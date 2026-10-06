@@ -93,12 +93,13 @@ def execute(args):
         if not targets:
             raise ValueError('No frame targets; use --address or a positive --sample')
         try:
-            image = Image(native.image_bytes())
+            data = native.image_bytes()
+            image = Image(data)
         except native.OracleError as error:
             raise ReadError(str(error)) from error
         frames = NativeFrames(rows, image, [int(a, 16) for a in args.noreturn])
         report = compare_frames(before, after, targets, frames)
-        report.update(native_binary_sha256=native.NATIVE_SHA256, purge_changed=purge_changed,
+        report.update(native_binary_sha256=native.image_sha256(data), purge_changed=purge_changed,
                       purge_callers=purge_callers, additional_noreturn=args.noreturn)
         if discovery_errors:
             report['read_errors'] += discovery_errors

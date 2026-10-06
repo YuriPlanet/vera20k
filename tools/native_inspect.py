@@ -1,4 +1,4 @@
-"""Read and scan the pinned retail executable. See tools/native_inspect.md.
+"""Read and scan supported retail executables. See tools/native_inspect.md.
 
 Static byte/instruction evidence only: linear sweep does not establish instruction
 boundaries, active reachability, class ownership or exhaustive cross-references.
@@ -6,6 +6,7 @@ boundaries, active reachability, class ownership or exhaustive cross-references.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 
@@ -25,7 +26,8 @@ STATIC_LIMITS = [
 
 def section_rows(data: bytes) -> list[dict]:
     return [dict(index=index, address=native.IMAGE_BASE + rva, file_offset=raw,
-                 file_bytes=size, virtual_bytes=virtual, flags=flags)
+                 file_bytes=size, virtual_bytes=virtual, flags=flags,
+                 file_backed_sha256=hashlib.sha256(data[raw:raw + size]).hexdigest())
             for index, (rva, raw, size, virtual, flags) in enumerate(native._sections(data))]
 
 
@@ -212,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         data = native.image_bytes()
         result = inspect(data, options)
-        packet = dict(schema=1, native_sha256=native.NATIVE_SHA256, image_base=native.IMAGE_BASE,
+        packet = dict(schema=1, native_sha256=native.image_sha256(data), image_base=native.IMAGE_BASE,
                       capstone_version=capstone.__version__, request=vars(options), result=result)
         print(json.dumps(packet, indent=2))
         return 0

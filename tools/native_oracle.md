@@ -31,13 +31,58 @@ cargo test -p vera20k --lib rules::color_scheme::tests::hsv_to_rgb_matches_nativ
 ```
 
 `RA2_DIR` is an alternative; an explicit executable path takes precedence and never
-silently falls back. The loader hashes the same immutable bytes it maps. Only the
-retail executable with SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`
-is accepted, including under optimized Python. No executable is distributed here.
+silently falls back. The loader hashes the same immutable bytes it maps. It accepts
+these exact retail executables, including under optimized Python:
+
+- Historical reference: `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+- Steam installation: `3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`.
+
+No executable is distributed here.
 This restriction belongs to these comparison tools alone, because their harnesses
 run code at fixed addresses of that build: the game and the Rust tests accept any
 retail `gamemd.exe`, locate its math tables by their contents and check every byte.
+
+### Steam compatibility and evidence identity
+
+[`native_inspect.steam.json`](native_inspect.steam.json) records the Steam file's
+actual SHA and all four file-backed section hashes/layouts. Each matches the
+historical sections in the sealed
+[`loader_compatibility.json`](spatial_oracle/shrapnel_damage/loader_compatibility.json).
+This establishes identical section bytes and virtual addresses for these fixed-address
+fixtures. It does not compare PE headers/section-external bytes or establish Windows
+startup, imports, DRM or complete game behavior. Reproduce the Steam section record
+with `python -m tools.native_inspect sections` after selecting the Steam EXE.
+
+`image_sha256()` and `provenance()` identify the actual selected file. Static
+inspection, native frame reports and standalone new execution receipts do so too.
+`NATIVE_SHA256` remains the historical reference identifier in legacy Rust-facing
+vector payloads; it must not be used to attest a newly selected executable.
+The authoritative execution identity for those legacy vectors is their provenance
+sidecar. Existing sidecars and historical fixture replays retain strict identity
+checks: accepting another input does not relabel old evidence as Steam execution.
+Ghidra annotation ledgers also remain tied to their own `program_sha256`; a Steam
+program needs a ledger authored for that program.
+
+The factory packet's registered helper profiles and inspection-owner seal are
+unchanged. Its public historical replay admission checks the actual file, including
+the direct consumer/gate routes. Only the explicitly unregistered candidate helper
+map is refreshed for the changed shared sources; it is not a compatibility verdict.
+Saved-receipt unit tests validate retained profile claims against the sealed
+registration independently of today's source admission. Native factory controls
+have not been replayed or rebaselined by this change.
+
+Generate and check Steam-specific evidence at a separate path, preserving the old
+goldens (the parent directory is created by `--write`):
+
+```powershell
+$env:VERA20K_GAMEMD_EXE = 'D:/steam/steamapps/common/Command & Conquer Red Alert II/gamemd.exe'
+python -m tools.spatial_oracle.shroud_current_sight --write --output logs/steam/shroud.json
+python -m tools.spatial_oracle.shroud_current_sight --check --output logs/steam/shroud.json
+```
+
+The saved [Steam shroud receipt](spatial_oracle/shroud_current_sight.steam-receipt.json)
+records 23 histories and 9 timer cases whose complete payload matches the existing
+historical vectors; it is a separate execution identity, not full-game parity.
 
 Both halves matter: the Python command checks current native output against the
 reference; the Rust test checks production conversion against that reference.
@@ -258,7 +303,7 @@ same argument and adds a reserved `call` object containing ECX/EDX, stack
 arguments, FPCW, observation mode and fixture write ranges. Reports do not copy
 the full heap, pointed-to data or executable and cannot restore an emulator.
 Include the fixture selectors needed to reproduce the case. The recorded
-`expected_native_sha256` is the runner's expected image, not an attestation of a
+`supported_native_sha256` lists accepted input identities, not an attestation of a
 custom machine: `run_checked` also accepts synthetic tests.
 
 The shared `Reader.invoke(..., context=...)` forwards this context. Anytown

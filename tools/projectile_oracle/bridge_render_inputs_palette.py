@@ -5,7 +5,7 @@ import importlib.util,json,struct,hashlib,argparse
 from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import *
-from tools.native_oracle import run_checked,NATIVE_SHA256
+from tools.native_oracle import run_checked,image_sha256
 from tools.spatial_oracle.building_body_rules import SP,dwords
 from tools.projectile_oracle import bridge_render_inputs as module
 
@@ -46,7 +46,7 @@ def generate():
    table_sha256=hashlib.sha256(bytes(u.mem_read(table,count*512))).hexdigest(),
    body_plain_vtable=hex(m.read32(m.read32(p+0x88))),body_rle_vtable=hex(m.read32(m.read32(p+0x8c))),
    convert_fields=[hex(m.read32(p+i)) for i in range(0,0x170,4)]))
- return dict(native_sha256=NATIVE_SHA256,loads=m.asset_loaded,rows=rows)
+ return dict(native_sha256=image_sha256(),loads=m.asset_loaded,rows=rows)
 
 if __name__=='__main__':
  a=argparse.ArgumentParser();a.add_argument('--check',type=Path);args=a.parse_args();result=generate()

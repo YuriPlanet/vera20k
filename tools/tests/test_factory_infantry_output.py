@@ -5,6 +5,26 @@ import unittest
 from unittest import mock
 
 from tools.spatial_oracle._factory_infantry_output import fixture, runtime as rt, saved
+from tools import native_oracle as native
+from tools.spatial_oracle import factory_infantry_output as public
+
+
+class ReplayImageAdmissionTests(unittest.TestCase):
+    def test_default_helper_admission_rejects_a_changed_inspection_owner(self):
+        metadata = copy.deepcopy(rt.metadata())
+        owner = next(iter(metadata['inspection_owner_files'].values()))
+        owner['sha256'] = '0' * 64
+        with mock.patch.object(rt, 'metadata', return_value=metadata):
+            with self.assertRaisesRegex(ValueError, 'Unsupported inspection-owner version'):
+                rt.verify_helpers()
+
+    def test_direct_consumer_and_gate_replays_reject_another_supported_file(self):
+        for control in ('unit_ready_consumer', 'infantry_unlimbo_gate'):
+            with self.subTest(control=control), \
+                    mock.patch.object(native, 'image_sha256', return_value=native.STEAM_NATIVE_SHA256), \
+                    mock.patch('sys.argv', ['factory', '--replay', control, '--output', 'unused-steam-replay.json']):
+                with self.assertRaisesRegex(ValueError, 'recorded executable identity'):
+                    public.main()
 
 
 class CandidateSourceAdmissionTests(unittest.TestCase):
@@ -53,7 +73,11 @@ class CandidateSourceAdmissionTests(unittest.TestCase):
     def test_restore_registered_maps_after_native_comparison_failure(self):
         meta = self.candidate_metadata()
         callers, profiles = copy.deepcopy(meta['caller_files']), copy.deepcopy(meta['helper_profiles'])
-        with mock.patch.object(rt, 'metadata', return_value=meta):
+        # This exercises context restoration after a comparison fails, not
+        # registration/replay of today's shared helpers against native controls.
+        candidate = {'profile_sha256': rt.canonical_sha(meta['initialized_candidate_helper_files'])}
+        with mock.patch.object(rt, 'metadata', return_value=meta), \
+                mock.patch.object(rt, 'verify_helpers', return_value=candidate):
             with self.assertRaisesRegex(RuntimeError, 'native comparison failed'):
                 with rt.candidate_helper_profile() as profile:
                     self.assertEqual(profile['profile_sha256'],
@@ -80,14 +104,32 @@ class PublicationPhaseEvidenceTests(unittest.TestCase):
         cls.meta = rt.metadata()['publication_phase']
         cls.replays = {order: rt.read_pinned(relative)
                        for order, relative in cls.meta['compatibility_receipts'].items()}
-        # The old receipts retain their sealed input closure. The executed
-        # compatibility wrappers bind the current callers independently.
+        # Both groups are saved executions. 'current' is the compatibility
+        # execution at capture time, not an attestation of today's helper bytes.
         cls.receipts = {
             'historical': {order: rt.read_pinned(row['receipt'])
                            for order, row in cls.meta['controls'].items()},
             'current': {order: replay['full_original_publication_control']
                         for order, replay in cls.replays.items()},
         }
+
+    def setUp(self):
+        # Verify the retained source claim against its sealed registration,
+        # then isolate saved-witness validation from current-source admission.
+        # Production verify_helpers remains strict; no profile is registered.
+        claim = self.receipts['current']['before_strip']['shared_helpers']
+        metadata = rt.metadata()
+        profile = metadata['helper_profiles'][claim['profile']]
+        inspections = metadata['inspection_owner_files']
+        expected = dict(profile=claim['profile'], imported_owner_files=len(profile['files']),
+                        profile_sha256=rt.canonical_sha(profile['files']), status=profile['status'],
+                        inspection_owner_files=len(inspections),
+                        inspection_owner_sha256=rt.canonical_sha({p: row['sha256'] for p, row in inspections.items()}))
+        for receipt in self.receipts['current'].values():
+            self.assertEqual(receipt['shared_helpers'], expected)
+        patcher = mock.patch.object(rt, 'verify_helpers', return_value=expected)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def control_receipts(self, *branches):
         # Copy only branches a rejection control mutates. The complete warmed

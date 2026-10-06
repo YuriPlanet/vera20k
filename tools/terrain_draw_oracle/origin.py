@@ -9,7 +9,7 @@ import json
 import struct
 from pathlib import Path
 from tools.native_oracle import (
-    NATIVE_SHA256, STACK_BASE, STACK_SIZE, SCRATCH, SCRATCH_SIZE,
+    image_sha256, STACK_BASE, STACK_SIZE, SCRATCH, SCRATCH_SIZE,
     Uc, UC_ARCH_X86, UC_MODE_32, load_image, run_checked,
 )
 from unicorn.x86_const import UC_X86_REG_ESP
@@ -49,7 +49,7 @@ def generate():
                           'projected_viewport_point':[376,404-viewport_y],
                           'draw_point':point,'clip':actual_clip,
                           'framebuffer_y':point[1]+actual_clip[1]})
-    return {'executable_sha256':NATIVE_SHA256,'region':'005F4B88..005F4CFD',
+    return {'executable_sha256':image_sha256(),'region':'005F4B88..005F4CFD',
             'virtual_target':'0071C1B0','cases':cases,
             'limit':'Projected point supplied; original dirty rebasing runs before the Terrain virtual call. Effective native row is framebuffer top minus viewport Y, not minus dirty-clip Y.'}
 

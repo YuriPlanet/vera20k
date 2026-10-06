@@ -38,7 +38,7 @@ def manifest(inputs):
     # Import the same owners; record transitive repository sources by relative
     # name. No host paths, retail bytes, generated logs, or duplicate captures.
     from . import hierarchy_composition, map_facts
-    from tools.native_oracle import NATIVE_SHA256
+    from tools.native_oracle import image_sha256
     import capstone
     import unicorn
     owned = {
@@ -57,7 +57,7 @@ def manifest(inputs):
             dependencies[path.relative_to(ROOT).as_posix()] = sha(path)
     return {
         'schema': 2,
-        'native_sha256': NATIVE_SHA256,
+        'native_sha256': image_sha256(),
         'runtime': {'python_requires': '>=3.10', 'unicorn': unicorn.__version__,
                     'capstone': capstone.__version__, 'lzo_version': map_facts.lib.lzo_version()},
         'runners': [f'{PACKAGE}.{runner}' for runner in RUNNERS],

@@ -108,7 +108,7 @@ def main(output):
                               'colors': colors, 'depths': depths})
     output.mkdir(parents=True, exist_ok=True)
     (output / 'half-rgb565.bin').write_bytes(packed)
-    result = {'executable_sha256': NATIVE_SHA256, 'mask': mask,
+    result = {'executable_sha256': image_sha256(), 'mask': mask,
               'leaves': ['004990E0', '00497390'], 'packed_cases': 65536,
               'packed_sha256': hashlib.sha256(packed).hexdigest(),
               'depth_record': 'shadow, row candidate, signed shape byte, old u16 Z, output color, stored u16 Z, repeat output color',

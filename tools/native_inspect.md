@@ -1,4 +1,4 @@
-# Inspect the pinned native executable
+# Inspect supported native executables
 
 Use `python -m tools.native_inspect` before writing a session-local disassembler,
 VA mapper or whole-code scan. It shares executable selection, SHA checking and
@@ -13,7 +13,7 @@ python -m pip install -r tools/requirements-test.txt
 ```
 
 Select `VERA20K_GAMEMD_EXE` or `RA2_DIR` as described in
-[native setup](native_oracle.md). Only the pinned original executable is accepted.
+[native setup](native_oracle.md). Only the two explicitly supported hashes are accepted.
 Import and `--help` do not read it. Missing/wrong images and invalid requests fail
 with nonzero status, diagnostics on stderr and no JSON evidence on stdout.
 
@@ -34,7 +34,9 @@ decimal or `0x` notation. No timestamps or machine-specific paths affect compari
 
 ## Scope and coverage
 
-- `sections` reports section index, VA, raw offset/length, virtual size and flags.
+- `sections` reports section index, VA, raw offset/length, virtual size, flags
+  and the SHA-256 of each complete file-backed section. The packet records the
+  actual selected executable hash, including for Steam.
   A virtual tail is not original file content. Do not convert VA to file offset
   by subtracting the image base: the retail fourth section differs, and `.data`
   includes a large unbacked runtime region.

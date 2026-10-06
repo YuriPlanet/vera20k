@@ -2,7 +2,7 @@
 import hashlib,json,struct
 from pathlib import Path
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32
-from tools.native_oracle import call,load_image,NATIVE_SHA256,SCRATCH
+from tools.native_oracle import call,load_image,image_sha256,SCRATCH
 from tools.spatial_oracle.map_queries import dwords
 OBJ=SCRATCH; HOUSE=SCRATCH+0x1000; TYPE=SCRATCH+0x7000
 RULES=SCRATCH+0x9000; COUNTRY=SCRATCH+0xb000; PAD=SCRATCH+0xc000; DOCK=SCRATCH+0xd000
@@ -59,7 +59,7 @@ def generate():
  for a,b in spans:
   data=bytes(u.mem_read(a,b-a));byte_rows.append(dict(start=hex(a),end=hex(b),hex=data.hex(),sha256=hashlib.sha256(data).hexdigest()))
  repairs=[repair_fragments(kind,hp,strength,estimate,step) for kind,step in [('building',4),('depot',8)] for hp,strength,estimate in [(70000,100000,-20),(2147483646,2147483647,2147483645),(-20,-10,-50),(-12,-10,-50),(100,100,-50),(0,0,-50),(-1,0,-50),(1,0,-50),(99,100,-50)]]
- return dict(native_sha256=NATIVE_SHA256,scope='147 complete authentic Techno refund wrapper executions and14 complete authentic Building survivor count executions. No callbacks replaced. 18 additional repair numeric-fragment rows execute original ADD and completion ranges only; depot callback/notification region6F4D5F..6F4DE5 is omitted and its mutations are not covered. Ordinary sale credit-call snippets are byte evidence only. No full sale lifecycle, human-field producer, survivor spawning, native cost admission or Rust parity claim.',
+ return dict(native_sha256=image_sha256(),scope='147 complete authentic Techno refund wrapper executions and14 complete authentic Building survivor count executions. No callbacks replaced. 18 additional repair numeric-fragment rows execute original ADD and completion ranges only; depot callback/notification region6F4D5F..6F4DE5 is omitted and its mutations are not covered. Ordinary sale credit-call snippets are byte evidence only. No full sale lifecycle, human-field producer, survivor spawning, native cost admission or Rust parity claim.',
  assumptions=['Supplied signed actual/estimate/type Strength and authored type Cost401. Fields varied independently with same type and owner configuration.',
  'Authentic Building and BuildingType vtables. Native GetType, Building actual cost, owner/country cost multipliers, owner human selector, refund float spill, native ftol all execute. PC53/chop0xE7F.',
  'Cost modifiers all1; Soylent0; FreeUnit0; SeparateAircrafttrue; fixture Pad/Dock distinct; RefundPercent.5; game mode0. Owner null or nonnull +1EC true/false, +1EDfalse.',

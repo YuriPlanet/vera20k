@@ -346,6 +346,25 @@ class IdentityAndReferenceTests(unittest.TestCase):
         with self.assertRaisesRegex(oracle.OracleError, "Unsupported gamemd.exe SHA-256"):
             oracle._verified_image(self.target)
 
+    def test_both_supported_executable_identities_load_the_same_read_bytes(self):
+        self.target.write_bytes(b"synthetic identity test, not native evidence")
+        self.addCleanup(oracle._verified_image.cache_clear)
+        for digest in (oracle.NATIVE_SHA256, oracle.STEAM_NATIVE_SHA256):
+            with self.subTest(digest=digest), patch.object(oracle.hashlib, "sha256") as sha:
+                sha.return_value.hexdigest.return_value = digest
+                oracle._verified_image.cache_clear()
+                self.assertEqual(oracle._verified_image(self.target), self.target.read_bytes())
+
+    def test_actual_input_identity_is_not_the_legacy_reference_identity(self):
+        data = b"synthetic execution bytes"
+        with patch.object(oracle, "image_bytes", return_value=data):
+            actual = hashlib.sha256(data).hexdigest()
+            self.assertEqual(oracle.image_sha256(), actual)
+            self.assertNotEqual(actual, oracle.NATIVE_SHA256)
+            metadata = oracle.provenance(scope="synthetic", assumptions=["not native evidence"],
+                                         substitutions=[], entry_points={"test": CODE})
+            self.assertEqual(metadata["native_sha256"], actual)
+
     def test_explicit_missing_path_does_not_fall_back(self):
         (self.target.parent / "gamemd.exe").write_bytes(b"fallback must not be selected")
         with patch.dict(os.environ, {"VERA20K_GAMEMD_EXE": str(self.target),
