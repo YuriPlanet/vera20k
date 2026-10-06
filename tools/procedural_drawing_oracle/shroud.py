@@ -11,7 +11,9 @@ from pathlib import Path
 import struct
 
 from unicorn import UC_HOOK_CODE
-from unicorn.x86_const import UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_ESI, UC_X86_REG_ESP
+from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX,
+                              UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESI,
+                              UC_X86_REG_ESP)
 
 from tools import native_oracle as native
 from tools.bridge_click_oracle import MATRIX_INITIALIZER
@@ -175,6 +177,145 @@ class Shroud:
         return result
 
 
+class BuildingReveal(Shroud):
+    """Building admission/tint controls using the existing tactical fixture.
+
+    Original 6D9920/43CEA0 decide admission. The render rectangle is a supplied
+    geometry boundary; 43D290 is a recording terminal, not an executed raster.
+    Original building-center and center-cell shroud helpers execute unchanged.
+    """
+
+    OBJECT, TYPE, RECT, DISPLAY, COORD, CELL_COORD = (
+        MEM + offset for offset in (0xE0000, 0xE1000, 0xE3000, 0xE3100,
+                                    0xE3200, 0xE3300))
+
+    def __init__(self, physical_type):
+        super().__init__()
+        self.events = []
+        self.phase = None
+        # Existing native Map startup sequence derives the height divisor used
+        # by 586360; do not replace its arithmetic with a host constant.
+        for entry in (0x561710, 0x5617A0, 0x5617C0, 0x5617E0):
+            call(self.u, entry, rally.TACTICAL, ())
+        self.level_height = rally.ints(self.u, 0xABDE88, 1)[0]
+        self.u.mem_write(self.OBJECT, words(0x7E3EBC))
+        self.u.mem_write(self.OBJECT + 0x520, words(self.TYPE))
+        self.u.mem_write(self.TYPE + 0xEF0,
+                         words(physical_type['result']['foundation']))
+        self.u.mem_write(self.OBJECT + 0x9C, words(2688, 5248, 0))
+        call(self.u, 0x447AC0, self.OBJECT, (self.COORD,))
+        self.center_coords = rally.ints(self.u, self.COORD, 3)
+        self.u.mem_write(self.COORD + 0x9C, words(*self.center_coords))
+        call(self.u, 0x41BEA0, self.COORD, (self.CELL_COORD,))
+        self.center_cell = list(struct.unpack('<hh', self.u.mem_read(self.CELL_COORD, 4)))
+        call(self.u, 0x41BEA0, self.OBJECT, (self.CELL_COORD,))
+        self.top_cell = list(struct.unpack('<hh', self.u.mem_read(self.CELL_COORD, 4)))
+        assert self.top_cell != self.center_cell
+        self.original_text = bytes(self.u.mem_read(0x401000, 4063232))
+        self.u.hook_add(UC_HOOK_CODE, self.building_observe)
+
+    def fixture_return(self, result, arg_bytes):
+        sp = self.u.reg_read(UC_X86_REG_ESP)
+        target = struct.unpack('<I', self.u.mem_read(sp, 4))[0]
+        self.u.reg_write(UC_X86_REG_EAX, result)
+        self.u.reg_write(UC_X86_REG_ESP, sp + 4 + arg_bytes)
+        self.u.reg_write(UC_X86_REG_EIP, target)
+
+    def building_observe(self, u, pc, _size, _data):
+        if self.phase == 'admission':
+            if pc == 0x455C20:
+                self.events.append(dict(kind='supplied_render_rectangle', pc=pc))
+                self.fixture_return(self.RECT, 4)
+            elif pc == 0x43CEA0:
+                sp = u.reg_read(UC_X86_REG_ESP)
+                self.events.append(dict(kind='draw_if_visible', pc=pc,
+                                        arguments=rally.ints(u, sp + 4, 3)))
+            elif pc == 0x43D290:
+                sp = u.reg_read(UC_X86_REG_ESP)
+                point, clip = struct.unpack('<2I', u.mem_read(sp + 4, 8))
+                self.events.append(dict(kind='base_draw_terminal', pc=pc,
+                                        point=rally.ints(u, point, 2),
+                                        clip=rally.ints(u, clip, 4)))
+                self.fixture_return(0, 8)
+        elif self.phase == 'tint' and pc == 0x487950:
+            cell = u.reg_read(UC_X86_REG_ECX)
+            self.events.append(dict(kind='center_cell_shroud_query', pc=pc,
+                                    cell=list(struct.unpack('<hh', u.mem_read(cell + 0x24, 4)))))
+
+    def prepare_visibility(self, case):
+        for xy in self.cells:
+            self.set_flags(xy, 0)
+        self.set_flags(self.top_cell, 0x18 if case.get('top_revealed') else 0)
+        self.set_flags(self.center_cell, 0x18 if case.get('center_revealed') else 0)
+
+    def admission(self, case):
+        self.prepare_visibility(case)
+        u = self.u
+        u.mem_write(self.OBJECT + 0x74, bytes([case.get('active', True)]))
+        u.mem_write(self.OBJECT + 0x80, bytes([1, case.get('limbo', False)]))
+        u.mem_write(self.OBJECT + 0x6E7, bytes([case.get('is_fogged', False)]))
+        u.mem_write(0xA8ED6B, bytes([case.get('armageddon', False)]))
+        u.mem_write(self.RECT, words(*case.get('rectangle', [10, 0, 70, 70])))
+        u.mem_write(self.DISPLAY, words(self.OBJECT))
+        u.mem_write(0x8A0394, words(self.DISPLAY))
+        u.mem_write(0x8A03A0, words(1))
+        u.mem_write(SCRATCH + 0x100, words(0, 0, *rally.SIZE))
+        self.events, self.phase = [], 'admission'
+        call(u, 0x6D9920, rally.TACTICAL,
+             (1, SCRATCH + 0x100, SCRATCH + 0x100))
+        self.phase = None
+        assert bytes(u.mem_read(0x401000, 4063232)) == self.original_text
+        return dict(input=case, base_draw_called=any(
+            event['kind'] == 'base_draw_terminal' for event in self.events),
+            events=self.events.copy())
+
+    def tint(self, case):
+        self.prepare_visibility(case)
+        self.events, self.phase = [], 'tint'
+        u = self.u
+        u.mem_write(SP + 0x80, words(case['packed_tint']))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ESI, self.OBJECT)
+        u.reg_write(UC_X86_REG_EBP, 1000)
+        native.run_checked(u, 0x706389, 0x7063EB, count=20000,
+                           required_addresses=[0x447AC0, 0x487950, 0x586360])
+        self.phase = None
+        assert bytes(u.mem_read(0x401000, 4063232)) == self.original_text
+        return dict(input=case, packed_tint=u.reg_read(UC_X86_REG_EAX),
+                    light_intensity=u.reg_read(UC_X86_REG_EBP),
+                    events=self.events.copy())
+
+
+def generate_building_reveal():
+    physical = rally.stock_type_inputs()
+    f = BuildingReveal(physical)
+    admission_inputs = [
+        dict(name='both_unexplored'),
+        dict(name='center_revealed_top_unexplored', center_revealed=True),
+        dict(name='top_revealed_center_unexplored', top_revealed=True),
+        dict(name='both_revealed', top_revealed=True, center_revealed=True),
+        dict(name='fogged_snapshot', is_fogged=True),
+        dict(name='fogged_armageddon', is_fogged=True, armageddon=True),
+        dict(name='inactive', active=False),
+        dict(name='limbo', limbo=True),
+        dict(name='offscreen', rectangle=[500, 500, 70, 70]),
+    ]
+    tint_inputs = [dict(name=f'{visibility}_tint_{value}',
+                        top_revealed=top, center_revealed=center, packed_tint=value)
+                   for visibility, top, center in (
+                       ('both_unexplored', False, False),
+                       ('center_only', False, True),
+                       ('top_only', True, False), ('both_revealed', True, True))
+                   for value in (0, 0xF800)]
+    return dict(physical_type=physical, object_coords=[2688, 5248, 0],
+                native_level_height=f.level_height,
+                native_top_cell=f.top_cell, native_center_coords=f.center_coords,
+                native_center_cell=f.center_cell,
+                admission_cases=[f.admission(case) for case in admission_inputs],
+                tint_cases=[f.tint(case) for case in tint_inputs],
+                original_text_unchanged=True)
+
+
 def stock_geometry():
     raw, identity = asset()
     w,h,frames = stock.shp(raw)
@@ -232,6 +373,34 @@ def generate():
 
 
 if __name__=='__main__':
+    import sys
+    if '--building-reveal' in sys.argv[1:]:
+        native.finish_vectors(generate_building_reveal,
+            Path(__file__).with_name('building_reveal.json'),
+            argv=[arg for arg in sys.argv[1:] if arg != '--building-reveal'],
+            provenance=lambda: native.provenance(
+                scope='Ordinary Building6D9920->43CEA0 base-draw admission and706389..7063EB center-cell packed tint policy',
+                assumptions=[
+                    'Existing Shroud/Rally own the original loaded-image, cell grid, stock SHROUD asset and native map/surface fixture. No live native Scenario, whole map placement or asset-loader parity is claimed.',
+                    'Original Map startup561710/5617A0/5617C0/5617E0 derivesABDE88 height divisor from original floating-point arithmetic. Zero-level cells isolate center selection from slope/bridge geometry.',
+                    'The existing stock_type_inputs executes constructor and native retail GAPILE Foundation reader. Actual447AC0/45EC90/45ECA0 compute building center coordinates;41BEA0 computes both top and center cell coordinates. Inputs do not take their center cell from VERA.',
+                    'Whole6D9920 and43CEA0 execute with one registered Building in the native display array, active graphical client, supplied rectangle and ordinary FogOfWar flag clear. +6E7 controls represent prepared IsFogged snapshot state, not an executed snapshot lifecycle.',
+                    '706389..7063EB executes actual447AC0/487950/586360. It records EAX packed tint and unchanged EBP baseline light. This isolates the caller decision, not the full705E00 body or colored pixel rasterization. Packed tintF800 is an explicit synthetic nonzero input; neutral0 is the ordinary Building default.',
+                    'Native .text remains byte-identical. Map cells use prepared flags and zero terrain level; reveal traversal, arbitrary slopes/bridges, enabled FogOfWar, observers and special effect producer parity are not established.',
+                ],
+                substitutions=[
+                    '455C20 GetRenderDimensions returns a supplied rectangle and applies its native RET4 stack convention, isolating geometry from admission.',
+                    '43D290 base DrawIt is a recording terminal with RET8 convention. Admission, clip intersection, render coordinates and projection are native; no building asset raster executes.',
+                ],
+                entry_points={'building_scan':0x6D9920,'draw_if_visible':0x43CEA0,
+                    'base_draw_terminal':0x43D290,'center_coords':0x447AC0,
+                    'coord_to_cell':0x41BEA0,'center_shroud':0x487950,
+                    'shrouded_coord':0x586360,'tint_begin':0x706389,
+                    'tint_end_exclusive':0x7063EB,'height_scale':0x5617E0}),
+            source_paths={'oracle':Path(__file__),'surface_fixture':Path(rally.__file__),
+                          'stock_owner':Path(stock.__file__),
+                          'projection_fixture':Path('tools/bridge_click_oracle.py')})
+        raise SystemExit(0)
     native.finish_vectors(generate,Path(__file__).with_suffix('.json'),
         provenance=lambda:native.provenance(
             scope='Stock SHROUD ABuffer values; original4112D0 reset,47EFE0 blit,4801F0/6D8700 selectors and whole6D3660 ordinary dirty/full draw including6D71E0',

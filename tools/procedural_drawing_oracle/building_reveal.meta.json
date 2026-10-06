@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary Building6D9920->43CEA0 base-draw admission and706389..7063EB center-cell packed tint policy",
+  "assumptions": [
+    "Existing Shroud/Rally own the original loaded-image, cell grid, stock SHROUD asset and native map/surface fixture. No live native Scenario, whole map placement or asset-loader parity is claimed.",
+    "Original Map startup561710/5617A0/5617C0/5617E0 derivesABDE88 height divisor from original floating-point arithmetic. Zero-level cells isolate center selection from slope/bridge geometry.",
+    "The existing stock_type_inputs executes constructor and native retail GAPILE Foundation reader. Actual447AC0/45EC90/45ECA0 compute building center coordinates;41BEA0 computes both top and center cell coordinates. Inputs do not take their center cell from VERA.",
+    "Whole6D9920 and43CEA0 execute with one registered Building in the native display array, active graphical client, supplied rectangle and ordinary FogOfWar flag clear. +6E7 controls represent prepared IsFogged snapshot state, not an executed snapshot lifecycle.",
+    "706389..7063EB executes actual447AC0/487950/586360. It records EAX packed tint and unchanged EBP baseline light. This isolates the caller decision, not the full705E00 body or colored pixel rasterization. Packed tintF800 is an explicit synthetic nonzero input; neutral0 is the ordinary Building default.",
+    "Native .text remains byte-identical. Map cells use prepared flags and zero terrain level; reveal traversal, arbitrary slopes/bridges, enabled FogOfWar, observers and special effect producer parity are not established."
+  ],
+  "substitutions": [
+    "455C20 GetRenderDimensions returns a supplied rectangle and applies its native RET4 stack convention, isolating geometry from admission.",
+    "43D290 base DrawIt is a recording terminal with RET8 convention. Admission, clip intersection, render coordinates and projection are native; no building asset raster executes."
+  ],
+  "entry_points": {
+    "building_scan": "0x006D9920",
+    "draw_if_visible": "0x0043CEA0",
+    "base_draw_terminal": "0x0043D290",
+    "center_coords": "0x00447AC0",
+    "coord_to_cell": "0x0041BEA0",
+    "center_shroud": "0x00487950",
+    "shrouded_coord": "0x00586360",
+    "tint_begin": "0x00706389",
+    "tint_end_exclusive": "0x007063EB",
+    "height_scale": "0x005617E0"
+  },
+  "source_normalized_lf_sha256": {
+    "oracle": "4f25bb1b41ad50afafc0a81508c62a53a9e30ea6f2e73253fc1cd58f5c8aea18",
+    "surface_fixture": "0168afa40ab7fa79a606116d117d24f634b00a37d3b38ec9121ec15f5636023d",
+    "stock_owner": "62b855dba1836bf484bb6c112b9249003ff4427c3004a1ef3d95c3aac985ba9b",
+    "projection_fixture": "b2879a5172b5fe778fbc8f8d98374b124ea1120aefe5e960764bd27a99183026"
+  },
+  "payload_sha256": "1d23b45b0ee361184f28baa8b8f19a97f0d9490beb8f0ea7eb01fceb9ed5f95a"
+}

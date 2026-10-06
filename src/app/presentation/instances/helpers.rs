@@ -26,12 +26,21 @@ pub(crate) fn tactical_entity_encounter_order(sim: &crate::sim::world::Simulatio
         .collect()
 }
 
-/// Common admission into the tactical render-tracked object set. SHP, voxel,
-/// and input consumers share this exact gate so hidden passengers, limboed
-/// objects, shrouded enemies, and invisible draw states cannot drift between
-/// what is rendered and what can seed tactical selection.
+/// Drawing and screen selection share lifecycle/DrawState admission, but a
+/// building's pixels may cross the shroud frontier before its anchor does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TacticalEntityPurpose {
+    Drawing,
+    ScreenSelection,
+}
+
+/// Native Building6D9920 ->43CEA0 ->43D290 submits ordinary building bodies
+/// independently of top/center shroud; the existing ABuffer clips their pixels.
+/// Screen selection retains its exploration gate. Mobile admission is unchanged.
+/// Steam executable controls and coverage: tools/procedural_drawing_oracle/building_reveal.md.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn tactical_entity_render_admission(
+pub(crate) fn tactical_entity_admission(
+    purpose: TacticalEntityPurpose,
     entity: &GameEntity,
     owner: &str,
     local_owner: Option<&str>,
@@ -42,16 +51,20 @@ pub(crate) fn tactical_entity_render_admission(
     remap_row: u32,
     observer: crate::render::draw_state::ObserverDrawContext,
 ) -> Option<crate::render::draw_state::DrawDecision> {
-    if entity.lifecycle.in_limbo
+    let requires_revealed_anchor = entity.category != EntityCategory::Structure
+        || purpose == TacticalEntityPurpose::ScreenSelection;
+    if (entity.category == EntityCategory::Structure && !entity.lifecycle.object_alive)
+        || entity.lifecycle.in_limbo
         || entity.passenger_role.is_inside_transport()
-        || !is_entity_visible_for_local_owner(
-            local_owner,
-            fog,
-            &entity.position,
-            owner,
-            ignore_visibility,
-            local_owner_id,
-        )
+        || (requires_revealed_anchor
+            && !is_entity_visible_for_local_owner(
+                local_owner,
+                fog,
+                &entity.position,
+                owner,
+                ignore_visibility,
+                local_owner_id,
+            ))
     {
         return None;
     }
@@ -149,7 +162,8 @@ fn compose_tactical_screen_entity_encounter_order(
                 {
                     entity.lifecycle.object_alive && !entity.lifecycle.in_limbo
                 } else {
-                    tactical_entity_render_admission(
+                    tactical_entity_admission(
+                        TacticalEntityPurpose::ScreenSelection,
                         entity,
                         owner,
                         local_owner,
@@ -481,6 +495,166 @@ mod tests {
     }
 
     #[test]
+    fn building_hidden_anchor_is_drawn_without_entering_screen_selection() {
+        use crate::sim::components::Health;
+
+        let mut sim = crate::sim::world::Simulation::new();
+        let local_owner = sim.interner.intern("Americans");
+        let neutral_owner = sim.interner.intern("Neutral");
+        let building_type = sim.interner.intern("CABHUT");
+        sim.fog.width = 32;
+        sim.fog.height = 32;
+        sim.fog.mark_visible_for_owner(local_owner, 9, 10);
+        let mut building = GameEntity::new_at_frame_zero_for_test(
+            7,
+            10,
+            10,
+            0,
+            0,
+            neutral_owner,
+            Health { current: 100 },
+            building_type,
+            EntityCategory::Structure,
+            0,
+            5,
+            false,
+        );
+        building.lifecycle.object_alive = true;
+        building.lifecycle.in_limbo = true;
+        sim.entities_mut().insert(building);
+        sim.reveal(7);
+        assert_eq!(tactical_entity_encounter_order(&sim), [7]);
+        assert!(!sim.fog.is_cell_revealed(local_owner, 10, 10));
+
+        let building = sim.entities().get(7).unwrap();
+        // Native6D9920 ->43CEA0 ->43D290 submits the body independently
+        // of its anchor's shroud; the shared ABuffer masks its pixels.
+        assert!(
+            tactical_entity_admission(
+                TacticalEntityPurpose::Drawing,
+                building,
+                "Neutral",
+                Some("Americans"),
+                Some(local_owner),
+                &sim.fog,
+                false,
+                0,
+                0,
+                crate::render::draw_state::ObserverDrawContext::default(),
+            )
+            .is_some(),
+            "the building must reach drawing before its anchor is explored"
+        );
+        let (x, y) = interpolated_screen_position_entity(building);
+        assert!(
+            compose_tactical_screen_entity_encounter_order(
+                &sim,
+                (x - 32.0, y - 32.0, x + 32.0, y + 32.0),
+                Some("Americans"),
+                Some(local_owner),
+                &sim.fog,
+                false,
+                0,
+                false,
+            )
+            .is_empty(),
+            "submitting a masked building must not expose screen selection"
+        );
+    }
+
+    #[test]
+    fn ordinary_building_admission_matches_executed_native_controls() {
+        use crate::sim::components::Health;
+
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/building_reveal.json",
+        ))
+        .unwrap();
+        let top: [u16; 2] = std::array::from_fn(|i| {
+            u16::try_from(native["native_top_cell"][i].as_u64().unwrap()).unwrap()
+        });
+        let center: [u16; 2] = std::array::from_fn(|i| {
+            u16::try_from(native["native_center_cell"][i].as_u64().unwrap()).unwrap()
+        });
+        let mut interner = crate::sim::intern::StringInterner::new();
+        let local = interner.intern("Americans");
+        let owner = interner.intern("Neutral");
+        let type_id = interner.intern(native["physical_type"]["type_id"].as_str().unwrap());
+        let mut compared = 0;
+        for row in native["admission_cases"].as_array().unwrap() {
+            let input = &row["input"];
+            // Enabled FogOfWar snapshots are a separate lifecycle. Geometry
+            // clipping belongs to the existing builders, beyond this gate.
+            if input.get("is_fogged").is_some() || input.get("rectangle").is_some() {
+                continue;
+            }
+            let mut fog = FogState {
+                width: 32,
+                height: 32,
+                ..Default::default()
+            };
+            fog.mark_visible_for_owner(local, 1, 1);
+            for (cell, key) in [(top, "top_revealed"), (center, "center_revealed")] {
+                if input[key].as_bool().unwrap_or(false) {
+                    fog.mark_visible_for_owner(local, cell[0], cell[1]);
+                }
+            }
+            let mut building = GameEntity::new_at_frame_zero_for_test(
+                7,
+                top[0],
+                top[1],
+                0,
+                0,
+                owner,
+                Health { current: 100 },
+                type_id,
+                EntityCategory::Structure,
+                0,
+                0,
+                false,
+            );
+            building.lifecycle.object_alive = input["active"].as_bool().unwrap_or(true);
+            building.lifecycle.in_limbo = input["limbo"].as_bool().unwrap_or(false);
+            let coord = crate::sim::movement::ground_pose::position_world_coord(&building.position);
+            assert_eq!(
+                serde_json::json!([coord.x, coord.y, coord.z]),
+                native["object_coords"]
+            );
+            let admitted = |purpose| {
+                tactical_entity_admission(
+                    purpose,
+                    &building,
+                    "Neutral",
+                    Some("Americans"),
+                    Some(local),
+                    &fog,
+                    false,
+                    0,
+                    0,
+                    crate::render::draw_state::ObserverDrawContext::default(),
+                )
+                .is_some()
+            };
+            let expected = row["base_draw_called"].as_bool().unwrap();
+            assert_eq!(
+                admitted(TacticalEntityPurpose::Drawing),
+                expected,
+                "{input}"
+            );
+            assert_eq!(
+                admitted(TacticalEntityPurpose::ScreenSelection),
+                expected && input["top_revealed"].as_bool().unwrap_or(false),
+                "screen selection must retain anchor exploration: {input}",
+            );
+            compared += 1;
+        }
+        assert_eq!(
+            compared, 6,
+            "all ordinary visibility/lifecycle controls must run"
+        );
+    }
+
+    #[test]
     fn item83_shared_render_admission_excludes_hidden_passenger_and_limbo() {
         use crate::sim::passenger::PassengerRole;
 
@@ -491,7 +665,8 @@ mod tests {
         entity.lifecycle.in_limbo = false;
 
         let admitted = |entity: &GameEntity, owner: &str, ignore_visibility: bool| {
-            tactical_entity_render_admission(
+            tactical_entity_admission(
+                TacticalEntityPurpose::Drawing,
                 entity,
                 owner,
                 Some("Americans"),

@@ -781,7 +781,18 @@ def _terrain(value: Any, expected_cell: Any, label: str) -> None:
     fields = ('final_tile_index', 'final_sub_tile', 'presentation_tile', 'level', 'slope',
               'raw_bridge_flags', 'bridge_state', 'has_deck', 'deck_level', 'walkable', 'transition')
     extension = ('overlay', 'terrain_object') if 'overlay' in cell or 'terrain_object' in cell else ()
-    require_exact_keys(cell, ('cell', 'allocated', *fields, *extension), label)
+    visibility_extension = ('local_visibility',) if 'local_visibility' in cell else ()
+    require_exact_keys(cell, ('cell', 'allocated', *fields, *extension, *visibility_extension), label)
+    if visibility_extension and cell['local_visibility'] is not None:
+        visibility = require_object(cell['local_visibility'], f'{label}.local_visibility')
+        require_exact_keys(visibility, ('owner', 'revealed', 'visible', 'gap_covered'),
+                           f'{label}.local_visibility')
+        require_string(visibility['owner'], f'{label}.local_visibility.owner')
+        if not visibility['owner']:
+            raise ValidationError(f'{label}.local_visibility.owner must be nonempty')
+        for key in ('revealed', 'visible', 'gap_covered'):
+            if type(visibility[key]) is not bool:
+                raise ValidationError(f'{label}.local_visibility.{key} must be boolean')
     if extension:
         overlay = cell['overlay']
         if overlay is not None:

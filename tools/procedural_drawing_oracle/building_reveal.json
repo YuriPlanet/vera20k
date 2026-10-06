@@ -1,0 +1,690 @@
+{
+  "admission_cases": [
+    {
+      "base_draw_called": true,
+      "events": [
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "arguments": [
+            269475808,
+            1,
+            0
+          ],
+          "kind": "draw_if_visible",
+          "pc": 4443808
+        },
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "clip": [
+            0,
+            0,
+            160,
+            120
+          ],
+          "kind": "base_draw_terminal",
+          "pc": 4444816,
+          "point": [
+            20,
+            10
+          ]
+        }
+      ],
+      "input": {
+        "name": "both_unexplored"
+      }
+    },
+    {
+      "base_draw_called": true,
+      "events": [
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "arguments": [
+            269475808,
+            1,
+            0
+          ],
+          "kind": "draw_if_visible",
+          "pc": 4443808
+        },
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "clip": [
+            0,
+            0,
+            160,
+            120
+          ],
+          "kind": "base_draw_terminal",
+          "pc": 4444816,
+          "point": [
+            20,
+            10
+          ]
+        }
+      ],
+      "input": {
+        "center_revealed": true,
+        "name": "center_revealed_top_unexplored"
+      }
+    },
+    {
+      "base_draw_called": true,
+      "events": [
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "arguments": [
+            269475808,
+            1,
+            0
+          ],
+          "kind": "draw_if_visible",
+          "pc": 4443808
+        },
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "clip": [
+            0,
+            0,
+            160,
+            120
+          ],
+          "kind": "base_draw_terminal",
+          "pc": 4444816,
+          "point": [
+            20,
+            10
+          ]
+        }
+      ],
+      "input": {
+        "name": "top_revealed_center_unexplored",
+        "top_revealed": true
+      }
+    },
+    {
+      "base_draw_called": true,
+      "events": [
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "arguments": [
+            269475808,
+            1,
+            0
+          ],
+          "kind": "draw_if_visible",
+          "pc": 4443808
+        },
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "clip": [
+            0,
+            0,
+            160,
+            120
+          ],
+          "kind": "base_draw_terminal",
+          "pc": 4444816,
+          "point": [
+            20,
+            10
+          ]
+        }
+      ],
+      "input": {
+        "center_revealed": true,
+        "name": "both_revealed",
+        "top_revealed": true
+      }
+    },
+    {
+      "base_draw_called": false,
+      "events": [],
+      "input": {
+        "is_fogged": true,
+        "name": "fogged_snapshot"
+      }
+    },
+    {
+      "base_draw_called": true,
+      "events": [
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "arguments": [
+            269475808,
+            1,
+            0
+          ],
+          "kind": "draw_if_visible",
+          "pc": 4443808
+        },
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "clip": [
+            0,
+            0,
+            160,
+            120
+          ],
+          "kind": "base_draw_terminal",
+          "pc": 4444816,
+          "point": [
+            20,
+            10
+          ]
+        }
+      ],
+      "input": {
+        "armageddon": true,
+        "is_fogged": true,
+        "name": "fogged_armageddon"
+      }
+    },
+    {
+      "base_draw_called": false,
+      "events": [
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "arguments": [
+            269475808,
+            1,
+            0
+          ],
+          "kind": "draw_if_visible",
+          "pc": 4443808
+        }
+      ],
+      "input": {
+        "active": false,
+        "name": "inactive"
+      }
+    },
+    {
+      "base_draw_called": false,
+      "events": [
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        },
+        {
+          "arguments": [
+            269475808,
+            1,
+            0
+          ],
+          "kind": "draw_if_visible",
+          "pc": 4443808
+        }
+      ],
+      "input": {
+        "limbo": true,
+        "name": "limbo"
+      }
+    },
+    {
+      "base_draw_called": false,
+      "events": [
+        {
+          "kind": "supplied_render_rectangle",
+          "pc": 4545568
+        }
+      ],
+      "input": {
+        "name": "offscreen",
+        "rectangle": [
+          500,
+          500,
+          70,
+          70
+        ]
+      }
+    }
+  ],
+  "native_center_cell": [
+    11,
+    21
+  ],
+  "native_center_coords": [
+    2944,
+    5376,
+    0
+  ],
+  "native_level_height": 104,
+  "native_top_cell": [
+    10,
+    20
+  ],
+  "object_coords": [
+    2688,
+    5248,
+    0
+  ],
+  "original_text_unchanged": true,
+  "physical_type": {
+    "constructor": {
+      "cloning": 0,
+      "factory": 0,
+      "foundation": 0,
+      "image": "GAPILE",
+      "type_id": "GAPILE",
+      "unit_repair": 0
+    },
+    "constructor_fixture_seams": [
+      "007C8E17"
+    ],
+    "physical_files": {
+      "art": {
+        "bytes": 336535,
+        "keys": {
+          "Foundation": "3x2"
+        },
+        "path": "ini\\artmd.ini",
+        "section": "GAPILE",
+        "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+      },
+      "rules": {
+        "bytes": 743215,
+        "keys": {
+          "Cloning": null,
+          "Factory": "InfantryType",
+          "Image": null,
+          "UnitRepair": null
+        },
+        "path": "ini\\rulesmd.ini",
+        "section": "GAPILE",
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      }
+    },
+    "reader_slices": [
+      {
+        "after": {
+          "cloning": 0,
+          "factory": 0,
+          "foundation": 0,
+          "image": "GAPILE",
+          "type_id": "GAPILE",
+          "unit_repair": 0
+        },
+        "before": {
+          "cloning": 0,
+          "factory": 0,
+          "foundation": 0,
+          "image": "GAPILE",
+          "type_id": "GAPILE",
+          "unit_repair": 0
+        },
+        "begin": "0x005F92F9",
+        "bytes_hex": "8d93f8010000578bfa83c9ff33c0f2aef7d12bf98d6c24148bc18bf78bfd6a19c1e902f3a58bc85283e1038d6b24f3a48d4c241c518b8c24c4010000682094810055e8d0f6f2ff",
+        "end_exclusive": "0x005F9340",
+        "name": "image",
+        "reads": [
+          {
+            "capacity": 25,
+            "default": "GAPILE",
+            "destination_offset": "0x1F8",
+            "key": "Image",
+            "phase": "image",
+            "reader": "0x00528A10",
+            "section": "GAPILE"
+          }
+        ],
+        "sha256": "aaeeeecc6b1cefa727fceeb66b1ebd30e22d42a298aca2e8033f267be453773d",
+        "stack_delta": -4
+      },
+      {
+        "after": {
+          "cloning": 0,
+          "factory": 16,
+          "foundation": 0,
+          "image": "GAPILE",
+          "type_id": "GAPILE",
+          "unit_repair": 0
+        },
+        "before": {
+          "cloning": 0,
+          "factory": 0,
+          "foundation": 0,
+          "image": "GAPILE",
+          "type_id": "GAPILE",
+          "unit_repair": 0
+        },
+        "begin": "0x0046051A",
+        "bytes_hex": "8b85b80e00005068f0738100538bcee8c24a01008d8c24c000000068800000005168649f88006820ac81008985b80e0000",
+        "end_exclusive": "0x0046054B",
+        "name": "factory",
+        "reads": [
+          {
+            "default": 0,
+            "key": "Factory",
+            "phase": "factory",
+            "raw_default_hex": "0x00000000",
+            "reader": "0x00474FF0",
+            "section": "GAPILE"
+          }
+        ],
+        "sha256": "cd9a10053c82699fc4e6ad354449e6faaadcede2d406f239e28906534507d6e7",
+        "stack_delta": -16
+      },
+      {
+        "after": {
+          "cloning": 0,
+          "factory": 16,
+          "foundation": 0,
+          "image": "GAPILE",
+          "type_id": "GAPILE",
+          "unit_repair": 0
+        },
+        "before": {
+          "cloning": 0,
+          "factory": 16,
+          "foundation": 0,
+          "image": "GAPILE",
+          "type_id": "GAPILE",
+          "unit_repair": 0
+        },
+        "begin": "0x00460906",
+        "bytes_hex": "8a8da91600005168f0aa8100538bcee8d68c0c008a95aa1600008bce5268e4aa8100538885a9160000",
+        "end_exclusive": "0x0046092F",
+        "name": "unit_repair",
+        "reads": [
+          {
+            "default": 0,
+            "key": "UnitRepair",
+            "phase": "unit_repair",
+            "raw_default_hex": "0x10080000",
+            "reader": "0x005295F0",
+            "section": "GAPILE"
+          }
+        ],
+        "sha256": "a189011392fc429b7ff6ce8b8af5c78d1933b64efd1e6a156835bc466fc7dae1",
+        "stack_delta": -12
+      },
+      {
+        "after": {
+          "cloning": 0,
+          "factory": 16,
+          "foundation": 0,
+          "image": "GAPILE",
+          "type_id": "GAPILE",
+          "unit_repair": 0
+        },
+        "before": {
+          "cloning": 0,
+          "factory": 16,
+          "foundation": 0,
+          "image": "GAPILE",
+          "type_id": "GAPILE",
+          "unit_repair": 0
+        },
+        "begin": "0x0046094E",
+        "bytes_hex": "8a8dac1600008885ab1600005168d4aa8100538bcee8888c0c008a95ad1600008bce5268c8aa8100538885ac160000",
+        "end_exclusive": "0x0046097D",
+        "name": "cloning",
+        "reads": [
+          {
+            "default": 0,
+            "key": "Cloning",
+            "phase": "cloning",
+            "raw_default_hex": "0x00887100",
+            "reader": "0x005295F0",
+            "section": "GAPILE"
+          }
+        ],
+        "sha256": "c299654c248a2cc036d9e19aec1cde66703b94db853cb856100f670db3930881",
+        "stack_delta": -12
+      },
+      {
+        "after": {
+          "cloning": 0,
+          "factory": 16,
+          "foundation": 5,
+          "image": "GAPILE",
+          "type_id": "GAPILE",
+          "unit_repair": 0
+        },
+        "before": {
+          "cloning": 0,
+          "factory": 16,
+          "foundation": 0,
+          "image": "GAPILE",
+          "type_id": "GAPILE",
+          "unit_repair": 0
+        },
+        "begin": "0x00461225",
+        "bytes_hex": "8b8df00e0000516834a7810057b980718800e8643b0100506834a7810053b9807188008985f00e0000e84d3b010085c074068985f00e0000",
+        "end_exclusive": "0x0046125D",
+        "name": "foundation",
+        "reads": [
+          {
+            "default": 0,
+            "key": "Foundation",
+            "phase": "foundation",
+            "raw_default_hex": "0x00000000",
+            "reader": "0x00474DA0",
+            "section": "GAPILE"
+          },
+          {
+            "default": 5,
+            "key": "Foundation",
+            "phase": "foundation",
+            "raw_default_hex": "0x00000005",
+            "reader": "0x00474DA0",
+            "section": "GAPILE"
+          }
+        ],
+        "sha256": "b17ded3167c44963f3ecc31cc072685771def73a925e603c4bbfb2a82f31014f",
+        "stack_delta": 0
+      }
+    ],
+    "result": {
+      "cloning": 0,
+      "factory": 16,
+      "foundation": 5,
+      "foundation_size": [
+        3,
+        2
+      ],
+      "has_rally_point": true,
+      "image": "GAPILE",
+      "type_id": "GAPILE",
+      "unit_repair": 0
+    },
+    "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+    "text_unchanged": true,
+    "type_id": "GAPILE"
+  },
+  "tint_cases": [
+    {
+      "events": [
+        {
+          "cell": [
+            11,
+            21
+          ],
+          "kind": "center_cell_shroud_query",
+          "pc": 4749648
+        }
+      ],
+      "input": {
+        "center_revealed": false,
+        "name": "both_unexplored_tint_0",
+        "packed_tint": 0,
+        "top_revealed": false
+      },
+      "light_intensity": 1000,
+      "packed_tint": 0
+    },
+    {
+      "events": [
+        {
+          "cell": [
+            11,
+            21
+          ],
+          "kind": "center_cell_shroud_query",
+          "pc": 4749648
+        }
+      ],
+      "input": {
+        "center_revealed": false,
+        "name": "both_unexplored_tint_63488",
+        "packed_tint": 63488,
+        "top_revealed": false
+      },
+      "light_intensity": 1000,
+      "packed_tint": 0
+    },
+    {
+      "events": [
+        {
+          "cell": [
+            11,
+            21
+          ],
+          "kind": "center_cell_shroud_query",
+          "pc": 4749648
+        }
+      ],
+      "input": {
+        "center_revealed": true,
+        "name": "center_only_tint_0",
+        "packed_tint": 0,
+        "top_revealed": false
+      },
+      "light_intensity": 1000,
+      "packed_tint": 0
+    },
+    {
+      "events": [
+        {
+          "cell": [
+            11,
+            21
+          ],
+          "kind": "center_cell_shroud_query",
+          "pc": 4749648
+        }
+      ],
+      "input": {
+        "center_revealed": true,
+        "name": "center_only_tint_63488",
+        "packed_tint": 63488,
+        "top_revealed": false
+      },
+      "light_intensity": 1000,
+      "packed_tint": 63488
+    },
+    {
+      "events": [
+        {
+          "cell": [
+            11,
+            21
+          ],
+          "kind": "center_cell_shroud_query",
+          "pc": 4749648
+        }
+      ],
+      "input": {
+        "center_revealed": false,
+        "name": "top_only_tint_0",
+        "packed_tint": 0,
+        "top_revealed": true
+      },
+      "light_intensity": 1000,
+      "packed_tint": 0
+    },
+    {
+      "events": [
+        {
+          "cell": [
+            11,
+            21
+          ],
+          "kind": "center_cell_shroud_query",
+          "pc": 4749648
+        }
+      ],
+      "input": {
+        "center_revealed": false,
+        "name": "top_only_tint_63488",
+        "packed_tint": 63488,
+        "top_revealed": true
+      },
+      "light_intensity": 1000,
+      "packed_tint": 0
+    },
+    {
+      "events": [
+        {
+          "cell": [
+            11,
+            21
+          ],
+          "kind": "center_cell_shroud_query",
+          "pc": 4749648
+        }
+      ],
+      "input": {
+        "center_revealed": true,
+        "name": "both_revealed_tint_0",
+        "packed_tint": 0,
+        "top_revealed": true
+      },
+      "light_intensity": 1000,
+      "packed_tint": 0
+    },
+    {
+      "events": [
+        {
+          "cell": [
+            11,
+            21
+          ],
+          "kind": "center_cell_shroud_query",
+          "pc": 4749648
+        }
+      ],
+      "input": {
+        "center_revealed": true,
+        "name": "both_revealed_tint_63488",
+        "packed_tint": 63488,
+        "top_revealed": true
+      },
+      "light_intensity": 1000,
+      "packed_tint": 63488
+    }
+  ]
+}

@@ -1389,6 +1389,10 @@ impl TacticalCaptureSession {
                 row
             })
             .collect();
+        let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+        let local_visibility_owner = local_owner
+            .as_deref()
+            .and_then(|owner| sim.interner.get(owner).map(|id| (owner, id)));
         let terrain = profile.terrain_cells().iter().map(|&[rx, ry]| {
             // Immutable real-cell indexing only. A diagnostic lookup must not
             // stamp canonical Dummy or evaluate gameplay height/zone queries.
@@ -1398,7 +1402,15 @@ impl TacticalCaptureSession {
             let terrain_object = sim.production.terrain_object_cells.get(&at)
                 .and_then(|id| sim.production.terrain_objects.get(id));
             let animation = sim.production.terrain_animations.get(&at);
+            // Observe the same viewer plane consumed by drawing and picking;
+            // never reveal a cell or create missing visibility state for capture.
+            let local_visibility = local_visibility_owner.map(|(owner, id)| json!({
+                "owner": owner, "revealed": sim.fog.is_cell_revealed(id, rx, ry),
+                "visible": sim.fog.is_cell_visible(id, rx, ry),
+                "gap_covered": sim.fog.is_cell_gap_covered(id, rx, ry),
+            }));
             json!({"cell": [rx, ry], "allocated": cell.is_some(),
+                "local_visibility": local_visibility,
                 "overlay": overlay.map(|overlay| json!({"id": overlay.overlay_id, "density": overlay.overlay_data})),
                 "terrain_object": terrain_object.map(|object| json!({"name": sim.interner.resolve(object.type_ref),
                     "frame": animation.map(|animation| animation.current_frame()),

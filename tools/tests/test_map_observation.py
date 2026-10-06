@@ -774,6 +774,35 @@ class MapObservationTests(unittest.TestCase):
             'observations.frames[1].actors[0].building.animation_slots[0].animation.runtime.frame_timer.duration',
             'observations.frames[1].terrain[0].overlay.density'])
 
+    def test_terrain_visibility_is_retained_and_compared(self):
+        self.production_profile()
+        cell = self.unallocated_cell([87, 53])
+        cell['local_visibility'] = dict(owner='Observer', revealed=False,
+                                        visible=False, gap_covered=False)
+        self.terrain_frames[1] = [cell]
+        before = self.valid_capture('visibility-before')
+        def change(manifest):
+            manifest['observations']['frames'][1]['terrain'][0]['local_visibility']['revealed'] = True
+        self.change = change
+        after = self.valid_capture('visibility-after')
+        report = observation.compare_runs(before, after)
+        self.assertEqual(report['status'], 'MISMATCH', report['errors'])
+        self.assertEqual([row['field'] for row in report['differences']],
+                         ['observations.frames[1].terrain[0].local_visibility.revealed'])
+
+    def test_terrain_visibility_accepts_legacy_or_missing_viewer_and_rejects_bad_states(self):
+        cell = self.unallocated_cell([87, 53])
+        observation._terrain(cell, [87, 53], 'terrain')
+        cell['local_visibility'] = None
+        observation._terrain(cell, [87, 53], 'terrain')
+        visibility = dict(owner='Observer', revealed=False, visible=False, gap_covered=False)
+        for key, value in [('owner', ''), ('owner', 7), ('revealed', 0),
+                           ('visible', None), ('gap_covered', 'false')]:
+            with self.subTest(key=key, value=value):
+                cell['local_visibility'] = dict(visibility, **{key: value})
+                with self.assertRaises(ValidationError):
+                    observation._terrain(cell, [87, 53], 'terrain')
+
     def refinery_profile(self):
         self.scripted_profile()
         self.actor_frames = {step: [self.actor(category='Unit')] for step in range(4)}

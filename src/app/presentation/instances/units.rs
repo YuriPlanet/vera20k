@@ -7,7 +7,7 @@
 
 use super::helpers::{
     EntityDrawBand, compute_sprite_depth, entity_draw_band, ground_sort_row, in_view,
-    projection_admitted, tactical_entity_render_admission,
+    projection_admitted, tactical_entity_admission,
 };
 use crate::app::AppState;
 use crate::app::presentation::render::draw_plan_lowering::{
@@ -336,7 +336,8 @@ pub(crate) fn build_unit_instances(
             .get(remap_owner)
             .copied()
             .unwrap_or_default();
-        let Some(draw_decision) = tactical_entity_render_admission(
+        let Some(draw_decision) = tactical_entity_admission(
+            super::helpers::TacticalEntityPurpose::Drawing,
             entity,
             owner_str,
             local_owner.as_deref(),

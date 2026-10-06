@@ -1,0 +1,336 @@
+{
+  "scope": "Rust production ordinary building first-reveal observation, not native full-frame pixel parity",
+  "binary_sha256": "9c2d1476b62cf1bf71eda3c8a3ec659165681e97478dcd96b1001907f6a59e46",
+  "build_label": "building-shroud-reveal-20261006-v1",
+  "build_source": {
+    "head": "cce0ad707dcb76404a248a24459220770cde80fe",
+    "branch": "feature/building-shroud-reveal",
+    "status": "M src/app/diagnostics/tactical_capture/map_observation.rs\n M src/app/presentation/instances/helpers.rs\n M src/app/presentation/instances/shp.rs\n M src/app/presentation/instances/units.rs\n M src/assets/asset_manager.rs\n M tools/map_observation.md\n M tools/map_observation.py\n M tools/procedural_drawing_oracle/shroud.meta.json\n M tools/procedural_drawing_oracle/shroud.py\n M tools/tests/test_map_observation.py\n?? tools/procedural_drawing_oracle/building_reveal.json\n?? tools/procedural_drawing_oracle/building_reveal.md\n?? tools/procedural_drawing_oracle/building_reveal.meta.json",
+    "source_sha256": "e458c854ca2902f0aafa244c83631b0558653a338e7e705e05598a7f256dd061"
+  },
+  "map_source": {
+    "entry_id": -854728974,
+    "kind": "mix",
+    "logical_name": "XMP03T4.MAP",
+    "payload_len": 156269,
+    "source_archive": "multimd.mix",
+    "source_sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+  },
+  "gpu": {
+    "backend": "Dx12",
+    "device": 9698,
+    "device_type": "DiscreteGpu",
+    "driver": "32.0.15.7688",
+    "driver_info": "",
+    "name": "NVIDIA GeForce RTX 3050 Laptop GPU",
+    "vendor": 4318
+  },
+  "camera": {
+    "requested_cell": [
+      42,
+      87
+    ],
+    "top_left": [
+      -1666.0,
+      1621.0
+    ],
+    "zoom": 1.0
+  },
+  "building": {
+    "stable_id": 1349,
+    "type_id": "CANEWY20",
+    "owner": "Neutral",
+    "anchor_cell": [
+      46,
+      87
+    ]
+  },
+  "tank": {
+    "stable_id": 1374,
+    "type_id": "MTNK",
+    "owner": "VERA-OBSERVER"
+  },
+  "first_anchor_revealed_step": 92,
+  "captures": [
+    {
+      "steps": 54,
+      "local_evidence_directory": "E:\\RA2\\vera20k-building-reveal\\logs\\building-reveal-fix\\move-54",
+      "profile_sha256": "5a4d5814f65ff88c53ec0fc397b13e96b42794f38f32e47975d15fe5312e0d15",
+      "run_json_sha256": "0f8719a19ba2ac1e37b13eabf94c31958538702d99a4ae025e059201a0e20183",
+      "capture_json_sha256": "785b0c58d1bb7a0545a5f09b968239ad3483db6cb943288e8e8da83cc97e55a7",
+      "frame": {
+        "byte_length": 1920000,
+        "file_name": "frame.bgra",
+        "height": 600,
+        "pixel_layout": "BGRA8",
+        "row_stride": 3200,
+        "sha256": "723064cd167fc36fe4fadced7cf31a8e5534daf7ac84804e0d0f57527e2e2c95",
+        "surface_format": "Bgra8UnormSrgb",
+        "width": 800
+      },
+      "final": {
+        "binary_frame": 54,
+        "deterministic_state_hash": 11841657332478401304,
+        "simulation_tick": 54,
+        "total_simulation_ms": 1188
+      },
+      "tank_cell": [
+        38,
+        88
+      ],
+      "tank_physical_leptons": [
+        9735,
+        22656,
+        416
+      ],
+      "anchor_visibility": {
+        "gap_covered": false,
+        "owner": "VERA-OBSERVER",
+        "revealed": false,
+        "visible": false
+      },
+      "frame_wall_mean_ms": 307.486572265625,
+      "status": "VALID",
+      "png": {
+        "file": "step-54.png",
+        "sha256": "dc3f0abe66d1d92713339376db6f902967cdbf82ce2b4c33a88d7b38de52bdc0"
+      }
+    },
+    {
+      "steps": 75,
+      "local_evidence_directory": "E:\\RA2\\vera20k-building-reveal\\logs\\building-reveal-fix\\move-75",
+      "profile_sha256": "3e85853e79cd94bfdded465bb8ec972b0007d16609c70cd2ba94e0ef7d2d8c76",
+      "run_json_sha256": "43dc9da18c81b5341500f77b79b8f3b67876bb8f39efe315d868748e02037c13",
+      "capture_json_sha256": "972159576368dbf0b624ec0c9f8b5ad2b1b9c8208119a6f705338324805baf41",
+      "frame": {
+        "byte_length": 1920000,
+        "file_name": "frame.bgra",
+        "height": 600,
+        "pixel_layout": "BGRA8",
+        "row_stride": 3200,
+        "sha256": "3b7d7cb9fe200690e42562399610b8643c06b9a1724e4dbec5f940d6eb536959",
+        "surface_format": "Bgra8UnormSrgb",
+        "width": 800
+      },
+      "final": {
+        "binary_frame": 75,
+        "deterministic_state_hash": 9730629541657535187,
+        "simulation_tick": 75,
+        "total_simulation_ms": 1650
+      },
+      "tank_cell": [
+        40,
+        87
+      ],
+      "tank_physical_leptons": [
+        10247,
+        22521,
+        416
+      ],
+      "anchor_visibility": {
+        "gap_covered": false,
+        "owner": "VERA-OBSERVER",
+        "revealed": false,
+        "visible": false
+      },
+      "frame_wall_mean_ms": 17.51251983642578,
+      "status": "VALID",
+      "png": {
+        "file": "step-75.png",
+        "sha256": "1bd19e4c8d78063e26071e65c6d24c7c90b8cae663a2a83d840d46fde7a4413c"
+      }
+    },
+    {
+      "steps": 91,
+      "local_evidence_directory": "E:\\RA2\\vera20k-building-reveal\\logs\\building-reveal-fix\\move-91",
+      "profile_sha256": "d99deae493db718d2c1c56ba21472bf1d4208b50ee708bb6645ffb0eef4b2a36",
+      "run_json_sha256": "4fb5a04095a351d7ef582bc7810b4a650e3fb6f5608c242b63538227ca04f897",
+      "capture_json_sha256": "9a61689903c7e8ef45916f9005891833a80e80af7fbc4fa25c6e15a5c80918d6",
+      "frame": {
+        "byte_length": 1920000,
+        "file_name": "frame.bgra",
+        "height": 600,
+        "pixel_layout": "BGRA8",
+        "row_stride": 3200,
+        "sha256": "3bf1515e95aa72775dd32140826fa2d44e1cc170756be165138517ccc00b3e8b",
+        "surface_format": "Bgra8UnormSrgb",
+        "width": 800
+      },
+      "final": {
+        "binary_frame": 91,
+        "deterministic_state_hash": 8532120965794214547,
+        "simulation_tick": 91,
+        "total_simulation_ms": 2002
+      },
+      "tank_cell": [
+        40,
+        87
+      ],
+      "tank_physical_leptons": [
+        10474,
+        22400,
+        416
+      ],
+      "anchor_visibility": {
+        "gap_covered": false,
+        "owner": "VERA-OBSERVER",
+        "revealed": false,
+        "visible": false
+      },
+      "frame_wall_mean_ms": 17.440698623657227,
+      "status": "VALID",
+      "png": {
+        "file": "step-91.png",
+        "sha256": "efd9fa1fa8dc1c5cc168b0d97bd96869bad4c6c150256ee4e5669a0bc0d8b709"
+      }
+    },
+    {
+      "steps": 92,
+      "local_evidence_directory": "E:\\RA2\\vera20k-building-reveal\\logs\\building-reveal-fix\\move-92",
+      "profile_sha256": "06152486e1a07e58096c64cc1c25527d975a37a7c40fbdf8a07b459f7f3b2b29",
+      "run_json_sha256": "84c6835508a0d39278cca9f67192af4b4c7302a9537eb69a59e18ed1d9c95c3b",
+      "capture_json_sha256": "13b1588fadb01b8d729800d053cfe53951c2e9cded4797708a9c50a9811ce685",
+      "frame": {
+        "byte_length": 1920000,
+        "file_name": "frame.bgra",
+        "height": 600,
+        "pixel_layout": "BGRA8",
+        "row_stride": 3200,
+        "sha256": "4cc034e8baf4ca05fa8739db530f8f2b8cba4a0404329839d0c9b3e70153e55f",
+        "surface_format": "Bgra8UnormSrgb",
+        "width": 800
+      },
+      "final": {
+        "binary_frame": 92,
+        "deterministic_state_hash": 1292768822193891139,
+        "simulation_tick": 92,
+        "total_simulation_ms": 2024
+      },
+      "tank_cell": [
+        41,
+        87
+      ],
+      "tank_physical_leptons": [
+        10501,
+        22400,
+        416
+      ],
+      "anchor_visibility": {
+        "gap_covered": false,
+        "owner": "VERA-OBSERVER",
+        "revealed": true,
+        "visible": true
+      },
+      "frame_wall_mean_ms": 17.873756408691406,
+      "status": "VALID",
+      "png": {
+        "file": "step-92.png",
+        "sha256": "f6c65d7014667f9589d90350318ca2f9263c881a2be3fa1e5c47b51cdf7a4046"
+      }
+    },
+    {
+      "steps": 200,
+      "local_evidence_directory": "E:\\RA2\\vera20k-building-reveal\\logs\\building-reveal-fix\\move-200",
+      "profile_sha256": "0ae73f74a20c59b6d4643172c2cf7b8ee738302d13b6d27062fc72ec8aabd3ab",
+      "run_json_sha256": "d198ff36007cd29ad0abcefa18ab53e8523b23b5a259e3e6ee2251806b3992e5",
+      "capture_json_sha256": "9a867f6251eafa5e50a7f0b1354cd4ad8bdd16266e34ea06980f185835bc7b4c",
+      "frame": {
+        "byte_length": 1920000,
+        "file_name": "frame.bgra",
+        "height": 600,
+        "pixel_layout": "BGRA8",
+        "row_stride": 3200,
+        "sha256": "098dea4f482d0d27ae97646ba4b21ef0c85f4c3f6785fa985ec955d176dfadf5",
+        "surface_format": "Bgra8UnormSrgb",
+        "width": 800
+      },
+      "final": {
+        "binary_frame": 200,
+        "deterministic_state_hash": 15818579214581792755,
+        "simulation_tick": 200,
+        "total_simulation_ms": 4400
+      },
+      "tank_cell": [
+        44,
+        87
+      ],
+      "tank_physical_leptons": [
+        11392,
+        22400,
+        416
+      ],
+      "anchor_visibility": {
+        "gap_covered": false,
+        "owner": "VERA-OBSERVER",
+        "revealed": true,
+        "visible": true
+      },
+      "frame_wall_mean_ms": 17.037275314331055,
+      "status": "VALID"
+    }
+  ],
+  "observer_comparison": {
+    "observer_on": "move-200",
+    "observer_off": "observer-off",
+    "bgra_byte_equal": true,
+    "byte_count": 1920000,
+    "sha256": "098dea4f482d0d27ae97646ba4b21ef0c85f4c3f6785fa985ec955d176dfadf5",
+    "initial_equal": true,
+    "final_equal": true,
+    "steps": 200,
+    "final_state": {
+      "binary_frame": 200,
+      "deterministic_state_hash": 15818579214581792755,
+      "simulation_tick": 200,
+      "total_simulation_ms": 4400
+    }
+  },
+  "checks": {
+    "before_fix_focused_regression": {
+      "failed": 1,
+      "exit_code": 101
+    },
+    "focused_instances": {
+      "passed": 89,
+      "ignored": 3
+    },
+    "retail_lib": {
+      "passed": 9704,
+      "failed": 0,
+      "ignored": 239
+    },
+    "clippy_lib": {
+      "exit_code": 0,
+      "retained_warnings": 723
+    },
+    "python_map_and_cargo": {
+      "tests": 141,
+      "skipped": 1,
+      "failed": 0
+    },
+    "sim_field_ratchet": {
+      "candidate": 2505,
+      "origin_main": 2505
+    },
+    "native_shroud_check": true,
+    "native_building_reveal_check": true,
+    "final_offline_capture_validation": {
+      "valid_bundles": ["discovery-v2", "move-54", "move-75", "move-91", "move-92", "move-200", "observer-off"],
+      "local_receipt_directory": "E:/RA2/vera20k-building-reveal/logs/building-reveal-fix",
+      "receipt_suffix": "-final-validation.json",
+      "derived_previews_outside_bundles": true
+    },
+    "fresh_read_only_critic": {
+      "agent": "/root/building_reveal_critic",
+      "confirmed_defects": 0,
+      "blocking_findings": 0,
+      "report": "review.md"
+    }
+  },
+  "limitations": [
+    "Prepared native admission/tint corpus has its separately documented scope; these Rust captures do not execute native whole Scenario or building raster.",
+    "Normal shroud enabled and FogOfWar disabled. FoggedObject snapshot lifecycle and nonzero special effect tint producer are separate residuals.",
+    "Frame timer includes simulation, observation, rendering and presentation pacing; not GPU duration or ordinary gameplay FPS.",
+    "Full lib run first failed in an unchanged audio fixture deleting a mapped MIX on Windows/exFAT. Test now drops its manager before fixture mutation; production asset code unchanged."
+  ]
+}
