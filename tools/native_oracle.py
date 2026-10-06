@@ -28,7 +28,14 @@ from unicorn.x86_const import (
     UC_X86_REG_EIP, UC_X86_REG_EFLAGS, UC_X86_REG_FPCW,
 )
 
+# Historical vector/reference identity, retained for existing Rust-facing payloads.
+# Actual input identity belongs in image_sha256()/provenance, not this constant.
 NATIVE_SHA256 = "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
+STEAM_NATIVE_SHA256 = "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+# Steam's four file-backed sections and their layouts match the sealed original
+# loader witness. See native_inspect.steam.json and native_oracle.md; this does
+# not admit arbitrary builds or claim equivalence of the Windows loader/startup.
+SUPPORTED_NATIVE_SHA256 = (NATIVE_SHA256, STEAM_NATIVE_SHA256)
 IMAGE_BASE = 0x00400000
 # Preserve the original fixture mapping, including runtime globals in BSS.
 IMAGE_SIZE = 0x00A00000
@@ -222,13 +229,18 @@ def _verified_image(path: Path) -> bytes:
     # Hash the same immutable bytes subsequently mapped, not a separate read.
     data = path.read_bytes()
     digest = hashlib.sha256(data).hexdigest()
-    if digest != NATIVE_SHA256:
-        raise OracleError(f"Unsupported gamemd.exe SHA-256 {digest}; expected {NATIVE_SHA256}")
+    if digest not in SUPPORTED_NATIVE_SHA256:
+        raise OracleError(f"Unsupported gamemd.exe SHA-256 {digest}; expected one of {SUPPORTED_NATIVE_SHA256}")
     return data
 
 
 def image_bytes() -> bytes:
     return _verified_image(configured_gamemd())
+
+
+def image_sha256(data: bytes | None = None) -> str:
+    """Actual input identity; supplied data must be the verified immutable bytes."""
+    return hashlib.sha256(image_bytes() if data is None else data).hexdigest()
 
 
 def _sections(data: bytes):
@@ -381,7 +393,7 @@ def run_checked(uc: Uc, begin: int, end: int | tuple[int, ...], *,
                 "unicorn_binding": unicorn.__version__, "unicorn_core": list(unicorn.uc_version()),
                 # run_checked also accepts synthetic machines and cannot attest
                 # their image identity just because this runner knows the pin.
-                "expected_native_sha256": NATIVE_SHA256,
+                "supported_native_sha256": list(SUPPORTED_NATIVE_SHA256),
             }
             raise NativeExecutionError(
                 f"{message}; reason={reason}, timeout={timed_out}, "
@@ -460,7 +472,7 @@ def provenance(*, scope: str, assumptions: list[str], substitutions: list[str],
     if not scope.strip() or not assumptions or not entry_points:
         raise ValueError("Declare scope, runtime assumptions, and native entry points")
     return {
-        "schema_version": 1, "native_sha256": hashlib.sha256(image_bytes()).hexdigest(),
+        "schema_version": 1, "native_sha256": image_sha256(),
         "unicorn_binding": unicorn.__version__, "unicorn_core": list(unicorn.uc_version()),
         "scope": scope, "assumptions": assumptions, "substitutions": substitutions,
         "entry_points": {name: f"0x{value:08X}" for name, value in entry_points.items()},

@@ -1,10 +1,15 @@
 """Static inspection contracts using synthetic x86; no private executable needed."""
+from contextlib import redirect_stdout
+import hashlib
+import io
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools import native_inspect as scan
 from tools import native_oracle as native
@@ -22,6 +27,17 @@ def command(data, *args):
 
 
 class NativeInspectTests(unittest.TestCase):
+    def test_packet_records_actual_bytes_not_the_legacy_reference_identity(self):
+        data = code_image(b'\xc3')
+        stdout = io.StringIO()
+        with patch.object(native, 'image_bytes', return_value=data), redirect_stdout(stdout):
+            self.assertEqual(scan.main(['sections']), 0)
+        packet = json.loads(stdout.getvalue())
+        self.assertEqual(packet['native_sha256'], hashlib.sha256(data).hexdigest())
+        self.assertNotEqual(packet['native_sha256'], native.NATIVE_SHA256)
+        self.assertEqual(packet['result']['sections'][0]['file_backed_sha256'],
+                         hashlib.sha256(b'\xc3').hexdigest())
+
     def test_reads_map_rva_to_file_offset_and_never_synthesize_bss(self):
         data = code_image(b'\x32\xc0\xc2\x04\x00')
         result = command(data, 'read', hex(BASE), '--bytes', '5')

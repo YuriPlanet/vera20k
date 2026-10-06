@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "image_base": 4194304,
+  "capstone_version": "5.0.7",
+  "request": {
+    "command": "sections"
+  },
+  "result": {
+    "sections": [
+      {
+        "index": 0,
+        "address": 4198400,
+        "file_offset": 4096,
+        "file_bytes": 4063232,
+        "virtual_bytes": 4060045,
+        "flags": 1610612768,
+        "file_backed_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc"
+      },
+      {
+        "index": 1,
+        "address": 8261632,
+        "file_offset": 4067328,
+        "file_bytes": 200704,
+        "virtual_bytes": 196724,
+        "flags": 1073741888,
+        "file_backed_sha256": "057ab12d49f7879e8707413511e0d2dc3c4326f4440d5164862a8ec9abdeab5d"
+      },
+      {
+        "index": 2,
+        "address": 8462336,
+        "file_offset": 4268032,
+        "file_bytes": 442368,
+        "virtual_bytes": 3570660,
+        "flags": 3221225536,
+        "file_backed_sha256": "50490286ee34220d562815ebc4ca3661e0e4d8c160b9aecd540d023e13f469af"
+      },
+      {
+        "index": 3,
+        "address": 12034048,
+        "file_offset": 4710400,
+        "file_bytes": 565248,
+        "virtual_bytes": 563868,
+        "flags": 1073741888,
+        "file_backed_sha256": "a2377a82d5aa7c72562a657b2e294a24a4d69b2faa85cdd7287efc9caf52e380"
+      }
+    ],
+    "limits": [
+      "Section virtual tails can be BSS, not bytes from the executable."
+    ]
+  }
+}

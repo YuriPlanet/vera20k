@@ -10,7 +10,7 @@ import struct
 from pathlib import Path
 
 from tools.native_oracle import (
-    NATIVE_SHA256, RET_MAGIC, STACK_BASE, STACK_SIZE,
+    image_sha256, RET_MAGIC, STACK_BASE, STACK_SIZE,
     Uc, UC_ARCH_X86, UC_MODE_32, load_image, run_checked,
 )
 from unicorn.x86_const import (
@@ -63,7 +63,7 @@ def generate():
                     run_checked(u, 0x437e82, 0x437eae)
                     rows.append(u.reg_read(UC_X86_REG_ESI))
                 results.append([gradient, top, height, adjust, skip, accumulator, rows])
-    return {'executable_sha256': NATIVE_SHA256,
+    return {'executable_sha256': image_sha256(),
             'regions': ['00437B70..00437CD4', '00437E82..00437EAE'],
             'case_fields': ['gradient', 'top', 'height', 'adjust', 'skip', 'accumulator', 'native_u32_rows'],
             'cases': results}

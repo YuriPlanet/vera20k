@@ -5,7 +5,7 @@ an empty sound registry; its allocated AP warhead retains constructor fields.
 import importlib.util,json,struct,argparse
 from pathlib import Path
 from unicorn.x86_const import *
-from tools.native_oracle import run_checked,NATIVE_SHA256
+from tools.native_oracle import run_checked,image_sha256
 from tools.spatial_oracle.building_body_rules import SP,RULES,dwords
 from tools.projectile_oracle import bridge_render_inputs as mod
 
@@ -51,7 +51,7 @@ def generate():
    projectile=m.string(bullet+0x24),weapon_reader_admitted=admitted,
    weapon_speed=m.read32(weapon+0xa8),lobber=bool(u.mem_read(weapon+0x12e,1)[0]),
    gravity=m.read32(rules_object+0x16b8),native_reads=m.reads))
- return dict(native_sha256=NATIVE_SHA256,ctor=ctor,rows=rows)
+ return dict(native_sha256=image_sha256(),ctor=ctor,rows=rows)
 
 if __name__=='__main__':
  a=argparse.ArgumentParser();a.add_argument('--check',type=Path);args=a.parse_args();result=generate()

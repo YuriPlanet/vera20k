@@ -9,7 +9,7 @@ import json
 import struct
 from pathlib import Path
 from tools.native_oracle import (
-    NATIVE_SHA256, STACK_BASE, STACK_SIZE, Uc, UC_ARCH_X86, UC_MODE_32,
+    image_sha256, STACK_BASE, STACK_SIZE, Uc, UC_ARCH_X86, UC_MODE_32,
     load_image, run_checked,
 )
 from unicorn.x86_const import UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP
@@ -48,7 +48,7 @@ def generate():
     assert cases[2]['changed_indices'] == list(range(4)) + list(range(60,64))
     assert cases[-2]['changed_indices'] == [1]
     assert cases[-1]['changed_indices'] == []
-    return {'executable_sha256': NATIVE_SHA256,
+    return {'executable_sha256': image_sha256(),
             'region': '007BCFD7..007BD0D7', 'empty_word': 65535,
             'separate_row_seed': 32768, 'cases': cases,
             'limit': 'Prepared lock result and ring/rect fields. Does not claim whole dirty-clear optimization equivalence or emulate its width-one aligned edge in the GPU full-frame clear.'}

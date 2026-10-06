@@ -9,7 +9,7 @@ import ctypes as C
 from ctypes import wintypes as W
 import argparse, hashlib, json, platform, time
 from pathlib import Path
-from tools.native_oracle import configured_gamemd, image_bytes, NATIVE_SHA256, _sections
+from tools.native_oracle import configured_gamemd, image_bytes, image_sha256, _sections
 
 parser=argparse.ArgumentParser(description=__doc__)
 mode=parser.add_mutually_exclusive_group()
@@ -60,7 +60,7 @@ def checked(ok):
 path=configured_gamemd(); original=image_bytes()
 si=SI(); si.cb=C.sizeof(si); si.flags=1; si.show=0
 pi=PI(); event=DE(); pending=False; exited=False
-payload={'native_sha256':NATIVE_SHA256,'os':platform.platform(),'mechanism':'hardware execution breakpoints, no WriteProcessMemory or code patches','coverage':'original process PE entry, constant initializers49F0E0/49F190 and WinMain entry, before application startup; no runtime immutability or arbitrary process-memory proof','events':[],'captures':[]}
+payload={'native_sha256':image_sha256(),'os':platform.platform(),'mechanism':'hardware execution breakpoints, no WriteProcessMemory or code patches','coverage':'original process PE entry, constant initializers49F0E0/49F190 and WinMain entry, before application startup; no runtime immutability or arbitrary process-memory proof','events':[],'captures':[]}
 def mem(addr,n):
     out=C.create_string_buffer(n); got=C.c_size_t()
     checked(read(pi.process,addr,out,n,C.byref(got))); assert got.value==n
@@ -150,4 +150,4 @@ else:
     expected.pop('recorded_os',None)
     if stable!=expected:
         raise SystemExit('Native startup capture differs from saved reference; no golden written')
-print(json.dumps({'result':'wrote' if args.write else 'matched','captures':len(payload['captures']),'native_sha256':NATIVE_SHA256,'all_executable_sections_original':True,'owned_process_stopped':True}))
+print(json.dumps({'result':'wrote' if args.write else 'matched','captures':len(payload['captures']),'native_sha256':image_sha256(),'all_executable_sections_original':True,'owned_process_stopped':True}))

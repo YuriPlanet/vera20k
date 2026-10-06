@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "kind": "Steam executable bounded shroud replay; unchanged historical payload",
+  "reference_payload": "shroud_current_sight.json",
+  "reference_native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "reference_file_sha256": "67748f5fe8c06dbe049394c48e1db5c3f5498e5ac519cc7c666dbb3887620282",
+  "cases": 23,
+  "timer_cases": 9,
+  "complete_payload_equal": true,
+  "steam_check_passed": true,
+  "execution_metadata": {
+    "schema_version": 1,
+    "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+    "unicorn_binding": "2.1.4",
+    "unicorn_core": [
+      2,
+      1,
+      33621247
+    ],
+    "scope": "Original ordinary-cell current-sight versus hostile gap shroud observations",
+    "assumptions": [
+      "Constructor-derived Cell fields supplied:130=1,134=0,120/121=-2; complete Size12x12 allocated diamond, selected3x3 real-cell neighborhood",
+      "Original MapCell4A9CA0 executes toreturn with real neighbor-cache and notify leaves; frame0,emptyobjectlists,scenarioFogOfWarclear",
+      "Hostile gap apply/remove begin after owner/power/radius admission and stop before second owner classification; original fixedlookup executes",
+      "IsShrouded586360 executes on ordinary worldZ0; boolean result isAL, upperEAX ignored",
+      "FireUnshroud leaf corresponds5673A0 final0; PsychicReveal sequence corresponds6CD773 final0 then6CD79C final1",
+      "Original Logic55B29A modulo gate and complete578100 two-pass sweep execute at supplied signed native frames; selected shroud observations do not certify all edge-cache outputs",
+      "Foot timer4DA6C8 executes after admitted moving/high-flight/direct-ally gates to due4DA6EF or rejected4DA7B0 boundary; no reveal call is stubbed or executed by this timer fragment",
+      "Original577EBF..577EE9 and577B3C..577B6C bulk stores execute on the selected Cell; source/gap brackets compose existing original leaves with supplied object registration order, not full callback dispatch",
+      "Legacy remove_mapclear case label refers to actual House577A SpySatActive, not byte241 MapIsClear",
+      "No renderer pixels, complete reveal traversal, optionalfogrecords or fullGapGenerator lifecycle comparison"
+    ],
+    "substitutions": [],
+    "entry_points": {
+      "map_cell": "0x004A9CA0",
+      "unshroud": "0x004876F0",
+      "hostile_gap_cell": "0x006FB2F7",
+      "hostile_remove_cell": "0x006FB5E1",
+      "is_shrouded": "0x00586360",
+      "periodic_logic": "0x0055B29A",
+      "recalc_shroud": "0x00578100",
+      "foot_timer_gate": "0x004DA6C8",
+      "map_reveal_bulk": "0x00577EBF",
+      "map_reset_bulk": "0x00577B3C"
+    },
+    "payload_sha256": "041d3f67252ac58f0f6abff56e10d2cc61941ec6c390a386a2aa2a6e09ad7574"
+  }
+}

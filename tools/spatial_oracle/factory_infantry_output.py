@@ -187,6 +187,14 @@ def main():
     rt.require(args.check or args.consumer_check or args.gate_check or args.phase_check or args.output is not None, '--replay requires --output to preserve the full result')
     rt.require(not args.candidate_gate_helper_profile or args.gate_check or args.replay == 'infantry_unlimbo_gate',
         'Gate candidate flag is restricted to Gate comparisons')
+    if args.replay:
+        # All branches replay this packet's historical file identity. In
+        # particular the direct consumer/gate branches do not call saved.check.
+        # Keep frozen callers intact; admitting a shared-loader build does not
+        # authorize relabeling these exact historical receipts.
+        from tools import native_oracle as native
+        rt.require(native.image_sha256() == rt.metadata()['native_sha256'],
+                   'Historical factory replay requires its recorded executable identity')
     if args.phase_check:
         rt.require(not args.candidate_helper_profile, 'Consumer candidate flag is restricted to consumer comparisons')
         from tools.spatial_oracle._factory_infantry_output.saved import publication_phase_check

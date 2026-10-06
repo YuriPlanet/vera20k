@@ -25,8 +25,9 @@ The server's project-loading argument separately uses the project path.
 `--before-program` and `--after-program` are required; the tool never uses a
 mutable current-program selection. The client does not attest the
 server's loaded bytes. Native frame bytes are independently checked through the
-shared oracle owner against SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+shared oracle owner against the two supported identities documented in
+[`native_oracle.md`](native_oracle.md#steam-compatibility-and-evidence-identity).
+Frame reports record the actual selected file hash, not the legacy vector identifier.
 
 Coordinate with the project owner and compare stable saved/rehearsal projects.
 Do not open the same project concurrently in GUI and headless Ghidra. Follow

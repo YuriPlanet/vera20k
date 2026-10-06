@@ -4,7 +4,7 @@ Physical file/archive loading is supplied. No VERA-interpreted scalar input.
 import argparse,hashlib,json,struct,os
 from pathlib import Path
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256,run_checked
+from tools.native_oracle import image_sha256,run_checked
 from tools.rules_oracle.bridge_anim_inputs import Reader
 from tools.spatial_oracle.building_body_rules import INI,RULES,SP,dwords
 
@@ -130,7 +130,7 @@ def generate():
         raw=(ROOT/name).read_bytes()
         palettes.append(dict(name=name,sha256=hashlib.sha256(raw).hexdigest(),bytes=len(raw),
             colors=[dict(index=i,raw6=list(raw[i*3:i*3+3])) for i in sorted(set(shp[32:]))]))
-    return dict(native_sha256=NATIVE_SHA256,constructor=initial,art=dict(bytes=len(art_raw),sha256=hashlib.sha256(art_raw).hexdigest(),raw_sections=art,source_lines=art_lines),layers=layers,controls=controls(),ordinary_selection=selection(),physical_image=physical_image,palettes=palettes)
+    return dict(native_sha256=image_sha256(),constructor=initial,art=dict(bytes=len(art_raw),sha256=hashlib.sha256(art_raw).hexdigest(),raw_sections=art,source_lines=art_lines),layers=layers,controls=controls(),ordinary_selection=selection(),physical_image=physical_image,palettes=palettes)
 
 if __name__=='__main__':
     a=argparse.ArgumentParser();a.add_argument('--check',type=Path);args=a.parse_args()

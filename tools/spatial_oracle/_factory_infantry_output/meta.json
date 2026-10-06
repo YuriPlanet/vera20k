@@ -1631,8 +1631,8 @@
       "sha256": "f2c3773047a69a0f432a901fbc98fb7ed7234742b8db8484ebbb8ceafbdc2ec6"
     },
     "../factory_infantry_output.py": {
-      "bytes": 15406,
-      "sha256": "82e65c76aaa452492d95efd05197d2c02877279c2d1239139b5698dda217c397"
+      "bytes": 15938,
+      "sha256": "8be2621930b1808de006f1a8202cc8e04ab5cfba06181bf89144d5f4a0fcaf83"
     },
     "initialized.py": {
       "bytes": 19825,
@@ -1851,9 +1851,9 @@
     }
   ],
   "initialized_candidate_helper_files": {
-    "tools/native_oracle.py": "141fc5f3981b40d41869643c0350e3988e40be2e470cba8a0b4a77bb7df39b27",
+    "tools/native_oracle.py": "b93a95875bdf8650850b89e284e5aa082776fdeb185d9d7330d880047eb6a4b0",
     "tools/native_slope.py": "737b8294db419d298d362029825a255ae70df9945bef4c8b588369a53eaf13de",
-    "tools/projectile_oracle/bridge_render_inputs.py": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
+    "tools/projectile_oracle/bridge_render_inputs.py": "2f05d2e7e917aef585553502830947ea8ca121eab2d886d2c9ba4df7c935727d",
     "tools/projectile_oracle/flat_art.py": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
     "tools/projectile_oracle/guided_step.py": "66862363b6ada9a83f71645f8d2f1684984bde8cd35cb52091607d40427e528e",
     "tools/rmg_oracle/gen_rng_vectors.py": "bac5dde765d07d3f522b7281a21a8527869f5d4da59eb385e7f9fed7493775a2",
