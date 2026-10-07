@@ -10,7 +10,7 @@ import hashlib
 from pathlib import Path
 import struct
 
-from unicorn import UC_HOOK_CODE
+from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX,
                               UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESI,
                               UC_X86_REG_ESP)
@@ -19,6 +19,8 @@ from tools import native_oracle as native
 from tools.bridge_click_oracle import MATRIX_INITIALIZER
 from tools.procedural_drawing_oracle import rally
 from tools.sidebar_oracle import stock
+from tools.spatial_oracle import bridge_damage_admission as bridge_fixture
+from tools.spatial_oracle.crate_speed_effect import VTABLES
 from tools.spatial_oracle.bridge_damage_admission import call, words, MEM, TABLE, SP, MAP
 
 SHP, SCRATCH, CELL_BASE = MEM + 0xB0000, MEM + 0xD0000, 0x32000000
@@ -372,8 +374,199 @@ def generate():
                 flag_controls=flag_controls,scenes=scenes)
 
 
+def generate_wave_admission():
+    """Original Wave DrawIt admission, stopping before its raster consumer.
+
+    The active YR Map5865E0 body is a constant false, not an explored-cell
+    query. Prepared endpoint cells are negative controls, not native reveal
+    traversal or a replacement Python visibility implementation.
+    """
+    rows = []
+    for scenario_fog_gate in (False, True):
+        for wave_type, stop in ((0, 0x75FA47), (3, 0x75FA5C)):
+            for source_flags, target_flags in ((0, 0), (0, 0x18),
+                                                (0x18, 0), (0x18, 0x18)):
+                u = bridge_fixture.base({})
+                obj = MEM + 0x19000
+                u.mem_write(0xA8B230, words(bridge_fixture.SCENARIO))
+                u.mem_write(bridge_fixture.SCENARIO,
+                            words(0x1000 if scenario_fog_gate else 0))
+                u.mem_write(obj, words(0x7F6BF4))
+                u.mem_write(obj + 0xB0, words(wave_type))
+                source = [10 * 256 + 128, 20 * 256 + 128, 0]
+                target = [9 * 256 + 128, 20 * 256 + 128, 0]
+                u.mem_write(obj + 0xB4, words(*source))
+                u.mem_write(obj + 0xC0, words(*target))
+                u.mem_write(bridge_fixture.CELL + 0x12C, words(source_flags))
+                u.mem_write(bridge_fixture.ANCHOR + 0x12C, words(target_flags))
+                state_before = bytes(u.mem_read(obj, 0x200))
+                rng_before = bytes(u.mem_read(bridge_fixture.SCENARIO + 0x218, 0x100))
+                u.mem_write(SP, words(native.RET_MAGIC, 0, 0))
+                u.reg_write(UC_X86_REG_ESP, SP)
+                u.reg_write(UC_X86_REG_ECX, obj)
+                visited = []
+                hook = u.hook_add(UC_HOOK_CODE,
+                    lambda _u, pc, _size, _data: visited.append(pc))
+                try:
+                    required = (0x75F9F0, 0x75FA29)
+                    if scenario_fog_gate:
+                        required += (0x5865E0, 0x75FA10)
+                    boundary = native.run_checked(u, 0x75F9F0, stop,
+                        count=120, required_addresses=required)
+                finally:
+                    u.hook_del(hook)
+                if bytes(u.mem_read(obj, 0x200)) != state_before:
+                    raise native.OracleError('Wave admission changed prepared object state')
+                if bytes(u.mem_read(bridge_fixture.SCENARIO + 0x218, 0x100)) != rng_before:
+                    raise native.OracleError('Wave admission changed prepared Scenario RNG')
+                rows.append(dict(input=dict(scenario_fog_gate=scenario_fog_gate,
+                    wave_type=wave_type, source=source, target=target,
+                    source_raw_flags=source_flags, target_raw_flags=target_flags),
+                    admitted=True, dispatch_boundary=f'{boundary:08X}',
+                    fog_leaf_entries=visited.count(0x5865E0),
+                    object_unchanged=True, scenario_rng_unchanged=True,
+                    visited=[f'{pc:08X}' for pc in visited]))
+    return dict(entry='0075F9F0', fog_leaf='005865E0',
+                fog_leaf_bytes=native.file_span(native.image_bytes(), 0x5865E0, 5)[1].hex(),
+                rows=rows)
+
+
+class EntityReveal(Shroud):
+    """Original Unit/Infantry/Aircraft DrawIfVisible; real DrawIt stop boundary.
+
+    Shroud/Rally own mapped cells, original vtables, native camera scalar and
+    surface setup. No mobile type/art or native draw body is substituted.
+    """
+    OBJECT, RECT = MEM + 0xE0000, MEM + 0xE3000
+
+    def __init__(self, kind):
+        super().__init__()
+        self.kind = kind
+        self.vtable = VTABLES[kind]
+        self.entry = rally.ints(self.u, self.vtable + 0x104, 1)[0]
+        self.body = rally.ints(self.u, self.vtable + 0x114, 1)[0]
+        self.u.mem_write(self.OBJECT, words(self.vtable))
+        self.u.mem_write(self.OBJECT + 0x9C, words(2688, 5248, 0))
+        self.u.mem_write(self.OBJECT + 0x418, b'\0')  # Unit temporal target absent.
+        # Same native retained viewport writer used by SetView and FullInit.
+        self.u.mem_write(SP, words(native.RET_MAGIC, 0x886FA0))
+        self.u.reg_write(UC_X86_REG_ESP, SP)
+        self.u.reg_write(UC_X86_REG_ECX, rally.TACTICAL)
+        native.run_checked(self.u, 0x6D5F60, 0x6D5F8D, count=1000)
+        self.original_text = bytes(self.u.mem_read(0x401000, 4063232))
+        self.original_vtable = bytes(self.u.mem_read(self.vtable, 0x600))
+
+    def admission(self, case):
+        u = self.u
+        self.set_flags((10, 20), case.get('cell_bits', 0))
+        u.mem_write(self.OBJECT + 0x74, bytes([case.get('marked', True)]))
+        u.mem_write(self.OBJECT + 0x80,
+                    bytes([case.get('redraw', True), case.get('limbo', False)]))
+        u.mem_write(self.OBJECT + 0x90, words(case.get('alive', True)))
+        u.mem_write(0xA8ED6B, b'\0')  # ordinary graphical client, no Armageddon.
+        u.mem_write(rally.TACTICAL + 0xB0, words(*case.get('camera', [-320, 440])))
+        u.mem_write(self.RECT, words(0, 0, *rally.SIZE))
+        u.mem_write(SP, words(native.RET_MAGIC, self.RECT, 0, 0))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ECX, self.OBJECT)
+        events, cell_reads = [], []
+        cell = self.cells[10, 20]
+
+        def code(uc, pc, _size, _data):
+            if pc in (self.entry, self.body, 0x5F4B10, 0x6D2140,
+                       0x586360, 0x5865E0, 0x487950):
+                events.append(pc)
+
+        def read(uc, _access, address, size, _value, _data):
+            if cell <= address < cell + 0x200:
+                cell_reads.append(dict(pc=uc.reg_read(UC_X86_REG_EIP),
+                                        offset=address-cell, size=size))
+
+        h1 = u.hook_add(UC_HOOK_CODE, code)
+        h2 = u.hook_add(UC_HOOK_MEM_READ, read)
+        endpoint = native.run_checked(u, self.entry,
+                                     (native.RET_MAGIC, self.body), count=20000)
+        u.hook_del(h1)
+        u.hook_del(h2)
+        result = dict(input=case, class_name=self.kind, vtable=self.vtable,
+                      entry=self.entry, body=self.body, endpoint=endpoint,
+                      body_admitted=endpoint == self.body, events=events,
+                      anchor_cell_reads=cell_reads)
+        if endpoint == self.body:
+            sp = u.reg_read(UC_X86_REG_ESP)
+            point, rect = struct.unpack('<2I', u.mem_read(sp+4, 8))
+            result.update(point=rally.ints(u, point, 2), clip=rally.ints(u, rect, 4))
+        assert bytes(u.mem_read(0x401000, 4063232)) == self.original_text
+        assert bytes(u.mem_read(self.vtable, 0x600)) == self.original_vtable
+        return result
+
+
+def generate_entity_reveal():
+    cases = [dict(name=f'raw_anchor_{bits:02x}', cell_bits=bits)
+             for bits in (0, 0x08, 0x18)]
+    cases += [dict(name='not_redraw_ready', redraw=False),
+              dict(name='limbo', limbo=True),
+              dict(name='anchor_outside_projection', camera=[10000, 10000]),
+              dict(name='dead_retained_member', alive=False),
+              dict(name='unmarked_retained_member', marked=False)]
+    rows = []
+    for kind in ('unit', 'infantry', 'aircraft'):
+        f = EntityReveal(kind)
+        rows += [f.admission(case) for case in cases]
+    return dict(object_coords=[2688, 5248, 0], anchor_cell=[10, 20],
+                size=list(rally.SIZE), admission_cases=rows,
+                original_text_and_vtables_unchanged=True)
+
+
+def entity_reveal_metadata():
+    return native.provenance(
+        scope='Original Unit/Infantry/Aircraft DrawIfVisible anchor-shroud independence',
+        assumptions=[
+            'Shroud/Rally own mapped32x32cells, native projection startup scalar and graphicalclientB73550=1. Original6D5F60..6D5F8D viewport writer executes with supplied ordinary viewport; full window/camera clamp initialization excluded.',
+            'Original class vtables from existing crate_speed_effect owner: Unit7F5C70, Infantry7EB058, Aircraft7E22A4. Their actual+104 entries execute to actual+114 body entries as stop boundaries; no body, vtable, or instruction is replaced.',
+            'Prepared Object coordinate2688,5248,0 is anchor10,20 at cellcenter. Raw Cell+12C=0/0x08/0x18 contrasts do not claim reveal lifecycle; full scenario, retail map/INI/class constructors and art pixels are not measured.',
+            'Ordinary redraw-ready, not-limbo and Unit+418=0 inputs exclude temporal-target ownership, cloak/warp/disguise and all body effects. Existing DrawState remains their Rustowner; effect parity does not follow from these gate controls.',
+            'Object+90alive and+74marked negative controls are malformed retained Display members: original5F4B10 gate does not read them. Native lifecycle/Display cleanup must remain authoritative; they are not claims that dead objects remain registered in ordinary play.',
+            'Original Tactical6D8F55..6D909E active Techno route uses projection, camera and optional5865E0 (active YRbodyalwaysfalse), not586360 or Cell+12C. Full Display scan and extra-draw scheduling are instruction-established here rather than executed.',
+            'No RNG draw, timer write or detach call occurs in executed admission/projection boundaries. Object+80redraw is consumed; lifecycle cleanup/creation and full frame scheduling remain excluded.',
+        ], substitutions=[],
+        entry_points=dict(object_admission=0x5F4B10, unit_admission=0x73B0B0,
+                          unit_body=0x73CEC0, infantry_body=0x518F90,
+                          aircraft_body=0x4144B0, projection=0x6D2140,
+                          viewport_writer=0x6D5F60))
+
+
 if __name__=='__main__':
     import sys
+    if '--entity-reveal' in sys.argv[1:]:
+        native.finish_vectors(generate_entity_reveal,
+            Path(__file__).with_name('entity_reveal.json'),
+            argv=[arg for arg in sys.argv[1:] if arg != '--entity-reveal'],
+            provenance=entity_reveal_metadata,
+            source_paths={'oracle':Path(__file__),'surface_fixture':Path(rally.__file__),
+                          'stock_owner':Path(stock.__file__),
+                          'vtable_owner':Path('tools/spatial_oracle/crate_speed_effect.py'),
+                          'projection_fixture':Path('tools/bridge_click_oracle.py')})
+        raise SystemExit(0)
+    if '--wave-admission' in sys.argv[1:]:
+        native.finish_vectors(generate_wave_admission,
+            Path(__file__).with_name('wave_admission.json'),
+            argv=[arg for arg in sys.argv[1:] if arg != '--wave-admission'],
+            provenance=lambda: native.provenance(
+                scope='Original YR Wave75F9F0 admission through pre-raster type0/3 dispatch calls, including original constant-false5865E0',
+                assumptions=[
+                    'Existing bridge_damage_admission.base owns verified PE and prepared map/stack setup. The object is a supplied Wave-shaped instance, not an executed constructor or live Display registration.',
+                    'Scenario bit0x1000, type0/3, endpoint coordinates and raw Cell+12C flags0/0x18 are explicit prepared inputs. These raw words are not assigned Rust visibility meanings; no reveal traversal or FogOfWar state producer executes.',
+                    'Original75F9F0 executes unchanged until75FA47/75FA5C before the raster call. When bit0x1000 is set, original5865E0 executes once and its falseAL bypasses the second endpoint query. Every fixture saves the original instruction path.',
+                    'Admission performs no RNG draw, timer write or detach call. Prepared Wave bytes and Scenario+218 RNG prefix remain unchanged; this is not the constructor/AI/lifetime or raster consumer chain.',
+                    'No whole-object camera/rectangle admission, Display traversal, distortion pixels, retail weapon binding or rendered Wave parity is claimed. Existing white-pixel rendering remains a separate framebuffer-distortion residual.',
+                ], substitutions=[],
+                entry_points={'draw_it':0x75F9F0,'fog_leaf':0x5865E0,
+                    'type0_raster_call_boundary':0x75FA47,
+                    'type3_raster_call_boundary':0x75FA5C}),
+            source_paths={'oracle':Path(__file__),
+                          'map_fixture':Path(bridge_fixture.__file__)})
+        raise SystemExit(0)
     if '--building-reveal' in sys.argv[1:]:
         native.finish_vectors(generate_building_reveal,
             Path(__file__).with_name('building_reveal.json'),

@@ -1,0 +1,923 @@
+{
+  "scope": "Ordinary first-reveal drawing admission; native boundary controls and Rust regression/output comparison, not whole-game parity",
+  "authority": "Local repair only; no publication authorized",
+  "native_checks": {
+    "shroud": {
+      "payload_sha256": "39a019add707e6d11e972aee22fac8404e05c1a4a1123eecb561c4ea895c8f43",
+      "metadata_sha256": "c1fedc3d3ec98a473bcb1e4814d626ffe528e823841cd532607f8d4962684b07",
+      "executable_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+      "checked": true
+    },
+    "building_reveal": {
+      "payload_sha256": "6a68e9e5a2f810e751a08e2125f2ef2051347f2726b0e734e7168cf32f8c7c40",
+      "metadata_sha256": "24c269730f0f06c81585c0d0e4a6b920f821c74d3f0bcf6e028930bac4fb2bb3",
+      "executable_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+      "checked": true
+    },
+    "entity_reveal": {
+      "payload_sha256": "21c8d9117955b09de0b6eee5baaeed20ec4243540d45d73e264c6e4829445a95",
+      "metadata_sha256": "d021dd398c792c9833cf891f0b89cd4f99020a8e0f29a3e91d44d496461b358f",
+      "executable_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+      "checked": true
+    },
+    "wave_admission": {
+      "payload_sha256": "94693b19b11b591aa71bdea5d565a814879669db0d81cdbe7db376d90f82ac9b",
+      "metadata_sha256": "4f97dfb7abb0fe2b66b9807c0ad9bdbfb9309431b5891bc9bd836ab24f404b5c",
+      "executable_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+      "checked": true
+    }
+  },
+  "rust_validation": {
+    "full_lib": {
+      "command": "python -m tools.cargo_run -- test -p vera20k --lib",
+      "retail_required": true,
+      "passed": 9705,
+      "failed": 0,
+      "ignored": 239,
+      "log": "logs\\all-shroud-pop-in\\full-tests-final.txt",
+      "log_sha256": "0cfffb0fa24d8790aeafbdffd7da1fe4263e87c0874953998bde01d031570e28"
+    },
+    "clippy": {
+      "command": "python -m tools.cargo_run -- clippy -p vera20k --lib",
+      "exit_code": 0,
+      "warnings": 721,
+      "log": "logs\\all-shroud-pop-in\\clippy-final.txt",
+      "log_sha256": "87eff50d6c2f91a90e7e9e3ab7ae612548ad9c25155cc464a82dc42ed58b8d28"
+    },
+    "field_ratchet": {
+      "current": 2505,
+      "origin_main": 2505
+    },
+    "helper_normalized_lf_sha256": "dbaefbb2710cdc1724e5931ac5f603387deec0fb973264cdd1239c4869c2fc56",
+    "pre_fix_regression": {
+      "log": "logs\\all-shroud-pop-in\\red-tests-fixed-types.txt",
+      "log_sha256": "7657ff13c8ffe9ca203f980d79ef13eb15cecde152a2c95822f6866524aeb8bc",
+      "mobile_test": "app::presentation::instances::helpers::tests::shroud_pop_in_mobile_admission_matches_original_class_entries",
+      "result": "FAILED before fix: Unit raw anchor0 refused although original body admitted",
+      "wave_note": "Same exploratory run also failed the wave research check; production wave changes/test were subsequently restored and are not shipped."
+    }
+  },
+  "wave_status": "Executed native admission mismatch retained as research; production change held for framebuffer raster prerequisite",
+  "release": {
+    "build_label": "mobile-shroud-reveal-20261007-v1",
+    "manifest_sha256": "1aadb2ca3d0295f8017677209534f4186c04ca2fb8b6ac88fdb49c231ffd32bc",
+    "manifest": {
+      "schema": 1,
+      "checkout": "E:\\RA2\\vera20k-building-reveal",
+      "source": {
+        "head": "f7e9a613d0adeee6f5081ef9c3ffcd489e9c8395",
+        "branch": "feature/building-shroud-reveal",
+        "status": "M src/app/presentation/fire_effects.rs\n M src/app/presentation/instances/helpers.rs\n M src/app/presentation/instances/overlays.rs\n M src/sim/wave.rs\n M tools/procedural_drawing_oracle/building_reveal.meta.json\n M tools/procedural_drawing_oracle/shroud.meta.json\n M tools/procedural_drawing_oracle/shroud.py\n?? tools/map_observation.mobile-reveal-110.example.json\n?? tools/map_observation.mobile-reveal-111.example.json\n?? tools/map_observation.mobile-reveal-clear.example.json\n?? tools/map_observation.mobile-reveal-hidden.example.json\n?? tools/procedural_drawing_oracle/entity_reveal.json\n?? tools/procedural_drawing_oracle/entity_reveal.md\n?? tools/procedural_drawing_oracle/entity_reveal.meta.json\n?? tools/procedural_drawing_oracle/first_reveal_audit.md\n?? tools/procedural_drawing_oracle/wave_admission.json\n?? tools/procedural_drawing_oracle/wave_admission.md\n?? tools/procedural_drawing_oracle/wave_admission.meta.json",
+        "source_sha256": "fd38a2831b0c12db4a316711ea537dc74eb40f3337315582e93379cc1f415b62"
+      },
+      "command": [
+        "cargo",
+        "build",
+        "--message-format=json-render-diagnostics",
+        "-p",
+        "vera20k",
+        "--release",
+        "--bin",
+        "vera20k"
+      ],
+      "target_dir": "E:\\RA2\\vera20k-building-reveal\\target\\owned-worktrees\\ce6c176651345b86",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+      "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)\n",
+      "build_environment": {},
+      "artifacts": [
+        {
+          "source": "E:\\RA2\\vera20k-building-reveal\\target\\owned-worktrees\\ce6c176651345b86\\release\\vera20k.exe",
+          "file": "0/vera20k.exe",
+          "sha256": "64ef0d79f41333d13cc754788364aff57208c088d360205a719a52059e6095aa"
+        }
+      ]
+    },
+    "build_log_sha256": "c191307fde4371ba70dde314ddad0a65d640008793980dc6cefeb66157c6c823"
+  },
+  "runtime_output": {
+    "110": {
+      "comparison_status": "MISMATCH",
+      "differences": [
+        {
+          "field": "frame.bytes",
+          "before": "0c77375378fbe3c2b83764cf5ab54cc5f812fb5a9a2bc25fa924d873e3eced99",
+          "after": "3603610865b11d8189f008fb477a345af3478f12ea52c504133e21437c80894a"
+        }
+      ],
+      "comparison_report": "E:\\RA2\\vera20k-building-reveal\\logs\\all-shroud-pop-in\\mobile\\mobile-110-comparison.json",
+      "comparison_sha256": "0c536dd1a24cde5097fb0c3aacaf9ed3faa7e3fd18bbaa3c249dbe67ac6f5d9f",
+      "input_bytes_clocks_simulation_observations_camera_atlas_equal": true,
+      "before": {
+        "bundle": "logs\\all-shroud-pop-in\\mobile\\mobile-110-before",
+        "run_sha256": "54781884fa7297cb2e2fe30a4fab18c8ebfa54cce0368f52f57d1e95faf0dd56",
+        "capture_sha256": "ca442ea1991c77ced4d9d22d889872d3e430eae4c709976b77fbf326314fbbf6",
+        "frame_sha256": "0c77375378fbe3c2b83764cf5ab54cc5f812fb5a9a2bc25fa924d873e3eced99",
+        "png": "mobile-110-before.png",
+        "png_sha256": "427f538f0a455c18c9c7483257fc4d87533517f47fb9e0ce8e30756c69a24b99",
+        "binary": {
+          "byte_length": 32556544,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\scenery-shroud-reveal-20261007-v1\\0\\vera20k.exe",
+          "sha256": "e4503435e08b6536fa62fcd5f779ae2f1f880add2c3d4fd1cc79e36c7b69f355"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 5884587036367889750,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "final": {
+          "binary_frame": 110,
+          "deterministic_state_hash": 3832070169457660959,
+          "simulation_tick": 110,
+          "total_simulation_ms": 2420
+        },
+        "last_terrain": [
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              47,
+              81
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 449,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": false,
+              "visible": false
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              449,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          },
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              44,
+              87
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 460,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": true,
+              "visible": true
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              460,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          }
+        ],
+        "frame_wall_mean_ms": 26.076555252075195
+      },
+      "after": {
+        "bundle": "logs\\all-shroud-pop-in\\mobile\\mobile-110-after",
+        "run_sha256": "e6efabc655b5db87e8d3dea15bdd0b6bf239bac76b288b4d3136e5fab1cab1ea",
+        "capture_sha256": "e93f6fe4a3785a04a3d9aba23815b4630b395f51e7e7f43c24ac43cc92015a7c",
+        "frame_sha256": "3603610865b11d8189f008fb477a345af3478f12ea52c504133e21437c80894a",
+        "png": "mobile-110-after.png",
+        "png_sha256": "d091898ac32fbd992cf1ec92503befdc9d4a4fd58471d3ebc3e1ee2cebbf4018",
+        "binary": {
+          "byte_length": 32553472,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\mobile-shroud-reveal-20261007-v1\\0\\vera20k.exe",
+          "sha256": "64ef0d79f41333d13cc754788364aff57208c088d360205a719a52059e6095aa"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 5884587036367889750,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "final": {
+          "binary_frame": 110,
+          "deterministic_state_hash": 3832070169457660959,
+          "simulation_tick": 110,
+          "total_simulation_ms": 2420
+        },
+        "last_terrain": [
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              47,
+              81
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 449,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": false,
+              "visible": false
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              449,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          },
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              44,
+              87
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 460,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": true,
+              "visible": true
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              460,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          }
+        ],
+        "frame_wall_mean_ms": 18.680572509765625
+      },
+      "changed_pixels": 708,
+      "changed_bbox_inclusive": [
+        285,
+        270,
+        321,
+        299
+      ]
+    },
+    "111": {
+      "comparison_status": "MATCH",
+      "differences": [],
+      "comparison_report": "E:\\RA2\\vera20k-building-reveal\\logs\\all-shroud-pop-in\\mobile\\mobile-111-comparison.json",
+      "comparison_sha256": "7953e50ab18a5894b27a412f8a9f54c6b455795d5a5cc64bc80efed57a775cca",
+      "input_bytes_clocks_simulation_observations_camera_atlas_equal": true,
+      "before": {
+        "bundle": "logs\\all-shroud-pop-in\\mobile\\mobile-111-before",
+        "run_sha256": "f9ed67a3ec9e93fe57ce4589474add7354b42c7ae173285cdec4722206fbf6af",
+        "capture_sha256": "2efb5a6c06a3d255591e88d511b676b8b48f3fc95665ac068d9e2058a2b70c03",
+        "frame_sha256": "354268ca49ddce77977714d657b76ec2124c839d1ef644b8b42ceda010b8c3ae",
+        "png": "mobile-111-before.png",
+        "png_sha256": "0fe629b187051ca3f0c40cbf3d5cac18f19cd51496be2f4f6d7f7e532d318d15",
+        "binary": {
+          "byte_length": 32556544,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\scenery-shroud-reveal-20261007-v1\\0\\vera20k.exe",
+          "sha256": "e4503435e08b6536fa62fcd5f779ae2f1f880add2c3d4fd1cc79e36c7b69f355"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 5884587036367889750,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "final": {
+          "binary_frame": 111,
+          "deterministic_state_hash": 10534753600150598977,
+          "simulation_tick": 111,
+          "total_simulation_ms": 2442
+        },
+        "last_terrain": [
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              47,
+              81
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 449,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": true,
+              "visible": true
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              449,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          },
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              44,
+              87
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 460,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": true,
+              "visible": true
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              460,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          }
+        ],
+        "frame_wall_mean_ms": 22.084327697753906
+      },
+      "after": {
+        "bundle": "logs\\all-shroud-pop-in\\mobile\\mobile-111-after",
+        "run_sha256": "7f0a3aa000d0b3f71146d1643577387d18f97724b72dc2f264f7743320c25af8",
+        "capture_sha256": "2acad9b4775b8c8899303bfbb8abc2fd40d268feb101f68350504e2bd1c9fa97",
+        "frame_sha256": "354268ca49ddce77977714d657b76ec2124c839d1ef644b8b42ceda010b8c3ae",
+        "png": "mobile-111-after.png",
+        "png_sha256": "0fe629b187051ca3f0c40cbf3d5cac18f19cd51496be2f4f6d7f7e532d318d15",
+        "binary": {
+          "byte_length": 32553472,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\mobile-shroud-reveal-20261007-v1\\0\\vera20k.exe",
+          "sha256": "64ef0d79f41333d13cc754788364aff57208c088d360205a719a52059e6095aa"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 5884587036367889750,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "final": {
+          "binary_frame": 111,
+          "deterministic_state_hash": 10534753600150598977,
+          "simulation_tick": 111,
+          "total_simulation_ms": 2442
+        },
+        "last_terrain": [
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              47,
+              81
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 449,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": true,
+              "visible": true
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              449,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          },
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              44,
+              87
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 460,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": true,
+              "visible": true
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              460,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          }
+        ],
+        "frame_wall_mean_ms": 20.877290725708008
+      },
+      "changed_pixels": 0,
+      "changed_bbox_inclusive": null
+    },
+    "hidden": {
+      "comparison_status": "MATCH",
+      "differences": [],
+      "comparison_report": "E:\\RA2\\vera20k-building-reveal\\logs\\all-shroud-pop-in\\mobile\\mobile-hidden-comparison.json",
+      "comparison_sha256": "0a33da80532cfc41113ffae483696fe8ff317cf32904aa476463db142da50325",
+      "input_bytes_clocks_simulation_observations_camera_atlas_equal": true,
+      "before": {
+        "bundle": "logs\\all-shroud-pop-in\\mobile\\mobile-hidden-before",
+        "run_sha256": "5fe13d537d865e6fe62f3aae757da14af18618cc3bab755ac791c2a833ba73c4",
+        "capture_sha256": "d6fef093af9ef8b62e60520e60d23cfb451978d6f561fb9a5b57835913a9573e",
+        "frame_sha256": "aaf0dc5bfdce212cb15173b51c65ea0c2a9b863045a203bd662ef2a89ec42d68",
+        "png": "mobile-hidden-before.png",
+        "png_sha256": "b5a60d396ff7adfaf569508758e4cdc4432a1781b43dab8d081b211d0c16ae04",
+        "binary": {
+          "byte_length": 32556544,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\scenery-shroud-reveal-20261007-v1\\0\\vera20k.exe",
+          "sha256": "e4503435e08b6536fa62fcd5f779ae2f1f880add2c3d4fd1cc79e36c7b69f355"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 5884587036367889750,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "final": {
+          "binary_frame": 1,
+          "deterministic_state_hash": 9912752098905279284,
+          "simulation_tick": 1,
+          "total_simulation_ms": 22
+        },
+        "last_terrain": [
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              47,
+              81
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 449,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": false,
+              "visible": false
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              449,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          },
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              44,
+              87
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 460,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": false,
+              "visible": false
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              460,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          }
+        ],
+        "frame_wall_mean_ms": 8512.404296875
+      },
+      "after": {
+        "bundle": "logs\\all-shroud-pop-in\\mobile\\mobile-hidden-after",
+        "run_sha256": "088fc08cd700b5a88b4a2fa7d59275d58897dc0f2041238b4b5450245f4040dc",
+        "capture_sha256": "c157d68bc5412cf1ebf2b884788ab4aa3d955712920a28e8fbf97a2ac5d3a909",
+        "frame_sha256": "aaf0dc5bfdce212cb15173b51c65ea0c2a9b863045a203bd662ef2a89ec42d68",
+        "png": "mobile-hidden-after.png",
+        "png_sha256": "b5a60d396ff7adfaf569508758e4cdc4432a1781b43dab8d081b211d0c16ae04",
+        "binary": {
+          "byte_length": 32553472,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\mobile-shroud-reveal-20261007-v1\\0\\vera20k.exe",
+          "sha256": "64ef0d79f41333d13cc754788364aff57208c088d360205a719a52059e6095aa"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 5884587036367889750,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "final": {
+          "binary_frame": 1,
+          "deterministic_state_hash": 9912752098905279284,
+          "simulation_tick": 1,
+          "total_simulation_ms": 22
+        },
+        "last_terrain": [
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              47,
+              81
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 449,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": false,
+              "visible": false
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              449,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          },
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              44,
+              87
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 460,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": false,
+              "visible": false
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              460,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          }
+        ],
+        "frame_wall_mean_ms": 5808.0546875
+      },
+      "changed_pixels": 0,
+      "changed_bbox_inclusive": null
+    },
+    "clear": {
+      "comparison_status": "MATCH",
+      "differences": [],
+      "comparison_report": "E:\\RA2\\vera20k-building-reveal\\logs\\all-shroud-pop-in\\mobile\\mobile-clear-comparison.json",
+      "comparison_sha256": "7628456af2d29d25e13b7371fcc96f8f3621525959ff0537ae66f6b1f0051194",
+      "input_bytes_clocks_simulation_observations_camera_atlas_equal": true,
+      "before": {
+        "bundle": "logs\\all-shroud-pop-in\\mobile\\mobile-clear-before",
+        "run_sha256": "5a2d9e16e83f2c5e47adc4f04b6a96c2c03ac2d8aaeec9a79d4a249d3e6bc188",
+        "capture_sha256": "9caf3da75d438d027ea95570217c93e069de2213700b107dc1b56a7eae8dae69",
+        "frame_sha256": "2ecefccdf705af24acb3f1cf417fa6ff552d5c9bcaa9f9c8d1c20f2c8aef09aa",
+        "png": "mobile-clear-before.png",
+        "png_sha256": "5fb6da2425270b160815cd24893b63504fe23e3a7d346373da179fbc43d51b53",
+        "binary": {
+          "byte_length": 32556544,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\scenery-shroud-reveal-20261007-v1\\0\\vera20k.exe",
+          "sha256": "e4503435e08b6536fa62fcd5f779ae2f1f880add2c3d4fd1cc79e36c7b69f355"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 2237448654896695789,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "final": {
+          "binary_frame": 1,
+          "deterministic_state_hash": 1208313254639001157,
+          "simulation_tick": 1,
+          "total_simulation_ms": 22
+        },
+        "last_terrain": [
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              47,
+              81
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 449,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": true,
+              "visible": false
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              449,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          },
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              44,
+              87
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 460,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": true,
+              "visible": false
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              460,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          }
+        ],
+        "frame_wall_mean_ms": 6768.37646484375
+      },
+      "after": {
+        "bundle": "logs\\all-shroud-pop-in\\mobile\\mobile-clear-after",
+        "run_sha256": "27c6bda8f3c0466017fec9e8f609d285cabaeac19750caae9b0b7c771ffd05cd",
+        "capture_sha256": "6578b79e2cc1a31abb61da59d6657220ddd93a124d942355d2465f2d32c59201",
+        "frame_sha256": "2ecefccdf705af24acb3f1cf417fa6ff552d5c9bcaa9f9c8d1c20f2c8aef09aa",
+        "png": "mobile-clear-after.png",
+        "png_sha256": "5fb6da2425270b160815cd24893b63504fe23e3a7d346373da179fbc43d51b53",
+        "binary": {
+          "byte_length": 32553472,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\mobile-shroud-reveal-20261007-v1\\0\\vera20k.exe",
+          "sha256": "64ef0d79f41333d13cc754788364aff57208c088d360205a719a52059e6095aa"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 2237448654896695789,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "final": {
+          "binary_frame": 1,
+          "deterministic_state_hash": 1208313254639001157,
+          "simulation_tick": 1,
+          "total_simulation_ms": 22
+        },
+        "last_terrain": [
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              47,
+              81
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 449,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": true,
+              "visible": false
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              449,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          },
+          {
+            "allocated": true,
+            "bridge_state": 0,
+            "cell": [
+              44,
+              87
+            ],
+            "deck_level": 4,
+            "final_sub_tile": 0,
+            "final_tile_index": 460,
+            "has_deck": false,
+            "level": 4,
+            "local_visibility": {
+              "gap_covered": false,
+              "owner": "VERA-OBSERVER",
+              "revealed": true,
+              "visible": false
+            },
+            "overlay": {
+              "density": 0,
+              "id": null
+            },
+            "presentation_tile": [
+              460,
+              0
+            ],
+            "raw_bridge_flags": 0,
+            "slope": 0,
+            "terrain_object": null,
+            "transition": false,
+            "walkable": false
+          }
+        ],
+        "frame_wall_mean_ms": 5650.35791015625
+      },
+      "changed_pixels": 0,
+      "changed_bbox_inclusive": null
+    }
+  },
+  "critic": {
+    "agent": "/root/ordinary_reveal_critic",
+    "fresh_read_only_passes": 1,
+    "confirmed_ordinary_defects": 0,
+    "confirmed_ordinary_blockers": 0,
+    "review": "tools\\procedural_drawing_oracle\\validation\\mobile-reveal\\review.md",
+    "review_sha256": "23de50d9995a158a138ebbe32c42d4f777c4b15d18d2454e00a75b9811e61f45",
+    "unconfirmed_residual": "Hidden cloak/warp/otherFX compatibility source shading at stock A=2 may leave faint outlines; special material GPU/native raster not measured."
+  },
+  "prior_scenery_on_current_release": {
+    "tree-25": {
+      "status": "MATCH",
+      "before": "E:\\RA2\\vera20k-building-reveal\\logs\\terrain-shroud-reveal\\tree-25-after",
+      "after": "E:\\RA2\\vera20k-building-reveal\\logs\\all-shroud-pop-in\\scenery-tree-25-final",
+      "comparison_report": "logs\\all-shroud-pop-in\\tree-25-final-comparison.json",
+      "comparison_sha256": "f8da7d2bd3fc9a19a2f9ae8d3b72225bc0fa7776a9709149b1a145a3c69f94d8",
+      "run_sha256": "f62afcd70e32ccc84f7183e6071c583b3532db3003c75d72398d908878d4197a",
+      "frame_sha256": "c66bd36448235ce6e1032b069586b4ae0c741149f7d22563b685dabbe69062ef",
+      "differences": []
+    },
+    "bridge-243": {
+      "status": "MATCH",
+      "before": "E:\\RA2\\vera20k-building-reveal\\logs\\terrain-shroud-reveal\\bridge-243-after",
+      "after": "E:\\RA2\\vera20k-building-reveal\\logs\\all-shroud-pop-in\\scenery-bridge-243-final",
+      "comparison_report": "logs\\all-shroud-pop-in\\bridge-243-final-comparison.json",
+      "comparison_sha256": "5aec74b5da17420224f4c97ca8ca3b3e81d969aaa81244f91a4202b68457d147",
+      "run_sha256": "b4dbdb5ece2f14948b7c7438f9bba19f31908cf4c33918c1ad55863b8d7ac955",
+      "frame_sha256": "f6b8cc7ad5c583df7f3cf4c359c17d9d3c7af7351bcca67482fe12881e501c41",
+      "differences": []
+    },
+    "rock-94": {
+      "status": "MATCH",
+      "before": "E:\\RA2\\vera20k-building-reveal\\logs\\terrain-shroud-reveal\\rock-94-after",
+      "after": "E:\\RA2\\vera20k-building-reveal\\logs\\all-shroud-pop-in\\scenery-rock-94-final",
+      "comparison_report": "logs\\all-shroud-pop-in\\rock-94-final-comparison.json",
+      "comparison_sha256": "7d10fed3589a044f658ffa93879ceeebf985c9da40e874c02cd774bc2dc49dc3",
+      "run_sha256": "5f4ea690641b352c3afc3ba232cbe0ff546af3452b712cda1dd89681254b00f0",
+      "frame_sha256": "d8c73948b3134068c758aff04bff598aa2d03ff1f4776a155bfc9d7c2b78465c",
+      "differences": []
+    }
+  }
+}

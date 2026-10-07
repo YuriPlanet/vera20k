@@ -1,0 +1,602 @@
+{
+  "admission_cases": [
+    {
+      "anchor_cell_reads": [],
+      "body": 7589568,
+      "body_admitted": true,
+      "class_name": "unit",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 7589568,
+      "entry": 7581872,
+      "events": [
+        7581872,
+        6245136,
+        7151936,
+        7589568
+      ],
+      "input": {
+        "cell_bits": 0,
+        "name": "raw_anchor_00"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8346736
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 7589568,
+      "body_admitted": true,
+      "class_name": "unit",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 7589568,
+      "entry": 7581872,
+      "events": [
+        7581872,
+        6245136,
+        7151936,
+        7589568
+      ],
+      "input": {
+        "cell_bits": 8,
+        "name": "raw_anchor_08"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8346736
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 7589568,
+      "body_admitted": true,
+      "class_name": "unit",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 7589568,
+      "entry": 7581872,
+      "events": [
+        7581872,
+        6245136,
+        7151936,
+        7589568
+      ],
+      "input": {
+        "cell_bits": 24,
+        "name": "raw_anchor_18"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8346736
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 7589568,
+      "body_admitted": false,
+      "class_name": "unit",
+      "endpoint": 805306368,
+      "entry": 7581872,
+      "events": [
+        7581872,
+        6245136
+      ],
+      "input": {
+        "name": "not_redraw_ready",
+        "redraw": false
+      },
+      "vtable": 8346736
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 7589568,
+      "body_admitted": false,
+      "class_name": "unit",
+      "endpoint": 805306368,
+      "entry": 7581872,
+      "events": [
+        7581872,
+        6245136
+      ],
+      "input": {
+        "limbo": true,
+        "name": "limbo"
+      },
+      "vtable": 8346736
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 7589568,
+      "body_admitted": false,
+      "class_name": "unit",
+      "endpoint": 805306368,
+      "entry": 7581872,
+      "events": [
+        7581872,
+        6245136,
+        7151936
+      ],
+      "input": {
+        "camera": [
+          10000,
+          10000
+        ],
+        "name": "anchor_outside_projection"
+      },
+      "vtable": 8346736
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 7589568,
+      "body_admitted": true,
+      "class_name": "unit",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 7589568,
+      "entry": 7581872,
+      "events": [
+        7581872,
+        6245136,
+        7151936,
+        7589568
+      ],
+      "input": {
+        "alive": false,
+        "name": "dead_retained_member"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8346736
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 7589568,
+      "body_admitted": true,
+      "class_name": "unit",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 7589568,
+      "entry": 7581872,
+      "events": [
+        7581872,
+        6245136,
+        7151936,
+        7589568
+      ],
+      "input": {
+        "marked": false,
+        "name": "unmarked_retained_member"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8346736
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 5345168,
+      "body_admitted": true,
+      "class_name": "infantry",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 5345168,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936,
+        5345168
+      ],
+      "input": {
+        "cell_bits": 0,
+        "name": "raw_anchor_00"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8302680
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 5345168,
+      "body_admitted": true,
+      "class_name": "infantry",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 5345168,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936,
+        5345168
+      ],
+      "input": {
+        "cell_bits": 8,
+        "name": "raw_anchor_08"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8302680
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 5345168,
+      "body_admitted": true,
+      "class_name": "infantry",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 5345168,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936,
+        5345168
+      ],
+      "input": {
+        "cell_bits": 24,
+        "name": "raw_anchor_18"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8302680
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 5345168,
+      "body_admitted": false,
+      "class_name": "infantry",
+      "endpoint": 805306368,
+      "entry": 6245136,
+      "events": [
+        6245136
+      ],
+      "input": {
+        "name": "not_redraw_ready",
+        "redraw": false
+      },
+      "vtable": 8302680
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 5345168,
+      "body_admitted": false,
+      "class_name": "infantry",
+      "endpoint": 805306368,
+      "entry": 6245136,
+      "events": [
+        6245136
+      ],
+      "input": {
+        "limbo": true,
+        "name": "limbo"
+      },
+      "vtable": 8302680
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 5345168,
+      "body_admitted": false,
+      "class_name": "infantry",
+      "endpoint": 805306368,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936
+      ],
+      "input": {
+        "camera": [
+          10000,
+          10000
+        ],
+        "name": "anchor_outside_projection"
+      },
+      "vtable": 8302680
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 5345168,
+      "body_admitted": true,
+      "class_name": "infantry",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 5345168,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936,
+        5345168
+      ],
+      "input": {
+        "alive": false,
+        "name": "dead_retained_member"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8302680
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 5345168,
+      "body_admitted": true,
+      "class_name": "infantry",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 5345168,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936,
+        5345168
+      ],
+      "input": {
+        "marked": false,
+        "name": "unmarked_retained_member"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8302680
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 4277424,
+      "body_admitted": true,
+      "class_name": "aircraft",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 4277424,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936,
+        4277424
+      ],
+      "input": {
+        "cell_bits": 0,
+        "name": "raw_anchor_00"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8266404
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 4277424,
+      "body_admitted": true,
+      "class_name": "aircraft",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 4277424,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936,
+        4277424
+      ],
+      "input": {
+        "cell_bits": 8,
+        "name": "raw_anchor_08"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8266404
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 4277424,
+      "body_admitted": true,
+      "class_name": "aircraft",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 4277424,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936,
+        4277424
+      ],
+      "input": {
+        "cell_bits": 24,
+        "name": "raw_anchor_18"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8266404
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 4277424,
+      "body_admitted": false,
+      "class_name": "aircraft",
+      "endpoint": 805306368,
+      "entry": 6245136,
+      "events": [
+        6245136
+      ],
+      "input": {
+        "name": "not_redraw_ready",
+        "redraw": false
+      },
+      "vtable": 8266404
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 4277424,
+      "body_admitted": false,
+      "class_name": "aircraft",
+      "endpoint": 805306368,
+      "entry": 6245136,
+      "events": [
+        6245136
+      ],
+      "input": {
+        "limbo": true,
+        "name": "limbo"
+      },
+      "vtable": 8266404
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 4277424,
+      "body_admitted": false,
+      "class_name": "aircraft",
+      "endpoint": 805306368,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936
+      ],
+      "input": {
+        "camera": [
+          10000,
+          10000
+        ],
+        "name": "anchor_outside_projection"
+      },
+      "vtable": 8266404
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 4277424,
+      "body_admitted": true,
+      "class_name": "aircraft",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 4277424,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936,
+        4277424
+      ],
+      "input": {
+        "alive": false,
+        "name": "dead_retained_member"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8266404
+    },
+    {
+      "anchor_cell_reads": [],
+      "body": 4277424,
+      "body_admitted": true,
+      "class_name": "aircraft",
+      "clip": [
+        0,
+        0,
+        160,
+        120
+      ],
+      "endpoint": 4277424,
+      "entry": 6245136,
+      "events": [
+        6245136,
+        7151936,
+        4277424
+      ],
+      "input": {
+        "marked": false,
+        "name": "unmarked_retained_member"
+      },
+      "point": [
+        20,
+        25
+      ],
+      "vtable": 8266404
+    }
+  ],
+  "anchor_cell": [
+    10,
+    20
+  ],
+  "object_coords": [
+    2688,
+    5248,
+    0
+  ],
+  "original_text_and_vtables_unchanged": true,
+  "size": [
+    160,
+    120
+  ]
+}

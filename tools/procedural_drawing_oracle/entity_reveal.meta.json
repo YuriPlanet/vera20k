@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Unit/Infantry/Aircraft DrawIfVisible anchor-shroud independence",
+  "assumptions": [
+    "Shroud/Rally own mapped32x32cells, native projection startup scalar and graphicalclientB73550=1. Original6D5F60..6D5F8D viewport writer executes with supplied ordinary viewport; full window/camera clamp initialization excluded.",
+    "Original class vtables from existing crate_speed_effect owner: Unit7F5C70, Infantry7EB058, Aircraft7E22A4. Their actual+104 entries execute to actual+114 body entries as stop boundaries; no body, vtable, or instruction is replaced.",
+    "Prepared Object coordinate2688,5248,0 is anchor10,20 at cellcenter. Raw Cell+12C=0/0x08/0x18 contrasts do not claim reveal lifecycle; full scenario, retail map/INI/class constructors and art pixels are not measured.",
+    "Ordinary redraw-ready, not-limbo and Unit+418=0 inputs exclude temporal-target ownership, cloak/warp/disguise and all body effects. Existing DrawState remains their Rustowner; effect parity does not follow from these gate controls.",
+    "Object+90alive and+74marked negative controls are malformed retained Display members: original5F4B10 gate does not read them. Native lifecycle/Display cleanup must remain authoritative; they are not claims that dead objects remain registered in ordinary play.",
+    "Original Tactical6D8F55..6D909E active Techno route uses projection, camera and optional5865E0 (active YRbodyalwaysfalse), not586360 or Cell+12C. Full Display scan and extra-draw scheduling are instruction-established here rather than executed.",
+    "No RNG draw, timer write or detach call occurs in executed admission/projection boundaries. Object+80redraw is consumed; lifecycle cleanup/creation and full frame scheduling remain excluded."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "object_admission": "0x005F4B10",
+    "unit_admission": "0x0073B0B0",
+    "unit_body": "0x0073CEC0",
+    "infantry_body": "0x00518F90",
+    "aircraft_body": "0x004144B0",
+    "projection": "0x006D2140",
+    "viewport_writer": "0x006D5F60"
+  },
+  "source_normalized_lf_sha256": {
+    "oracle": "63da6bb19af85e42aa938898ba4aff7ecf8ccf36a2ec61189d87ba8256966296",
+    "surface_fixture": "0168afa40ab7fa79a606116d117d24f634b00a37d3b38ec9121ec15f5636023d",
+    "stock_owner": "62b855dba1836bf484bb6c112b9249003ff4427c3004a1ef3d95c3aac985ba9b",
+    "vtable_owner": "4884d5f647da1e480a6f70aba1fea900491eda1a9875852e0fe53e731834c411",
+    "projection_fixture": "b2879a5172b5fe778fbc8f8d98374b124ea1120aefe5e960764bd27a99183026"
+  },
+  "payload_sha256": "4dceb074665c8f6821a0774c39e33a2cbf59f4d1fcdcc3da758a1b831a0b8525"
+}

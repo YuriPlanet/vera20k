@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original YR Wave75F9F0 admission through pre-raster type0/3 dispatch calls, including original constant-false5865E0",
+  "assumptions": [
+    "Existing bridge_damage_admission.base owns verified PE and prepared map/stack setup. The object is a supplied Wave-shaped instance, not an executed constructor or live Display registration.",
+    "Scenario bit0x1000, type0/3, endpoint coordinates and raw Cell+12C flags0/0x18 are explicit prepared inputs. These raw words are not assigned Rust visibility meanings; no reveal traversal or FogOfWar state producer executes.",
+    "Original75F9F0 executes unchanged until75FA47/75FA5C before the raster call. When bit0x1000 is set, original5865E0 executes once and its falseAL bypasses the second endpoint query. Every fixture saves the original instruction path.",
+    "Admission performs no RNG draw, timer write or detach call. Prepared Wave bytes and Scenario+218 RNG prefix remain unchanged; this is not the constructor/AI/lifetime or raster consumer chain.",
+    "No whole-object camera/rectangle admission, Display traversal, distortion pixels, retail weapon binding or rendered Wave parity is claimed. Existing white-pixel rendering remains a separate framebuffer-distortion residual."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "draw_it": "0x0075F9F0",
+    "fog_leaf": "0x005865E0",
+    "type0_raster_call_boundary": "0x0075FA47",
+    "type3_raster_call_boundary": "0x0075FA5C"
+  },
+  "source_normalized_lf_sha256": {
+    "oracle": "63da6bb19af85e42aa938898ba4aff7ecf8ccf36a2ec61189d87ba8256966296",
+    "map_fixture": "25525c7397377b5ca9478d26a0275180e29824da5e1a760161720d4a6f9d3136"
+  },
+  "payload_sha256": "11c724ac9c0a9e72ef9d2127f912fd07c98d6ad6d479f4a668bff26c5d3348e2"
+}
