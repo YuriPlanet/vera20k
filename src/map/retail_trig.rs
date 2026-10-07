@@ -697,3 +697,25 @@ pub(crate) fn required_math_tables() -> (&'static TrigTable, &'static AcosTable)
     #[cfg(not(test))]
     panic!("verified gamemd sine/Acos tables were not installed before native math");
 }
+
+/// The exact retail sine and Acos tables for a native-bit comparison, or
+/// `None` after a `SKIPPED` line when the test fallback is synthetic. Bit-exact
+/// goldens need the retail entries: the synthetic sine disagrees with the
+/// retail table on 4997 of 10240 entries by one binary32 ulp. A readiness run
+/// (`VERA20K_REQUIRE_RETAIL_INI` set) fails instead of skipping, so it also
+/// needs `RA2_DIR` to name a verified `gamemd.exe`.
+#[cfg(test)]
+pub(crate) fn verified_math_tables_or_skip(
+    comparison: &str,
+) -> Option<(&'static TrigTable, &'static AcosTable)> {
+    let (trig, acos) = required_math_tables();
+    if trig.matches_retail() && acos.matches_retail() {
+        return Some((trig, acos));
+    }
+    assert!(
+        !crate::rules::retail_ini_fixture::require_retail_ini(),
+        "{comparison} requires RA2_DIR with verified gamemd.exe math tables"
+    );
+    eprintln!("SKIPPED: {comparison} needs RA2_DIR with verified gamemd.exe math tables");
+    None
+}

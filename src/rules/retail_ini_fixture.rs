@@ -114,7 +114,7 @@ fn retail_ini_path(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("ini").join(name)
 }
 
-fn require_retail_ini() -> bool {
+pub(crate) fn require_retail_ini() -> bool {
     required(std::env::var_os(REQUIRE_RETAIL_INI_ENV).as_deref())
 }
 

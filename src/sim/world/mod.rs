@@ -56,10 +56,10 @@ mod logic_vector;
 mod move_cell_input;
 #[cfg(test)]
 mod native_cell_input_test_fixture;
-mod rally_cell_input;
 mod navigation;
-mod rocket_flight;
 mod object_turn;
+mod rally_cell_input;
+mod rocket_flight;
 pub use frame_error::FrameAdvanceError;
 pub(crate) use world_orders::EngineerBuildingAction;
 mod shroud_refresh;
@@ -1299,8 +1299,7 @@ pub struct Simulation {
     pub(crate) lightning_storm:
         Option<crate::sim::superweapon::lightning_storm::LightningStormState>,
     /// The Psychic Dominator's globals (one at a time).
-    pub(crate) psychic_dominator:
-        crate::sim::superweapon::psychic_dominator::PsychicDominatorState,
+    pub(crate) psychic_dominator: crate::sim::superweapon::psychic_dominator::PsychicDominatorState,
     /// Whether superweapon grants have been initialized from map-placed buildings.
     pub(crate) super_weapons_initialized: bool,
     /// Per-cell terrain speed modifier config (slope climb/descend).
