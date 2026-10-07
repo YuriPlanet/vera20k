@@ -447,6 +447,11 @@ pub enum SimSoundEvent {
     /// (`0x004C9D3B..0x004C9D5F`): `[AudioVisual] ScoldSound=` when the house
     /// is the local player's.
     ProductionRefused { owner: InternedId },
+    /// The PLACE event's Unlimbo succeeded (`HouseClass @ 0x004FB0E0`,
+    /// `0x004FB236`; a wall's Unlimbo also returns 1 at `0x00440865`):
+    /// `[AudioVisual] BuildingSlam=` centred at full volume when the house is
+    /// the local player's (`0x004FB2CC..0x004FB314`).
+    BuildingPlaced { owner: InternedId },
     /// A chrono teleport happened — play the resolved warp sound at this position.
     /// Sim emits two of these per warp: one at the source cell with the unit's
     /// `ChronoOutSound=`, one at the destination cell with the unit's

@@ -298,6 +298,8 @@ pub fn place_production_with_overlays(
         {
             return false;
         }
+        sim.sound_events
+            .push(crate::sim::world::SimSoundEvent::BuildingPlaced { owner: owner_id });
         // Wall placement consumes the factory-created BuildingClass into
         // overlay state; the constructor identity is destroyed, never
         // reconstructed at placement.
@@ -418,6 +420,10 @@ pub fn place_production_with_overlays(
             Some(rules),
         );
     }
+    // `0x004FB2CC..0x004FB314`: BuildingSlam follows every successful
+    // Unlimbo, before the yard's FirstContact BREAK, whatever the release.
+    sim.sound_events
+        .push(crate::sim::world::SimSoundEvent::BuildingPlaced { owner: owner_id });
     crate::sim::radio::transmit_to_contact(
         sim,
         yard,

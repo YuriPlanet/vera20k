@@ -904,6 +904,13 @@ pub struct GeneralRules {
     /// when the name does not resolve; VERA stores the name and resolves it at
     /// play time. Retail's `MenuClick` resolves.
     pub gui_build_sound: Option<String>,
+    /// `[AudioVisual] BuildingSlam=` (`Rules+0x6EC`, read at `0x0066AAA7`
+    /// through `VocClass::FindByName`; retail `PlaceBuilding`): the PLACE
+    /// event handler `HouseClass @ 0x004FB0E0` plays it centred at full
+    /// volume (`0x004FB2FD..0x004FB314`) for the player's own house after the
+    /// building's Unlimbo succeeds. Same name-resolution residual as
+    /// `gui_build_sound`; retail's `PlaceBuilding` resolves.
+    pub building_slam: Option<String>,
     /// Sidebar tab click sound from [AudioVisual] GUITabSound (retail
     /// `MenuTab`). The key→tab-click mapping is name-inferred — flagged for a
     /// Ghidra spot-check of the tab-ID consumer before parity sign-off.
@@ -1769,6 +1776,7 @@ impl Default for GeneralRules {
             ore_twinkle: None,
             ore_twinkle_chance: 50,
             gui_build_sound: None,
+            building_slam: None,
             gui_tab_sound: None,
             incoming_message_sound: None,
             message_delay_minutes: 0.6,
@@ -2598,6 +2606,9 @@ impl GeneralRules {
                 .read_int("OreTwinkleChance", defaults.ore_twinkle_chance),
             gui_build_sound: audio_visual
                 .read_name("GUIBuildSound", 0x80)
+                .map(str::to_owned),
+            building_slam: audio_visual
+                .read_name("BuildingSlam", 0x80)
                 .map(str::to_owned),
             gui_tab_sound: audio_visual
                 .read_name("GUITabSound", 0x80)
@@ -5516,14 +5527,15 @@ SpawnCount=3
     #[test]
     fn retail_production_click_keys_come_from_rulesmd() {
         // Rules+0xF0 MaximumQueuedObjects ([General], 0x00671DA7), +0x18C
-        // GUIBuildSound and +0x700 ScoldSound ([AudioVisual], 0x006693C1 and
-        // 0x0066ABE8).
+        // GUIBuildSound, +0x6EC BuildingSlam and +0x700 ScoldSound
+        // ([AudioVisual], 0x006693C1, 0x0066AAA7 and 0x0066ABE8).
         let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
             return;
         };
         let general = GeneralRules::from_ini(&ini);
         assert_eq!(general.maximum_queued_objects, 29);
         assert_eq!(general.gui_build_sound.as_deref(), Some("MenuClick"));
+        assert_eq!(general.building_slam.as_deref(), Some("PlaceBuilding"));
         assert_eq!(general.scold_sound.as_deref(), Some("MenuScold"));
     }
 

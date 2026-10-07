@@ -929,10 +929,59 @@ pub struct SfxPlayer {
     rng: SfxRng,
 }
 
+/// Device period the SFX sink asks for, about 10 ms of frames.
+///
+/// rodio 0.22 opens a fixed ~50 ms buffer by default (`DeviceSinkBuilder::
+/// from_device`), so the mixer picks up a new Player only once per period.
+/// The arbiter pumps every 33 ms (`AudioSystem::Pump @ 0x00406F70`) and a
+/// `Limit=1` `Control=interrupt` cue resubmitted every frame stops its
+/// previous instance there — so with the default period most `CreditTicks`
+/// cues (`CreditUp`/`CreditDown`, ~24 ms samples) were stopped before the
+/// device ever rendered them. DirectSound starts a secondary buffer as it is
+/// played, so native ticks are audible. A period below the pump interval lets
+/// each cue reach the device first. Clamped to the device's supported range.
+fn sfx_buffer_frames(sample_rate: u32, supported: &rodio::cpal::SupportedBufferSize) -> u32 {
+    let target = (sample_rate / 100).max(1).next_power_of_two();
+    match *supported {
+        rodio::cpal::SupportedBufferSize::Range { min, max } => target.clamp(min, max.max(min)),
+        rodio::cpal::SupportedBufferSize::Unknown => target,
+    }
+}
+
+/// Open the default output with [`sfx_buffer_frames`], falling back to
+/// rodio's own default sink when the device refuses that period.
+fn open_sfx_sink() -> Result<MixerDeviceSink, rodio::DeviceSinkError> {
+    use rodio::cpal::traits::{DeviceTrait, HostTrait};
+
+    let low_latency = rodio::cpal::default_host()
+        .default_output_device()
+        .and_then(|device| {
+            let config = device.default_output_config().ok()?;
+            let frames = sfx_buffer_frames(config.sample_rate(), config.buffer_size());
+            DeviceSinkBuilder::from_device(device)
+                .ok()?
+                .with_buffer_size(rodio::cpal::BufferSize::Fixed(frames))
+                .open_stream()
+                .map(|sink| {
+                    log::info!(
+                        "SFX output buffer: {frames} frames at {} Hz",
+                        config.sample_rate()
+                    );
+                    sink
+                })
+                .map_err(|e| log::warn!("SFX low-latency output unavailable ({e}); using default"))
+                .ok()
+        });
+    match low_latency {
+        Some(sink) => Ok(sink),
+        None => DeviceSinkBuilder::open_default_sink(),
+    }
+}
+
 impl SfxPlayer {
     /// Create a new SfxPlayer. Returns None if audio output cannot be opened.
     pub fn new() -> Option<Self> {
-        let device = DeviceSinkBuilder::open_default_sink()
+        let device = open_sfx_sink()
             .map_err(|e| log::error!("Failed to initialize SFX audio: {}", e))
             .ok()?;
 
@@ -2185,6 +2234,28 @@ fn decode_pcm(pcm: &[u8], channels: u16, bits_per_sample: u16) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// About 10 ms of frames, below the 33 ms arbiter pump, clamped to what
+    /// the device supports.
+    #[test]
+    fn sfx_buffer_period_stays_below_the_pump_interval() {
+        use rodio::cpal::SupportedBufferSize;
+        assert_eq!(
+            sfx_buffer_frames(48_000, &SupportedBufferSize::Unknown),
+            512
+        );
+        assert_eq!(
+            sfx_buffer_frames(44_100, &SupportedBufferSize::Unknown),
+            512
+        );
+        let range = SupportedBufferSize::Range {
+            min: 1024,
+            max: 4096,
+        };
+        assert_eq!(sfx_buffer_frames(48_000, &range), 1024);
+        let range = SupportedBufferSize::Range { min: 64, max: 256 };
+        assert_eq!(sfx_buffer_frames(48_000, &range), 256);
+    }
     use crate::rules::ini_parser::IniFile;
 
     /// A scripted RNG: hands out the listed draws in order and records every

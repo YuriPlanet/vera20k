@@ -441,6 +441,18 @@ pub(super) fn dispatch_sim_sound_events(
                 };
                 GameSoundEvent::UiSound { sound_id }
             }
+            SimSoundEvent::BuildingPlaced { owner } => {
+                // `0x004FB2CC..0x004FB314`: BuildingSlam through `0x00750920`
+                // (pan `0x2000`, volume `1.0f`) for the player's house.
+                let owner_str = sim.interner.resolve(owner);
+                if !local_owner_name.is_some_and(|l| l.eq_ignore_ascii_case(owner_str)) {
+                    continue;
+                }
+                let Some(sound_id) = rules.general.building_slam.clone() else {
+                    continue;
+                };
+                GameSoundEvent::UiSound { sound_id }
+            }
             SimSoundEvent::StructureGarrisoned { owner } => {
                 // EVA cue: only play for the local human player.
                 let owner_str = sim.interner.resolve(owner);
@@ -1237,6 +1249,38 @@ mod tests {
         assert!(matches!(
             &emitted[0],
             GameSoundEvent::Eva { event, type_override: None } if event == expected
+        ));
+    }
+
+    /// `0x004FB2CC..0x004FB314`: BuildingSlam is the player's own cue, read
+    /// from retail `[AudioVisual]`.
+    #[test]
+    fn building_slam_plays_only_for_the_local_owner() {
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let rules = RuleSet::from_ini(&ini).expect("retail rules");
+        let mut sim = Simulation::new();
+        let local = sim.interner.intern("Local");
+        let remote = sim.interner.intern("Remote");
+        let mut output = SoundEventQueue::new();
+        dispatch_sim_sound_events(
+            [
+                SimSoundEvent::BuildingPlaced { owner: remote },
+                SimSoundEvent::BuildingPlaced { owner: local },
+            ],
+            &sim,
+            &rules,
+            Some("LOCAL"),
+            None,
+            &mut |_| true,
+            &mut output,
+        );
+        let emitted = output.drain();
+        assert_eq!(emitted.len(), 1);
+        assert!(matches!(
+            &emitted[0],
+            GameSoundEvent::UiSound { sound_id } if sound_id == "PlaceBuilding"
         ));
     }
 

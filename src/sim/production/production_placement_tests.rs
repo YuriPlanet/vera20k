@@ -3748,3 +3748,71 @@ fn stock_infantry_fallback_unit_ready_uses_producer_getcoords() {
         .collect();
     assert_eq!(notifications, [(owner, RadarEventType::UnitReady, 15, 15)]);
 }
+
+fn building_placed_owners(sim: &Simulation) -> Vec<crate::sim::intern::InternedId> {
+    sim.sound_events
+        .iter()
+        .filter_map(|event| match event {
+            crate::sim::world::SimSoundEvent::BuildingPlaced { owner } => Some(*owner),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `HouseClass @ 0x004FB0E0`: BuildingSlam (`0x004FB2FD..0x004FB314`) follows
+/// only a successful Unlimbo (`0x004FB236 JE` skips it), for a wall too
+/// (its Unlimbo returns 1 at `0x00440865`).
+#[test]
+fn successful_placement_requests_building_slam_once() {
+    let rules = build_catalog_rules();
+    let mut sim = placement_sim();
+    spawn_structure(&mut sim, 1, "Americans", "GACNST", 18, 18);
+    super::credits_entry_for_owner(&mut sim, "Americans");
+    ready_building(&mut sim, &rules, "Americans", "GACNST");
+    let americans = sim.interner.intern("Americans");
+
+    let far = ProductionPlacement::Building {
+        type_id: "GACNST",
+        cell: (60, 60),
+    };
+    assert!(!place_production_with_overlays(
+        &mut sim,
+        &rules,
+        "Americans",
+        far,
+        None
+    ));
+    assert!(building_placed_owners(&sim).is_empty());
+
+    let near = ProductionPlacement::Building {
+        type_id: "GACNST",
+        cell: (20, 20),
+    };
+    assert!(place_production_with_overlays(
+        &mut sim,
+        &rules,
+        "Americans",
+        near,
+        None
+    ));
+    assert_eq!(building_placed_owners(&sim), vec![americans]);
+
+    let (wall_rules, registry) = gsi_04_07_wall_placement_contract();
+    let mut wall_sim = placement_sim();
+    spawn_structure(&mut wall_sim, 1, "Americans", "GACNST", 10, 10);
+    wall_sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    ready_building(&mut wall_sim, &wall_rules, "Americans", "GAWALL");
+    let wall = ProductionPlacement::Building {
+        type_id: "GAWALL",
+        cell: (12, 10),
+    };
+    assert!(place_production_with_overlays(
+        &mut wall_sim,
+        &wall_rules,
+        "Americans",
+        wall,
+        Some(&registry)
+    ));
+    let wall_owner = wall_sim.interner.get("Americans").expect("owner");
+    assert_eq!(building_placed_owners(&wall_sim), vec![wall_owner]);
+}
