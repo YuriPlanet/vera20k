@@ -23,8 +23,6 @@ use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::terrain_rules::LandType;
-use crate::sim::intern::InternedId;
-use crate::sim::vision::FogState;
 use crate::util::sha256::sha256_hex;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -279,7 +277,6 @@ impl Probe {
         &self,
         scene: &HeadlessScenario,
         entries: &[OverlayEntry],
-        visibility: Option<(InternedId, &FogState)>,
         camera: [f32; 2],
     ) -> (Vec<SpriteInstance>, Vec<RenderZPolicy>) {
         let mut instances = Vec::new();
@@ -298,7 +295,6 @@ impl Probe {
                 terrain: Some(&self.terrain),
                 heights: &heights,
                 lighting: self.lighting.grid(),
-                visibility,
                 camera,
                 viewport: SIZE.map(|value| value as f32),
                 origin_y: 0.0,
@@ -438,31 +434,24 @@ impl Probe {
             );
         }
 
-        let owner = sim.session.current_house.unwrap();
-        let mut fog = FogState {
-            width: self.terrain.width(),
-            height: self.terrain.height(),
-            ..Default::default()
-        };
+        if phase == "loaded" {
+            let owner = sim.session.current_house.unwrap();
+            assert!(
+                !sim.fog.is_cell_revealed(owner, center.0, row),
+                "the physical bridge witness must begin with an unexplored anchor"
+            );
+        }
         assert!(
-            self.instances(scene, &entries, Some((owner, &fog)), self.camera)
-                .0
-                .is_empty(),
-            "unrevealed row draws nothing"
-        );
-        fog.reveal_cells_for_owner(owner, entries.iter().map(|entry| (entry.rx, entry.ry)));
-        assert!(
-            self.instances(scene, &entries, Some((owner, &fog)), [1_000_000.0; 2])
+            self.instances(scene, &entries, [1_000_000.0; 2])
                 .0
                 .is_empty(),
             "camera rejection uses production admission"
         );
-        let (instances, policies) =
-            self.instances(scene, &entries, Some((owner, &fog)), self.camera);
+        let (instances, policies) = self.instances(scene, &entries, self.camera);
         assert_eq!(
             instances.len(),
             usize::from(visible),
-            "{phase}: only center frame1 owns art"
+            "{phase}: only center frame1 owns art, independently of anchor exploration"
         );
         assert!(
             policies
@@ -645,7 +634,7 @@ impl Probe {
             serde_json::to_writer_pretty(std::fs::File::create(path.join("receipt.json")).unwrap(),&json!({
                 "size":SIZE,"camera":self.camera,"center":self.fixture.center(),
                 "physical_inputs":self.physical_inputs,"stages":self.receipts,
-                "scope":"Physical authored rows, real damage and ordinary Engineer repair, retained physical atlas, shared ordinary-overlay builder, upload/submission and every color/depth pixel. Rows drawn separately against clear targets. Revealed/hidden and camera-rejection controls. Ground level, TMP identity and live Road/Water publication checked; underlying terrain is not drawn. No original composited frame, native timing or full-scene rendering parity claim."
+                "scope":"Physical authored rows, real damage and ordinary Engineer repair, retained physical atlas, shared ordinary-overlay builder, upload/submission and every color/depth pixel. Rows drawn separately against clear targets; initial anchor exploration is false and does not gate art submission. Camera-rejection controls. Ground level, TMP identity and live Road/Water publication checked; underlying terrain and shroud are not drawn. No original composited frame, native timing or full-scene rendering parity claim."
             })).unwrap();
         }
     }

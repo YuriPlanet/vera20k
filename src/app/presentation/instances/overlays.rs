@@ -537,10 +537,6 @@ struct CellOverlayInputs<'a> {
     terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
     heights: &'a std::collections::BTreeMap<(u16, u16), u8>,
     lighting: &'a crate::map::lighting::CellLightGrid,
-    visibility: Option<(
-        crate::sim::intern::InternedId,
-        &'a crate::sim::vision::FogState,
-    )>,
     camera: [f32; 2],
     viewport: [f32; 2],
     origin_y: f32,
@@ -548,7 +544,10 @@ struct CellOverlayInputs<'a> {
 }
 
 /// Cell_ContentRendering @ 0x006D6D10 -> DrawOverlay_Body @ 0x0047F6A0. Both the app and
-/// offscreen retail witness use this one identity/frame/visibility owner.
+/// offscreen retail witness use this one identity/frame/geometry owner.
+/// Native 6D6D10 checks map bounds and art/clip rectangles, not exploration;
+/// 47FB90/47FDE0 and full draw controls: tools/spatial_oracle/bridge_shadow_render.shroud-admission.md.
+/// The shared ABuffer supplies per-pixel shroud independently of cell admission.
 fn build_cell_overlay_instances(
     input: &CellOverlayInputs<'_>,
     instances: &mut Vec<SpriteInstance>,
@@ -559,12 +558,6 @@ fn build_cell_overlay_instances(
     let mut planned_cells = Vec::new();
     let mut next_draw_id = 0u64;
     for entry in input.entries {
-        if let Some((owner_id, fog)) = input.visibility {
-            if !fog.is_cell_revealed(owner_id, entry.rx, entry.ry) {
-                continue;
-            }
-        }
-
         let Some(static_name) = input.names.get(&entry.overlay_id) else {
             continue;
         };
@@ -634,7 +627,7 @@ fn build_cell_overlay_instances(
         let screen_y: f32 = screen_y + track_y_offset;
 
         // No LocalSize gate: gamemd draws overlays on border filler cells like
-        // any other; fog visibility and the camera clamp are the only hiders.
+        // any other; camera/geometry admission precedes per-pixel shroud.
         if !in_view(
             screen_x,
             screen_y,
@@ -765,32 +758,6 @@ pub(crate) fn build_overlay_instances(
         .map(|g| (g.origin_y, g.world_height))
         .unwrap_or((0.0, 1.0));
 
-    // Cell visibility for the local owner — used to cull overlays and terrain
-    // objects in unrevealed cells. The shroud multiply pass darkens per-pixel,
-    // but tall sprites (bridges, trees) extend their canopy into screen-space
-    // owned by neighboring cells; if those neighbors are revealed, the canopy
-    // shows above the shroud edge. gamemd gates these renders on the cell's
-    // explored bit. Computed once and shared by both loops below.
-    let cell_visibility_fog: Option<(
-        crate::sim::intern::InternedId,
-        &crate::sim::vision::FogState,
-    )> = if state.match_state.sandbox_full_visibility {
-        None
-    } else {
-        let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
-        match (
-            state
-                .match_state
-                .sim_runtime
-                .as_ref()
-                .map(|rt| &rt.simulation),
-            &local_owner_name,
-        ) {
-            (Some(sim), Some(owner)) => sim.interner.get(owner).map(|id| (id, &sim.fog)),
-            _ => None,
-        }
-    };
-
     build_cell_overlay_instances(
         &CellOverlayInputs {
             entries: state.match_state.match_presentation.overlays.as_slice(),
@@ -806,7 +773,6 @@ pub(crate) fn build_overlay_instances(
             terrain: state.terrain_template(),
             heights: state.height_map(),
             lighting: state.match_state.match_presentation.lighting.grid(),
-            visibility: cell_visibility_fog,
             camera: [cam_x, cam_y],
             viewport: [sw, sh],
             origin_y,
@@ -836,11 +802,9 @@ pub(crate) fn build_overlay_instances(
             continue;
         }
         let name = sim.interner.resolve(obj.type_ref);
-        if let Some((owner_id, fog)) = cell_visibility_fog {
-            if !fog.is_cell_revealed(owner_id, obj.rx, obj.ry) {
-                continue;
-            }
-        }
+        // Ordinary native Ground6D97D0 -> Terrain71CC50/71C1B0 admits live
+        // static art independently of anchor exploration; ABuffer clips pixels.
+        // Full scan/geometry controls: tools/spatial_oracle/terrain_reveal.md.
 
         // Terrain Render71CD30 reads the retained Location through GetCoords
         // 5F65A0; DrawIt71C1B0 applies AdjustForZ to that retained height.

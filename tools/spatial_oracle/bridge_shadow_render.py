@@ -7,10 +7,11 @@ this module executes original bridge caller and raster instructions unchanged.
 from pathlib import Path
 import hashlib
 import struct
+import sys
 
-from unicorn import UC_HOOK_CODE
+from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ
 from unicorn.x86_const import (
-    UC_X86_REG_EBP, UC_X86_REG_EDI, UC_X86_REG_ESP,
+    UC_X86_REG_EBP, UC_X86_REG_EDI, UC_X86_REG_ESP, UC_X86_REG_EIP,
 )
 from tools.native_oracle import (
     NATIVE_SHA256, configured_gamemd, finish_vectors, provenance,
@@ -30,17 +31,20 @@ MEM = 0x21000000
 CELL, POINT, CLIP, RECT = [MEM + n for n in (0, 0x1000, 0x1020, 0x1040)]
 LEAVES = {0x493830: 'plain_shadow', 0x497390: 'rle_shadow'}
 BRIDGE_TYPES = ('BRIDGE1', 'BRIDGE2', 'BRIDGEB1', 'BRIDGEB2')
+LOW_BRIDGE_TYPES = ('LOBRDG01', 'LOBRDG02', 'LOBRDG08', 'LOBRDG09')
 
 
 def ints(u, address, count):
     return list(struct.unpack('<' + 'i' * count, u.mem_read(address, count * 4)))
 
 
-def physical_assets():
+def physical_assets(extra_types=()):
     root = configured_gamemd().parent
     sources, assets = [], {}
     for outer_name, children in (
         ('ra2.mix', {'temperat.mix': ('bridge.tem', 'bridgb.tem'),
+                     **({'isotemp.mix': tuple(name.lower() + '.tem' for name in extra_types)}
+                        if extra_types else {}),
                      'snow.mix': ('bridge.sno', 'bridgb.sno'),
                      'urban.mix': ('bridge.urb', 'bridgb.urb'),
                      'cache.mix': ('palette.pal', 'anim.pal')}),
@@ -64,8 +68,8 @@ def physical_assets():
     return assets, sources
 
 
-def prepare():
-    assets, sources = physical_assets()
+def prepare(extra_types=()):
+    assets, sources = physical_assets(extra_types)
     shadow_bytes, shape_aliases = {}, []
     for name, raw in assets.items():
         image_name = name.split('.')[0]
@@ -87,7 +91,8 @@ def prepare():
                                    shadow_frames_sha256=hashlib.sha256(normalized).hexdigest()))
     assert all(len(images) == 6 and all(raw == images[0] for raw in images)
                for images in shadow_bytes.values())
-    art, art_lines = lexical(assets['ARTMD.INI'], {*BRIDGE_TYPES, 'BRIDGE', 'BRIDGB'})
+    selected_types = (*BRIDGE_TYPES, *extra_types)
+    art, art_lines = lexical(assets['ARTMD.INI'], {*selected_types, 'BRIDGE', 'BRIDGB'})
     m = PaletteReader(art)
     m.assets.update(assets)
     initialize(m)
@@ -98,7 +103,7 @@ def prepare():
     run_checked(u, 0x4E71E0, 0x4E7216)
     declared, _ = lexical(assets['RULESMD.INI'], {'OverlayTypes'})
     names = list(declared['OverlayTypes'].values())
-    names = names[:1 + max(names.index(name) for name in BRIDGE_TYPES)]
+    names = names[:1 + max(names.index(name) for name in selected_types)]
     types = {}
     for name in names:
         typ = m.alloc(0x300)
@@ -107,9 +112,9 @@ def prepare():
     m.make_ini(art)
     layers = []
     for filename in ('RULESMD.INI', 'MPBattleMD.ini'):
-        sections, lines = lexical(assets[filename.upper()], set(BRIDGE_TYPES))
+        sections, lines = lexical(assets[filename.upper()], set(selected_types))
         m.rules_cache(sections)
-        for name in BRIDGE_TYPES:
+        for name in selected_types:
             typ = types[name]
             mark = len(m.asset_loaded)
             admitted = m.invoke(0x5FE770, typ, (RULES,)) & 255
@@ -340,6 +345,109 @@ def generate():
                 rows=rows, traversal=traversal(m), pixel_rows=pixel_rows(m))
 
 
+def shroud_admission():
+    """Execute real rectangle and draw callers, varying only Cell visibility words."""
+    from tools import native_oracle as native
+
+    m, types, inputs = prepare(LOW_BRIDGE_TYPES)
+    u = m.u
+    tactical, map_object = m.alloc(0xE20), m.alloc(0x200)
+    u.mem_write(0x887324, dwords(tactical))
+    u.mem_write(tactical + 0xB0, dwords(-366, 369))
+    u.mem_write(0xB0CE30, dwords(WIDTH, HEIGHT))
+    u.mem_write(0xB0CD48, struct.pack('<Q', 0x3FC25E5374344960))
+    u.mem_write(map_object + 0xF4, dwords(16, 16))
+    u.mem_write(CELL + 0x24, struct.pack('<2h', 10, 20))
+    u.mem_write(CELL + 0x10A, struct.pack('<3h', 1000, 1000, 1000))
+    u.mem_write(CELL + 0x11B, b'\0')
+    u.mem_write(0x886FA0, dwords(0, 0, WIDTH, HEIGHT))
+    u.mem_write(POINT, dwords(66, 81))
+    u.mem_write(CLIP, dwords(0, 0, WIDTH, HEIGHT))
+    rows = []
+    for name in (*LOW_BRIDGE_TYPES, 'BRIDGEB1'):
+        typ = types[name]
+        index = m.read32(typ + 0x294)
+        image = m.read32(typ + 0xA4)
+        assert image, name
+        u.mem_write(CELL + 0x44, dwords(index))
+        state = 0 if name == 'BRIDGEB1' else 1
+        u.mem_write(CELL + 0x11E, bytes((state,)))
+        u.mem_write(CELL + 0x140, dwords(0x180 if name == 'BRIDGEB1' else 0))
+        for cell_flags, cell_flags2 in ((0, 0), (0, 1), (8, 0), (8, 1), (0x18, 0), (0x18, 1)):
+            u.mem_write(CELL + 0x12C, dwords(cell_flags, cell_flags2))
+            u.mem_write(CELL + 100, dwords(-1))  # supplied invalid redraw-frame cache
+            u.mem_write(PIXELS, packed_words([0xFFFF] * COUNT))
+            u.mem_write(Z, packed_words([65535] * COUNT))
+            u.mem_write(A, packed_words([127] * COUNT))
+            flag_reads, draws, rects = [], [], {}
+
+            def read_flags(_u, _access, address, size, _value, _data):
+                if address < CELL + 0x134 and address + size > CELL + 0x12C:
+                    flag_reads.append(dict(pc=f'{u.reg_read(UC_X86_REG_EIP):08X}',
+                                           offset=address - CELL, bytes=size))
+
+            def draw(_u, address, _size, _data):
+                if address == 0x4AED70:
+                    args = ints(u, u.reg_read(UC_X86_REG_ESP) + 4, 14)
+                    draws.append(dict(piece='body' if len(draws) == 0 else 'shadow',
+                                      frame=args[1], point=ints(u, args[2], 2),
+                                      clip=ints(u, args[3], 4), flags=args[4],
+                                      z_adjust=args[6], brightness=args[8]))
+
+            h_read = u.hook_add(UC_HOOK_MEM_READ, read_flags)
+            h_draw = u.hook_add(UC_HOOK_CODE, draw)
+            for address in (0x47FB90, 0x47FDE0):
+                m.invoke(address, CELL, (RECT,))
+                rects[f'{address:08X}'] = ints(u, RECT, 4)
+            for address in (0x47F6A0, 0x47F510):
+                m.invoke(address, CELL, (POINT, CLIP))
+            u.hook_del(h_draw)
+            u.hook_del(h_read)
+            assert len(draws) == 2, (name, draws)
+            assert not flag_reads, (name, flag_reads)
+            output = snapshot(u, 0xFFFF, 65535)
+            rows.append(dict(type=name, ordinal=index, state=state, cell_flags=cell_flags,
+                             cell_flags2=cell_flags2, rects=rects, draws=draws,
+                             visibility_word_reads=flag_reads,
+                             output={key:value for key, value in output.items() if key != 'runs'}))
+    map_bounds = []
+    for coords in ((10, 20), (0, 0), (16, 16), (33, 33)):
+        u.mem_write(RECT, struct.pack('<2h', *coords))
+        admitted = m.invoke(0x568300, map_object, (RECT,)) & 255
+        map_bounds.append(dict(cell=list(coords), admitted=bool(admitted)))
+    static = []
+    for begin, size in ((0x6D6D10, 0x4C5), (0x6D3290, 0x1D2),
+                        (0x47FB90, 0x1F4), (0x47FDE0, 0x194),
+                        (0x568300, 0x47), (0x480110, 0x64),
+                        (0x47F6A0, 0x4EE), (0x47F510, 0x183)):
+        _, raw = native.file_span(native.image_bytes(), begin, size)
+        assert bytes(u.mem_read(begin, size)) == raw, f'Native code changed at{begin:08X}'
+        static.append(dict(address=f'{begin:08X}', bytes=size, raw_hex=raw.hex(),
+                           sha256=hashlib.sha256(raw).hexdigest()))
+    return dict(native_sha256=native.image_sha256(), inputs=inputs,
+                supplied=dict(cell=[10, 20], level=0, camera=[-366, 369],
+                              point=[66, 81], clip=[0, 0, WIDTH, HEIGHT],
+                              brightness=1000, a_buffer=127, map_width=16, map_height=16),
+                rows=rows, map_bounds=map_bounds, static_native_bytes=static)
+
+
+def shroud_admission_metadata():
+    return provenance(
+        scope='30 low/high wood bridge visibility-word controls through complete original body/shadow rectangles and draw/raster callers, plus four original map-bound controls. Not a complete Tactical traversal or native Scenario.',
+        assumptions=[
+            'Existing bridge fixture loads retail declared OverlayTypes prefix, original type constructor and full rules readers against RULESMD and MPBattleMD, original ART/image binding and palette Convert construction. Extra low-bridge physical .TEM files come from ra2.mix/isotemp.mix; no map overrides or other theater loaders claimed.',
+            'Supplied live Cell coords10,20, level0, low wood state1(the only nonempty retail body frame) / high wood state0, brightness1000, invalid redraw-frame cache(-1), exploration words12C/130, Tactical camera and RGB565/A/Z memory surfaces. Original projection6D2140, draw offset480110, rectangle47FB90/47FDE0, body47F6A0, shadow47F510 and raster execute. Low wood shadow halves are empty; shadow caller is reached directly, while original Tactical rectangle gate would omit it.',
+            '30 rows cover LOBRDG01/02/08/09 and shared high wood BRIDGEB1, each with12C=0/8/18 and130=0/1. Memory observer checks reads overlapping both visibility words; unchanged output across controls is a bounded admission witness, not shroud pixel coverage.',
+            '568300 is executed with prepared Map+F4/F8=16/16. Its original instructions test diamond map bounds using coordinates; it does not query explored state. Saved unmodified native caller bytes support the complete6D6D10 two-sweep control-flow reading, not its execution or all aliases/callers.',
+        ],
+        substitutions=[
+            'Reuse existing PaletteReader allocator, TLS, archive/resource and lexical INI boundaries. No reached Cell rectangle, projection, body, shadow or raster is replaced. No568300/47FB90/47FDE0 visibility stub from the older traversal fixture applies.',
+        ],
+        entry_points={'body_rect':0x47FB90, 'shadow_rect':0x47FDE0,
+                      'body':0x47F6A0, 'shadow':0x47F510, 'map_bounds':0x568300,
+                      'tactical_content':0x6D6D10, 'tactical_dirty_rects':0x6D3290})
+
+
 def metadata():
     return provenance(
         scope='43 original high concrete and 20 affected high wood bridge Cell shadow callers through physical bridge.tem/bridgb.tem SHP, clip, selector, RLE rowwalker, shadow color and depth writes; 15 selected plain/RLE leaf controls; original two-sweep Tactical traversal suffix with visibility/map and draw sinks. No complete scene, map loader, GPU or gameplay parity.',
@@ -366,4 +474,13 @@ def metadata():
 
 
 if __name__ == '__main__':
-    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata)
+    argv = sys.argv[1:]
+    if '--shroud-admission' in argv:
+        argv.remove('--shroud-admission')
+        finish_vectors(shroud_admission,
+                       Path(__file__).with_suffix('.shroud-admission.json'),
+                       provenance=shroud_admission_metadata, argv=argv,
+                       source_paths={'bridge_shadow_render.py':Path(__file__)})
+    else:
+        finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata,
+                       argv=argv)

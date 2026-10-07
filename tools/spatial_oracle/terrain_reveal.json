@@ -1,0 +1,849 @@
+{
+  "rows": [
+    {
+      "cell_flags_after": 0,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 0,
+        "name": "flags_00_counter_0",
+        "shroud_counter": 0
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 0,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 0,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 0,
+        "name": "flags_00_counter_1",
+        "shroud_counter": 1
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 1,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 0,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 0,
+        "name": "flags_00_counter_255",
+        "shroud_counter": 255
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 255,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 8,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 8,
+        "name": "flags_08_counter_0",
+        "shroud_counter": 0
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 0,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 8,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 8,
+        "name": "flags_08_counter_1",
+        "shroud_counter": 1
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 1,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 8,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 8,
+        "name": "flags_08_counter_255",
+        "shroud_counter": 255
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 255,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 16,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 16,
+        "name": "flags_10_counter_0",
+        "shroud_counter": 0
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 0,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 16,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 16,
+        "name": "flags_10_counter_1",
+        "shroud_counter": 1
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 1,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 16,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 16,
+        "name": "flags_10_counter_255",
+        "shroud_counter": 255
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 255,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 24,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 24,
+        "name": "flags_18_counter_0",
+        "shroud_counter": 0
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 0,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 24,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 24,
+        "name": "flags_18_counter_1",
+        "shroud_counter": 1
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 1,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 24,
+      "draws": [
+        {
+          "brightness": 1000,
+          "caller": "0071C309",
+          "flags": 19968,
+          "frame": 0,
+          "gradient": 2,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210000000074df0f10e0df0f10004e000000000000f4ffffff02000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -12
+        },
+        {
+          "brightness": 1000,
+          "caller": "0071C353",
+          "flags": 19969,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            100,
+            165
+          ],
+          "raw_args_hex": "009401210200000074df0f10e0df0f10014e000000000000fdffffff00000000e80300000000000000000000000000000000000000000000",
+          "z_adjust": -3
+        }
+      ],
+      "input": {
+        "cell_flags": 24,
+        "name": "flags_18_counter_255",
+        "shroud_counter": 255
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50",
+        "0071CD30",
+        "0071CD7B",
+        "0071C1B0",
+        "0071C304",
+        "0071C34E"
+      ],
+      "shroud_counter_after": 255,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 0,
+      "draws": [],
+      "input": {
+        "cell_flags": 0,
+        "name": "unregistered",
+        "registered": false,
+        "shroud_counter": 1
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0"
+      ],
+      "shroud_counter_after": 1,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 0,
+      "draws": [],
+      "input": {
+        "alive": 0,
+        "cell_flags": 0,
+        "name": "dead",
+        "shroud_counter": 1
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690"
+      ],
+      "shroud_counter_after": 1,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 0,
+      "draws": [],
+      "input": {
+        "cell_flags": 0,
+        "marked": 0,
+        "name": "unmarked",
+        "shroud_counter": 1
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50"
+      ],
+      "shroud_counter_after": 1,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 0,
+      "draws": [],
+      "input": {
+        "cell_flags": 0,
+        "limbo": 1,
+        "name": "limbo",
+        "shroud_counter": 1
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0",
+        "006D98E9",
+        "0071CC50"
+      ],
+      "shroud_counter_after": 1,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 0,
+      "draws": [],
+      "input": {
+        "animated": 1,
+        "cell_flags": 0,
+        "name": "animated",
+        "shroud_counter": 1
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690"
+      ],
+      "shroud_counter_after": 1,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 0,
+      "draws": [],
+      "input": {
+        "cell_flags": 0,
+        "crumbling": 1,
+        "name": "crumbling",
+        "shroud_counter": 1
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690"
+      ],
+      "shroud_counter_after": 1,
+      "visibility_reads": []
+    },
+    {
+      "cell_flags_after": 0,
+      "draws": [],
+      "input": {
+        "cell_flags": 0,
+        "name": "offscreen",
+        "offscreen": true,
+        "shroud_counter": 1
+      },
+      "projected_point": [
+        100,
+        165
+      ],
+      "reached": [
+        "006D97D0",
+        "006D9827",
+        "0071D300",
+        "005F6690",
+        "0071D160",
+        "0069E7E0"
+      ],
+      "shroud_counter_after": 1,
+      "visibility_reads": []
+    }
+  ]
+}
