@@ -1,0 +1,570 @@
+{
+  "schema": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "kind": "Static original file bytes/callers; Ghidra pseudocode retained only as leads",
+  "packets": [
+    {
+      "path": "building/building-4544a0-call-candidates.json",
+      "sha256": "005a79e6ff3aa48fc80590f8d04df2e2de84ca4aa18c31e4bef2bac167e4f175",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "calls",
+        "0x4544a0",
+        "--include-jumps"
+      ]
+    },
+    {
+      "path": "building/building-4544a0.json",
+      "sha256": "8f81b7f1ca7593b2e42126d3d08308fdbf3c9c0f9a25421f8dee05c535e9a445",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x4544a0",
+        "--bytes",
+        "384"
+      ]
+    },
+    {
+      "path": "building/building-rtti-459ec0.json",
+      "sha256": "b009929863be155dec8355b063fc654c1eeb920b33eea6ec0341fc2aefbb2e5c",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x459ec0",
+        "--bytes",
+        "16"
+      ]
+    },
+    {
+      "path": "building/building-screen-sensor-70d420.json",
+      "sha256": "e2ddf8857e345b8068992e8fecbcf3672c5f803951ada3a7632d07b9e4db5536",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x70d420",
+        "--bytes",
+        "128"
+      ]
+    },
+    {
+      "path": "building/building-sensor-slot.json",
+      "sha256": "56657306c520cfd21b7bd08a74093f8db840d8dd7e8e35cc66232cf59d53223f",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7e41e4",
+        "--bytes",
+        "4"
+      ]
+    },
+    {
+      "path": "building/building-vtable.json",
+      "sha256": "c23a2b5045b9a1eea3ca79b44e29d93b74468cd0ccdae4c981894f94a2e45f8e",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7e3ebc",
+        "--bytes",
+        "112"
+      ]
+    },
+    {
+      "path": "building/README.md",
+      "sha256": "8ca61dd0f34a77df4dfc8f8f281c7a49278c96f267e12495fb2c671e62693252"
+    },
+    {
+      "path": "building/shp-705e00.json",
+      "sha256": "b490fc77f053cb390e0c552e796623123f2ff504c58700779b40da5a5e670b21",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x705e00",
+        "--bytes",
+        "144"
+      ]
+    },
+    {
+      "path": "building/techno-703860.json",
+      "sha256": "eeca484ee80361f9666f9b73a24dd7a2eb97fba2d607941c5925beaaca64e41b",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x703860",
+        "--bytes",
+        "704"
+      ]
+    },
+    {
+      "path": "locomotor/dormant-tunnel-7291d0.json",
+      "sha256": "821965c6c10391014dfd91f67feeb7b8b5ce929502e315184853695d03f9dcba",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x7291d0",
+        "--bytes",
+        "144"
+      ]
+    },
+    {
+      "path": "locomotor/dormant-tunnel-vtable.json",
+      "sha256": "169b0ecc6218ac4ce8d23cc2837e26d3726d33d7ef261328052a1cfec01e5931",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7f5a24",
+        "--bytes",
+        "56"
+      ]
+    },
+    {
+      "path": "locomotor/drive-constructor.json",
+      "sha256": "672d54fc836c324354c9e6b727d3214e1d51c3b0aed38f47258127666904545f",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x4af540",
+        "--bytes",
+        "240"
+      ]
+    },
+    {
+      "path": "locomotor/drive-factory.json",
+      "sha256": "3a9e917851257e25b421f7cfd6ba4ceab693d5c68bc64505b1d2f21c826fd2ba",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x6c3f40",
+        "--bytes",
+        "320"
+      ]
+    },
+    {
+      "path": "locomotor/drive-vtable.json",
+      "sha256": "bcc2e781afc3b2f541bafd8a4e1167eeae4830ad1a66329c488dea2032e6da5e",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7e7eb0",
+        "--bytes",
+        "56"
+      ]
+    },
+    {
+      "path": "locomotor/factory-vtables.json",
+      "sha256": "98734a86a5d06aa97cec26ecfadcc5acb05e9d270d40794d141fffc8b8752116",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7f3c78",
+        "--bytes",
+        "260"
+      ]
+    },
+    {
+      "path": "locomotor/fly-constructor.json",
+      "sha256": "8f64c18add17633b39bbfcb38f32896adac247017a1de4688e86c01e9a0ade55",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x4cc9a0",
+        "--bytes",
+        "240"
+      ]
+    },
+    {
+      "path": "locomotor/fly-factory.json",
+      "sha256": "b0e4cb1c98af8399917dcee47c3a44826590ce0cd6757dba1b352f516e227098",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x6c49c0",
+        "--bytes",
+        "320"
+      ]
+    },
+    {
+      "path": "locomotor/fly-vtable.json",
+      "sha256": "d8a8b0af84a6d53b027252ad8d9dafec618526335bb2710886588b768e32d7c9",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7e89f4",
+        "--bytes",
+        "56"
+      ]
+    },
+    {
+      "path": "locomotor/foot-4da4e0.json",
+      "sha256": "b02cc8f6d75ba092a75c33c710a2f939155cef90dc58bd094b2fd0117c610c5f",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x4da4e0",
+        "--bytes",
+        "80"
+      ]
+    },
+    {
+      "path": "locomotor/hover-constructor.json",
+      "sha256": "4974809a71212394e21b6abd76fe436cbb805a3e9afb4572a7d20f1a920963c2",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x513c20",
+        "--bytes",
+        "240"
+      ]
+    },
+    {
+      "path": "locomotor/hover-factory.json",
+      "sha256": "fb1d6756533cd8e84ea78005a2daea5976ef5da3c2d39916ab1de18d0b31f708",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x6c4240",
+        "--bytes",
+        "320"
+      ]
+    },
+    {
+      "path": "locomotor/hover-vtable.json",
+      "sha256": "7385543a7d2a98b5c943608d096bf20d4c73444b694f95f519059b43aad2cf41",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7eacfc",
+        "--bytes",
+        "56"
+      ]
+    },
+    {
+      "path": "locomotor/jumpjet-constructor.json",
+      "sha256": "3bd784d489b7f0e8682d68679c570f82f99d41adf5079362c388c3a3874d1460",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x54ac40",
+        "--bytes",
+        "240"
+      ]
+    },
+    {
+      "path": "locomotor/jumpjet-factory.json",
+      "sha256": "d0b23ec629867111e4fb67bc09ea6cfd5d7815a757ab5496775c123e86bae3b1",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x6c40c0",
+        "--bytes",
+        "320"
+      ]
+    },
+    {
+      "path": "locomotor/jumpjet-vtable.json",
+      "sha256": "afc9ae72b2d4abdf8491897d9830bf756be61a64e497428703eae33a4da9a924",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7ecd68",
+        "--bytes",
+        "56"
+      ]
+    },
+    {
+      "path": "locomotor/README.md",
+      "sha256": "0a406f0b7a4ccddff4f0fb2d7b163e471775ec76d7e06290a52a2904d19664b2"
+    },
+    {
+      "path": "locomotor/registered-guid-bytes.json",
+      "sha256": "131876f99231b502c2aa6c5e0180301be30c92effa4c0bf321ae2f5895a26cb3",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7e9a20",
+        "--bytes",
+        "192"
+      ]
+    },
+    {
+      "path": "locomotor/registration-6bd140.json",
+      "sha256": "f2eef49ce997b6409bb46e31715f1e2868aeb0da77a0338db25f013b54d838f5",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x6bd140",
+        "--bytes",
+        "752"
+      ]
+    },
+    {
+      "path": "locomotor/registration-prefix-6bd080.json",
+      "sha256": "220dfd1cc89233850179d57f6ec95197ff5c0c942c323a1145f18a64a3adc63b",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x6bd080",
+        "--bytes",
+        "192"
+      ]
+    },
+    {
+      "path": "locomotor/rocket-constructor.json",
+      "sha256": "1f79c7db1c039a4cc2bf6f6b833a30f070c57504982a9e7db0a8845e1f4ecc0d",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x661ec0",
+        "--bytes",
+        "240"
+      ]
+    },
+    {
+      "path": "locomotor/rocket-factory.json",
+      "sha256": "393bc896eff346eb0eb302c533445900c1d83013c258cbaac5beb8cee5e3b083",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x6c43c0",
+        "--bytes",
+        "320"
+      ]
+    },
+    {
+      "path": "locomotor/rocket-vtable.json",
+      "sha256": "9d8303daa16eaba45dc25bbcace7c3097bb9fe97b0027cd035449bac15674e5e",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7f0b1c",
+        "--bytes",
+        "56"
+      ]
+    },
+    {
+      "path": "locomotor/shared-55abc0.json",
+      "sha256": "4234576930619996ac2e0d02e529d030aedbeead3424870bb80f39fc48f2ed46",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x55abc0",
+        "--bytes",
+        "16"
+      ]
+    },
+    {
+      "path": "locomotor/ship-constructor.json",
+      "sha256": "e0b4cb5d9384da07258c31578e0e816c8a7e9a940867db01c0756c55ce23a2c5",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x69ec50",
+        "--bytes",
+        "240"
+      ]
+    },
+    {
+      "path": "locomotor/ship-factory.json",
+      "sha256": "711fbcd6e1fa212a63acebd2be86c342ab30dcc10d902f4060737e7e2c3fae2f",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x6c4e40",
+        "--bytes",
+        "320"
+      ]
+    },
+    {
+      "path": "locomotor/ship-vtable.json",
+      "sha256": "e0600b83ca446b282cc6b8de9b6e46918237bbea5be16b4b21662b6de5b5d38d",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7f2d8c",
+        "--bytes",
+        "56"
+      ]
+    },
+    {
+      "path": "locomotor/teleport-constructor.json",
+      "sha256": "1fb490dac1788a6bd8603964b67622e71563e8a233fe6fb1a6428bb3e206a69f",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x718000",
+        "--bytes",
+        "240"
+      ]
+    },
+    {
+      "path": "locomotor/teleport-factory.json",
+      "sha256": "465ab95c43cc2633ad2a95c76e406aec10034a6bd0c2a7f5aa7e0cf3ef5c5f63",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x6c4b40",
+        "--bytes",
+        "320"
+      ]
+    },
+    {
+      "path": "locomotor/teleport-vtable.json",
+      "sha256": "19acc5299939f8b6796f1dee9d38be253375ba75b6a60951eb72c5a52523401d",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7f5000",
+        "--bytes",
+        "56"
+      ]
+    },
+    {
+      "path": "locomotor/walk-constructor.json",
+      "sha256": "7de0c49f0aa2cd12311b5115a8c908802d9f9260969bcc3eb3ede480cc29a824",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x75aa90",
+        "--bytes",
+        "240"
+      ]
+    },
+    {
+      "path": "locomotor/walk-factory.json",
+      "sha256": "663ec5d9a7ef08f59ac0033d5baca7514f250eae7a0bc8e8c36d8befedd9e254",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "disasm",
+        "0x6c46c0",
+        "--bytes",
+        "320"
+      ]
+    },
+    {
+      "path": "locomotor/walk-vtable.json",
+      "sha256": "dfa284f43d0b5c785fb0a2fe0d948a63c8ad1f84bf4e77e2b42382e2942d2f1d",
+      "command": [
+        "python",
+        "-m",
+        "tools.native_inspect",
+        "read",
+        "0x7f69f8",
+        "--bytes",
+        "56"
+      ]
+    },
+    {
+      "path": "ghidra/0x00703860-decompile.c",
+      "sha256": "5eaab157dfee55c96baf52777f7a201669cefaf72fade78a68a629b3e325878b"
+    },
+    {
+      "path": "ghidra/0x0070BE50-decompile.c",
+      "sha256": "1838c8ff56fcd0ecc2c0b8cbdc21af18710fcfc0373006afd8ac02524752b638"
+    },
+    {
+      "path": "ghidra/get_metadata.txt",
+      "sha256": "c13388c491163e4c5f0fc83bd255dcff4cfe2b3d701a44823a7c96e63d354e7c"
+    },
+    {
+      "path": "ghidra/list_open_programs.txt",
+      "sha256": "b59ff14dd5f7b0c84ba039498fa1d0cf04f41aeafdf05ea6daeeaacf49fc8c0e"
+    },
+    {
+      "path": "translucent-replay-check.log",
+      "sha256": "86c3bdbfd7296e6c5d66c7315bd3736c89a25b97c73ad5330c2cd5599c1eb2d0"
+    },
+    {
+      "path": "translucent-replay-check.receipt.json",
+      "sha256": "6eebb8fbf7d50b78337066e3ab36dd468d11af67dcc7982f6d9eeba66818f414"
+    }
+  ],
+  "executed_corpus": {
+    "path": "../../translucent_blitter_a.json",
+    "file_sha256": "ad9da73bb4a6ea1f6fa472bcafc2ea9e132f487b944b762578677fc717a9b445",
+    "canonical_payload_sha256": "a1ea5ca49f238eb894f4f7e276dd1bfc31122226f856c1135ab2c0333da4c5e6",
+    "counts": {
+      "selectors": 20,
+      "cases": 6136,
+      "cloak_transition": 256,
+      "cloak_offsets": 14,
+      "replay_controls": 54
+    }
+  }
+}

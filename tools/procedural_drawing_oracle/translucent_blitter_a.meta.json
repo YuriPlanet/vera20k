@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original RGB565 SHP/voxel translucent selector and pixel leaves, including neighbor-destination bit8; isolated from full scene production.",
+  "assumptions": [
+    "Actual Convert490E50/490B90 selectors execute over constructor-derived slot/vtable fixtures; original file-backed mask81DC24/28=0x3000 is retained.",
+    "Original4BAA73..4BAB06 produces masks and48EB56..48EB73 writes Convert+180/+184. Blitter+4/+8/+C values follow48EBF0 RGB565 constructor bytes; full allocation is not executed.",
+    "N1/N27/N53 palettes/LUTs use existing native palette owner. Synthetic RGB200,100,50 and carry-boundary RGB palettes, A0/1/2/63/127/255, indices1/240, brightness1000/1500, destination0/F940/FFFF and packed channel boundaries.",
+    "SHP compressed zero run versus voxel raw zero source; old Z[65535,65535,0], candidate4096, zero signed shape. Depth-read and depth-write controls both execute; write controls do not establish Unit final-composite usage.",
+    "Bit8 offset0/plus-or-minus1/plus-or-minus8 controls isolate neighbor destination reads with a synthetic eight-word pitch; offsets are supplied, not claimed as executed cloak70BE50 outputs. Destination memory-trace offsets are relative to the passed destination pointer. Wholebody Unit73B140 caller reading separately establishes flags280x; full Unit temp-cache/row-walker production is not executed.",
+    "Separate original4DA4E0->703860 transition controls use real Unit/Drive vtables, TypeInvisible0, state1, current-house-owned flag41A, force0/1, stages0/1/9/12/13/-1/-9 and signed progress; they execute x87 FIDIV/FMUL/ftol and Unit73B21F..73B259 selector, including the native invalid-stage results. State0/2 controls supply owned41A and a nonnull tactical screen; allied/sensor visibility branches are not executed.",
+    "Separate70BE50 executes actual Unit secondary vtable7F5C54 getter410220 and ftol7C5F00 over supplied native_unique_id and raw f32+24C. The constructor/world producer lifecycle of the supplied fields is not executed.",
+    "No native instruction is changed and no leaf call is substituted. Original pixel leaves contain no RNG, timer or detach calls. Palette/mask/selector ranges are separate executable comparisons.",
+    "54 separate sequential parent replay controls invoke the same original SHP/voxel bits2/4/6 leaf three times on one retained destination and depth array: read/write Z, A0/2/127, brightness1000, plus brightness1500 read controls. Source holes and initial strict depth rejection remain; no expected result is calculated in Python."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "shp_selector": "0x00490E50",
+    "voxel_selector": "0x00490B90",
+    "mask_begin": "0x004BAA73",
+    "mask_end": "0x004BAB06",
+    "convert_masks_begin": "0x0048EB56",
+    "convert_masks_end": "0x0048EB73",
+    "drive_constructor": "0x004AF540",
+    "foot_visual": "0x004DA4E0",
+    "visual_character": "0x00703860",
+    "visual_scaled": "0x00703A94",
+    "unit_selector_begin": "0x0073B21F",
+    "unit_selector_end": "0x0073B259",
+    "cloak_offset": "0x0070BE50",
+    "native_id": "0x00410220",
+    "ftol": "0x007C5F00",
+    "light_convert": "0x00556090",
+    "plain_convert": "0x004BBB00",
+    "intensity": "0x00420196"
+  },
+  "source_normalized_lf_sha256": {
+    "oracle": "92f1af4bf804d17636b355b411aae544ad8ff9b21d71c54036f58639112bb415",
+    "palette_owner": "12f63f378e77070f5278912d71eb9fcc09d247b4680c785e838ee4997ecd1a90",
+    "native_owner": "b93a95875bdf8650850b89e284e5aa082776fdeb185d9d7330d880047eb6a4b0"
+  },
+  "payload_sha256": "a1ea5ca49f238eb894f4f7e276dd1bfc31122226f856c1135ab2c0333da4c5e6"
+}

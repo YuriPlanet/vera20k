@@ -10,14 +10,14 @@ const TILE: u32 = 32;
 const END: usize = usize::MAX;
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct TerrainCommand {
-    pub draw: DestinationEditCommand,
+pub(super) struct TerrainCommand<T = DestinationEditCommand> {
+    pub draw: T,
     pub rect: [u32; 4],
     next: usize,
 }
 
-impl TerrainCommand {
-    pub fn new(draw: DestinationEditCommand, rect: [u32; 4]) -> Self {
+impl<T> TerrainCommand<T> {
+    pub fn new(draw: T, rect: [u32; 4]) -> Self {
         Self {
             draw,
             rect,
@@ -47,19 +47,33 @@ impl TerrainBatchStats {
 
 /// Storage is reused across spans; no entity/asset identity or prior image is
 /// retained. Linked wave lists avoid one allocation per fully overlapping piece.
-#[derive(Default)]
-pub(super) struct TerrainBatches {
+pub(super) struct TerrainBatches<T = DestinationEditCommand> {
     size: [u32; 2],
     columns: u32,
     grid: Vec<usize>,
     touched: Vec<usize>,
-    commands: Vec<TerrainCommand>,
+    commands: Vec<TerrainCommand<T>>,
     heads: Vec<usize>,
     tails: Vec<usize>,
     tile_dependencies: usize,
 }
 
-impl TerrainBatches {
+impl<T> Default for TerrainBatches<T> {
+    fn default() -> Self {
+        Self {
+            size: [0; 2],
+            columns: 0,
+            grid: Vec::new(),
+            touched: Vec::new(),
+            commands: Vec::new(),
+            heads: Vec::new(),
+            tails: Vec::new(),
+            tile_dependencies: 0,
+        }
+    }
+}
+
+impl<T> TerrainBatches<T> {
     pub fn begin_span(&mut self, size: [u32; 2]) {
         // Clear only cells touched by the preceding TREE span. Ordinary draw
         // fences must not turn this into a whole-screen clear per object.
@@ -84,7 +98,7 @@ impl TerrainBatches {
     /// The caller supplies the *same* cached clipped rect used for snapshot and
     /// edit scissors. Out-of-attachment rectangles retain the old sequential
     /// draw/validation path instead of acquiring unchecked grid addressing.
-    pub fn push(&mut self, command: TerrainCommand) -> bool {
+    pub fn push(&mut self, command: TerrainCommand<T>) -> bool {
         let [x, y, width, height] = command.rect;
         let (Some(right), Some(bottom)) = (x.checked_add(width), y.checked_add(height)) else {
             return false;
@@ -137,7 +151,7 @@ impl TerrainBatches {
         }
     }
 
-    pub fn waves(&self) -> impl ExactSizeIterator<Item = TerrainWave<'_>> {
+    pub fn waves(&self) -> impl ExactSizeIterator<Item = TerrainWave<'_, T>> {
         self.heads.iter().map(|&next| TerrainWave {
             commands: &self.commands,
             next,
@@ -146,13 +160,13 @@ impl TerrainBatches {
 }
 
 #[derive(Clone)]
-pub(super) struct TerrainWave<'a> {
-    commands: &'a [TerrainCommand],
+pub(super) struct TerrainWave<'a, T = DestinationEditCommand> {
+    commands: &'a [TerrainCommand<T>],
     next: usize,
 }
 
-impl<'a> Iterator for TerrainWave<'a> {
-    type Item = &'a TerrainCommand;
+impl<'a, T> Iterator for TerrainWave<'a, T> {
+    type Item = &'a TerrainCommand<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.next == END {

@@ -27,6 +27,13 @@ Change only `ticks` to reproduce each endpoint, using a fresh output directory.
 If the map, roster, rules or seed changes, inspect a zero-step observation before
 reusing literal handles. [Saved evidence and limits](procedural_drawing_oracle/building_reveal.md#rust-production-observation).
 
+Actor `cloak`, when present, reads the existing raw signed state/progress,
+live signed Rules `CloakingStages`, actual VXL/SHP route, and original type's
+`NoShadow` flag. `null` means no cloak runtime. Reading this projection sends
+no transition, timer or movement callback. Historical sealed receipts may omit
+it; omission supplies no cloak-state evidence. This records VERA production
+inputs and does not independently establish native timing or whole-object parity.
+
 Foot's optional `track` observation reads the installed Drive/Ship owner's
 destination and head XYZ, selector, signed cursor and valid byte. It sends no
 movement callback and creates no runtime. A paid head may survive Stop after

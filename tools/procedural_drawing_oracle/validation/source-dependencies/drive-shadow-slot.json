@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "image_base": 4194304,
+  "capstone_version": "5.0.7",
+  "request": {
+    "command": "read",
+    "address": 8289968,
+    "bytes": 64
+  },
+  "result": {
+    "address": 8289968,
+    "file_offset": 4095664,
+    "bytes": "904d4b00a04d4b00b04d4b0010a7550080fb4a0090fc4a00c0fc4a00f0ab5500e0ab550060ff4a0010044b00d0ab5500c0a85500c0ab550070484b0080484b00",
+    "limits": [
+      "Original file bytes only; no emulation or runtime initialization."
+    ]
+  }
+}

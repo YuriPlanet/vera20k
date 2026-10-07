@@ -338,7 +338,7 @@ fn original_early_fire_error_retains_cell_between_temporal_and_lifted_gates() {
         target.position.sub_y = SimFixed::from_num(y % 256);
         target.position.exact_z_leptons = Some(z);
         if row.name == "target_cloaked" {
-            let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0, 1);
+            let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
             cloak.state = 2;
             target.cloak = Some(cloak);
         }

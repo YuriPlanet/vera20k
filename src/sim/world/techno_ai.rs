@@ -4184,7 +4184,7 @@ mod tests {
                 sim.substrate.entities.insert(entity);
             }
             if cloaked {
-                let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0, 9);
+                let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
                 cloak.state = 2;
                 sim.substrate.entities.get_mut(2).unwrap().cloak = Some(cloak);
             }

@@ -1661,6 +1661,10 @@ impl BatchRenderer {
         &self.texture_bind_group_layout
     }
 
+    pub(crate) fn zshape_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.zshape_bind_group_layout
+    }
+
     /// Access the camera bind group layout so external pipelines can share it.
     pub fn camera_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
         &self.camera_bind_group_layout

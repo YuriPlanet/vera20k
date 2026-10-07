@@ -362,7 +362,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                     }
                 }
                 if node["cloaked"].as_bool().unwrap_or(false) {
-                    let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(100, 9);
+                    let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(100);
                     cloak.establish_unlimbo_fully_cloaked();
                     blocker.cloak = Some(cloak);
                 }

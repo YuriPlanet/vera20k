@@ -32,7 +32,7 @@ fn entities(target_type: &str) -> EntityStore {
     // this fixture exercises the DecloakToFire arm rather than turn-to-fire.
     bsub.body_facing.snap(0x4000, 0);
     bsub.attack_target = Some(AttackTarget::new(2));
-    let mut cloak = CloakRuntime::new(0, 9);
+    let mut cloak = CloakRuntime::new(0);
     cloak.establish_unlimbo_fully_cloaked();
     bsub.cloak = Some(cloak);
     store.insert(bsub);
@@ -153,7 +153,6 @@ fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
     // Represent completion of StartUncloaking's ordinary state-3 progression.
     let cloak = entities.get_mut(1).unwrap().cloak.as_mut().unwrap();
     cloak.state = 0;
-    cloak.visual_phase = None;
     let mut retry = CombatEmit::default();
     resolve_once(
         &mut entities,

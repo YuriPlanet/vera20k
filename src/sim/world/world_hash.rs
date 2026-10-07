@@ -1561,11 +1561,7 @@ impl Simulation {
             if let Some(cloak) = entity.cloak.as_ref() {
                 1u8.hash(hasher);
                 cloak.state.hash(hasher);
-                cloak.visual_phase.map(|phase| phase as u8).hash(hasher);
                 cloak.depth.hash(hasher);
-                cloak.cloaking_stages.hash(hasher);
-                cloak.late_visible.hash(hasher);
-                cloak.force_visible_call.hash(hasher);
                 cloak.step_delta.hash(hasher);
                 cloak.step_timer.timer.start_frame().hash(hasher);
                 cloak.step_timer.speed.hash(hasher);

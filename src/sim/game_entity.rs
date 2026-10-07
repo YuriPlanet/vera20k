@@ -348,6 +348,11 @@ pub struct GameEntity {
     /// Techno Scenario word (Unit735454 / Building43BA15). May wrap or duplicate;
     /// stable handles remain the reference and storage authority.
     pub(crate) native_unique_id: i32,
+    /// Native Techno+24C float bits, initialized to zero by6F2D62 and
+    /// preserved by native persistence (70C32A). Only visual-character4 reads
+    /// this displacement through70BE50; no simulation/RNG/timer consumer.
+    /// Retain the raw datum, not a renderer-owned reconstructed animation.
+    native_cloak_displacement: crate::util::native_x87::NativeF32Bits,
     /// Low word of the one raw Scenario RNG draw performed by the active-retail
     /// `TechnoClass` constructor (`0x006F3254`, stored at native `+0x3C8`).
     /// Later report-selection consumers read this persistent value; placement
@@ -1198,6 +1203,48 @@ impl GameEntity {
 }
 
 impl GameEntity {
+    /// Native703860 base decision through the shared cloak owner. Accepted
+    /// Technos have one real owner; retained +41A belongs to discovery, not cloak.
+    /// Building4544A0 delegates here only with its +6ED override stage zero.
+    /// The nonzero building override has no Rust producer and remains separate.
+    pub fn visual_character(
+        &self,
+        cloaking_stages: i32,
+        invisible: bool,
+        query: crate::sim::cloak_disguise::VisualCharacterQuery,
+    ) -> u8 {
+        let (state, progress) = self
+            .cloak
+            .as_ref()
+            .map_or((0, 0), |c| (c.state, c.depth as i32));
+        crate::sim::cloak_disguise::visual_character(
+            state,
+            progress,
+            cloaking_stages,
+            invisible,
+            self.category == EntityCategory::Structure,
+            self.discovery.owned_by_current_house,
+            true,
+            query,
+        )
+    }
+
+    /// `Techno70BE50`: actual COM410220 reads Abstract+10, then native7C5F00
+    /// truncates retained+24C. Wrapping signed addition precedes IDIV400.
+    /// Offset is RGB565 words, not world coordinates or a per-frame RNG draw.
+    /// Original executed controls: translucent_blitter_a.json/ cloak_offsets.
+    pub fn native_cloak_offset_words(&self) -> i32 {
+        use crate::util::native_x87::{NativeF32Bits, X87Chop53};
+        let displacement = if self.native_cloak_displacement == NativeF32Bits::POSITIVE_ZERO {
+            0
+        } else {
+            X87Chop53::load_f32(self.native_cloak_displacement)
+                .map(X87Chop53::ftol_i32_low_masked)
+                .unwrap_or(0)
+        };
+        self.native_unique_id.wrapping_add(displacement) % 400
+    }
+
     pub(crate) fn door_phase(&self) -> crate::sim::door::DoorPhase {
         self.door.phase()
     }
@@ -1597,6 +1644,7 @@ impl GameEntity {
             tracking_facts: Default::default(),
             stable_id,
             native_unique_id,
+            native_cloak_displacement: crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,
             techno_ctor_random_word,
             stage: crate::sim::stage::StageClass::constructed(construction_frame as i32),
             discovery: TechnoDiscoveryHistory::default(),
@@ -2122,6 +2170,71 @@ impl GameEntity {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn native_cloak_fixture() -> serde_json::Value {
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/translucent_blitter_a.json",
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn visual_character_matches_original_executed_transition_controls() {
+        let native = native_cloak_fixture();
+        let rows = native["cloak_transition"].as_array().unwrap();
+        assert_eq!(rows.len(), 256);
+        let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 20);
+        for row in rows {
+            let mut cloak = CloakRuntime::new(0);
+            cloak.state = row["state"].as_i64().unwrap() as i32;
+            cloak.depth = row["depth"].as_i64().unwrap() as u32;
+            entity.cloak = Some(cloak);
+            entity.discovery.owned_by_current_house = row["owned"].as_bool().unwrap();
+            let query = if row["force"].as_bool().unwrap() {
+                crate::sim::cloak_disguise::VisualCharacterQuery::sensor(false, false, false)
+            } else {
+                crate::sim::cloak_disguise::VisualCharacterQuery::screen(
+                    true, false, false, false, false, false,
+                )
+            };
+            assert_eq!(
+                entity.visual_character(row["stage"].as_i64().unwrap() as i32, false, query),
+                row["character"].as_u64().unwrap() as u8,
+                "native control {row}"
+            );
+        }
+    }
+
+    #[test]
+    fn native_cloak_offset_matches_original_identity_float_and_wrap_controls() {
+        let native = native_cloak_fixture();
+        let rows = native["cloak_offsets"].as_array().unwrap();
+        assert_eq!(rows.len(), 14);
+        let mut entity = GameEntity::test_default(777, "MTNK", "Americans", 10, 20);
+        for row in rows {
+            entity.native_unique_id = row["native_unique_id"].as_i64().unwrap() as i32;
+            let hex = row["raw_f32_hex"].as_str().unwrap();
+            let bytes: [u8; 4] =
+                std::array::from_fn(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap());
+            entity.native_cloak_displacement =
+                crate::util::native_x87::NativeF32Bits::from_bits(u32::from_le_bytes(bytes));
+            assert_eq!(
+                entity.native_cloak_offset_words(),
+                row["offset_words"].as_i64().unwrap() as i32,
+                "native control {row}"
+            );
+            let saved = bincode::serialize(&entity).unwrap();
+            let restored: GameEntity = bincode::deserialize(&saved).unwrap();
+            assert_eq!(
+                restored.native_cloak_displacement,
+                entity.native_cloak_displacement
+            );
+            assert_eq!(
+                restored.native_cloak_offset_words(),
+                entity.native_cloak_offset_words()
+            );
+        }
+    }
 
     #[test]
     fn test_new_entity_defaults() {

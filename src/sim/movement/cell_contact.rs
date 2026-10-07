@@ -66,6 +66,7 @@ impl Simulation {
                         .start_uncloaking_from_mover_contact(
                             self.session.binary_frame as i32,
                             speed,
+                            rules.general.cloaking_stages,
                         );
                     if result.play_sound
                         && let Some(sound) = rules.general.cloak_sound.as_deref()

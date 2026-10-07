@@ -1,0 +1,1575 @@
+{
+  "scope": "Canonical visual-character, packed material and selected stock single-VXL SUB integration; Rust output regression and bounded native executable controls, not whole-scene parity",
+  "publication_authority": "Local only; no comments/push/PR/merge authorized",
+  "native": {
+    "command": [
+      "python",
+      "-m",
+      "tools.procedural_drawing_oracle.blitter_a",
+      "--translucent",
+      "--check"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 312.171,
+    "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+    "log_sha256": "86c3bdbfd7296e6c5d66c7315bd3736c89a25b97c73ad5330c2cd5599c1eb2d0",
+    "corpus_file_sha256": "ad9da73bb4a6ea1f6fa472bcafc2ea9e132f487b944b762578677fc717a9b445",
+    "canonical_payload_sha256": "a1ea5ca49f238eb894f4f7e276dd1bfc31122226f856c1135ab2c0333da4c5e6",
+    "counts": {
+      "selectors": 20,
+      "cases": 6136,
+      "replay_controls": 54,
+      "cloak_transition": 256,
+      "cloak_offsets": 14
+    },
+    "scope": "Independent existing native oracle replay; no Cargo/GPU/whole-scene test"
+  },
+  "release": {
+    "label": "packed-shroud-reveal-20261008-v1",
+    "manifest_sha256": "d81c27f227c2c370c7e16303bf06a9ad7bef5f41820cc8dd85a8e6b586bab2d0",
+    "manifest": {
+      "schema": 1,
+      "checkout": "E:\\RA2\\vera20k-building-reveal",
+      "source": {
+        "head": "9a22c28fbe5d5862a27eb662191b74d3bd1e34a7",
+        "branch": "feature/building-shroud-reveal",
+        "status": "M src/app/diagnostics/tactical_capture/map_observation.rs\n M src/app/presentation/instances/helpers.rs\n M src/app/presentation/instances/shp.rs\n M src/app/presentation/instances/units.rs\n M src/app/presentation/render/draw_plan_lowering.rs\n M src/app/presentation/render/merge_passes.rs\n M src/render/batch.rs\n M src/render/draw_state.rs\n M src/render/sprite_voxel_shader.wgsl\n M src/render/terrain_batch.rs\n M src/render/terrain_draw.rs\n M src/render/terrain_draw_gpu_tests.rs\n M src/render/zsprite_shader.wgsl\n M src/rules/object_type.rs\n M src/sim/cloak_disguise.rs\n M src/sim/cloak_sound_tests.rs\n M src/sim/cloak_transitions.rs\n M src/sim/combat/combat_cloak_damage_tests.rs\n M src/sim/combat/combat_cloak_fire_tests.rs\n M src/sim/combat/combat_cloak_legality_tests.rs\n M src/sim/combat/fire_error_cell_tests.rs\n M src/sim/combat/fire_error_world.rs\n M src/sim/combat/world_receiver.rs\n M src/sim/game_entity.rs\n M src/sim/movement/cell_contact.rs\n M src/sim/sensor_lifecycle.rs\n M src/sim/snapshot.rs\n M src/sim/world/techno_ai.rs\n M src/sim/world/techno_ai/building_missions_tests.rs\n M src/sim/world/techno_ai_cloak.rs\n M src/sim/world/unit_entry_tests.rs\n M src/sim/world/walk_prehead_response_tests.rs\n M src/sim/world/world_hash.rs\n M src/sim/world/world_spawn.rs\n M tools/map_observation.md\n M tools/map_observation.py\n M tools/procedural_drawing_oracle/blitter_a.meta.json\n M tools/procedural_drawing_oracle/blitter_a.py\n M tools/tests/test_map_observation.py\n?? src/app/presentation/render/packed_material_gpu_tests.rs\n?? src/render/terrain_packed.rs\n?? src/render/terrain_packed.wgsl\n?? src/render/terrain_packed_shp.wgsl\n?? src/render/terrain_packed_voxel.wgsl\n?? tools/procedural_drawing_oracle/translucent_blitter_a.json\n?? tools/procedural_drawing_oracle/translucent_blitter_a.md\n?? tools/procedural_drawing_oracle/translucent_blitter_a.meta.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/README.md\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/README.md\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-4544a0-call-candidates.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-4544a0.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-rtti-459ec0.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-screen-sensor-70d420.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-sensor-slot.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/shp-705e00.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/techno-703860.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/ghidra/0x00703860-decompile.c\n?? tools/procedural_drawing_oracle/validation/native-controlflow/ghidra/0x0070BE50-decompile.c\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/README.md\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/dormant-tunnel-7291d0.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/dormant-tunnel-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/drive-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/drive-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/drive-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/factory-vtables.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/fly-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/fly-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/fly-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/foot-4da4e0.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/hover-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/hover-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/hover-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/jumpjet-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/jumpjet-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/jumpjet-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/registered-guid-bytes.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/registration-6bd140.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/registration-prefix-6bd080.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/rocket-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/rocket-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/rocket-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/shared-55abc0.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/ship-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/ship-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/ship-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/teleport-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/teleport-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/teleport-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/walk-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/walk-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/walk-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/manifest.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/ordinary-write.receipt.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/static-check.receipt.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/translucent-check.receipt.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/translucent-generation.receipt.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/translucent-replay-check.receipt.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/README.md\n?? tools/procedural_drawing_oracle/validation/source-dependencies/bool-tail.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/cloak-start.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/drive-shadow-slot.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/foot-shadow.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/noshadow-ctor.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/noshadow-key-raw.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/noshadow-reader.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/shadow-owner.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/shared-shp.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/ship-shadow-constant.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/ship-vtable.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/type-reader-entry.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/unit-source.json",
+        "source_sha256": "7dc09a448db642d9107bb2e06fd45460983c10746258ff4cf49807bb0174b37f"
+      },
+      "command": [
+        "cargo",
+        "build",
+        "--message-format=json-render-diagnostics",
+        "-j",
+        "1",
+        "-p",
+        "vera20k",
+        "--release",
+        "--bin",
+        "vera20k"
+      ],
+      "target_dir": "E:\\RA2\\vera20k-building-reveal\\target\\owned-worktrees\\ce6c176651345b86",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+      "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)\n",
+      "build_environment": {},
+      "artifacts": [
+        {
+          "source": "E:\\RA2\\vera20k-building-reveal\\target\\owned-worktrees\\ce6c176651345b86\\release\\vera20k.exe",
+          "file": "0/vera20k.exe",
+          "sha256": "5284bcbc397315946d55656d376543d392f54d44c7367e18bb7790f8b63edb16"
+        }
+      ]
+    }
+  },
+  "validation_logs": {
+    "ordinary-native-gpu-controls.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\ordinary-native-gpu-controls.txt",
+      "sha256": "59b58f1217c2f064d4a622ddfa14d90bcbbef7af968e500ed8d6c1ae38f47eb7",
+      "actual_result_lines": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.37s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 9941 filtered out; finished in 2.60s"
+      ]
+    },
+    "native-producer-cpu.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\native-producer-cpu.txt",
+      "sha256": "9e847164596a32d9d23aac64c25997fb03058e4935e85f310487ffd9b339992f",
+      "actual_result_lines": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.51s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 9943 filtered out; finished in 0.05s"
+      ]
+    },
+    "map-observation-python.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\map-observation-python.txt",
+      "sha256": "a01a16ea89542cf5edee1d1457db97c79221bd95b71d51593d09bbe61d3c09d4",
+      "actual_result_lines": [
+        "Ran 111 tests in 70.442s",
+        "OK"
+      ]
+    },
+    "packed-gpu-batched-vulkan.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\packed-gpu-batched-vulkan.txt",
+      "sha256": "d67cdee39602528ed4b600caa033bb8810400015a08e6e153b845b59e89f9372",
+      "actual_result_lines": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 13m 20s",
+        "PACKED_WORKLOAD count=1000 encode_ms=1.834 completed_wall_ms=11.034 waves=4 passes=16 debug_assertions=true",
+        "PACKED_WORKLOAD count=20000 encode_ms=30.035 completed_wall_ms=72.202 waves=24 passes=96 debug_assertions=true",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 9953 filtered out; finished in 4.93s"
+      ]
+    },
+    "packed-gpu-batched-dx12.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\packed-gpu-batched-dx12.txt",
+      "sha256": "10b7188c22baefc76b474d72846f1747b2ad5cd945776f4b6b2060675e4e6152",
+      "actual_result_lines": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.32s",
+        "PACKED_WORKLOAD count=1000 encode_ms=22.173 completed_wall_ms=28.433 waves=4 passes=16 debug_assertions=true",
+        "PACKED_WORKLOAD count=20000 encode_ms=95.397 completed_wall_ms=117.031 waves=24 passes=96 debug_assertions=true",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 9953 filtered out; finished in 10.63s"
+      ]
+    },
+    "final-strict-retail-lib.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\final-strict-retail-lib.txt",
+      "sha256": "69ead53b89c68d3f026e063562e3b54540bfda8dc1da96dcbcf52aa78ece38da",
+      "actual_result_lines": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.09s",
+        "test result: FAILED. 9712 passed; 2 failed; 241 ignored; 0 measured; 0 filtered out; finished in 280.30s"
+      ]
+    },
+    "snapshot-version-focused.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\snapshot-version-focused.txt",
+      "sha256": "c849ca82fb8f75b1671dff00f3dc9cde1f4976bd17cfc8781f5e7284b83678d0",
+      "actual_result_lines": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 8m 14s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9954 filtered out; finished in 0.00s"
+      ]
+    },
+    "walk-cloak-input-focused.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\walk-cloak-input-focused.txt",
+      "sha256": "9ddb9a16bc89022366e1742637d1f3bdd54d1fae4bdf6543c77d04c5eef79068",
+      "actual_result_lines": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.52s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 9953 filtered out; finished in 16.02s"
+      ]
+    },
+    "final-strict-retail-clippy.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\final-strict-retail-clippy.txt",
+      "sha256": "5e1737e7661bc3e70dcdad4de39e58470f51cea21c670522c85ae5b5423e8255",
+      "actual_result_lines": [
+        "    Finished `dev` profile [optimized + debuginfo] target(s) in 2m 09s"
+      ]
+    },
+    "release-build.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\release-build.txt",
+      "sha256": "5c0eb877447883f47ed4e33dbd7452973dc368403ec6388fa94a379851150bf9",
+      "actual_result_lines": [
+        "    Finished `release` profile [optimized] target(s) in 9m 32s"
+      ]
+    },
+    "asset-release-build.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\asset-release-build.txt",
+      "sha256": "28b99d99a984937091e4c1d92cd1f9e5d1fb5b03ffa53a81491ae46a58b28348",
+      "actual_result_lines": [
+        "    Finished `release` profile [optimized] target(s) in 15.03s"
+      ]
+    }
+  },
+  "ordinary_regressions": {
+    "mobile-110": {
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\mobile-110-comparison.json",
+      "comparison_sha256": "565459640554a64791c61b0fc2d1d6bf24868b8723816e6198120e26c41f084d",
+      "raw_comparer_status": "MISMATCH",
+      "sole_difference": "Additive actor.cloak:null absent from historical schema",
+      "additive_field_differences": 444,
+      "all_common_inputs_clocks_state_transcripts_and_full_frame_equal": true,
+      "frame_sha256": "3603610865b11d8189f008fb477a345af3478f12ea52c504133e21437c80894a"
+    },
+    "mobile-111": {
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\mobile-111-comparison.json",
+      "comparison_sha256": "01b3eef71c96aca18361df09e1cc876d0365d24439ca3b3a838ddfdb9c559669",
+      "raw_comparer_status": "MISMATCH",
+      "sole_difference": "Additive actor.cloak:null absent from historical schema",
+      "additive_field_differences": 448,
+      "all_common_inputs_clocks_state_transcripts_and_full_frame_equal": true,
+      "frame_sha256": "354268ca49ddce77977714d657b76ec2124c839d1ef644b8b42ceda010b8c3ae"
+    },
+    "mobile-hidden": {
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\mobile-hidden-comparison.json",
+      "comparison_sha256": "70e3110508e83e4ffdc9a4de7511a65d9f9c2ed1fb731b7e746ba01a80f14daa",
+      "raw_comparer_status": "MISMATCH",
+      "sole_difference": "Additive actor.cloak:null absent from historical schema",
+      "additive_field_differences": 8,
+      "all_common_inputs_clocks_state_transcripts_and_full_frame_equal": true,
+      "frame_sha256": "aaf0dc5bfdce212cb15173b51c65ea0c2a9b863045a203bd662ef2a89ec42d68"
+    },
+    "mobile-clear": {
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\mobile-clear-comparison.json",
+      "comparison_sha256": "f07b127c477a8b55e4f0172ba777396f4548df7cfa28e5fd0ceaf71d21751fec",
+      "raw_comparer_status": "MISMATCH",
+      "sole_difference": "Additive actor.cloak:null absent from historical schema",
+      "additive_field_differences": 8,
+      "all_common_inputs_clocks_state_transcripts_and_full_frame_equal": true,
+      "frame_sha256": "2ecefccdf705af24acb3f1cf417fa6ff552d5c9bcaa9f9c8d1c20f2c8aef09aa"
+    },
+    "tree-25": {
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\tree-25-comparison.json",
+      "comparison_sha256": "7fab40837248d7635995d817b5265ae71044d3854d8aa85ee90d1cf5d167ee1d",
+      "raw_comparer_status": "MISMATCH",
+      "sole_difference": "Additive actor.cloak:null absent from historical schema",
+      "additive_field_differences": 104,
+      "all_common_inputs_clocks_state_transcripts_and_full_frame_equal": true,
+      "frame_sha256": "c66bd36448235ce6e1032b069586b4ae0c741149f7d22563b685dabbe69062ef"
+    },
+    "bridge-243": {
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\bridge-243-comparison.json",
+      "comparison_sha256": "f62bc1bf4e776ffdf773a052674fe7a9ebb3e8553d6d4cb288f09abd151c3575",
+      "raw_comparer_status": "MISMATCH",
+      "sole_difference": "Additive actor.cloak:null absent from historical schema",
+      "additive_field_differences": 976,
+      "all_common_inputs_clocks_state_transcripts_and_full_frame_equal": true,
+      "frame_sha256": "f6b8cc7ad5c583df7f3cf4c359c17d9d3c7af7351bcca67482fe12881e501c41"
+    },
+    "rock-94": {
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\rock-94-comparison.json",
+      "comparison_sha256": "5be08e014e85fc9c03f947ac81b97b49d87e95d647e4c026f4eee7e01ff81874",
+      "raw_comparer_status": "MISMATCH",
+      "sole_difference": "Additive actor.cloak:null absent from historical schema",
+      "additive_field_differences": 380,
+      "all_common_inputs_clocks_state_transcripts_and_full_frame_equal": true,
+      "frame_sha256": "d8c73948b3134068c758aff04bff598aa2d03ff1f4776a155bfc9d7c2b78465c"
+    }
+  },
+  "sub_production": {
+    "sub-zero": {
+      "status": "VALID",
+      "profile_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-zero.profile.json",
+      "run_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-zero\\run.json",
+      "run_sha256": "82c0362eeb37e08b531debe0a6eec92edd9fd6653dd852b93b654ca2edf5f34a",
+      "capture_sha256": "203dfefa1633c8f3fff787ba1b9d19789fc6883425eabf73e4d5427c074ebdbf",
+      "frame_sha256": "cacf36a13a3b824aad6c046640529567a8b12c51f50fb219f1b17a83e87643d0",
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-owned-sub.map",
+        "payload_len": 248878,
+        "source_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a"
+      },
+      "transitions": [
+        {
+          "step": 0,
+          "state": 0,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        }
+      ],
+      "final_SUB1930": {
+        "active": true,
+        "archive": null,
+        "building": null,
+        "category": "Unit",
+        "cell": [
+          69,
+          131
+        ],
+        "cloak": {
+          "cloaking_stages_i32": 9,
+          "no_shadow": false,
+          "progress_i32": 0,
+          "state_i32": 0,
+          "voxel": true
+        },
+        "dying": false,
+        "foot": {
+          "air": {
+            "current_cell_slot_holder": null,
+            "slot_cell_564": [
+              0,
+              0
+            ],
+            "slot_cell_slot_holder": null,
+            "spatial_bucket": null,
+            "spatial_enter_order": 1930,
+            "tracker_cell_560": [
+              0,
+              0
+            ],
+            "tracker_cell_slot_holder": null
+          },
+          "firing_sequence_latch_68d": 0,
+          "infantry_doing": null,
+          "navigation_leptons": [
+            17792,
+            33664,
+            0
+          ],
+          "navigation_unavailable": null,
+          "pending_entry_500": null,
+          "retarget_after_stop_688": false,
+          "track": null,
+          "walk_destination_leptons": null,
+          "walk_head_leptons": null,
+          "walk_is_moving": null
+        },
+        "health": 600,
+        "in_limbo": false,
+        "jumpjet": null,
+        "miner": null,
+        "mission": {
+          "ai_counter": 0,
+          "current": 5,
+          "dispatch_timer": {
+            "delay": 0,
+            "start_frame": 0
+          },
+          "effective": 5,
+          "handler_state": 0,
+          "queued": -1,
+          "start_frame": 0,
+          "suspended": -1
+        },
+        "nav": null,
+        "on_bridge": false,
+        "owner": "VERA-OBSERVER",
+        "physical_leptons": [
+          17792,
+          33664,
+          0
+        ],
+        "radio": {
+          "contacts": [
+            null
+          ],
+          "dock_entered_with": null
+        },
+        "stable_id": 1930,
+        "target": null,
+        "type_id": "SUB",
+        "unit": {
+          "body_counter_538": 0,
+          "current_turret_124": -1,
+          "current_weapon_138": 0,
+          "deploy_anim_130": null,
+          "deployed_6e0": 0,
+          "deploying_6e1": 0,
+          "landing_for_deploy_134": false,
+          "stage_f8": 0,
+          "undeploying_6e2": 0
+        }
+      }
+    },
+    "sub-guard-1": {
+      "status": "VALID",
+      "profile_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-1.profile.json",
+      "run_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-1\\run.json",
+      "run_sha256": "4833b7cd06c59408e7e05bb8b5b8ae555a2da938a794aca6e05698cc9548d7d7",
+      "capture_sha256": "eab2c4c6ece42a2f20b4ff2811743830617eaba902ffc0f4f5b4dfa97de1a31b",
+      "frame_sha256": "5eb4e1e2a19e78b394c4281ed00389c51799cbc305cec19ec05137d4aa2f6132",
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-owned-sub.map",
+        "payload_len": 248878,
+        "source_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a"
+      },
+      "transitions": [
+        {
+          "step": 0,
+          "state": 0,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 1,
+          "state": 1,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        }
+      ],
+      "final_SUB1930": {
+        "active": true,
+        "archive": null,
+        "building": null,
+        "category": "Unit",
+        "cell": [
+          69,
+          131
+        ],
+        "cloak": {
+          "cloaking_stages_i32": 9,
+          "no_shadow": false,
+          "progress_i32": 0,
+          "state_i32": 1,
+          "voxel": true
+        },
+        "dying": false,
+        "foot": {
+          "air": {
+            "current_cell_slot_holder": null,
+            "slot_cell_564": [
+              0,
+              0
+            ],
+            "slot_cell_slot_holder": null,
+            "spatial_bucket": null,
+            "spatial_enter_order": 1930,
+            "tracker_cell_560": [
+              0,
+              0
+            ],
+            "tracker_cell_slot_holder": null
+          },
+          "firing_sequence_latch_68d": 0,
+          "infantry_doing": null,
+          "navigation_leptons": [
+            17792,
+            33664,
+            0
+          ],
+          "navigation_unavailable": null,
+          "pending_entry_500": null,
+          "retarget_after_stop_688": false,
+          "track": {
+            "cursor": -1,
+            "destination_leptons": null,
+            "family": "Ship",
+            "head_leptons": null,
+            "selector": -1,
+            "valid": false
+          },
+          "walk_destination_leptons": null,
+          "walk_head_leptons": null,
+          "walk_is_moving": null
+        },
+        "health": 600,
+        "in_limbo": false,
+        "jumpjet": null,
+        "miner": null,
+        "mission": {
+          "ai_counter": 1,
+          "current": 5,
+          "dispatch_timer": {
+            "delay": 27,
+            "start_frame": 0
+          },
+          "effective": 5,
+          "handler_state": 0,
+          "queued": -1,
+          "start_frame": 0,
+          "suspended": -1
+        },
+        "nav": null,
+        "on_bridge": false,
+        "owner": "VERA-OBSERVER",
+        "physical_leptons": [
+          17792,
+          33664,
+          0
+        ],
+        "radio": {
+          "contacts": [
+            null
+          ],
+          "dock_entered_with": null
+        },
+        "stable_id": 1930,
+        "target": null,
+        "type_id": "SUB",
+        "unit": {
+          "body_counter_538": 0,
+          "current_turret_124": -1,
+          "current_weapon_138": 0,
+          "deploy_anim_130": null,
+          "deployed_6e0": 0,
+          "deploying_6e1": 0,
+          "landing_for_deploy_134": false,
+          "stage_f8": 0,
+          "undeploying_6e2": 0
+        }
+      }
+    },
+    "sub-guard-2": {
+      "status": "VALID",
+      "profile_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-2.profile.json",
+      "run_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-2\\run.json",
+      "run_sha256": "6d2316fc70f023d186115fea6cf5364483381dc5b42e7f4906658d2d5362539c",
+      "capture_sha256": "416c8a243f719b594762041037986622c9bac823bd8ca7d376e64689141110e4",
+      "frame_sha256": "80b7cee9583220ed4099da847cac0f9ea0d2b465701a5a6f8843df43c4541aed",
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-owned-sub.map",
+        "payload_len": 248878,
+        "source_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a"
+      },
+      "transitions": [
+        {
+          "step": 0,
+          "state": 0,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 1,
+          "state": 1,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 2,
+          "state": 1,
+          "progress": 1,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        }
+      ],
+      "final_SUB1930": {
+        "active": true,
+        "archive": null,
+        "building": null,
+        "category": "Unit",
+        "cell": [
+          69,
+          131
+        ],
+        "cloak": {
+          "cloaking_stages_i32": 9,
+          "no_shadow": false,
+          "progress_i32": 1,
+          "state_i32": 1,
+          "voxel": true
+        },
+        "dying": false,
+        "foot": {
+          "air": {
+            "current_cell_slot_holder": null,
+            "slot_cell_564": [
+              0,
+              0
+            ],
+            "slot_cell_slot_holder": null,
+            "spatial_bucket": null,
+            "spatial_enter_order": 1930,
+            "tracker_cell_560": [
+              0,
+              0
+            ],
+            "tracker_cell_slot_holder": null
+          },
+          "firing_sequence_latch_68d": 0,
+          "infantry_doing": null,
+          "navigation_leptons": [
+            17792,
+            33664,
+            0
+          ],
+          "navigation_unavailable": null,
+          "pending_entry_500": null,
+          "retarget_after_stop_688": false,
+          "track": {
+            "cursor": -1,
+            "destination_leptons": null,
+            "family": "Ship",
+            "head_leptons": null,
+            "selector": -1,
+            "valid": false
+          },
+          "walk_destination_leptons": null,
+          "walk_head_leptons": null,
+          "walk_is_moving": null
+        },
+        "health": 600,
+        "in_limbo": false,
+        "jumpjet": null,
+        "miner": null,
+        "mission": {
+          "ai_counter": 2,
+          "current": 5,
+          "dispatch_timer": {
+            "delay": 27,
+            "start_frame": 0
+          },
+          "effective": 5,
+          "handler_state": 0,
+          "queued": -1,
+          "start_frame": 0,
+          "suspended": -1
+        },
+        "nav": null,
+        "on_bridge": false,
+        "owner": "VERA-OBSERVER",
+        "physical_leptons": [
+          17792,
+          33664,
+          0
+        ],
+        "radio": {
+          "contacts": [
+            null
+          ],
+          "dock_entered_with": null
+        },
+        "stable_id": 1930,
+        "target": null,
+        "type_id": "SUB",
+        "unit": {
+          "body_counter_538": 0,
+          "current_turret_124": -1,
+          "current_weapon_138": 0,
+          "deploy_anim_130": null,
+          "deployed_6e0": 0,
+          "deploying_6e1": 0,
+          "landing_for_deploy_134": false,
+          "stage_f8": 0,
+          "undeploying_6e2": 0
+        }
+      }
+    },
+    "sub-guard-90": {
+      "status": "VALID",
+      "profile_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-90.profile.json",
+      "run_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-90\\run.json",
+      "run_sha256": "bbf61aae35a819f94264c87a99e53f22e6c5dec9ba91ac2608c20bb661975227",
+      "capture_sha256": "4803b6fd2002b921d5ab9caeaaf1687826690dc1572a2e49a41f72d7cf43d7d1",
+      "frame_sha256": "4acea025075e0e3a1107e61ac7bb6db421f50a2bc588ff5e89153704f416da24",
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-owned-sub.map",
+        "payload_len": 248878,
+        "source_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a"
+      },
+      "transitions": [
+        {
+          "step": 0,
+          "state": 0,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 1,
+          "state": 1,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 2,
+          "state": 1,
+          "progress": 1,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 3,
+          "state": 1,
+          "progress": 2,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 4,
+          "state": 1,
+          "progress": 3,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 5,
+          "state": 1,
+          "progress": 4,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 6,
+          "state": 2,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        }
+      ],
+      "final_SUB1930": {
+        "active": true,
+        "archive": null,
+        "building": null,
+        "category": "Unit",
+        "cell": [
+          69,
+          131
+        ],
+        "cloak": {
+          "cloaking_stages_i32": 9,
+          "no_shadow": false,
+          "progress_i32": 0,
+          "state_i32": 2,
+          "voxel": true
+        },
+        "dying": false,
+        "foot": {
+          "air": {
+            "current_cell_slot_holder": null,
+            "slot_cell_564": [
+              0,
+              0
+            ],
+            "slot_cell_slot_holder": null,
+            "spatial_bucket": null,
+            "spatial_enter_order": 1930,
+            "tracker_cell_560": [
+              0,
+              0
+            ],
+            "tracker_cell_slot_holder": null
+          },
+          "firing_sequence_latch_68d": 0,
+          "infantry_doing": null,
+          "navigation_leptons": [
+            17792,
+            33664,
+            0
+          ],
+          "navigation_unavailable": null,
+          "pending_entry_500": null,
+          "retarget_after_stop_688": false,
+          "track": {
+            "cursor": -1,
+            "destination_leptons": null,
+            "family": "Ship",
+            "head_leptons": null,
+            "selector": -1,
+            "valid": false
+          },
+          "walk_destination_leptons": null,
+          "walk_head_leptons": null,
+          "walk_is_moving": null
+        },
+        "health": 600,
+        "in_limbo": false,
+        "jumpjet": null,
+        "miner": null,
+        "mission": {
+          "ai_counter": 90,
+          "current": 5,
+          "dispatch_timer": {
+            "delay": 28,
+            "start_frame": 80
+          },
+          "effective": 5,
+          "handler_state": 0,
+          "queued": -1,
+          "start_frame": 0,
+          "suspended": -1
+        },
+        "nav": null,
+        "on_bridge": false,
+        "owner": "VERA-OBSERVER",
+        "physical_leptons": [
+          17792,
+          33664,
+          0
+        ],
+        "radio": {
+          "contacts": [
+            null
+          ],
+          "dock_entered_with": null
+        },
+        "stable_id": 1930,
+        "target": null,
+        "type_id": "SUB",
+        "unit": {
+          "body_counter_538": 0,
+          "current_turret_124": -1,
+          "current_weapon_138": 0,
+          "deploy_anim_130": null,
+          "deployed_6e0": 0,
+          "deploying_6e1": 0,
+          "landing_for_deploy_134": false,
+          "stage_f8": 0,
+          "undeploying_6e2": 0
+        }
+      }
+    },
+    "sub-attack-stop-160": {
+      "status": "VALID",
+      "profile_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-attack-stop-160.profile.json",
+      "run_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-attack-stop-160\\run.json",
+      "run_sha256": "21e16c55c28bc00b72461f549b4aba75d17373ad40ea9fe9061fbe127241be8d",
+      "capture_sha256": "f4a89ad6b64df2e1d0a7bd2fc6f6dfbc3464bff7acc9ea2b230715d7fb0cb8d4",
+      "frame_sha256": "b9b3dbc764329c38cff989b279ef77983928e9afa6afc9644c84846317b42666",
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-owned-sub.map",
+        "payload_len": 248878,
+        "source_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a"
+      },
+      "transitions": [
+        {
+          "step": 0,
+          "state": 0,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 1,
+          "state": 1,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 2,
+          "state": 1,
+          "progress": 1,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 3,
+          "state": 1,
+          "progress": 2,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 4,
+          "state": 1,
+          "progress": 3,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 5,
+          "state": 1,
+          "progress": 4,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 6,
+          "state": 2,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 91,
+          "state": 2,
+          "progress": 0,
+          "mission": 5,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 92,
+          "state": 2,
+          "progress": 0,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 116,
+          "state": 2,
+          "progress": 0,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 320
+        },
+        {
+          "step": 131,
+          "state": 2,
+          "progress": 0,
+          "mission": 1,
+          "target": null,
+          "HYD1928_health": 320
+        },
+        {
+          "step": 139,
+          "state": 2,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 320
+        }
+      ],
+      "final_SUB1930": {
+        "active": true,
+        "archive": null,
+        "building": null,
+        "category": "Unit",
+        "cell": [
+          69,
+          131
+        ],
+        "cloak": {
+          "cloaking_stages_i32": 9,
+          "no_shadow": false,
+          "progress_i32": 0,
+          "state_i32": 2,
+          "voxel": true
+        },
+        "dying": false,
+        "foot": {
+          "air": {
+            "current_cell_slot_holder": null,
+            "slot_cell_564": [
+              0,
+              0
+            ],
+            "slot_cell_slot_holder": null,
+            "spatial_bucket": null,
+            "spatial_enter_order": 1930,
+            "tracker_cell_560": [
+              0,
+              0
+            ],
+            "tracker_cell_slot_holder": null
+          },
+          "firing_sequence_latch_68d": 0,
+          "infantry_doing": null,
+          "navigation_leptons": [
+            17792,
+            33664,
+            0
+          ],
+          "navigation_unavailable": null,
+          "pending_entry_500": null,
+          "retarget_after_stop_688": false,
+          "track": {
+            "cursor": -1,
+            "destination_leptons": null,
+            "family": "Ship",
+            "head_leptons": null,
+            "selector": -1,
+            "valid": false
+          },
+          "walk_destination_leptons": null,
+          "walk_head_leptons": null,
+          "walk_is_moving": null
+        },
+        "health": 600,
+        "in_limbo": false,
+        "jumpjet": null,
+        "miner": null,
+        "mission": {
+          "ai_counter": 21,
+          "current": 5,
+          "dispatch_timer": {
+            "delay": 98,
+            "start_frame": 139
+          },
+          "effective": 5,
+          "handler_state": 0,
+          "queued": -1,
+          "start_frame": 138,
+          "suspended": -1
+        },
+        "nav": null,
+        "on_bridge": false,
+        "owner": "VERA-OBSERVER",
+        "physical_leptons": [
+          17792,
+          33664,
+          0
+        ],
+        "radio": {
+          "contacts": [
+            null
+          ],
+          "dock_entered_with": null
+        },
+        "stable_id": 1930,
+        "target": null,
+        "type_id": "SUB",
+        "unit": {
+          "body_counter_538": 31,
+          "current_turret_124": -1,
+          "current_weapon_138": 0,
+          "deploy_anim_130": null,
+          "deployed_6e0": 0,
+          "deploying_6e1": 0,
+          "landing_for_deploy_134": false,
+          "stage_f8": 0,
+          "undeploying_6e2": 0
+        }
+      }
+    },
+    "sub-decloak-160": {
+      "status": "VALID",
+      "profile_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-decloak-160.profile.json",
+      "run_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-decloak-160\\run.json",
+      "run_sha256": "eaa468ba4efe3abb2836216524019797cf4540cc383ce4bc37346991658c12df",
+      "capture_sha256": "725f30acfa744a01ebfb7b89605095cd1de16b098a0be25e1dd81cfa3e68e7e2",
+      "frame_sha256": "de8080aca845a7cb8f6ee48d6441e94968ea5cccefa8f695318de341e89e343f",
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-decloak-to-fire.map",
+        "payload_len": 248913,
+        "source_sha256": "026aa7dd62d53befde9dc5ea384a728715b4e2a3741879bcdaa6fc7d52fff64c"
+      },
+      "transitions": [
+        {
+          "step": 0,
+          "state": 0,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 1,
+          "state": 1,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 2,
+          "state": 1,
+          "progress": 1,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 3,
+          "state": 1,
+          "progress": 2,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 4,
+          "state": 1,
+          "progress": 3,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 5,
+          "state": 1,
+          "progress": 4,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 6,
+          "state": 2,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 91,
+          "state": 2,
+          "progress": 0,
+          "mission": 5,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 92,
+          "state": 3,
+          "progress": 8,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 93,
+          "state": 3,
+          "progress": 7,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 94,
+          "state": 3,
+          "progress": 6,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 95,
+          "state": 3,
+          "progress": 5,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 96,
+          "state": 3,
+          "progress": 4,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 97,
+          "state": 3,
+          "progress": 3,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 98,
+          "state": 3,
+          "progress": 2,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 99,
+          "state": 3,
+          "progress": 1,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 100,
+          "state": 0,
+          "progress": 0,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 116,
+          "state": 0,
+          "progress": 0,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 398
+        },
+        {
+          "step": 124,
+          "state": 0,
+          "progress": 0,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 318
+        },
+        {
+          "step": 131,
+          "state": 0,
+          "progress": 0,
+          "mission": 1,
+          "target": null,
+          "HYD1928_health": 318
+        },
+        {
+          "step": 137,
+          "state": 0,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 318
+        },
+        {
+          "step": 142,
+          "state": 0,
+          "progress": 0,
+          "mission": 1,
+          "target": {
+            "Entity": 1929
+          },
+          "HYD1928_health": 316
+        }
+      ],
+      "final_SUB1930": {
+        "active": true,
+        "archive": null,
+        "building": null,
+        "category": "Unit",
+        "cell": [
+          69,
+          131
+        ],
+        "cloak": {
+          "cloaking_stages_i32": 9,
+          "no_shadow": false,
+          "progress_i32": 0,
+          "state_i32": 0,
+          "voxel": true
+        },
+        "dying": false,
+        "foot": {
+          "air": {
+            "current_cell_slot_holder": null,
+            "slot_cell_564": [
+              0,
+              0
+            ],
+            "slot_cell_slot_holder": null,
+            "spatial_bucket": null,
+            "spatial_enter_order": 1930,
+            "tracker_cell_560": [
+              0,
+              0
+            ],
+            "tracker_cell_slot_holder": null
+          },
+          "firing_sequence_latch_68d": 0,
+          "infantry_doing": null,
+          "navigation_leptons": [
+            17792,
+            33664,
+            0
+          ],
+          "navigation_unavailable": null,
+          "pending_entry_500": null,
+          "retarget_after_stop_688": false,
+          "track": {
+            "cursor": -1,
+            "destination_leptons": null,
+            "family": "Ship",
+            "head_leptons": null,
+            "selector": -1,
+            "valid": false
+          },
+          "walk_destination_leptons": null,
+          "walk_head_leptons": null,
+          "walk_is_moving": null
+        },
+        "health": 592,
+        "in_limbo": false,
+        "jumpjet": null,
+        "miner": null,
+        "mission": {
+          "ai_counter": 23,
+          "current": 1,
+          "dispatch_timer": {
+            "delay": 108,
+            "start_frame": 137
+          },
+          "effective": 1,
+          "handler_state": 0,
+          "queued": -1,
+          "start_frame": 136,
+          "suspended": 5
+        },
+        "nav": null,
+        "on_bridge": false,
+        "owner": "VERA-OBSERVER",
+        "physical_leptons": [
+          17792,
+          33664,
+          0
+        ],
+        "radio": {
+          "contacts": [
+            null
+          ],
+          "dock_entered_with": null
+        },
+        "stable_id": 1930,
+        "target": {
+          "Entity": 1929
+        },
+        "type_id": "SUB",
+        "unit": {
+          "body_counter_538": 31,
+          "current_turret_124": -1,
+          "current_weapon_138": 0,
+          "deploy_anim_130": null,
+          "deployed_6e0": 0,
+          "deploying_6e1": 0,
+          "landing_for_deploy_134": false,
+          "stage_f8": 0,
+          "undeploying_6e2": 0
+        }
+      }
+    },
+    "sub-decloak-92": {
+      "status": "VALID",
+      "profile_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-decloak-92.profile.json",
+      "run_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-decloak-92\\run.json",
+      "run_sha256": "5d455a02e237b1b1e519c466d900b35a96be40204fe2fd36adecd6c88cc92309",
+      "capture_sha256": "65d02091d7939561eb41aa30c24cc2322c66f207de2a3418faef2d746b424633",
+      "frame_sha256": "0b677248e61fb9b1d260257262ed638cce44f522c5f57c079285daa098b526a5",
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-decloak-to-fire.map",
+        "payload_len": 248913,
+        "source_sha256": "026aa7dd62d53befde9dc5ea384a728715b4e2a3741879bcdaa6fc7d52fff64c"
+      },
+      "transitions": [
+        {
+          "step": 0,
+          "state": 0,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 1,
+          "state": 1,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 2,
+          "state": 1,
+          "progress": 1,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 3,
+          "state": 1,
+          "progress": 2,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 4,
+          "state": 1,
+          "progress": 3,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 5,
+          "state": 1,
+          "progress": 4,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 6,
+          "state": 2,
+          "progress": 0,
+          "mission": 5,
+          "target": null,
+          "HYD1928_health": 400
+        },
+        {
+          "step": 91,
+          "state": 2,
+          "progress": 0,
+          "mission": 5,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        },
+        {
+          "step": 92,
+          "state": 3,
+          "progress": 8,
+          "mission": 1,
+          "target": {
+            "Entity": 1928
+          },
+          "HYD1928_health": 400
+        }
+      ],
+      "final_SUB1930": {
+        "active": true,
+        "archive": null,
+        "building": null,
+        "category": "Unit",
+        "cell": [
+          69,
+          131
+        ],
+        "cloak": {
+          "cloaking_stages_i32": 9,
+          "no_shadow": false,
+          "progress_i32": 8,
+          "state_i32": 3,
+          "voxel": true
+        },
+        "dying": false,
+        "foot": {
+          "air": {
+            "current_cell_slot_holder": null,
+            "slot_cell_564": [
+              0,
+              0
+            ],
+            "slot_cell_slot_holder": null,
+            "spatial_bucket": null,
+            "spatial_enter_order": 1930,
+            "tracker_cell_560": [
+              0,
+              0
+            ],
+            "tracker_cell_slot_holder": null
+          },
+          "firing_sequence_latch_68d": 0,
+          "infantry_doing": null,
+          "navigation_leptons": [
+            17792,
+            33664,
+            0
+          ],
+          "navigation_unavailable": null,
+          "pending_entry_500": null,
+          "retarget_after_stop_688": false,
+          "track": {
+            "cursor": -1,
+            "destination_leptons": null,
+            "family": "Ship",
+            "head_leptons": null,
+            "selector": -1,
+            "valid": false
+          },
+          "walk_destination_leptons": null,
+          "walk_head_leptons": null,
+          "walk_is_moving": null
+        },
+        "health": 600,
+        "in_limbo": false,
+        "jumpjet": null,
+        "miner": null,
+        "mission": {
+          "ai_counter": 1,
+          "current": 1,
+          "dispatch_timer": {
+            "delay": 16,
+            "start_frame": 91
+          },
+          "effective": 1,
+          "handler_state": 0,
+          "queued": -1,
+          "start_frame": 91,
+          "suspended": -1
+        },
+        "nav": null,
+        "on_bridge": false,
+        "owner": "VERA-OBSERVER",
+        "physical_leptons": [
+          17792,
+          33664,
+          0
+        ],
+        "radio": {
+          "contacts": [
+            null
+          ],
+          "dock_entered_with": null
+        },
+        "stable_id": 1930,
+        "target": {
+          "Entity": 1928
+        },
+        "type_id": "SUB",
+        "unit": {
+          "body_counter_538": 0,
+          "current_turret_124": -1,
+          "current_weapon_138": 0,
+          "deploy_anim_130": null,
+          "deployed_6e0": 0,
+          "deploying_6e1": 0,
+          "landing_for_deploy_134": false,
+          "stage_f8": 0,
+          "undeploying_6e2": 0
+        }
+      }
+    }
+  },
+  "residuals": [
+    "SHP shadow companion geometry/frame lifecycle (including stock DLPH) is pre-existing missing separate mechanism.",
+    "Turreted split source relative native raster/cache depth and warp remain unproved.",
+    "Nonzero Building+6ED override writer/lifecycle remains a separate state mechanism.",
+    "Enabled-FogOfWar Wave framebuffer distortion remains separate; ordinary stock shroud controls use FogOfWar=false.",
+    "Native Techno+24C alias writes are not exhaustively proved absent.",
+    "No whole-scene geometry, native cloak timing/alliance/sensor lifecycle, or normal 20k-unit FPS certification."
+  ],
+  "full_lib_followup": {
+    "full_result": "9712 passed, 2 failed, 241 ignored",
+    "failed_checks_fixed": [
+      "Snapshot-version assertion290->291 only.",
+      "Walk fixture production [General] CloakingStages=10, matching original oracle Rules+628 input; old fixture inadvertently used default9."
+    ],
+    "focused_result": "snapshot assertion1pass; complete walk_prehead_response module2pass",
+    "full_suite_repeated": false,
+    "policy": "AGENTS.md requires later fixes be validated with focused tests unless they reach beyond the tested modules; these fixes affect only assertions/fixture inputs."
+  },
+  "field_ratchet": {
+    "command": "python -B tools/sim_field_ratchet.py --base origin/main",
+    "exit_code": 0,
+    "current": 2501,
+    "origin_main": 2505,
+    "merge_base": "f3e09acd28"
+  },
+  "sub_map_sources": [
+    {
+      "steam_archive": "expandmd01.mix",
+      "entry_id": "0x8D2B5997",
+      "retail_source": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\steam-map-source\\extract\\c2s01md.map",
+      "retail_sha256": "8b6722212fdfd111fc02da13cb97c653e40839ff8e5887521eb359340623bbb4",
+      "authored_map": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-owned-sub.map",
+      "authored_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a",
+      "change": {
+        "old_ascii": "2=Neutral,SUB,256,69,131,64,Guard,0C2ADEAC,0,-1,0,-1,1,1",
+        "new_ascii": "2=VERA-OBSERVER,SUB,256,69,131,64,Guard,0C2ADEAC,0,-1,0,-1,1,1"
+      },
+      "scope": "Authored Rust production fixture derived from retail bytes, not a native scenario execution or whole-frame parity golden"
+    },
+    {
+      "base_map_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a",
+      "authored_map_sha256": "026aa7dd62d53befde9dc5ea384a728715b4e2a3741879bcdaa6fc7d52fff64c",
+      "appended_ascii": "\r\n[SubTorpedo]\r\nDecloakToFire=yes\r\n",
+      "scope": "Authored scenario rule override for ordinary Attack integration; retail SubTorpedo DecloakToFire=no; not native retail parity evidence"
+    }
+  ],
+  "retail_weapon_reader": {
+    "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-torpedo-decloak-reader.json",
+    "sha256": "ce1e01985dfca2473a80ac381431cf58dd231f511a75a3c437756d394ea075a6",
+    "reader_bool_result": false,
+    "raw_value": "no",
+    "supplied_default": true
+  }
+}

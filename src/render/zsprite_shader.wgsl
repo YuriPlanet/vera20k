@@ -116,32 +116,8 @@ fn vs_read_only(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOu
     return output;
 }
 
-fn apply_fx(color: vec4f, _flags: u32, params: vec4f) -> vec4f {
-    return vec4f(color.rgb, color.a * params.x);
-}
-
-// RA2_DEBUG_DEPTH_VIEW (camera.pad1 > 0.5): depth as grey, wrapping every
-// 128 world rows, so depth ordering can be read off a screenshot.
-fn debug_depth_color(depth: f32) -> vec4f {
-    let rows: f32 = world_row_from_native_depth(depth, camera.camera_pos.y + camera.native_z_origin_y);
-    let g: f32 = fract(rows / 128.0);
-    return vec4f(g, g, g, 1.0);
-}
-
-struct FragOutput {
-    @location(0) color: vec4f,
-    @builtin(frag_depth) depth: f32,
-};
-
-// Palette and stored-depth mechanisms are supplied by tactical_shader::source.
-
-@fragment
-fn fs_main(input: VertexOutput) -> FragOutput {
-    let color: vec4f = textureSample(t_sprite, s_sprite, input.uv);
-    if (color.a < 0.01) {
-        discard;
-    }
-
+// One signed candidate owner for ordinary and packed SHP consumers.
+fn native_candidate(input: VertexOutput) -> i32 {
     let camera_row: i32 = i32(round(camera.camera_pos.y + camera.native_z_origin_y));
     var rect_top: i32 = i32(round(input.rect_top_height.x));
     var rect_bottom: i32 = rect_top + max(i32(round(input.rect_top_height.y)), 1);
@@ -174,6 +150,37 @@ fn fs_main(input: VertexOutput) -> FragOutput {
         // seed. 0x437E67 advances the shape without the ordinary row gradient.
         z = ((32768 - height - screen_top + 1) & 0xFFFF) + i32(round(input.z_adjust)) - shape_delta;
     }
+
+    return z;
+}
+
+fn apply_fx(color: vec4f, _flags: u32, params: vec4f) -> vec4f {
+    return vec4f(color.rgb, color.a * params.x);
+}
+
+// RA2_DEBUG_DEPTH_VIEW (camera.pad1 > 0.5): depth as grey, wrapping every
+// 128 world rows, so depth ordering can be read off a screenshot.
+fn debug_depth_color(depth: f32) -> vec4f {
+    let rows: f32 = world_row_from_native_depth(depth, camera.camera_pos.y + camera.native_z_origin_y);
+    let g: f32 = fract(rows / 128.0);
+    return vec4f(g, g, g, 1.0);
+}
+
+struct FragOutput {
+    @location(0) color: vec4f,
+    @builtin(frag_depth) depth: f32,
+};
+
+// Palette and stored-depth mechanisms are supplied by tactical_shader::source.
+
+@fragment
+fn fs_main(input: VertexOutput) -> FragOutput {
+    let color: vec4f = textureSample(t_sprite, s_sprite, input.uv);
+    if (color.a < 0.01) {
+        discard;
+    }
+
+    let z = native_candidate(input);
 
     // The shared attachment stores the low16 native word, independent of map bounds.
     let frag_depth: f32 = stored_native_depth(z);

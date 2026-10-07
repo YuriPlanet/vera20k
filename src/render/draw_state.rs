@@ -6,12 +6,33 @@
 
 use crate::sim::game_entity::GameEntity;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObserverDrawContext {
     /// The observer's house considers the object's real owner allied.
     pub owner_is_allied: bool,
     /// Positive sensor/detection result supplied by observer gameplay state.
     pub detects_cloak: bool,
+    /// Screen-only fully-cloaked allowance requires both alliance directions.
+    pub owner_is_mutually_allied: bool,
+    pub observer_present: bool,
+    /// Current production Rules value, not a second retained cloak clock.
+    pub cloaking_stages: i32,
+    pub invisible: bool,
+    pub is_campaign: bool,
+}
+
+impl Default for ObserverDrawContext {
+    fn default() -> Self {
+        Self {
+            owner_is_allied: false,
+            detects_cloak: false,
+            owner_is_mutually_allied: false,
+            observer_present: false,
+            cloaking_stages: crate::rules::ruleset::GeneralRules::default().cloaking_stages,
+            invisible: false,
+            is_campaign: false,
+        }
+    }
 }
 
 /// `fx_flags` bit assignments consumed by the sprite shaders.
@@ -30,26 +51,13 @@ pub const FX_SHADOW: u32 = 1 << 6;
 /// world row; ordinary alpha remains in its own lane.
 pub(crate) const FX_SINKING_CLIP: u32 = 1 << 7;
 
-/// Native cloak state values consumed by YR draw selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CloakDrawPhase {
-    Cloaking,
-    FullyCloaked,
-    Uncloaking,
-}
-
-/// Authoritative producer values needed by YR cloak draw selection.
-///
-/// The simulation does not yet own these fields. Keeping the input separate avoids
-/// reconstructing gameplay state from render flags.
+/// Resolved native visual character; the simulation owns the query and clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CloakDrawInput {
-    pub phase: CloakDrawPhase,
-    pub depth: u32,
-    pub cloaking_stages: u32,
-    pub late_visible: bool,
-    pub force_visible_call: bool,
-    pub visible_to_observer: bool,
+    pub character: u8,
+    pub progress: i32,
+    pub native_offset_words: i32,
+    pub voxel: bool,
 }
 
 /// Authoritative producer values needed by YR disguise shimmer selection.
@@ -99,6 +107,8 @@ pub struct DrawState {
     pub fx_flags: u32,
     pub fx_params: [f32; 4],
     pub sinking_row: f32,
+    /// Techno70BE50 signed packed-surface displacement, derived from GameEntity.
+    pub native_offset_words: i32,
 }
 
 impl Default for DrawState {
@@ -108,11 +118,17 @@ impl Default for DrawState {
             fx_flags: 0,
             fx_params: [1.0, 0.0, 1.0, 0.0],
             sinking_row: 0.0,
+            native_offset_words: 0,
         }
     }
 }
 
 impl DrawState {
+    /// Original Convert selector bits, shared by lowering and the compositor.
+    pub(crate) fn native_selector_bits(&self) -> u32 {
+        self.fx_params[1] as u32
+    }
+
     /// Resolve YR object draw state without inferring any producer-owned gameplay state.
     ///
     /// Original locations: `TechnoClass::DrawVoxel @ 0x00706640` and
@@ -154,6 +170,7 @@ impl DrawState {
 
         if cloak_flag {
             state.fx_flags |= FX_CLOAK;
+            state.native_offset_words = input.cloak.map_or(0, |cloak| cloak.native_offset_words);
         }
         let selector_bits = cloak_selector | warp_selector | disguise_selector;
         state.fx_params[0] = opacity_for_selector_bits(selector_bits);
@@ -173,28 +190,29 @@ impl DrawState {
         observer: ObserverDrawContext,
     ) -> DrawDecision {
         let (warp_out, warp_in) = (entity.is_warped_out(), entity.is_warping_in());
+        let character = entity.visual_character(
+            observer.cloaking_stages,
+            observer.invisible,
+            crate::sim::cloak_disguise::VisualCharacterQuery::screen(
+                true,
+                observer.observer_present,
+                observer.detects_cloak,
+                observer.owner_is_mutually_allied,
+                observer.is_campaign,
+                false,
+            ),
+        );
         Self::resolve(
             DrawStateInput {
-                cloak: entity.cloak.as_ref().and_then(|cloak| {
-                    let phase = match cloak.visual_phase? {
-                        crate::sim::cloak_disguise::CloakVisualPhase::Cloaking => {
-                            CloakDrawPhase::Cloaking
-                        }
-                        crate::sim::cloak_disguise::CloakVisualPhase::FullyCloaked => {
-                            CloakDrawPhase::FullyCloaked
-                        }
-                        crate::sim::cloak_disguise::CloakVisualPhase::Uncloaking => {
-                            CloakDrawPhase::Uncloaking
-                        }
-                    };
-                    Some(CloakDrawInput {
-                        phase,
-                        depth: cloak.depth,
-                        cloaking_stages: cloak.cloaking_stages,
-                        late_visible: cloak.late_visible,
-                        force_visible_call: cloak.force_visible_call,
-                        visible_to_observer: observer.owner_is_allied || observer.detects_cloak,
-                    })
+                cloak: Some(CloakDrawInput {
+                    character,
+                    progress: entity.cloak.as_ref().map_or(0, |cloak| cloak.depth as i32),
+                    native_offset_words: if character == 4 && entity.is_voxel {
+                        entity.native_cloak_offset_words()
+                    } else {
+                        0
+                    },
+                    voxel: entity.is_voxel,
                 }),
                 disguise: entity.disguise.as_ref().map(|disguise| DisguiseDrawInput {
                     active: disguise.disguised,
@@ -223,51 +241,25 @@ pub fn disguise_phase_percent(phase: u32) -> u8 {
     }
 }
 
-/// `TechnoClass::VisualCharacter @ 0x00703860`'s transitional cloak phase.
-pub fn cloak_phase_256(depth: u32, cloaking_stages: u32) -> u32 {
-    depth.saturating_mul(256) / cloaking_stages.max(1)
-}
-
-/// `TechnoClass::VisualCharacter @ 0x00703860`'s drawn transitional band.
-pub fn cloak_visual_character(
-    depth: u32,
-    cloaking_stages: u32,
-    late_visible: bool,
-    force_visible_call: bool,
-) -> u8 {
-    if depth == 0 {
-        return 0;
-    }
-    match cloak_phase_256(depth, cloaking_stages) {
-        0..=63 => 1,
-        64..=127 => 2,
-        128..=191 => 3,
-        192..=254 if late_visible && !force_visible_call => 3,
-        192..=254 => 4,
-        _ => 5,
-    }
-}
-
 fn cloak_selector(cloak: Option<CloakDrawInput>) -> Option<(u8, bool)> {
     let Some(cloak) = cloak else {
         return Some((0, false));
     };
-    if cloak.phase == CloakDrawPhase::FullyCloaked && !cloak.visible_to_observer {
-        return None;
-    }
-    if cloak.phase == CloakDrawPhase::FullyCloaked || cloak.depth == 0 {
-        return Some((0, false));
-    }
-
-    let visual_character = cloak_visual_character(
-        cloak.depth,
-        cloak.cloaking_stages,
-        cloak.late_visible,
-        cloak.force_visible_call,
-    );
-    match visual_character {
+    // Unit73B21F..73B259/Techno706640 consume the query, whereas SHP705E45
+    // does not add the displacement bit. See the executed selector corpus in
+    // tools/procedural_drawing_oracle/translucent_blitter_a.md.
+    match cloak.character {
+        0 => Some((0, false)),
         1 => Some((TRANSLUCENCY_25, true)),
-        2..=4 => Some((TRANSLUCENCY_50, true)),
+        2 | 3 => Some((TRANSLUCENCY_50, true)),
+        4 => Some((
+            if cloak.progress == 0 {
+                TRANSLUCENCY_25
+            } else {
+                TRANSLUCENCY_50
+            } | if cloak.voxel { 8 } else { 0 },
+            true,
+        )),
         _ => None,
     }
 }
@@ -332,18 +324,55 @@ mod tests {
     }
 
     #[test]
-    fn cloak_ramp_matches_locked_yr_vectors() {
-        assert_eq!(cloak_phase_256(1, 9), 28);
-        assert_eq!(cloak_phase_256(3, 9), 85);
-        assert_eq!(cloak_phase_256(8, 9), 227);
-        assert_eq!(cloak_visual_character(0, 9, false, false), 0);
-        assert_eq!(cloak_visual_character(1, 9, false, false), 1);
-        assert_eq!(cloak_visual_character(3, 9, false, false), 2);
-        assert_eq!(cloak_visual_character(5, 9, false, false), 3);
-        assert_eq!(cloak_visual_character(8, 9, false, false), 4);
-        assert_eq!(cloak_visual_character(9, 9, false, false), 5);
-        assert_eq!(cloak_visual_character(8, 9, true, false), 3);
-        assert_eq!(cloak_visual_character(8, 9, true, true), 4);
+    fn cloak_material_selection_matches_executed_original_unit_controls() {
+        let original: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/translucent_blitter_a.json",
+        ))
+        .unwrap();
+        for control in original["cloak_transition"].as_array().unwrap() {
+            let character = control["character"].as_u64().unwrap() as u8;
+            let decision = DrawState::resolve(
+                DrawStateInput {
+                    cloak: Some(CloakDrawInput {
+                        character,
+                        progress: control["depth"].as_i64().unwrap() as i32,
+                        native_offset_words: control["offset_words"].as_i64().unwrap() as i32,
+                        voxel: true,
+                    }),
+                    ..DrawStateInput::default()
+                },
+                0,
+                0,
+            );
+            assert_eq!(decision.visible, character != 5, "{control}");
+            if decision.visible {
+                assert_eq!(
+                    decision.state.native_selector_bits(),
+                    control["final_flags"].as_u64().unwrap() as u32 & 0xEu32,
+                    "{control}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shp_character_four_does_not_use_voxel_neighbor_material() {
+        for (progress, expected) in [(0, 2), (1, 4)] {
+            let decision = DrawState::resolve(
+                DrawStateInput {
+                    cloak: Some(CloakDrawInput {
+                        character: 4,
+                        progress,
+                        native_offset_words: -1,
+                        voxel: false,
+                    }),
+                    ..DrawStateInput::default()
+                },
+                0,
+                0,
+            );
+            assert_eq!(decision.state.native_selector_bits(), expected);
+        }
     }
 
     #[test]
@@ -351,12 +380,10 @@ mod tests {
         let decision = DrawState::resolve(
             DrawStateInput {
                 cloak: Some(CloakDrawInput {
-                    phase: CloakDrawPhase::FullyCloaked,
-                    depth: 9,
-                    cloaking_stages: 9,
-                    late_visible: false,
-                    force_visible_call: false,
-                    visible_to_observer: false,
+                    character: 5,
+                    progress: 9,
+                    native_offset_words: 0,
+                    voxel: true,
                 }),
                 ..DrawStateInput::default()
             },
@@ -371,12 +398,10 @@ mod tests {
         let decision = DrawState::resolve(
             DrawStateInput {
                 cloak: Some(CloakDrawInput {
-                    phase: CloakDrawPhase::Cloaking,
-                    depth: 1,
-                    cloaking_stages: 9,
-                    late_visible: false,
-                    force_visible_call: false,
-                    visible_to_observer: true,
+                    character: 1,
+                    progress: 1,
+                    native_offset_words: 0,
+                    voxel: true,
                 }),
                 disguise: Some(DisguiseDrawInput {
                     active: true,

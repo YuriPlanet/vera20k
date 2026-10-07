@@ -1304,6 +1304,24 @@ impl TacticalCaptureSession {
                 let contacts: Vec<_> = (0..entity.radio_contacts.capacity())
                     .map(|slot| entity.radio_contacts.slot(slot))
                     .collect();
+                // Read the existing cloak/type owners, without advancing a
+                // timer or inferring a phase from the rendered pixels. Signed
+                // +224 progress is what the native visual query consumes.
+                let cloak = if let Some(cloak) = entity.cloak.as_ref() {
+                    let rules = state.rules().context("cloak observation rules absent")?;
+                    let object = rules
+                        .object(type_name)
+                        .context("cloak observation type absent")?;
+                    Some(json!({
+                        "state_i32": cloak.state,
+                        "progress_i32": cloak.depth as i32,
+                        "cloaking_stages_i32": rules.general.cloaking_stages,
+                        "voxel": entity.is_voxel,
+                        "no_shadow": object.no_shadow,
+                    }))
+                } else {
+                    None
+                };
                 let mut observation = json!({
                     "stable_id": id, "owner": owner,
                     "type_id": type_name, "category": entity.category,
@@ -1319,6 +1337,7 @@ impl TacticalCaptureSession {
                     "target": entity.attack_target.as_ref().map(|target| target.target),
                     "archive": entity.archive_target(), "nav": entity.navigation.nav_com, "foot": foot,
                     "jumpjet": jumpjet,
+                    "cloak": cloak,
                     "building": building, "unit": unit,
                     "miner": miner,
                     "radio": {"contacts": contacts, "dock_entered_with": entity.dock_entered_with},

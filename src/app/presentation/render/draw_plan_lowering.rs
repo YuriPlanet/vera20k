@@ -87,6 +87,9 @@ impl PlannedObjectInstance {
 pub(crate) struct ObjectDrawRun {
     pub target: ObjectTexture,
     pub render_z: RenderZPolicy,
+    /// Destination-dependent material is composed once per retained parent.
+    /// Opaque runs leave this empty and retain cross-parent atlas batching.
+    pub packed_parent: Option<DrawId>,
     pub start: u32,
     pub count: u32,
 }
@@ -291,12 +294,24 @@ pub(crate) fn lower_ground_object_instances(
 }
 
 fn push_object_piece(pass: &mut ObjectLayerPass, owner: DrawId, piece: ObjectPieceInstance) {
-    #[cfg(not(test))]
-    let _ = owner;
+    // Unit73B140 composites its opaque source cache once; SHP705E00 selects
+    // the packed leaves through Convert490E50. Source pieces retain their
+    // parent here so hull/turret/barrel are not blended separately. Native
+    // selectors and coverage: procedural_drawing_oracle/translucent_blitter_a.md.
+    let packed_parent = (matches!(
+        piece.target,
+        ObjectTexture::UnitAtlasPage(_)
+            | ObjectTexture::UnitTransitionPage(_)
+            | ObjectTexture::UnitPose
+            | ObjectTexture::ShpPage(_)
+    ) && piece.instance.draw_state.native_selector_bits() & 6 != 0
+        && piece.instance.draw_state.fx_flags & crate::render::draw_state::FX_SHADOW == 0)
+        .then_some(owner);
     let start = pass.instances.len() as u32;
     if let Some(run) = pass.runs.last_mut().filter(|run| {
         run.target == piece.target
             && run.render_z == piece.render_z
+            && run.packed_parent == packed_parent
             && run.start + run.count == start
     }) {
         run.count += 1;
@@ -304,6 +319,7 @@ fn push_object_piece(pass: &mut ObjectLayerPass, owner: DrawId, piece: ObjectPie
         pass.runs.push(ObjectDrawRun {
             target: piece.target,
             render_z: piece.render_z,
+            packed_parent,
             start,
             count: 1,
         });
@@ -613,6 +629,77 @@ mod tests {
         order
             .object_draw(id, SpriteEncoding::Plain)
             .expect("registered parent")
+    }
+
+    #[test]
+    fn packed_material_retains_parent_across_all_native_sprite_sources() {
+        let order = NativeDisplayOrder::new(&[1, 2, 3, 4]);
+        let packed = |target, marker, bits| {
+            let mut piece = marked_piece(target, marker);
+            piece.instance.draw_state.fx_params[1] = bits as f32;
+            piece
+        };
+        let pass = lower_ground_object_instances(vec![
+            PlannedObjectInstance::object(
+                plain_parent(&order, 2),
+                vec![packed(ObjectTexture::UnitAtlasPage(0), 2, 4)],
+            ),
+            PlannedObjectInstance::object(
+                plain_parent(&order, 1),
+                vec![
+                    packed(ObjectTexture::UnitAtlasPage(0), 11, 4),
+                    packed(ObjectTexture::UnitTransitionPage(1), 12, 4),
+                    packed(ObjectTexture::UnitPose, 13, 4),
+                ],
+            ),
+            PlannedObjectInstance::object(
+                plain_parent(&order, 3),
+                vec![packed(ObjectTexture::ShpPage(0), 3, 12)],
+            ),
+            PlannedObjectInstance::object(
+                plain_parent(&order, 4),
+                vec![packed(ObjectTexture::ShpPage(0), 4, 2)],
+            ),
+        ]);
+        assert_eq!(pass.owners, [1, 1, 1, 2, 3, 4]);
+        assert_eq!(
+            pass.runs
+                .iter()
+                .map(|run| run.packed_parent)
+                .collect::<Vec<_>>(),
+            [Some(1), Some(1), Some(1), Some(2), Some(3), Some(4)],
+            "atlas coalescing must not merge distinct destination composites"
+        );
+    }
+
+    #[test]
+    fn only_native_body_selectors_split_opaque_atlas_batching() {
+        use crate::render::draw_state::FX_SHADOW;
+
+        let order = NativeDisplayOrder::new(&[1, 2, 3, 4]);
+        let mut rgba_alpha = marked_piece(ObjectTexture::UnitPose, 2);
+        rgba_alpha.instance.alpha = 0.5;
+        rgba_alpha.instance.draw_state.fx_params[0] = 0.25;
+        let mut shadow = marked_piece(ObjectTexture::UnitPose, 3);
+        shadow.instance.draw_state.fx_params[1] = 4.0;
+        shadow.instance.draw_state.fx_flags |= FX_SHADOW;
+        let mut terrain = marked_piece(
+            ObjectTexture::TerrainShp(crate::render::terrain_draw::TerrainPiece::Body),
+            4,
+        );
+        terrain.instance.draw_state.fx_params[1] = 4.0;
+        let pass = lower_ground_object_instances(vec![
+            PlannedObjectInstance::object(
+                plain_parent(&order, 1),
+                vec![marked_piece(ObjectTexture::UnitPose, 1)],
+            ),
+            PlannedObjectInstance::object(plain_parent(&order, 2), vec![rgba_alpha]),
+            PlannedObjectInstance::object(plain_parent(&order, 3), vec![shadow]),
+            PlannedObjectInstance::object(plain_parent(&order, 4), vec![terrain]),
+        ]);
+        assert_eq!(pass.runs.len(), 2);
+        assert_eq!(pass.runs[0].count, 3);
+        assert!(pass.runs.iter().all(|run| run.packed_parent.is_none()));
     }
 
     #[test]

@@ -1757,6 +1757,12 @@ pub struct ObjectType {
     /// so a `DetectDisguise=yes` building without this key stamps no cells —
     /// stock YAPSYT and NAPSYB are exactly that case; only NAPSIS (15) deposits.
     pub detect_disguise_range: u8,
+    /// `NoShadow=` — TechnoType+0xD98, constructor false at0x71160D.
+    /// ReadINI0x715087..0x7150A2 reads exact key0x8436E0 through
+    /// ReadBool0x5295F0 with the prior byte as its default on every rules pass.
+    /// VXL shadow706BF3 and SHP shadow706052 consume the same type flag.
+    /// Original byte receipts: tools/procedural_drawing_oracle/validation/source-dependencies/.
+    pub no_shadow: bool,
     /// `Cloakable=` — copied into Unit/Infantry runtime cloak ability.
     pub cloakable: bool,
     /// `CloakingSpeed=` — signed frame duration between cloak progress steps.
@@ -2758,6 +2764,7 @@ impl ObjectType {
             detect_disguise_range: section
                 .read_int("DetectDisguiseRange", 0)
                 .clamp(0, u8::MAX as i32) as u8,
+            no_shadow: section.read_bool("NoShadow", false),
             cloakable: section.read_bool("Cloakable", false),
             cloaking_speed: section.read_int("CloakingSpeed", 1),
             cloak_stop: section.read_bool("CloakStop", false),
@@ -4850,6 +4857,72 @@ mod tests {
         assert!(obj.sensors);
         assert_eq!(obj.sensors_sight, 14);
         assert!(obj.cloak_generator);
+    }
+
+    #[test]
+    fn no_shadow_reader_retains_native_prior_value_across_rules_layers() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=GENERATED\n[GENERATED]\nNoShadow=yes\n",
+        ));
+        // ReadBool's original default branch preserves the prior byte for
+        // invalid values; physical INI loading omits authored empty values.
+        for (kind, patch, expected) in [
+            (RulesLayerKind::LangRule, "NoShadow=off", true),
+            (RulesLayerKind::GameMode, "NoShadow=", true),
+            (RulesLayerKind::Scenario, "NoShadow=no", false),
+            (RulesLayerKind::Scenario, "noshadow=yes", false),
+        ] {
+            layers.push(kind, IniFile::from_str(&format!("[GENERATED]\n{patch}\n")));
+            let rules = RuleSet::from_rules_layers(&layers).unwrap();
+            assert_eq!(
+                rules.object("GENERATED").unwrap().no_shadow,
+                expected,
+                "{patch}"
+            );
+        }
+        let defaults = IniFile::from_str("[DEFAULTS]\nFixtureOnly=yes\n");
+        assert!(
+            !ObjectType::from_ini_section(
+                "DEFAULTS",
+                defaults.section("DEFAULTS").unwrap(),
+                ObjectCategory::Vehicle,
+            )
+            .no_shadow
+        );
+    }
+
+    #[test]
+    fn retail_cloaked_naval_and_vehicle_shadow_type_inputs() {
+        use crate::rules::art_data::ArtRegistry;
+        use crate::rules::locomotor_type::LocomotorKind;
+        use crate::rules::ruleset::RuleSet;
+
+        let Some((ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+            return;
+        };
+        let mut rules = RuleSet::from_ini(&ini).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+        for (id, voxel) in [("SUB", true), ("DLPH", false)] {
+            let object = rules.object(id).unwrap();
+            assert!(!object.no_shadow, "{id}");
+            assert!(object.cloakable, "{id}");
+            assert_eq!(object.locomotor, LocomotorKind::Ship, "{id}");
+            assert!(!object.has_turret, "{id}");
+            assert_eq!(object.turret_count, 0, "{id}");
+            let art = rules
+                .art()
+                .resolve_metadata_entry(id, &object.image)
+                .expect("retail naval body art");
+            assert_eq!(art.voxel, voxel, "{id}: native VXL/SHP caller distinction");
+        }
+        assert!(!rules.object("MTNK").unwrap().no_shadow);
+        // Positive retail controls prevent a constructor-default-only port.
+        for id in ["DNOA", "DNOB"] {
+            assert!(rules.object(id).unwrap().no_shadow, "{id}");
+        }
     }
 
     #[test]

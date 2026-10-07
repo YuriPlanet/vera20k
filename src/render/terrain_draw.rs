@@ -19,10 +19,13 @@ use super::tactical_draw_plan::RenderZPolicy;
 mod batching;
 #[path = "terrain_line_trail.rs"]
 mod line_trails;
+#[path = "terrain_packed.rs"]
+mod packed;
 #[path = "terrain_submission.rs"]
 mod submission;
 pub(crate) use batching::TerrainBatchStats;
 use batching::{TerrainBatches, TerrainCommand};
+pub(crate) use packed::{PackedComposite, PackedCompositePiece, PackedSpriteKind};
 use submission::PassSubmission;
 
 // High16 bits select the final admitted body; low16 retain its native word.
@@ -78,6 +81,7 @@ pub(crate) struct TerrainDrawRenderer {
     read_only_commands: Vec<TerrainCommand>,
     submission: PassSubmission,
     line_trails: line_trails::LineTrailGpu,
+    packed: packed::PackedSpriteGpu,
 }
 
 impl TerrainDrawRenderer {
@@ -183,7 +187,9 @@ impl TerrainDrawRenderer {
         // Reuse the production SHP projection/ABI verbatim, without its shape
         // binding or fragment policy. Both consumers share native_row_z.
         let shp = include_str!("zsprite_shader.wgsl");
-        let vertex = shp[..shp.find("fn apply_fx(").expect("SHP projection boundary")]
+        let vertex = shp[..shp
+            .find("// One signed candidate owner")
+            .expect("SHP projection boundary")]
             .replace("@group(2) @binding(0) var t_zshape: texture_2d<f32>;", "");
         let source = super::tactical_shader::world_source(&format!(
             "{vertex}\n{}\n{}",
@@ -331,6 +337,7 @@ impl TerrainDrawRenderer {
             #[cfg(test)]
             reference_shadow_pipeline: pipeline("fs_shadow", false),
             line_trails: line_trails::LineTrailGpu::new(device, format, &snapshot_layout),
+            packed: packed::PackedSpriteGpu::new(device, queue, format, batch),
             source_layout,
             snapshot_layout,
             read_only_layout,
@@ -377,6 +384,7 @@ impl TerrainDrawRenderer {
         camera: CameraUniform,
     ) {
         self.submission.reset_frame();
+        self.packed.begin_frame();
         self.camera = camera;
         if self
             .targets
@@ -393,6 +401,7 @@ impl TerrainDrawRenderer {
                 .contains(wgpu::TextureUsages::TEXTURE_BINDING)
         );
         assert_eq!(color.size(), depth.texture().size());
+        self.packed.prepare(color.size());
         let encoded_source = color.create_view(&wgpu::TextureViewDescriptor {
             label: Some("Terrain encoded source bytes"),
             format: Some(color.format().remove_srgb_suffix()),

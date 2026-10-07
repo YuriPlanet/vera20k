@@ -32,12 +32,8 @@ impl CloakStepTimer {
 pub struct CloakRuntime {
     /// Native state id: 0 uncloaked, 1 cloaking, 2 fully cloaked, 3 uncloaking.
     pub state: i32,
-    pub visual_phase: Option<CloakVisualPhase>,
     /// Native `CloakProgress +0x224`.
     pub depth: u32,
-    pub cloaking_stages: u32,
-    pub late_visible: bool,
-    pub force_visible_call: bool,
     /// Native signed progress delta, +1 cloaking and -1 uncloaking.
     pub step_delta: i32,
     pub step_timer: CloakStepTimer,
@@ -50,13 +46,6 @@ pub struct CloakRuntime {
     /// 900 frames — into `+0x248`. `CanAutoCloak @ 0x006FBDC0` reads it as its
     /// LAST timer gate (`param_1[0x90]`/`[0x92]`).
     pub recloak_delay: CdTimer,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum CloakVisualPhase {
-    Cloaking,
-    FullyCloaked,
-    Uncloaking,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +62,168 @@ pub struct CloakTickFacts {
     pub health_above_red: bool,
     pub cloaking_speed: i32,
     pub cloak_delay_frames: i32,
+    cloaking_stages: i32,
+    invisible: bool,
+    owned_by_current_house: bool,
+    is_building: bool,
+}
+
+/// Observer inputs to `TechnoClass::VisualCharacter @ 0x00703860`.
+/// Derived query facts, not persistent gameplay state. Screen and explicit
+/// sensor calls have different native admission rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VisualCharacterQuery {
+    force_sensor: bool,
+    graphical_client: bool,
+    observer_present: bool,
+    observer_senses_cell: bool,
+    mutually_allied: bool,
+    is_campaign: bool,
+    map_editor: bool,
+}
+
+impl VisualCharacterQuery {
+    /// Screen `(0, NULL)` call; alliances must be true in both directions.
+    pub const fn screen(
+        graphical_client: bool,
+        observer_present: bool,
+        observer_senses_cell: bool,
+        mutually_allied: bool,
+        is_campaign: bool,
+        map_editor: bool,
+    ) -> Self {
+        Self {
+            force_sensor: false,
+            graphical_client,
+            observer_present,
+            observer_senses_cell,
+            mutually_allied,
+            is_campaign,
+            map_editor,
+        }
+    }
+
+    /// Explicit `(1, house)` call used by GetFireError and cloak AI. A null
+    /// house denies fully cloaked visibility, regardless of ownership/alliance.
+    pub const fn sensor(
+        observer_present: bool,
+        observer_senses_cell: bool,
+        map_editor: bool,
+    ) -> Self {
+        Self {
+            force_sensor: true,
+            graphical_client: true,
+            observer_present,
+            observer_senses_cell,
+            mutually_allied: false,
+            is_campaign: false,
+            map_editor,
+        }
+    }
+}
+
+/// One complete native visual-character decision shared by AI, combat and drawing.
+/// Original703860..703B0B, actual Unit4DA4E0/Drive55ABC0 callers. Native
+/// executable controls: tools/procedural_drawing_oracle/translucent_blitter_a.json.
+/// This query has no RNG, timer writes or detach calls. Rules owns the live
+/// signed stage count; Techno discovery owns +41A, never the cloak component.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn visual_character(
+    state: i32,
+    progress: i32,
+    cloaking_stages: i32,
+    invisible: bool,
+    is_building: bool,
+    owned_by_current_house: bool,
+    owner_present: bool,
+    query: VisualCharacterQuery,
+) -> u8 {
+    if invisible && owned_by_current_house {
+        return 0;
+    }
+    if invisible && !query.map_editor {
+        return 5;
+    }
+    if state == 0 || query.map_editor || is_building {
+        return 0;
+    }
+    if state == 2 {
+        if query.force_sensor {
+            return if query.observer_present && query.observer_senses_cell {
+                3
+            } else {
+                5
+            };
+        }
+        if !query.graphical_client || owned_by_current_house || query.observer_senses_cell {
+            return 3;
+        }
+        return if !query.is_campaign
+            && owner_present
+            && query.observer_present
+            && query.mutually_allied
+        {
+            3
+        } else {
+            5
+        };
+    }
+    if progress <= 0 {
+        return 0;
+    }
+    //703A79 FILD signed progress; FIDIV signed Rules+628; FMUL256;
+    //7C5F00 FISTP signed64, with only EAX consumed. The rational numerator
+    //fits signed64; integer truncation preserves the finite division result
+    //without host floating-point state. A zero divisor produces masked
+    //indefinite signed64, whose low32 bits are zero. Narrowing deliberately
+    //wraps: large progress must not saturate at i32::MAX.
+    //53-bit native truncation proof and replay coverage: procedural_drawing_oracle/
+    //validation/native-controlflow/README.md (CW0E7F, numerator below2^39).
+    let scaled = if cloaking_stages == 0 {
+        0
+    } else {
+        (i64::from(progress) * 256 / i64::from(cloaking_stages)) as i32
+    };
+    match scaled {
+        ..=63 => 1,
+        64..=127 => 2,
+        128..=191 => 3,
+        _ if !query.force_sensor && owned_by_current_house => 3,
+        192..=254 => 4,
+        _ => 5,
+    }
+}
+
+impl CloakTickFacts {
+    /// Capture live owner inputs once at the native AI visit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        current_frame: i32,
+        state_zero_head_allows: bool,
+        can_auto_cloak: bool,
+        should_uncloak: bool,
+        health_above_red: bool,
+        cloaking_speed: i32,
+        cloak_delay_frames: i32,
+        cloaking_stages: i32,
+        invisible: bool,
+        owned_by_current_house: bool,
+        is_building: bool,
+    ) -> Self {
+        Self {
+            current_frame,
+            state_zero_head_allows,
+            can_auto_cloak,
+            should_uncloak,
+            health_above_red,
+            cloaking_speed,
+            cloak_delay_frames,
+            cloaking_stages,
+            invisible,
+            owned_by_current_house,
+            is_building,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,14 +247,10 @@ pub struct CloakTickResult {
 }
 
 impl CloakRuntime {
-    pub fn new(current_frame: i32, cloaking_stages: i32) -> Self {
+    pub fn new(current_frame: i32) -> Self {
         Self {
             state: 0,
-            visual_phase: None,
             depth: 0,
-            cloaking_stages: cloaking_stages.max(1) as u32,
-            late_visible: false,
-            force_visible_call: false,
             step_delta: 0,
             step_timer: CloakStepTimer::started(current_frame, 0),
             recloak_delay: CdTimer::started(current_frame, 0),
@@ -114,7 +261,6 @@ impl CloakRuntime {
     /// ability is present and stored Techno+0x3D5 is clear.
     pub fn establish_unlimbo_fully_cloaked(&mut self) {
         self.state = 2;
-        self.visual_phase = Some(CloakVisualPhase::FullyCloaked);
     }
 
     fn advance_due_step(&mut self, now: i32) {
@@ -127,24 +273,6 @@ impl CloakRuntime {
             self.depth.wrapping_add(self.step_delta as u32)
         };
         self.step_timer.timer.start(now, self.step_timer.speed);
-    }
-
-    /// `GetVisualState @ 0x00703860` transition ladder. For the non-negative
-    /// native progress domain, integer division is output-equivalent to the
-    /// x87 divide/multiply followed by truncation toward zero.
-    pub fn transition_visual_state(&self) -> u8 {
-        if self.depth == 0 {
-            return 0;
-        }
-        let scaled = (u64::from(self.depth) * 256 / u64::from(self.cloaking_stages.max(1)))
-            .min(i32::MAX as u64) as i32;
-        match scaled {
-            ..=0x3f => 1,
-            0x40..=0x7f => 2,
-            0x80..=0xbf => 3,
-            0xc0..=0xfe => 4,
-            _ => 5,
-        }
     }
 
     /// Active state machine from `TechnoClass::CloakingTick @ 0x006FB740`.
@@ -182,13 +310,23 @@ impl CloakRuntime {
                 if self.step_timer.speed == 0 {
                     self.step_timer = CloakStepTimer::started(facts.current_frame, 1);
                 }
-                match self.transition_visual_state() {
+                match visual_character(
+                    self.state,
+                    self.depth as i32,
+                    facts.cloaking_stages,
+                    facts.invisible,
+                    facts.is_building,
+                    facts.owned_by_current_house,
+                    true,
+                    VisualCharacterQuery::sensor(false, false, false),
+                ) {
                     2 if !facts.health_above_red => {
                         result.consumed_scenario_rng = true;
                         if rng.next_range_u32_inclusive(0, 99) <= 9 {
                             let start = self.start_uncloaking(
                                 facts.current_frame,
                                 facts.cloaking_speed,
+                                facts.cloaking_stages,
                                 true,
                             );
                             result.transitioned = start.transitioned;
@@ -197,7 +335,6 @@ impl CloakRuntime {
                     }
                     3 | 5 => {
                         self.state = 2;
-                        self.visual_phase = Some(CloakVisualPhase::FullyCloaked);
                         self.depth = 0;
                         self.step_delta = 0;
                         self.step_timer = CloakStepTimer::started(facts.current_frame, 0);
@@ -208,14 +345,27 @@ impl CloakRuntime {
                 }
             }
             2 if facts.should_uncloak => {
-                let start = self.start_uncloaking(facts.current_frame, facts.cloaking_speed, false);
+                let start = self.start_uncloaking(
+                    facts.current_frame,
+                    facts.cloaking_speed,
+                    facts.cloaking_stages,
+                    false,
+                );
                 result.transitioned = start.transitioned;
                 result.play_cloak_sound = start.play_sound;
             }
-            3 => match self.transition_visual_state() {
+            3 => match visual_character(
+                self.state,
+                self.depth as i32,
+                facts.cloaking_stages,
+                facts.invisible,
+                facts.is_building,
+                facts.owned_by_current_house,
+                true,
+                VisualCharacterQuery::sensor(false, false, false),
+            ) {
                 0 => {
                     self.state = 0;
-                    self.visual_phase = None;
                     self.depth = 0;
                     self.step_delta = 0;
                     self.step_timer = CloakStepTimer::started(facts.current_frame, 0);
@@ -496,7 +646,7 @@ mod tests {
 
     #[test]
     fn cloak_transition_vectors() {
-        let mut state = CloakRuntime::new(0, 9);
+        let mut state = CloakRuntime::new(0);
         let mut rng = SimRng::new(1);
         let facts = |frame, can_auto, should_uncloak| CloakTickFacts {
             current_frame: frame,
@@ -506,6 +656,10 @@ mod tests {
             health_above_red: true,
             cloaking_speed: 1,
             cloak_delay_frames: 18,
+            cloaking_stages: 9,
+            invisible: false,
+            owned_by_current_house: false,
+            is_building: false,
         };
         state.tick(facts(0, true, false), &mut rng);
         assert_eq!(state.state, 1);
@@ -524,9 +678,8 @@ mod tests {
 
     #[test]
     fn a_zero_rate_cloak_stage_restarts_at_the_current_frame() {
-        let mut cloak = CloakRuntime::new(0, 9);
+        let mut cloak = CloakRuntime::new(0);
         cloak.state = 1;
-        cloak.visual_phase = Some(CloakVisualPhase::Cloaking);
         let facts = CloakTickFacts {
             current_frame: 50,
             state_zero_head_allows: true,
@@ -535,6 +688,10 @@ mod tests {
             health_above_red: true,
             cloaking_speed: 0,
             cloak_delay_frames: 0,
+            cloaking_stages: 9,
+            invisible: false,
+            owned_by_current_house: false,
+            is_building: false,
         };
         cloak.tick(facts, &mut SimRng::new(1));
         assert_eq!(cloak.step_timer, CloakStepTimer::started(50, 1));
@@ -559,13 +716,17 @@ mod tests {
             health_above_red: false,
             cloaking_speed: 1,
             cloak_delay_frames: 18,
+            cloaking_stages: 9,
+            invisible: false,
+            owned_by_current_house: false,
+            is_building: false,
         };
 
         let seed4 = seed_with_first_roll(|roll| roll < 4);
         let mut actual = SimRng::new(seed4);
         let mut expected = actual.clone();
         assert!(expected.next_range_u32_inclusive(0, 99) < 4);
-        let mut cloak = CloakRuntime::new(0, 9);
+        let mut cloak = CloakRuntime::new(0);
         let result = cloak.tick(facts(0), &mut actual);
         assert!(result.consumed_scenario_rng && result.transitioned);
         assert_eq!(cloak.state, 1);
@@ -573,7 +734,7 @@ mod tests {
 
         let seed4_boundary = seed_with_first_roll(|roll| roll == 4);
         let mut actual = SimRng::new(seed4_boundary);
-        let mut cloak = CloakRuntime::new(0, 9);
+        let mut cloak = CloakRuntime::new(0);
         let result = cloak.tick(facts(0), &mut actual);
         assert!(result.consumed_scenario_rng && !result.transitioned);
         assert_eq!(cloak.state, 0, "the 4% branch is strict `< 4`");
@@ -582,9 +743,8 @@ mod tests {
         let mut actual = SimRng::new(seed10);
         let mut expected = actual.clone();
         assert!(expected.next_range_u32_inclusive(0, 99) <= 9);
-        let mut cloak = CloakRuntime::new(0, 9);
+        let mut cloak = CloakRuntime::new(0);
         cloak.state = 1;
-        cloak.visual_phase = Some(CloakVisualPhase::Cloaking);
         cloak.depth = 3; // trunc(3/9*256)=85 => active visual state 2.
         cloak.step_delta = 1;
         cloak.step_timer = CloakStepTimer::started(0, 1);
@@ -595,9 +755,8 @@ mod tests {
 
         let seed10_boundary = seed_with_first_roll(|roll| roll == 10);
         let mut actual = SimRng::new(seed10_boundary);
-        let mut cloak = CloakRuntime::new(0, 9);
+        let mut cloak = CloakRuntime::new(0);
         cloak.state = 1;
-        cloak.visual_phase = Some(CloakVisualPhase::Cloaking);
         cloak.depth = 3;
         cloak.step_delta = 1;
         cloak.step_timer = CloakStepTimer::started(0, 1);
@@ -611,7 +770,7 @@ mod tests {
 
     #[test]
     fn healthy_autocloak_does_not_advance_scenario_rng() {
-        let mut cloak = CloakRuntime::new(0, 9);
+        let mut cloak = CloakRuntime::new(0);
         let mut rng = SimRng::new(0xC10A_C001);
         let before = rng.logical_state();
         let result = cloak.tick(
@@ -623,6 +782,10 @@ mod tests {
                 health_above_red: true,
                 cloaking_speed: 1,
                 cloak_delay_frames: 18,
+                cloaking_stages: 9,
+                invisible: false,
+                owned_by_current_house: false,
+                is_building: false,
             },
             &mut rng,
         );
@@ -648,7 +811,7 @@ mod tests {
 
     #[test]
     fn cloaking_speed_five_delays_each_progress_step() {
-        let mut state = CloakRuntime::new(0, 9);
+        let mut state = CloakRuntime::new(0);
         let mut rng = SimRng::new(1);
         let facts = |frame| CloakTickFacts {
             current_frame: frame,
@@ -658,6 +821,10 @@ mod tests {
             health_above_red: true,
             cloaking_speed: 5,
             cloak_delay_frames: 18,
+            cloaking_stages: 9,
+            invisible: false,
+            owned_by_current_house: false,
+            is_building: false,
         };
         state.tick(facts(0), &mut rng);
         for frame in 1..5 {

@@ -24,7 +24,9 @@ use serde_json::{Value, json};
 const CELL: u64 = 0x2000_0000;
 const OTHER: u64 = 0x2002_1000;
 const ATTACK_CELL: u64 = 0x2001_9400;
-const EXTRA: &str = "[ENGINEER]\nMovementZone=Infantry\n\
+// Original walk_prehead_response.py initializes Rules+628 to10, independently
+// of the obstacle's cloak component. Exercise the live production Rules reader.
+const EXTRA: &str = "[General]\nCloakingStages=10\n[ENGINEER]\nMovementZone=Infantry\n\
     [VehicleTypes]\n0=OBSTACLE\n[OBSTACLE]\nStrength=100\nSpeed=4\n\
     CloakingSpeed=4\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n";
 
@@ -222,7 +224,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
         e.lifecycle.object_alive = input["obstacle_alive"].as_bool().unwrap_or(true);
         e.lifecycle.cell_marked = true;
         e.on_bridge = input["obstacle_deck"] == true;
-        let mut cloak = CloakRuntime::new(0, 10);
+        let mut cloak = CloakRuntime::new(0);
         cloak.state = input["cloak"].as_i64().unwrap_or(0) as i32;
         e.cloak = Some(cloak);
         sim.substrate.occupancy.add(

@@ -60,7 +60,7 @@ fn destroyer_and_sub(sub_cloak_state: i32) -> (EntityStore, StringInterner, FogS
         10,
     )));
     let mut sub = live(GameEntity::test_default(2, "SUB", "Soviet", 11, 10));
-    let mut cloak = CloakRuntime::new(0, 9);
+    let mut cloak = CloakRuntime::new(0);
     cloak.state = sub_cloak_state;
     sub.cloak = Some(cloak);
     store.insert(sub);
@@ -142,7 +142,7 @@ fn same_owner_is_exempt_but_an_ally_is_not() {
     let mut store = EntityStore::new();
     store.insert(live(GameEntity::test_default(1, "DEST", "Soviet", 10, 10)));
     let mut own_sub = live(GameEntity::test_default(2, "SUB", "Soviet", 11, 10));
-    let mut cloak = CloakRuntime::new(0, 9);
+    let mut cloak = CloakRuntime::new(0);
     cloak.state = 2;
     own_sub.cloak = Some(cloak);
     store.insert(own_sub);

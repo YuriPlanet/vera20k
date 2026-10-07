@@ -1,6 +1,6 @@
 //! Native cloak transition entry points and their arg-sensitive sound edge.
 
-use super::{CloakRuntime, CloakStepTimer, CloakVisualPhase};
+use super::{CloakRuntime, CloakStepTimer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct StartCloakingResult {
@@ -32,7 +32,6 @@ impl CloakRuntime {
             };
         }
         self.state = 1;
-        self.visual_phase = Some(CloakVisualPhase::Cloaking);
         self.depth = 0;
         self.step_delta = 1;
         self.step_timer = CloakStepTimer::started(now, speed);
@@ -49,6 +48,7 @@ impl CloakRuntime {
         &mut self,
         now: i32,
         speed: i32,
+        cloaking_stages: i32,
         suppress_sound: bool,
     ) -> StartUncloakingResult {
         if !matches!(self.state, 1 | 2) {
@@ -58,8 +58,7 @@ impl CloakRuntime {
             };
         }
         self.state = 3;
-        self.visual_phase = Some(CloakVisualPhase::Uncloaking);
-        self.depth = self.cloaking_stages.saturating_sub(1);
+        self.depth = cloaking_stages.wrapping_sub(1) as u32;
         self.step_delta = -1;
         self.step_timer = CloakStepTimer::started(now, speed);
         StartUncloakingResult {
@@ -87,8 +86,9 @@ impl CloakRuntime {
         &mut self,
         now: i32,
         speed: i32,
+        cloaking_stages: i32,
     ) -> StartUncloakingResult {
-        self.start_uncloaking(now, speed, false)
+        self.start_uncloaking(now, speed, cloaking_stages, false)
     }
 
     /// `FootClass::PerCellProcess @ 0x004D8829` invokes the same `+0xFC`
@@ -98,8 +98,9 @@ impl CloakRuntime {
         &mut self,
         now: i32,
         speed: i32,
+        cloaking_stages: i32,
     ) -> StartUncloakingResult {
-        self.start_uncloaking(now, speed, false)
+        self.start_uncloaking(now, speed, cloaking_stages, false)
     }
 
     /// Cell483480 calls the ground-list receiver+FC (Techno703850), then
@@ -109,8 +110,9 @@ impl CloakRuntime {
         &mut self,
         now: i32,
         speed: i32,
+        cloaking_stages: i32,
     ) -> StartUncloakingResult {
-        self.start_uncloaking(now, speed, false)
+        self.start_uncloaking(now, speed, cloaking_stages, false)
     }
 
     /// `UnitClass::Fire_At_Target @ 0x00736DF0` case 9 invokes virtual
@@ -119,7 +121,8 @@ impl CloakRuntime {
         &mut self,
         now: i32,
         speed: i32,
+        cloaking_stages: i32,
     ) -> StartUncloakingResult {
-        self.start_uncloaking(now, speed, false)
+        self.start_uncloaking(now, speed, cloaking_stages, false)
     }
 }

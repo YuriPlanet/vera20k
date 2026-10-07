@@ -767,7 +767,6 @@ mod tests {
                 .as_mut()
                 .unwrap();
             cloak.state = 0;
-            cloak.visual_phase = None;
         }
 
         let added = sim.apply_sensor_add(detector, (40, 30), 1, Some(&rules));
@@ -803,7 +802,6 @@ mod tests {
                 .as_mut()
                 .unwrap();
             cloak.state = 0;
-            cloak.visual_phase = None;
         }
         let removed = sim.apply_unit_sensor_remove(detector, (40, 30), 1, Some(&rules));
         assert_eq!(removed, vec![newer, older]);

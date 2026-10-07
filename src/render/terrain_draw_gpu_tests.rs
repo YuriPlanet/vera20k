@@ -29,7 +29,9 @@ impl Gpu {
     }
     pub(crate) fn with_features(features: wgpu::Features) -> Self {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
+            // Use the production owner's standard WGPU_BACKEND override so
+            // the same native readbacks can exercise Windows DX12 explicitly.
+            backends: wgpu::Backends::PRIMARY.with_env(),
             ..Default::default()
         });
         let adapter = pollster::block_on(instance.request_adapter(&Default::default()))

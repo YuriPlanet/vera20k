@@ -707,7 +707,13 @@ pub(crate) fn commit_entities(
                 .entities
                 .get_mut(target_id)
                 .and_then(|target| target.cloak.as_mut())
-                .map(|cloak| cloak.start_uncloaking_from_damage(now, cloaking_speed));
+                .map(|cloak| {
+                    cloak.start_uncloaking_from_damage(
+                        now,
+                        cloaking_speed,
+                        rules.general.cloaking_stages,
+                    )
+                });
             if surfaced.is_some_and(|result| result.play_sound)
                 && let Some(sound_name) = rules.general.cloak_sound.as_deref()
                 && let Some(sink) = sound_enabled.then_some(&mut world.sound_events)
@@ -3016,7 +3022,13 @@ fn uncloak_to_fire(
         .entities
         .get_mut(id)
         .and_then(|entity| entity.cloak.as_mut())
-        .map(|cloak| cloak.start_uncloaking_to_fire(binary_frame as i32, obj.cloaking_speed));
+        .map(|cloak| {
+            cloak.start_uncloaking_to_fire(
+                binary_frame as i32,
+                obj.cloaking_speed,
+                rules.general.cloaking_stages,
+            )
+        });
     if start.is_some_and(|result| result.play_sound)
         && let Some(sound_name) = rules.general.cloak_sound.as_deref()
         && let Some(sink) = sound_enabled.then_some(&mut world.sound_events)

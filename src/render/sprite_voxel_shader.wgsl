@@ -129,7 +129,7 @@ fn vs_main(
 // gradient table (`VXL_CacheBlit @ 0x00707480` -> extended blitter).
 
 
-fn native_depth(in: VertexOutput) -> f32 {
+fn native_candidate(in: VertexOutput) -> i32 {
     let camera_row: i32 = i32(round(camera.camera_pos.y + camera.native_z_origin_y));
     var rect_top: f32 = in.rect_top_height.x;
     var height: i32 = max(i32(round(in.rect_top_height.y)), 1);
@@ -181,7 +181,7 @@ fn native_depth(in: VertexOutput) -> f32 {
     let screen_top: i32 = i32(round(rect_top)) - camera_row;
     let row: i32 = clamp(i32(floor(in.world_pos.y - rect_top)), 0, height - 1);
     let z: i32 = native_row_z(gradient, screen_top, height, z_adjust, row);
-    return stored_native_depth(z);
+    return z;
 }
 
 fn apply_fx(color: vec4f, _flags: u32, params: vec4f) -> vec4f {
@@ -233,7 +233,7 @@ fn fs_main(in: VertexOutput) -> FragOutput {
     }
 
     var out: FragOutput;
-    out.depth = native_depth(in);
+    out.depth = stored_native_depth(native_candidate(in));
 
     // Ground shadow stencil (FX_SHADOW = 1 << 6): every non-zero atlas byte
     // darkens the destination. The native darken blitter halves the encoded

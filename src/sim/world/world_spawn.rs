@@ -1561,10 +1561,8 @@ impl Simulation {
         if !object.cloakable && !rank_cloak {
             return;
         }
-        let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(
-            self.session.binary_frame as i32,
-            rules.general.cloaking_stages,
-        );
+        let mut cloak =
+            crate::sim::cloak_disguise::CloakRuntime::new(self.session.binary_frame as i32);
         // Only UnitClass owns the direct Unlimbo state write, and it tests the
         // copied runtime Cloakable byte rather than rank-granted CLOAK.
         if category == EntityCategory::Unit && object.cloakable && !in_playfield {

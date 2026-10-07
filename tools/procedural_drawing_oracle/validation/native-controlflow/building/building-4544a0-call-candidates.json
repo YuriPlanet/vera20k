@@ -1,0 +1,292 @@
+﻿{
+  "schema": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "image_base": 4194304,
+  "capstone_version": "5.0.7",
+  "request": {
+    "command": "calls",
+    "target": 4539552,
+    "include_jumps": true,
+    "start": null,
+    "bytes": null
+  },
+  "result": {
+    "coverage": [
+      {
+        "address": 4198400,
+        "file_offset": 4096,
+        "bytes": 4063232,
+        "decoded_items": 1394108,
+        "decoded_bytes": 4063166,
+        "undecoded_bytes": 66,
+        "undecoded_ranges": [
+          {
+            "address": 4650400,
+            "bytes": 1
+          },
+          {
+            "address": 4774693,
+            "bytes": 1
+          },
+          {
+            "address": 4775192,
+            "bytes": 1
+          },
+          {
+            "address": 5013780,
+            "bytes": 1
+          },
+          {
+            "address": 5083757,
+            "bytes": 1
+          },
+          {
+            "address": 5243364,
+            "bytes": 1
+          },
+          {
+            "address": 5359753,
+            "bytes": 1
+          },
+          {
+            "address": 5359757,
+            "bytes": 1
+          },
+          {
+            "address": 5359761,
+            "bytes": 1
+          },
+          {
+            "address": 5370364,
+            "bytes": 1
+          },
+          {
+            "address": 5377788,
+            "bytes": 1
+          },
+          {
+            "address": 5815716,
+            "bytes": 1
+          },
+          {
+            "address": 5898372,
+            "bytes": 1
+          },
+          {
+            "address": 6015692,
+            "bytes": 1
+          },
+          {
+            "address": 6015733,
+            "bytes": 1
+          },
+          {
+            "address": 6015745,
+            "bytes": 1
+          },
+          {
+            "address": 6225637,
+            "bytes": 1
+          },
+          {
+            "address": 6487628,
+            "bytes": 1
+          },
+          {
+            "address": 6696988,
+            "bytes": 1
+          },
+          {
+            "address": 6926684,
+            "bytes": 1
+          },
+          {
+            "address": 6984397,
+            "bytes": 1
+          },
+          {
+            "address": 7003104,
+            "bytes": 1
+          },
+          {
+            "address": 7011660,
+            "bytes": 1
+          },
+          {
+            "address": 7012929,
+            "bytes": 1
+          },
+          {
+            "address": 7012936,
+            "bytes": 1
+          },
+          {
+            "address": 7208444,
+            "bytes": 1
+          },
+          {
+            "address": 7208473,
+            "bytes": 1
+          },
+          {
+            "address": 7208513,
+            "bytes": 1
+          },
+          {
+            "address": 7208677,
+            "bytes": 1
+          },
+          {
+            "address": 7208681,
+            "bytes": 1
+          },
+          {
+            "address": 7208693,
+            "bytes": 1
+          },
+          {
+            "address": 7208701,
+            "bytes": 1
+          },
+          {
+            "address": 7208792,
+            "bytes": 1
+          },
+          {
+            "address": 7224440,
+            "bytes": 1
+          },
+          {
+            "address": 7376213,
+            "bytes": 1
+          },
+          {
+            "address": 7376216,
+            "bytes": 2
+          },
+          {
+            "address": 7467717,
+            "bytes": 1
+          },
+          {
+            "address": 7467721,
+            "bytes": 1
+          },
+          {
+            "address": 7467745,
+            "bytes": 1
+          },
+          {
+            "address": 7467817,
+            "bytes": 1
+          },
+          {
+            "address": 7467821,
+            "bytes": 1
+          },
+          {
+            "address": 7467837,
+            "bytes": 1
+          },
+          {
+            "address": 7468180,
+            "bytes": 1
+          },
+          {
+            "address": 7468556,
+            "bytes": 1
+          },
+          {
+            "address": 7468924,
+            "bytes": 1
+          },
+          {
+            "address": 7469536,
+            "bytes": 1
+          },
+          {
+            "address": 7469540,
+            "bytes": 1
+          },
+          {
+            "address": 7487015,
+            "bytes": 1
+          },
+          {
+            "address": 7507468,
+            "bytes": 1
+          },
+          {
+            "address": 7508401,
+            "bytes": 1
+          },
+          {
+            "address": 7936241,
+            "bytes": 1
+          },
+          {
+            "address": 7943253,
+            "bytes": 1
+          },
+          {
+            "address": 7969620,
+            "bytes": 1
+          },
+          {
+            "address": 7991336,
+            "bytes": 1
+          },
+          {
+            "address": 8061049,
+            "bytes": 1
+          },
+          {
+            "address": 8061057,
+            "bytes": 1
+          },
+          {
+            "address": 8061060,
+            "bytes": 2
+          },
+          {
+            "address": 8150418,
+            "bytes": 1
+          },
+          {
+            "address": 8150428,
+            "bytes": 1
+          },
+          {
+            "address": 8159474,
+            "bytes": 1
+          },
+          {
+            "address": 8159484,
+            "bytes": 1
+          },
+          {
+            "address": 8195258,
+            "bytes": 1
+          },
+          {
+            "address": 8232239,
+            "bytes": 1
+          },
+          {
+            "address": 8261631,
+            "bytes": 1
+          }
+        ]
+      }
+    ],
+    "matches": [],
+    "direct_control_transfers": 197096,
+    "indirect_or_unresolved_control_transfers": 27367,
+    "limits": [
+      "Static file bytes only; runtime initialization, relocations and patches are not represented.",
+      "Linear sweep and a requested start address do not establish valid instruction boundaries or active reachability.",
+      "Undecodable bytes are reported; resynchronization after them can misidentify instructions.",
+      "Only decoded immediate control transfers are matched; indirect calls and dataflow aliases are outside coverage."
+    ]
+  }
+}

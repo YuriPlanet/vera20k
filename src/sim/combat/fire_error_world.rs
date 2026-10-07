@@ -604,38 +604,27 @@ impl FireQuery for WorldQuery<'_, '_> {
         combat_weapon::select_naval_targeting_weapon(subject.obj, facts.as_ref())
     }
 
-    /// `TechnoClass::GetVisualState @ 0x00703860` as T17 asks it (`0x006FC25B`:
-    /// the sensor argument set, the firer's house). `+0x41A`, whose writer is
-    /// unidentified, is held clear; the map editor never runs.
+    /// T17 calls the shared703860 owner with `(1, firerHouse)` at6FC25B.
+    /// This explicit sensor query deliberately has no alliance/owned shortcut.
     fn visual_state(&mut self) -> i32 {
         let subject = self.subject;
         let (Some(target), Some(obj)) = (subject.target_entity(), subject.target_obj()) else {
             return 0;
         };
-        let building = target.category == EntityCategory::Structure;
-        // `+0xC9A`: `Invisible=`, which a BuildingType's `InvisibleInGame=`
-        // also sets (`0x00460E09`).
-        if obj.invisible || (building && obj.invisible_in_game) {
-            return 5;
-        }
-        let Some(cloak) = target.cloak.as_ref() else {
-            return 0;
-        };
-        if cloak.state == 0 || building {
-            return 0;
-        }
-        if cloak.state == 2 {
-            // The firer's house senses the target's Location cell.
-            let sensed = subject.fog.is_some_and(|fog| {
-                fog.has_sensor_for_house(
-                    subject.firer.owner(),
-                    target.position.rx,
-                    target.position.ry,
-                )
-            });
-            return if sensed { 3 } else { 5 };
-        }
-        i32::from(cloak.transition_visual_state())
+        let invisible =
+            obj.invisible || target.category == EntityCategory::Structure && obj.invisible_in_game;
+        let sensed = subject.fog.is_some_and(|fog| {
+            fog.has_sensor_for_house(
+                subject.firer.owner(),
+                target.position.rx,
+                target.position.ry,
+            )
+        });
+        i32::from(target.visual_character(
+            subject.rules.general.cloaking_stages,
+            invisible,
+            crate::sim::cloak_disguise::VisualCharacterQuery::sensor(true, sensed, false),
+        ))
     }
 
     fn high_flying(&mut self) -> bool {

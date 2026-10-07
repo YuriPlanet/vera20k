@@ -17,7 +17,7 @@ use crate::map::entities::EntityCategory;
 use crate::map::lighting;
 use crate::map::terrain::{TILE_HEIGHT, TILE_WIDTH};
 use crate::render::batch::SpriteInstance;
-use crate::render::draw_state::{DrawState, FX_SHADOW, ObserverDrawContext};
+use crate::render::draw_state::{DrawState, FX_SHADOW};
 use crate::render::native_z::{
     SHP_DRAW_Z_ADJUST_PX, ZGradient, pack_voxel_z_gradient, pack_z_gradient,
 };
@@ -321,6 +321,10 @@ pub(crate) fn build_unit_instances(
         ) else {
             continue;
         };
+        let no_shadow = state
+            .rules()
+            .and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())))
+            .is_some_and(|object| object.no_shadow);
         let type_str = type_name.as_ref();
         let remap_owner = entity
             .disguise
@@ -346,13 +350,13 @@ pub(crate) fn build_unit_instances(
             ignore_visibility,
             sim.session.binary_frame,
             house_color_to_remap_row(hc),
-            ObserverDrawContext {
-                owner_is_allied: local_owner.as_deref().is_some_and(|observer| {
-                    crate::map::houses::is_allied_with(&sim.house_alliances, observer, owner_str)
-                }),
-                detects_cloak: local_owner_id
-                    .is_some_and(|observer| sim.fog.has_sensor_for_house(observer, pos.rx, pos.ry)),
-            },
+            super::helpers::observer_draw_context(
+                sim,
+                entity,
+                local_owner.as_deref(),
+                local_owner_id,
+                state.rules(),
+            ),
         ) else {
             continue;
         };
@@ -485,6 +489,7 @@ pub(crate) fn build_unit_instances(
         {
             // Turret unit: emit body, turret, and barrel as separate sprites.
             emit_turret_unit_sprites(
+                no_shadow,
                 atlas,
                 art_reg,
                 entity,
@@ -538,7 +543,7 @@ pub(crate) fn build_unit_instances(
                         entity,
                         type_str,
                         body_facing,
-                        draw_state,
+                        no_shadow,
                         slope_state,
                         band,
                         [(entry, [0.0, 0.0])],
@@ -546,6 +551,7 @@ pub(crate) fn build_unit_instances(
                 if !native_shadow {
                     emit_unit_shadow_sprite(
                         native_shadow,
+                        no_shadow,
                         voxel_adjust,
                         atlas,
                         entity,
@@ -584,6 +590,7 @@ pub(crate) fn build_unit_instances(
                 if native_shadow {
                     emit_unit_shadow_sprite(
                         native_shadow,
+                        no_shadow,
                         voxel_adjust,
                         atlas,
                         entity,
@@ -1109,12 +1116,12 @@ fn prepare_unit_shadow(
     entity: &crate::sim::game_entity::GameEntity,
     type_id: &str,
     body_facing: u8,
-    draw_state: DrawState,
+    no_shadow: bool,
     slope: UnitRenderSlopeState,
     band: EntityDrawBand,
     parts: impl IntoIterator<Item = (crate::render::unit_atlas::UnitSpriteEntry, [f32; 2])>,
 ) -> bool {
-    if !native_shadow_caller_eligible(entity, draw_state, slope, band) {
+    if !native_shadow_caller_eligible(entity, no_shadow, slope, band) {
         return false;
     }
     let key = UnitSpriteKey {
@@ -1131,23 +1138,37 @@ fn prepare_unit_shadow(
 
 fn native_shadow_caller_eligible(
     entity: &crate::sim::game_entity::GameEntity,
-    draw_state: DrawState,
+    no_shadow: bool,
     slope: UnitRenderSlopeState,
     band: EntityDrawBand,
 ) -> bool {
-    if entity.category != EntityCategory::Unit
-        || entity.sinking.is_active()
-        || band != EntityDrawBand::Ground
+    if !unit_shadow_admitted(entity, no_shadow, band)
         || !entity
             .locomotor
             .as_ref()
             .is_some_and(|l| l.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive)
         || !matches!(slope, UnitRenderSlopeState::Stable(0))
-        || draw_state.fx_flags & crate::render::draw_state::FX_CLOAK != 0
     {
         return false;
     }
     true
+}
+
+/// Unit73C5C4 -> Foot4DB0D0 -> Techno706BD0: raw +220 must be
+/// zero (706BDD), and TechnoType+D98 NoShadow must be false (706BF3).
+/// A real StartCloaking703799/+224=0 is still character0; presentation FX
+/// therefore cannot supply this decision. This owner serves cache and emit.
+/// Evidence: tools/procedural_drawing_oracle/validation/source-dependencies.
+fn unit_shadow_admitted(
+    entity: &crate::sim::game_entity::GameEntity,
+    no_shadow: bool,
+    band: EntityDrawBand,
+) -> bool {
+    entity.category == EntityCategory::Unit
+        && !entity.sinking.is_active()
+        && band == EntityDrawBand::Ground
+        && !no_shadow
+        && entity.cloak.as_ref().is_none_or(|cloak| cloak.state == 0)
 }
 
 fn shadow_lookup_key(mut key: UnitSpriteKey, native_shadow: bool) -> UnitSpriteKey {
@@ -1168,6 +1189,7 @@ fn shadow_lookup_key(mut key: UnitSpriteKey, native_shadow: bool) -> UnitSpriteK
 #[allow(clippy::too_many_arguments)]
 fn emit_unit_shadow_sprite(
     native_shadow: bool,
+    no_shadow: bool,
     voxel_adjust: f32,
     atlas: &crate::render::unit_atlas::UnitAtlas,
     entity: &crate::sim::game_entity::GameEntity,
@@ -1181,14 +1203,8 @@ fn emit_unit_shadow_sprite(
     band: EntityDrawBand,
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
-    // Original Unit73C1D2 returns before its shadow suffix while +3CD is set.
-    if entity.category != EntityCategory::Unit
-        || entity.sinking.is_active()
-        || band != EntityDrawBand::Ground
-    {
-        return;
-    }
-    if draw_state.fx_flags & crate::render::draw_state::FX_CLOAK != 0 {
+    // Original Unit73C1D2 also skips its shadow suffix while sinking +3CD.
+    if !unit_shadow_admitted(entity, no_shadow, band) {
         return;
     }
     let key = UnitSpriteKey {
@@ -1371,6 +1387,7 @@ fn composite_draw_state(state: &AppState, mut draw_state: DrawState, split: bool
 /// shifted by the art.ini TurretOffset (rotated by body facing) so the turret
 /// sits on its correct pivot point on the hull.
 fn emit_turret_unit_sprites(
+    no_shadow: bool,
     atlas: &crate::render::unit_atlas::UnitAtlas,
     art_reg: Option<&crate::rules::art_data::ArtRegistry>,
     entity: &crate::sim::game_entity::GameEntity,
@@ -1502,7 +1519,7 @@ fn emit_turret_unit_sprites(
             entity,
             type_id,
             body_facing,
-            draw_state,
+            no_shadow,
             slope_state,
             band,
             body_entry_opt
@@ -1517,6 +1534,7 @@ fn emit_turret_unit_sprites(
     if !native_shadow {
         emit_unit_shadow_sprite(
             native_shadow,
+            no_shadow,
             voxel_adjust,
             atlas,
             entity,
@@ -1585,6 +1603,7 @@ fn emit_turret_unit_sprites(
     if native_shadow {
         emit_unit_shadow_sprite(
             native_shadow,
+            no_shadow,
             voxel_adjust,
             atlas,
             entity,
@@ -1837,7 +1856,7 @@ mod tests {
             entity.locomotor = Some(LocomotorState::for_test_kind(kind));
             let eligible = native_shadow_caller_eligible(
                 &entity,
-                DrawState::default(),
+                false,
                 UnitRenderSlopeState::Stable(slope),
                 EntityDrawBand::Ground,
             );
@@ -1847,14 +1866,37 @@ mod tests {
             );
         }
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
-        let mut cloak = DrawState::default();
-        cloak.fx_flags |= crate::render::draw_state::FX_CLOAK;
+        let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
+        cloak.state = 1;
+        entity.cloak = Some(cloak);
         assert!(!native_shadow_caller_eligible(
             &entity,
-            cloak,
+            false,
             UnitRenderSlopeState::Stable(0),
             EntityDrawBand::Ground
         ));
+    }
+
+    #[test]
+    fn raw_cloak_shadow_gate_covers_zero_progress_and_type_flag() {
+        let mut entity = GameEntity::test_default(1, "SUB", "Russians", 0, 0);
+        entity.category = EntityCategory::Unit;
+        assert!(unit_shadow_admitted(&entity, false, EntityDrawBand::Ground));
+        assert!(!unit_shadow_admitted(&entity, true, EntityDrawBand::Ground));
+        for state in [1, 2, 3] {
+            let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
+            cloak.state = state;
+            entity.cloak = Some(cloak);
+            // StartCloaking703799 writes state1/progress0. At zero progress
+            // the body's visual query may be ordinary; the shadow stays absent.
+            assert!(!unit_shadow_admitted(
+                &entity,
+                false,
+                EntityDrawBand::Ground
+            ));
+        }
+        entity.cloak.as_mut().unwrap().state = 0;
+        assert!(unit_shadow_admitted(&entity, false, EntityDrawBand::Ground));
     }
 
     /// A crashing body takes its pose before the turret split, whether or not

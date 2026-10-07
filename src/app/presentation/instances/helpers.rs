@@ -34,6 +34,42 @@ pub(crate) enum TacticalEntityPurpose {
     ScreenSelection,
 }
 
+/// Gather facts for the simulation-owned visual-character query without
+/// retaining a second ownership, alliance, sensor or Rules state in rendering.
+pub(crate) fn observer_draw_context(
+    sim: &crate::sim::world::Simulation,
+    entity: &GameEntity,
+    local_owner: Option<&str>,
+    local_owner_id: Option<InternedId>,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> crate::render::draw_state::ObserverDrawContext {
+    let owner = sim.interner.resolve(entity.owner());
+    let allied = local_owner.is_some_and(|observer| {
+        crate::map::houses::is_allied_with(&sim.house_alliances, observer, owner)
+    });
+    let object = rules.and_then(|r| r.object(sim.interner.resolve(entity.type_ref())));
+    crate::render::draw_state::ObserverDrawContext {
+        owner_is_allied: allied,
+        owner_is_mutually_allied: allied
+            && local_owner.is_some_and(|observer| {
+                crate::map::houses::is_allied_with(&sim.house_alliances, owner, observer)
+            }),
+        observer_present: local_owner_id.is_some(),
+        detects_cloak: local_owner_id.is_some_and(|observer| {
+            sim.fog
+                .has_sensor_for_house(observer, entity.position.rx, entity.position.ry)
+        }),
+        cloaking_stages: rules.map_or_else(
+            || crate::rules::ruleset::GeneralRules::default().cloaking_stages,
+            |r| r.general.cloaking_stages,
+        ),
+        invisible: object.is_some_and(|obj| {
+            obj.invisible || (entity.category == EntityCategory::Structure && obj.invisible_in_game)
+        }),
+        is_campaign: !sim.session.game_mode_nonzero,
+    }
+}
+
 /// Native Building6D9920 ->43CEA0 ->43D290 submits ordinary building bodies
 /// independently of top/center shroud; the existing ABuffer clips their pixels.
 /// Unit73B0B0 and Infantry/Aircraft5F4B10 likewise reach their original
@@ -128,6 +164,7 @@ fn tactical_bounded_entity_encounter_order(
         state.match_state.sandbox_full_visibility,
         sim.session.binary_frame,
         bulk_register_live_buildings,
+        state.rules(),
     )
 }
 
@@ -141,6 +178,7 @@ fn compose_tactical_screen_entity_encounter_order(
     ignore_visibility: bool,
     current_frame: u32,
     bulk_register_live_buildings: bool,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> Vec<u64> {
     let (min_x, min_y, max_x, max_y) = bounds;
     let mut candidates = tactical_entity_encounter_order(sim);
@@ -173,22 +211,7 @@ fn compose_tactical_screen_entity_encounter_order(
                         ignore_visibility,
                         current_frame,
                         0,
-                        crate::render::draw_state::ObserverDrawContext {
-                            owner_is_allied: local_owner.is_some_and(|observer| {
-                                crate::map::houses::is_allied_with(
-                                    &sim.house_alliances,
-                                    observer,
-                                    owner,
-                                )
-                            }),
-                            detects_cloak: local_owner_id.is_some_and(|observer| {
-                                fog.has_sensor_for_house(
-                                    observer,
-                                    entity.position.rx,
-                                    entity.position.ry,
-                                )
-                            }),
-                        },
+                        observer_draw_context(sim, entity, local_owner, local_owner_id, rules),
                     )
                     .is_some()
                 };
@@ -557,6 +580,7 @@ mod tests {
                 false,
                 0,
                 false,
+                None,
             )
             .is_empty(),
             "submitting a masked building must not expose screen selection"
@@ -901,6 +925,7 @@ mod tests {
             false,
             0,
             false,
+            None,
         );
         let preflight = compose_tactical_screen_entity_encounter_order(
             &sim,
@@ -911,6 +936,7 @@ mod tests {
             false,
             0,
             true,
+            None,
         );
 
         assert!(

@@ -19,7 +19,7 @@ use crate::app::presentation::render::draw_plan_lowering::{
 };
 use crate::map::entities::EntityCategory;
 use crate::render::batch::SpriteInstance;
-use crate::render::draw_state::{DrawState, ObserverDrawContext};
+use crate::render::draw_state::DrawState;
 use crate::render::native_z::{
     self, BIB_Z_ADJUST_PX, SHP_DRAW_Z_ADJUST_PX, ZGradient, ZSHAPE_MAX_FOUNDATION_WIDTH,
     pack_z_gradient,
@@ -169,13 +169,13 @@ pub(crate) fn build_shp_instances(
             ignore_visibility,
             sim.session.binary_frame,
             super::units::house_color_to_remap_row(hc),
-            ObserverDrawContext {
-                owner_is_allied: local_owner.as_deref().is_some_and(|observer| {
-                    crate::map::houses::is_allied_with(&sim.house_alliances, observer, owner_str)
-                }),
-                detects_cloak: local_owner_id
-                    .is_some_and(|observer| sim.fog.has_sensor_for_house(observer, pos.rx, pos.ry)),
-            },
+            super::helpers::observer_draw_context(
+                sim,
+                entity,
+                local_owner.as_deref(),
+                local_owner_id,
+                state.rules(),
+            ),
         ) else {
             continue;
         };

@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn start_cloaking_arg_zero_sounds_only_on_accepted_transition() {
-    let mut audible = CloakRuntime::new(0, 9);
+    let mut audible = CloakRuntime::new(0);
     assert_eq!(
         audible.start_cloaking(12, 5, false),
         StartCloakingResult {
@@ -30,9 +30,8 @@ fn start_cloaking_arg_zero_sounds_only_on_accepted_transition() {
         "fully cloaked state two rejects StartCloaking"
     );
 
-    let mut silent_reversal = CloakRuntime::new(0, 9);
+    let mut silent_reversal = CloakRuntime::new(0);
     silent_reversal.state = 3;
-    silent_reversal.visual_phase = Some(CloakVisualPhase::Uncloaking);
     assert_eq!(
         silent_reversal.start_cloaking(12, 1, true),
         StartCloakingResult {
@@ -45,9 +44,9 @@ fn start_cloaking_arg_zero_sounds_only_on_accepted_transition() {
 
 #[test]
 fn start_uncloaking_arg_zero_sounds_only_on_accepted_transition() {
-    let mut audible = CloakRuntime::new(0, 9);
+    let mut audible = CloakRuntime::new(0);
     audible.establish_unlimbo_fully_cloaked();
-    let started = audible.start_uncloaking(12, 1, false);
+    let started = audible.start_uncloaking(12, 1, 9, false);
     assert_eq!(
         started,
         StartUncloakingResult {
@@ -56,7 +55,7 @@ fn start_uncloaking_arg_zero_sounds_only_on_accepted_transition() {
         }
     );
     assert_eq!(
-        audible.start_uncloaking(13, 1, false),
+        audible.start_uncloaking(13, 1, 9, false),
         StartUncloakingResult {
             transitioned: false,
             play_sound: false,
@@ -64,11 +63,10 @@ fn start_uncloaking_arg_zero_sounds_only_on_accepted_transition() {
         "a repeated state-3 visit neither transitions nor replays the cue"
     );
 
-    let mut silent = CloakRuntime::new(0, 9);
+    let mut silent = CloakRuntime::new(0);
     silent.state = 1;
-    silent.visual_phase = Some(CloakVisualPhase::Cloaking);
     assert_eq!(
-        silent.start_uncloaking(12, 1, true),
+        silent.start_uncloaking(12, 1, 9, true),
         StartUncloakingResult {
             transitioned: true,
             play_sound: false,
@@ -87,6 +85,10 @@ fn cloak_tick_reports_arg_zero_sound_for_entering_and_leaving_cloak() {
         health_above_red,
         cloaking_speed: 1,
         cloak_delay_frames: 18,
+        cloaking_stages: 9,
+        invisible: false,
+        owned_by_current_house: false,
+        is_building: false,
     };
 
     let seed = (0..100_000)
@@ -96,9 +98,8 @@ fn cloak_tick_reports_arg_zero_sound_for_entering_and_leaving_cloak() {
         })
         .expect("bounded seed search finds the native ten-percent branch");
     let mut rng = SimRng::new(seed);
-    let mut abort = CloakRuntime::new(0, 9);
+    let mut abort = CloakRuntime::new(0);
     abort.state = 1;
-    abort.visual_phase = Some(CloakVisualPhase::Cloaking);
     abort.depth = 3;
     abort.step_delta = 1;
     abort.step_timer = CloakStepTimer::started(0, 1);
@@ -109,13 +110,12 @@ fn cloak_tick_reports_arg_zero_sound_for_entering_and_leaving_cloak() {
         "mid-cloak abort calls StartUncloaking(1)"
     );
 
-    let mut entering = CloakRuntime::new(0, 9);
+    let mut entering = CloakRuntime::new(0);
     let result = entering.tick(facts(true, false), &mut rng);
     assert!(result.transitioned && result.play_cloak_sound);
 
-    let mut reversal = CloakRuntime::new(0, 9);
+    let mut reversal = CloakRuntime::new(0);
     reversal.state = 3;
-    reversal.visual_phase = Some(CloakVisualPhase::Uncloaking);
     reversal.depth = 1;
     let result = reversal.tick(facts(true, false), &mut rng);
     assert!(result.transitioned);
@@ -124,7 +124,7 @@ fn cloak_tick_reports_arg_zero_sound_for_entering_and_leaving_cloak() {
         "state-three reversal calls StartCloaking(1)"
     );
 
-    let mut ordinary = CloakRuntime::new(0, 9);
+    let mut ordinary = CloakRuntime::new(0);
     ordinary.establish_unlimbo_fully_cloaked();
     let result = ordinary.tick(facts(true, true), &mut rng);
     assert!(result.transitioned && result.play_cloak_sound);

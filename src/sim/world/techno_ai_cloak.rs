@@ -211,19 +211,24 @@ fn stock_cloak_tick_facts(
     } else {
         !cloaked_by_own_house
     };
-    Some(crate::sim::cloak_disguise::CloakTickFacts {
+    Some(crate::sim::cloak_disguise::CloakTickFacts::new(
         current_frame,
         state_zero_head_allows,
         can_auto_cloak,
         should_uncloak,
-        health_above_red: health_strictly_above_condition_red(
+        health_strictly_above_condition_red(
             entity.health,
             object.strength,
             rules.general.condition_red,
         ),
-        cloaking_speed: object.cloaking_speed,
-        cloak_delay_frames: rules.general.cloak_delay_frames,
-    })
+        object.cloaking_speed,
+        rules.general.cloak_delay_frames,
+        rules.general.cloaking_stages,
+        object.invisible
+            || (entity.category == EntityCategory::Structure && object.invisible_in_game),
+        entity.discovery.owned_by_current_house,
+        entity.category == EntityCategory::Structure,
+    ))
 }
 
 /// `CellClass::IsVisibleToHouse @ 0x004870B0` for the object's own owner — the
@@ -481,7 +486,13 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
         .entities
         .get_mut(id)
         .and_then(|entity| entity.cloak.as_mut())
-        .map(|cloak| cloak.start_uncloaking_from_sensor_neighbour(now, cloaking_speed));
+        .map(|cloak| {
+            cloak.start_uncloaking_from_sensor_neighbour(
+                now,
+                cloaking_speed,
+                rules.general.cloaking_stages,
+            )
+        });
     if surfaced.is_some_and(|result| result.play_sound) {
         emit_configured_cloak_sound(sim, id, rules);
     }
@@ -543,7 +554,7 @@ fn original_health_ratio_corpus_populates_cloak_tick_facts() {
             5,
             true,
         );
-        entity.cloak = Some(crate::sim::cloak_disguise::CloakRuntime::new(0, 9));
+        entity.cloak = Some(crate::sim::cloak_disguise::CloakRuntime::new(0));
         sim.substrate.entities.insert(entity);
         let facts = stock_cloak_tick_facts(&sim, 1, &rules).expect("cloakable unit facts");
         assert_eq!(
@@ -592,7 +603,6 @@ pub(super) fn tick_stock_cloak_producer(
     {
         entity.cloak = Some(crate::sim::cloak_disguise::CloakRuntime::new(
             sim.session.binary_frame as i32,
-            rules.general.cloaking_stages,
         ));
     }
 

@@ -30,7 +30,6 @@ use crate::sim::intern::test_interner;
 use crate::sim::superweapon::invulnerability::{InvulnKind, InvulnerabilityState};
 
 const TICK: u64 = 100;
-const CLOAKING_STAGES: i32 = 9;
 
 fn dolphin_rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
@@ -68,7 +67,7 @@ fn store(attacker_type: &str, attacker_owner: &str) -> EntityStore {
         10,
     )));
     let mut victim = live(GameEntity::test_default(2, "DLPH", "Soviet", 11, 10));
-    let mut cloak = CloakRuntime::new(0, CLOAKING_STAGES);
+    let mut cloak = CloakRuntime::new(0);
     cloak.establish_unlimbo_fully_cloaked();
     victim.cloak = Some(cloak);
     store.insert(victim);

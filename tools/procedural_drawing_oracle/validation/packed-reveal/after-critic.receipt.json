@@ -1,0 +1,840 @@
+{
+  "scope": "Owner validation after the single independent critic; bounded native pixel controls and Rust production regression, not whole-scene native parity",
+  "publication_authority": "Local only; no comments/push/PR/merge authorized",
+  "previous_receipt": {
+    "path": "receipt.json",
+    "sha256": "8ef8cdbdc6fada287e58f905d5513cda7a9cbc4ecdd21c5444686ce24e64494c"
+  },
+  "release": {
+    "label": "packed-shroud-reveal-20261008-v2",
+    "manifest_sha256": "7d2fd4a616acf8baf1ede398f8f608b2611eb0737e7e1b056f2130fad29599d9",
+    "manifest": {
+      "schema": 1,
+      "checkout": "E:\\RA2\\vera20k-building-reveal",
+      "source": {
+        "head": "9a22c28fbe5d5862a27eb662191b74d3bd1e34a7",
+        "branch": "feature/building-shroud-reveal",
+        "status": "M src/app/diagnostics/tactical_capture/map_observation.rs\n M src/app/presentation/instances/helpers.rs\n M src/app/presentation/instances/shp.rs\n M src/app/presentation/instances/units.rs\n M src/app/presentation/render/draw_plan_lowering.rs\n M src/app/presentation/render/merge_passes.rs\n M src/render/batch.rs\n M src/render/draw_state.rs\n M src/render/sprite_voxel_shader.wgsl\n M src/render/terrain_batch.rs\n M src/render/terrain_draw.rs\n M src/render/terrain_draw_gpu_tests.rs\n M src/render/zsprite_shader.wgsl\n M src/rules/object_type.rs\n M src/sim/cloak_disguise.rs\n M src/sim/cloak_sound_tests.rs\n M src/sim/cloak_transitions.rs\n M src/sim/combat/combat_cloak_damage_tests.rs\n M src/sim/combat/combat_cloak_fire_tests.rs\n M src/sim/combat/combat_cloak_legality_tests.rs\n M src/sim/combat/fire_error_cell_tests.rs\n M src/sim/combat/fire_error_world.rs\n M src/sim/combat/world_receiver.rs\n M src/sim/game_entity.rs\n M src/sim/movement/cell_contact.rs\n M src/sim/sensor_lifecycle.rs\n M src/sim/snapshot.rs\n M src/sim/world/techno_ai.rs\n M src/sim/world/techno_ai/building_missions_tests.rs\n M src/sim/world/techno_ai_cloak.rs\n M src/sim/world/unit_entry_tests.rs\n M src/sim/world/walk_prehead_response_tests.rs\n M src/sim/world/world_hash.rs\n M src/sim/world/world_spawn.rs\n M tools/map_observation.md\n M tools/map_observation.py\n M tools/procedural_drawing_oracle/blitter_a.meta.json\n M tools/procedural_drawing_oracle/blitter_a.py\n M tools/tests/test_map_observation.py\n?? src/app/presentation/render/packed_material_gpu_tests.rs\n?? src/render/terrain_packed.rs\n?? src/render/terrain_packed.wgsl\n?? src/render/terrain_packed_shp.wgsl\n?? src/render/terrain_packed_voxel.wgsl\n?? tools/map_observation.packed-sub-guard.example.json\n?? tools/procedural_drawing_oracle/translucent_blitter_a.json\n?? tools/procedural_drawing_oracle/translucent_blitter_a.md\n?? tools/procedural_drawing_oracle/translucent_blitter_a.meta.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/README.md\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/README.md\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-4544a0-call-candidates.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-4544a0.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-rtti-459ec0.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-screen-sensor-70d420.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-sensor-slot.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/building-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/shp-705e00.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/building/techno-703860.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/ghidra/0x00703860-decompile.c\n?? tools/procedural_drawing_oracle/validation/native-controlflow/ghidra/0x0070BE50-decompile.c\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/README.md\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/dormant-tunnel-7291d0.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/dormant-tunnel-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/drive-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/drive-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/drive-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/factory-vtables.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/fly-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/fly-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/fly-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/foot-4da4e0.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/hover-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/hover-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/hover-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/jumpjet-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/jumpjet-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/jumpjet-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/registered-guid-bytes.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/registration-6bd140.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/registration-prefix-6bd080.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/rocket-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/rocket-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/rocket-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/shared-55abc0.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/ship-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/ship-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/ship-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/teleport-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/teleport-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/teleport-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/walk-constructor.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/walk-factory.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/locomotor/walk-vtable.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/manifest.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/ordinary-write.receipt.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/static-check.receipt.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/translucent-check.receipt.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/translucent-generation.receipt.json\n?? tools/procedural_drawing_oracle/validation/native-controlflow/translucent-replay-check.receipt.json\n?? tools/procedural_drawing_oracle/validation/packed-reveal/README.md\n?? tools/procedural_drawing_oracle/validation/packed-reveal/receipt.json\n?? tools/procedural_drawing_oracle/validation/packed-reveal/review.md\n?? tools/procedural_drawing_oracle/validation/source-dependencies/README.md\n?? tools/procedural_drawing_oracle/validation/source-dependencies/bool-tail.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/cloak-start.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/drive-shadow-slot.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/foot-shadow.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/noshadow-ctor.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/noshadow-key-raw.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/noshadow-reader.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/shadow-owner.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/shared-shp.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/ship-shadow-constant.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/ship-vtable.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/type-reader-entry.json\n?? tools/procedural_drawing_oracle/validation/source-dependencies/unit-source.json",
+        "source_sha256": "8ab8339691753fcaafb4ed81b7d466b003d1e8a33c9a6ca2cf3c7323ff718460"
+      },
+      "command": [
+        "cargo",
+        "build",
+        "--message-format=json-render-diagnostics",
+        "-j",
+        "1",
+        "-p",
+        "vera20k",
+        "--release",
+        "--bin",
+        "vera20k"
+      ],
+      "target_dir": "E:\\RA2\\vera20k-building-reveal\\target\\owned-worktrees\\ce6c176651345b86",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+      "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)\n",
+      "build_environment": {},
+      "artifacts": [
+        {
+          "source": "E:\\RA2\\vera20k-building-reveal\\target\\owned-worktrees\\ce6c176651345b86\\release\\vera20k.exe",
+          "file": "0/vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        }
+      ]
+    }
+  },
+  "compiled_code": {
+    "policy": "Raw src files plus Cargo.toml/Cargo.lock, captured while release source is frozen; docs/results are separately pinned",
+    "sha256": "d06bdb507530b7e5791678cf2e6f2e15ef948d662f2ea109089c0aaa33002573",
+    "file_count": 1375,
+    "all_file_hashes_rechecked": true,
+    "local_fingerprint_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\compiled-code-fingerprint.json",
+    "fingerprint_file_sha256": "f5f42860e5dd63e9b2b1da012b817a9cb7026920d101e144a76f1e55ed53c536",
+    "note": "Release compiled the frozen source. Later result-document edits and local commit do not alter src or Cargo files; the wider build-manifest source snapshot predates those docs."
+  },
+  "validation_logs": {
+    "packed-4k-red.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\packed-4k-red.txt",
+      "sha256": "0ac92179d0c7eb99aa83254f3c9fc65e5a5c3107afa05e65f6bf53fa49d64c0e",
+      "actual_result_lines": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 9m 37s",
+        "      Each current dispatch group size dimension ([129600, 1, 1]) must be less or equal to 65535",
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9955 filtered out; finished in 2.22s",
+        "Cache retention: blocked, removed 0 allocated bytes; E:\\RA2\\vera20k\\.git\\owned-builds\\retention\\1791399534152010700-9237ceec.json",
+        "Cache deletion stopped: Unsupported executable debug dependency format: E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\building-shroud-reveal-20261006-v1\\0\\vera20k.exe"
+      ]
+    },
+    "packed-gpu-fixed-vulkan.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\packed-gpu-fixed-vulkan.txt",
+      "sha256": "1b6e275da28359942a30d25e99226be178a5f0782c17625db4765125eb0ef891",
+      "actual_result_lines": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 9m 25s",
+        "PACKED_WORKLOAD count=1000 encode_ms=1.961 completed_wall_ms=9.682 waves=4 passes=16 debug_assertions=true",
+        "PACKED_WORKLOAD count=20000 encode_ms=23.122 completed_wall_ms=68.752 waves=24 passes=96 debug_assertions=true",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 9953 filtered out; finished in 6.05s"
+      ]
+    },
+    "packed-gpu-fixed-dx12.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\packed-gpu-fixed-dx12.txt",
+      "sha256": "6438388c83e15f58c7c5062924aa35e8ac4745500d19f41658e2c404101c715e",
+      "actual_result_lines": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.06s",
+        "PACKED_WORKLOAD count=1000 encode_ms=14.021 completed_wall_ms=20.006 waves=4 passes=16 debug_assertions=true",
+        "PACKED_WORKLOAD count=20000 encode_ms=94.525 completed_wall_ms=117.337 waves=24 passes=96 debug_assertions=true",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 9953 filtered out; finished in 12.43s"
+      ]
+    },
+    "draw-state-focused.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\draw-state-focused.txt",
+      "sha256": "c7444f068eeac138cc33ab59ac7efc2386cac477be1298f9c0ea1a836ed80c3e",
+      "actual_result_lines": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.67s",
+        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 9946 filtered out; finished in 0.04s"
+      ]
+    },
+    "clippy-after-critic.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\clippy-after-critic.txt",
+      "sha256": "6b592e2f65726c5978277688728bd7f7354a059105173da0bce12a59d25d319e",
+      "actual_result_lines": [
+        "warning: `vera20k` (lib) generated 721 warnings (run `cargo clippy --fix --lib -p vera20k -- ` to apply 459 suggestions)",
+        "    Finished `dev` profile [optimized + debuginfo] target(s) in 1m 28s"
+      ]
+    },
+    "field-ratchet-final.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\field-ratchet-final.txt",
+      "sha256": "fef263bb419a76c22c48a0079f62076f0336e2e481838b8842debe1ca492a287",
+      "actual_result_lines": [
+        "2501 crate-visible struct fields in src/sim; 2505 at origin/main (merge base f3e09acd28)."
+      ]
+    },
+    "release-after-critic.txt": {
+      "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\release-after-critic.txt",
+      "sha256": "8f31d57cba32c817f1b7e8f8ff9a9f6a61688a01a88aadb9595f410eff792462",
+      "actual_result_lines": [
+        "warning: `vera20k` (lib) generated 23 warnings (run `cargo fix --lib -p vera20k` to apply 13 suggestions)",
+        "    Finished `release` profile [optimized] target(s) in 9m 05s",
+        "Preserved build: E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2",
+        "Cache retention: blocked, removed 0 allocated bytes; E:\\RA2\\vera20k\\.git\\owned-builds\\retention\\1791401507648469200-8a57350f.json",
+        "Cache deletion stopped: Unsupported executable debug dependency format: E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\building-shroud-reveal-20261006-v1\\0\\vera20k.exe"
+      ]
+    }
+  },
+  "full_library_run": {
+    "result": "9712 passed, 2 failed, 241 ignored",
+    "full_suite_repeated": false,
+    "repairs": "Snapshot assertion and Walk fixture repaired and passed focused checks recorded in previous receipt; final critic fix is confined to packed dispatch and independently reruns the complete packed GPU module on both backends."
+  },
+  "field_ratchet": {
+    "exit_code": 0,
+    "current": 2501,
+    "origin_main": 2505,
+    "merge_base": "f3e09acd28"
+  },
+  "production_regressions": {
+    "mobile-110": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\mobile-110-comparison.json",
+      "comparison_sha256": "2dc5c8d9a70f7743cfae78a36a8ddff0cd2f5253d2917d2c99cc8c3e8b9e5889",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\mobile-110",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\mobile-110",
+      "run_sha256": "af50139bdf23acec1fb572eed6418f136bbd5b0031a1cc8e3d973185d025006c",
+      "capture_sha256": "23b428f276e46902934e12b625b2b410e4d267484d4e90170dcc8a8edea102fc",
+      "frame_sha256": "3603610865b11d8189f008fb477a345af3478f12ea52c504133e21437c80894a",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 3033,
+          "path": "E:\\RA2\\vera20k-building-reveal\\tools\\map_observation.mobile-reveal-110.example.json",
+          "sha256": "c2f04d34ff04a7865960ba680164c369dbd4da12124e4a46eae403debce8ea84"
+        }
+      },
+      "map_source": {
+        "entry_id": -854728974,
+        "kind": "mix",
+        "logical_name": "XMP03T4.MAP",
+        "payload_len": 156269,
+        "source_archive": "multimd.mix",
+        "source_sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+      },
+      "final": {
+        "binary_frame": 110,
+        "deterministic_state_hash": 3832070169457660959,
+        "simulation_tick": 110,
+        "total_simulation_ms": 2420
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "mobile-111": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\mobile-111-comparison.json",
+      "comparison_sha256": "dbb7a49f63129b1a1c8c67f20009ea1693e22f934693d875bbefbd2ba644c10a",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\mobile-111",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\mobile-111",
+      "run_sha256": "d8f95b8f728ac41843cdedec2a817bfbb7164047865629141e1e6c51d935af65",
+      "capture_sha256": "89999bf68c4ff91d4248228a01f50263de6f4e4c2b22f733cd2eff1a7ac2cf0e",
+      "frame_sha256": "354268ca49ddce77977714d657b76ec2124c839d1ef644b8b42ceda010b8c3ae",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 3033,
+          "path": "E:\\RA2\\vera20k-building-reveal\\tools\\map_observation.mobile-reveal-111.example.json",
+          "sha256": "8170ccce75707f9945f21d1b5329f39e8cf7059a9e057602b5dd9d378a54fd35"
+        }
+      },
+      "map_source": {
+        "entry_id": -854728974,
+        "kind": "mix",
+        "logical_name": "XMP03T4.MAP",
+        "payload_len": 156269,
+        "source_archive": "multimd.mix",
+        "source_sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+      },
+      "final": {
+        "binary_frame": 111,
+        "deterministic_state_hash": 10534753600150598977,
+        "simulation_tick": 111,
+        "total_simulation_ms": 2442
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "mobile-hidden": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\mobile-hidden-comparison.json",
+      "comparison_sha256": "9fac0ad8045286ee393f13a22d5ae74ec543707532a7b65acbc2dfe47f656d47",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\mobile-hidden",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\mobile-hidden",
+      "run_sha256": "a1fcc6b479e60ff9d5df07cb74d46a00056b6a052e75724fa1deb36432fc8cbb",
+      "capture_sha256": "f2dbb750a8c71c7f2320eaa3064a5492444daeb5ad3c05df18ef1a8f2d917fe4",
+      "frame_sha256": "aaf0dc5bfdce212cb15173b51c65ea0c2a9b863045a203bd662ef2a89ec42d68",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 2779,
+          "path": "E:\\RA2\\vera20k-building-reveal\\tools\\map_observation.mobile-reveal-hidden.example.json",
+          "sha256": "9c21f057aa599c1573c52e37da1e5439d3ea5f36e1ab6339e1dd9c9ea60c14bc"
+        }
+      },
+      "map_source": {
+        "entry_id": -854728974,
+        "kind": "mix",
+        "logical_name": "XMP03T4.MAP",
+        "payload_len": 156269,
+        "source_archive": "multimd.mix",
+        "source_sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+      },
+      "final": {
+        "binary_frame": 1,
+        "deterministic_state_hash": 9912752098905279284,
+        "simulation_tick": 1,
+        "total_simulation_ms": 22
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "mobile-clear": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\mobile-clear-comparison.json",
+      "comparison_sha256": "0fbe076526120559819aa7170edc57c35853614023011eada83873d0b5640b15",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\mobile-clear",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\mobile-clear",
+      "run_sha256": "c44f1661806324040f2d48ae33b08f4b7ae26f66e9adfa7721cbd2eab370ce3a",
+      "capture_sha256": "9e538209fc5585da162081ae7d31db85a5b3a4e8f62e4121e1961c6f17b64842",
+      "frame_sha256": "2ecefccdf705af24acb3f1cf417fa6ff552d5c9bcaa9f9c8d1c20f2c8aef09aa",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 2780,
+          "path": "E:\\RA2\\vera20k-building-reveal\\tools\\map_observation.mobile-reveal-clear.example.json",
+          "sha256": "cc6238e38d92c6a70dab49e27b7f02d1d65dd112c051a3c75d68d59d1b3e83c3"
+        }
+      },
+      "map_source": {
+        "entry_id": -854728974,
+        "kind": "mix",
+        "logical_name": "XMP03T4.MAP",
+        "payload_len": 156269,
+        "source_archive": "multimd.mix",
+        "source_sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+      },
+      "final": {
+        "binary_frame": 1,
+        "deterministic_state_hash": 1208313254639001157,
+        "simulation_tick": 1,
+        "total_simulation_ms": 22
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "tree-25": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\tree-25-comparison.json",
+      "comparison_sha256": "b87837ebad986fa05fbfaf75cad25103e89df2aec8332e497e0bf74e78fa7443",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\tree-25",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\tree-25",
+      "run_sha256": "686dca22b219f3fb68b174e3c37321f5c7de2e09b4cc7fb5d6560ee499acb0fe",
+      "capture_sha256": "2b25d7d0d53c0a6db24f67df8b46fd261eea28dab2e9a63d898de9b78c818bf4",
+      "frame_sha256": "c66bd36448235ce6e1032b069586b4ae0c741149f7d22563b685dabbe69062ef",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 3178,
+          "path": "E:\\RA2\\vera20k-building-reveal\\tools\\map_observation.scenery-tree-25.example.json",
+          "sha256": "8f7d4e42f0b2e9a336e411b6cc1d12c9cf7f0bd125a2a125fe977691966ee8af"
+        }
+      },
+      "map_source": {
+        "entry_id": 953629237,
+        "kind": "mix",
+        "logical_name": "XShrapnel.MAP",
+        "payload_len": 148622,
+        "source_archive": "multimd.mix",
+        "source_sha256": "c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438"
+      },
+      "final": {
+        "binary_frame": 25,
+        "deterministic_state_hash": 13129449062117883958,
+        "simulation_tick": 25,
+        "total_simulation_ms": 550
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "bridge-243": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\bridge-243-comparison.json",
+      "comparison_sha256": "1deb9b480d6553e01e8ca49cf47f5401d405e23e1c63a0c661d1a804f75e3e0c",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\bridge-243",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\bridge-243",
+      "run_sha256": "87272157ad07defdb6ad14f4c3994499234dc975a285ac462e9880436d24d2a8",
+      "capture_sha256": "60040a45faebb0fe4b4f1c85b9d40ab976f4c29b1779a03feefe30d62e497e24",
+      "frame_sha256": "f6b8cc7ad5c583df7f3cf4c359c17d9d3c7af7351bcca67482fe12881e501c41",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 3409,
+          "path": "E:\\RA2\\vera20k-building-reveal\\tools\\map_observation.scenery-bridge-243.example.json",
+          "sha256": "21cb0a066d0c7f165d706b059aeb9ac6b94687d737f2322304014178873556eb"
+        }
+      },
+      "map_source": {
+        "entry_id": 953629237,
+        "kind": "mix",
+        "logical_name": "XShrapnel.MAP",
+        "payload_len": 148622,
+        "source_archive": "multimd.mix",
+        "source_sha256": "c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438"
+      },
+      "final": {
+        "binary_frame": 243,
+        "deterministic_state_hash": 3701825530125591799,
+        "simulation_tick": 243,
+        "total_simulation_ms": 5346
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "rock-94": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\rock-94-comparison.json",
+      "comparison_sha256": "c69548e0a602d960e3e2328415e3657a35e44aac0a5051413e94dd3a4a94d68b",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\rock-94",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\rock-94",
+      "run_sha256": "93c5a94151057df7c3eabfd27f8551ffee5a39c88151ec8cc19709b2d29f01d5",
+      "capture_sha256": "68a527261bc0372829af9ad6272d71916fd5069122c4f5521963e85a57ba8df8",
+      "frame_sha256": "d8c73948b3134068c758aff04bff598aa2d03ff1f4776a155bfc9d7c2b78465c",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 3255,
+          "path": "E:\\RA2\\vera20k-building-reveal\\tools\\map_observation.scenery-rock-94.example.json",
+          "sha256": "6adbe52a25953d9e6bc53286886a60261f6f934409899e086431449c839aced3"
+        }
+      },
+      "map_source": {
+        "entry_id": 953629237,
+        "kind": "mix",
+        "logical_name": "XShrapnel.MAP",
+        "payload_len": 148622,
+        "source_archive": "multimd.mix",
+        "source_sha256": "c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438"
+      },
+      "final": {
+        "binary_frame": 94,
+        "deterministic_state_hash": 7164018987279558183,
+        "simulation_tick": 94,
+        "total_simulation_ms": 2068
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "sub-zero": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-zero-comparison.json",
+      "comparison_sha256": "61c9f158f613876bc198b6b76182997bcbd7e0ec50384e425eadb2c8a053dac1",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-zero",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-zero",
+      "run_sha256": "4750d388d6fa64b5bb3aaee3d482aa0e66beb538f7cdc5b8f57f7382e8f42edf",
+      "capture_sha256": "e5ac5786460ccf9541ee15c42a02044456c3c8af48ad5a334f54f8d9f22dc3f1",
+      "frame_sha256": "cacf36a13a3b824aad6c046640529567a8b12c51f50fb219f1b17a83e87643d0",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 2936,
+          "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-zero.profile.json",
+          "sha256": "3cc933b55fb4fec50497ae17549d65407cc712dd20f7b799cf0512bc47777cdc"
+        }
+      },
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-owned-sub.map",
+        "payload_len": 248878,
+        "source_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a"
+      },
+      "final": {
+        "binary_frame": 0,
+        "deterministic_state_hash": 13416293997595478442,
+        "simulation_tick": 0,
+        "total_simulation_ms": 0
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "sub-guard-1": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-guard-1-comparison.json",
+      "comparison_sha256": "9380b0bb4046d46d9b10caa645a33cc533242c6a8f669c2da07752b5a3432566",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-1",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-guard-1",
+      "run_sha256": "7ab827eea3b83d361b730bdd1534e987b12174a82604b407d297ddc6be315a71",
+      "capture_sha256": "b935af59c92cd5373ecee764953b31f6ea3f4bdca77df8bfefd30c87dde5d82e",
+      "frame_sha256": "5eb4e1e2a19e78b394c4281ed00389c51799cbc305cec19ec05137d4aa2f6132",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 2936,
+          "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-1.profile.json",
+          "sha256": "2d9c78e570fdb8d907ac87f42fdfb3e7b469d188a9a090f0f1f66ed69843de75"
+        }
+      },
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-owned-sub.map",
+        "payload_len": 248878,
+        "source_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a"
+      },
+      "final": {
+        "binary_frame": 1,
+        "deterministic_state_hash": 4958428399016893087,
+        "simulation_tick": 1,
+        "total_simulation_ms": 22
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "sub-guard-2": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-guard-2-comparison.json",
+      "comparison_sha256": "9bad02c9efd695f5376c05d595afc37b846a4e14eb4c69a67e4c2381932f9882",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-2",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-guard-2",
+      "run_sha256": "c17f45c535551bb1ab42502c3bcf4f6c1ae42adea9560e89955e76193d9008de",
+      "capture_sha256": "2038efce9eba619804b6bfed29706d6dc19f5409921270352d2f83388d97f91f",
+      "frame_sha256": "80b7cee9583220ed4099da847cac0f9ea0d2b465701a5a6f8843df43c4541aed",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 2936,
+          "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-2.profile.json",
+          "sha256": "099872d22680440a552d62920c5d959b686433e9e58f579e634a922e26b3b3f9"
+        }
+      },
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-owned-sub.map",
+        "payload_len": 248878,
+        "source_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a"
+      },
+      "final": {
+        "binary_frame": 2,
+        "deterministic_state_hash": 16627338452174702045,
+        "simulation_tick": 2,
+        "total_simulation_ms": 44
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "sub-guard-90": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-guard-90-comparison.json",
+      "comparison_sha256": "0cfdb2af5160ce44503c9b074647300368b070a4244b71f3e99228bb1bb49e61",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-90",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-guard-90",
+      "run_sha256": "70d66647d9e5bc27c6d3573f8e2aad3dd1981306fd9f6e704a39cdac920d1654",
+      "capture_sha256": "edf61236331f8fd64f9fc5b26fd709b9c87cecf85e43bf3bba485201740acbc3",
+      "frame_sha256": "4acea025075e0e3a1107e61ac7bb6db421f50a2bc588ff5e89153704f416da24",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 2937,
+          "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-guard-90.profile.json",
+          "sha256": "efaf9d39185572cf7a9d256c0086c0fd58b388673d1a26755b51d69a7fca3f98"
+        }
+      },
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-owned-sub.map",
+        "payload_len": 248878,
+        "source_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a"
+      },
+      "final": {
+        "binary_frame": 90,
+        "deterministic_state_hash": 14250616211043219552,
+        "simulation_tick": 90,
+        "total_simulation_ms": 1980
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "sub-attack-stop-160": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-attack-stop-160-comparison.json",
+      "comparison_sha256": "1efc569211bb18e09e8c6c236d80f36cef39ab5a279515570f55701d8f23203b",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-attack-stop-160",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-attack-stop-160",
+      "run_sha256": "eb30a1fa4f631cd1ecfefd9b0f9a878d42ac98dce1f7d022d78bff5f4d8dac92",
+      "capture_sha256": "9dbd59c7b92fc99a9c1f2c008fccb664202b47cc358b8e61904f23420ea33ce4",
+      "frame_sha256": "b9b3dbc764329c38cff989b279ef77983928e9afa6afc9644c84846317b42666",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 3310,
+          "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-attack-stop-160.profile.json",
+          "sha256": "9d6f35def872ac417af2db247fd912a82e127503687b1375256ce230afc7e69e"
+        }
+      },
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-owned-sub.map",
+        "payload_len": 248878,
+        "source_sha256": "1b7fbc1f81e3eea64cc0853c7fce3969c904e9131d77b6ad291d0be1a565aa7a"
+      },
+      "final": {
+        "binary_frame": 160,
+        "deterministic_state_hash": 11689202975165364357,
+        "simulation_tick": 160,
+        "total_simulation_ms": 3520
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "sub-decloak-160": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-decloak-160-comparison.json",
+      "comparison_sha256": "669e33bed00d92d69d37f55f785260312619fcc62fb0a5f4a5e55ca56a0d3a33",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-decloak-160",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-decloak-160",
+      "run_sha256": "17790badf438c367eaebf7f7d20ed7a8625a65a42310f4e296999a7138ad9398",
+      "capture_sha256": "63ec4255a00cf716ecbbd7e93244a69bf4f9b43cb8803186111b84945bbc6254",
+      "frame_sha256": "de8080aca845a7cb8f6ee48d6441e94968ea5cccefa8f695318de341e89e343f",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 3316,
+          "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-decloak-160.profile.json",
+          "sha256": "379d1fdb30ea701f255716d88bf3eca1212c6b007dd515b4f226268c2dbd3030"
+        }
+      },
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-decloak-to-fire.map",
+        "payload_len": 248913,
+        "source_sha256": "026aa7dd62d53befde9dc5ea384a728715b4e2a3741879bcdaa6fc7d52fff64c"
+      },
+      "final": {
+        "binary_frame": 160,
+        "deterministic_state_hash": 12727268933463287762,
+        "simulation_tick": 160,
+        "total_simulation_ms": 3520
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    },
+    "sub-decloak-92": {
+      "status": "MATCH",
+      "errors": [],
+      "differences": [],
+      "comparison_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-decloak-92-comparison.json",
+      "comparison_sha256": "5942d1703c14517fff4071129f3e7018f73d205342b9993246280a7892372cc1",
+      "before_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-decloak-92",
+      "after_path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime-v2\\sub-decloak-92",
+      "run_sha256": "bc5191457a56136e3eba1c1cd7427002ebb5259551809db2d0f33044ffaacee1",
+      "capture_sha256": "027535431b52584678d9d442ec37ac4d96b192d4ffd5e824063c6ced55e1c089",
+      "frame_sha256": "0b677248e61fb9b1d260257262ed638cce44f522c5f57c079285daa098b526a5",
+      "inputs": {
+        "config": {
+          "byte_length": 611,
+          "path": "E:\\RA2\\vera20k-building-reveal\\config.toml",
+          "sha256": "acffdbe81804833a0904e04c0b840d5604e0c24b7afe71c1ee8de884b023d572"
+        },
+        "contract": {
+          "byte_length": 613,
+          "path": "E:\\RA2\\vera20k-building-reveal\\src\\app\\diagnostics\\tactical_capture\\contract.v2.json",
+          "sha256": "8b2a2e5be6588727924c8a8a294eec8ce6ab830a257fc0c04d75bf8574a70656"
+        },
+        "executable": {
+          "byte_length": 32810496,
+          "path": "E:\\RA2\\vera20k\\.git\\owned-builds\\artifacts\\packed-shroud-reveal-20261008-v2\\0\\vera20k.exe",
+          "sha256": "592d26c19990652468dfffaa1bc5b37a33f95fb99c27d023b379a57ff25079ab"
+        },
+        "profile": {
+          "byte_length": 3147,
+          "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\sub-decloak-92.profile.json",
+          "sha256": "3cac6de01cdc7d7feba6865dedf222e5434f4a116d0d71f0e339f7860966c342"
+        }
+      },
+      "map_source": {
+        "kind": "loose",
+        "path": "E:\\RA2\\vera20k-building-reveal\\logs\\packed-shroud-fidelity\\runtime\\c2s01md-decloak-to-fire.map",
+        "payload_len": 248913,
+        "source_sha256": "026aa7dd62d53befde9dc5ea384a728715b4e2a3741879bcdaa6fc7d52fff64c"
+      },
+      "final": {
+        "binary_frame": 92,
+        "deterministic_state_hash": 6549185969197544116,
+        "simulation_tick": 92,
+        "total_simulation_ms": 2024
+      },
+      "native_comparator": "NONE",
+      "parity_certification": "NONE"
+    }
+  },
+  "native_reference": {
+    "receipt": "../native-controlflow/translucent-replay-check.receipt.json",
+    "sha256": "6eebb8fbf7d50b78337066e3ab36dd468d11af67dcc7982f6d9eeba66818f414",
+    "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+  },
+  "critic": {
+    "path": "review.md",
+    "passes": 1,
+    "confirmed_defect": "4K union dispatch exceeded requested device workgroup dimension limit",
+    "reproduced_before_fix": true,
+    "fixed": true
+  },
+  "coverage_limits": [
+    "SHP shadow companion geometry/frame lifecycle (including stock DLPH) is pre-existing missing separate mechanism.",
+    "Turreted split source relative native raster/cache depth and warp remain unproved.",
+    "Nonzero Building+6ED override writer/lifecycle remains a separate state mechanism.",
+    "Enabled-FogOfWar Wave framebuffer distortion remains separate; ordinary stock shroud controls use FogOfWar=false.",
+    "Native Techno+24C alias writes are not exhaustively proved absent.",
+    "No whole-scene geometry, native cloak timing/alliance/sensor lifecycle, or normal 20k-unit FPS certification."
+  ]
+}

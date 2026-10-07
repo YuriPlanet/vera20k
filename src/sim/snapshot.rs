@@ -6371,7 +6371,7 @@ mod tests {
             5,
             false,
         );
-        let mut cloak = CloakRuntime::new(0, 9);
+        let mut cloak = CloakRuntime::new(0);
         cloak.establish_unlimbo_fully_cloaked();
         entity.cloak = Some(cloak);
         entity.sensor_deposit = Some(SensorDeposit {

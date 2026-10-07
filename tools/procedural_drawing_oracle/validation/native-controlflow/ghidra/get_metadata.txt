@@ -1,0 +1,12 @@
+Program Name: gamemd.exe
+Executable Path: /D:/steam/steamapps/common/Command & Conquer Red Alert II/gamemd.exe
+Architecture: x86
+Compiler: windows
+Language: x86:LE:32:default
+Endian: Little
+Address Size: 32 bits
+Base Address: 00400000
+Memory Blocks: 6
+Total Memory Size: 8408036 bytes
+Function Count: 8953
+Symbol Count: 36740

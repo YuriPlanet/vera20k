@@ -327,10 +327,7 @@ fn mission_attack_matches_the_original() {
         let away = toward.wrapping_add(0x8000);
         let entity = sim.substrate.entities.get_mut(building).unwrap();
         entity.body_facing.snap(away, FRAME);
-        let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(
-            FRAME as i32,
-            rules.general.cloaking_stages,
-        );
+        let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(FRAME as i32);
         cloak.state = 2;
         entity.cloak = Some(cloak);
 
