@@ -567,7 +567,8 @@ mod tests {
         // Actual x86 function execution over the recorded fixture domain. This
         // does not certify map loading, dummy/alias cases, or final GPU pixels.
         let document: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/render_depth_vectors.json")).unwrap();
+            serde_json::from_str(crate::test_fixture::text("tools/render_depth_vectors.json"))
+                .unwrap();
         fn integer(value: &serde_json::Value, field: &str) -> i32 {
             i32::try_from(value[field].as_i64().unwrap()).unwrap()
         }

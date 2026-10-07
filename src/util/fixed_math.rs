@@ -123,27 +123,6 @@ pub fn fixed_distance(dx: SimFixed, dy: SimFixed) -> SimFixed {
     SimFixed::from_bits(guess.to_bits() as i32)
 }
 
-/// Legacy whole-cell distance estimate used by Rocket movement.
-///
-/// The caller must bound the squared sum to i32 and the result to SimFixed.
-/// The fixed-count integer Newton iteration can end on either member of a
-/// two-cycle (for example, sqrt(8) returns 3); this is not a floor-square-root
-/// contract or native Rocket parity. Fractional distance is not retained.
-/// Rocket's movement mechanism needs native validation before changing this
-/// estimate, because its result controls flight progress and phase timing.
-pub fn int_distance_to_sim(dx: i32, dy: i32) -> SimFixed {
-    let sum: i32 = dx * dx + dy * dy;
-    if sum <= 0 {
-        return SIM_ZERO;
-    }
-    // Newton's method integer sqrt.
-    let mut guess: i32 = sum;
-    for _ in 0..16 {
-        guess = (guess + sum / guess) / 2;
-    }
-    SimFixed::from_num(guess)
-}
-
 /// Integer square root of an `i64` via Newton's method.
 ///
 /// Returns `sqrt(val)` as `i64`. Used for lepton-space distance where the
@@ -427,37 +406,6 @@ mod tests {
             // (b) chosen path equals from_num(reference_double):
             assert_eq!(from_f64, SimFixed::from_num(reference), "row {s:?}");
         }
-    }
-
-    #[test]
-    fn test_int_distance_to_sim_345() {
-        // 3-4-5 right triangle.
-        let dist: SimFixed = int_distance_to_sim(3, 4);
-        assert_eq!(dist, SimFixed::from_num(5));
-    }
-
-    #[test]
-    fn test_int_distance_to_sim_large_map() {
-        // 500x500 diagonal — would overflow SimFixed if done as dx*dx in I16F16.
-        let dist: f32 = int_distance_to_sim(500, 500).to_num();
-        let expected: f32 = (500.0f32 * 500.0 + 500.0 * 500.0).sqrt(); // ~707.1
-        assert!(
-            (dist - expected).abs() < 1.0,
-            "dist={dist}, expected={expected}"
-        );
-    }
-
-    #[test]
-    fn test_int_distance_to_sim_zero() {
-        assert_eq!(int_distance_to_sim(0, 0), SIM_ZERO);
-    }
-
-    #[test]
-    fn test_int_distance_to_sim_axis_aligned() {
-        let dist: SimFixed = int_distance_to_sim(100, 0);
-        assert_eq!(dist, SimFixed::from_num(100));
-        let dist: SimFixed = int_distance_to_sim(0, -250);
-        assert_eq!(dist, SimFixed::from_num(250));
     }
 
     // -----------------------------------------------------------------------

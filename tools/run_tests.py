@@ -2,13 +2,17 @@
 
 Python >= 3.12; install tools/requirements-test.txt. See tools/README.md.
 No retail executable, GPU or game install is needed for the default suite.
+Where the locale encoding is not UTF-8 (Windows), it reruns itself in UTF-8 mode.
 """
 from __future__ import annotations
 
 import argparse
+import codecs
 import importlib.util
+import locale
 import os
 from pathlib import Path
+import subprocess
 import sys
 import unittest
 
@@ -69,5 +73,15 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if result.wasSuccessful() else 1
 
 
+def needs_utf8_mode() -> bool:
+    """Tool sources and evidence are UTF-8; without UTF-8 mode, Windows reads
+    text opened without an encoding with its ANSI code page."""
+    return (not sys.flags.utf8_mode
+            and codecs.lookup(locale.getpreferredencoding(False)).name != 'utf-8')
+
+
 if __name__ == '__main__':
+    if needs_utf8_mode():
+        raise SystemExit(subprocess.call(
+            [sys.executable, '-X', 'utf8', '-m', 'tools.run_tests', *sys.argv[1:]], cwd=ROOT))
     raise SystemExit(main())

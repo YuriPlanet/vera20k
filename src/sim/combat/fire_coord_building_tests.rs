@@ -67,8 +67,8 @@ fn place(sim: &mut Simulation, id: u64, kind: &str, category: EntityCategory, at
 
 #[test]
 fn building_aim_directions_match_the_original() {
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/building_fire_facing.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_fire_facing.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 52);

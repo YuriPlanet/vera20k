@@ -682,8 +682,8 @@ mod tests {
 
     #[test]
     fn finite_subnormal_primitives_match_original_x87_instructions() {
-        let rows: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/x87_subnormal_primitives.json"
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/x87_subnormal_primitives.json",
         ))
         .unwrap();
         let rows = rows.as_array().unwrap();
@@ -740,8 +740,8 @@ mod tests {
 
     #[test]
     fn finite_overlay_velocity_addition_matches_original_common_tail() {
-        let rows: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/unit_per_cell_overlay.json"
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/unit_per_cell_overlay.json",
         ))
         .unwrap();
         let rows = rows.as_array().unwrap();

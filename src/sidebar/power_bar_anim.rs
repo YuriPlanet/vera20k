@@ -569,9 +569,10 @@ mod native_draw_tests {
     }
     #[test]
     fn original_1215_power_draw_sequences_match() {
-        let packet: Packet =
-            serde_json::from_str(include_str!("../../tools/sidebar_oracle/power_draw.json"))
-                .unwrap();
+        let packet: Packet = serde_json::from_str(crate::test_fixture::text(
+            "tools/sidebar_oracle/power_draw.json",
+        ))
+        .unwrap();
         assert_eq!(packet.cases.len(), 1215);
         for c in packet.cases {
             let [surplus_segments, output_segments, drain_segments] = c.counts_surplus_output_drain;

@@ -6,8 +6,8 @@ use super::*;
 use serde_json::Value;
 
 fn rows() -> Vec<Value> {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/track_fresh_admission.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/track_fresh_admission.json",
     ))
     .expect("fresh native corpus")
 }

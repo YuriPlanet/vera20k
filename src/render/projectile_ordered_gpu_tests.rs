@@ -364,7 +364,8 @@ fn ordered_reduction_preserves_noop_bytes_and_chunk_continuation() {
         // Last body is exactly ordinal65535, followed by a new chunk shadow.
         // The independent exhaustive original-leaf corpus supplies the red
         // destination's shadow transition across this implementation chunk.
-        let words = include_bytes!("../../tools/projectile_oracle/bridge_render_pixels.rgb565.bin");
+        let words =
+            crate::test_fixture::bytes("tools/projectile_oracle/bridge_render_pixels.rgb565.bin");
         let expected = u16::from_le_bytes(words[0xf800 * 2..0xf800 * 2 + 2].try_into().unwrap());
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         clear(
@@ -401,7 +402,8 @@ fn ordered_reduction_preserves_noop_bytes_and_chunk_continuation() {
 
 #[test]
 fn original_exhaustive_shadow_transition_is_zero_after_six_applications() {
-    let words = include_bytes!("../../tools/projectile_oracle/bridge_render_pixels.rgb565.bin");
+    let words =
+        crate::test_fixture::bytes("tools/projectile_oracle/bridge_render_pixels.rgb565.bin");
     for start in 0..=u16::MAX {
         let mut word = start;
         for _ in 0..6 {

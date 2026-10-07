@@ -696,8 +696,8 @@ mod tests {
     }
 
     fn fear_corpus() -> serde_json::Value {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/infantry_fear_action.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/infantry_fear_action.json",
         ))
         .unwrap();
         assert_eq!(
@@ -1050,8 +1050,8 @@ mod tests {
     }
 
     fn idle_corpus() -> serde_json::Value {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/anytown_damage/foot_missions.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/anytown_damage/foot_missions.json",
         ))
         .unwrap();
         assert_eq!(

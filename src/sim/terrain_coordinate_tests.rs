@@ -18,8 +18,8 @@ fn bridge_neighbor_terrain_retains_native_surface_coords_through_damage_and_rest
         return;
     };
     let rules = RuleSet::from_ini(&ini).unwrap();
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/terrain_coordinate.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/terrain_coordinate.json",
     ))
     .unwrap();
     for row in corpus["cases"].as_array().unwrap() {

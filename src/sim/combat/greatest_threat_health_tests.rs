@@ -9,8 +9,8 @@ fn bits(row: &Value, key: &str) -> NativeF64Bits {
 
 #[test]
 fn native_health_term_spills_and_retaliation_predicates_preserve_nonfinite_values() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/threat_health.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/threat_health.json",
     ))
     .unwrap();
     let rows = corpus["health_terms"].as_array().unwrap();
@@ -62,8 +62,8 @@ fn native_health_term_spills_and_retaliation_predicates_preserve_nonfinite_value
 
 #[test]
 fn actual_scorer_consumes_live_signed_strength_and_masked_zero_division() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/threat_health.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/threat_health.json",
     ))
     .unwrap();
     let mut compared = 0;

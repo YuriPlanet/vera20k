@@ -1023,8 +1023,8 @@ mod tests {
              [Drok]\nSound=Drok\nName=THEME:Drok\nNormal=yes\n",
         )
         .expect("write thememd.ini");
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/storage_oracle/sound_theme_metadata.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/sound_theme_metadata.json",
         ))
         .unwrap();
         let drok = fixture["cases"]
@@ -1447,8 +1447,8 @@ mod tests {
 
     #[test]
     fn current_song_matches_both_original_callers() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/storage_oracle/sound_theme_metadata.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/sound_theme_metadata.json",
         ))
         .unwrap();
         let cases = fixture["current_song_cases"].as_array().unwrap();

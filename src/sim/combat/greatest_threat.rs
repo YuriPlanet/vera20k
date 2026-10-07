@@ -1750,7 +1750,8 @@ fn evaluate_candidate(
     }
 
     // G19 — `Insignificant=` (`+0x232`), `0x006F8364..0x006F847D`, on an
-    // object not mind-controlled: a building passes unless its owner is
+    // object neither mind-controlled (`+0x2C0`) nor permanently controlled
+    // by the Psychic Dominator (`+0x2C4`): a building passes unless its owner is
     // `MultiplayPassive`, and the rest take the passive-house exception,
     // which only a building meets. Stock authors `Insignificant=yes` on 26
     // civilian vehicles (cars, buses, taxis), 22 civilian infantry types
@@ -3483,9 +3484,10 @@ mod tests {
 
     #[test]
     fn vhp_scan_matches_original_integer_slices() {
-        let rows: serde_json::Value =
-            serde_json::from_str(include_str!("../../../tools/spatial_oracle/vhp_scan.json"))
-                .unwrap();
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/vhp_scan.json",
+        ))
+        .unwrap();
         let rows = rows.as_array().unwrap();
         assert_eq!(rows.len(), 498);
         for row in rows {

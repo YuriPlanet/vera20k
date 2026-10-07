@@ -37,9 +37,8 @@ pub fn launch(
     // SuperClass::Launch case 1 (0x006CCF39..0x006CD035) selects a live
     // CellClass list, invokes +0x154, then reads that object's +0x30 AFTER the
     // call. Never snapshot recipients or infer membership from coordinates.
-    // Native also skips external chrono-warp latch +0x27C on Technos. Its
-    // ChronoWarp/action-128 producers have no current Rust implementation; do
-    // not substitute ordinary teleport_state, whose native path leaves it clear.
+    // A Foot under the Chronosphere's warp latch (+0x27C, 0x006CCFF8..
+    // 0x006CD006) is skipped.
     let mut target_count = 0;
     for (x, y) in native_cells_3x3(target_rx, target_ry) {
         let Some(((rx, ry), layer)) = selected_cell_list(sim, x, y) else {
@@ -51,7 +50,12 @@ pub fn launch(
             .get(rx, ry)
             .and_then(|cell| cell.first_on_layer(layer));
         while let Some(id) = next {
-            if let Some(entity) = sim.substrate.entities.get(id) {
+            if let Some(entity) = sim
+                .substrate
+                .entities
+                .get(id)
+                .filter(|entity| !entity.chrono_warp_latch())
+            {
                 let category = entity.category;
                 let type_ref = entity.type_ref();
                 if category == EntityCategory::Infantry {
@@ -263,6 +267,39 @@ Translucent=yes
             e.invulnerability.as_ref(),
             sim.session.binary_frame
         ));
+    }
+
+    /// The curtained tank's tint stage steps in its own Techno AI
+    /// (`0x006F9EAF`) and draws from the Scenario stream once, at its stage
+    /// 2 step: the AI visit ten frames after its first under the curtain.
+    /// The same idle tank uncurtained draws in the same other visits.
+    #[test]
+    fn a_curtained_tank_draws_its_tint_number_in_its_own_ai() {
+        let rules = test_rules();
+        let drawing_visits = |curtain: bool| {
+            let mut sim = Simulation::new();
+            let owner = sim.interner.intern("Americans");
+            spawn(&mut sim, 1, "MTNK", 10, 10, EntityCategory::Unit);
+            let sw_test = sim.interner.intern("SWTEST");
+            if curtain {
+                assert!(launch(&mut sim, &rules, owner, 10, 10, sw_test, None));
+            }
+            let mut drawn = Vec::new();
+            for visit in 1..=40 {
+                let ((), draws) = crate::sim::rng::trace_draws(|| {
+                    sim.advance_tick(&[], Some(&rules), None, None, 67);
+                });
+                if draws.iter().any(|draw| draw["logic_object"] == 1) {
+                    drawn.push(visit);
+                }
+            }
+            drawn
+        };
+        let mut expected = drawing_visits(false);
+        assert!(!expected.contains(&11));
+        expected.push(11);
+        expected.sort();
+        assert_eq!(drawing_visits(true), expected);
     }
 
     #[test]

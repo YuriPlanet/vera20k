@@ -16,12 +16,12 @@ use crate::util::fixed_math::SimFixed;
 
 #[test]
 fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/infantry_scatter_entry_priority.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_scatter_entry_priority.json",
     ))
     .unwrap();
-    let metadata: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/infantry_scatter_entry_priority.meta.json"
+    let metadata: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_scatter_entry_priority.meta.json",
     ))
     .unwrap();
     assert_eq!(

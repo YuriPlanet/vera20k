@@ -730,6 +730,23 @@ impl FactoryRegistry {
         self.factories.get(&holder)
     }
 
+    /// Whether a running factory is building `entity`: its object
+    /// (`FactoryClass::GetObject @ 0x004CA160`, `+0x58`) is that Techno, its
+    /// rate (`+0x38`) is set and `+0x70` (completion or the user's hold) is
+    /// clear. `HouseClass::AI_FindBestRallyTarget`'s test for a Hard house
+    /// (`0x0050CCA2..0x0050CCDC`, every factory).
+    pub(crate) fn is_building(&self, entity: u64) -> bool {
+        self.factories.values().any(|factory| {
+            factory
+                .object
+                .as_ref()
+                .is_some_and(|object| object.entity_id == Some(entity))
+                && factory.step_rate_frames != 0
+                && !factory.suspended
+                && !factory.manual
+        })
+    }
+
     /// The factory `BuildingClass+0x524` holds for building `building`.
     pub(crate) fn building_factory(&self, building: u64) -> Option<&Factory> {
         self.factories.get(&FactoryHolder::Building(building))
@@ -1396,8 +1413,8 @@ pub(super) fn native_time_to_build_inputs(row: &serde_json::Value) -> TimeToBuil
 /// result, and the row itself.
 #[cfg(test)]
 fn native_time_to_build_rows() -> Vec<(TimeToBuildInputs, i32, serde_json::Value)> {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/time_to_build.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/time_to_build.json",
     ))
     .expect("oracle rows");
     rows.into_iter()
@@ -1413,8 +1430,8 @@ fn native_time_to_build_rows() -> Vec<(TimeToBuildInputs, i32, serde_json::Value
 /// start alone, `builds` rows then run `FactoryClass::AI` once per frame.
 #[cfg(test)]
 pub(super) fn native_factory_cadence() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/factory_cadence.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/factory_cadence.json",
     ))
     .expect("cadence oracle")
 }
@@ -1537,8 +1554,8 @@ mod tests {
         use crate::sim::power_system::PowerState;
         use crate::sim::world::Simulation;
 
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/house_power_consumers.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/house_power_consumers.json",
         ))
         .unwrap();
         assert_eq!(

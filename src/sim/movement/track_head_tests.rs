@@ -7,8 +7,8 @@ use crate::sim::pathfinding::PathGrid;
 use crate::util::fixed_math::SimFixed;
 
 fn corpus() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/locomotor_head_coordinates.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/locomotor_head_coordinates.json",
     ))
     .unwrap()
 }
@@ -378,8 +378,8 @@ fn production_process_admission_uses_valid_selector_independently_of_head() {
 #[test]
 fn retained_admission_matches_native_entry_cases_without_tube_or_turn_latch() {
     use crate::sim::components::TrackProgress;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/track_process_entry.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/track_process_entry.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 144);

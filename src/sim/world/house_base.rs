@@ -772,8 +772,8 @@ mod tests {
 
     #[test]
     fn native_home_inputs_keep_retained_base_geometry_across_snapshot_load() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/house_base_return.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/house_base_return.json",
         ))
         .unwrap();
         for row in corpus["home_return"].as_array().unwrap() {
@@ -801,12 +801,12 @@ mod tests {
 
     #[test]
     fn original_house_500200_ordinary_return_rows_through_production_owner() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/house_base_return.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/house_base_return.json",
         ))
         .unwrap();
-        let meta: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/house_base_return.meta.json"
+        let meta: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/house_base_return.meta.json",
         ))
         .unwrap();
         assert_eq!(
@@ -921,12 +921,12 @@ mod tests {
 
     #[test]
     fn original_house_4fd150_projection_rows_and_shared_cost_queries() {
-        let default: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/house_base_projection.json"
+        let default: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/house_base_projection.json",
         ))
         .unwrap();
-        let selected: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/house_base_return.json"
+        let selected: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/house_base_return.json",
         ))
         .unwrap();
         let mut production_rows = 0;
@@ -1298,8 +1298,8 @@ mod tests {
 
     #[test]
     fn original_factory_plant_f32_fold_including_gradual_underflow() {
-        let rows: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/factory_plant_factors.json"
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/factory_plant_factors.json",
         ))
         .unwrap();
         for row in rows.as_array().unwrap() {

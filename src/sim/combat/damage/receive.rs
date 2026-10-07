@@ -205,8 +205,8 @@ pub(crate) mod tests {
             build_cat: u32,
             house_type_mults: [u32; 5],
         }
-        let corpus: Corpus = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/damage_build.json"
+        let corpus: Corpus = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/damage_build.json",
         ))
         .expect("original damage-build corpus");
         let mut rulesets = std::collections::BTreeMap::new();
@@ -279,8 +279,8 @@ pub(crate) mod tests {
             elite_stronger: u8,
             veteran_armor: u32,
         }
-        let corpus: Corpus = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/damage_build.json"
+        let corpus: Corpus = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/damage_build.json",
         ))
         .expect("original damage-build corpus");
         assert_eq!(corpus.receive.len(), 1659);

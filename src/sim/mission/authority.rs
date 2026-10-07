@@ -1529,12 +1529,12 @@ mod tests {
                 (raw, rules)
             })
             .collect();
-        let native: Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/base_defense_response.json"
+        let native: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/base_defense_response.json",
         ))
         .unwrap();
-        let completion: Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/walk_completion.json"
+        let completion: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/walk_completion.json",
         ))
         .unwrap();
 

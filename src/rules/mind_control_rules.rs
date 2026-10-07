@@ -30,6 +30,10 @@ pub struct MindControlRules {
     /// `[CombatDamage] ControlledAnimationType=` (Rules `+0x320`, read at
     /// `0x0066CA11`): the ring a captured object wears (stock `MINDANIM`).
     pub controlled_anim: Option<String>,
+    /// `[CombatDamage] PermaControlledAnimationType=` (Rules `+0x324`, read
+    /// at `0x0066CA4F`): the ring an object the Psychic Dominator captured
+    /// wears (`PsyDom::MindControlArea @ 0x0053B080`; stock `MINDANIMR`).
+    pub perma_controlled_anim: Option<String>,
     /// `[CombatDamage] OverloadCount=` (Rules `+0xEE8`, `0x0066C7A4`): the
     /// captive counts that select each overload row.
     pub overload_count: Vec<i32>,
@@ -67,6 +71,9 @@ impl MindControlRules {
             // ReadString 0x80, then the anim or sound lookup.
             controlled_anim: combat
                 .read_type_name("ControlledAnimationType", 0x80)
+                .map(str::to_string),
+            perma_controlled_anim: combat
+                .read_type_name("PermaControlledAnimationType", 0x80)
                 .map(str::to_string),
             overload_count: list(combat, "OverloadCount"),
             overload_damage: list(combat, "OverloadDamage"),

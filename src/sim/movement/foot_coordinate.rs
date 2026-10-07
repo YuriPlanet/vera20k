@@ -28,24 +28,6 @@ pub(super) fn current_coordinate(entity: &GameEntity) -> DriveCoord {
     }
 }
 
-/// Publish the integer displacement of an existing altitude controller onto
-/// the owner's exact coordinate, without reinterpreting it as a ground
-/// baseline. Quantize each endpoint separately: the stored Object coordinate
-/// has integer leptons. A rocket's Location carries its launch coordinate from
-/// its Unlimbo (`spawn_manager::launch_coordinate`); an owner without an exact
-/// Z has no coordinate to move and keeps none.
-pub(super) fn publish_altitude_change(
-    position: &mut crate::sim::components::Position,
-    previous: crate::util::fixed_math::SimFixed,
-    next: crate::util::fixed_math::SimFixed,
-) {
-    if let Some(z) = position.exact_z_leptons.as_mut() {
-        *z = z
-            .wrapping_sub(previous.to_num::<i32>())
-            .wrapping_add(next.to_num::<i32>());
-    }
-}
-
 /// Stored head, before the Head_To null fallback. AtCoord's handoff transform
 /// needs these original XY values even when Head_To resolves to current XYZ.
 pub(super) fn stored_head(entity: &GameEntity) -> Option<DriveCoord> {

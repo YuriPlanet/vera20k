@@ -16,6 +16,7 @@
 //!   script step, with `Recalc`, `Calc_Center`, `Regroup`, the
 //!   under-strength retreat and a member's damage report.
 //! - `actions`: the script step and the ported script actions.
+//! - `super_actions`: the superweapon script actions 55 and 57.
 //! - `orders`: the member virtuals team code calls.
 //!
 //! Each submodule lists its residuals. The TeamType's Tag (`+0xD0`, created
@@ -39,6 +40,7 @@ mod actions;
 mod membership;
 mod orders;
 mod registry_install;
+mod super_actions;
 mod team_ai;
 
 /// One resolved ScriptType action record.

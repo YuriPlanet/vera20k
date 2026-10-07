@@ -36,8 +36,8 @@ use serde_json::{Value, json};
 const TICK_MS: u32 = 67;
 
 fn ground_command_corpus() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/walk_first_path.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/walk_first_path.json",
     ))
     .unwrap()
 }
@@ -1528,8 +1528,10 @@ fn initialized_gi_deploy_class_contexts_match_original_returns() {
 }
 
 fn corpus() -> Value {
-    let data: Value =
-        serde_json::from_str(include_str!("fixtures/factory_infantry_local_native.json")).unwrap();
+    let data: Value = serde_json::from_str(crate::test_fixture::text(
+        "src/sim/world/fixtures/factory_infantry_local_native.json",
+    ))
+    .unwrap();
     assert_eq!(data["schema_version"], 2);
     assert_eq!(
         data["native_sha256"],
@@ -1858,8 +1860,8 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 .expect("the ordinary app frame completes");
             let admitted = output.take_admitted_commands();
             if products[0].completed_frame.is_some() && products[0].placed_frame.is_none() {
-                let phase: Value = serde_json::from_str(include_str!(
-                    "fixtures/factory_infantry_publication_native.json"
+                let phase: Value = serde_json::from_str(crate::test_fixture::text(
+                    "src/sim/world/fixtures/factory_infantry_publication_native.json",
                 ))
                 .unwrap();
                 assert_eq!(phase["native_sha256"], native["native_sha256"]);

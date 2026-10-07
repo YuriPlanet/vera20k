@@ -57,8 +57,8 @@ fn edges(hierarchy: &ZoneHierarchy) -> Value {
 
 #[test]
 fn direct_repair_edges_match_original_all_theater_offsets_and_boundaries() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_repair_zones.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_repair_zones.json",
     ))
     .unwrap();
     let mut count = 0;
@@ -93,8 +93,8 @@ fn direct_repair_edges_match_original_all_theater_offsets_and_boundaries() {
 
 #[test]
 fn record_activation_matches_original_and_keeps_raw_connectivity_rows() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_repair_zones.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_repair_zones.json",
     ))
     .unwrap();
     let mut count = 0;
@@ -219,8 +219,8 @@ fn record_activation_matches_original_and_keeps_raw_connectivity_rows() {
 
 #[test]
 fn connectivity_consumes_retained_classes_and_matches_original_thirteen_rows() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_connectivity.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_connectivity.json",
     ))
     .unwrap();
     let originals = corpus["cases"].as_array().unwrap();

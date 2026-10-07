@@ -1556,8 +1556,8 @@ TurretAnimIsVoxel={}\n\n\
         !fires_at_offset(false, 1, 0x0801),
         "and is refused past it, with no snap-and-retry"
     );
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/building_fire_turn.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_fire_turn.json",
     ))
     .unwrap();
     for row in native.as_array().unwrap() {
@@ -1810,8 +1810,8 @@ fn turret_cadence_matches_the_original() {
     use crate::sim::movement::turret::facing_update;
     use crate::util::fixed_math::SimFixed;
 
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/turret_cadence.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/turret_cadence.json",
     ))
     .unwrap();
     let off_map = |input: &serde_json::Value| {

@@ -91,9 +91,10 @@ mod tests {
 
     #[test]
     fn saved_entry_order_and_comparison_count_match_original_instructions() {
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/storage_oracle/seed_order.json"))
-                .unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/seed_order.json",
+        ))
+        .unwrap();
         let cases = vectors["cases"].as_object().unwrap();
         assert_eq!(cases.len(), 36);
         for (name, case) in cases {

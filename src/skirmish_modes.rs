@@ -196,8 +196,9 @@ pub(crate) fn skirmish_modes_from_selected_ini(
 
 #[cfg(test)]
 pub(crate) fn stock_skirmish_modes() -> Vec<SkirmishGameMode> {
-    const TEST_ROSTER: &str = include_str!("../tests/fixtures/ini/mpmodesmd_stock_contract.ini");
-    let roster = IniFile::from_str(TEST_ROSTER);
+    let roster = IniFile::from_str(crate::test_fixture::text(
+        "tests/fixtures/ini/mpmodesmd_stock_contract.ini",
+    ));
     parse_mpmodes_ini_with_overrides(&roster, |name| {
         let settings = match name.to_ascii_lowercase().as_str() {
             "mpteammd.ini" => "AlliesAllowed=yes\nMustAlly=yes\n",

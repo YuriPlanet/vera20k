@@ -212,8 +212,8 @@ mod tests {
     use super::*;
     #[test]
     fn numeric_263px_rails_match_original_pointer_and_thumb_projection() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/launcher_trackbar.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/launcher_trackbar.json",
         ))
         .unwrap();
         let native = fixture["geometries"]
@@ -249,8 +249,8 @@ mod tests {
     }
     #[test]
     fn original_b8_resource_children_match_executed_placement() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/sound_shell_layout.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/sound_shell_layout.json",
         ))
         .unwrap();
         for case in fixture["cases"].as_array().unwrap() {

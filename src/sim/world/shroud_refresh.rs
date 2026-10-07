@@ -7,6 +7,19 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::{pathfinding::PathGrid, vision};
 
 impl Simulation {
+    /// The settings a single object's reveal (`TechnoClass::UpdateReveal @
+    /// 0x0070AF50` and its callers) reads: the stored playfield byte gates
+    /// it, and the rules' sight keys and the game's fog shape it.
+    pub(crate) fn sight_reveal_config(&self, rules: Option<&RuleSet>) -> vision::VisionConfig {
+        vision::VisionConfig {
+            require_playfield_membership: true,
+            veteran_sight: rules.map_or(0.0, |r| r.general.veteran_sight),
+            leptons_per_sight_increase: rules.map_or(0, |r| r.general.leptons_per_sight_increase),
+            reveal_by_height: rules.is_none_or(|r| r.general.reveal_by_height),
+            fog_of_war: self.session.game_options.fog_of_war,
+        }
+    }
+
     pub(super) fn refresh_high_flying_sight_before_process(
         &mut self,
         stable_id: u64,
@@ -68,13 +81,7 @@ impl Simulation {
         if due.is_empty() {
             return;
         }
-        let config = vision::VisionConfig {
-            require_playfield_membership: true,
-            veteran_sight: rules.map_or(0.0, |r| r.general.veteran_sight),
-            leptons_per_sight_increase: rules.map_or(0, |r| r.general.leptons_per_sight_increase),
-            reveal_by_height: rules.map_or(true, |r| r.general.reveal_by_height),
-            fog_of_war: self.session.game_options.fog_of_war,
-        };
+        let config = self.sight_reveal_config(rules);
         let height_grid = if config.reveal_by_height {
             self.path_grid().map(PathGrid::ground_height_grid)
         } else {

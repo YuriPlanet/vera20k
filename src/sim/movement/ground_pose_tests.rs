@@ -760,7 +760,7 @@ fn surface_query_uses_live_fixed_slot_alias_and_stamps_nonzero_shared_dummy() {
 #[test]
 fn live_surface_and_coordinate_setter_match_all_native_ramp_vectors() {
     let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("../../../tools/ramp_height_vectors.json")).unwrap();
+        serde_json::from_str(crate::test_fixture::text("tools/ramp_height_vectors.json")).unwrap();
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(
         cases.len(),

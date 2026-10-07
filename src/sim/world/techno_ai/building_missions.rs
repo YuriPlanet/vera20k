@@ -162,6 +162,9 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: Option<&Rul
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.advance_building_body(now, archive_less_sale, has_turret, options);
     }
+    // 450F9E..451145, between the step and the ready admission, which it
+    // does not touch.
+    sim.update_super_weapon_anims(id, rules);
 }
 
 ///43FE27's first check requires BState!=0;43FF91's second does not.
@@ -230,7 +233,7 @@ pub(super) fn dispatch(
             Some(delay) => delay,
             None => return,
         },
-        Some(MissionType::Missile) => return,
+        Some(MissionType::Missile) => super::building_missile::mission_missile(sim, id, rules),
         // Every other slot of the building's table, and no mission (above
         // `0x1F`, `0x005B30BB`), is a MissionClass stub.
         _ => DEFAULT_MISSION_DELAY,
@@ -521,8 +524,14 @@ fn clear_factory_exit_bib(
 }
 
 /// `Queue_Mission(mission, false)` then Commence, as both handlers switch
-/// missions (`0x00449792`/`0x0044979C`, `0x0044B13E`/`0x0044B148`).
-fn queue_and_commence(sim: &mut Simulation, id: u64, mission: MissionType, rules: &RuleSet) {
+/// missions (`0x00449792`/`0x0044979C`, `0x0044B13E`/`0x0044B148`) and
+/// `SuperClass::Launch` starts a silo's Missile (`0x006CDDAD`/`0x006CDDB7`).
+pub(crate) fn queue_and_commence(
+    sim: &mut Simulation,
+    id: u64,
+    mission: MissionType,
+    rules: &RuleSet,
+) {
     let now = sim.session.binary_frame;
     let readiness = LiveReadyInputProvider { rules };
     let _ = sim.mission_queue_exact(id, MissionId::from_known(mission), 0, now, &readiness);

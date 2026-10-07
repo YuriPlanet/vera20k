@@ -185,8 +185,8 @@ fn new_ids(sim: &Simulation, before: &[u64]) -> Vec<u64> {
 /// a second one, while using the shared class placement owner.
 #[test]
 fn building_crew_keeps_distinct_native_caller_placement_and_rng() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "world/world_spawn/fixtures/infantry_unlimbo_placement_native.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "src/sim/world/world_spawn/fixtures/infantry_unlimbo_placement_native.json",
     ))
     .unwrap();
     let row = corpus["rows"]
@@ -1532,8 +1532,8 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
 /// the original instructions' outputs (`tools/spatial_oracle/survivor_facing.py`).
 #[test]
 fn survivor_direction_matches_the_original() {
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/survivor_facing.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/survivor_facing.json",
     ))
     .unwrap();
     let rows = rows.as_array().unwrap();

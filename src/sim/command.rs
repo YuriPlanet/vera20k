@@ -578,9 +578,9 @@ pub enum Command {
         attacker_id: u64,
         target_building_id: u64,
     },
-    /// Fire a superweapon at a target cell.
-    /// The sim validates that the owner has a ready instance of the specified SW type
-    /// and dispatches to the appropriate launch handler.
+    /// Fire a superweapon at a target cell: the SPECIAL_PLACE event, which
+    /// runs `HouseClass::Fire_SW` (`Simulation::fire_super_weapon`; its
+    /// ClickFire admits the Super).
     LaunchSuperWeapon {
         sw_type_id: InternedId,
         target_rx: u16,

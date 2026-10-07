@@ -704,8 +704,8 @@ fn retail_building_voxel_turrets_load_their_native_barrels() {
 
 #[test]
 fn building_voxel_filenames_match_original_loader_execution() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/voxel_oracle/building_barrel.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/building_barrel.json",
     ))
     .unwrap();
     for case in native["loader_cases"].as_array().unwrap() {
@@ -855,8 +855,8 @@ fn retail_ifv_atlas_covers_all_turrets_without_replicating_its_hull() {
 #[test]
 fn indexed_turret_names_and_draw_admission_match_native_controls() {
     use crate::sim::voxel_frame_catalog::voxel_turret_index;
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/ifv_turret_switching.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/ifv_turret_switching.json",
     ))
     .expect("native IFV corpus");
     for row in native["draw"]["filenames"].as_array().unwrap() {
@@ -905,8 +905,8 @@ fn retail_ifv_models_draw_four_distinct_guns_and_share_body_and_shadow() {
         return;
     };
     let (_, assets) = retail_assets().expect("the battle rules came from RA2_DIR");
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/ifv_turret_switching.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/ifv_turret_switching.json",
     ))
     .unwrap();
     for row in native["physical"]["assets"].as_array().unwrap() {

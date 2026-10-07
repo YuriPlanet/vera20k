@@ -202,8 +202,8 @@ mod tests {
 
     #[test]
     fn bridge_tree_strength_reader_matches_original_constructor_and_fallback() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/terrain_strength.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/terrain_strength.json",
         ))
         .unwrap();
         for row in corpus["cases"].as_array().unwrap() {

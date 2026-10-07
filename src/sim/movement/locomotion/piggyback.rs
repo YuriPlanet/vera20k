@@ -56,14 +56,13 @@ pub struct WalkRuntime {
 /// Class-local state that travels with the locomotor object.
 ///
 /// Special process state is carried here rather than reconstructed from a phase
-/// byte when a complete locomotor is suspended or loaded. Rocket's process
-/// state remains entity-owned; its variant only marks that class.
+/// byte when a complete locomotor is suspended or loaded.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum LocomotorRuntimePayload {
     Drive(DriveRuntime),
     Walk(WalkRuntime),
     Teleport(super::super::teleport_movement::TeleportRuntime),
-    Rocket,
+    Rocket(super::super::rocket_movement::RocketRuntime),
     Hover(super::super::hover::HoverRuntime),
     Ship(ShipRuntime),
     Fly(super::super::fly_height::FlyRuntime),
@@ -76,7 +75,9 @@ impl LocomotorRuntimePayload {
             LocomotorKind::Drive => Self::Drive(DriveRuntime::at_binary_frame(binary_frame)),
             LocomotorKind::Walk => Self::Walk(WalkRuntime::default()),
             LocomotorKind::Teleport => Self::Teleport(Default::default()),
-            LocomotorKind::Rocket => Self::Rocket,
+            LocomotorKind::Rocket => Self::Rocket(
+                super::super::rocket_movement::RocketRuntime::constructed(binary_frame),
+            ),
             LocomotorKind::Hover => Self::Hover(Default::default()),
             LocomotorKind::Ship => Self::Ship(ShipRuntime::at_binary_frame(binary_frame)),
             LocomotorKind::Fly => Self::Fly(Default::default()),
@@ -374,7 +375,12 @@ mod tests {
         let bytes = bincode::serialize(&state).expect("serialize locomotor");
         let loaded: LocomotorState = bincode::deserialize(&bytes).expect("load locomotor");
 
-        assert_eq!(loaded.runtime_payload, LocomotorRuntimePayload::Rocket);
+        assert_eq!(
+            loaded.runtime_payload,
+            LocomotorRuntimePayload::Rocket(
+                super::super::super::rocket_movement::RocketRuntime::constructed(0)
+            )
+        );
         assert_eq!(
             loaded
                 .piggyback

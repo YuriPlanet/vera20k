@@ -11,8 +11,8 @@ use crate::util::fixed_math::{SIM_ZERO, sim_from_f32};
 fn walk_destination_and_cell_producer_match_original_startup_conversion() {
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
     use crate::sim::{components::DriveCoord, game_entity::GameEntity};
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/walk_head_occupation.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/walk_head_occupation.json",
     ))
     .unwrap();
     let rows = native["destination"].as_array().unwrap();
@@ -84,8 +84,8 @@ fn walk_destination_and_cell_producer_match_original_startup_conversion() {
 #[test]
 fn walk_moving_byte_matches_original_setter_and_head_lifetime_traces() {
     use crate::sim::components::DriveCoord;
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/walk_head_occupation.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/walk_head_occupation.json",
     ))
     .unwrap();
     let cases = native["moving"].as_array().unwrap();

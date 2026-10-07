@@ -9,16 +9,16 @@ use crate::sim::deploy_tests::{assert_native_deploy_state, native_deploy_fixture
 use crate::sim::mission::{MissionDispatchTimer, MissionId};
 
 pub(super) fn corpus() -> Value {
-    let meta: Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/infantry_auto_deploy.meta.json"
+    let meta: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_auto_deploy.meta.json",
     ))
     .unwrap();
     assert_eq!(
         meta["native_sha256"],
         "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
-    serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/infantry_auto_deploy.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_auto_deploy.json",
     ))
     .unwrap()
 }

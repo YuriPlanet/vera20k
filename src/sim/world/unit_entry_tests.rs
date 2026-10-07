@@ -8,7 +8,7 @@ use crate::util::fixed_math::SimFixed;
 #[test]
 fn unit_entry_preserves_original_numeric_results_and_repair_projection() {
     compare_rows(
-        include_str!("../../../tools/spatial_oracle/unit_entry.json"),
+        crate::test_fixture::text("tools/spatial_oracle/unit_entry.json"),
         150,
         true,
     );
@@ -17,7 +17,7 @@ fn unit_entry_preserves_original_numeric_results_and_repair_projection() {
 #[test]
 fn unit_entry_matches_original_height_bridge_and_tube_traversal() {
     compare_rows(
-        include_str!("../../../tools/spatial_oracle/unit_entry_traversal.json"),
+        crate::test_fixture::text("tools/spatial_oracle/unit_entry_traversal.json"),
         328,
         false,
     );
@@ -26,7 +26,7 @@ fn unit_entry_matches_original_height_bridge_and_tube_traversal() {
 #[test]
 fn unit_entry_matches_original_playfield_boundary_permissions() {
     compare_rows(
-        include_str!("../../../tools/spatial_oracle/unit_entry_boundary.json"),
+        crate::test_fixture::text("tools/spatial_oracle/unit_entry_boundary.json"),
         100,
         true,
     );
@@ -35,7 +35,7 @@ fn unit_entry_matches_original_playfield_boundary_permissions() {
 #[test]
 fn unit_entry_reads_actual_blocker_movement_state() {
     compare_rows(
-        include_str!("../../../tools/spatial_oracle/unit_entry_motion.json"),
+        crate::test_fixture::text("tools/spatial_oracle/unit_entry_motion.json"),
         56,
         true,
     );
@@ -44,7 +44,7 @@ fn unit_entry_reads_actual_blocker_movement_state() {
 #[test]
 fn unit_entry_reads_fly_pitch_and_jumpjet_request_independently_of_phase() {
     compare_rows(
-        include_str!("../../../tools/spatial_oracle/unit_entry_air_motion.json"),
+        crate::test_fixture::text("tools/spatial_oracle/unit_entry_air_motion.json"),
         288,
         true,
     );

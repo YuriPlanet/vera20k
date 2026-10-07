@@ -52,7 +52,7 @@ const STATE_DONE: u32 = 4;
 
 /// Aircraft handler states on `aircraft+0xBC`. Native state 1 (written only
 /// at `0x0041541F`, inside the team arm) is not ported with the rest of that
-/// arm (the team residual on [`dispatch_aircraft_unload`]).
+/// arm (the team residual on [`mission_unload`]).
 const AIR_STATE_CHECK_LANDED: u32 = 0;
 const AIR_STATE_WAIT_STOP: u32 = 2;
 const AIR_STATE_EJECT: u32 = 3;
@@ -417,7 +417,7 @@ enum EjectOutcome {
 /// re-inserts the passenger with `AddPassenger` (`0x0073DC78`) and re-applies
 /// the gunner weapon (`0x0073DC96`). A transport in a team would add the
 /// passenger to it after `Set_Destination` (`0x0073DC0C..0x0073DC19`; the
-/// team residual on [`dispatch_aircraft_unload`]).
+/// team residual on [`mission_unload`]).
 ///
 /// Infantry `Unlimbo` (`InfantryClass::Unlimbo @ 0x0051DFF0`) runs
 /// `PlaceInfantryInCell` a second time from the already-adjusted sub-cell
@@ -705,8 +705,9 @@ fn aircraft_landed(
             .is_none_or(|loco| loco.altitude == SIM_ZERO)
 }
 
-/// The Aircraft Unload slot `0x004151E0`, for a `Passengers > 0` aircraft.
-/// Timer-gated inside; writes its own epilogue. Dormant in retail: read
+/// The Aircraft Unload slot `0x004151E0`, for a `Passengers > 0` aircraft;
+/// returns its frames ([`crate::sim::aircraft::dispatch_native_mission`]
+/// gates it on the mission timer and restarts the timer). Dormant in retail: read
 /// through `RuleSet::from_ini`, no `[AircraftTypes]` entry has `Passengers=`.
 /// The Nighthawk `[SHAD]` is a Jumpjet `[VehicleTypes]` entry and unloads
 /// through [`unit_mission_unload`].
@@ -753,24 +754,14 @@ fn aircraft_landed(
 /// Only script actions 8, 14 and 43 load or unload one, and they are not
 /// ported (`team_script_vm::actions`), so no ported path reaches these arms;
 /// once they are, passengers would leave their team at unload.
-pub(crate) fn dispatch_aircraft_unload(
+pub(crate) fn mission_unload(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-) {
-    let now = sim.session.binary_frame;
-    let Some(entity) = sim.substrate.entities.get(id) else {
-        return;
-    };
-    if entity.dying
-        || entity.category != EntityCategory::Aircraft
-        || entity.mission.current() != MissionId::from_known(MissionType::Unload)
-        || !entity.mission.dispatch_timer().due(now)
-    {
-        return;
-    }
-    let delay = match entity.mission.handler_state() {
+) -> i32 {
+    let entity = sim.substrate.entities.get(id).expect("dispatched aircraft");
+    match entity.mission.handler_state() {
         AIR_STATE_CHECK_LANDED => {
             // Without a NavCom: landed → 3 (`0x00415250`), otherwise → 2
             // (`0x0041530C`). The NavCom arms are a residual above.
@@ -829,9 +820,6 @@ pub(crate) fn dispatch_aircraft_unload(
             1
         }
         _ => unload_epilogue(sim, rules, id),
-    };
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.mission.write_dispatch_epilogue(now as i32, delay);
     }
 }
 

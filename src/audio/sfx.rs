@@ -1444,6 +1444,14 @@ impl SfxPlayer {
         effect.inserted
     }
 
+    /// The `[DialogList]` index by name (`0x00753250`, a miss is -1) and
+    /// `VoxClass::RemoveFromQueues @ 0x00752A40`, which ignores a miss.
+    pub fn remove_eva(&mut self, event: &str, eva_registry: &EvaRegistry) {
+        if let Some(entry) = eva_registry.entry(event) {
+            self.vox.remove_from_queues(&entry.name);
+        }
+    }
+
     /// Whether the dedicated voice slot has audio left to play
     /// (`StreamPlayer::IsPlaying @ 0x00408070` stand-in; VERA serves unit
     /// acknowledgements from the same slot, so a unit line counts too).

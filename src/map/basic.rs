@@ -146,8 +146,8 @@ mod tests {
 
     #[test]
     fn free_radar_preserves_original_bool_tokens_and_supplied_default() {
-        let original: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/free_radar_oracle/fixtures/native-free-radar.json"
+        let original: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/free_radar_oracle/fixtures/native-free-radar.json",
         ))
         .unwrap();
         let cases = original["parser_cases"].as_array().unwrap();

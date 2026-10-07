@@ -30,39 +30,82 @@ use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
 use crate::util::fixed_math::isqrt_i64;
-use crate::util::lepton::CELL_CENTER_LEPTON;
 
 const TELEPORT_WARP_DRAW_FLAGS: u32 = 0x600;
-const TELEPORT_WARP_DELAY: u16 = 0;
-const TELEPORT_WARP_LOOP_COUNT: i32 = 1;
-const TELEPORT_WARP_Z_ADJUST: i32 = 0;
-const TELEPORT_WARP_REVERSE: bool = false;
 
-/// The `[General] WarpOut=` `AnimClass` constructor row Teleport Process
-/// builds at the owner's Location: the departure (`0x00719442`) and the
-/// arrival (`0x00719791`). The row constants are read from the native
-/// constructor sites. The coordinate is not: native passes the owner's exact
-/// `+0x9C` coordinate, VERA the cell centre and height level of its cell.
-pub(crate) fn warp_out_anim(
-    warp_out_type: InternedId,
-    rx: u16,
-    ry: u16,
-    z: u8,
-) -> AnimClassSpawnDescriptor {
-    let mut anim_spawn = AnimClassSpawnDescriptor::new(
-        warp_out_type,
-        rx,
-        ry,
-        CELL_CENTER_LEPTON,
-        CELL_CENTER_LEPTON,
-        z,
-    );
-    anim_spawn.delay = TELEPORT_WARP_DELAY;
-    anim_spawn.loop_count = TELEPORT_WARP_LOOP_COUNT;
-    anim_spawn.draw_flags = TELEPORT_WARP_DRAW_FLAGS;
-    anim_spawn.z_adjust = TELEPORT_WARP_Z_ADJUST;
-    anim_spawn.reverse = TELEPORT_WARP_REVERSE;
-    anim_spawn
+/// The warp's two VocClass::PlayAt calls at the owner's Location: ChronoOut
+/// (the ordinary warp `0x0071962C`, the Chronosphere's state 2 `0x007198CE`)
+/// and ChronoIn (`0x00719710`, state 5 `0x00719A70`).
+#[derive(Clone, Copy)]
+pub(crate) enum WarpSound {
+    Out,
+    In,
+}
+
+impl crate::sim::world::Simulation {
+    /// One warp sound at the owner's cell: the type's
+    /// ChronoOutSound/ChronoInSound (TechnoType+0x578/+0x574), else
+    /// `[AudioVisual]` (Rules+0x21C/+0x218), else silence.
+    pub(crate) fn teleport_warp_sound(
+        &mut self,
+        id: u64,
+        sound: WarpSound,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let (rx, ry) = (entity.position.rx, entity.position.ry);
+        let object = self.object_type(entity.type_ref(), rules);
+        let name = match sound {
+            WarpSound::Out => object
+                .and_then(|object| object.chrono_out_sound.clone())
+                .or_else(|| rules.general.chrono_out_sound.clone()),
+            WarpSound::In => object
+                .and_then(|object| object.chrono_in_sound.clone())
+                .or_else(|| rules.general.chrono_in_sound.clone()),
+        };
+        if let Some(name) = name {
+            let sound_id = self.interner.intern(&name);
+            self.sound_events
+                .push(crate::sim::world::SimSoundEvent::ChronoTeleport { sound_id, rx, ry });
+        }
+    }
+
+    /// `AnimClass([General] WarpOut=, Location, 0, 1, 0x600, 0, 0)` at the
+    /// owner's exact Location (`+0x9C`), constructed inside the mover's own
+    /// turn: the ordinary warp's departure and arrival (`0x00719442`,
+    /// `0x00719791`) and the Chronosphere's states 2 and 5 (`0x00719873`,
+    /// `0x00719B7C`).
+    pub(crate) fn teleport_warp_out(&mut self, id: u64, rules: &crate::rules::ruleset::RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let location = super::ground_pose::object_location(entity, self.resolved_terrain.as_ref());
+        let world = crate::sim::anim_class::AnimWorldCoord {
+            x: location.x,
+            y: location.y,
+            z: location.z,
+        };
+        let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
+        let type_id = self.interner.intern(&rules.general.warp_out.name);
+        let descriptor = AnimClassSpawnDescriptor {
+            delay: 0,
+            loop_count: 1,
+            draw_flags: TELEPORT_WARP_DRAW_FLAGS,
+            z_adjust: 0,
+            reverse: false,
+            ..AnimClassSpawnDescriptor::new(type_id, rx, ry, sub_x, sub_y, z)
+        };
+        if let Err(error) = self.spawn_anim_at_world(rules, descriptor, world) {
+            // An art type that never bound draws nothing natively either; see
+            // `spawn_combat_explosion_anim`.
+            log::debug!(
+                "teleport warp [{}] did not construct: {error}",
+                rules.general.warp_out.name
+            );
+        }
+    }
 }
 
 /// Phase within the teleport state machine.
@@ -115,6 +158,7 @@ impl TeleportState {
         self.being_warped_ticks
     }
 
+    #[cfg(test)]
     pub(crate) fn destination(&self) -> Option<DriveCoord> {
         self.destination
     }
@@ -149,13 +193,9 @@ impl TeleportState {
         self.being_warped_ticks = ticks;
     }
 
-    /// YR TeleportLocomotionClass::Process @ 0x007192f0 exposes separate
-    /// warp-out and warp-in producer bytes. Relocation is the departure
-    /// producer; the post-relocation delay is the arrival producer.
-    pub fn warp_out_active(&self) -> bool {
-        self.phase == TeleportPhase::Relocate
-    }
-
+    /// The warp-in byte (`TechnoClass+0x271`) of the ordinary teleport:
+    /// written 1 by the arrival (`0x00719579`), cleared by TimerCheck
+    /// (`0x00719BF0`). The ordinary teleport never writes `+0x270`.
     pub fn warp_in_active(&self) -> bool {
         self.phase == TeleportPhase::ChronoDelay && self.being_warped_ticks > 0
     }
@@ -165,6 +205,107 @@ impl TeleportState {
     #[cfg(test)]
     pub fn is_targetable(&self) -> bool {
         self.phase == TeleportPhase::ChronoDelay
+    }
+}
+
+/// The Chronosphere's warp on the Teleport a Chrono Warp piggybacks over a
+/// Foot's locomotor (`SuperClass::Launch 0x006CC989..0x006CCB6A`): Teleport
+/// Process's states (`+0x38`, `0x007197CC..0x00719BE2`, run by
+/// `movement::teleport_chrono`), its timer, and the Techno bytes those states
+/// write. Native keeps the bytes on the Techno; only the Teleport's states
+/// write them, and End_Piggyback waits until all are clear
+/// (`0x00719F30`), so they live and die with this Teleport.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ChronoWarp {
+    /// Teleport `+0x38`.
+    state: u8,
+    /// Teleport `+0x3C..+0x44`.
+    timer: crate::sim::timer::CdTimer,
+    /// Techno `+0x288` ChronoDestCoords.
+    destination: DriveCoord,
+    /// Techno `+0x42C` ChronoWarpedByHouse.
+    house: Option<InternedId>,
+    /// Techno `+0x27C`: set by case 4, cleared by state 2.
+    latched: bool,
+    /// Techno `+0x270` BeingWarpedOut: set by state 0, cleared by state 2.
+    warped_out: bool,
+    /// Techno `+0x271` WarpingIn: set by state 2, cleared by TimerCheck's
+    /// expiry and state 7.
+    warping_in: bool,
+}
+
+impl ChronoWarp {
+    /// Case 4's arming of a fresh Teleport, whose constructor starts its
+    /// timer at the current frame with no duration (`0x0071804C..0x00718058`),
+    /// with the latch (`0x006CCC3D`), the destination (`0x006CCC48`) and the
+    /// Super's owner (`0x006CCC67`).
+    pub(crate) fn new(destination: DriveCoord, house: InternedId, frame: u32) -> Self {
+        Self {
+            state: 0,
+            timer: crate::sim::timer::CdTimer::started(frame as i32, 0),
+            destination,
+            house: Some(house),
+            latched: true,
+            warped_out: false,
+            warping_in: false,
+        }
+    }
+
+    pub(crate) fn state(&self) -> u8 {
+        self.state
+    }
+
+    pub(crate) fn set_state(&mut self, state: u8) {
+        self.state = state;
+    }
+
+    pub(crate) fn timer(&self) -> crate::sim::timer::CdTimer {
+        self.timer
+    }
+
+    pub(crate) fn start_timer(&mut self, frame: u32, duration: i32) {
+        self.timer.start(frame as i32, duration);
+    }
+
+    pub(crate) fn destination(&self) -> DriveCoord {
+        self.destination
+    }
+
+    pub(crate) fn set_destination(&mut self, destination: DriveCoord) {
+        self.destination = destination;
+    }
+
+    pub(crate) fn house(&self) -> Option<InternedId> {
+        self.house
+    }
+
+    pub(crate) fn clear_house(&mut self) {
+        self.house = None;
+    }
+
+    /// Techno `+0x27C`.
+    pub(crate) fn latched(&self) -> bool {
+        self.latched
+    }
+
+    /// Techno `+0x270`.
+    pub(crate) fn warped_out(&self) -> bool {
+        self.warped_out
+    }
+
+    /// Techno `+0x271`.
+    pub(crate) fn warping_in(&self) -> bool {
+        self.warping_in
+    }
+
+    pub(crate) fn set_bytes(&mut self, latched: bool, warped_out: bool, warping_in: bool) {
+        self.latched = latched;
+        self.warped_out = warped_out;
+        self.warping_in = warping_in;
+    }
+
+    pub(crate) fn set_warping_in(&mut self, warping_in: bool) {
+        self.warping_in = warping_in;
     }
 }
 
@@ -178,6 +319,8 @@ pub struct TeleportRuntime {
     resolved: Option<DriveCoord>,
     requested: bool,
     warp: Option<TeleportState>,
+    #[serde(default)]
+    chrono: Option<ChronoWarp>,
 }
 
 impl TeleportRuntime {
@@ -194,6 +337,31 @@ impl TeleportRuntime {
         self.resolved
     }
 
+    pub(crate) fn chrono(&self) -> Option<&ChronoWarp> {
+        self.chrono.as_ref()
+    }
+
+    pub(crate) fn chrono_mut(&mut self) -> Option<&mut ChronoWarp> {
+        self.chrono.as_mut()
+    }
+
+    /// Case 4's arming of a fresh Teleport (`0x006CCC3D..0x006CCC67`).
+    pub(crate) fn arm_chrono(&mut self, warp: ChronoWarp) {
+        self.chrono = Some(warp);
+    }
+
+    /// State 7's return to state 0 (`0x00719BB4..0x00719BDF`): with every
+    /// byte clear the warp is over. It also drops Is_Moving (`+0x34`).
+    pub(crate) fn end_chrono(&mut self) {
+        self.chrono = None;
+        self.requested = false;
+    }
+
+    /// Update_Position's `+0x28` Marked coordinate (`0x007186B9..0x007186E4`).
+    pub(crate) fn set_resolved_destination(&mut self, coord: DriveCoord) {
+        self.resolved = Some(coord);
+    }
+
     fn stop(&mut self) {
         self.requested = false;
         if let Some(warp) = self.warp.as_mut() {
@@ -206,6 +374,16 @@ impl TeleportRuntime {
 }
 
 impl crate::sim::game_entity::GameEntity {
+    /// The Chronosphere warp on the active Teleport.
+    pub(crate) fn chrono_warp(&self) -> Option<&ChronoWarp> {
+        self.locomotor.as_ref()?.teleport_runtime()?.chrono()
+    }
+
+    /// Techno `+0x27C`, the Chronosphere's warp latch.
+    pub(crate) fn chrono_warp_latch(&self) -> bool {
+        self.chrono_warp().is_some_and(ChronoWarp::latched)
+    }
+
     /// View of the owned Teleport effect, including a suspended instance.
     /// Active locomotor queries and Process use only the active payload.
     pub fn teleport_state(&self) -> Option<&TeleportState> {
@@ -289,8 +467,10 @@ pub fn compute_chrono_delay(rules: &GeneralRules, distance_leptons: i32) -> u32 
 /// infantry_scatter_destination --teleport-cell.
 ///
 /// The legacy Unit Cell resolver and Infantry object/FNPC branches remain
-/// bounded adapters. EMP/death and Chronosphere admission, full Process and
-/// chrono timing are separate residuals; this entry does not certify them.
+/// bounded adapters. EMP/death admission, full Process and chrono timing are
+/// separate residuals; this entry does not certify them. A warped-out or
+/// warping-in owner (vt+0x1D4/+0x1D8, `0x0071812E..0x0071814E`) refuses the
+/// request and loses its NavCom (`0x0071820F`).
 impl crate::sim::world::Simulation {
     pub(crate) fn teleport_move_to(
         &mut self,
@@ -320,7 +500,7 @@ impl crate::sim::world::Simulation {
             return Ok(false);
         }
         if actor.is_paralyzed(self.session.binary_frame)
-            || actor.temporal.is_warped()
+            || actor.is_warped_out()
             || actor.is_warping_in()
         {
             self.substrate
@@ -332,15 +512,48 @@ impl crate::sim::world::Simulation {
             return Ok(false);
         }
         let infantry = actor.category == EntityCategory::Infantry;
+        let latched = actor.chrono_warp_latch();
         let physical = super::ground_pose::position_world_coord(&actor.position);
-        let previous = actor
+        let marked = actor
             .locomotor
             .as_ref()
             .unwrap()
             .teleport_runtime()
             .unwrap()
-            .resolved_destination()
-            .unwrap_or(physical);
+            .resolved_destination();
+        let previous = marked.unwrap_or(physical);
+        // 0x00718B9F..0x00718BCF, 0x0071908D..0x007190A3: a latched owner
+        // other than Infantry skips the resolution. After the resolver's
+        // REMOVE at Marked-or-Location it PUTs at Marked as it stands (the
+        // null coordinate's cell (0,0) without one); the tail
+        // (0x00719249..0x007192BB) PUTs at Marked and accepts, or PUTs back at
+        // Location and refuses, and Move_To takes the class NULL arm
+        // (0x007181F9). The Chrono Warp's fresh Teleport has no Marked
+        // coordinate, so its Unit drops the destination it was given.
+        if latched && !infantry {
+            self.object_raw_receiver_at(id, previous, false);
+            self.object_raw_receiver_at(
+                id,
+                marked.unwrap_or(DriveCoord { x: 0, y: 0, z: 0 }),
+                true,
+            );
+            if let Some(marked) = marked {
+                self.object_raw_receiver_at(id, marked, true);
+                if let Some(runtime) = self
+                    .substrate
+                    .entities
+                    .get_mut(id)
+                    .and_then(|actor| actor.locomotor.as_mut())
+                    .and_then(|locomotor| locomotor.teleport_runtime_mut())
+                {
+                    runtime.requested = true;
+                }
+                return Ok(true);
+            }
+            self.object_raw_receiver_at(id, physical, true);
+            self.assign_null_destination(id, Some(rules), registry);
+            return Ok(false);
+        }
         if infantry
             && !self.infantry_destination_inputs_available(
                 id,
@@ -978,12 +1191,10 @@ mod tests {
     #[test]
     fn teleport_exposes_distinct_warp_and_targetability_producers() {
         let relocate = TeleportState::for_test(TeleportPhase::Relocate, 1, 1, 10);
-        assert!(relocate.warp_out_active());
         assert!(!relocate.warp_in_active());
         assert!(!relocate.is_targetable());
 
         let arrival = TeleportState::for_test(TeleportPhase::ChronoDelay, 1, 1, 10);
-        assert!(!arrival.warp_out_active());
         assert!(arrival.warp_in_active());
         assert!(arrival.is_targetable());
     }

@@ -12,8 +12,8 @@ use crate::sim::world::Simulation;
 use serde_json::Value;
 
 fn corpus() -> Vec<Value> {
-    serde_json::from_str(include_str!(
-        "../../../tools/projectile_oracle/bridge_cluster_order.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/bridge_cluster_order.json",
     ))
     .unwrap()
 }
@@ -150,8 +150,8 @@ fn ordinary_bridge_continuation_precedes_cluster_rng_like_native() {
 
 #[test]
 fn nested_death_bridge_continuation_finishes_before_parent_area_returns() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/projectile_oracle/bridge_nested_draws.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/bridge_nested_draws.json",
     ))
     .unwrap();
     let mut input = corpus()

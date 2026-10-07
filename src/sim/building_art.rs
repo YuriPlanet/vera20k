@@ -19,6 +19,8 @@ mod expiry_tests;
 mod power;
 #[path = "building_art_storage.rs"]
 mod storage;
+#[path = "building_art_super.rs"]
+mod super_anim;
 pub(crate) use storage::BuildingStorage;
 
 impl Simulation {
@@ -117,6 +119,9 @@ impl Simulation {
         }
         if first_opening && refinery {
             self.initialize_refinery_storage_anim(id, rules);
+        }
+        if first_opening {
+            self.open_super_weapon_anims(id, damaged, garrisoned, rules);
         }
         if first_opening && let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.mission_leaf.set_building_ready_latch(1);
@@ -680,8 +685,8 @@ mod body_tests {
     }
     #[test]
     fn whole_original_body_and_second_receiver_transition_435_rows() {
-        let corpus: Corpus = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_body_transition.json"
+        let corpus: Corpus = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_body_transition.json",
         ))
         .unwrap();
         assert_eq!(corpus.rows.len(), 435);
@@ -1094,8 +1099,8 @@ mod native_slot_tests {
     use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
     #[test]
     fn original_420_scalar_replacements_copy_frame_without_copying_constructor_state() {
-        let rows: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_slot_replacement.json"
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_slot_replacement.json",
         ))
         .unwrap();
         assert_eq!(rows.as_array().unwrap().len(), 420);
@@ -1157,8 +1162,8 @@ mod native_slot_tests {
 
     #[test]
     fn original_36_retained_transitions_replace_only_selected_occupied_slots() {
-        let rows: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_art_transition.json"
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_art_transition.json",
         ))
         .unwrap();
         let mut checked = 0;

@@ -245,16 +245,6 @@ pub fn projectile_key(
     }
 }
 
-fn unresolved_firer_key(
-    type_id: &str,
-    projectile_type: &ProjectileType,
-    frame: u16,
-) -> ShpSpriteKey {
-    let mut key = projectile_key(type_id, projectile_type, frame, HouseColorIndex(0));
-    key.palette_context = ShpPaletteContext::BulletAnim;
-    key
-}
-
 pub(crate) fn attached_anim_palette_context(
     config: Option<&art_data::AnimTypeRuntimeConfig>,
 ) -> ShpPaletteContext {
@@ -444,30 +434,17 @@ impl SpriteAtlas {
     }
 
     /// Exact frame lookup; an absent frame is not substituted or wrapped.
-    ///
-    /// RESIDUAL: BulletConstruct466519..46653B snapshots source House+16054
-    /// into Bullet+114. VERA does not yet retain that House/scheme authority.
-    /// A missing retained scheme preserves the old ANIM.PAL appearance through
-    /// this same Bullet path; it does not pretend scheme zero is native state.
+    /// `scheme` is the colour a `FirersPalette=` bullet draws with: its
+    /// retained Bullet+114 House's, else the local player's
+    /// (`0x004683A1..0x004683D1`).
     pub fn projectile_sprite(
         &self,
         type_id: &str,
         projectile_type: &ProjectileType,
         frame: u16,
-        retained_scheme: Option<HouseColorIndex>,
+        scheme: HouseColorIndex,
     ) -> Option<&ShpSpriteEntry> {
-        if projectile_type.firers_palette
-            && !projectile_type.anim_palette
-            && retained_scheme.is_none()
-        {
-            return self.get(&unresolved_firer_key(type_id, projectile_type, frame));
-        }
-        self.get(&projectile_key(
-            type_id,
-            projectile_type,
-            frame,
-            retained_scheme.unwrap_or_default(),
-        ))
+        self.get(&projectile_key(type_id, projectile_type, frame, scheme))
     }
 
     /// Number of unique sprites across all pages.
@@ -1156,11 +1133,14 @@ fn projectile_shp_candidates(
     candidates
 }
 
+/// Every frame of every drawable BulletType; a `FirersPalette=` type in each
+/// House colour of the match, the schemes its draw can select.
 fn register_projectile_frames(
     needed: &mut HashSet<ShpSpriteKey>,
     files: &mut HashMap<String, (String, u16)>,
     assets: &AssetManager,
     rules: Option<&RuleSet>,
+    house_colors: &HouseColorMap,
     theater_ext: &str,
     theater_name: &str,
 ) {
@@ -1191,11 +1171,9 @@ fn register_projectile_frames(
         });
         for frame in 0..*count {
             if projectile.firers_palette && !projectile.anim_palette {
-                // The production Bullet adapter has no retained House scheme
-                // yet and requests None. Register only its explicit ANIM.PAL
-                // fallback, not unused per-house variants. Native +114 capture
-                // remains the separate 466519..46653B House-authority residual.
-                needed.insert(unresolved_firer_key(&id, projectile, frame));
+                for &color in house_colors.values() {
+                    needed.insert(projectile_key(&id, projectile, frame, color));
+                }
             } else {
                 needed.insert(projectile_key(&id, projectile, frame, HouseColorIndex(0)));
             }
@@ -1302,6 +1280,7 @@ pub fn build_sprite_atlas(
         &mut projectile_files,
         asset_manager,
         rules,
+        house_colors,
         theater_ext,
         theater_name,
     );

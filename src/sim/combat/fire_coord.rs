@@ -687,8 +687,8 @@ mod tests {
 
     #[test]
     fn numbered_flh_readers_and_slot_bounds_match_original() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/ifv_fire_coord.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ifv_fire_coord.json",
         ))
         .unwrap();
         for row in native["flh_controls"].as_array().unwrap() {
@@ -722,8 +722,8 @@ mod tests {
         };
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&art));
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/ifv_fire_coord.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ifv_fire_coord.json",
         ))
         .unwrap();
         let obj = rules.object("FV").unwrap();
@@ -771,8 +771,8 @@ mod tests {
         };
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&art));
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/ifv_fire_coord.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ifv_fire_coord.json",
         ))
         .unwrap();
         let native = &native["spawn_launch"];

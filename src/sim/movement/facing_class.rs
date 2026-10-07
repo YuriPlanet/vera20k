@@ -221,8 +221,8 @@ mod tests {
 
     #[test]
     fn signed_rates_and_retained_histories_match_native() {
-        let rows: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/facing_class.json"
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/facing_class.json",
         ))
         .unwrap();
         for row in rows.as_array().unwrap() {

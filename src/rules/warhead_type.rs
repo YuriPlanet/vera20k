@@ -462,8 +462,8 @@ mod tests {
 
     #[test]
     fn native_bridge_landing_verses_reader_bits() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/rules_oracle/bridge_landing_inputs.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/rules_oracle/bridge_landing_inputs.json",
         ))
         .unwrap();
         let mut completed = 0;

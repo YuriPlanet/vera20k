@@ -48,10 +48,11 @@ MAX_OBSERVATION_SAMPLES = 100_000
 MAX_RECEIPT_BYTES = 128 * 1024 * 1024
 ORDER_VARIANTS = frozenset(('Select', 'Move', 'Stop', 'Attack', 'ForceAttack', 'Guard',
                             'DeployMcv', 'ForceAttackCell', 'CaptureBuilding', 'ToggleRepair',
-                            'EnterTransport', 'UnloadPassengers', 'RepairAtDepot', 'SellBuilding', 'SetRally'))
+                            'EnterTransport', 'UnloadPassengers', 'RepairAtDepot', 'SellBuilding', 'SetRally',
+                            'LaunchSuperWeapon'))
 PRODUCTION_VARIANTS = frozenset(('QueueProduction', 'PlaceReadyBuilding'))
 EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe_types', 'observe_action_line_inputs', 'camera_cell',
-                              'cursor_position', 'terrain_cells'))
+                              'cursor_position', 'terrain_cells', 'observe_super_weapons'))
 COPIES = {'profile': 'profile.json', 'config': 'config.toml', 'contract': 'contract.json'}
 
 
@@ -309,6 +310,8 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
         _coordinate(profile['camera_cell'], 'profile.camera_cell')
     if 'observe_action_line_inputs' in profile and type(profile['observe_action_line_inputs']) is not bool:
         raise ValidationError('profile.observe_action_line_inputs must be a boolean')
+    if 'observe_super_weapons' in profile and type(profile['observe_super_weapons']) is not bool:
+        raise ValidationError('profile.observe_super_weapons must be a boolean')
     if 'cursor_position' in profile:
         position = require_array(profile['cursor_position'], 'profile.cursor_position')
         if len(position) != 2:
@@ -569,14 +572,16 @@ def _foot_air(value: Any, label: str) -> None:
             _bounded_int(air[key], f'{label}.{key}', 1, (1 << 64) - 1)
 
 
-def _houses(value: Any, owners: list[str], label: str) -> int:
+def _houses(value: Any, owners: list[str], label: str, super_weapons: bool = False) -> int:
     houses = require_array(value, label)
     if len(houses) != len(owners):
         raise ValidationError(f'{label} must contain one row per requested House')
+    count = len(houses)
     for index, (value, owner) in enumerate(zip(houses, owners)):
         row_label = f'{label}[{index}]'
         house = require_object(value, row_label)
-        require_exact_keys(house, ('owner', 'economy'), row_label)
+        require_exact_keys(house, ('owner', 'economy', *(('super_weapons',) if super_weapons else ())),
+                           row_label)
         require_value(house['owner'], owner, f'{row_label}.owner')
         if house['economy'] is not None:
             economy = require_object(house['economy'], f'{row_label}.economy')
@@ -584,7 +589,31 @@ def _houses(value: Any, owners: list[str], label: str) -> int:
                                f'{row_label}.economy')
             for key in economy:
                 _bounded_int(economy[key], f'{row_label}.economy.{key}', -(1 << 31), (1 << 31) - 1)
-    return len(houses)
+        if super_weapons:
+            count += _super_weapons(house['super_weapons'], f'{row_label}.super_weapons')
+    return count
+
+
+def _super_weapons(value: Any, label: str) -> int:
+    rows = require_array(value, label)
+    previous = -1
+    for index, value in enumerate(rows):
+        row_label = f'{label}[{index}]'
+        row = require_object(value, row_label)
+        require_exact_keys(row, ('type', 'interned_id', 'granted', 'ready', 'on_hold', 'charge_start',
+                                 'charge_duration', 'remaining'), row_label)
+        if not require_string(row['type'], f'{row_label}.type'):
+            raise ValidationError(f'{row_label}.type is empty')
+        identity = _bounded_int(row['interned_id'], f'{row_label}.interned_id', 0, (1 << 32) - 1)
+        if identity <= previous:
+            raise ValidationError(f'{row_label}.interned_id is repeated or out of order')
+        previous = identity
+        for key in ('granted', 'ready', 'on_hold'):
+            if type(row[key]) is not bool:
+                raise ValidationError(f'{row_label}.{key} must be a boolean')
+        for key in ('charge_start', 'charge_duration', 'remaining'):
+            _bounded_int(row[key], f'{row_label}.{key}', -(1 << 31), (1 << 31) - 1)
+    return len(rows)
 
 
 def _action_line_inputs(value: Any, category: str, label: str) -> None:
@@ -952,7 +981,8 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
         if gesture_input:
             sample_count += _input_observation(row['input'], f'{row_label}.input')
         if docking_state:
-            sample_count += _houses(row['houses'], owners, f'{row_label}.houses')
+            sample_count += _houses(row['houses'], owners, f'{row_label}.houses',
+                                    profile.get('observe_super_weapons', False))
         if building_state:
             sample_count += sum(len(actor['building']['animation_slots']) for actor in actors
                                 if actor['category'] == 'Structure')

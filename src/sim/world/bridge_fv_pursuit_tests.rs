@@ -303,8 +303,8 @@ fn command_paid_fv(
 fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
     let input = std::env::var_os("VERA20K_FV_PAID_INPUT").map_or_else(
         || {
-            include_str!(
-                "../../../tools/spatial_oracle/fv_cell_attack/paid_conditional_v26_vectors.json"
+            crate::test_fixture::text(
+                "tools/spatial_oracle/fv_cell_attack/paid_conditional_v26_vectors.json",
             )
             .to_owned()
         },
@@ -454,8 +454,8 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
     use crate::sim::combat::AttackTarget;
     use crate::sim::mission::state::MissionTestFixture;
     use crate::sim::mission::{MissionDispatchTimer, MissionId};
-    let packet: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fv_cell_attack/approach_vectors.json"
+    let packet: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/approach_vectors.json",
     ))
     .unwrap();
     let mut count = 0;
@@ -667,8 +667,8 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
 #[test]
 #[ignore = "requires unmodified physical Anytown and retail TEMPERATE assets"]
 fn retail_fv_approaches_a_firing_cell_before_its_first_paid_step() {
-    let packet: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fv_cell_attack/pursuit_vectors.json"
+    let packet: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/pursuit_vectors.json",
     ))
     .unwrap();
     let witness = packet["rows"]

@@ -13,15 +13,15 @@ use crate::sim::movement::infantry_entry::InfantryEntryArgs;
 use crate::sim::movement::locomotor::MovementLayer;
 
 fn receipt() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_hills_bridge_inputs.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_hills_bridge_inputs.json",
     ))
     .expect("saved original executable Hills receipt")
 }
 
 fn assert_native_route(case_name: &str, actual: &[(u16, u16)]) {
-    let packet: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_hills_route.json"
+    let packet: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_hills_route.json",
     ))
     .expect("saved original full Hills search receipt");
     assert_eq!(packet["code_unchanged"], true);
@@ -631,8 +631,8 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
     use crate::sim::pathfinding::SearchMarkerOverlay;
     use crate::util::fixed_math::{SIM_ONE, SIM_ZERO};
 
-    let packet: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_hills_markers.json"
+    let packet: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_hills_markers.json",
     ))
     .expect("original42ACF0/full Hills search and429830 controls");
     assert_eq!(packet["code_unchanged"], true);

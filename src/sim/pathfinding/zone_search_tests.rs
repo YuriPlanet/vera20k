@@ -1882,8 +1882,8 @@ fn tube_hierarchy_gate_uses_raw_invalid_labels_and_flat_goal_bridge_flag() {
     let mut grid = PathGrid::new(2, 2);
     grid.set_cell_for_test(0, 0, 4, false, false);
     grid.set_cell_for_test(1, 0, 0, true, true);
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/tube_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/tube_hierarchy.json",
     ))
     .unwrap();
     let expected_admission = |a, b| {
@@ -2009,8 +2009,8 @@ fn tube_hierarchy_gate_uses_raw_invalid_labels_and_flat_goal_bridge_flag() {
 
 #[test]
 fn tube_hierarchy_dword_zone_query_matches_original_executable() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/tube_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/tube_hierarchy.json",
     ))
     .unwrap();
     for case in corpus["get_zone"].as_array().unwrap() {
@@ -2218,8 +2218,8 @@ fn tube_hierarchy_missing_record_sentinel_controls_actual_route_gate() {
 
 #[test]
 fn tube_hierarchy_native_entry_prefix_matches_original_executable() {
-    let cases: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/path_entry.json"
+    let cases: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/path_entry.json",
     ))
     .unwrap();
     assert_eq!(cases.as_array().unwrap().len(), 19);

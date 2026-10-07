@@ -377,8 +377,8 @@ mod tests {
 
     #[test]
     fn original_extended_row_walk_matches_all_clipped_fixture_rows() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/terrain_draw_oracle/fixtures/rows.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/terrain_draw_oracle/fixtures/rows.json",
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();

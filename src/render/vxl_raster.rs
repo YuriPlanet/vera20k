@@ -1569,8 +1569,10 @@ mod tests {
 
     #[test]
     fn prepared_lighting_matches_native_all_flat_facings() {
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/voxel_oracle/lighting.json")).unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/lighting.json",
+        ))
+        .unwrap();
         let mut vxl = make_test_vxl();
         for case in vectors["cases"].as_array().unwrap() {
             let step = case["step"].as_u64().unwrap() as u8;
@@ -2160,8 +2162,10 @@ mod tests {
         );
 
         // The offset rides the native body basis.
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/voxel_oracle/lighting.json")).unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/lighting.json",
+        ))
+        .unwrap();
         let raw = &vectors["cases"][0]["draw_matrix_bits"];
         let units = turret_offset_units(50);
         let expected_x = f32::from_bits(raw[0].as_u64().unwrap() as u32) * units;
@@ -2177,7 +2181,10 @@ mod tests {
     }
 
     fn barrel_vectors() -> serde_json::Value {
-        serde_json::from_str(include_str!("../../tools/voxel_oracle/barrel_pitch.json")).unwrap()
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/barrel_pitch.json",
+        ))
+        .unwrap()
     }
 
     /// A native row-major 3x4 matrix, bottom row `0 0 0 1`.
@@ -2325,8 +2332,10 @@ mod tests {
 
         // The independent native matrix includes table-trig asymmetry. It
         // cannot be collapsed into a mathematically exact single yaw.
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/voxel_oracle/lighting.json")).unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/lighting.json",
+        ))
+        .unwrap();
         let raw: Vec<f32> = vectors["cases"][16]["draw_matrix_bits"]
             .as_array()
             .unwrap()
@@ -2541,8 +2550,8 @@ mod tests {
             eprintln!("skipped: set RA2_DIR to the retail install to run this");
             return;
         }
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/jumpjet_crash.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/jumpjet_crash.json",
         ))
         .unwrap();
         let rows = corpus["draw_matrix"].as_array().unwrap();
@@ -2592,8 +2601,8 @@ mod tests {
     /// ordinary draw. Native reads table trig; within 2e-3 of glam's.
     #[test]
     fn crash_draw_matrix_matches_native_fly_draw_matrix() {
-        let oracle: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/aircraft_crash.json"
+        let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/aircraft_crash.json",
         ))
         .unwrap();
         let rows = oracle["draw_matrix"].as_array().unwrap();

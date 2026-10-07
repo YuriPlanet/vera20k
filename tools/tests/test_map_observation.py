@@ -855,6 +855,46 @@ class MapObservationTests(unittest.TestCase):
         with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', 7):
             self.assertEqual(self.run_capture()['status'], 'INVALID')
 
+    def test_super_weapon_rows_are_opt_in_ordered_typed_and_count_towards_budget(self):
+        self.scripted_profile()
+        self.profile['observe_super_weapons'] = True
+        self.profile['commands'].append({'issue_after_step': 2, 'owner': 'Computer1', 'payload': {
+            'LaunchSuperWeapon': {'sw_type_id': 2500, 'target_rx': 87, 'target_ry': 53}}})
+        self.profile_path.write_text(json.dumps(self.profile))
+        nuke = {'type': 'NukeSpecial', 'interned_id': 2500, 'granted': True, 'ready': True,
+                'on_hold': False, 'charge_start': 0, 'charge_duration': 9000, 'remaining': 0}
+        self.house_frames = {step: [{'owner': 'Computer1', 'economy': None,
+                                     'super_weapons': [dict(nuke, ready=step < 3)]}]
+                             for step in range(4)}
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        self.assertEqual(report['capture']['observations']['frames'][3]['houses'][0]['super_weapons'],
+                         [dict(nuke, ready=False)])
+        rows = lambda m: m['observations']['frames'][1]['houses'][0]
+        changes = [lambda m: rows(m).pop('super_weapons'),
+                   lambda m: rows(m)['super_weapons'][0].pop('remaining'),
+                   lambda m: rows(m)['super_weapons'][0].update(extra=0),
+                   lambda m: rows(m)['super_weapons'][0].update(ready=1),
+                   lambda m: rows(m)['super_weapons'][0].update(type=''),
+                   lambda m: rows(m)['super_weapons'][0].update(charge_start=1 << 31),
+                   lambda m: rows(m)['super_weapons'].append(dict(nuke))]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                self.output = self.root / f'super-weapon-invalid-{index}'
+                self.change = change
+                self.assertEqual(self.run_capture()['status'], 'INVALID')
+        self.change = lambda manifest: None
+        # Four frames of one actor, terrain cell, House and Super cost sixteen
+        # samples; without the Super rows they would fit in twelve.
+        for budget, status in ((15, 'INVALID'), (16, 'VALID')):
+            self.output = self.root / f'super-weapon-budget-{budget}'
+            with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', budget):
+                self.assertEqual(self.run_capture()['status'], status)
+        self.profile.pop('observe_super_weapons')
+        self.profile_path.write_text(json.dumps(self.profile))
+        self.output = self.root / 'unrequested-super-weapon-rows'
+        self.assertEqual(self.run_capture()['status'], 'INVALID')
+
     def test_paid_walk_receipts_retain_head_destination_moving_and_cleanup(self):
         self.scripted_profile()
         self.actor_frames[1][0]['foot'].update(

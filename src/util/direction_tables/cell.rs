@@ -37,8 +37,8 @@ mod tests {
 
     #[test]
     fn cell_delta_table_equals_gamemd_dump() {
-        let original: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/locomotor_head_coordinates.json"
+        let original: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/locomotor_head_coordinates.json",
         ))
         .unwrap();
         let controls: Vec<_> = original["initializer_controls"]

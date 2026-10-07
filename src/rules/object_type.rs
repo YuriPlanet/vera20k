@@ -722,6 +722,17 @@ pub struct ObjectType {
     pub super_weapon: Option<String>,
     /// Secondary superweapon type ID, typically from an upgrade (SuperWeapon2= in rules.ini).
     pub super_weapon2: Option<String>,
+    /// `NukeSilo=` (BuildingType `+0x16BA`, ReadBool at `0x00460A45`,
+    /// constructor clear at `0x0045E127`): `SuperClass::Launch @ 0x006CC390`
+    /// fires a `MultiMissile` weapon from the first such type granting it,
+    /// and `BuildingClass::Mission_Missile @ 0x0044C980` takes its silo arm.
+    pub nuke_silo: bool,
+    /// `ChargedAnimTime=` (BuildingType `+0x16E8`, a float: ReadDouble at
+    /// `0x00460B9E`, `FSTP dword`; constructor 999.0 at `0x0045E1D4`), in
+    /// minutes. A granted weapon's building swaps its SuperAnim slots once
+    /// that little charge remains (`BuildingClass::UpdateAnimation`
+    /// `0x00450F9E`); above 990 the block is off.
+    pub charged_anim_time: f32,
     /// When true, this building provides full map vision while powered.
     /// Used by the Allied Spy Satellite Uplink (GASPYSAT).
     pub spy_sat: bool,
@@ -1021,6 +1032,16 @@ pub struct ObjectType {
     /// `0x0045E225` defaults it false; reader block
     /// `0x00460FFC..0x00461010` binds it.
     pub is_base_defense: bool,
+    /// BuildingType `HoverPad=`, `IsTemple=` and `IsPlug=` (`+0x154E`,
+    /// `+0x154C`, `+0x154D`): ReadBool with the field as default
+    /// (`0x00460573..0x004605D2`); the constructor clears them
+    /// (`0x0045DFC3`, `0x0045DFE0`, `0x0045DFEC`). Other types never read
+    /// them. A computer house values an enemy building by them when it aims
+    /// a superweapon (`sim::superweapon::ai_fire`); no retail building sets
+    /// one.
+    pub hover_pad: bool,
+    pub is_temple: bool,
+    pub is_plug: bool,
     /// BuildingType `AntiAirValue=`, `AntiArmorValue=` and
     /// `AntiInfantryValue=` (`+0x1524`, `+0x1528`, `+0x152C`): signed ReadInt
     /// with the field as default (`0x0045FED2`, `0x0045FEB8`, `0x0045FE9E`);
@@ -2282,6 +2303,8 @@ impl ObjectType {
             death_weapon_damage_modifier: section.read_float("DeathWeaponDamageModifier", 1.0),
             super_weapon: section.read_name("SuperWeapon", 0x20).map(str::to_owned),
             super_weapon2: section.read_name("SuperWeapon2", 0x20).map(str::to_owned),
+            nuke_silo: section.read_bool("NukeSilo", false),
+            charged_anim_time: section.read_float("ChargedAnimTime", 999.0),
             spy_sat: section.read_bool("SpySat", false),
             gap_generator: section.read_bool("GapGenerator", false),
             radar: section.read_bool("Radar", false),
@@ -2482,6 +2505,9 @@ impl ObjectType {
             // BuildingTypeClass__ReadINI 0x00460FFC..0x00461010 writes
             // `IsBaseDefense=` to BuildingType+0x1706; constructor default false.
             is_base_defense: section.read_bool("IsBaseDefense", false),
+            hover_pad: building_bool(section, category, "HoverPad"),
+            is_temple: building_bool(section, category, "IsTemple"),
+            is_plug: building_bool(section, category, "IsPlug"),
             anti_air_value: building_int(section, category, "AntiAirValue"),
             anti_armor_value: building_int(section, category, "AntiArmorValue"),
             anti_infantry_value: building_int(section, category, "AntiInfantryValue"),
@@ -2893,6 +2919,11 @@ fn building_int(section: &IniSection, category: ObjectCategory, key: &str) -> i3
     }
 }
 
+/// A flag only `BuildingTypeClass::ReadINI` reads (constructor false).
+fn building_bool(section: &IniSection, category: ObjectCategory, key: &str) -> bool {
+    category == ObjectCategory::Building && section.read_bool(key, false)
+}
+
 #[cfg(test)]
 #[path = "infantry_speed_type_tests.rs"]
 mod infantry_speed_type_tests;
@@ -2908,9 +2939,10 @@ mod tests {
             stored: i32,
             effective: i32,
         }
-        let rows: Vec<Row> =
-            serde_json::from_str(include_str!("../../tools/spatial_oracle/flight_level.json"))
-                .unwrap();
+        let rows: Vec<Row> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/flight_level.json",
+        ))
+        .unwrap();
         assert_eq!(rows.len(), 30);
         for row in rows {
             let mut ini = IniFile::from_str("[PLANE]\nStrength=100\n");
@@ -2943,8 +2975,8 @@ mod tests {
         }
         // Executed original ReadInteger call site and separate contact clamp.
         // Non-constructor defaults test the shared reader, not Rules pass lifetime.
-        let rows: Vec<Row> = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_dock_count_rules.json"
+        let rows: Vec<Row> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_dock_count_rules.json",
         ))
         .unwrap();
         for row in rows {
@@ -3343,8 +3375,8 @@ mod tests {
         struct Fixture {
             firestorm_wall: Vec<Row>,
         }
-        let fixture: Fixture = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_body_rules.json"
+        let fixture: Fixture = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_body_rules.json",
         ))
         .unwrap();
         for row in fixture.firestorm_wall {
@@ -4785,8 +4817,8 @@ mod tests {
 
     #[test]
     fn original_eight_refinery_smoke_frames_scalar_rows() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/refinery_smoke.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/refinery_smoke.json",
         ))
         .unwrap();
         let rows = corpus["frames_parser"].as_array().unwrap();
@@ -5247,8 +5279,8 @@ mod simple_deploy_reader_tests {
     };
     #[test]
     fn simple_deploy_keys_match_native_reader_history() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/unit_simple_deploy.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/unit_simple_deploy.json",
         ))
         .unwrap();
         let base = "[VehicleTypes]\n0=SCHP\n[SCHP]\nIsSimpleDeployer=yes\nDeployToLand=yes\n[AudioVisual]\nDeployDir=2\n";

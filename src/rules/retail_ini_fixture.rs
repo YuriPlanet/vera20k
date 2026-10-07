@@ -92,8 +92,8 @@ pub(crate) const REQUIRE_RETAIL_ASSETS_ENV: &str = "VERA20K_REQUIRE_RETAIL_ASSET
 /// The factory oracle owns selection and verifies this export against its
 /// complete native receipts; component tests only read the selected state.
 pub(crate) fn factory_unit_ready_native() -> serde_json::Value {
-    let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/_factory_infantry_output/fixtures/unit-ready-consumer-rust.json"
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/_factory_infantry_output/fixtures/unit-ready-consumer-rust.json",
     ))
     .expect("mechanically selected native UnitReady fixture");
     assert_eq!(fixture["schema"], 1);

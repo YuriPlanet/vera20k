@@ -195,6 +195,16 @@ fn spawn_pdplane(
             target_rx,
             target_ry,
         });
+        // The native mission beside the Rust machine: case 5/6 sends the
+        // carrier in mission 26 (`0x006CD41B PUSH 0x1A`), queued before
+        // Unlimbo (`0x0065E70C`) and started after the passengers board
+        // (vt+0x1EC, `0x0065E809`). `aircraft::leave_map` reads it.
+        crate::sim::mission::authority::queue_entity_mission_deferred(
+            entity,
+            crate::sim::mission::MissionId::from_known(
+                crate::sim::mission::MissionType::ParadropApproach,
+            ),
+        );
     }
 
     // FUN_0065E660 installs the carrier mission and destination before
@@ -293,6 +303,10 @@ fn spawn_pdplane(
         return false;
     }
 
+    let now = sim.session.binary_frame;
+    if let Some(entity) = sim.substrate.entities.get_mut(pdplane_id) {
+        crate::sim::mission::authority::commence_entity_mission(entity, now);
+    }
     log::info!(
         "Paradrop: spawned '{}' for '{}' carrying {} '{}' at edge ({},{}) → target ({},{})",
         PDPLANE,

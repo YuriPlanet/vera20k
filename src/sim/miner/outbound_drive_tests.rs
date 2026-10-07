@@ -39,11 +39,11 @@ struct OutboundContractOracle {
 }
 
 fn outbound_contract_inputs() -> (IniFile, IniFile) {
-    let rules_ini = IniFile::from_str(include_str!(
-        "../../../tests/fixtures/ini/miner_outbound_rules_contract.ini"
+    let rules_ini = IniFile::from_str(crate::test_fixture::text(
+        "tests/fixtures/ini/miner_outbound_rules_contract.ini",
     ));
-    let art_ini = IniFile::from_str(include_str!(
-        "../../../tests/fixtures/ini/miner_outbound_art_contract.ini"
+    let art_ini = IniFile::from_str(crate::test_fixture::text(
+        "tests/fixtures/ini/miner_outbound_art_contract.ini",
     ));
     (rules_ini, art_ini)
 }

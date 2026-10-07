@@ -50,8 +50,6 @@
 //!   Drive/Ship Process path port, which holds those locomotors.
 //! - Grinder (UnitClass::PerCellProcess `0x0073A13E..0x0073A181`): credits the
 //!   eater's refund, then suppression 50 + ExitUnit. VERA has no grinding.
-//! - ChronoWarp (SuperClass::Launch case 4 `0x006CC763`): a Naval eater gets
-//!   suppression 500 + ExitUnit. VERA has no Chronosphere superweapon.
 //! - Magnetron lift (`0x00710026`): a Naval eater exits. VERA does not port the
 //!   IsLocomotor detonation arm.
 //! - Sonic weapons may target an allied infected Foot (What_Action_OnObject
@@ -74,6 +72,10 @@ pub(crate) const LAUNCH_LOCK_FRAMES: u32 = 0x14;
 /// Forced releases (repair `Receive_Radio 0x1C`, heal, Iron Curtain, grinder)
 /// arm the suppression timer with 50 frames before ExitUnit.
 pub(crate) const FORCED_RELEASE_SUPPRESSION_FRAMES: i32 = 50;
+
+/// The Chrono Warp's release of a Naval eater (`SuperClass::Launch` case 4,
+/// `0x006CC78F..0x006CC7B7`): suppression 500, then ExitUnit.
+pub(crate) const CHRONO_WARP_SUPPRESSION_FRAMES: i32 = 500;
 
 /// Retained ParasiteClass instance fields. The owner (`+0x24`) is the entity
 /// storing this value.
@@ -1038,6 +1040,7 @@ impl Simulation {
                 == Some(crate::sim::world::display_layers::DisplayLayer::SURFACE);
             if self.unregister_non_entity_object(bullet) {
                 self.projectiles.set_owner(bullet, firer);
+                self.construct_bullet_scheme(bullet, rules);
                 let registered = self.register_projectile(bullet, flat);
                 debug_assert!(registered);
             }

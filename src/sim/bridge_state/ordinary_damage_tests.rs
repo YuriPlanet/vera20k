@@ -16,20 +16,18 @@ impl OrdinaryDamageHost for Host {
 
 #[test]
 fn concrete_damage_matches_original_all_overlay_states_and_width_entries() {
-    let corpus: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/bridge_ordinary_damage.json"
-    )))
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_ordinary_damage.json",
+    ))
     .unwrap();
     compare_cases(&corpus, Family::High);
 }
 
 #[test]
 fn wooden_damage_matches_original_all_overlay_states_width_entries_and_physical_sequence() {
-    let corpus: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/shrapnel_damage/scalar_test_vectors.json"
-    )))
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/shrapnel_damage/scalar_test_vectors.json",
+    ))
     .unwrap();
     compare_cases(&corpus, Family::Low);
     for sequence in corpus["physical_sequences"].as_array().unwrap() {

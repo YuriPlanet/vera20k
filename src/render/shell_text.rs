@@ -206,8 +206,8 @@ mod tests {
 
     #[test]
     fn line_submissions_match_original_434cd0_for_short_static_rectangles() {
-        let golden: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/storage_oracle/shell_text_lines.json"
+        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/shell_text_lines.json",
         ))
         .unwrap();
         let mut font = make_test_font(&[(b'A' as u16, 6)], 3);

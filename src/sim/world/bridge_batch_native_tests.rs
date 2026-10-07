@@ -123,8 +123,8 @@ fn bridge_batch_simulation(case: &serde_json::Value) -> Simulation {
 
 #[test]
 fn live_bridge_batch_matches_original_order_recalc_cache_and_hierarchy() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_hierarchy.json",
     ))
     .unwrap();
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
@@ -320,8 +320,8 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
     use crate::rules::locomotor_type::SpeedType;
     use crate::sim::pathfinding::terrain_cost::TerrainCostGrid;
 
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_hierarchy.json",
     ))
     .unwrap();
     let case = corpus["cases"]
@@ -409,9 +409,9 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
 #[test]
 fn live_raw_bridge_height_preserves_native_signed_deck_byte_and_dummy_identity() {
     let heights: serde_json::Value =
-        serde_json::from_str(include_str!("../../../tools/ramp_height_vectors.json")).unwrap();
-    let hierarchy: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_hierarchy.json"
+        serde_json::from_str(crate::test_fixture::text("tools/ramp_height_vectors.json")).unwrap();
+    let hierarchy: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_hierarchy.json",
     ))
     .unwrap();
     let case = hierarchy["cases"]
@@ -479,8 +479,8 @@ fn live_bridge_batch_recovers_rust_append_capacity_without_replacing_base_connec
     // Rust storage recovery regression, not a native threshold parity claim.
     // Exhaust only the fine level so coarse levels have already been patched
     // when the append fails; recovery must replace that partially changed graph.
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_hierarchy.json",
     ))
     .unwrap();
     let case = corpus["cases"]

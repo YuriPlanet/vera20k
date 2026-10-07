@@ -316,8 +316,8 @@ mod tests {
 
     #[test]
     fn runtime_identity_uses_native_wrap_and_changes_future_state_hash() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/native_id_snapshot.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/native_id_snapshot.json",
         ))
         .unwrap();
         for case in corpus["cases"].as_array().unwrap() {
@@ -345,8 +345,8 @@ mod tests {
     #[test]
     fn native_id_continuation_survives_production_snapshot_envelope() {
         use crate::sim::snapshot::GameSnapshot;
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/native_id_snapshot.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/native_id_snapshot.json",
         ))
         .unwrap();
         for case in corpus["cases"].as_array().unwrap() {

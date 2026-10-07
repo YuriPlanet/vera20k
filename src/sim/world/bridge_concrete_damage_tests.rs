@@ -110,10 +110,9 @@ fn retail_concrete_damage_repair_and_restore_publish_navigation() {
 #[test]
 #[ignore = "requires unmodified physical Anytown and retail TEMPERATE assets"]
 fn retail_concrete_hut_damage_matches_native_both_huts_and_three_states() {
-    let native: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/anytown_damage/hut_test_vectors.json"
-    )))
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/anytown_damage/hut_test_vectors.json",
+    ))
     .unwrap();
     let mut scene = loaded();
     let pristine = scene.sim().resolved_terrain.as_ref().unwrap().clone();

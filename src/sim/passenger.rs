@@ -2038,8 +2038,8 @@ ConditionYellow=50%
 
     #[test]
     fn open_topped_boarding_preserves_old_target_until_class_reset() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/base_defense_response.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/base_defense_response.json",
         ))
         .unwrap();
         let row = native["infantry_assignment"]["rows"]

@@ -118,8 +118,8 @@ fn assert_facings(sim: &Simulation, row: &Value) {
 
 #[test]
 fn aircraft_approach_matches_original_dispatch_and_restored_continuation() {
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_approach.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_approach.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 49);
@@ -147,8 +147,8 @@ fn aircraft_approach_matches_original_dispatch_and_restored_continuation() {
 
 #[test]
 fn aircraft_initial_attack_reaches_live_search_on_the_next_due_visit() {
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_reengagement.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_reengagement.json",
     ))
     .unwrap();
     let row = rows.iter().find(|r| r["input"]["name"] == "base").unwrap();

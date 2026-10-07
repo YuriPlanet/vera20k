@@ -140,8 +140,8 @@ mod tests {
 
     #[test]
     fn original_speed_effect_updates_live_foot_speed_for_every_recipient() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/crate_speed_effect.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/crate_speed_effect.json",
         ))
         .unwrap();
         let rules = RuleSet::from_ini(&IniFile::from_str(

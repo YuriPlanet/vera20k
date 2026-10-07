@@ -251,8 +251,8 @@ mod tests {
             input: Input,
             output: Output,
         }
-        let rows: Vec<Row> = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_slot_power.json"
+        let rows: Vec<Row> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_slot_power.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 1728);
@@ -400,8 +400,8 @@ mod tests {
 
     #[test]
     fn original_192_building_edges_keep_normal_and_special_outages_distinct() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_power_dispatch.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_power_dispatch.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 192);

@@ -34,8 +34,8 @@ use crate::util::fixed_math::SimFixed;
 mod waiter_oracle_tests;
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/building_repair.depot_service.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_repair.depot_service.json",
     ))
     .unwrap()
 }

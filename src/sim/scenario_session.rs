@@ -12,6 +12,10 @@ use crate::sim::game_options::GameOptions;
 use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
 
+/// NukeLevel (`ScenarioClass+0x3574`): Set_Defaults stores 100 (`0x00683920`,
+/// the binary's only store to it) and no INI key reads it.
+pub const NUKE_LEVEL_UNITS: i32 = 100;
+
 /// One map-authored global lighting profile in the native integer scales.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ScenarioLightProfileUnits {
@@ -48,6 +52,38 @@ impl ScenarioLightProfileUnits {
             level_units: 0,
         }
     }
+
+    /// `ScenarioClass::Set_Defaults @ 0x00683610` (`0x00683991..
+    /// 0x006839B7`).
+    pub const fn dominator_default() -> Self {
+        Self {
+            ambient_percent: 150,
+            red_percent: 85,
+            green_percent: 20,
+            blue_percent: 30,
+            ground_units: 0,
+            level_units: 0,
+        }
+    }
+
+    /// The RGB `ScenarioClass::UpdateLighting @ 0x0053C280` hands
+    /// RecalcLighting for an alternate profile: each percentage times 10.
+    pub fn alternate_rgb(&self) -> [i32; 3] {
+        [self.red_percent, self.green_percent, self.blue_percent].map(|v| v.wrapping_mul(10))
+    }
+}
+
+impl From<crate::map::lighting::LightingProfileUnits> for ScenarioLightProfileUnits {
+    fn from(units: crate::map::lighting::LightingProfileUnits) -> Self {
+        Self {
+            ambient_percent: units.ambient_percent,
+            red_percent: units.red_percent,
+            green_percent: units.green_percent,
+            blue_percent: units.blue_percent,
+            ground_units: units.ground_units,
+            level_units: units.level_units,
+        }
+    }
 }
 
 impl Default for ScenarioLightProfileUnits {
@@ -61,6 +97,7 @@ impl Default for ScenarioLightProfileUnits {
 pub enum ScenarioLightingProfile {
     Normal,
     Ion,
+    Dominator,
 }
 
 /// Persistent ScenarioClass-style authority for global lighting transitions.
@@ -71,20 +108,34 @@ pub enum ScenarioLightingProfile {
 pub struct ScenarioLightingState {
     pub normal: ScenarioLightProfileUnits,
     pub ion: ScenarioLightProfileUnits,
+    /// `Dominator*=` (`ScenarioClass+0x357C..+0x3590`).
+    pub dominator: ScenarioLightProfileUnits,
+    /// `DominatorAmbientChangeRate=` (`+0x3594`): the fade interval while
+    /// the Psychic Dominator is active.
+    pub dominator_change_rate: i32,
     pub current_ambient: i32,
     pub target_ambient: i32,
+    /// The profile the last `UpdateLighting` selected: its ambient is the
+    /// target and its RGB the alternate tint.
     pub selected_profile: ScenarioLightingProfile,
     pub transition_timer: CdTimer,
 }
 
 impl ScenarioLightingState {
-    /// Construct a tick-zero scenario from its two map-authored profiles.
-    pub const fn new(normal: ScenarioLightProfileUnits, ion: ScenarioLightProfileUnits) -> Self {
+    /// Construct a tick-zero scenario from its map-authored profiles.
+    pub const fn new(
+        normal: ScenarioLightProfileUnits,
+        ion: ScenarioLightProfileUnits,
+        dominator: ScenarioLightProfileUnits,
+        dominator_change_rate: i32,
+    ) -> Self {
         Self {
             current_ambient: normal.ambient_percent,
             target_ambient: normal.ambient_percent,
             normal,
             ion,
+            dominator,
+            dominator_change_rate,
             selected_profile: ScenarioLightingProfile::Normal,
             // Scenario construction starts this zero-duration timer at frame 0;
             // it is immediately due without using CdTimer's paused sentinel.
@@ -92,24 +143,56 @@ impl ScenarioLightingState {
         }
     }
 
-    #[inline]
-    pub fn selected(&self) -> ScenarioLightProfileUnits {
-        match self.selected_profile {
+    /// The scenario's lighting as the map's `[Lighting]` section sets it.
+    pub fn from_map(profiles: &crate::map::lighting::ParsedLightingProfiles) -> Self {
+        Self::new(
+            profiles.normal.into(),
+            profiles.ion.into(),
+            profiles.dominator.into(),
+            profiles.dominator_change_rate,
+        )
+    }
+
+    pub fn profile(&self, profile: ScenarioLightingProfile) -> ScenarioLightProfileUnits {
+        match profile {
             ScenarioLightingProfile::Normal => self.normal,
             ScenarioLightingProfile::Ion => self.ion,
+            ScenarioLightingProfile::Dominator => self.dominator,
         }
     }
 
-    #[inline]
-    pub fn select_normal(&mut self) {
-        self.selected_profile = ScenarioLightingProfile::Normal;
-        self.target_ambient = self.normal.ambient_percent;
+    /// The Level a full cell relight's top scalar multiplies by the cell's
+    /// height under `profile` (`CellClass::ProcessColourComponents @
+    /// 0x00484180`): the profile's own, but [`NUKE_LEVEL_UNITS`] in the
+    /// Dominator arm (`0x004844DB`), whose bottom reads `DominatorLevel=`.
+    pub fn relight_top_level(&self, profile: ScenarioLightingProfile) -> i32 {
+        match profile {
+            ScenarioLightingProfile::Dominator => NUKE_LEVEL_UNITS,
+            other => self.profile(other).level_units,
+        }
     }
 
+    /// `ScenarioClass::UpdateLighting @ 0x0053C280`'s writes for `profile`:
+    /// the ambient target (`+0x3530`) becomes its ambient. RecalcLighting's
+    /// RGB is [`Self::alternate_rgb`].
     #[inline]
-    pub fn select_ion(&mut self) {
-        self.selected_profile = ScenarioLightingProfile::Ion;
-        self.target_ambient = self.ion.ambient_percent;
+    pub fn select(&mut self, profile: ScenarioLightingProfile) {
+        self.selected_profile = profile;
+        self.target_ambient = self.profile(profile).ambient_percent;
+    }
+
+    /// RecalcLighting's RGB for the selected profile (`0x0053AD00`): the
+    /// alternate profile's percentages times 10, none for the ordinary one
+    /// (`-1, -1, -1`).
+    pub fn alternate_rgb(&self) -> Option<[i32; 3]> {
+        (self.selected_profile != ScenarioLightingProfile::Normal)
+            .then(|| self.profile(self.selected_profile).alternate_rgb())
+    }
+
+    /// Restart the ambient fade timer (`ScenarioClass+0x1248`), as
+    /// `PsyDom::Start` does (`0x0053AEFB..0x0053AF24`).
+    pub fn restart_transition_timer(&mut self, frame: i32, duration: i32) {
+        self.transition_timer.start(frame, duration);
     }
 
     /// Run the one native pre-ore transition rung for `binary_frame`.
@@ -134,7 +217,9 @@ impl ScenarioLightingState {
         }
         self.transition_timer.start(frame, interval_frames);
 
+        // `0x0055B42E..0x0055B43C`: the target is clamped at zero and stored.
         let target = self.target_ambient.max(0);
+        self.target_ambient = target;
         if self.current_ambient < target {
             let advanced = self.current_ambient.wrapping_add(ambient_step);
             self.current_ambient = advanced.min(target);
@@ -151,6 +236,8 @@ impl Default for ScenarioLightingState {
         Self::new(
             ScenarioLightProfileUnits::normal_default(),
             ScenarioLightProfileUnits::ion_default(),
+            ScenarioLightProfileUnits::dominator_default(),
+            1,
         )
     }
 }
@@ -383,12 +470,24 @@ impl ScenarioSession {
         lighting.ion.level_units.hash(hasher);
         lighting.current_ambient.hash(hasher);
         lighting.target_ambient.hash(hasher);
-        match lighting.selected_profile {
-            crate::sim::scenario_session::ScenarioLightingProfile::Normal => 0u8.hash(hasher),
-            crate::sim::scenario_session::ScenarioLightingProfile::Ion => 1u8.hash(hasher),
-        }
+        let profile_tag = |profile| match profile {
+            ScenarioLightingProfile::Normal => 0u8,
+            ScenarioLightingProfile::Ion => 1u8,
+            ScenarioLightingProfile::Dominator => 2u8,
+        };
+        profile_tag(lighting.selected_profile).hash(hasher);
         lighting.transition_timer.start_frame().hash(hasher);
         lighting.transition_timer.duration().hash(hasher);
+        // Appended after the original fields, and only for values other
+        // than the Set_Defaults ones, so a map without `Dominator*=` keys
+        // keeps its earlier hash stream.
+        if lighting.dominator != ScenarioLightProfileUnits::dominator_default()
+            || lighting.dominator_change_rate != 1
+        {
+            0x357cu16.hash(hasher);
+            lighting.dominator.hash(hasher);
+            lighting.dominator_change_rate.hash(hasher);
+        }
     }
 
     /// Hash per-match game options for lockstep verification.
@@ -487,18 +586,18 @@ mod tests {
         assert_eq!(lighting.ion, ScenarioLightProfileUnits::ion_default());
         assert_eq!(lighting.transition_timer, CdTimer::started(0, 0));
 
-        lighting.select_ion();
+        lighting.select(ScenarioLightingProfile::Ion);
         assert!(lighting.advance_transition_if_due(0, true, 180, 20));
         assert_eq!(lighting.current_ambient, 87);
         assert_eq!(lighting.transition_timer, CdTimer::started(0, 180));
 
-        lighting.select_normal();
+        lighting.select(ScenarioLightingProfile::Normal);
         assert!(!lighting.advance_transition_if_due(179, true, 180, 20));
         assert_eq!(lighting.current_ambient, 87);
         assert!(lighting.advance_transition_if_due(180, true, 180, 20));
         assert_eq!(lighting.current_ambient, 100);
 
-        lighting.select_ion();
+        lighting.select(ScenarioLightingProfile::Ion);
         assert!(!lighting.advance_transition_if_due(360, false, 180, 20));
         assert_eq!(lighting.current_ambient, 100);
         assert_eq!(lighting.transition_timer, CdTimer::started(180, 180));

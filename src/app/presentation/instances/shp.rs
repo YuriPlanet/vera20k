@@ -314,7 +314,7 @@ pub(crate) fn build_shp_instances(
         // building still draws (Approach A in the design doc). Non-garrisonable
         // misses keep their existing skip path.
         let entry = match atlas.get(&key) {
-            Some(e) => e,
+            Some(e) => Some(e),
             None if shp_frame != 0
                 && entity.category == EntityCategory::Structure
                 && state
@@ -331,15 +331,18 @@ pub(crate) fn build_shp_instances(
                     house_color: hc,
                 };
                 match atlas.get(&fallback_key) {
-                    Some(e) => e,
+                    Some(e) => Some(e),
                     None => continue,
                 }
             }
+            // An empty (0x0) body frame has no atlas entry: `NAMISL`'s six
+            // frames are all empty and its SuperAnims are the silo. The body
+            // draw paints nothing and the building's bib, anims and turret
+            // still draw after it.
+            None if entity.category == EntityCategory::Structure => None,
             None => continue,
         };
 
-        let final_x: f32 = sx + entry.offset_x;
-        let final_y: f32 = sy + entry.offset_y;
         let base_depth: f32 = match entity.category {
             EntityCategory::Structure => {
                 // `sy` already carries the render-coordinate lift, so it *is* the
@@ -353,7 +356,9 @@ pub(crate) fn build_shp_instances(
                 // The drawn row carries this body's height lift; the sort key
                 // must not. A hovering Rocketeer or a descending paradrop key
                 // off the cell it is over, exactly like a GI standing there.
-                let depth_y: f32 = sy + entry.canvas_rect[1] + entry.canvas_rect[3];
+                // Only a Structure reaches here without a body entry.
+                let canvas = entry.map_or([0.0; 4], |entry| entry.canvas_rect);
+                let depth_y: f32 = sy + canvas[1] + canvas[3];
                 compute_sprite_depth(state, ground_sort_row(entity, depth_y), interp_z)
             }
         };
@@ -434,7 +439,10 @@ pub(crate) fn build_shp_instances(
             );
             (
                 lifted_z_adjust(lift_px, normal_z_adjust + SHP_DRAW_Z_ADJUST_PX),
-                native_z::pack_building_z_gradient(zshape, entry.extended),
+                native_z::pack_building_z_gradient(
+                    zshape,
+                    entry.is_some_and(|entry| entry.extended),
+                ),
                 [origin.0 as f32, origin.1 as f32],
             )
         } else {
@@ -456,48 +464,52 @@ pub(crate) fn build_shp_instances(
                 [0.0, 0.0],
             )
         };
-        let body = SpriteInstance {
-            position: [final_x, final_y],
-            size: entry.pixel_size,
-            uv_origin: entry.uv_origin,
-            uv_size: entry.uv_size,
-            depth,
-            tint,
-            palette_light,
-            alpha: 1.0,
-            draw_state,
-            z_adjust,
-            z_gradient,
-            zshape_origin,
-        };
+        let body = entry.map(|entry| {
+            let instance = SpriteInstance {
+                position: [sx + entry.offset_x, sy + entry.offset_y],
+                size: entry.pixel_size,
+                uv_origin: entry.uv_origin,
+                uv_size: entry.uv_size,
+                depth,
+                tint,
+                palette_light,
+                alpha: 1.0,
+                draw_state,
+                z_adjust,
+                z_gradient,
+                zshape_origin,
+            };
+            (ObjectTexture::ShpPage(entry.page as usize), instance)
+        });
 
         let mut building_pieces = Vec::new();
         if entity.category == EntityCategory::Structure {
-            building_pieces.push(PlannedBuildingPieceInstance {
-                kind: if is_building_up || is_building_down {
-                    BuildingPieceKind::BuildupOrSpecial
-                } else {
-                    BuildingPieceKind::Body
-                },
-                z_bias: 0,
-                // Body and buildup go through the same Z-writing body draw.
-                policy: BlitPolicy::opaque(SpriteEncoding::Plain),
-                target: ObjectTexture::ShpPage(entry.page as usize),
-                instance: body,
-            });
-        } else {
-            if let Some(parent) =
-                ground_order.object_draw(entity.stable_id(), SpriteEncoding::Plain)
-            {
-                ground_objects.push(PlannedObjectInstance::object(
-                    parent,
-                    vec![ObjectPieceInstance {
-                        target: ObjectTexture::ShpPage(entry.page as usize),
-                        render_z: parent.policy.render_z,
-                        instance: body,
-                    }],
-                ));
+            if let Some((target, instance)) = body {
+                building_pieces.push(PlannedBuildingPieceInstance {
+                    kind: if is_building_up || is_building_down {
+                        BuildingPieceKind::BuildupOrSpecial
+                    } else {
+                        BuildingPieceKind::Body
+                    },
+                    z_bias: 0,
+                    // Body and buildup go through the same Z-writing body draw.
+                    policy: BlitPolicy::opaque(SpriteEncoding::Plain),
+                    target,
+                    instance,
+                });
             }
+        } else if let Some((target, instance)) = body
+            && let Some(parent) =
+                ground_order.object_draw(entity.stable_id(), SpriteEncoding::Plain)
+        {
+            ground_objects.push(PlannedObjectInstance::object(
+                parent,
+                vec![ObjectPieceInstance {
+                    target,
+                    render_z: parent.policy.render_z,
+                    instance,
+                }],
+            ));
         }
 
         // Emit building animation overlays and bib — but NOT during build-up/down.
@@ -1201,8 +1213,8 @@ mod tests {
 
     #[test]
     fn completed_garrison_body_frames_match_native_oracle() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../tools/garrison_oracle/body_frame.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/garrison_oracle/body_frame.json",
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();

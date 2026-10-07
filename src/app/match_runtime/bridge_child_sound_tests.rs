@@ -19,12 +19,12 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
     let registry = SoundRegistry::from_ini(&sound);
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/rules_oracle/bridge_child_sound.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/bridge_child_sound.json",
     ))
     .unwrap();
-    let art_native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/rules_oracle/bridge_anim_inputs.json"
+    let art_native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/bridge_anim_inputs.json",
     ))
     .unwrap();
     for report in native["anim_reports"].as_array().unwrap() {

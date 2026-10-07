@@ -368,6 +368,27 @@ fn scatter_delta(
     offset_along(delta, angle, magnitude, trig)
 }
 
+/// The pitch both nuclear missiles leave at, pushed as an immediate
+/// (`0x0044CB4E`, `0x0046B43B`): a hair under pi/2.
+const MISSILE_PITCH: NativeF64Bits = NativeF64Bits::from_bits(0x3ff9_21c9_0fe8_fbda);
+
+/// The velocity of both nuclear missiles: the silo's
+/// (`BuildingClass::Mission_Missile`, `0x0044CB4E..0x0044CC30`, `scale` 10.0
+/// at `0x007E44A8`) and the warhead NukeMaker drops (`0x0046B43B..
+/// 0x0046B529`, `scale` -1.0 at `0x007E4900`). With the sine and cosine of
+/// the one pitch from the table (`0x004CACB0`, `0x004CAD00`): X = cos·cos,
+/// Y = cos·sin, Z = sin, each times `scale` and stored as a double.
+pub(crate) fn missile_launch_velocity(scale: NativeF64Bits) -> ProjectileVelocity {
+    let trig = TrigTable::embedded();
+    let (sine, cosine) = (sin(trig, MISSILE_PITCH), cos(trig, MISSILE_PITCH));
+    let scale = d(scale);
+    ProjectileVelocity::from_native([
+        store(X::mul(X::mul(cosine, cosine), scale)),
+        store(X::mul(X::mul(cosine, sine), scale)),
+        store(X::mul(sine, scale)),
+    ])
+}
+
 /// `BulletClass::SpawnShrapnel`'s child launch velocity. Both branches turn
 /// the zeroed velocity's seed (100, 0, 0) toward the target, divide out its
 /// existing pitch and apply the fixed pitch `0x3FE921648732995C`. A child
@@ -572,6 +593,43 @@ mod tests {
     use super::*;
     use serde_json::Value;
 
+    /// Both nuclear missiles' launch velocities against the original Fire
+    /// calls (`tools/superweapon_oracle.py`: the silo's at 10.0 in every
+    /// `mission_missile` launch, NukeMaker's at -1.0), bit for bit.
+    #[test]
+    fn missile_launch_velocities_match_native() {
+        let oracle: Value =
+            serde_json::from_str(crate::test_fixture::text("tools/superweapon_oracle.json"))
+                .unwrap();
+        for (section, scale) in [
+            ("mission_missile", 0x4024_0000_0000_0000_u64),
+            ("nuke_maker", 0xbff0_0000_0000_0000),
+        ] {
+            let velocity = missile_launch_velocity(NativeF64Bits::from_bits(scale))
+                .native()
+                .map(|component| component.bits());
+            let fired: Vec<Vec<u64>> = oracle[section]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|row| row["events"].as_array().unwrap())
+                .filter(|event| event[0] == "fire")
+                .map(|event| {
+                    event[2]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|bits| bits.as_u64().unwrap())
+                        .collect()
+                })
+                .collect();
+            assert!(fired.len() >= 5, "{section}");
+            for native in fired {
+                assert_eq!(velocity.to_vec(), native, "{section}");
+            }
+        }
+    }
+
     fn tables() -> (&'static TrigTable, &'static AcosTable) {
         let tables = crate::map::retail_trig::required_math_tables();
         assert!(
@@ -588,23 +646,23 @@ mod tests {
         for (name, data) in [
             (
                 "ordinary",
-                include_str!("../../../tools/projectile_oracle/fireat_launch.json"),
+                crate::test_fixture::text("tools/projectile_oracle/fireat_launch.json"),
             ),
             (
                 "voxel",
-                include_str!("../../../tools/projectile_oracle/voxel_launch.json"),
+                crate::test_fixture::text("tools/projectile_oracle/voxel_launch.json"),
             ),
             (
                 "second probe",
-                include_str!("../../../tools/projectile_oracle/arc_second_probe.json"),
+                crate::test_fixture::text("tools/projectile_oracle/arc_second_probe.json"),
             ),
             (
                 "building",
-                include_str!("../../../tools/projectile_oracle/building_pitch.json"),
+                crate::test_fixture::text("tools/projectile_oracle/building_pitch.json"),
             ),
             (
                 "directed",
-                include_str!("../../../tools/projectile_oracle/directed_launch.json"),
+                crate::test_fixture::text("tools/projectile_oracle/directed_launch.json"),
             ),
         ] {
             let rows: Vec<Value> = serde_json::from_str(data).unwrap();
@@ -681,8 +739,8 @@ mod tests {
     }
 
     fn fireat_speed_corpus() -> Value {
-        serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/fireat_speed.json"
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/fireat_speed.json",
         ))
         .unwrap()
     }
@@ -797,8 +855,8 @@ mod tests {
     }
 
     fn launch_scatter_corpus() -> Value {
-        serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/launch_scatter.json"
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/launch_scatter.json",
         ))
         .unwrap()
     }
@@ -892,8 +950,8 @@ mod tests {
     #[ignore = "requires RA2_DIR with verified gamemd.exe math tables"]
     fn original_arc_solver_domain_and_failure_predicates() {
         let (_, table) = tables();
-        let rows: Vec<Value> = serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/arc_domain.json"
+        let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/arc_domain.json",
         ))
         .unwrap();
         for (index, row) in rows.iter().enumerate() {

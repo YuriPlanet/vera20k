@@ -330,8 +330,8 @@ mod tests {
     #[test]
     fn native_non_entity_lifetimes_reach_their_layers_without_family_or_page_sorting() {
         use crate::sim::world::display_layers::{DisplayLayer, DisplayLayers};
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/display_non_entity.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/display_non_entity.json",
         ))
         .unwrap();
         for row in rows {
@@ -450,8 +450,8 @@ mod tests {
 
         // Original instructions produce a partially sorted vector after each
         // 551A30 call. Rendering must preserve every intermediate history.
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/crate_ground_membership.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/crate_ground_membership.json",
         ))
         .unwrap();
         let row = rows

@@ -12,8 +12,8 @@ fn debris_contact_matches_original_tree_damage_gates_radius_and_retirement() {
     let Some(art_ini) = retail_ini("artmd.ini") else {
         return;
     };
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/terrain_debris_receiver.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/terrain_debris_receiver.json",
     ))
     .unwrap();
     let mut compared = 0;

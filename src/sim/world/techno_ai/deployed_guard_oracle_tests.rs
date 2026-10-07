@@ -37,16 +37,16 @@ use crate::sim::world::{ObjectAiCtx, Simulation};
 fn corpus() -> &'static Value {
     static CORPUS: OnceLock<Value> = OnceLock::new();
     CORPUS.get_or_init(|| {
-        let meta: Value = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/infantry_deployed_guard.meta.json"
+        let meta: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/infantry_deployed_guard.meta.json",
         ))
         .unwrap();
         assert_eq!(
             meta["native_sha256"],
             "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
         );
-        let value: Value = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/infantry_deployed_guard.json"
+        let value: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/infantry_deployed_guard.json",
         ))
         .unwrap();
         assert_eq!(value["schema_version"], 1);

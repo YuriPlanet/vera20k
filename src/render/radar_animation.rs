@@ -106,9 +106,10 @@ mod tests {
     }
     #[test]
     fn original_600_draw_timer_states_match() {
-        let packet: Packet =
-            serde_json::from_str(include_str!("../../tools/sidebar_oracle/radar_timer.json"))
-                .unwrap();
+        let packet: Packet = serde_json::from_str(crate::test_fixture::text(
+            "tools/sidebar_oracle/radar_timer.json",
+        ))
+        .unwrap();
         assert_eq!(packet.cases.len(), 600);
         for c in packet.cases {
             let mut a = RadarAnimation {

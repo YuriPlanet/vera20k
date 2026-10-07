@@ -1,0 +1,34 @@
+# cargo-about configuration for the third-party notices shipped in release
+# archives (THIRD_PARTY_LICENSES.html). Every accepted license is compatible
+# with VERA20k's GPLv3; the release fails when a crate needs any other. Where a
+# crate offers a choice, the first accepted license in this order is used.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unlicense",
+    "CC0-1.0",
+    "BSL-1.0",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "NCSA",
+    # Fonts embedded by egui's epaint; both licenses allow bundling with any software.
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+]
+# The platforms release.yml builds.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+]
+# Build scripts and test-only crates are not part of the shipped program.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# VERA20k itself (publish = false) is first-party; its license is LICENSE-GPL.
+private = { ignore = true }

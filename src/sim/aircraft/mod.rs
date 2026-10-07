@@ -14,8 +14,12 @@ pub mod attack_mission;
 pub mod drop_payload;
 pub mod idle_mode;
 pub(crate) mod landing_base;
+mod leave_map;
+#[cfg(test)]
+mod leave_map_tests;
 pub mod paradrop_mission;
 pub mod runtime_contract;
+pub(crate) mod spyplane_mission;
 
 #[cfg(test)]
 mod dock_cycle_tests;
@@ -138,6 +142,43 @@ pub fn tick_aircraft_missions(
         // This batch fixture has no resident overlay table.
         .filter(|&id| dispatch_aircraft_mission(sim, rules, id, None))
         .collect()
+}
+
+/// `MissionClass::AI @ 0x005B3060` for the aircraft missions ported as
+/// native handlers: an alive aircraft whose mission timer is due runs its
+/// current mission's handler (jump table `0x005B34E8`) and restarts the
+/// timer with the frames it returns. These are Unload (`0x004151E0`, vtable
+/// `+0x23C`) and the Spy Plane's two (`+0x26C`, `+0x270`); the other
+/// missions still run on VERA's aircraft state machine
+/// ([`dispatch_aircraft_mission`]).
+pub(crate) fn dispatch_native_mission(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+) {
+    use crate::sim::mission::MissionType;
+    let now = sim.session.binary_frame;
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    if entity.dying
+        || entity.category != EntityCategory::Aircraft
+        || !entity.mission.dispatch_timer().due(now)
+    {
+        return;
+    }
+    let delay = match entity.mission.current().known() {
+        Some(MissionType::Unload) => {
+            crate::sim::transport_unload::mission_unload(sim, id, rules, overlay_registry)
+        }
+        Some(MissionType::SpyplaneApproach) => spyplane_mission::approach(sim, id, rules),
+        Some(MissionType::SpyplaneOverfly) => spyplane_mission::overfly(sim, id, rules),
+        _ => return,
+    };
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity.mission.write_dispatch_epilogue(now as i32, delay);
+    }
 }
 
 /// One aircraft's mission dispatch inside its own LogicVector slot.
@@ -518,6 +559,18 @@ fn mission_step(
             target_ry,
         } => {
             let outcome = paradrop_mission::tick_approach(sim, rules, id, *target_rx, *target_ry);
+            // Mission 26's in-radius arm queues 27 (`0x00415946`); the
+            // class AI's Ready/Commence starts it this frame.
+            if matches!(outcome.new_mission, AircraftMission::ParaDropOverfly { .. })
+                && let Some(entity) = sim.substrate.entities.get_mut(id)
+            {
+                crate::sim::mission::authority::queue_entity_mission_deferred(
+                    entity,
+                    crate::sim::mission::MissionId::from_known(
+                        crate::sim::mission::MissionType::ParadropOverfly,
+                    ),
+                );
+            }
             m.new_mission = outcome.new_mission;
             m.move_to = outcome.move_to;
         }
@@ -764,11 +817,12 @@ fn apply_mission_mutation(
         }
     }
 
-    // Silent despawn for a carrier that exited the playfield with empty cargo.
-    // Native is silent too: `AircraftClass::Mission_Rescue @ 0x00415960`
-    // never removes the carrier, and the off-playfield removal in
-    // `AircraftClass::AI` (`0x00414F93` / `0x00414FD1`) is a bare `UnInit`
-    // (`+0xF8`) with no `Death_Announcement` (`+0x3B8`).
+    // Silent despawn for a carrier that exited the playfield with empty cargo
+    // (the exit RESIDUAL in `paradrop_mission`). Native is silent too:
+    // mission 27 (`0x00415960`) never removes the carrier, and the removals
+    // that do, `aircraft::leave_map` and the Fly locomotor's Retreat exit
+    // (`0x004CD5E2`), are a bare `UnInit` (`+0xF8`) with no
+    // `Death_Announcement` (`+0x3B8`).
     if m.paradrop_silent_despawn {
         let infantry_terminal = sim.begin_raw_infantry_death(m.id);
         if let Some(entity) = sim.substrate.entities.get_mut(m.id) {

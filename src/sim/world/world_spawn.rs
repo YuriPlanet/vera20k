@@ -1655,7 +1655,7 @@ impl Simulation {
         // `ConstructionYard=` building, a mind-controlled one (+0x2C0,
         // 0x00700EC6..0x00700ED8), and that refusal clears Unit+0x68C
         // (0x00739AA7). The predicate's other arms are not represented here.
-        let stolen_mcv = source.mind_control.is_mind_controlled()
+        let stolen_mcv = source.mind_control.controller().is_some()
             && construction_yard_type_for_mcv(self.interner.resolve(source.type_ref()), rules)
                 .and_then(|yard| rules.object(&yard))
                 .is_some_and(|yard| yard.construction_yard);
@@ -2243,7 +2243,7 @@ impl Simulation {
         // `BuildingClass::CanUndeployMCV @ 0x00449C15` and
         // `ShouldShowDeployButton @ 0x0044F614`: a mind-controlled yard (+0x2C0)
         // cannot repack.
-        if entity.mind_control.is_mind_controlled() {
+        if entity.mind_control.controller().is_some() {
             return false;
         }
         self.houses

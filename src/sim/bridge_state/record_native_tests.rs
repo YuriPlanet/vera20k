@@ -3,8 +3,8 @@
 
 #[test]
 fn native_bridge_records_match_original_executable() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_records.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_records.json",
     ))
     .unwrap();
     let cases = corpus["cases"].as_array().unwrap();

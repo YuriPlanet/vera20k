@@ -230,8 +230,8 @@ fn retail_siege_chopper_draws_schd_only_after_deployment_completes() {
 
 #[test]
 fn unit_hva_frames_match_native_selected_model_remainders() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/unit_simple_deploy.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_simple_deploy.json",
     ))
     .expect("native simple deployment draw controls");
     let frames_by_name = native["retail_art"]["physical_hva"].as_array().unwrap();

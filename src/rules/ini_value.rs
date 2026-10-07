@@ -1198,10 +1198,9 @@ mod tests {
     /// INI line, which both lexical loaders omit. Replay the scalar control.
     #[test]
     fn native_base_response_type_speed_reads_an_empty_supplied_cache_entry() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tools/spatial_oracle/base_defense_response.json",
-        )))
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/base_defense_response.json",
+        ))
         .unwrap();
         let row = native["speed_history"]
             .as_array()

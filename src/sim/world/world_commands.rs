@@ -1903,132 +1903,19 @@ impl Simulation {
                 target_rx,
                 target_ry,
             } => {
+                let Some(rules) = rules else { return false };
                 if !self.session.game_options.super_weapons {
                     return false;
                 }
-                let owner_iid = self.interner.intern(command_owner);
-                let sw_type_str = self.interner.resolve(*sw_type_id).to_string();
-
-                // Look up the instance and verify it's ready.
-                let is_ready = self
-                    .super_weapons
-                    .get(&owner_iid)
-                    .and_then(|weapons| weapons.get(sw_type_id))
-                    .map_or(false, |inst| inst.is_active && inst.is_ready);
-                if !is_ready {
-                    log::warn!(
-                        "LaunchSuperWeapon '{}' by '{}' — not ready",
-                        sw_type_str,
-                        command_owner,
-                    );
-                    return false;
-                }
-
-                // Look up the type to determine dispatch kind.
-                let Some(sw_type) = rules.and_then(|r| r.super_weapon(&sw_type_str)) else {
-                    return false;
-                };
-                let kind = sw_type.kind;
-                let recharge = sw_type.recharge_time_frames;
-
-                // Dispatch based on kind.
-                let success = match kind {
-                    crate::rules::superweapon_type::SuperWeaponKind::LightningStorm => {
-                        let rules = rules.unwrap();
-                        crate::sim::superweapon::lightning_storm::start(
-                            self,
-                            rules,
-                            owner_iid,
-                            *target_rx,
-                            *target_ry,
-                            *sw_type_id,
-                        )
-                    }
-                    crate::rules::superweapon_type::SuperWeaponKind::IronCurtain => {
-                        let rules = rules.unwrap();
-                        crate::sim::superweapon::iron_curtain::launch(
-                            self,
-                            rules,
-                            owner_iid,
-                            *target_rx,
-                            *target_ry,
-                            *sw_type_id,
-                            overlay_registry,
-                        )
-                    }
-                    crate::rules::superweapon_type::SuperWeaponKind::ForceShield => {
-                        let rules = rules.unwrap();
-                        crate::sim::superweapon::force_shield::launch(
-                            self,
-                            rules,
-                            owner_iid,
-                            *target_rx,
-                            *target_ry,
-                            *sw_type_id,
-                        )
-                    }
-                    crate::rules::superweapon_type::SuperWeaponKind::GeneticConverter => {
-                        let rules = rules.unwrap();
-                        crate::sim::superweapon::genetic_converter::launch(
-                            self,
-                            rules,
-                            owner_iid,
-                            *target_rx,
-                            *target_ry,
-                            *sw_type_id,
-                            overlay_registry,
-                        )
-                    }
-                    crate::rules::superweapon_type::SuperWeaponKind::PsychicReveal => {
-                        let rules = rules.unwrap();
-                        crate::sim::superweapon::psychic_reveal::launch(
-                            self,
-                            rules,
-                            owner_iid,
-                            *target_rx,
-                            *target_ry,
-                            *sw_type_id,
-                        )
-                    }
-                    crate::rules::superweapon_type::SuperWeaponKind::ParaDrop => {
-                        let rules = rules.unwrap();
-                        crate::sim::superweapon::paradrop::launch(
-                            self,
-                            rules,
-                            owner_iid,
-                            *target_rx,
-                            *target_ry,
-                            crate::sim::superweapon::paradrop::ParaDropKind::Generic,
-                            *sw_type_id,
-                        )
-                    }
-                    crate::rules::superweapon_type::SuperWeaponKind::AmerParaDrop => {
-                        let rules = rules.unwrap();
-                        crate::sim::superweapon::paradrop::launch(
-                            self,
-                            rules,
-                            owner_iid,
-                            *target_rx,
-                            *target_ry,
-                            crate::sim::superweapon::paradrop::ParaDropKind::American,
-                            *sw_type_id,
-                        )
-                    }
-                    other => {
-                        log::warn!("SuperWeapon kind {:?} not yet implemented", other);
-                        false
-                    }
-                };
-
-                if success {
-                    // Reset the instance — restart charging.
-                    if let Some(weapons) = self.super_weapons.get_mut(&owner_iid) {
-                        if let Some(inst) = weapons.get_mut(sw_type_id) {
-                            inst.reset_after_fire(recharge, self.session.binary_frame);
-                        }
-                    }
-                }
-                success
+                // The SPECIAL_PLACE event (`EventClass::Execute 0x004C78D6`).
+                let owner = self.interner.intern(command_owner);
+                self.fire_super_weapon(
+                    rules,
+                    owner,
+                    *sw_type_id,
+                    (*target_rx, *target_ry),
+                    overlay_registry,
+                )
             }
             Command::EnterBunker { unit_id, bunker_id } => {
                 let Some(rules) = rules else { return false };

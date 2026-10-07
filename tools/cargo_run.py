@@ -86,8 +86,22 @@ def build_lock(path: Path, timeout: float):
                 fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def source_identity(root: Path) -> dict:
-    """Fingerprint tracked and nonignored untracked files, including local edits."""
+# A file written this close to a fingerprint may change again without its
+# timestamp moving: FAT rounds timestamps to two seconds, HFS+ to one.
+RACY_NS = 2_000_000_000
+
+
+def source_identity(root: Path, hashes: dict | None = None) -> dict:
+    """Fingerprint tracked and nonignored untracked files, including local edits.
+
+    `hashes` carries each file's digest to a later call in the same run. That call
+    reads again only files whose size, timestamps or file ID changed, or whose
+    timestamp was too close to the earlier call to prove there was no later write.
+    A same-size write that leaves all of those unchanged (a memory-mapped write on
+    Windows, a tool that restores timestamps) is therefore not seen; labelled
+    builds pass no table and compare contents.
+    """
+    started = time.time_ns()
     names = subprocess.check_output([
         'git', '-C', str(root), 'ls-files', '--cached', '--others', '--exclude-standard', '-z',
     ]).split(b'\0')
@@ -96,7 +110,15 @@ def source_identity(root: Path) -> dict:
         path = root / os.fsdecode(raw)
         digest.update(raw + b'\0')
         if path.is_file():
-            digest.update(b'file\0' + hashlib.sha256(path.read_bytes()).digest())
+            info = path.stat()
+            stamp = (info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_dev, info.st_ino)
+            known = hashes.get(raw) if hashes is not None else None
+            if known is None or known[0] != stamp or info.st_mtime_ns > known[2] - RACY_NS:
+                # Stamp before reading: a write during the read then shows as a change.
+                known = (stamp, hashlib.sha256(path.read_bytes()).digest(), started)
+                if hashes is not None:
+                    hashes[raw] = known
+            digest.update(b'file\0' + known[1])
         elif path.is_symlink():
             digest.update(b'link\0' + os.fsencode(os.readlink(path)))
         elif path.exists():
@@ -299,7 +321,7 @@ def publish_binaries(store: Path, namespace: str, target: Path, artifacts: set[P
 
 
 def run(root: Path, args: list[str], label: str | None, timeout: float, *, policy=None) -> int:
-    from tools._cargo_cache import CachePolicy, register_locked, automatic_locked
+    from tools._cargo_cache import CachePolicy, register_locked, automatic_locked, retention_due
     policy = policy if policy is not None else CachePolicy.from_env()
     args = cargo_args(args, label)
     if label:
@@ -313,24 +335,33 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
         if output and output.exists():
             raise ValueError(f'Label already exists; choose a new label: {output}')
         register_locked(root, store, target)
-        automatic_locked(root, store, policy)
-        # Admission uses a fresh measurement after cleanup, not projected file
-        # allocation or a retention receipt. A protected cache must never cause
-        # another compile to consume the remaining volume reserve.
         # Check both paths even if platform device identifiers are unavailable
         # or collide; an artifact copy may consume a different volume.
         volumes = [target, store] if output else [target]
-        for volume in volumes:
-            available = shutil.disk_usage(volume).free
-            if available < policy.min_free_bytes:
-                raise ValueError(
-                    f'Build blocked: {available / (1024 ** 3):.2f} GiB free at {volume}; '
-                    f'{policy.min_free_bytes / (1024 ** 3):.2f} GiB required. '
-                    'Review owned superseded builds and the cache retention receipt '
-                    'before retrying; protected files were preserved.')
+
+        def below_reserve():
+            return [(volume, free) for volume in volumes
+                    if (free := shutil.disk_usage(volume).free) < policy.min_free_bytes]
+
+        # A retention pass inventories every registered cache, which takes seconds
+        # and grows with each worktree. Before Cargo it can matter only by
+        # restoring the reserve, and the reserve is cheap to measure.
+        if below_reserve():
+            automatic_locked(root, store, policy)
+        # Admission uses a fresh measurement after cleanup, not projected file
+        # allocation or a retention receipt. A protected cache must never cause
+        # another compile to consume the remaining volume reserve.
+        if short := below_reserve():
+            volume, available = short[0]
+            raise ValueError(
+                f'Build blocked: {available / (1024 ** 3):.2f} GiB free at {volume}; '
+                f'{policy.min_free_bytes / (1024 ** 3):.2f} GiB required. '
+                'Review owned superseded builds and the cache retention receipt '
+                'before retrying; protected files were preserved.')
         artifacts = set()
         try:
-            before = source_identity(root)
+            hashes = {}
+            before = source_identity(root, hashes)
             env = dict(os.environ, CARGO_TARGET_DIR=str(target))
             command = ['cargo', *args]
             print(f'Checkout: {root}\nTarget: {target}\nCommand: {command}', file=sys.stderr, flush=True)
@@ -354,7 +385,9 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
                 result = child.wait()
             if result:
                 return result
-            after = source_identity(root)
+            # A label's manifest records this identity: compare contents exactly
+            # there. Elsewhere the stat table is enough; see source_identity.
+            after = source_identity(root, None if label else hashes)
             if before != after:
                 raise ValueError('Source changed during Cargo; result is not a labeled validation')
             publish_binaries(store, namespace, target, artifacts)
@@ -389,7 +422,8 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
                 print(f'Preserved build: {output}', flush=True)
         finally:
             register_locked(root, store, target, artifacts)
-            automatic_locked(root, store, policy)
+            if retention_due(store, policy, volumes):
+                automatic_locked(root, store, policy)
     return 0
 
 

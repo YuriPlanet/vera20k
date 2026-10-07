@@ -1771,8 +1771,8 @@ fn repeated_fog_view_builds_leave_state_hash_unchanged() {
 /// Compare the selected knowledge consumer, not the legacy projected raw counters.
 #[test]
 fn shroud_current_sight_matches_original_native_sequences() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/shroud_current_sight.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/shroud_current_sight.json",
     ))
     .unwrap();
     assert_eq!(corpus["cases"].as_array().unwrap().len(), 23);
@@ -2159,8 +2159,8 @@ fn shroud_current_sight_first_fire_and_psychic_have_distinct_pending_history() {
 
 #[test]
 fn shroud_current_sight_timer_gate_matches_original_signed_frame_cases() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/shroud_current_sight.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/shroud_current_sight.json",
     ))
     .unwrap();
     let cases = corpus["timer_cases"].as_array().unwrap();

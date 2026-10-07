@@ -6,8 +6,8 @@ use crate::rules::locomotor_type::MovementZone;
 
 #[test]
 fn retained_base_repair_matches_native_selectors_and_adoption_without_live_publication() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/base_zone_repair.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/base_zone_repair.json",
     ))
     .unwrap();
     let cases = corpus["cases"].as_array().unwrap();

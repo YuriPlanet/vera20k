@@ -411,8 +411,8 @@ pub(super) fn assert_reengagement(sim: &mut Simulation, row: &Value) {
 
 #[test]
 fn aircraft_reengagement_matches_original_through_production_dispatch() {
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_reengagement.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_reengagement.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 16);
@@ -439,8 +439,8 @@ fn aircraft_reengagement_matches_original_through_production_dispatch() {
 
 #[test]
 fn aircraft_reengagement_reserves_in_logic_order_and_ignores_inactive_objects() {
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_reengagement.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_reengagement.json",
     ))
     .unwrap();
     let base = rows.iter().find(|r| r["input"]["name"] == "base").unwrap();
@@ -493,8 +493,8 @@ fn selected(value: Option<NavTargetRef>) -> Value {
 
 #[test]
 fn fire_location_live_inputs_and_rng_match_original_search() {
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_fire_location.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_fire_location.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 63);
@@ -536,8 +536,8 @@ fn fire_location_live_inputs_and_rng_match_original_search() {
 
 #[test]
 fn fire_location_reads_restored_reservations_cargo_and_current_house() {
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_fire_location.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_fire_location.json",
     ))
     .unwrap();
     for name in [

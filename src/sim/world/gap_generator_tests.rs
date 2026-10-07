@@ -112,8 +112,8 @@ fn refresh(sim: &mut Simulation, rules: &RuleSet) {
 
 #[test]
 fn gap_operational_original_gate_and_native_order_corpus() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/gap_admission.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/gap_admission.json",
     ))
     .unwrap();
     let (mut sim, rules, _, owner, _) = fixture();
@@ -209,8 +209,8 @@ pub(crate) fn gap_operational_power_loss_views() -> Vec<(
     sim.scenario_rng = crate::sim::rng::SimRng::new(0); // native Scenario load reset
     let before = sim.state_hash();
     let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "gap-power-order", 0);
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/gap_admission.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/gap_admission.json",
     ))
     .unwrap();
     let mut views = Vec::new();

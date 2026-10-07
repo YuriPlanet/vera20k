@@ -34,8 +34,8 @@ struct GateCorpus {
 
 #[test]
 fn bridge_layer_gate_matches_original_flags_coordinates_and_retained_dummy() {
-    let corpus: GateCorpus = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_target_layer.json"
+    let corpus: GateCorpus = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_target_layer.json",
     ))
     .unwrap();
     assert_eq!(
@@ -251,8 +251,8 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
     };
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_target_composed.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_target_composed.json",
     ))
     .unwrap();
     let row = &native["cases"]

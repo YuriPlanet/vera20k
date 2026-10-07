@@ -1915,8 +1915,8 @@ fn test_entity_blocks_fully_surrounded_no_path() {
 
 #[test]
 fn original_hills_code2_clearing_queue_costs_match_the_existing_cost_owner() {
-    let packet: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_hills_markers.json"
+    let packet: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_hills_markers.json",
     ))
     .unwrap();
     assert_eq!(packet["code_unchanged"], true);

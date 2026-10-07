@@ -307,7 +307,10 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // Same-binary old-feed control recovers514E76C3355546F9; all201 complete rows
 // match except state_hash, including all3 RNG states. Control removed.
 // Rust attribution: tools/spatial_oracle/drive_instance_replay/other/bridge/receipt.json.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x4C4F_372E_1841_05B6;
+// Rocket locomotor port: the entity-level absent rocket_state tag is removed;
+// the Rocket payload owns its fold. Restoring only that old 0 tag recovers
+// incoming 4C4F372E184105B6 in the same test binary. Control removed.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x4647_E5D1_3F93_4248;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so

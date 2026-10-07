@@ -67,8 +67,8 @@ fn original_fv_range_uses_live_dummy_ground_and_source_bridge_queries() {
     };
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    let mut corpus: Corpus = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/in_range_cell_boundary.json"
+    let mut corpus: Corpus = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/in_range_cell_boundary.json",
     ))
     .unwrap();
     assert_eq!(
@@ -76,8 +76,8 @@ fn original_fv_range_uses_live_dummy_ground_and_source_bridge_queries() {
         "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     assert_eq!(corpus.rows.len(), 6);
-    let ties: Corpus = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fv_cell_attack/range_ties.json"
+    let ties: Corpus = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/range_ties.json",
     ))
     .unwrap();
     assert_eq!(ties.native_sha256, corpus.native_sha256);
@@ -199,8 +199,8 @@ fn original_fv_cell_range_matches_bridge_states_and_boundaries() {
         return;
     };
     let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fv_cell_attack/range_vectors.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/range_vectors.json",
     ))
     .unwrap();
     let weapon = rules.weapon("HoverMissile").unwrap();

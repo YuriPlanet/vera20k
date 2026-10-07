@@ -9,8 +9,8 @@ use crate::sim::rng::SimRng;
 /// infantry_source_scatter).
 #[test]
 fn source_selection_matches_original_execution() {
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/infantry_source_scatter.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_source_scatter.json",
     ))
     .unwrap();
     let mut checked = 0;

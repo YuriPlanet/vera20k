@@ -284,6 +284,51 @@ pub(crate) fn native_minutes_to_frames(minutes: f64) -> i32 {
     ))
 }
 
+/// `[General] AIIonCannon*Value=`: `RulesClass::ReadGeneral` reads each
+/// through the IntVector reader `0x00475D70` with the field as its default
+/// (`0x00670801..0x00670AE6`, lists at `Rules+0x1194` step `0x1C`, in field
+/// order); the constructor leaves them empty. `HouseClass::
+/// AI_FindBestRallyTarget @ 0x0050CBF0` values an enemy object by its kind's
+/// list, indexed by the firing house's difficulty (`sim::superweapon::ai_fire`).
+/// Retail comments out the Plug, Helipad and Temple keys.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AiIonCannonValues {
+    pub con_yard: Vec<i32>,
+    pub war_factory: Vec<i32>,
+    pub power: Vec<i32>,
+    pub tech_center: Vec<i32>,
+    pub engineer: Vec<i32>,
+    pub thief: Vec<i32>,
+    pub harvester: Vec<i32>,
+    pub mcv: Vec<i32>,
+    pub apc: Vec<i32>,
+    pub base_defense: Vec<i32>,
+    pub plug: Vec<i32>,
+    pub helipad: Vec<i32>,
+    pub temple: Vec<i32>,
+}
+
+impl AiIonCannonValues {
+    fn read(general: &IniSection) -> Self {
+        let list = |key: &str| general.read_int_list(key).unwrap_or_default();
+        Self {
+            con_yard: list("AIIonCannonConYardValue"),
+            war_factory: list("AIIonCannonWarFactoryValue"),
+            power: list("AIIonCannonPowerValue"),
+            tech_center: list("AIIonCannonTechCenterValue"),
+            engineer: list("AIIonCannonEngineerValue"),
+            thief: list("AIIonCannonThiefValue"),
+            harvester: list("AIIonCannonHarvesterValue"),
+            mcv: list("AIIonCannonMCVValue"),
+            apc: list("AIIonCannonAPCValue"),
+            base_defense: list("AIIonCannonBaseDefenseValue"),
+            plug: list("AIIonCannonPlugValue"),
+            helipad: list("AIIonCannonHelipadValue"),
+            temple: list("AIIonCannonTempleValue"),
+        }
+    }
+}
+
 /// Global gameplay constants from `[General]` that affect vision, gap generators, etc.
 #[derive(Debug, Clone)]
 pub struct GeneralRules {
@@ -831,6 +876,29 @@ pub struct GeneralRules {
     /// (`0x006CDCA8`/`0x006CDCAE` when the silo animates the launch,
     /// `0x006CDDE3`/`0x006CDDE9` when it does not).
     pub dig_sound: Option<String>,
+    /// `[General] NukeTakeOff=` (stock `NUKETO`), the AnimType at `Rules+0x98`
+    /// (ReadString then the AnimType lookup, `0x0066D829..0x0066D850`;
+    /// constructor null at `0x00665735`). `BuildingClass::Mission_Missile`
+    /// plays it at the silo's launch point (`0x0044CC62`).
+    pub nuke_take_off: String,
+    /// `[General] AISuperDefenseProbability=` (`Rules+0xEC4`, the IntVector
+    /// reader at `0x0067038E`; constructor empty), indexed by a house's
+    /// difficulty: the percent chance a computer house takes up the defence
+    /// when an `AIDefendAgainst=` weapon targets near its base.
+    pub ai_super_defense_probability: Vec<i32>,
+    /// `[General] AISuperDefenseDistance=` (`Rules+0xEE4`, ReadRange at
+    /// `0x006703D9`, leptons; constructor 10 at `0x00666A35`): the alert's
+    /// reach from the house's base centre.
+    pub ai_super_defense_distance: i32,
+    /// `[General] AISuperDefenseFrames=` (`Rules+0xEE0`, ReadInt at
+    /// `0x006703A4..0x006703BE` with the field as its default; constructor
+    /// 25 at `0x00666A24`): how long the launch alert lasts. A computer house
+    /// aims its Force Shield at the alerted cell while the alert is younger
+    /// (`HouseClass::AI_TryFireSW`, `0x00509A7F..0x00509A99`).
+    pub ai_super_defense_frames: i32,
+    /// `[General] AIIonCannon*Value=`: what a computer house values an enemy
+    /// object by when it aims a superweapon.
+    pub ai_ion_cannon_values: AiIonCannonValues,
     /// `[AudioVisual] PsychicDominatorActivateSound=` (stock
     /// `PsychicDominatorActivate`), stored at `Rules+0x24C`.
     ///
@@ -853,6 +921,20 @@ pub struct GeneralRules {
     /// `0x006CD7BF CALL VocClass::PlayAtCoord @ 0x00750E20`. This case plays
     /// no EVA line.
     pub psychic_reveal_activate_sound: Option<String>,
+    /// `[AudioVisual] SpyPlaneCamera=` (stock `SpyPlaneSnapshot`), the sound
+    /// index at `Rules+0x280` (constructor -1, no sound, at `0x006659EE`):
+    /// ReadString128 then `VocClass::FindIndex @ 0x007514D0`, keeping the
+    /// prior index for a missing, empty or unknown name
+    /// (`0x0066A295..0x0066A2C2`); [`RuleSet::bind_type_sound_references`]
+    /// resolves it. `AircraftClass::Mission_SpyplaneApproach @ 0x004155F0`
+    /// plays it at the plane through `VocClass::PlayAt @ 0x007509E0`
+    /// (`0x004156FB`) on each camera snapshot.
+    pub spy_plane_camera: Option<String>,
+    /// `[AudioVisual] SpyPlaneCameraFrames=` (`Rules+0x290`, ReadInteger at
+    /// `0x0066A39A` with the field as its default; constructor 16 at
+    /// `0x00665A06`): the frames Mission_SpyplaneApproach returns, its
+    /// mission timer (`0x0041578D`, `0x004157A0`, `0x004157B3`).
+    pub spy_plane_camera_frames: i32,
     /// SFX played when a paradropped passenger successfully deploys a parachute.
     /// Parsed from [AudioVisual] ChuteSound (stock "ParachuteDrop").
     /// None = no sound configured. Resolved at app layer to a sound.ini entry.
@@ -1295,6 +1377,11 @@ pub struct GeneralRules {
     /// 3 at `0x006671F8`; retail 2): the house IQ from which a computer house
     /// replaces its harvesters (`sim::ai_unit_choice`).
     pub iq_harvester: i32,
+    /// `[IQ] SuperWeapons=` (`Rules+0x1438`, ReadInt at `0x00674282..
+    /// 0x006742A2` with the field as its default; constructor 4 at
+    /// `0x006671BB`): in game mode 0 the house IQ from which a computer house
+    /// fires its superweapons (`AI_Building_Strategy 0x004FD77C..0x004FD797`).
+    pub iq_super_weapons: i32,
     /// `[IQ] RepairSell` outer gate for BuildingClass repair/sell AI.
     pub iq_repair_sell: i32,
     /// `[IQ] SellBack` gate for the red-health low-credit sell decision.
@@ -1345,6 +1432,41 @@ pub struct GeneralRules {
     // --- IronCurtain ([General]) ---
     /// Animation played on IC target (IronCurtainInvokeAnim= in [General]). Default IRONBLST.
     pub iron_curtain_invoke_anim: String,
+    /// `[General] ChronoPlacement=` (`RulesClass+0x330`, ReadString 0x80 at
+    /// `0x0066E095`, empty keeps the constructor's null type): the anim the
+    /// Chronosphere's first click loops over its source cell
+    /// (`SuperClass::CreateChronoAnim @ 0x006CB3A0`). Retail `CHRONOAR`.
+    pub chrono_placement_anim: String,
+    /// `[General] ChronoBlast=` (`+0x328`, `0x0066E112`): the Chrono Warp's
+    /// anim over the source cell (`0x006CC674`). Retail `CHRONOFD`.
+    pub chrono_blast_anim: String,
+    /// `[General] ChronoBlastDest=` (`+0x32C`, `0x0066E151`): the Chrono
+    /// Warp's anim over the destination cell (`0x006CC61A`). Retail
+    /// `CHRONOTG`.
+    pub chrono_blast_dest_anim: String,
+    /// `[General] DominatorWarhead=` (`RulesClass+0x2F8`, ReadString 0x80
+    /// then the warhead lookup at `0x0066DF72`; empty keeps the
+    /// constructor's null warhead): the Psychic Dominator's area damage
+    /// warhead (`PsyDom::MindControlArea @ 0x0053B080`). Retail `DominatorWH`.
+    pub dominator_warhead: String,
+    /// `[General] DominatorFirstAnim=` (`+0x2FC`, `0x0066DFB1`): the anim
+    /// `PsyDom::Start @ 0x0053AE50` raises over the target. Start does
+    /// nothing unless both Dominator anims are set. Retail `PDFXCLD`.
+    pub dominator_first_anim: String,
+    /// `[General] DominatorSecondAnim=` (`+0x300`, `0x0066DFEF`): the anim
+    /// MindControlArea places on the target cell. Retail `PDFXLOC`.
+    pub dominator_second_anim: String,
+    /// `[General] DominatorFireAtPercentage=` (`+0x304`, ReadInt at
+    /// `0x0066E020`, constructor 50): the share of the first anim's frames
+    /// after which the Dominator strikes (`PsychicDominator::Process
+    /// @ 0x0053AF40`).
+    pub dominator_fire_at_percentage: i32,
+    /// `[General] DominatorCaptureRange=` (`+0x308`, `0x0066E040`,
+    /// constructor 2): MindControlArea's cell-spread radius, capped at 10.
+    pub dominator_capture_range: i32,
+    /// `[General] DominatorDamage=` (`+0x30C`, `0x0066E05F`, constructor
+    /// 50): MindControlArea's area damage.
+    pub dominator_damage: i32,
     /// `[General] IonBlast=` (`RulesClass+0x298`), the animation the Genetic
     /// Mutator launch constructs (`SuperClass::Launch 0x006CD8A5`). Retail
     /// `RING1`. The constructor default is a null type: no key, no animation.
@@ -1762,9 +1884,16 @@ impl Default for GeneralRules {
             // definition of EAX before it is `0x00667202 MOV EAX,0x1`.
             lightning_print_text: true,
             dig_sound: None,
+            nuke_take_off: String::new(),
+            ai_super_defense_probability: Vec::new(),
+            ai_super_defense_distance: 10,
+            ai_super_defense_frames: 25,
+            ai_ion_cannon_values: AiIonCannonValues::default(),
             psychic_dominator_activate_sound: None,
             genetic_mutator_activate_sound: None,
             psychic_reveal_activate_sound: None,
+            spy_plane_camera: None,
+            spy_plane_camera_frames: 16,
             chute_sound: None,
             gui_main_button_sound: None,
             gui_move_in_sound: None,
@@ -1872,6 +2001,7 @@ impl Default for GeneralRules {
             max_iq_levels: 5,
             iq_production: 5,
             iq_harvester: 3,
+            iq_super_weapons: 4,
             iq_repair_sell: 3,
             iq_sell_back: 2,
             credit_reserve: 1000,
@@ -1891,6 +2021,16 @@ impl Default for GeneralRules {
             ambient_change_step: 20,
             iron_curtain_duration: 750,
             iron_curtain_invoke_anim: "IRONBLST".to_string(),
+            chrono_placement_anim: String::new(),
+            chrono_blast_anim: String::new(),
+            chrono_blast_dest_anim: String::new(),
+            dominator_warhead: String::new(),
+            dominator_first_anim: String::new(),
+            dominator_second_anim: String::new(),
+            // RulesClass constructor (`0x00665A91..0x00665AB8`).
+            dominator_fire_at_percentage: 50,
+            dominator_capture_range: 2,
+            dominator_damage: 50,
             ion_blast_anim: String::new(),
             force_shield_radius: 4,
             force_shield_duration: 500,
@@ -2143,6 +2283,15 @@ const VETERAN_RATIO_DEFAULT: f64 = 3.0;
 /// [`VETERAN_RATIO_DEFAULT`]; stock supplies `2`.
 const VETERAN_CAP_DEFAULT: f64 = 2.0;
 
+/// `[General] AmbientChangeRate=` and `AmbientChangeStep=` (Rules `+0x1668`,
+/// `+0x1670`) as `LogicClass::PerTickUpdate`'s ambient fade reads them:
+/// whether the rate is nonzero (`0x0055B351..0x0055B362`), the interval
+/// `ftol(rate * 900)` (`0x0055B3D8..0x0055B3E4`) and the step
+/// `ftol(step * 100)` (`0x0055B447..0x0055B453`).
+pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
+    (rate != 0.0, (rate * 900.0) as i32, (step * 100.0) as i32)
+}
+
 impl GeneralRules {
     /// Drive4B3A65, Ship6A30B4 and Foot/Walk's timer producers retain the
     /// configured double until FLD/FMUL900/ftol7C5F00. In particular, authored
@@ -2181,6 +2330,8 @@ impl GeneralRules {
         let iq_production = iq.read_int("Production", defaults.iq_production);
         // `0x00674379..0x00674399`, the same section gate and reader.
         let iq_harvester = iq.read_int("Harvester", defaults.iq_harvester);
+        // `0x00674282..0x006742A2`, the same section gate and reader.
+        let iq_super_weapons = iq.read_int("SuperWeapons", defaults.iq_super_weapons);
         // RulesProcess668F56 reaches ReadAudioVisual6691E0 independently of
         // ReadGeneral.66B34B/66B372 pass AudioVisual to5283D0 and store raw
         // doubles in Rules+1708/+1700; a missing General section cannot skip them.
@@ -2210,6 +2361,7 @@ impl GeneralRules {
                 deploy_dir,
                 iq_production,
                 iq_harvester,
+                iq_super_weapons,
                 display_cruise_height,
                 condition_yellow: condition_yellow_native,
                 condition_red: condition_red_native,
@@ -2260,8 +2412,11 @@ impl GeneralRules {
             general.read_double("ConditionYellowSparkingProbability", 0.01);
         // These are ReadDouble values (single-precision parse widened to f64)
         // and the consumer's ftol boundary chops toward zero.
-        let ambient_change_rate = general.read_double("AmbientChangeRate", 0.2);
-        let ambient_change_step = general.read_double("AmbientChangeStep", 0.2);
+        let (ambient_change_rate_nonzero, ambient_change_interval_frames, ambient_change_step) =
+            ambient_change_terms(
+                general.read_double("AmbientChangeRate", 0.2),
+                general.read_double("AmbientChangeStep", 0.2),
+            );
         Self {
             deploy_dir,
             scroll_multiplier: audio_visual
@@ -2562,6 +2717,14 @@ impl GeneralRules {
             // constructor's `true` (see the field doc).
             lightning_print_text: general.read_bool("LightningPrintText", true),
             dig_sound: audio_visual.read_name("DigSound", 0x80).map(str::to_owned),
+            nuke_take_off: general.read_string("NukeTakeOff", "", 0x80),
+            ai_super_defense_probability: general
+                .read_int_list("AISuperDefenseProbability")
+                .unwrap_or_default(),
+            ai_super_defense_distance: general.read_range("AISuperDefenseDistance", 10),
+            ai_super_defense_frames: general
+                .read_int("AISuperDefenseFrames", defaults.ai_super_defense_frames),
+            ai_ion_cannon_values: AiIonCannonValues::read(general),
             psychic_dominator_activate_sound: audio_visual
                 .read_name("PsychicDominatorActivateSound", 0x80)
                 .map(str::to_owned),
@@ -2571,6 +2734,10 @@ impl GeneralRules {
             psychic_reveal_activate_sound: audio_visual
                 .read_name("PsychicRevealActivateSound", 0x80)
                 .map(str::to_owned),
+            // Constructor -1 until the fixed SOUNDMD catalog resolves it.
+            spy_plane_camera: None,
+            spy_plane_camera_frames: audio_visual
+                .read_int("SpyPlaneCameraFrames", defaults.spy_plane_camera_frames),
             chute_sound: audio_visual
                 .read_name("ChuteSound", 0x80)
                 .map(str::to_owned),
@@ -2817,6 +2984,7 @@ impl GeneralRules {
             max_iq_levels: iq.read_int("MaxIQLevels", defaults.max_iq_levels),
             iq_production,
             iq_harvester,
+            iq_super_weapons,
             iq_repair_sell: iq.read_int("RepairSell", defaults.iq_repair_sell),
             iq_sell_back: iq.read_int("SellBack", defaults.iq_sell_back),
             credit_reserve: ai.read_int("CreditReserve", defaults.credit_reserve),
@@ -2831,15 +2999,24 @@ impl GeneralRules {
             lightning_warhead: general.read_string("LightningWarhead", "", 128),
             weather_con_bolt_explosion: general.read_string("WeatherConBoltExplosion", "", 128),
             weapon_nullify_anim: general.read_string("WeaponNullifyAnim", "", 128),
-            ambient_change_rate_nonzero: ambient_change_rate != 0.0,
-            ambient_change_interval_frames: (ambient_change_rate * 900.0) as i32,
-            ambient_change_step: (ambient_change_step * 100.0) as i32,
+            ambient_change_rate_nonzero,
+            ambient_change_interval_frames,
+            ambient_change_step,
             iron_curtain_duration: combat_damage.read_int("IronCurtainDuration", 750),
             iron_curtain_invoke_anim: general.read_string(
                 "IronCurtainInvokeAnim",
                 "IRONBLST",
                 0x80,
             ),
+            chrono_placement_anim: general.read_string("ChronoPlacement", "", 0x80),
+            chrono_blast_anim: general.read_string("ChronoBlast", "", 0x80),
+            chrono_blast_dest_anim: general.read_string("ChronoBlastDest", "", 0x80),
+            dominator_warhead: general.read_string("DominatorWarhead", "", 0x80),
+            dominator_first_anim: general.read_string("DominatorFirstAnim", "", 0x80),
+            dominator_second_anim: general.read_string("DominatorSecondAnim", "", 0x80),
+            dominator_fire_at_percentage: general.read_int("DominatorFireAtPercentage", 50),
+            dominator_capture_range: general.read_int("DominatorCaptureRange", 2),
+            dominator_damage: general.read_int("DominatorDamage", 50),
             ion_blast_anim: general.read_string("IonBlast", "", 0x80),
             force_shield_radius: general.read_int("ForceShieldRadius", 4) as u32,
             force_shield_duration: general.read_int("ForceShieldDuration", 500),
@@ -3192,6 +3369,7 @@ impl RuleSet {
         let mut rules = Self::from_projected_ini(processed.ini())?;
         rules.crate_rules = processed.crate_rules().clone();
         rules.powerups = processed.powerups().clone();
+        rules.missile_spawn = processed.missile_spawn().clone();
         rules.general.metallic_debris = processed.metallic_debris().to_vec();
         rules.bridge_rules.explosions = processed.bridge_explosions().to_vec();
         rules.general.gravity = processed.gravity();
@@ -3302,6 +3480,9 @@ impl RuleSet {
         self.general.building_repaired_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "BuildingRepairedSound"));
+        self.general.spy_plane_camera = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "SpyPlaneCamera"));
         for object in &mut self.object_list {
             let section = ini.section(&object.id);
             if object.category == crate::rules::object_type::ObjectCategory::Building {
@@ -3557,6 +3738,17 @@ impl RuleSet {
         {
             weapon_ids.insert(default_death_weapon.to_string());
         }
+        // `SuperWeaponTypeClass::ReadINI` allocates its `WeaponType=` too
+        // (`WeaponTypeClass::FindOrAllocate @ 0x00772FA0` at `0x006CEA7D`):
+        // the nuclear missile's `NukeCarrier`.
+        for sw_id in parse_registry(ini, "SuperWeaponTypes") {
+            if let Some(name) = ini
+                .section(&sw_id)
+                .and_then(|section| section.read_name("WeaponType", 0x80))
+            {
+                weapon_ids.insert(name.to_string());
+            }
+        }
 
         // Step 3: Parse weapon sections.
         let mut weapons: HashMap<String, WeaponType> = HashMap::new();
@@ -3756,11 +3948,9 @@ impl RuleSet {
 
         let mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(ini);
 
-        // [General] rocket type/frame slots + [CombatDamage] missile warheads.
-        let missile_spawn = crate::rules::missile_spawn::MissileSpawnRules::from_ini_sections(
-            ini.section_or_empty("General"),
-            ini.section_or_empty("CombatDamage"),
-        );
+        // [General] rocket blocks + [CombatDamage] missile warheads; the
+        // per-pass result replaces this in `from_processed_rules`.
+        let missile_spawn = crate::rules::missile_spawn::MissileSpawnRules::from_ini(ini);
 
         // [CombatDamage] C4Delay = minutes (double). Default 0.03 = 27 ticks @ 15 fps.
         // Stored as integer ticks for lockstep-safe per-tick comparison.
@@ -4615,6 +4805,15 @@ impl RuleSet {
         Self::lookup_ci(&self.super_weapons, id)
     }
 
+    /// A superweapon type's `SuperWeaponTypeClass` array index (its
+    /// `[SuperWeaponTypes]` position, case-insensitive), the value
+    /// `SuperWeapon=` stores (BuildingType `+0x16F0`).
+    pub fn super_weapon_index(&self, id: &str) -> Option<usize> {
+        self.super_weapon_order
+            .iter()
+            .position(|name| name.eq_ignore_ascii_case(id))
+    }
+
     /// Look up a particle type by ID. Panics if `id` is out of range.
     pub fn particle_type(&self, id: ParticleTypeId) -> &ParticleType {
         &self.particle_types[id.0 as usize]
@@ -4918,6 +5117,19 @@ impl RuleSet {
     pub(crate) fn bind_anim_frame_count_for_test(&mut self, name: &str, raw_count: i32) {
         self.art_registry
             .bind_anim_frame_count_for_test(name, raw_count);
+    }
+
+    /// A weapon's stored speed (after Process's postpass), as a native
+    /// fixture writes it.
+    #[cfg(test)]
+    pub(crate) fn set_weapon_speed_for_test(&mut self, id: &str, speed: i32) {
+        if let Some(weapon) = self
+            .weapons
+            .values_mut()
+            .find(|weapon| weapon.id.eq_ignore_ascii_case(id))
+        {
+            weapon.speed = speed;
+        }
     }
 
     #[cfg(test)]
@@ -5669,8 +5881,10 @@ CellSpread=0
     /// up case-insensitively. The hand-written Default must NOT be a derived zero.
     #[test]
     fn cost_of_matches_the_original_cost_virtuals() {
-        let rows: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/spatial_oracle/cost_of.json")).unwrap();
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/cost_of.json",
+        ))
+        .unwrap();
         let bits = |value: &serde_json::Value| -> [NativeF32Bits; 5] {
             let bits: Vec<u32> = value
                 .as_array()
@@ -6881,6 +7095,38 @@ StormSound=
         assert_eq!(absent.storm_sound, None);
     }
 
+    /// The Spy Plane's camera keys: the sound (`Rules+0x280`, constructor -1
+    /// at `0x006659EE`), resolved against SOUNDMD with the prior index kept
+    /// for a missing, empty or unknown name (`0x0066A295..0x0066A2C2`), and
+    /// the frames (`Rules+0x290`, constructor 16 at `0x00665A06`, read with
+    /// the field as its default at `0x0066A39A`).
+    #[test]
+    fn spy_plane_camera_keys_read_audio_visual_over_the_constructor() {
+        let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=SpyPlaneSnapshot\n",
+        ));
+        let read = |audio_visual: &str| {
+            let ini = IniFile::from_str(&format!(
+                "[General]\nFlightLevel=500\n[AudioVisual]\n{audio_visual}"
+            ));
+            let mut rules = RuleSet::from_ini(&ini).unwrap();
+            assert_eq!(
+                rules.general.spy_plane_camera, None,
+                "unbound: the constructor's -1"
+            );
+            rules.bind_type_sound_references(&ini, &sounds);
+            rules.general
+        };
+        let stock = read("SpyPlaneCamera=SpyPlaneSnapshot\nSpyPlaneCameraFrames=12\n");
+        assert_eq!(stock.spy_plane_camera.as_deref(), Some("SpyPlaneSnapshot"));
+        assert_eq!(stock.spy_plane_camera_frames, 12);
+        for silent in ["SpyPlaneCamera=\n", "SpyPlaneCamera=NoSuchSound\n", ""] {
+            let general = read(silent);
+            assert_eq!(general.spy_plane_camera, None, "{silent:?} keeps -1");
+            assert_eq!(general.spy_plane_camera_frames, 16);
+        }
+    }
+
     /// `LightningPrintText` is absent from stock `rulesmd.ini`, so the gate on
     /// `StormSound` is decided by `RulesClass::Constructor @ 0x006676BC`, which
     /// stores `AL` after `0x00667202 MOV EAX,0x1` with no intervening `CALL`
@@ -7697,8 +7943,8 @@ Projectile=Invisible
 
     #[test]
     fn native_discharge_retail_gi_binding_retains_independent_zero_defaults() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/infantry_discharge_rules.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/infantry_discharge_rules.json",
         ))
         .unwrap();
         let physical = corpus["cases"]
@@ -7731,8 +7977,8 @@ Projectile=Invisible
 
     #[test]
     fn native_discharge_signed_art_fields_reach_infantry_type() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/infantry_discharge_rules.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/infantry_discharge_rules.json",
         ))
         .unwrap();
         let row = corpus["cases"]

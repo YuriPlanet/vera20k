@@ -437,9 +437,10 @@ mod tests {
                 state: (0..250).map(|i| word(12 + i * 4)).collect(),
             }
         }
-        let corpus: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/spatial_oracle/mapgen_range.json"))
-                .unwrap();
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/mapgen_range.json",
+        ))
+        .unwrap();
         let mut compared = 0;
         for row in corpus["cases"].as_array().unwrap() {
             for call in row["calls"].as_array().unwrap() {

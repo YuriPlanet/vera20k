@@ -88,8 +88,8 @@ mod tests {
 
     #[test]
     fn question_matches_original_resource_and_executed_placement() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/abort_shell_layout.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/abort_shell_layout.json",
         ))
         .unwrap();
         let question = fixture["resource"]["controls"]

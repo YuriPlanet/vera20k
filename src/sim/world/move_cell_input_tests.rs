@@ -14,8 +14,8 @@ use serde_json::{Value, json};
 /// 4DE1D0 corpus: the resolver is class-generic, so one Rust owner serves all.
 #[test]
 fn ordinary_foot_input_matches_native_admission_rows() {
-    let rows: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/walk_move_admission.json"
+    let rows: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/walk_move_admission.json",
     ))
     .unwrap();
     assert_eq!(rows.as_array().unwrap().len(), 29);
@@ -101,8 +101,8 @@ fn ordinary_foot_input_matches_native_admission_rows() {
 /// Construction, map setup and ground-order dispatch use their live owners.
 #[test]
 fn ground_walk_order_preserves_native_human_deploy_refusal() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/walk_first_path.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/walk_first_path.json",
     ))
     .unwrap();
     let native = &corpus["setter"]

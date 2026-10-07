@@ -1726,9 +1726,10 @@ pub struct ResolvedTerrainGrid {
     /// Presentation consumers use this for `NO_TILE` cells while
     /// `ResolvedTerrainCell::final_tile_index` retains the sentinel for sim.
     clear_tile_id: u16,
-    /// Active theater WaterSet cumulative tile base (global AA0738), not the
-    /// sticky Fill cache. ReadTheater545150 resets to -1; Lunar also uses -1.
-    projectile_water_set_base: i32,
+    /// Active theater tile-family bases: WaterSet (global AA0738, not the
+    /// sticky Fill cache), ShorePieces (ABAD28) and the four waterfall sets.
+    /// ReadTheater545150 resets each to -1; Lunar keeps -1 for them.
+    water_tiles: crate::map::rmg::tiles::TileIds,
     /// Active theater tile registry length. Positive out-of-range ids present
     /// as ClearTile while their stored semantic id remains untouched.
     tile_registry_len: Option<usize>,
@@ -1987,7 +1988,7 @@ impl ResolvedTerrainGrid {
             native_tube_indices,
             tube_native_ids,
             clear_tile_id: 0,
-            projectile_water_set_base: -1,
+            water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
             tile_registry_len: None,
             dummy_accepts_smudge: false,
             bridge_set_start: None,
@@ -2026,12 +2027,30 @@ impl ResolvedTerrainGrid {
     }
 
     pub(crate) fn projectile_water_set_base(&self) -> i32 {
-        self.projectile_water_set_base
+        self.water_tiles.water_base
     }
 
     #[cfg(test)]
     pub(crate) fn set_projectile_water_set_base(&mut self, base: i32) {
-        self.projectile_water_set_base = base;
+        self.water_tiles.water_base = base;
+    }
+
+    /// `CellClass @ 0x004865D0` (the database's HasBridgeOverlay), which
+    /// reads only the cell's tile (`+0x38`): a WaterSet, ShorePieces or
+    /// waterfall tile ([`TileIds::is_water_shore_or_waterfall`], the one
+    /// port). The shared dummy's tile is 0xFFFF.
+    ///
+    /// RESIDUAL: that port skips a family whose base is -1; native compares
+    /// against the -1 base too, so on Lunar (no WaterSet or ShorePieces)
+    /// tiles 0..40 answer true. Trigger: a Chrono Warp landing on a Lunar
+    /// cell its object cannot enter (PostWarpValidation). Effect: VERA
+    /// destroys the object where native sinks it.
+    ///
+    /// [`TileIds::is_water_shore_or_waterfall`]:
+    /// crate::map::rmg::tiles::TileIds::is_water_shore_or_waterfall
+    pub(crate) fn native_cell_is_water_tile(&self, cell: NativeCellIdentity) -> bool {
+        self.water_tiles
+            .is_water_shore_or_waterfall(self.native_cell_tile_index(cell))
     }
 
     pub(crate) fn current_tile_radar_metadata(
@@ -4128,9 +4147,10 @@ impl ResolvedTerrainGrid {
                 native_tube_indices: Vec::new(),
                 tube_native_ids: Vec::new(),
                 clear_tile_id,
-                projectile_water_set_base: theater_data
-                    .and_then(|td| td.rmg_tiles.water_set)
-                    .map_or(-1, i32::from),
+                water_tiles: theater_data.map_or_else(
+                    || crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
+                    crate::map::rmg::tiles::TileIds::resolve,
+                ),
                 tile_registry_len: theater_data.map(|td| td.lookup.len()),
                 dummy_accepts_smudge: theater_data
                     .is_some_and(|td| current_tile_permissions(&td.lookup, 0xFFFF).0),
@@ -4865,9 +4885,10 @@ impl ResolvedTerrainGrid {
             native_tube_indices,
             tube_native_ids,
             clear_tile_id,
-            projectile_water_set_base: theater_data
-                .and_then(|td| td.rmg_tiles.water_set)
-                .map_or(-1, i32::from),
+            water_tiles: theater_data.map_or_else(
+                || crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
+                crate::map::rmg::tiles::TileIds::resolve,
+            ),
             tile_registry_len: theater_data.map(|td| td.lookup.len()),
             dummy_accepts_smudge: theater_data
                 .is_some_and(|td| current_tile_permissions(&td.lookup, 0xFFFF).0),
@@ -8072,8 +8093,8 @@ mod tests {
 
     #[test]
     fn deploy_tube_neighborhood_matches_original_cell_body() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/unit_simple_deploy.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/unit_simple_deploy.json",
         ))
         .unwrap();
         let fixture = &corpus["tube_admission"];

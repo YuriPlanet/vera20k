@@ -50,8 +50,8 @@ fn coord(value: &Value) -> RimCoord {
 
 impl SuppliedHost {
     fn stock() -> Self {
-        let input: Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/bridge_rim_stock_inputs.json"
+        let input: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/bridge_rim_stock_inputs.json",
         ))
         .unwrap();
         Self::from_input(&input)
@@ -166,8 +166,8 @@ impl SuppliedHost {
 
 #[test]
 fn retained_dummy_and_requested_endpoint_match_original_control_cases() {
-    let original: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_rim_control.json"
+    let original: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_control.json",
     ))
     .unwrap();
     for case in original["cases"].as_array().unwrap() {
@@ -351,8 +351,8 @@ fn compare_stock_cases(cases: &Value, bounds: impl Fn(&Value) -> Option<RimBound
 }
 
 fn stock_original() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_rim.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim.json",
     ))
     .unwrap()
 }

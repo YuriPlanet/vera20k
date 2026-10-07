@@ -7,8 +7,8 @@ fn native_discharge_art_reader_matches_original_signed_independent_keys() {
     // Original InfantryType ART reads 5246BE..52473A call ReadInt5276D0
     // independently over E40/E44/E48/E4C. Replay every cached-input row
     // through the production read owner, then fresh file/registry inputs.
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/infantry_discharge_rules.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_discharge_rules.json",
     ))
     .unwrap();
     let rows = corpus["cases"].as_array().unwrap();
@@ -65,8 +65,8 @@ fn native_discharge_art_reader_matches_original_signed_independent_keys() {
 
 #[test]
 fn animation_layer_matches_original_name_reader() {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/anim_layer_rules.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/anim_layer_rules.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 19);
@@ -96,8 +96,8 @@ fn original_1080_building_slot_power_reads_preserve_native_defaults() {
         initial: bool,
         output: bool,
     }
-    let rows: Vec<Row> = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/building_slot_power_rules.json"
+    let rows: Vec<Row> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_slot_power_rules.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 1080);
@@ -997,8 +997,10 @@ fn animation_binding_keeps_literal_types_and_exact_image_sections() {
 
 #[test]
 fn animation_image25_matches_original_reader_and_loader_selection() {
-    let rows: Vec<serde_json::Value> =
-        serde_json::from_str(include_str!("../../tools/rules_oracle/anim_image.json")).unwrap();
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/anim_image.json",
+    ))
+    .unwrap();
     for row in rows {
         let name = row["type"].as_str().unwrap();
         let mut section = IniSection::new(name.to_owned());

@@ -129,8 +129,8 @@ mod tests {
 
     #[test]
     fn free_radar_matches_original_empty_provider_decisions_without_radar_blackout() {
-        let original: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/free_radar_oracle/fixtures/native-free-radar.json"
+        let original: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/free_radar_oracle/fixtures/native-free-radar.json",
         ))
         .unwrap();
         let rules = make_rules_with_radar();

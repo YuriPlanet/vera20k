@@ -43,8 +43,8 @@ use crate::util::native_x87::MaskedX87Chop53;
 pub(super) fn oracle() -> &'static Value {
     static CORPUS: OnceLock<Value> = OnceLock::new();
     CORPUS.get_or_init(|| {
-        let value: Value = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/anytown_damage/foot_missions.json"
+        let value: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/anytown_damage/foot_missions.json",
         ))
         .unwrap();
         assert_eq!(
@@ -415,13 +415,6 @@ fn supplied_target(
     }
 }
 
-fn target_to_nav(target: TargetKind) -> NavTargetRef {
-    match target {
-        TargetKind::Cell(x, y) => NavTargetRef::cell(x, y),
-        TargetKind::Entity(id) => NavTargetRef::Entity { id },
-    }
-}
-
 impl SuppliedFootFixture {
     /// Transport a fresh native VM's constructor roles onto this fixture's
     /// existing stable identities. Resolve every old binding before replacing
@@ -469,7 +462,7 @@ impl SuppliedFootFixture {
     }
 
     pub(super) fn nav(&self, pointer: &Value) -> Option<NavTargetRef> {
-        self.target(pointer).map(target_to_nav)
+        self.target(pointer).map(NavTargetRef::from)
     }
 
     pub(super) fn new(row: &Value, rules: &RuleSet) -> Self {
@@ -686,14 +679,14 @@ impl SuppliedFootFixture {
                     target(&before["target"]).map(|target| AttackTarget { target });
                 // The oracle writes raw NavCom without Move_To. A supplied
                 // nonnull NavCom therefore does not arm Walk's moving byte.
-                entity.navigation.nav_com = target(&before["nav"]).map(target_to_nav);
+                entity.navigation.nav_com = target(&before["nav"]).map(NavTargetRef::from);
                 if input["navigation_control"].is_object() {
-                    entity.navigation.nav_com_aux = target(&before["aux"]).map(target_to_nav);
+                    entity.navigation.nav_com_aux = target(&before["aux"]).map(NavTargetRef::from);
                     entity.navigation.nav_queue = before["nav_queue"]["entries"]
                         .as_array()
                         .unwrap()
                         .iter()
-                        .map(|pointer| target_to_nav(target(pointer).unwrap()))
+                        .map(|pointer| NavTargetRef::from(target(pointer).unwrap()))
                         .collect();
                     entity.navigation.path_replay.directions = before["path"]
                         .as_array()

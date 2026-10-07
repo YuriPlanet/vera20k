@@ -1,7 +1,8 @@
 # Build cache retention validation
 
-The shared `cargo_run` owner holds `owned-builds/cargo.lock` across retention,
-Cargo, label publication and final retention. `_cargo_cache` is its private
+The shared `cargo_run` owner holds `owned-builds/cargo.lock` across any retention
+pass, Cargo, label publication and the final pass when one is due (see the
+cadence in [the tool index](README.md#cargo-ownership-and-labeled-builds)). `_cargo_cache` is its private
 implementation, not a separate cleanup command or lock owner. The immutable
 manifest validator is shared with labelled executable resolution; protecting a
 library-test label does not make it eligible for host executable resolution.
@@ -135,7 +136,8 @@ and ctime transition; unexpected mutation stops deletion. Allocation is reclaime
 only when the final inode alias is removed, while incremental-budget accounting
 ends with the final incremental alias. Dry-run projections remain estimates.
 
-After automatic cleanup, a fresh free-space measurement admits or blocks Cargo.
+A fresh free-space measurement, taken after automatic cleanup when the reserve was
+short, admits or blocks Cargo.
 The configured minimum applies to the target volume and, for labels, the artifact
 volume. Missing measurements block a build. This prevents new builds starting
 below the reserve; it cannot bound a running build’s peak allocation or unrelated

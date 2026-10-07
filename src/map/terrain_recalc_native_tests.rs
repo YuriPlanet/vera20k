@@ -134,8 +134,8 @@ fn install_repair_test_catalog(
 
 #[test]
 fn recalc_pristine_metadata_and_level_override_match_original_instructions() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/terrain_recalc.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/terrain_recalc.json",
     ))
     .unwrap();
     let cases = corpus["cases"].as_array().unwrap();
@@ -404,8 +404,8 @@ fn resident_recalc_rejects_unadmitted_lifecycle_requirements() {
 
 #[test]
 fn current_tile_permission_queries_match_original_instruction_blocks() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/terrain_tile_permissions.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/terrain_tile_permissions.json",
     ))
     .unwrap();
     for case in corpus["cases"].as_array().unwrap() {
@@ -437,8 +437,8 @@ fn current_tile_permission_queries_match_original_instruction_blocks() {
 }
 
 fn bridge_catalog_corpus() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/bridge_recalc_presentation.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_recalc_presentation.json",
     ))
     .unwrap()
 }

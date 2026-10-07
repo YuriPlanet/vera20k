@@ -4,8 +4,8 @@ use serde_json::Value;
 
 #[test]
 fn original_approach_candidate_geometry_and_order() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fv_cell_attack/approach_vectors.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/approach_vectors.json",
     ))
     .unwrap();
     assert_eq!(

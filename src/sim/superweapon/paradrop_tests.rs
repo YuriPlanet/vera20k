@@ -897,3 +897,44 @@ CellSpread=0
         );
     }
 }
+
+/// Case 5/6 starts the carrier in native mission 26 beside its Rust machine
+/// (`0x006CD41B` pushes 0x1A; SendParadropPlanes queues it at `0x0065E70C`
+/// and starts it at `0x0065E809`), and the drop's in-radius arm queues 27
+/// (`0x00415946`). The off-map removal's predicate keeps a carrier in either
+/// (`0x0041B8B4..0x0041B8CC`), even mission-only and in the playfield.
+#[test]
+fn carrier_flies_the_native_missions_the_off_map_removal_spares() {
+    use crate::sim::mission::{MissionId, MissionType};
+    let rules = make_paradrop_rules();
+    let (mut sim, path_grid) = build_sim(&rules);
+    let owner = sim.interner.intern("Americans");
+    let sw = sim.interner.intern("SWTEST");
+    assert!(launch(
+        &mut sim,
+        &rules,
+        owner,
+        50,
+        20,
+        ParaDropKind::American,
+        sw
+    ));
+    let id = find_pdplane(&sim).unwrap();
+    let mission = |sim: &Simulation| sim.substrate.entities.get(id).unwrap().mission;
+    assert_eq!(
+        mission(&sim).current(),
+        MissionId::from_known(MissionType::ParadropApproach)
+    );
+    assert!(sim.substrate.entities.get(id).unwrap().is_mission_only());
+    let overfly = MissionId::from_known(MissionType::ParadropOverfly);
+    let mut frames = 0;
+    while mission(&sim).current() != overfly {
+        sim.substrate.entities.get_mut(id).unwrap().in_playfield = true;
+        assert!(!sim.aircraft_may_leave_map(id));
+        tick_n(&mut sim, &rules, &path_grid, 1);
+        frames += 1;
+        assert!(frames < 600, "no Overfly: {:?}", mission(&sim));
+    }
+    sim.substrate.entities.get_mut(id).unwrap().in_playfield = true;
+    assert!(!sim.aircraft_may_leave_map(id));
+}

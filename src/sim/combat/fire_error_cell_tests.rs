@@ -86,8 +86,8 @@ fn reset_dummy(terrain: &ResolvedTerrainGrid, input: &CellInput) {
 
 #[test]
 fn original_object_cell_queries_keep_physical_aliases_and_dummy_fields() {
-    let corpus: Corpus = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/object_get_cell.json"
+    let corpus: Corpus = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/object_get_cell.json",
     ))
     .unwrap();
     assert_eq!(
@@ -308,8 +308,8 @@ struct BoundaryCorpus {
 }
 
 fn boundary_corpus() -> BoundaryCorpus {
-    let corpus: BoundaryCorpus = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fire_error_cell_boundary.json"
+    let corpus: BoundaryCorpus = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fire_error_cell_boundary.json",
     ))
     .unwrap();
     assert_eq!(

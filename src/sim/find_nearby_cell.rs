@@ -743,22 +743,41 @@ impl crate::sim::world::Simulation {
                     entity.on_bridge,
                 )
             });
+        let cell = self.nearby_location_cell(
+            seed,
+            PassabilityArgs {
+                speed_type,
+                required_zone_id: zone,
+                movement_zone: object.movement_zone,
+                bridge_aware_zone: entity.on_bridge,
+            },
+        )?;
+        Some((cell.0 as i16, cell.1 as i16))
+    }
+
+    /// `MapClass::Find_Nearby_Passable_Cell` in the argument shape
+    /// NearbyLocation (`0x00703590`) and Teleport Update_Position
+    /// (`0x0071854F..0x007185D5`) push: one cell, the height-aware anchor,
+    /// bridge cells allowed, no height or occupancy check, the map's radius
+    /// cap and no target cell; each caller supplies the seed and the
+    /// passability inputs. `None` when nothing passes or the map size is
+    /// unknown.
+    pub(crate) fn nearby_location_cell(
+        &self,
+        seed: (i32, i32),
+        passability: PassabilityArgs,
+    ) -> Option<(u16, u16)> {
         let (width, height) = self
             .playfield_bounds
             .zip(self.playfield_size_height)
             .map(|(b, h)| (b.base, h))?;
         let grid = self.path_grid_snapshot();
-        let cell = find_nearby_passable_cell(
+        find_nearby_passable_cell(
             seed,
             &NearbyQuery {
                 native_cells: None,
                 raw_occupation: Some(&self.substrate.raw_cell_occupation),
-                passability: PassabilityArgs {
-                    speed_type,
-                    required_zone_id: zone,
-                    movement_zone: object.movement_zone,
-                    bridge_aware_zone: entity.on_bridge,
-                },
+                passability,
                 footprint: NearbyFootprint::SINGLE,
                 anchor_gate: NearbyAnchorGate::NativeHeightAware,
                 allow_bridge_cells: true,
@@ -775,8 +794,7 @@ impl crate::sim::world::Simulation {
                 playfield_bounds: self.playfield_bounds,
             },
             self.session.binary_frame,
-        )?;
-        Some((cell.0 as i16, cell.1 as i16))
+        )
     }
 }
 
@@ -857,8 +875,8 @@ mod tests {
 
     #[test]
     fn nearby_raw_and_retained_seed_match_original_bounded_queries() {
-        let cases: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/nearby_raw_occupation.json"
+        let cases: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/nearby_raw_occupation.json",
         ))
         .unwrap();
         let cases = cases.as_array().unwrap();

@@ -122,8 +122,8 @@ fn fixture_type(case: &str) -> Option<&'static str> {
 /// write (`+0x2E8`, `+0x2EC`, `+0x2F4` and its latch, `+0x2F8`) are not kept.
 #[test]
 fn native_tracking_corpus() {
-    let cases: Vec<NativeTrackingCase> = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/house_tracking.json"
+    let cases: Vec<NativeTrackingCase> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/house_tracking.json",
     ))
     .unwrap();
     assert_eq!(cases.len(), 36);

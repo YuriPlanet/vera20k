@@ -429,8 +429,8 @@ mod tests {
     }
     #[test]
     fn thumb_height_matches_native_sampled_geometry() {
-        let vectors: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/saved_scrollbar.json"
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/saved_scrollbar.json",
         ))
         .unwrap();
         let cases = vectors["cases"].as_array().unwrap();

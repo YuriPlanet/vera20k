@@ -51,8 +51,8 @@ fn gap_fixture(case: &serde_json::Value) -> (ResolvedTerrainGrid, Vec<BridgeEndp
 
 #[test]
 fn native_gap_restamp_matches_order_bits_aliases_and_retained_dummy() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_gap_flags.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_gap_flags.json",
     ))
     .unwrap();
     assert_eq!(corpus["cases"].as_array().unwrap().len(), 20);
@@ -103,8 +103,8 @@ fn native_gap_restamp_matches_order_bits_aliases_and_retained_dummy() {
 fn gap_flags_snapshot_hash_and_later_setter_preserve_value_authority() {
     use crate::sim::snapshot::GameSnapshot;
     use crate::sim::world::Simulation;
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_gap_flags.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_gap_flags.json",
     ))
     .unwrap();
     let (terrain, records) = gap_fixture(&corpus["cases"][1]);
@@ -236,8 +236,8 @@ fn gap_retention_native_setter_anchor_flags_keep_direction_independent_of_destro
         RETAINED_CELLCLASS_BRIDGE_FLAG_MASK, apply_bridge_fact_slot,
         apply_retained_cellclass_bridge_slot,
     };
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_gap_flags.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_gap_flags.json",
     ))
     .unwrap();
     let cases = corpus["setter_prefixes"].as_array().unwrap();

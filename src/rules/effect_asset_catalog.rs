@@ -183,6 +183,13 @@ pub(crate) const CLIFF_COLLAPSE_ANIMS: [&str; 3] = ["XGRYMED1", "XGRYMED2", "XGR
 /// it by this literal (`0x004150EF..0x00415102`), no rules key names it.
 pub(crate) const AIRCRAFT_SMOKE_ANIM: &str = "SGRYSMK1";
 
+/// The launch puffs and trail a missile's Rocket locomotor constructs:
+/// `RocketLocomotionClass::Process @ 0x006622C0` finds them by
+/// `AnimTypeClass::FindIndex @ 0x00427CB0` on the literals `[0x008399AC]`
+/// (`0x008399BC`) and `[0x008399B0]` (`0x008399B4`); no rules key names them.
+pub(crate) const ROCKET_TAKEOFF_ANIM: &str = "V3TAKOFF";
+pub(crate) const ROCKET_TRAIL_ANIM: &str = "V3TRAIL";
+
 /// Every animation name the simulation can turn into an `AnimClass` instance,
 /// which the loader must bind before the match starts.
 ///
@@ -263,6 +270,29 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     insert(&rules.general.iron_curtain_invoke_anim);
     insert(&rules.general.force_shield_invoke_anim);
     insert(&rules.general.ion_blast_anim);
+    // The Chronosphere's source loop and both Chrono Warp blasts
+    // (`sim::superweapon::chronosphere`).
+    insert(&rules.general.chrono_placement_anim);
+    insert(&rules.general.chrono_blast_anim);
+    insert(&rules.general.chrono_blast_dest_anim);
+    // The Psychic Dominator's two anims (`PsyDom::Start @ 0x0053AE50`,
+    // `PsyDom::MindControlArea @ 0x0053B080`, `sim::superweapon::
+    // psychic_dominator`): without them the strike follows no anim and lands
+    // at once.
+    insert(&rules.general.dominator_first_anim);
+    insert(&rules.general.dominator_second_anim);
+    // `[CombatDamage] ControlledAnimationType=` and
+    // `PermaControlledAnimationType=`: the rings a captured or Dominated
+    // object wears (`sim::capture_manager`).
+    for name in [
+        &rules.mind_control.controlled_anim,
+        &rules.mind_control.perma_controlled_anim,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        insert(name);
+    }
     // Lightning Storm bolts (`sim::superweapon::lightning_storm`).
     for name in LIGHTNING_BOLT_ANIMS {
         insert(name);
@@ -288,6 +318,10 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // The aircraft smoke (`sim::world::crash`): without this root SGRYSMK1
     // never bound and every puff failed to construct.
     insert(AIRCRAFT_SMOKE_ANIM);
+    // The rocket's puffs and trail (`sim::movement::rocket_movement`): without
+    // these roots neither ever constructed.
+    insert(ROCKET_TAKEOFF_ANIM);
+    insert(ROCKET_TRAIL_ANIM);
     roots.into_iter().collect()
 }
 
@@ -511,12 +545,16 @@ mod anim_class_root_tests {
     fn roots_cover_teleport_superweapon_and_lightning_producers() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[General]\nWarpOut=MYWARP\nIronCurtainInvokeAnim=MYIRON\n\
-             ForceShieldInvokeAnim=MYSHIELD\nIonBlast=MYRING\n",
+             ForceShieldInvokeAnim=MYSHIELD\nIonBlast=MYRING\n\
+             DominatorFirstAnim=MYHEAD\nDominatorSecondAnim=MYLOC\n\
+             [CombatDamage]\nControlledAnimationType=MYMIND\n\
+             PermaControlledAnimationType=MYPERMA\n",
         ))
         .expect("rules");
         let roots = anim_class_roots(&rules);
         for name in [
-            "MYWARP", "MYIRON", "MYSHIELD", "MYRING", "WCLBOLT1", "WCLBOLT2", "WCLBOLT3",
+            "MYWARP", "MYIRON", "MYSHIELD", "MYRING", "WCLBOLT1", "WCLBOLT2", "WCLBOLT3", "MYHEAD",
+            "MYLOC", "MYMIND", "MYPERMA",
         ] {
             assert!(
                 roots.iter().any(|root| root == name),
@@ -544,13 +582,20 @@ mod anim_class_root_tests {
     }
 
     /// Producers that name their type outside any warhead list: the ore
-    /// twinkle and the cliff-collapse literals.
+    /// twinkle, the cliff-collapse literals and the rocket's puffs and trail.
     #[test]
-    fn roots_cover_ore_twinkle_and_cliff_collapse_literals() {
+    fn roots_cover_ore_twinkle_and_producer_literals() {
         let rules = RuleSet::from_ini(&IniFile::from_str("[General]\nOreTwinkle=MYTWINKLE\n"))
             .expect("rules");
         let roots = anim_class_roots(&rules);
-        for name in ["MYTWINKLE", "XGRYMED1", "XGRYMED2", "XGRYSML1"] {
+        for name in [
+            "MYTWINKLE",
+            "XGRYMED1",
+            "XGRYMED2",
+            "XGRYSML1",
+            "V3TAKOFF",
+            "V3TRAIL",
+        ] {
             assert!(
                 roots.iter().any(|root| root == name),
                 "{name} missing: {roots:?}"

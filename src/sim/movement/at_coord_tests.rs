@@ -64,8 +64,8 @@ fn kind(value: &Value) -> LocomotorKind {
 
 #[test]
 fn coordinate_queries_match_original_heads_transforms_and_native_probes() {
-    let data: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/locomotor_at_coord.json"
+    let data: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/locomotor_at_coord.json",
     ))
     .unwrap();
     let cases = data["cases"].as_array().unwrap();

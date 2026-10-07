@@ -4,7 +4,10 @@
 // Included within cell_rect::tests to share its plain terrain fixture.
 
 fn spatial_native_vectors() -> serde_json::Value {
-    serde_json::from_str(include_str!("../../tools/spatial_oracle/map_queries.json")).unwrap()
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/map_queries.json",
+    ))
+    .unwrap()
 }
 
 #[test]

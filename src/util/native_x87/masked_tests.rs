@@ -37,8 +37,8 @@ fn load(format: &str, bits: &str) -> MaskedX87Value {
 
 #[test]
 fn masked_values_match_hardware_instruction_fragments() {
-    let rows: Vec<Row> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/x87_masked_hardware.json"
+    let rows: Vec<Row> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/x87_masked_hardware.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 2376);

@@ -49,8 +49,8 @@ const DELAY: i32 = 28;
 const ROF: i32 = 45;
 
 fn golden() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/building_prism.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_prism.json",
     ))
     .unwrap()
 }

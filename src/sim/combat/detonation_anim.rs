@@ -185,8 +185,8 @@ mod tests {
 
     #[test]
     fn dummy_land_survives_misses_and_resets_at_native_resize() {
-        let native: Value = serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/ifv_select_anim.json"
+        let native: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ifv_select_anim.json",
         ))
         .unwrap();
         let mut world = Simulation::new();
@@ -228,8 +228,8 @@ mod tests {
         let Some((base, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
             return;
         };
-        let native: Value = serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/ifv_select_anim.json"
+        let native: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ifv_select_anim.json",
         ))
         .unwrap();
         let rows = native["rows"].as_array().unwrap();
@@ -396,8 +396,8 @@ mod tests {
             return;
         };
         let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-        let native: Value = serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/ifv_select_anim.json"
+        let native: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ifv_select_anim.json",
         ))
         .unwrap();
         assert_eq!(native["rows"].as_array().unwrap().len(), 48);

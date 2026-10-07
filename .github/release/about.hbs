@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>VERA20k third-party licenses</title>
+    <style>
+        body { font-family: sans-serif; max-width: 860px; margin: 0 auto; padding: 0 16px; }
+        @media (prefers-color-scheme: dark) { body { background: #222; color: #eee; } a { color: skyblue; } }
+        .license-text { white-space: pre-wrap; font-size: 0.85em; border-left: 3px solid #888; padding-left: 10px; }
+        .used-by { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <h1>Third-party licenses</h1>
+    <p>VERA20k is licensed under the GNU General Public License version 3 (see LICENSE-GPL).
+    This program includes the open-source libraries listed below; their licenses and
+    copyright notices follow.</p>
+
+    <h2>Overview</h2>
+    <ul>
+        {{#each overview}}
+        <li><a href="#{{id}}">{{name}}</a> ({{count}})</li>
+        {{/each}}
+    </ul>
+
+    <h2>License texts</h2>
+    {{#each licenses}}
+        {{#if first_of_kind}}<h3 id="{{id}}">{{name}}</h3>{{/if}}
+        <p>Used by:</p>
+        <ul class="used-by">
+            {{#each used_by}}
+            <li>{{crate.name}} {{crate.version}}</li>
+            {{/each}}
+        </ul>
+        <pre class="license-text">{{text}}</pre>
+    {{/each}}
+</body>
+</html>

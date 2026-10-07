@@ -21,8 +21,8 @@ fn assert_progress(progress: &TrackProgress, expected: &Value) {
 
 #[test]
 fn post_placement_gates_reload_cursor_and_preserve_the_paid_raw_descriptor() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/locomotor_track_point_gates.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/locomotor_track_point_gates.json",
     ))
     .unwrap();
     let mut descriptors = 0;
@@ -83,8 +83,8 @@ fn post_placement_gates_reload_cursor_and_preserve_the_paid_raw_descriptor() {
 
 #[test]
 fn retained_cursor_and_paid_samples_match_original_drive_and_ship() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/locomotor_track_cursor.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/locomotor_track_cursor.json",
     ))
     .unwrap();
     let mut samples = 0;
@@ -264,8 +264,8 @@ fn retained_cursor_and_paid_samples_match_original_drive_and_ship() {
 
 #[test]
 fn residual_scalar_and_cell_identity_gate_match_original_instructions() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/locomotor_track_residual.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/locomotor_track_residual.json",
     ))
     .unwrap();
     let mut scalars = 0;
@@ -366,8 +366,8 @@ fn accepted_chain_advances_refetched_cursor_and_preserves_old_residual_until_sto
 
 #[test]
 fn callback_mutations_keep_paid_raw_cache_but_transform_and_residual_use_live_state() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/locomotor_track_callback.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/locomotor_track_callback.json",
     ))
     .unwrap();
     let mut cases = 0;

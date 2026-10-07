@@ -172,8 +172,8 @@ mod tests {
     /// it does not assert that Mission_Attack already calls that search.
     #[test]
     fn aircraft_fire_location_candidates_and_distances_match_native() {
-        let rows: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/aircraft_fire_location.json"
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/aircraft_fire_location.json",
         ))
         .unwrap();
         let mut candidate_count = 0;
@@ -241,8 +241,8 @@ mod tests {
     #[test]
     fn every_walk_heading_uses_the_original_trig_entries() {
         use crate::util::sha256::{Sha256, digest_hex, sha256_hex};
-        let oracle: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/walk_direction_table.json"
+        let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/walk_direction_table.json",
         ))
         .unwrap();
         assert_eq!(sha256_hex(RETAIL_SINE_TABLE), oracle["table_sha256"]);

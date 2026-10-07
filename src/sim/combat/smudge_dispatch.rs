@@ -530,8 +530,8 @@ mod oracle_tests {
     /// events are not compared (the SpawnsParticle loop is a residual).
     #[test]
     fn anim_middle_marks_match_the_original() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/anim_middle.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/anim_middle.json",
         ))
         .unwrap();
         assert!(rows.len() >= 290);

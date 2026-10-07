@@ -21,7 +21,19 @@ pub(crate) enum LightingEvent {
         center: (u16, u16),
         source: Option<PointLight>,
     },
-    Global(ScenarioLightingState),
+    /// A global refresh (`ScenarioClass::RecalcLighting @ 0x0053AD00`, the
+    /// ambient fade's `UpdateCellLighting @ 0x004AE4C0`): the scenario's
+    /// lighting, and the profile whose Ground/Level each cell's refresh reads
+    /// at that moment ([`Simulation::lighting_cell_profile`]).
+    Global {
+        state: ScenarioLightingState,
+        cell_profile: ScenarioLightingProfile,
+    },
+    /// The profile later full relights read changed with no refresh: cells
+    /// keep the scalars their last refresh gave them.
+    RelightProfile {
+        cell_profile: ScenarioLightingProfile,
+    },
 }
 
 /// Native source pointers are discarded during Building load (454174), so
@@ -142,16 +154,59 @@ impl Simulation {
     /// invalidations. A final-frame fingerprint cannot recover that history.
     pub(crate) fn publish_global_lighting(&mut self) {
         self.flush_radiation_lighting();
-        self.lighting_sources
-            .pending
-            .push(LightingEvent::Global(self.session.lighting));
+        let cell_profile = self.lighting_cell_profile();
+        self.lighting_sources.pending.push(LightingEvent::Global {
+            state: self.session.lighting,
+            cell_profile,
+        });
     }
 
-    pub(crate) fn select_lighting_profile(&mut self, profile: ScenarioLightingProfile) {
-        match profile {
-            ScenarioLightingProfile::Normal => self.session.lighting.select_normal(),
-            ScenarioLightingProfile::Ion => self.session.lighting.select_ion(),
+    /// Publish [`LightingEvent::RelightProfile`] after a change of
+    /// [`Self::lighting_cell_profile`] that refreshes no cell.
+    pub(crate) fn publish_relight_profile(&mut self) {
+        self.flush_radiation_lighting();
+        let cell_profile = self.lighting_cell_profile();
+        self.lighting_sources
+            .pending
+            .push(LightingEvent::RelightProfile { cell_profile });
+    }
+
+    /// The profile whose Ground/Level a cell's refresh reads
+    /// (`CellClass::RefreshRetainedLightingScalars @ 0x00484680`,
+    /// `ProcessColourComponents` at `0x004844C4`): the Ion one while a storm
+    /// rages (`LightningStorm::IsActive @ 0x0053A100`), else the Dominator's
+    /// while one is active (`PsyDom::Active @ 0x0053B400`, its fade back
+    /// included; a full relight's top scalar then reads NukeLevel,
+    /// [`ScenarioLightingState::relight_top_level`]), else the ordinary one.
+    /// NukeFlash's fading-in arm (`+0x3570`/`+0x3574`) is not modelled: VERA
+    /// has no nuke flash.
+    pub(crate) fn lighting_cell_profile(&self) -> ScenarioLightingProfile {
+        if crate::sim::superweapon::lightning_storm::raging(self) {
+            ScenarioLightingProfile::Ion
+        } else if crate::sim::superweapon::psychic_dominator::active(self) {
+            ScenarioLightingProfile::Dominator
+        } else {
+            ScenarioLightingProfile::Normal
         }
+    }
+
+    /// `ScenarioClass::UpdateLighting @ 0x0053C280`: the ambient target
+    /// (`+0x3530`) and RecalcLighting's tint come from the Ion profile while
+    /// a storm rages (`0x00A9FAB4`), else the Dominator's while its status is
+    /// neither 0 nor 5 (`0x0053C313..0x0053C31F`), else the ordinary one
+    /// (`RecalcLighting(-1, -1, -1, 0)`). Its first arm, NukeFlash
+    /// (`0x00A9FABC == 1`) or the chrono screen (`0x00A9FAB0`), is not
+    /// modelled: VERA has no nuke flash, and only `SuperWeaponEffects::
+    /// ResetAll` writes the chrono screen.
+    pub(crate) fn update_lighting(&mut self) {
+        let profile = if crate::sim::superweapon::lightning_storm::raging(self) {
+            ScenarioLightingProfile::Ion
+        } else if crate::sim::superweapon::psychic_dominator::tints_scenario(self) {
+            ScenarioLightingProfile::Dominator
+        } else {
+            ScenarioLightingProfile::Normal
+        };
+        self.session.lighting.select(profile);
         self.publish_global_lighting();
     }
 }

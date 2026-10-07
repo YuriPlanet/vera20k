@@ -1560,8 +1560,6 @@ mod tests {
 
     #[test]
     fn item83_visible_warp_out_match_holds_screen_scope_before_final_admission() {
-        use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};
-
         let rules = item83_rules();
         let mut interner = StringInterner::new();
         let owner = interner.intern("Americans");
@@ -1577,12 +1575,8 @@ mod tests {
             true,
         ));
         let mut warp_out = item83_entity(2, 11, 10, owner, amcv, EntityCategory::Unit, false);
-        warp_out.install_teleport_state_for_test(Some(TeleportState::for_test(
-            TeleportPhase::Relocate,
-            20,
-            20,
-            0,
-        )));
+        // BeingWarpedOut (`+0x270`): a Temporal chain's head.
+        warp_out.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(1);
         entities.insert(warp_out);
         entities.insert(item83_entity(
             3,
@@ -1831,8 +1825,8 @@ mod tests {
 
     #[test]
     fn mission_only_empty_selection_click_matches_native_flag_gate() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/aircraft_mission_only.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/aircraft_mission_only.json",
         ))
         .unwrap();
         let mut interner = StringInterner::new();

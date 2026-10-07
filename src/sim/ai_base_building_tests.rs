@@ -6,7 +6,10 @@ use crate::sim::rng::SimRng;
 use serde_json::Value;
 
 fn oracle() -> Value {
-    serde_json::from_str(include_str!("../../tools/ai_base_building_oracle.json")).unwrap()
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/ai_base_building_oracle.json",
+    ))
+    .unwrap()
 }
 
 fn int(value: &Value) -> i64 {

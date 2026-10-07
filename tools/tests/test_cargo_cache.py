@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
@@ -726,7 +727,8 @@ class CacheTests(unittest.TestCase):
             registry = json.loads((self.store / 'cache-roots.json').read_text())
             owned = custom / 'owned-worktrees' / self.namespace
             self.assertEqual(registry['roots'][str(owned)]['checkout'], str(self.root))
-            self.assertEqual(automatic.call_count, 2)
+            # The reserve is intact, so the one pass follows the build, failed or not.
+            self.assertEqual(automatic.call_count, 1)
             self.assertFalse((self.store / 'artifacts').exists())
 
     def test_retention_free_space_failure_blocks_cargo_admission(self):
@@ -749,11 +751,56 @@ class CacheTests(unittest.TestCase):
             cargo_run.run(self.root, ['check'], None, 0,
                           policy=cache.CachePolicy(0, 0, 0))
         self.assertEqual(launched, [])
-        receipts = [json.loads(path.read_text()) for path in
-                    (self.store / 'retention').glob('*.json')]
-        self.assertEqual(len(receipts), 1)
-        self.assertTrue(all(receipt['state'] == 'blocked' for receipt in receipts))
-        self.assertTrue(all(receipt['removed_files'] == [] for receipt in receipts))
+        # An unmeasurable reserve blocks admission before any pass could delete.
+        self.assertEqual(list((self.store / 'retention').glob('*.json')), [])
+
+    def test_second_run_within_the_interval_starts_no_pass(self):
+        policy = cache.CachePolicy(1 << 40, 1 << 40, 0)
+        child = MagicMock()
+        child.__enter__.return_value = child
+        child.wait.return_value = 0
+        real_popen = subprocess.Popen
+        def start(command, **kwargs):
+            if command[0] == 'cargo':
+                child.stdout = io.StringIO('')
+                return child
+            return real_popen(command, **kwargs)
+        receipts = self.store / 'retention'
+        with patch.object(cargo_run, 'source_identity', return_value={'same': True}), \
+             patch.object(cargo_run.subprocess, 'Popen', side_effect=start), \
+             redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+            for expected in (1, 1):
+                self.assertEqual(cargo_run.run(self.root, ['check'], None, 0, policy=policy), 0)
+                self.assertEqual(len(list(receipts.glob('*.json'))), expected)
+            with patch.object(cache, 'AUTOMATIC_INTERVAL_SECONDS', 0):
+                self.assertEqual(cargo_run.run(self.root, ['check'], None, 0, policy=policy), 0)
+            self.assertEqual(len(list(receipts.glob('*.json'))), 2)
+
+    def test_automatic_pass_is_due_without_a_recent_applied_pass(self):
+        policy = cache.CachePolicy(1 << 40, 1 << 40, 0)
+        volumes = [self.target]
+        self.assertTrue(cache.retention_due(self.store, policy, volumes))
+        self.trim(policy, dry_run=True)  # A preview trims nothing.
+        self.assertTrue(cache.retention_due(self.store, policy, volumes))
+        finished = self.trim(policy)['finished_unix']
+        self.assertFalse(cache.retention_due(self.store, policy, volumes))
+        for later, due in ((cache.AUTOMATIC_INTERVAL_SECONDS - 1, False),
+                           (cache.AUTOMATIC_INTERVAL_SECONDS, True), (-1, True)):
+            with self.subTest(later=later), patch.object(cache.time, 'time', return_value=finished + later):
+                self.assertEqual(cache.retention_due(self.store, policy, volumes), due)
+        (self.store / 'retention' / f'{time.time_ns()}-00000000.json').write_text('{broken')
+        self.assertTrue(cache.retention_due(self.store, policy, volumes))
+
+    def test_short_or_unmeasured_reserve_makes_a_pass_due_despite_a_recent_one(self):
+        policy = cache.CachePolicy(1 << 40, 1 << 40, 4096)
+        volumes = [self.target]
+        with patch.object(cache.shutil, 'disk_usage', return_value=SimpleNamespace(free=4096)):
+            self.trim(policy)
+            self.assertFalse(cache.retention_due(self.store, policy, volumes))
+        with patch.object(cache.shutil, 'disk_usage', return_value=SimpleNamespace(free=4095)):
+            self.assertTrue(cache.retention_due(self.store, policy, volumes))
+        with patch.object(cache.shutil, 'disk_usage', side_effect=OSError('volume unavailable')):
+            self.assertTrue(cache.retention_due(self.store, policy, volumes))
 
     def test_under_budget_never_invokes_expensive_dependency_inspection(self):
         self.label()

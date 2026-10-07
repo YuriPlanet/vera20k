@@ -14,14 +14,15 @@ use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::house_state::{HouseDifficulty, HouseState};
 use crate::sim::rng::SimRng;
+use crate::sim::superweapon::charge_nearly_full;
 use crate::sim::team_script_vm::{TeamScriptDefinition, TeamTaskForceDefinition};
 use crate::sim::timer::CdTimer;
-use crate::util::native_x87::NativeF64Bits;
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 use serde_json::Value;
 
 pub(crate) fn rows(section: &str) -> Vec<Value> {
     let oracle: Value =
-        serde_json::from_str(include_str!("../../tools/ai_team_oracle.json")).unwrap();
+        serde_json::from_str(crate::test_fixture::text("tools/ai_team_oracle.json")).unwrap();
     oracle[section].as_array().unwrap().clone()
 }
 

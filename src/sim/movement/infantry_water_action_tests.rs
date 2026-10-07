@@ -23,8 +23,8 @@ use crate::sim::world::SimSoundEvent;
 fn oracle() -> &'static [Value] {
     static NATIVE: OnceLock<Vec<Value>> = OnceLock::new();
     NATIVE.get_or_init(|| {
-        let rows: Vec<Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/infantry_water_action.json"
+        let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/infantry_water_action.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 356);

@@ -249,15 +249,13 @@ fn family_name(family: Family) -> &'static str {
 
 #[test]
 fn high_body_publication_matches_original_callback_boundaries() {
-    let source: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/bridge_rim_stock_inputs.json"
-    )))
+    let source: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_stock_inputs.json",
+    ))
     .unwrap();
-    let native: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/bridge_body_publication.json"
-    )))
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_body_publication.json",
+    ))
     .unwrap();
     for case in native["cases"].as_array().unwrap() {
         let mut host = Host::new(&source, case);
@@ -308,15 +306,13 @@ fn high_body_publication_matches_original_callback_boundaries() {
 /// rim pair, zone query, the 586990 vector and the family return value.
 #[test]
 fn bridgehead_branches_match_original_callback_boundaries() {
-    let source: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/bridge_rim_stock_inputs.json"
-    )))
+    let source: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_stock_inputs.json",
+    ))
     .unwrap();
-    let native: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/bridge_head_publication.json"
-    )))
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_head_publication.json",
+    ))
     .unwrap();
     for case in native["cases"].as_array().unwrap() {
         let mut host = Host::head(&source, case);

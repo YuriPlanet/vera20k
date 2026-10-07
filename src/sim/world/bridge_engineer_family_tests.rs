@@ -6,8 +6,8 @@ use serde_json::{Value, json};
 
 #[test]
 fn engineer_family_selector_matches_original_boundary_and_dummy() {
-    let cases: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/engineer_family_selector.json"
+    let cases: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/engineer_family_selector.json",
     ))
     .unwrap();
     let rules = RuleSet::from_ini(&IniFile::from_str(

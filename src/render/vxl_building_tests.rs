@@ -5,8 +5,8 @@ use super::*;
 /// corpus establishes that call-site connection independently of unit draw.
 #[test]
 fn building_gun_rotations_match_original_submitted_matrices() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/voxel_oracle/building_barrel.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/building_barrel.json",
     ))
     .unwrap();
     for (index, case) in native["draw_cases"].as_array().unwrap().iter().enumerate() {

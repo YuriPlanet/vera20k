@@ -126,8 +126,8 @@ fn respond(sim: &mut Simulation, rules: &RuleSet) {
 
 #[test]
 fn native_response_uses_the_paid_foot_head_instead_of_navcom() {
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_navigation_coordinate.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_navigation_coordinate.json",
     ))
     .unwrap();
     let row = rows

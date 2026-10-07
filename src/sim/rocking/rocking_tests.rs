@@ -539,8 +539,8 @@ fn integration_determinism_same_impulse_same_hash() {
 #[test]
 fn crash_spin_matches_native_rocking_update() {
     use crate::sim::rocking::rocking_system::advance_crash_spin;
-    let oracle: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_crash.json"
+    let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_crash.json",
     ))
     .unwrap();
     let rows = oracle["rocking"].as_array().unwrap();
@@ -588,8 +588,8 @@ fn crash_spin_matches_native_rocking_update() {
 #[test]
 fn unit_crash_spin_matches_native_rocking_update() {
     use crate::sim::rocking::rocking_system::advance_crash_spin;
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/unit_rocking_update.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_rocking_update.json",
     ))
     .unwrap();
     let native = |hex: &serde_json::Value| {

@@ -415,8 +415,8 @@ mod tests {
 
     #[test]
     fn paradrop_landing_cell_matches_original_coordinate_prefix() {
-        let oracle: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/paradrop_coordinates.json"
+        let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/paradrop_coordinates.json",
         ))
         .unwrap();
         let rules = drop_test_rules();
@@ -466,8 +466,8 @@ mod tests {
     #[test]
     fn paradrop_world_coordinates_match_all_native_headings() {
         use crate::util::sha256::{Sha256, digest_hex};
-        let oracle: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/paradrop_coordinates.json"
+        let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/paradrop_coordinates.json",
         ))
         .unwrap();
         let sweeps = oracle["sweeps"].as_array().unwrap();
@@ -501,8 +501,8 @@ mod tests {
 
     #[test]
     fn paradrop_uses_native_cell_for_occupancy_admission() {
-        let oracle: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/paradrop_coordinates.json"
+        let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/paradrop_coordinates.json",
         ))
         .unwrap();
         let row = oracle["sweeps"][0]["samples"]

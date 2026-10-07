@@ -395,8 +395,8 @@ mod tests {
     /// `fmul qword [0x007E3808]` as ReadDouble's `0x0052857E`.
     #[test]
     fn percent_magnitude_is_the_chopped_native_product() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/rules_oracle/read_double_percent.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/rules_oracle/read_double_percent.json",
         ))
         .unwrap();
         let sweep = native["reader"]["percent_sweep"].as_array().unwrap();

@@ -1,15 +1,25 @@
-//! Carrier-aircraft paradrop mission handlers — stock SW Open + Rescue equivalents.
+//! The paradrop carrier's missions: ParadropApproach (mission 26,
+//! `0x004158E0`) and ParadropOverfly (27, `0x00415960`), the cases
+//! `MissionClass::AI`'s jump table `0x005B34E8` runs for them. Launch cases 5
+//! and 6 start the carrier in 26; these Rust states run the behavior, and the
+//! native mission ids are written beside them (`superweapon::paradrop`,
+//! `aircraft::mission_step`) for their readers, `aircraft::leave_map` among
+//! them.
 //!
-//! The enum variants keep their older Rust names for save compatibility, but
-//! standard superweapon PDPLANE behavior is the gamemd Mission_Open (0x1A) →
-//! Mission_Rescue (0x1B) chain, not binary Mission_ParaDropApproach/Overfly.
+//! Approach: flies in toward target. When distance ≤ ParadropRadius,
+//! queues Overfly after the verified 3-game-frame return delay.
 //!
-//! Open-equivalent: flies in toward target. When distance ≤ ParadropRadius,
-//! queues Rescue-equivalent after the verified 3-game-frame return delay.
+//! Overfly: calls Drop_Payload once per execution and reschedules at the
+//! 5-game-frame cadence. When cargo empty, redirects to the opposite-edge exit
+//! cell and silently despawns at the boundary.
 //!
-//! Rescue-equivalent: calls Drop_Payload once per execution and reschedules at
-//! the 5-game-frame Mission_Rescue cadence. When cargo empty, redirects to the
-//! opposite-edge exit cell and silently despawns at the boundary.
+//! RESIDUAL: that exit. Native Overfly with its cargo gone drops its Target,
+//! clears its destination and queues Retreat (`0x00415960`); Retreat
+//! (`0x00415A50`) flies it to its own house's edge, where the Fly locomotor
+//! (`0x004CD510`, Retreat outside the playfield) or `aircraft::leave_map`
+//! UnInits it. VERA keeps mission 27 and leaves by the opposite edge.
+//! Trigger: every paradrop. Effect: the empty carrier flies on across the map
+//! instead of turning home; both exits are silent.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on rules/, sim/aircraft, sim/intern, sim/world.
@@ -181,8 +191,8 @@ pub fn tick_overfly(
     }
 }
 
-/// Resolve the opposite-edge exit cell for the carrier aircraft.
-/// Encoding: waypoint_edge → opposite via +2 mod 4 (P12).
+/// Resolve the opposite-edge exit cell for the carrier aircraft: the edge
+/// across from its house's ([`Edge::opposite_edge`], `0x0050DAC0`).
 ///
 /// Fallback chain when no passable opposite-edge cell exists:
 ///   1. Try the opposite edge.
@@ -196,8 +206,7 @@ pub fn compute_exit_cell(
     target_ry: u16,
 ) -> (u16, u16) {
     let waypoint_edge = sim.houses.get(&owner).map_or(0, |h| h.waypoint_edge);
-    let opposite_idx = (waypoint_edge + 2) % 4;
-    let exit_edge = Edge::from_index(opposite_idx).unwrap_or(Edge::South);
+    let exit_edge = Edge::opposite_edge(waypoint_edge);
 
     let map_w = sim.fog.width;
     let map_h = sim.fog.height;

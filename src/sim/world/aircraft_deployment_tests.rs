@@ -20,8 +20,8 @@ fn rules(selectable: bool, landable: bool, weapon: &str, elite: &str) -> RuleSet
 
 #[test]
 fn mission_only_aircraft_reveal_matches_original_flag_histories() {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_mission_only.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_mission_only.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 96);
@@ -131,8 +131,8 @@ fn aircraft_unlimbo_height_and_tail_match_original_runs() {
     use crate::map::playfield::PlayfieldBounds;
     use crate::util::fixed_math::{SIM_ONE, SIM_ZERO};
 
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_unlimbo_height.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_unlimbo_height.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 146);

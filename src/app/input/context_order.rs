@@ -2530,8 +2530,8 @@ mod tests {
     /// absent from the admitted hut arm, including damaged/capturable traps.
     #[test]
     fn engineer_hut_context_orders_match_native_terminal_action_decisions() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/engineer_bridge_cursor_caller.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/engineer_bridge_cursor_caller.json",
         ))
         .unwrap();
         for relation in ["hostile", "allied", "self"] {
@@ -2599,8 +2599,8 @@ mod tests {
     /// its later ordinary WhatAction continuation is outside those goldens.
     #[test]
     fn nonrepairable_noncapturable_hut_does_not_produce_hut_capture_order() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/engineer_bridge_cursor_caller.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/engineer_bridge_cursor_caller.json",
         ))
         .unwrap();
         let row = native["actions"]
@@ -2650,8 +2650,8 @@ mod tests {
     /// claiming the later ordinary WhatAction continuation's final action.
     #[test]
     fn engineer_hut_object_prerequisites_exclude_nonlocal_and_undeploy_targets() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/engineer_bridge_cursor_caller.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/engineer_bridge_cursor_caller.json",
         ))
         .unwrap();
         for gate in ["nonlocal", "undeploy"] {
@@ -2732,8 +2732,8 @@ mod tests {
             SpawnManagerMode, SpawnManagerState, SpawnSlot, SpawnSlotState,
         };
         use crate::sim::timer::CdTimer;
-        let packet: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/engineer_bridge_cursor_caller.json"
+        let packet: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/engineer_bridge_cursor_caller.json",
         ))
         .unwrap();
         let mut compared = 0;

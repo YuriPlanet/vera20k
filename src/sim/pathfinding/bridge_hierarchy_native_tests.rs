@@ -240,8 +240,8 @@ fn assert_native_hierarchy_state(
 
 #[test]
 fn bridge_hierarchy_native_full_and_local_graphs_queries_and_padding() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_hierarchy.json",
     ))
     .unwrap();
     let mut local_count = 0;
@@ -341,8 +341,8 @@ fn bridge_hierarchy_native_full_and_local_graphs_queries_and_padding() {
 
 #[test]
 fn bridge_hierarchy_native_flood_last_neighbor_query_order_and_flag() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_hierarchy.json",
     ))
     .unwrap();
     for case in corpus["floods"].as_array().unwrap() {
@@ -431,8 +431,8 @@ fn bridge_hierarchy_native_flood_last_neighbor_query_order_and_flag() {
 
 #[test]
 fn bridge_hierarchy_native_world_endpoint_lookup_retains_boundary_zone() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_hierarchy.json",
     ))
     .unwrap();
     let case = corpus["cases"]
@@ -496,8 +496,8 @@ fn live_world_navigation_and_sentinel_repair_match_native_hierarchy_graphs() {
     use crate::sim::pathfinding::zone_incremental::{
         PackedZoneCoord, ZoneRepairKind, ZoneRepairOutcome, repair_zone_cell,
     };
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_hierarchy.json",
     ))
     .unwrap();
     for name in [

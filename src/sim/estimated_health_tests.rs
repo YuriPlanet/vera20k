@@ -5,8 +5,8 @@ use crate::sim::world::Simulation;
 
 #[test]
 fn recovery_matches_original_techno_ai_instructions() {
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/estimated_health.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/estimated_health.json",
     ))
     .unwrap();
     let rows = rows.as_array().unwrap();

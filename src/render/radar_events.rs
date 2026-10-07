@@ -8,8 +8,9 @@
 //! lifecycle and the one eight-cell review ring. The simulation only publishes
 //! `RadarEventRequest`s; admission, and the EVA lines native gates on its
 //! return value, happen here. Whether a caller tests the local player first is
-//! that caller's own rule: no such test was found before the type-12, type-13
-//! and trigger-action call sites, which are not ported yet.
+//! that caller's own rule: the Chronosphere's type-13 pair has none, and none
+//! was found before the type-12 and trigger-action call sites, which are not
+//! ported yet.
 //! Type 5 is produced render-side by the radar object tracker
 //! (`TechnoClass::IdleAnimDispatch 0x0070DAD7`).
 

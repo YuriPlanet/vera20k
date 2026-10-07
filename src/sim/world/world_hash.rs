@@ -411,6 +411,11 @@ fn hash_mission_leaf(leaf: &crate::sim::mission::MissionLeafState, hasher: &mut 
         building.ready_latch().hash(hasher);
         b"building-repair-progress-620".hash(hasher);
         building.repair_progress().hash(hasher);
+        // Constructor -1 adds no bytes, preserving earlier streams.
+        if building.firing_super_weapon() != -1 {
+            b"building-firing-super-weapon-5f8".hash(hasher);
+            building.firing_super_weapon().hash(hasher);
+        }
     }
     // Infantry already folds the same owned byte above. Native default0
     // retains the prior Unit/Aircraft hash stream; loaded nonzero Foot68D
@@ -501,6 +506,7 @@ impl Simulation {
         self.hash_crate_authority(&mut hasher);
         self.hash_smudge_grid(&mut hasher);
         self.hash_radiation(&mut hasher);
+        self.kamikaze.fold_hash(&mut hasher);
         {
             self.hash_projectiles(&mut hasher);
             let shared_dummy_handle = self.effective_shared_cell_dummy();
@@ -707,6 +713,10 @@ impl Simulation {
             projectile.collision.elasticity_bits.hash(hasher);
             projectile.on_bridge.hash(hasher);
             projectile.collision.arcing.hash(hasher);
+            if let Some(house) = projectile.firer_house() {
+                b"bullet-firer-scheme-v1".hash(hasher);
+                house.index().hash(hasher);
+            }
         }
     }
 
@@ -875,6 +885,7 @@ impl Simulation {
             house.eva_funds_timer.duration().hash(hasher);
             house.eva_low_power_guard.hash(hasher);
             house.hash_event_notifications(hasher);
+            house.hash_super_weapon_cells(hasher);
             house.repair_delay.to_bits().hash(hasher);
             house.repair_start_latch.hash(hasher);
             i64::from(house.repair_latch_timer.start_frame()).hash(hasher);
@@ -1202,20 +1213,26 @@ impl Simulation {
                 inst.charge_duration.hash(hasher);
                 inst.charge_drain_state.hash(hasher);
                 inst.ready_tick.hash(hasher);
+                // The Chronosphere's source cell and held anim (`+0x62`,
+                // `+0x68`); the tag keeps every Super that never took a
+                // Chronosphere click on its established stream.
+                if inst.chrono_cell() != (0, 0) || inst.placement_anim().is_some() {
+                    b"chrono-super-v1".hash(hasher);
+                    inst.chrono_cell().hash(hasher);
+                    inst.placement_anim().hash(hasher);
+                }
             }
         }
         // Hash lightning storm global state.
         self.lightning_storm.is_some().hash(hasher);
         if let Some(ref ls) = self.lightning_storm {
-            ls.owner.hash(hasher);
-            ls.target_rx.hash(hasher);
-            ls.target_ry.hash(hasher);
-            ls.deferment_remaining.hash(hasher);
-            ls.duration_remaining.hash(hasher);
-            ls.center_bolt_timer.hash(hasher);
-            ls.scatter_bolt_timer.hash(hasher);
-            ls.last_bolt_rx.hash(hasher);
-            ls.last_bolt_ry.hash(hasher);
+            ls.hash(hasher);
+        }
+        // The Psychic Dominator's globals; the tag keeps a match that never
+        // launched one on its established stream.
+        if self.psychic_dominator != Default::default() {
+            b"psychic-dominator-v1".hash(hasher);
+            self.psychic_dominator.hash(hasher);
         }
     }
 
@@ -1501,6 +1518,12 @@ impl Simulation {
             if entity.setter_force_reassign {
                 0x1f8_u32.hash(hasher);
             }
+            // Techno+0x284 stays zero until a blocked Chronosphere landing
+            // writes it; tagged like +0x1F8.
+            if entity.chrono_warp_delay() != 0 {
+                0x284_u32.hash(hasher);
+                entity.chrono_warp_delay().hash(hasher);
+            }
 
             if let Some(ref loco) = entity.locomotor {
                 1u8.hash(hasher);
@@ -1522,7 +1545,6 @@ impl Simulation {
             entity.spotlight_capable.hash(hasher);
             entity.building_light.hash(hasher);
             entity.low_bridge_tube_state.hash(hasher);
-            hash_rocket_state(entity.rocket_state.as_ref(), hasher);
             if let Some(cloak) = entity.cloak.as_ref() {
                 1u8.hash(hasher);
                 cloak.state.hash(hasher);
@@ -1569,13 +1591,7 @@ impl Simulation {
 
             if let Some(ref inv) = entity.invulnerability {
                 1u8.hash(hasher);
-                inv.timer.start_frame().hash(hasher);
-                inv.timer.duration().hash(hasher);
-                let kind_byte: u8 = match inv.kind {
-                    crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain => 0,
-                    crate::sim::superweapon::invulnerability::InvulnKind::ForceShield => 1,
-                };
-                kind_byte.hash(hasher);
+                inv.hash_state(hasher);
             } else {
                 0u8.hash(hasher);
             }
@@ -2008,9 +2024,9 @@ fn hash_locomotor_payload(
             2u8.hash(hasher);
             state.hash(hasher);
         }
-        LocomotorRuntimePayload::Rocket => {
+        LocomotorRuntimePayload::Rocket(state) => {
             4u8.hash(hasher);
-            hash_rocket_state(None, hasher);
+            state.hash(hasher);
         }
         LocomotorRuntimePayload::Hover(state) => {
             6u8.hash(hasher);
@@ -2057,77 +2073,14 @@ fn hash_slope_transition_state(
     transition_total.hash(hasher);
 }
 
-/// RocketLocomotionClass::Process @ 0x006622c0 owns the complete flight table
-/// selection and current flight state. `pitch` is render-only, so it is omitted.
-fn hash_rocket_state(
-    state: Option<&crate::sim::movement::rocket_movement::RocketState>,
-    hasher: &mut impl Hasher,
-) {
-    match state {
-        None => 0u8.hash(hasher),
-        Some(state) => {
-            1u8.hash(hasher);
-            let phase = match state.phase {
-                crate::sim::movement::rocket_movement::RocketPhase::Ignition => 0u8,
-                crate::sim::movement::rocket_movement::RocketPhase::Tilt => 1,
-                crate::sim::movement::rocket_movement::RocketPhase::Ascent => 2,
-                crate::sim::movement::rocket_movement::RocketPhase::Cruise => 3,
-                crate::sim::movement::rocket_movement::RocketPhase::Terminal => 4,
-                crate::sim::movement::rocket_movement::RocketPhase::Secondary => 5,
-            };
-            phase.hash(hasher);
-            state.origin_rx.hash(hasher);
-            state.origin_ry.hash(hasher);
-            state.target_rx.hash(hasher);
-            state.target_ry.hash(hasher);
-            state.speed.to_bits().hash(hasher);
-            state.current_speed.to_bits().hash(hasher);
-            state.altitude.to_bits().hash(hasher);
-            state.progress.to_bits().hash(hasher);
-            state.phase_frames.hash(hasher);
-            state.parameters.acceleration.to_bits().hash(hasher);
-            state.parameters.max_speed.to_bits().hash(hasher);
-            state.parameters.ascent_altitude.to_bits().hash(hasher);
-            state.parameters.tilt_rate.to_bits().hash(hasher);
-            state.parameters.relaunches.hash(hasher);
-        }
-    }
-}
-
 #[cfg(test)]
-mod teleport_rocket_hash_tests {
+mod teleport_hash_tests {
     use super::Simulation;
     use crate::sim::game_entity::GameEntity;
-    use crate::sim::movement::rocket_movement::{RocketFlightParameters, RocketPhase, RocketState};
     use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};
-    use crate::util::fixed_math::SimFixed;
 
     fn teleport_state() -> TeleportState {
         TeleportState::for_test(TeleportPhase::Relocate, 17, 29, 41)
-    }
-
-    fn rocket_state() -> RocketState {
-        RocketState {
-            phase: RocketPhase::Cruise,
-            origin_rx: 3,
-            origin_ry: 5,
-            target_rx: 17,
-            target_ry: 29,
-            speed: SimFixed::from_num(11),
-            current_speed: SimFixed::from_num(7),
-            altitude: SimFixed::from_num(400),
-            progress: SimFixed::from_num(0.5),
-            phase_frames: 13,
-            parameters: RocketFlightParameters {
-                acceleration: SimFixed::from_num(90),
-                max_speed: SimFixed::from_num(11),
-                ascent_altitude: SimFixed::from_num(400),
-                tilt_rate: SimFixed::from_num(0.35),
-                relaunches: 2,
-            },
-            pitch: 0.25,
-            payload: None,
-        }
     }
 
     fn hash_entity(mut entity: GameEntity) -> u64 {
@@ -2143,24 +2096,11 @@ mod teleport_rocket_hash_tests {
         hash_entity(entity)
     }
 
-    fn hash_rocket(state: Option<RocketState>) -> u64 {
-        let mut entity = GameEntity::test_default(1, "V3RKT", "Soviet", 5, 5);
-        entity.rocket_state = state;
-        hash_entity(entity)
-    }
-
     fn assert_teleport_change(change: impl FnOnce(&mut TeleportState)) {
         let baseline = hash_teleport(Some(teleport_state()));
         let mut changed = teleport_state();
         change(&mut changed);
         assert_ne!(baseline, hash_teleport(Some(changed)));
-    }
-
-    fn assert_rocket_change(change: impl FnOnce(&mut RocketState)) {
-        let baseline = hash_rocket(Some(rocket_state()));
-        let mut changed = rocket_state();
-        change(&mut changed);
-        assert_ne!(baseline, hash_rocket(Some(changed)));
     }
 
     #[test]
@@ -2178,34 +2118,6 @@ mod teleport_rocket_hash_tests {
             state.set_destination_for_test(destination);
         });
         assert_teleport_change(|state| state.set_ticks_for_test(state.being_warped_ticks() + 1));
-    }
-
-    #[test]
-    fn rocket_hash_projects_complete_simulation_flight_runtime() {
-        assert_ne!(hash_rocket(None), hash_rocket(Some(rocket_state())));
-        assert_rocket_change(|state| state.phase = RocketPhase::Terminal);
-        assert_rocket_change(|state| state.origin_rx += 1);
-        assert_rocket_change(|state| state.origin_ry += 1);
-        assert_rocket_change(|state| state.target_rx += 1);
-        assert_rocket_change(|state| state.target_ry += 1);
-        assert_rocket_change(|state| state.speed += SimFixed::from_num(1));
-        assert_rocket_change(|state| state.current_speed += SimFixed::from_num(1));
-        assert_rocket_change(|state| state.altitude += SimFixed::from_num(1));
-        assert_rocket_change(|state| state.progress += SimFixed::from_num(0.1));
-        assert_rocket_change(|state| state.phase_frames += 1);
-        assert_rocket_change(|state| state.parameters.acceleration += SimFixed::from_num(1));
-        assert_rocket_change(|state| state.parameters.max_speed += SimFixed::from_num(1));
-        assert_rocket_change(|state| state.parameters.ascent_altitude += SimFixed::from_num(1));
-        assert_rocket_change(|state| state.parameters.tilt_rate += SimFixed::from_num(0.1));
-        assert_rocket_change(|state| state.parameters.relaunches += 1);
-    }
-
-    #[test]
-    fn rocket_hash_excludes_explicit_render_only_pitch() {
-        let baseline = hash_rocket(Some(rocket_state()));
-        let mut render_only_change = rocket_state();
-        render_only_change.pitch = 0.75;
-        assert_eq!(baseline, hash_rocket(Some(render_only_change)));
     }
 }
 
@@ -3895,8 +3807,8 @@ mod infantry_hash_tests {
 
     #[test]
     fn foot_retarget_snapshot_retains_native_next_scan_mask_and_empty_clear() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/anytown_damage/foot_missions.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/anytown_damage/foot_missions.json",
         ))
         .unwrap();
         let row = native["greatest_threat_rows"]
@@ -3945,8 +3857,8 @@ mod infantry_hash_tests {
 
     #[test]
     fn inherited_foot_firing_state_survives_snapshot_and_changes_noninfantry_hash() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/anytown_damage/foot_missions.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/anytown_damage/foot_missions.json",
         ))
         .unwrap();
         let raw = native["rows"]
@@ -4034,8 +3946,8 @@ mod infantry_hash_tests {
         sim.substrate.entities.insert(actor);
         let clear_hash = sim.state_hash();
         let mut retained_hashes = vec![clear_hash];
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/foot_scold_latch.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/foot_scold_latch.json",
         ))
         .unwrap();
         for row in native["imported_latch"].as_array().unwrap() {

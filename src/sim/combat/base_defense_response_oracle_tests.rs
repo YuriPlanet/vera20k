@@ -239,10 +239,9 @@ fn native_base_response_dispatch_matches_14_represented_original_tails() {
 }
 
 fn corpus() -> Value {
-    let rows: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/base_defense_response.json",
-    )))
+    let rows: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/base_defense_response.json",
+    ))
     .unwrap();
     assert_eq!(rows["schema_version"], 1);
     assert_eq!(

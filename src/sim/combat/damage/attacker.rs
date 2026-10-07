@@ -110,8 +110,8 @@ mod tests {
             house_firepower: Option<u64>,
             unit_firepower: Option<u64>,
         }
-        let corpus: Corpus = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/damage_build.json"
+        let corpus: Corpus = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/damage_build.json",
         ))
         .expect("original damage-build corpus");
         assert_eq!(corpus.fire.len(), 629);

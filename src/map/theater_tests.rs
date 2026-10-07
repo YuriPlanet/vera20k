@@ -570,8 +570,8 @@ fn general_reader_missing_bridge_middle_returns_none() {
 }
 
 fn native_general_corpus() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../tools/rules_oracle/theater_general_reader.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/theater_general_reader.json",
     ))
     .expect("executed 545150 General reader corpus")
 }

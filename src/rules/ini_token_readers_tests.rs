@@ -50,8 +50,8 @@ struct ReadBoolRow {
 }
 
 fn native() -> Native {
-    serde_json::from_str(include_str!(
-        "../../tools/rules_oracle/ini_token_readers.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/ini_token_readers.json",
     ))
     .unwrap()
 }

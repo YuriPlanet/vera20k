@@ -5,12 +5,12 @@ use crate::sim::game_entity::GameEntity;
 #[test]
 fn original_selfheal_tail_and_192_height_rows_retain_art_and_mark_smoke() {
     use crate::rules::particle_system_type::ParticleSystemTypeId;
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/building_art_transition.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_art_transition.json",
     ))
     .unwrap();
-    let height: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/selfheal_smoke_height.json"
+    let height: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/selfheal_smoke_height.json",
     ))
     .unwrap();
     let mut checked = 0;
@@ -135,8 +135,8 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
 
 #[test]
 fn production_self_heal_matches_original_signed_cadence_and_increment() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/object_health.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/object_health.json",
     ))
     .unwrap();
     let rows = corpus["self_heal"].as_array().unwrap();
@@ -185,8 +185,8 @@ fn production_self_heal_matches_original_signed_cadence_and_increment() {
 
 #[test]
 fn whole_object_ai_keeps_wrapping_self_heal_and_signed_frame_period() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/object_health.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/object_health.json",
     ))
     .unwrap();
     for row in corpus["self_heal"]

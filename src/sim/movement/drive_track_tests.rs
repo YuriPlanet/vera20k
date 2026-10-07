@@ -95,8 +95,8 @@ fn occupant_can_use_track_answers_only_at_the_chain_point_of_a_turning_curve() {
 #[test]
 fn occupant_can_use_track_matches_native_oracle() {
     use crate::sim::components::TrackProgress;
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/locomotor_can_use_track.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/locomotor_can_use_track.json",
     ))
     .unwrap();
     let mut checked = 0;
@@ -475,8 +475,8 @@ const DIR_SW: u8 = 5;
 #[test]
 fn fresh_heading_gate_and_facing_setter_match_original_native_rows() {
     use crate::sim::movement::track_fresh::fresh_heading_ready;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/drive_fresh_turn.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/drive_fresh_turn.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 120);

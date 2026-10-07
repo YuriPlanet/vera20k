@@ -307,8 +307,8 @@ mod tests {
     fn normalized_animation_rates_match_original_execution() {
         // Original5FB2E0 executes independently for all56 supplied controls;
         // neither the table nor the formula is duplicated in this expectation.
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/fv_cell_attack/speed_normalize.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/fv_cell_attack/speed_normalize.json",
         ))
         .unwrap();
         let rows = native["rows"].as_array().unwrap();

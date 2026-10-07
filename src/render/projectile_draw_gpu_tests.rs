@@ -9,8 +9,8 @@ use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded, extent,
 use wgpu::util::DeviceExt;
 
 fn native() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../tools/projectile_oracle/bridge_render_pixels.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/bridge_render_pixels.json",
     ))
     .unwrap()
 }
@@ -155,7 +155,8 @@ fn production_bullet_body_shadow_matches_original_blitters() {
 fn production_bullet_shadow_matches_every_original_destination_word() {
     let gpu = Gpu::new();
     let native = native();
-    let words = include_bytes!("../../tools/projectile_oracle/bridge_render_pixels.rgb565.bin");
+    let words =
+        crate::test_fixture::bytes("tools/projectile_oracle/bridge_render_pixels.rgb565.bin");
     assert_eq!(words.len(), 65536 * 2);
     for row in native["packed"].as_array().unwrap() {
         assert_eq!(

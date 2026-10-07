@@ -3,8 +3,8 @@ use super::*;
 use serde_json::Value;
 
 fn fixture() -> Value {
-    serde_json::from_str(include_str!(
-        "../../tools/procedural_drawing_oracle/shroud.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/procedural_drawing_oracle/shroud.json",
     ))
     .unwrap()
 }

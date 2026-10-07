@@ -439,8 +439,8 @@ mod tests {
     #[test]
     fn native_approach_attitude_and_completion_histories() {
         use crate::util::fixed_math::SimFixed;
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/fly_attitude.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/fly_attitude.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 65);
@@ -476,8 +476,8 @@ mod tests {
 
     #[test]
     fn all_saved_original_vertical_steps_match() {
-        let rows: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/fly_height.json"
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/fly_height.json",
         ))
         .unwrap();
         let rows = rows.as_array().unwrap();

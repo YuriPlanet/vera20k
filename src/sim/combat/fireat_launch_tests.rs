@@ -9,8 +9,8 @@ use crate::sim::projectile::{ProjectileCoord, launch::fireat_launch_distance};
 use crate::sim::world::Simulation;
 
 fn attack_aim_corpus() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/procedural_drawing_oracle/action_lines_attack_prerequisites.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/procedural_drawing_oracle/action_lines_attack_prerequisites.json",
     ))
     .expect("original retained Unit aim and FireAt controls")
 }

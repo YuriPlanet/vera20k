@@ -138,16 +138,19 @@ impl Simulation {
     }
 
     /// Reconcile represented air-vector membership after a physical step.
-    /// Fly and Jumpjet enter/leave through their native callbacks; marking a
-    /// grounded instance cannot create a new tracker registration. Other
-    /// represented air categories retain their existing admission predicate.
+    /// Fly, Jumpjet and Rocket enter/leave through their native callbacks;
+    /// marking a grounded instance cannot create a new tracker registration.
+    /// Other represented air categories retain their existing admission
+    /// predicate.
     pub(crate) fn sync_air_spatial_membership(&mut self, id: u64) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
         let tracked = entity.foot_air.air_spatial_bucket.is_some();
         let explicit_membership = entity.locomotor.as_ref().is_some_and(|locomotor| {
-            locomotor.fly_runtime().is_some() || locomotor.jumpjet_runtime().is_some()
+            locomotor.fly_runtime().is_some()
+                || locomotor.jumpjet_runtime().is_some()
+                || locomotor.rocket_runtime().is_some()
         });
         let desired = entity.lifecycle.object_alive
             && !entity.lifecycle.in_limbo
@@ -412,8 +415,8 @@ mod tests {
     /// cache block, recorded in schema2 rather than a Rust-derived golden.
     #[test]
     fn native_uninit_retains_slot_until_destructor_cached_cell_clear() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/jumpjet_states.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/jumpjet_states.json",
         ))
         .unwrap();
         let control = native["composed_controls"]

@@ -244,8 +244,8 @@ mod tests {
     const MOVER: u64 = 1;
 
     fn native_corpus() -> Value {
-        serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_guard_attack_gate.json"
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_guard_attack_gate.json",
         ))
         .unwrap()
     }

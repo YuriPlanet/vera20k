@@ -11,8 +11,8 @@ use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::movement::infantry_entry::InfantryEntryArgs;
 
 fn waiter_corpus() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/building_repair.depot_waiters.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_repair.depot_waiters.json",
     ))
     .unwrap()
 }

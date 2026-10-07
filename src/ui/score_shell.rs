@@ -562,9 +562,10 @@ mod tests {
     fn rows_sort_in_the_native_qsort_order() {
         // The original qsort and comparator, executed by
         // tools/storage_oracle/score_sort.py: scores in house order -> rows.
-        let fixture: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/storage_oracle/score_sort.json"))
-                .unwrap();
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/score_sort.json",
+        ))
+        .unwrap();
         let cases = fixture["cases"].as_array().unwrap();
         assert_eq!(cases.len(), 12);
         for case in cases {

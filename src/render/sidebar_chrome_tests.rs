@@ -281,8 +281,10 @@ fn original_n1_tables_drive_sidebar_palette_and_skip_alpha() {
         rgb: Vec<u8>,
         words: Vec<u16>,
     }
-    let packet: Packet =
-        serde_json::from_str(include_str!("../../tools/sidebar_oracle/palette.json")).unwrap();
+    let packet: Packet = serde_json::from_str(crate::test_fixture::text(
+        "tools/sidebar_oracle/palette.json",
+    ))
+    .unwrap();
     for c in packet.cases {
         let p = super::decode_sidebar_palette(&c.raw).unwrap();
         assert_eq!(p.colors.len(), c.words.len());
@@ -402,8 +404,8 @@ fn retail_radar_histories_match_original_4912b0_stores() {
         frames: Vec<usize>,
         output_rgb565_sha256: Vec<String>,
     }
-    let packet: Packet = serde_json::from_str(include_str!(
-        "../../tools/sidebar_oracle/radar_surface.json"
+    let packet: Packet = serde_json::from_str(crate::test_fixture::text(
+        "tools/sidebar_oracle/radar_surface.json",
     ))
     .unwrap();
     let assets = AssetManager::new(&retail_ra2_dir(), MediaArchiveMode::STOCK_DIGITAL).unwrap();

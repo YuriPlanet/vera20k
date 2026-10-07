@@ -60,8 +60,8 @@ const NW: (u16, u16) = (6, 9);
 const OTHER_NW: (u16, u16) = (20, 20);
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/refinery_dock.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/refinery_dock.json",
     ))
     .unwrap()
 }

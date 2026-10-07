@@ -540,7 +540,8 @@ def all_to_hunt_row(label, *, technos, human=False):
 
     result = emu.invoke(ALL_TO_HUNT, args=(HOUSE + 0x24,))
     return dict(label=label, human=human, technos=technos, events=emu.events,
-                result=i32(result), latch=bool(read_byte(emu, HOUSE + 0x249)))
+                result=i32(result), latch=bool(read_byte(emu, HOUSE + 0x249)),
+                c4_warhead=C4_WARHEAD)
 
 
 def all_to_hunt():

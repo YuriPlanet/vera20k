@@ -75,6 +75,24 @@ where
     Ok(command)
 }
 
+/// The observed House's Supers in interned-id order: the id a profile's
+/// `LaunchSuperWeapon` names and the state the sidebar reads.
+fn super_weapon_rows(sim: &crate::sim::world::Simulation, owner: &str) -> Value {
+    let frame = sim.session.binary_frame as i32;
+    sim.interner
+        .get(owner)
+        .and_then(|id| sim.super_weapons.get(&id))
+        .into_iter()
+        .flatten()
+        .map(|(&type_id, inst)| {
+            json!({"type": sim.interner.resolve(type_id), "interned_id": type_id.index(),
+                "granted": inst.is_active, "ready": inst.is_ready, "on_hold": inst.is_suspended,
+                "charge_start": inst.charge_start_tick, "charge_duration": inst.charge_duration,
+                "remaining": inst.charge_remaining(frame)})
+        })
+        .collect()
+}
+
 fn deserialize_present<'de, D, T>(deserializer: D) -> std::result::Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -146,6 +164,15 @@ pub(crate) struct MapCaptureProfile {
         skip_serializing_if = "Option::is_none"
     )]
     terrain_cells: Option<Vec<[u16; 2]>>,
+    // Opt-in Super rows on each observed House: the interned type id a
+    // `LaunchSuperWeapon` command names, grant, readiness, hold and the
+    // charge timer. Historical profiles and their rows stay unchanged.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    observe_super_weapons: Option<bool>,
 }
 
 impl MapCaptureProfile {
@@ -176,7 +203,8 @@ impl MapCaptureProfile {
                     && self.observe_action_line_inputs.is_none()
                     && self.camera_cell.is_none()
                     && self.cursor_position.is_none()
-                    && self.terrain_cells.is_none(),
+                    && self.terrain_cells.is_none()
+                    && self.observe_super_weapons.is_none(),
                 "map observation profile v1 cannot declare v2 extension fields"
             );
         }
@@ -226,6 +254,7 @@ impl MapCaptureProfile {
                         | Command::UnloadPassengers { .. }
                         | Command::RepairAtDepot { .. }
                         | Command::SellBuilding { .. }
+                        | Command::LaunchSuperWeapon { .. }
                 ),
                 "command is outside the map observation's ordinary order coverage"
             );
@@ -557,6 +586,11 @@ impl MapObservation {
                 })
             })
             .and_then(|count| count.checked_add(frame.houses.len()))
+            .and_then(|count| {
+                frame.houses.iter().try_fold(count, |count, house| {
+                    count.checked_add(house["super_weapons"].as_array().map_or(0, Vec::len))
+                })
+            })
             .and_then(|count| count.checked_add(frame.missing_actor_ids.len()))
             .and_then(|count| count.checked_add(frame.terrain.len()))
             .and_then(|count| {
@@ -1346,7 +1380,11 @@ impl TacticalCaptureSession {
                 .map(|house| &house.economy);
                 // Missing Houses stay explicit rather than inventing a zero
                 // balance. Economy is the same immutable wallet used by play.
-                json!({"owner": owner, "economy": economy})
+                let mut row = json!({"owner": owner, "economy": economy});
+                if profile.observe_super_weapons == Some(true) {
+                    row["super_weapons"] = super_weapon_rows(sim, owner);
+                }
+                row
             })
             .collect();
         let terrain = profile.terrain_cells().iter().map(|&[rx, ry]| {
@@ -1672,8 +1710,8 @@ mod tests {
     }
 
     fn example() -> MapCaptureProfile {
-        serde_json::from_str(include_str!(
-            "../../../../tools/map_observation.example.json"
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.example.json",
         ))
         .unwrap()
     }
@@ -1683,8 +1721,8 @@ mod tests {
         let mut profile = example();
         profile.validate().unwrap();
         let radar: super::super::super::profile::TacticalCaptureProfile =
-            serde_json::from_str(include_str!(
-                "../../../../tools/tactical_certification/profiles/soviet-radar-online-v2.json"
+            serde_json::from_str(crate::test_fixture::text(
+                "tools/tactical_certification/profiles/soviet-radar-online-v2.json",
             ))
             .unwrap();
         assert_eq!(profile.launch, radar.launch_session());
@@ -1722,8 +1760,8 @@ mod tests {
 
     #[test]
     fn versioned_extension_fields_preserve_presence_and_reject_null_or_ignored_arguments() {
-        let original: Value = serde_json::from_str(include_str!(
-            "../../../../tools/map_observation.example.json"
+        let original: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.example.json",
         ))
         .unwrap();
         assert_eq!(serde_json::to_value(example()).unwrap(), original);
@@ -1742,15 +1780,21 @@ mod tests {
         let mut legacy = example();
         legacy.gestures = Some(Vec::new());
         assert!(legacy.validate().is_err());
+        let mut legacy = example();
+        legacy.observe_super_weapons = Some(false);
+        assert!(legacy.validate().is_err());
         let mut modern = original;
         modern["schema_version"] = json!(PROFILE_V2);
         modern["commands"] = json!([{"issue_after_step": 0, "owner": "Computer1",
-            "payload": {"DeployMcv": {"entity_id": 1}}}]);
+            "payload": {"DeployMcv": {"entity_id": 1}}},
+            {"issue_after_step": 0, "owner": "Computer1", "payload": {"LaunchSuperWeapon":
+                {"sw_type_id": 5, "target_rx": 3, "target_ry": 4}}}]);
         modern["observe_owners"] = json!(["Computer1"]);
         modern["observe_types"] = json!(["CLEG"]);
         modern["observe_action_line_inputs"] = json!(true);
         modern["cursor_position"] = json!([720, 556]);
         modern["gestures"] = json!([]);
+        modern["observe_super_weapons"] = json!(true);
         let profile: MapCaptureProfile = serde_json::from_value(modern.clone()).unwrap();
         profile.validate().unwrap();
         assert_eq!(serde_json::to_value(profile).unwrap(), modern);
@@ -1763,6 +1807,7 @@ mod tests {
             "camera_cell",
             "cursor_position",
             "terrain_cells",
+            "observe_super_weapons",
         ] {
             let mut invalid = modern.clone();
             invalid[key] = Value::Null;
@@ -2160,17 +2205,17 @@ mod tests {
 
     #[test]
     fn jumpjet_discovery_profile_preserves_verified_production_prefix_without_guessed_actor() {
-        let profile: MapCaptureProfile = serde_json::from_str(include_str!(
-            "../../../../tools/map_observation.jumpjet-instance.example.json"
+        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.jumpjet-instance.example.json",
         ))
         .unwrap();
         profile.validate().unwrap();
-        let cmin: Value = serde_json::from_str(include_str!(
-            "../../../../tools/map_observation.cmin-instance.example.json"
+        let cmin: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.cmin-instance.example.json",
         ))
         .unwrap();
-        let factory: Value = serde_json::from_str(include_str!(
-            "../../../../tools/map_observation.factory-tank-exit.example.json"
+        let factory: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.factory-tank-exit.example.json",
         ))
         .unwrap();
         let value = serde_json::to_value(&profile).unwrap();
@@ -2242,8 +2287,8 @@ mod tests {
 
     #[test]
     fn anytown_discovery_example_is_an_accepted_ordinary_allied_ai_launch() {
-        let profile: MapCaptureProfile = serde_json::from_str(include_str!(
-            "../../../../tools/map_observation.bridge-response.example.json"
+        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.bridge-response.example.json",
         ))
         .unwrap();
         profile.validate().unwrap();
@@ -2263,12 +2308,12 @@ mod tests {
 
     #[test]
     fn barracks_output_example_preserves_opening_and_queues_two_gis_in_order() {
-        let profile: MapCaptureProfile = serde_json::from_str(include_str!(
-            "../../../../tools/map_observation.barracks-output.example.json"
+        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.barracks-output.example.json",
         ))
         .unwrap();
-        let opening: MapCaptureProfile = serde_json::from_str(include_str!(
-            "../../../../tools/map_observation.building-opening.example.json"
+        let opening: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.building-opening.example.json",
         ))
         .unwrap();
         profile.validate().unwrap();
@@ -2304,9 +2349,108 @@ mod tests {
     }
 
     #[test]
+    fn nuclear_missile_example_launches_the_charged_silo_at_the_neutral_tanks() {
+        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.nuclear-missile.example.json",
+        ))
+        .unwrap();
+        profile.validate().unwrap();
+        assert_eq!(profile.observe_super_weapons, Some(true));
+        // The silo's Super charges for 9000 frames from the first step; the
+        // id is the one its `observe_super_weapons` row reports.
+        let [command] = profile.commands() else {
+            panic!("one launch");
+        };
+        assert_eq!(command.issue_after_step, 9010);
+        assert!(matches!(
+            command.payload,
+            Command::LaunchSuperWeapon {
+                target_rx: 41,
+                target_ry: 63,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn computer_nuclear_missile_example_leaves_the_launch_to_the_computer() {
+        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.ai-nuclear-missile.example.json",
+        ))
+        .unwrap();
+        profile.validate().unwrap();
+        assert_eq!(profile.observe_super_weapons, Some(true));
+        // The computer's Strategy tick fires its charged silo.
+        assert!(profile.commands().is_empty());
+    }
+
+    #[test]
+    fn computer_psychic_dominator_example_leaves_the_launch_to_the_computer() {
+        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.ai-psychic-dominator.example.json",
+        ))
+        .unwrap();
+        profile.validate().unwrap();
+        assert_eq!(profile.observe_super_weapons, Some(true));
+        // The computer's Strategy tick aims its charged Dominator.
+        assert!(profile.commands().is_empty());
+    }
+
+    #[test]
+    fn computer_team_superweapon_examples_leave_the_launch_to_the_computer() {
+        for path in [
+            "tools/map_observation.ai-iron-curtain.example.json",
+            "tools/map_observation.ai-chronosphere.example.json",
+        ] {
+            let profile: MapCaptureProfile =
+                serde_json::from_str(crate::test_fixture::text(path)).unwrap();
+            profile.validate().unwrap();
+            assert_eq!(profile.observe_super_weapons, Some(true));
+            // A computer team's script fires the charged Super.
+            assert!(profile.commands().is_empty());
+        }
+    }
+
+    #[test]
+    fn chronosphere_example_warps_the_source_block_with_a_tactical_click() {
+        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.chronosphere.example.json",
+        ))
+        .unwrap();
+        profile.validate().unwrap();
+        assert_eq!(profile.observe_super_weapons, Some(true));
+        // The Chronosphere charges for 6300 frames from the first step; its
+        // launch selects the Chrono Warp, and the click at the view's centre
+        // (`camera_cell`) fires it.
+        let [command] = profile.commands() else {
+            panic!("one launch");
+        };
+        assert_eq!(command.issue_after_step, 6310);
+        assert!(matches!(
+            command.payload,
+            Command::LaunchSuperWeapon {
+                target_rx: 41,
+                target_ry: 63,
+                ..
+            }
+        ));
+        let [gesture] = profile.gestures() else {
+            panic!("one click");
+        };
+        assert_eq!(gesture.issue_after_step, 6320);
+        assert!(matches!(
+            gesture.gesture,
+            MapGesture::Click {
+                position: [316, 284]
+            }
+        ));
+        assert_eq!(profile.camera_cell, Some([45, 55]));
+    }
+
+    #[test]
     fn rally_profile_reuses_literal_command_serde_and_rejects_ignored_fields() {
-        let mut value: Value = serde_json::from_str(include_str!(
-            "../../../../tools/map_observation.barracks-output.example.json"
+        let mut value: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.barracks-output.example.json",
         ))
         .unwrap();
         // Syntax-only supplied producer identity: the ordinary command owner

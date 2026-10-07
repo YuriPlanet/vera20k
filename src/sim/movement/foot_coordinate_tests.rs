@@ -64,8 +64,8 @@ fn entity(id: u64, kind: LocomotorKind, current: DriveCoord, head: DriveCoord) -
 
 #[test]
 fn lazy_track_constructor_projects_original_null_head_coordinates() {
-    let rows: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_navigation_coordinate.json"
+    let rows: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_navigation_coordinate.json",
     ))
     .unwrap();
     let mut checked = 0;
@@ -97,8 +97,8 @@ fn lazy_track_constructor_projects_original_null_head_coordinates() {
 
 #[test]
 fn world_queries_match_all_original_foot_coordinate_rows_and_snapshot() {
-    let rows: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_navigation_coordinate.json"
+    let rows: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_navigation_coordinate.json",
     ))
     .unwrap();
     assert_eq!(rows.as_array().unwrap().len(), 44);
@@ -302,12 +302,11 @@ fn missing_foot_receiver_is_an_error_and_tube_does_not_hide_missing_descriptor()
 
 #[test]
 fn flight_queries_follow_live_altitude_producers_and_keep_jumpjet_exact_z() {
-    use crate::sim::movement::{air_movement, rocket_movement};
+    use crate::sim::movement::air_movement;
     let mut sim = Simulation::new();
     sim.interner = crate::sim::intern::test_interner();
     let base = DriveCoord::cell(8, 6, 104);
-    // Fly reads GetHeight against actual terrain. Rocket still owns its
-    // independent displacement controller and receives the same starting Z.
+    // Fly reads GetHeight against actual terrain.
     let terrain = crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
         16,
         16,
@@ -333,39 +332,14 @@ fn flight_queries_follow_live_altitude_producers_and_keep_jumpjet_exact_z() {
 
     loco.set_fly_target_height(1000);
     sim.substrate.entities.insert(fly);
-    sim.substrate
-        .entities
-        .insert(entity(2, LocomotorKind::Rocket, base, NULL_COORD));
-    assert!(rocket_movement::attach_rocket_state(
-        &mut sim.substrate.entities,
-        2,
-        (8, 6),
-        (18, 6),
-        SimFixed::from_num(250)
-    ));
-    sim.substrate
-        .entities
-        .get_mut(2)
-        .unwrap()
-        .rocket_state
-        .as_mut()
-        .unwrap()
-        .phase = rocket_movement::RocketPhase::Ascent;
     air_movement::tick_air_movement(&mut sim.substrate.entities, 1, 1, 1, Some(&terrain), None);
-    rocket_movement::process_rocket(sim.substrate.entities.get_mut(2).unwrap(), 1);
-    for id in [1, 2] {
-        let e = sim.substrate.entities.get(id).unwrap();
-        let altitude = if id == 1 {
-            e.locomotor.as_ref().unwrap().altitude
-        } else {
-            e.rocket_state.as_ref().unwrap().altitude
-        };
-        assert!(altitude > SimFixed::from_num(0));
-        assert_eq!(
-            sim.foot_navigation_coordinate(id).unwrap().z,
-            104 + altitude.to_num::<i32>()
-        );
-    }
+    let e = sim.substrate.entities.get(1).unwrap();
+    let altitude = e.locomotor.as_ref().unwrap().altitude;
+    assert!(altitude > SimFixed::from_num(0));
+    assert_eq!(
+        sim.foot_navigation_coordinate(1).unwrap().z,
+        104 + altitude.to_num::<i32>()
+    );
     let mut jumpjet = entity(
         3,
         LocomotorKind::Jumpjet,

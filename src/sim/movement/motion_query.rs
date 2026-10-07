@@ -4,14 +4,14 @@
 //! ([`is_really_moving_now`]). Native callers dispatch one slot or another,
 //! and `Is_Moving` and `Is_Moving_Now` answer differently in every family
 //! except Teleport. Native retained-state readers are shared here; Teleport
-//! reads the active complete instance's request byte. Rocket's destination
-//! lifecycle remains unrepresented and its `Is_Moving` query returns `None`.
+//! reads the active complete instance's request byte.
 use super::track_process::TrackFamily;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::game_entity::GameEntity;
 
-/// Drive4AFB80, Ship69F290, Walk75AB30, Fly4CCA90, Jumpjet54AE50 and
-/// Hover514C30. Teleport718080 delegates to its existing state owner.
+/// Drive4AFB80, Ship69F290, Walk75AB30, Fly4CCA90, Jumpjet54AE50,
+/// Hover514C30 and Rocket661F50. Teleport718080 delegates to its existing
+/// state owner.
 /// Evidence: locomotor_moving, air_locomotor_moving, cmin_dock and
 /// jumpjet_infantry_actions --default-motion native corpora; Teleport's
 /// ordinary move/stop controls (infantry_teleport_destination) establish the
@@ -32,9 +32,9 @@ pub(crate) fn is_moving(entity: &GameEntity) -> Option<bool> {
         LocomotorKind::Teleport => locomotor
             .teleport_runtime()
             .map(super::teleport_movement::TeleportRuntime::is_moving),
-        // Rocket destination storage still requires its native
-        // producer/lifecycle migration.
-        _ => None,
+        LocomotorKind::Rocket => locomotor
+            .rocket_runtime()
+            .map(super::rocket_movement::RocketRuntime::is_moving),
     }
 }
 
@@ -55,10 +55,9 @@ pub(crate) fn is_moving_now(
         LocomotorKind::Fly => locomotor
             .fly_runtime()
             .is_some_and(super::fly_height::FlyRuntime::is_moving_now),
-        LocomotorKind::Rocket => entity
-            .rocket_state
-            .as_ref()
-            .is_some_and(|rocket| rocket.phase.is_moving_now()),
+        LocomotorKind::Rocket => locomotor
+            .rocket_runtime()
+            .is_some_and(super::rocket_movement::RocketRuntime::is_moving_now),
         _ => super::ready_producer::ready_state_for(entity, rules, binary_frame)
             .is_some_and(super::locomotor_ready::LocomotorReadyState::is_moving_now),
     }

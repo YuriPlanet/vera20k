@@ -5,10 +5,11 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 
-const VECTORS: &str = include_str!("../../../tools/spatial_oracle/hover_speed_altitude.json");
-
 fn vectors() -> Vec<serde_json::Value> {
-    serde_json::from_str(VECTORS).expect("hover oracle vectors")
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/hover_speed_altitude.json",
+    ))
+    .expect("hover oracle vectors")
 }
 
 fn bits(value: &serde_json::Value) -> NativeF64Bits {

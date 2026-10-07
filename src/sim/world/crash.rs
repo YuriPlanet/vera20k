@@ -170,13 +170,11 @@ impl Simulation {
     /// an explosion anim and area damage. Nothing in VERA powers an aircraft
     /// off (native: `Power_Off`, reached by EMP), so the arm is dormant.
     ///
-    /// RESIDUAL: `AircraftClass::AI` UnInits an aircraft outside the playfield
-    /// or `In_Bounds` when its map-leave predicate (vt+0x4DC, `0x0041B890`)
-    /// answers true (`0x00414F47..0x00414FD1`); VERA ports neither. Trigger: a
-    /// wreck of a plane that leaves the map (paradrop, spy, cargo: the
-    /// predicate's `+0x3D4` latch) drifting out of bounds while it falls.
-    /// Effect: it keeps drifting where native removes it; a shot-down combat
-    /// aircraft (latch clear) drifts natively too. Frequency: rare.
+    /// A falling wreck is still alive for its class AI, so one that drifts
+    /// past the playfield or `In_Bounds` meets `AircraftClass::AI`'s removal
+    /// after this Process (`aircraft::leave_map`, `0x00414F47..0x00414FD1`):
+    /// the map-leave predicate decides, as natively, and a shot-down combat
+    /// aircraft (its `+0x3D4` latch clear) keeps falling.
     pub(super) fn fly_crash_fall(
         &mut self,
         id: u64,

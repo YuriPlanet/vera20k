@@ -949,10 +949,11 @@ fn open_transport_weapon(in_open_transport: bool, obj: &ObjectType) -> Option<i3
 ///   `Overpowerable=true` building (stock: TESLA, CAEAST01/02, CAPARS01), or
 ///   one while the house is at full power ratio; effect: the coil never fires
 ///   `OPCoilBolt`; frequency: only that micro.
-/// - `aircraft_spawn_collision` = false (`AircraftClass+0x6CA`, writer
-///   `SpawnRetreat__Push 0x0054E47D`). Trigger: Hornet/ASW pushed to
-///   retreat; effect: the collision secondary is never chosen; frequency:
-///   every carrier/destroyer spawn cycle end.
+/// - `aircraft_spawn_collision` = false (`AircraftClass+0x6CA`): the kamikaze
+///   tracker's membership (`sim::kamikaze`), which Push sets only on a
+///   `MissileSpawn=` child (`0x0054E47D`; any other child crashes). Dormant:
+///   arms C/D return 0 first for a type without both weapons, as every retail
+///   `MissileSpawn=` type is.
 pub(crate) fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
     let kind = TechnoKind::from_category(entity.category);
     let deploy_fire_active = match kind {
@@ -2194,8 +2195,8 @@ IsLocomotor=yes
     /// kinds and the unclamped stages (`2s` wraps).
     #[test]
     fn original_weapon_selection_rows() {
-        let payload: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/gattling_select.json"
+        let payload: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/gattling_select.json",
         ))
         .unwrap();
         let defaults = &payload["defaults"];

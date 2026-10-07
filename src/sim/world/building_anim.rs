@@ -164,8 +164,8 @@ mod tests {
     use crate::sim::game_entity::GameEntity;
     #[test]
     fn original_210_refinery_smoke_rows_and_140_represented_producer_calls() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/refinery_smoke.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/refinery_smoke.json",
         ))
         .unwrap();
         let vector = |value: &serde_json::Value| {

@@ -11,8 +11,8 @@ fn retail_tibtre_decode_and_atlas_pairs_match_original_shape_draw() {
     assert!(root.is_dir());
     let mut retail =
         crate::rules::retail_ini_fixture::retail_battle_rules().expect("retail Battle rules");
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/terrain_render.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/terrain_render.json",
     ))
     .unwrap();
     let stock = &native["stock_shapes"];

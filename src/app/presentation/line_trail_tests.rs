@@ -11,8 +11,8 @@ fn coord(v: &Value) -> ProjectileCoord {
 
 #[test]
 fn native_line_trail_ring_fades_on_each_composite_and_detaches_before_retirement() {
-    let fixture: Value = serde_json::from_str(include_str!(
-        "../../../tools/projectile_oracle/line_trail.json"
+    let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/line_trail.json",
     ))
     .unwrap();
     for row in fixture["rows"].as_array().unwrap() {
@@ -70,8 +70,8 @@ fn native_line_trail_ring_fades_on_each_composite_and_detaches_before_retirement
 
 #[test]
 fn native_line_trail_save_load_drops_ring_and_does_not_reconstruct_from_live_owner() {
-    let fixture: Value = serde_json::from_str(include_str!(
-        "../../../tools/projectile_oracle/line_trail.json"
+    let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/line_trail.json",
     ))
     .unwrap();
     for row in fixture["persistence"].as_array().unwrap() {
@@ -92,8 +92,8 @@ fn native_line_trail_save_load_drops_ring_and_does_not_reconstruct_from_live_own
 
 #[test]
 fn native_line_trail_registry_emits_reverse_attached_order() {
-    let fixture: Value = serde_json::from_str(include_str!(
-        "../../../tools/projectile_oracle/line_trail.json"
+    let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/line_trail.json",
     ))
     .unwrap();
     for row in fixture["ordered_pixel_cases"].as_array().unwrap() {

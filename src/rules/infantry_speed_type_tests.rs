@@ -9,8 +9,8 @@ use crate::rules::ruleset::RuleSet;
 use serde_json::Value;
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!(
-        "../../tools/rules_oracle/infantry_speed_type.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/infantry_speed_type.json",
     ))
     .unwrap()
 }

@@ -18,15 +18,15 @@ use crate::sim::snapshot::GameSnapshot;
 use serde_json::{Value, json};
 
 fn entry_cases() -> Vec<Value> {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/track_process_entry.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/track_process_entry.json",
     ))
     .expect("original Drive/Ship TrackProcess entry corpus")
 }
 
 fn turn_cases() -> Vec<Value> {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/track_turn_latch.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/track_turn_latch.json",
     ))
     .expect("original Drive/Ship Process turn corpus")
 }
@@ -634,8 +634,8 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
     use crate::sim::movement::locomotor::MovementLayer;
     use crate::util::fixed_math::SimFixed;
 
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/track_outer_entry_continuation.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/track_outer_entry_continuation.json",
     ))
     .unwrap();
 
@@ -984,10 +984,10 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                         victim.lifecycle.object_alive = true;
                         victim.lifecycle.in_limbo = false;
                         victim.lifecycle.cell_marked = true;
-                        victim.invulnerability = Some(InvulnerabilityState {
-                            timer: crate::sim::timer::CdTimer::started((frame - age) as i32, 30),
-                            kind: shield,
-                        });
+                        victim.invulnerability = Some(InvulnerabilityState::new(
+                            crate::sim::timer::CdTimer::started((frame - age) as i32, 30),
+                            shield,
+                        ));
                         sim.substrate.entities.insert(victim);
                     }
                     sim.substrate.occupancy =

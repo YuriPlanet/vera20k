@@ -1317,8 +1317,8 @@ pub(crate) fn assert_native_deploy_state(sim: &Simulation, id: u64, row: &serde_
 /// producer is connected, Guard runs its Foot idle continuation instead.
 #[test]
 fn guard_auto_deploy_reaches_the_native_action_from_infantry_ai() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/infantry_deploy_action.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_deploy_action.json",
     ))
     .unwrap();
     let row = corpus
@@ -1348,8 +1348,8 @@ fn guard_auto_deploy_reaches_the_native_action_from_infantry_ai() {
 
 #[test]
 fn walk_stop_and_pending_callback_match_original_deployment_rows() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/infantry_deploy_action.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_deploy_action.json",
     ))
     .unwrap();
     let mut compared = 0;
@@ -1379,8 +1379,8 @@ fn walk_stop_and_pending_callback_match_original_deployment_rows() {
 
 #[test]
 fn deploy_completion_keeps_suffix_effects_when_next_action_refuses() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/infantry_deploy_action.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_deploy_action.json",
     ))
     .unwrap();
     let mut compared = 0;
@@ -1403,8 +1403,8 @@ fn deploy_completion_keeps_suffix_effects_when_next_action_refuses() {
 
 #[test]
 fn passive_scan_shortening_matches_original_signed_timer_and_rng_controls() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/infantry_deploy_action.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_deploy_action.json",
     ))
     .unwrap();
     let mut compared = 0;
@@ -1431,8 +1431,8 @@ fn passive_scan_shortening_matches_original_signed_timer_and_rng_controls() {
 
 #[test]
 fn infantry_unload_full_original_handler_matches52_supplied_controls() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/infantry_mission_unload.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_mission_unload.json",
     ))
     .unwrap();
     for row in corpus.as_array().unwrap() {
@@ -1461,8 +1461,8 @@ fn infantry_unload_full_original_handler_matches52_supplied_controls() {
 fn synchronized_deploy_queues_unload_before_handler_action_and_sound() {
     use crate::sim::mission::{MissionId, MissionType};
 
-    let row: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/infantry_mission_unload.json"
+    let row: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_mission_unload.json",
     ))
     .unwrap();
     let (mut sim, rules, id) = native_deploy_fixture(&row[0]);

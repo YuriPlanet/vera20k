@@ -26,8 +26,8 @@ use crate::sim::rng::{SimRng, trace_draws};
 use serde_json::{Value, json};
 
 fn corpus() -> Value {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/engineer_repair_joined.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/engineer_repair_joined.json",
     ))
     .unwrap();
     assert_eq!(native["source"], "unicorn/gamemd.exe");

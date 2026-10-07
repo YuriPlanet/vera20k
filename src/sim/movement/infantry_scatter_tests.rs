@@ -87,8 +87,8 @@ fn armed_teleport_destination_requires_the_current_cell_inputs() {
 /// pin the gate answer and the draw together.
 #[test]
 fn forced_gates_and_draw_match_original_hut_caller() {
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/hut_scatter.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/hut_scatter.json",
     ))
     .unwrap();
     let rows = rows.as_array().unwrap();
@@ -137,10 +137,12 @@ fn forced_gates_and_draw_match_original_hut_caller() {
 /// draws RNG or writes the man; a path-execution adapter changes nothing.
 #[test]
 fn forced_no_kidding_gates_match_native_walk_and_jumpjet_rows() {
-    let walk: serde_json::Value =
-        serde_json::from_str(include_str!("../../../tools/infantry_scatter_oracle.json")).unwrap();
-    let jumpjet: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/jumpjet_scatter_gates.json"
+    let walk: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/infantry_scatter_oracle.json",
+    ))
+    .unwrap();
+    let jumpjet: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/jumpjet_scatter_gates.json",
     ))
     .unwrap();
     let mut checked = 0;
@@ -211,8 +213,8 @@ fn forced_no_kidding_gates_match_native_walk_and_jumpjet_rows() {
 #[test]
 fn damage_gates_match_original_execution() {
     use crate::sim::animation::{Animation, SequenceKind};
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/infantry_damage_scatter.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_damage_scatter.json",
     ))
     .unwrap();
     let mut checked = 0;

@@ -296,7 +296,10 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // The Drive/Ship payload migration remains. All618 same-binary Rust rows
 // match except tick_result.state_hash; the control recovers incoming pins.
 // tools/spatial_oracle/factory_infantry_output_replay/main7e9/receipt.json.
-const SLICE6_BASELINE_HASH: u64 = 0xF008_D6D1_349C_CD9C;
+// Rocket locomotor port: the entity-level absent rocket_state tag is removed;
+// the Rocket payload owns its fold. Restoring only that old 0 tag recovers
+// incoming 0xF008D6D1349CCD9C in the same test binary. Control removed.
+const SLICE6_BASELINE_HASH: u64 = 0x775E_E0D5_4F7A_EB5F;
 
 #[test]
 fn replay_hash_stable_through_slice6() {

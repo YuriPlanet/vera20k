@@ -482,8 +482,8 @@ mod tests {
     /// 0x200 for every angle byte, and beside the map's edges.
     #[test]
     fn cluster_distances_match_the_native_helper() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/launch_scatter.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/launch_scatter.json",
         ))
         .unwrap();
         let rows = corpus["direction"].as_array().unwrap();
@@ -509,16 +509,16 @@ mod tests {
 
     #[test]
     fn native_house_return_direction_snap_matches_all_28_original_calls() {
-        let metadata: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/house_base_return.meta.json"
+        let metadata: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/house_base_return.meta.json",
         ))
         .unwrap();
         assert_eq!(
             metadata["native_sha256"],
             "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
         );
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/house_base_return.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/house_base_return.json",
         ))
         .unwrap();
         let rows = corpus["home_return"].as_array().unwrap();

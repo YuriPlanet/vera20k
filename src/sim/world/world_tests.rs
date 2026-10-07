@@ -2086,10 +2086,15 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
     assert_eq!(sim.scenario_rng.state(), expected_rng.state());
 }
 
+/// Rocket Detonate (`0x00663030`) constructs its explosion before
+/// `Apply_area_damage`: the crater Anim starts while the ore still lies in the
+/// cell, and the area damage then reduces it in the same Process.
 #[test]
 fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
     let ini = IniFile::from_str(
         "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+         [General]\nDMislDamage=100\nDMislBodyLength=0\n\
+         [CombatDamage]\nDMislWarhead=MISSILEWH\n\
          [Warheads]\n0=MISSILEWH\n[OverlayTypes]\n0=ORE\n\
          [SmudgeTypes]\n0=CR1\n[Tiberiums]\n0=Riparius\n\
          [MISSILEWH]\nCellSpread=0\nAnimList=EXPLOSION\nTiberium=yes\n\
@@ -2117,31 +2122,33 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
     let mut overlay = crate::sim::overlay_grid::OverlayGrid::new(10, 10);
     overlay.place_overlay(5, 5, ore_id, 9);
     sim.overlay_grid = Some(overlay);
-    let owner = sim.interner.intern("Americans");
-    let missile_warhead = sim.interner.intern("MISSILEWH");
-    sim.pending_missile_detonations
-        .push(crate::sim::spawn_manager::MissileDetonation {
-            rx: 5,
-            ry: 5,
-            warhead: missile_warhead,
-            damage: 100,
-            firer_id: crate::sim::combat::RAD_NO_ATTACKER,
-            owner,
-            impact: None,
-        });
+    // A cruising missile on the ground of the ore cell detonates at once.
+    let mut missile = GameEntity::test_default_of_category(
+        1,
+        "DMISL",
+        "Americans",
+        5,
+        5,
+        EntityCategory::Aircraft,
+    );
+    missile.owner = sim.interner.intern("Americans");
+    missile.type_ref = sim.interner.intern("DMISL");
+    let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Rocket);
+    locomotor
+        .rocket_runtime_mut()
+        .unwrap()
+        .set_mission_state_for_test(4);
+    missile.locomotor = Some(locomotor);
+    sim.substrate.entities.insert(missile);
+    sim.reveal(1);
     let before_rng = sim.scenario_rng.state();
 
-    let result = sim.tick_combat_with_fatal_lifecycle(
-        &rules,
-        Some(&registry),
-        100,
-        &[],
-        &BTreeSet::new(),
-        &Default::default(),
-        &[],
-        &[],
-    );
+    sim.process_rocket(1, &rules, Some(&registry));
 
+    assert!(
+        !sim.substrate.entities.get(1).unwrap().is_object_alive(),
+        "Detonate UnInits the missile"
+    );
     assert_eq!(
         sim.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_id,
         None
@@ -2156,20 +2163,7 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
         "RocketLocomotion starts its crater Anim before the later ore sweep"
     );
     assert_eq!(sim.scenario_rng.state(), before_rng);
-    assert!(
-        result
-            .consequences
-            .effects()
-            .tiberium_reduction_requests
-            .is_empty()
-    );
-    assert!(
-        result
-            .consequences
-            .effects()
-            .smudge_spawn_requests
-            .is_empty()
-    );
+    assert_eq!(sim.combat_light_requests.len(), 1);
 }
 
 #[test]
@@ -4944,10 +4938,9 @@ fn concrete_damage_fixture(
     crate::map::overlay_types::OverlayTypeRegistry,
     serde_json::Value,
 ) {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/bridge_ordinary_damage.json"
-    )))
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_ordinary_damage.json",
+    ))
     .unwrap();
     let native = corpus["cases"]
         .as_array()
@@ -4966,10 +4959,9 @@ fn concrete_damage_fixture(
         ));
     }
     let (mut sim, rules, registry) = super::entry_test_fixture::fixture_with_rules(&overlay_rules);
-    let recalc_native: serde_json::Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/terrain_recalc.json"
-    )))
+    let recalc_native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/terrain_recalc.json",
+    ))
     .unwrap();
     let pristine_land = recalc_native["cases"]
         .as_array()
@@ -5306,10 +5298,9 @@ fn test_bridge_snapshot_roundtrip_preserves_state_after_collapse() {
 /// its false return means there was no collapse or structural BlowUp/debris.
 #[test]
 fn test_bridge_dispatcher_consumes_one_path_gate_draw_per_non_ion_event() {
-    let admission: serde_json::Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/bridge_damage_admission.json"
-    )))
+    let admission: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_damage_admission.json",
+    ))
     .unwrap();
     let gate = admission["cases"]
         .as_array()
@@ -6044,8 +6035,6 @@ fn test_select_command_rejects_limbo_object() {
 
 #[test]
 fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
-    use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};
-
     let mut sim = Simulation::new();
     let rules = selection_gate_test_rules();
     let tank = sim
@@ -6055,16 +6044,9 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
         .spawn_object("MTNK", "Americans", 21, 22, 0, &rules)
         .expect("spawn second MTNK");
     assert!(sim.try_select_object(tank, Some(&rules)));
-    sim.substrate
-        .entities
-        .get_mut(tank)
-        .unwrap()
-        .install_teleport_state_for_test(Some(TeleportState::for_test(
-            TeleportPhase::Relocate,
-            30,
-            30,
-            0,
-        )));
+    // BeingWarpedOut (`+0x270`): a Temporal chain's head.
+    sim.substrate.entities.get_mut(tank).unwrap().temporal =
+        crate::sim::temporal::TemporalState::warped_by_for_test(wingman);
 
     assert!(
         sim.substrate.entities.get(tank).unwrap().selected,

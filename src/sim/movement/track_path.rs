@@ -97,6 +97,17 @@ fn walk_unit(entity: &GameEntity) -> bool {
             .is_some_and(|loco| loco.active_kind() == LocomotorKind::Walk)
 }
 
+/// A Unit on a Teleport locomotor, which for a type that is no `Teleporter=`
+/// is the Chrono Warp's (`SuperClass::Launch @ 0x006CCB4A`): the Unit
+/// setter's Foot tail reaches Teleport Move_To (`0x00718100`).
+fn teleport_unit(entity: &GameEntity) -> bool {
+    entity.category == EntityCategory::Unit
+        && entity
+            .locomotor
+            .as_ref()
+            .is_some_and(|loco| loco.active_kind() == LocomotorKind::Teleport)
+}
+
 /// A Unit on a Jumpjet locomotor: its null destination reaches the Jumpjet's
 /// `Stop_Moving` through the same Unit setter.
 fn jumpjet_unit(entity: &GameEntity) -> bool {
@@ -878,14 +889,16 @@ impl Simulation {
     }
 
     /// Whether the Unit setter (`0x741970`) is represented for `id` as the
-    /// team, harvest and undeploy callers use it: a Drive, Ship, Hover, Walk
-    /// or Jumpjet receiver, or a `Teleporter=` Unit whatever its locomotor.
+    /// team, harvest and undeploy callers use it: a Drive, Ship, Hover, Walk,
+    /// Jumpjet or Teleport receiver, or a `Teleporter=` Unit whatever its
+    /// locomotor.
     pub(crate) fn unit_setter_receiver(&self, id: u64, rules: Option<&RuleSet>) -> bool {
         self.substrate.entities.get(id).is_some_and(|actor| {
             track_unit(actor)
                 || hover_unit(actor)
                 || walk_unit(actor)
                 || jumpjet_unit(actor)
+                || teleport_unit(actor)
                 || teleporter_unit(self, actor, rules)
         })
     }
@@ -940,7 +953,12 @@ impl Simulation {
         let teleporter = teleporter_unit(self, actor, Some(rules));
         let hover = hover_unit(actor);
         let jumpjet = jumpjet_unit(actor);
-        if !(track_unit(actor) || teleporter || hover || jumpjet || walk_unit(actor))
+        if !(track_unit(actor)
+            || teleporter
+            || hover
+            || jumpjet
+            || walk_unit(actor)
+            || teleport_unit(actor))
             || !super::can_accept_destination(actor)
         {
             return false;
@@ -1199,17 +1217,17 @@ impl Simulation {
                 }
                 Some(LocomotorKind::Teleport) => {
                     super::navcom::publish_nav_com(actor, requested);
-                    self.teleport_move_to(
-                        id,
-                        requested_cell.expect("only a Cell target keeps the Teleport primary"),
-                        rules,
-                        info.is_harvester,
-                        None,
-                    )
-                    .unwrap_or_else(|error| {
-                        log::debug!("Unit Teleport MoveTo {id}: {error}");
-                        false
-                    })
+                    // A Teleporter's arm keeps its Teleport only for a Cell;
+                    // the Chrono Warp's Teleport takes any destination's
+                    // coordinate (`0x004D9628`).
+                    let coord = coord.expect("accepted Move_To captures target +4C");
+                    let cell =
+                        requested_cell.unwrap_or(((coord.x / 256) as u16, (coord.y / 256) as u16));
+                    self.teleport_move_to(id, cell, rules, info.is_harvester, None)
+                        .unwrap_or_else(|error| {
+                            log::debug!("Unit Teleport MoveTo {id}: {error}");
+                            false
+                        })
                 }
                 _ => false,
             }
@@ -1317,9 +1335,9 @@ impl Simulation {
     /// tails the arm reaches consume it in the same call (`0x00742D0B`,
     /// `0x00743161`), so it is never stored.
     ///
-    /// The warp-transit latch (Techno+0x27C) and a lifted owner (+0x2B0) have
-    /// no producer in VERA and read clear; the Foot locomotor-swap byte
-    /// (+0x6AD) is read.
+    /// The arm needs the Chronosphere's warp latch (Techno+0x27C), a lifted
+    /// owner (+0x2B0) and the Foot locomotor-swap byte (+0x6AD) clear; a
+    /// lifted owner has no producer in VERA and reads clear.
     ///
     /// The Drive install stashes the Teleport without a Stop, so a warp the
     /// Teleport had armed waits until End_Piggyback hands it back: the
@@ -1334,7 +1352,10 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        if !teleporter_unit(self, actor, Some(rules)) || actor.foot_locomotor_swap_active {
+        if !teleporter_unit(self, actor, Some(rules))
+            || actor.chrono_warp_latch()
+            || actor.foot_locomotor_swap_active
+        {
             return false;
         }
         let Some(active) = actor.locomotor.as_ref().map(|loco| loco.active_kind()) else {

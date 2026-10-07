@@ -464,8 +464,8 @@ fn foot_speed_without_class_payload_roundtrips_and_hashes_each_field() {
 #[test]
 fn foot_speed_ownership_matches_original_helper_witnesses() {
     use crate::sim::components::FootSpeedState;
-    let cases: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_speed_owner.json"
+    let cases: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_speed_owner.json",
     ))
     .unwrap();
     // The setter-only rows are the owner's (`components.rs`).
@@ -605,8 +605,8 @@ fn foot_queue_without_class_payload_roundtrips_and_hashes_each_field() {
 
 #[test]
 fn foot_queue_operations_match_original_memory_witnesses() {
-    let cases: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_path_queue.json"
+    let cases: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_path_queue.json",
     ))
     .unwrap();
     assert_eq!(cases.len(), 28);

@@ -8,8 +8,8 @@ use serde_json::Value;
 fn native() -> &'static Value {
     static CORPUS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
     CORPUS.get_or_init(|| {
-        serde_json::from_str(include_str!(
-            "../../../tools/procedural_drawing_oracle/action_lines.json"
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/action_lines.json",
         ))
         .unwrap()
     })
@@ -543,8 +543,8 @@ fn retail_tank_attack_inputs_match_original_readers() {
     else {
         return;
     };
-    let original: Value = serde_json::from_str(include_str!(
-        "../../../tools/procedural_drawing_oracle/action_lines_attack_prerequisites.json"
+    let original: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/procedural_drawing_oracle/action_lines_attack_prerequisites.json",
     ))
     .unwrap();
     let input = &original["type_inputs"];

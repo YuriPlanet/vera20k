@@ -9,8 +9,8 @@ use crate::sim::world::Simulation;
 use serde_json::Value;
 
 fn aim_cases() -> Vec<Value> {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_damage_admission.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_damage_admission.json",
     ))
     .unwrap();
     corpus["aim_cases"].as_array().unwrap().clone()

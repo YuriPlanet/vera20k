@@ -4260,8 +4260,8 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
     use crate::rules::ruleset::RuleSet;
     use crate::sim::runtime::SimRuntime;
 
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/projectile_oracle/ifv_lifecycle_controls.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/ifv_lifecycle_controls.json",
     ))
     .unwrap();
     // Supplied guided motion isolates the OLD-height collision predicate and
@@ -5476,8 +5476,8 @@ fn gsi_05_04_sentinel_origin_cell_target_becomes_explicit_null() {
 
 #[test]
 fn gsi_05_04_high_flying_source_and_target_become_explicit_null() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/projectile_oracle/ifv_lifecycle_controls.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/ifv_lifecycle_controls.json",
     ))
     .unwrap();
     let control = &native["rows"][2];
@@ -7712,8 +7712,8 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
     use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/display_non_entity.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/display_non_entity.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 9);
@@ -8029,30 +8029,46 @@ fn unlimbo_levels_then_aims_the_barrel_elevation() {
 /// whose step reaches a new cell is tracked there in the same turn.
 #[test]
 fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
-    use crate::sim::movement::rocket_movement::{RocketFlightParameters, RocketPhase, RocketState};
+    // One frame of cruise accelerates to the clamped Speed=100 (255 leptons).
+    let rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n0=TEST\n[BuildingTypes]\n\
+         [General]\nDMislAcceleration=255\n[TEST]\nSpeed=100\n",
+        ))
+        .expect("missile rules");
     let mut sim = Simulation::new();
     install_common_raw_terrain(&mut sim, 32, 32, 0, None);
+    // A map Size whose In_Bounds diamond (`0x00568300`) holds the flight.
+    sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+    sim.playfield_size_height = Some(20);
     insert_entity(&mut sim, 1, EntityCategory::Aircraft);
     sim.substrate.entities.get_mut(1).unwrap().locomotor =
         Some(LocomotorState::for_test_kind(LocomotorKind::Rocket));
-    let _ = sim.try_reveal_entity(1, common_raw_request(5, 5, 0, 128, 128));
-    let speed = SimFixed::from_num(64);
-    sim.substrate.entities.get_mut(1).unwrap().rocket_state = Some(RocketState {
-        phase: RocketPhase::Cruise,
-        origin_rx: 5,
-        origin_ry: 5,
-        target_rx: 20,
-        target_ry: 5,
-        speed,
-        current_speed: speed,
-        altitude: SimFixed::from_num(512),
-        progress: SimFixed::from_num(0.25),
-        phase_frames: 0,
-        parameters: RocketFlightParameters::legacy(speed),
-        pitch: 0.0,
-        payload: None,
-    });
-    sim.sync_air_spatial_membership(1);
+    let _ = sim.try_reveal_entity(1, common_raw_request(12, 12, 0, 128, 128));
+    // It cruises 512 leptons over the ground.
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .position
+        .exact_z_leptons = Some(512);
+    sim.rocket_move_to(
+        1,
+        crate::sim::components::DriveCoord::cell(25, 12, 0),
+        &rules,
+    );
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .unwrap()
+        .rocket_runtime_mut()
+        .unwrap()
+        .set_mission_state_for_test(4);
+    // The tilt's end added the climbing missile to the AircraftTracker.
+    sim.aircraft_tracker_add(1);
     let bucket = |sim: &Simulation, cell: (u16, u16)| {
         crate::sim::occupancy::air_spatial_bucket_index(
             cell.0,
@@ -8063,14 +8079,14 @@ fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
     };
     assert_eq!(
         sim.substrate.entities.get(1).unwrap().air_spatial_bucket(),
-        Some(bucket(&sim, (5, 5)))
+        Some(bucket(&sim, (12, 12)))
     );
 
-    sim.advance_live_object_turn(1, None, super::techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, Some(&rules), super::techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let missile = sim.substrate.entities.get(1).unwrap();
     let cell = (missile.position.rx, missile.position.ry);
-    assert_ne!(cell, (5, 5), "the flight step left the launch cell");
+    assert_eq!(cell, (13, 12), "the flight step left the launch cell");
     assert_eq!(missile.air_spatial_bucket(), Some(bucket(&sim, cell)));
 }

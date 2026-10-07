@@ -45,8 +45,8 @@ const SKIPPED: &[&str] = &[
 ];
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/harvest_field.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/harvest_field.json",
     ))
     .unwrap()
 }

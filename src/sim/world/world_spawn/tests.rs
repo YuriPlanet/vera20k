@@ -30,8 +30,8 @@ fn constructor_rules() -> RuleSet {
 /// therefore compare this shared class placement owner, not complete Reveal.
 #[test]
 fn infantry_unlimbo_placement_matches_original_coordinate_and_rng_controls() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "fixtures/infantry_unlimbo_placement_native.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "src/sim/world/world_spawn/fixtures/infantry_unlimbo_placement_native.json",
     ))
     .unwrap();
     for row in corpus["rows"].as_array().unwrap() {
@@ -107,8 +107,10 @@ fn infantry_unlimbo_matches_native_gate_incoming_membership_and_signed_xy() {
     use crate::sim::movement::ground_pose;
     use crate::sim::occupancy::CellListInsertion;
 
-    let corpus: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/infantry_unlimbo_gate_native.json")).unwrap();
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "src/sim/world/world_spawn/fixtures/infantry_unlimbo_gate_native.json",
+    ))
+    .unwrap();
     assert_eq!(corpus["schema_version"], 1);
     assert_eq!(
         corpus["native_sha256"],
@@ -279,8 +281,8 @@ fn infantry_unlimbo_matches_native_gate_incoming_membership_and_signed_xy() {
 #[test]
 fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
     use crate::sim::world::lifecycle::{LifecycleTestEvent, UninitContext};
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "fixtures/infantry_unlimbo_placement_native.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "src/sim/world/world_spawn/fixtures/infantry_unlimbo_placement_native.json",
     ))
     .unwrap();
     for row in corpus["rows"].as_array().unwrap() {
@@ -399,8 +401,8 @@ fn install_american_house(sim: &mut Simulation) {
 /// actual slots before any HELLO; the component prefix consumes no RNG.
 #[test]
 fn building_contact_constructor_matches_original_slots_before_hello() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/refinery_dock.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/refinery_dock.json",
     ))
     .unwrap();
     let rows = native["building_contact_constructor_controls"]
@@ -527,8 +529,8 @@ fn signed_rot_reaches_spawn_combat_turn_and_snapshot_restore() {
     use crate::sim::combat::UnitFacingUpdate;
     use crate::sim::snapshot::GameSnapshot;
 
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/facing_class.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/facing_class.json",
     ))
     .unwrap();
     for row in rows.as_array().unwrap().iter().filter(|row| {
@@ -614,8 +616,8 @@ fn signed_rot_reaches_spawn_combat_turn_and_snapshot_restore() {
 #[test]
 fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
     use crate::sim::snapshot::GameSnapshot;
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/jumpjet_entry_discovery.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/jumpjet_entry_discovery.json",
     ))
     .unwrap();
     let foreign = native
@@ -2216,8 +2218,8 @@ fn native_health_class(kind: &str) -> (EntityCategory, &'static str) {
 
 #[test]
 fn signed_constructor_and_authored_health_consume_original_corpus() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/object_health.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/object_health.json",
     ))
     .unwrap();
     assert_eq!(corpus["constructors"].as_array().unwrap().len(), 32);
@@ -2272,8 +2274,8 @@ fn signed_constructor_and_authored_health_consume_original_corpus() {
 fn aircraft_spawn_initializes_both_facings_without_a_turret_flag() {
     // Native rate observations plus the traced Unlimbo snaps at6F6DAA/414417.
     // Exercise both authored and runtime consumers of component construction.
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/facing_class.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/facing_class.json",
     ))
     .unwrap();
     for row in rows.as_array().unwrap().iter().filter(|row| {
@@ -2326,8 +2328,8 @@ fn aircraft_spawn_initializes_both_facings_without_a_turret_flag() {
 
 #[test]
 fn aircraft_ammo_initialization_matches_native_for_authored_and_runtime_objects() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/aircraft_attack_release.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_attack_release.json",
     ))
     .unwrap();
     let rows = corpus["initialization"].as_array().unwrap();
@@ -2367,8 +2369,8 @@ fn aircraft_ammo_initialization_matches_native_for_authored_and_runtime_objects(
 
 #[test]
 fn map_admission_uses_class_health_and_rejects_unresolved_types() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/object_health.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/object_health.json",
     ))
     .unwrap();
     for row in corpus["map_health"].as_array().unwrap() {
@@ -2418,8 +2420,8 @@ fn map_admission_uses_class_health_and_rejects_unresolved_types() {
 
 #[test]
 fn authored_unlimbo_preserves_scenario_scope_and_applies_native_class_health() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/object_health.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/object_health.json",
     ))
     .unwrap();
     let rules = signed_health_rules(65_536);

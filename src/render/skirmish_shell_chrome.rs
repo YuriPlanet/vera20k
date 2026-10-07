@@ -1099,7 +1099,6 @@ fn pack_entries(
 
 #[cfg(test)]
 mod tests {
-    use crate::assets::asset_manager::MediaArchiveMode;
     use super::{
         AssetManager, OWNER_DRAW_FLAG_TRANSPARENT_RGB, PRIMITIVE_BEVEL_COLOR_A_RGB,
         PRIMITIVE_BEVEL_COLOR_B_RGB, RenderedShellEntry, ShellAssetRole, TRACKBAR_FRAME_BORDER,
@@ -1107,6 +1106,7 @@ mod tests {
         load_parent_background_palette, render_primitive_bevel_entry, render_shp_entry,
         render_trackbar_frame_geometry, rgba_color, trackbar_frame_rgba,
     };
+    use crate::assets::asset_manager::MediaArchiveMode;
 
     fn pixel(entry: &RenderedShellEntry, x: u32, y: u32) -> [u8; 4] {
         let offset = ((y * entry.width + x) * 4) as usize;
@@ -1307,9 +1307,10 @@ mod tests {
     /// lines and pixels in order gives exactly the frame canvas, in RGB565.
     #[test]
     fn trackbar_frames_match_the_executed_bevel() {
-        let fixture: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/storage_oracle/shell_bevel.json"))
-                .unwrap();
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/shell_bevel.json",
+        ))
+        .unwrap();
         for case in fixture["cases"].as_array().unwrap() {
             let label = case["trackbar"].as_str().unwrap();
             let width = case["width"].as_u64().unwrap() as u32;

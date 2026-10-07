@@ -1125,8 +1125,10 @@ mod tests {
         use crate::sim::components::DriveCoord;
         use crate::sim::game_entity::GameEntity;
         use crate::sim::movement::ground_pose;
-        let data: serde_json::Value =
-            serde_json::from_str(include_str!("fixtures/infantry_exit_native.json")).unwrap();
+        let data: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "src/sim/production/fixtures/infantry_exit_native.json",
+        ))
+        .unwrap();
         assert_eq!(
             data["native_sha256"],
             "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"

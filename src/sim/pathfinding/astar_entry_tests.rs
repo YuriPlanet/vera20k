@@ -18,8 +18,8 @@ fn scalar_cell(level: u8, flags: u32, walkable_hint: bool) -> PathCell {
 
 #[test]
 fn original_signed_height_producer_and_blocked_goal_tail() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_signed_height.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_signed_height.json",
     ))
     .unwrap();
     let cases = corpus["cases"].as_array().unwrap();
@@ -67,8 +67,8 @@ fn original_signed_height_producer_and_blocked_goal_tail() {
 
 #[test]
 fn original_structural_node_height_and_closed_list_selection() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_structural_height.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_structural_height.json",
     ))
     .unwrap();
     let cases = corpus["cases"].as_array().unwrap();
@@ -121,8 +121,8 @@ fn canonical_entry_reaches_blocked_goal_before_static_grid_refusal() {
     // Production wiring check: the supplied class comes from concrete native
     // Infantry-entry controls. This two-cell Rust route is not a native route
     // golden; it exposes a second static-grid verdict overriding the live one.
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_capture_neighbor.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_capture_neighbor.json",
     ))
     .unwrap();
     let source = scalar_cell(10, 0, false);
@@ -210,8 +210,8 @@ fn native_null_candidates_never_reach_entry_or_create_routes() {
             Ok(0)
         }
     }
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_structural_height.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_structural_height.json",
     ))
     .unwrap();
     let controls = corpus["allocation_guards"].as_array().unwrap();
@@ -299,8 +299,8 @@ fn original_reconstruction_retains_each_parent_descriptor_height() {
     // route-selection goldens. In particular, signed_parent_heights supplies
     // values independent of physical Cell levels; reconstruction must not
     // derive another height from terrain or the object-list layer.
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_path_finishing.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_path_finishing.json",
     ))
     .unwrap();
     let cases = corpus["cases"].as_array().unwrap();
@@ -381,8 +381,8 @@ fn accepted_descriptor_height_survives_selected_list_transition() {
     // Production owner regression using the original scalar-height producer
     // corpus: selected_list can remain deck even when the accepted new node's
     // height becomes ground. Reconstruction must keep both facts separately.
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_structural_height.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_structural_height.json",
     ))
     .unwrap();
     for case in corpus["cases"].as_array().unwrap() {

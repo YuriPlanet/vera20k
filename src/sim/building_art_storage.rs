@@ -183,8 +183,8 @@ mod tests {
     }
     #[test]
     fn original_1176_storage_rows_drive_real_initial_and_update_slots() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_storage_animation.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_storage_animation.json",
         ))
         .unwrap();
         let mut configs = std::collections::BTreeMap::new();

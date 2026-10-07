@@ -69,7 +69,7 @@ impl Simulation {
                 entity
                     .locomotor
                     .as_mut()
-                    .expect("Fly destination")
+                    .expect("aircraft destination owner has a locomotor")
                     .power_on();
                 let detach = entity.radio_contacts.slot(0) == Some(pad)
                     && requested.and_then(target_id) != Some(pad);
@@ -99,13 +99,23 @@ impl Simulation {
             )
             .expect("live aircraft NavCom coordinate");
             let entity = self.substrate.entities.get(id).unwrap();
-            let speed = crate::sim::movement::order_speed(
-                entity,
-                self.object_type(entity.type_ref(), rules),
-                Some(rules),
-                &self.houses,
-            );
-            self.move_air_coordinate(id, coord, speed, None, Some(rules));
+            // Foot4D94B0's ILocomotion::Move_To: a spawned missile's Rocket
+            // (`0x006632E0`), every other aircraft's Fly (`0x004CCC80`).
+            if entity
+                .locomotor
+                .as_ref()
+                .is_some_and(|locomotor| locomotor.rocket_runtime().is_some())
+            {
+                self.rocket_move_to(id, coord, rules);
+            } else {
+                let speed = crate::sim::movement::order_speed(
+                    entity,
+                    self.object_type(entity.type_ref(), rules),
+                    Some(rules),
+                    &self.houses,
+                );
+                self.move_air_coordinate(id, coord, speed, None, Some(rules));
+            }
         }
         // Accepted Foot setter resets both timers even when Fly MoveTo refuses
         // (e.g. powered off). Retry count is preserved.
@@ -324,8 +334,8 @@ mod tests {
 
     #[test]
     fn fly_link_retains_native_aircraft_only_airport_binding() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/fly_instance_link.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/fly_instance_link.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 4);

@@ -228,8 +228,8 @@ impl Fixture {
         }
         // The inherited original reader packet holds the same physical
         // Building ART/SHP inputs; no bounds are calculated from Rust.
-        let inherited: Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/engineer_repair_joined.json"
+        let inherited: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/engineer_repair_joined.json",
         ))
         .unwrap();
         for anim in inherited["native_anim_inputs"].as_array().unwrap() {
@@ -1289,8 +1289,8 @@ impl Fixture {
 
 #[test]
 fn original_ready_mtnk_shot_runs_building_fires_crew_and_deferred_cleanup() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/building_death_anims_joined.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_death_anims_joined.json",
     ))
     .unwrap();
     assert_ready_fatal_routes(&corpus);
@@ -1298,8 +1298,8 @@ fn original_ready_mtnk_shot_runs_building_fires_crew_and_deferred_cleanup() {
 
 #[test]
 fn original_stock_smudges_join_ready_shot_crew_and_deferred_cleanup() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/building_death_anims_joined_stock_smudges.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_death_anims_joined_stock_smudges.json",
     ))
     .unwrap();
     assert_ready_fatal_routes(&corpus);
@@ -1442,8 +1442,8 @@ fn assert_ready_fatal_routes(corpus: &Value) {
 
 #[test]
 fn original_direct_ap_receivers_join_debris_crew_uninit_power_and_deferred_destructor() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/building_death_anims_joined.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_death_anims_joined.json",
     ))
     .unwrap();
     assert_eq!(

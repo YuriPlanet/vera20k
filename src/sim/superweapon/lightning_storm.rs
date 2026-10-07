@@ -30,27 +30,54 @@ const ENDING_DURATION_SENTINEL: i32 = i32::MIN;
 /// Active lightning storm state.
 ///
 /// Global — only one storm at a time (per original engine).
-/// Stored as `Simulation.lightning_storm: Option<LightningStormState>`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// Stored as `Simulation.lightning_storm: Option<LightningStormState>`. The
+/// world hash folds the fields in declaration order.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub struct LightningStormState {
-    /// House that launched the storm.
-    pub owner: InternedId,
+    /// House that launched the storm (`0x00A9FACC`).
+    owner: InternedId,
     /// Storm center cell X.
-    pub target_rx: u16,
+    target_rx: u16,
     /// Storm center cell Y.
-    pub target_ry: u16,
+    target_ry: u16,
     /// Ticks remaining before bolts begin (deferment countdown).
-    pub deferment_remaining: i32,
+    deferment_remaining: i32,
     /// Ticks remaining for active bolt generation.
-    pub duration_remaining: i32,
+    duration_remaining: i32,
     /// Ticks until next center bolt.
-    pub center_bolt_timer: i32,
+    center_bolt_timer: i32,
     /// Ticks until next scatter bolt.
-    pub scatter_bolt_timer: i32,
+    scatter_bolt_timer: i32,
     /// Last bolt cell X (for separation enforcement).
-    pub last_bolt_rx: u16,
+    last_bolt_rx: u16,
     /// Last bolt cell Y (for separation enforcement).
-    pub last_bolt_ry: u16,
+    last_bolt_ry: u16,
+}
+
+impl LightningStormState {
+    /// The storm's house, `0x00A9FACC`: `LightningStorm::Start` writes it
+    /// before its deferment test (`0x00539F4B`) and the storm's end clears it
+    /// (`0x0053A8E4`), so it names a house while a storm counts down or
+    /// rages.
+    pub(crate) fn owner(&self) -> InternedId {
+        self.owner
+    }
+
+    /// A storm of `owner`'s raging over `cell` with its bolts far off.
+    #[cfg(test)]
+    pub(crate) fn raging_for_test(owner: InternedId, (rx, ry): (u16, u16)) -> Self {
+        Self {
+            owner,
+            target_rx: rx,
+            target_ry: ry,
+            deferment_remaining: 0,
+            duration_remaining: 100,
+            center_bolt_timer: 10,
+            scatter_bolt_timer: 10,
+            last_bolt_rx: rx,
+            last_bolt_ry: ry,
+        }
+    }
 }
 
 /// The storm actually begins — the non-deferred half of
@@ -60,8 +87,24 @@ pub struct LightningStormState {
 /// in gamemd they are two statements of one straight-line block, reached only
 /// once the deferment countdown is zero.
 fn begin(sim: &mut Simulation) {
-    sim.select_lighting_profile(crate::sim::scenario_session::ScenarioLightingProfile::Ion);
+    // `0x0053A009`: the storm now rages, so UpdateLighting selects Ion.
+    sim.update_lighting();
     sim.sound_events.push(SimSoundEvent::LightningStormBegan);
+}
+
+/// `LightningStorm::HasDeferment @ 0x0053A0E0`: a storm rages (`0x00A9FAB4`)
+/// or counts down (`0x00A9FAB8 > 0`). VERA keeps both, and the ending turn
+/// that still counts as raging, in `Simulation::lightning_storm`.
+pub(crate) fn has_deferment(sim: &Simulation) -> bool {
+    sim.lightning_storm.is_some()
+}
+
+/// `LightningStorm::IsActive @ 0x0053A100` (`0x00A9FAB4`): a storm rages,
+/// its deferment over, through the ending turn that still counts as raging.
+pub(crate) fn raging(sim: &Simulation) -> bool {
+    sim.lightning_storm
+        .as_ref()
+        .is_some_and(|storm| storm.deferment_remaining <= 0)
 }
 
 /// Start a new lightning storm. An overlapping invocation retargets the one
@@ -182,7 +225,8 @@ pub fn process(
     if duration == ENDING_DURATION_SENTINEL {
         log::info!("Lightning Storm ended");
         sim.lightning_storm = None;
-        sim.select_lighting_profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal);
+        // `0x0053A8F3`: an active Psychic Dominator's tint takes over.
+        sim.update_lighting();
         return;
     }
     if duration == 0 {

@@ -20,8 +20,8 @@ fn retained_ground_history_controls_overlapping_atlas_pixels() {
 
     // Execute the same relocation/sort history as the original-instruction
     // corpus. Stop after one pass: a fresh full sort has a different overlap.
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/crate_ground_membership.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/crate_ground_membership.json",
     ))
     .unwrap();
     let row = rows

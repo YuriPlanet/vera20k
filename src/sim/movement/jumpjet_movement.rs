@@ -1122,8 +1122,8 @@ mod tests {
     #[test]
     fn retained_coordinates_and_placement_match_original_jumpjet_bodies() {
         use serde_json::json;
-        let rows: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/jumpjet_coordinates.json"
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/jumpjet_coordinates.json",
         ))
         .unwrap();
         assert_eq!(rows.as_array().unwrap().len(), 12);

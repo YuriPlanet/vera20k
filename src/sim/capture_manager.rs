@@ -47,11 +47,12 @@
 //! `[ControllerBuilding]`, `[PsychicControl]` (Inviso), `[CombatDamage]
 //! Overload*=`, `[General] AICapture*=`.
 //!
+//! The Psychic Dominator's strike (`PsyDom::MindControlArea @ 0x0053B080`,
+//! `superweapon::psychic_dominator`) captures through
+//! [`Simulation::perma_capture`]: no manager holds the object, its permanent
+//! byte `+0x2C4` stays set, and IsMindControlled reads it with `+0x2C0`.
+//!
 //! RESIDUALS:
-//! - The Psychic Dominator (`PsychicDominator::MindControlArea @ 0x0053B080`)
-//!   and its permanent byte `+0x2C4` are not ported; `is_mind_controlled`
-//!   reads `+0x2C0` alone. Trigger: the Dominator superweapon. Effect: no
-//!   permanent capture. Frequency: per Dominator strike.
 //! - DecideUnitFate's "Put in Grinder"/"Put in Bio Reactor" arms
 //!   (`0x004DFA70`/`0x004DFB70`) walk the house's grinder and absorber lists,
 //!   which VERA does not keep, so they fall back to Hunt. Trigger: an
@@ -228,30 +229,62 @@ impl CaptureManagerState {
     }
 }
 
-/// The victim side: `TechnoClass+0x2C0` MindControlledBy and `+0x2C8` the
-/// ring anim. Written only by this module.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// The victim side: `TechnoClass+0x2C0` MindControlledBy, `+0x2C4` the
+/// Psychic Dominator's permanent control and `+0x2C8` the ring anim.
+/// Written only by this module.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MindControlLink {
     controller: Option<u64>,
     ring_anim: Option<AnimId>,
+    /// `+0x2C4`: set by `PsyDom::MindControlArea` (`0x0053B2A2`); nothing
+    /// clears it.
+    permanent: bool,
+}
+
+/// The world hash folds the controller and ring as it always has, and the
+/// permanent byte only when it is set.
+impl std::hash::Hash for MindControlLink {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        self.controller.hash(hasher);
+        self.ring_anim.hash(hasher);
+        if self.permanent {
+            0x2c4_u32.hash(hasher);
+        }
+    }
 }
 
 impl MindControlLink {
-    /// `TechnoClass::IsMindControlled @ 0x007105E0` (`+0x2C0 || +0x2C4`;
-    /// the Dominator's `+0x2C4` is a module residual).
+    /// `TechnoClass::IsMindControlled @ 0x007105E0`: a controller (`+0x2C0`)
+    /// or the Dominator's permanent control (`+0x2C4`).
     pub fn is_mind_controlled(&self) -> bool {
-        self.controller.is_some()
+        self.controller.is_some() || self.permanent
     }
 
+    /// `+0x2C0` MindControlledBy alone, which the deploy and repack tests
+    /// read (`0x00700ED0`, `0x00449C15`, `0x0044F614`, `0x00449D50`).
     pub(crate) fn controller(&self) -> Option<u64> {
         self.controller
+    }
+
+    /// `+0x2C4` alone, which All_To_Hunt's Dominator arm reads (`0x0050144B`).
+    pub(crate) fn permanent(&self) -> bool {
+        self.permanent
     }
 
     #[cfg(test)]
     pub(crate) fn controlled_by_for_test(controller: u64) -> Self {
         Self {
             controller: Some(controller),
-            ring_anim: None,
+            ..Self::default()
+        }
+    }
+
+    /// The Dominator's hold (`+0x2C4`) with no controller or ring.
+    #[cfg(test)]
+    pub(crate) fn permanent_for_test() -> Self {
+        Self {
+            permanent: true,
+            ..Self::default()
         }
     }
 }
@@ -410,8 +443,68 @@ impl Simulation {
         }
         self.reset_captured_orders(target_id, rules);
         self.decide_unit_fate(controller_id, target_id, rules, registry);
-        self.attach_capture_ring(target_id, rules);
+        if let Some(ring) = rules.mind_control.controlled_anim.as_deref() {
+            self.attach_control_ring(target_id, ring, rules);
+        }
         true
+    }
+
+    /// `TechnoClass::CanBePermaMindControlled @ 0x0053C450`, which
+    /// `PsyDom::MindControlArea` inlines (`0x0053B219..0x0053B270`): not a
+    /// Building (vt+0x2C), not `ImmuneToPsionics=` (`+0xD35`), not under an
+    /// Iron Curtain or Force Shield (vt+0x160), not `BalloonHover=`
+    /// (`+0xD6A`) and not in the air (vt+0x54). Nothing tests an object
+    /// already controlled.
+    pub(crate) fn can_be_perma_mind_controlled(&self, id: u64, rules: &RuleSet) -> bool {
+        let Some(object) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if object.category == EntityCategory::Structure {
+            return false;
+        }
+        let Some(object_type) = self.object_type(object.type_ref(), rules) else {
+            return false;
+        };
+        !object_type.immune_to_psionics
+            && !crate::sim::superweapon::invulnerability::is_invulnerable(
+                object.invulnerability.as_ref(),
+                self.session.binary_frame,
+            )
+            && !object_type.balloon_hover
+            && !crate::sim::movement::air_movement::is_high_flying(
+                object,
+                self.resolved_terrain.as_ref(),
+                Some((rules, &self.interner)),
+            )
+    }
+
+    /// MindControlArea's capture of one object (`0x0053B276..0x0053B31C`):
+    /// its controller lets it go (FreeUnit through the controller's manager,
+    /// `0x0053B287`), it joins `house` (`SetOwningHouse(house, 1)`, vt+0x3D4),
+    /// its `+0x2C4` is set and `PermaControlledAnimationType=` rings it. A
+    /// ring it already wears stays on it: `+0x2C8` only takes the new one.
+    pub(crate) fn perma_capture(
+        &mut self,
+        id: u64,
+        house: InternedId,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        if let Some(controller) = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|object| object.mind_control.controller)
+        {
+            self.free_unit(controller, id, rules, registry);
+        }
+        self.change_owner_with_rules(id, house, rules, registry);
+        if let Some(object) = self.substrate.entities.get_mut(id) {
+            object.mind_control.permanent = true;
+        }
+        if let Some(ring) = rules.mind_control.perma_controlled_anim.as_deref() {
+            self.attach_control_ring(id, ring, rules);
+        }
     }
 
     /// The MindControl arm of `BulletClass::DetonateAtCoord` (`0x0046920B..
@@ -489,10 +582,9 @@ impl Simulation {
     /// its `Height=` in levels (`BuildingType+0xEF4 * [0x0089E178]`, 104 once
     /// the file's static initializer `0x00471610` has run:
     /// `tools/spatial_oracle/capture_ring_height.py`), attached to the victim.
-    fn attach_capture_ring(&mut self, target_id: u64, rules: &RuleSet) {
-        let Some(anim_name) = rules.mind_control.controlled_anim.as_deref() else {
-            return;
-        };
+    /// MindControlArea builds its `PermaControlledAnimationType=` ring the
+    /// same way (`0x0053B2A9..0x0053B31C`), never for a building.
+    fn attach_control_ring(&mut self, target_id: u64, anim_name: &str, rules: &RuleSet) {
         let Some(target) = self.substrate.entities.get(target_id) else {
             return;
         };

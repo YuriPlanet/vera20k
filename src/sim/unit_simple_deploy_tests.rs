@@ -19,8 +19,8 @@ const ART: &str = "[SCHPDEPL]\nShadow=yes\nRate=100\n";
 fn corpus() -> &'static Value {
     static DATA: OnceLock<Value> = OnceLock::new();
     DATA.get_or_init(|| {
-        serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/unit_simple_deploy.json"
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/unit_simple_deploy.json",
         ))
         .expect("saved original-executable observations")
     })

@@ -1,0 +1,45 @@
+VERA20k @VERSION@ (early alpha)
+
+VERA20k is a free, open-source reimplementation of Command & Conquer: Yuri's
+Revenge. It contains no game files: you need your own copy of Yuri's Revenge
+1.001, for example from The Ultimate Collection on Steam or the EA app.
+
+GETTING STARTED
+Either:
+  - copy these files into your Yuri's Revenge folder (the one with gamemd.exe)
+    and start vera20k there, or
+  - keep them in a folder of your own, copy config.toml.example to config.toml
+    and set ra2_dir to your game folder, with forward slashes, for example
+    ra2_dir = "C:/Games/Yuri's Revenge"
+
+VERA20k writes logs/, saves/ and replays/ in the folder you start it from; the
+log is logs/ra2.log. If your game folder is under Program Files, which Windows
+protects from writing, use the second option.
+
+REQUIREMENTS
+  A GPU with Vulkan, DirectX 12 or Metal.
+  Windows: SmartScreen may warn about an unknown app; choose More info, then
+    Run anyway.
+  macOS: the program is not notarized by Apple yet, so macOS refuses to open
+    it as downloaded. Open Terminal, type cd and a space, drag this folder
+    onto the Terminal window and press Return. Then run these two lines; the
+    first removes macOS's "downloaded from the internet" mark from this one
+    program, and you only need it once:
+      xattr -d com.apple.quarantine vera20k
+      ./vera20k
+  Linux: needs ALSA (libasound2) and a Vulkan driver.
+
+This is early software: expect missing features and differences from the
+original game. Report them at https://github.com/YuriPlanet/vera20k/issues
+
+Official downloads come only from
+https://github.com/YuriPlanet/vera20k/releases. To check that an archive was
+built there, run: gh attestation verify <archive> --repo YuriPlanet/vera20k
+
+VERA20k is licensed under the GNU General Public License version 3
+(LICENSE-GPL). Source code: https://github.com/YuriPlanet/vera20k
+THIRD_PARTY_LICENSES.html lists the open-source libraries it includes and
+their licenses.
+
+Command & Conquer, Red Alert and Yuri's Revenge are trademarks of Electronic
+Arts Inc. VERA20k is not affiliated with or endorsed by Electronic Arts.

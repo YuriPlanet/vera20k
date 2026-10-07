@@ -62,8 +62,8 @@ mod tests {
 
     #[test]
     fn carryall_reader_matches_original() {
-        let vectors: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/fly_landing_base.json"
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/fly_landing_base.json",
         ))
         .unwrap();
         let rows = vectors["rules"].as_array().unwrap();

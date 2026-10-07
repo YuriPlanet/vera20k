@@ -58,8 +58,8 @@ const UNITS: &str = "[VehicleTypes]\n0=DRV\n1=SHP\n2=DRW\n3=SHW\n4=DRC\n5=SHC\n6
     WheeledUphill=0.625\nWheeledDownhill=1.375\n";
 
 fn corpus() -> Vec<Value> {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/track_fresh_response.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/track_fresh_response.json",
     ))
     .unwrap()
 }
@@ -495,8 +495,8 @@ fn fresh_arm_rows_match_the_original_responses() {
 
 #[test]
 fn first_code7_scold_request_retains_the_native_byte() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_scold_latch.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_scold_latch.json",
     ))
     .unwrap();
     for row in native["track_guards"]

@@ -62,3 +62,7 @@ pub mod skirmish_persistence;
 // Source-level dependency guards for the domain-boundaries ledger.
 #[cfg(test)]
 mod architecture_guards;
+
+// Fixture files that library tests read from the checkout.
+#[cfg(test)]
+mod test_fixture;

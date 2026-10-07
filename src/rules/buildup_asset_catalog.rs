@@ -154,8 +154,8 @@ mod tests {
     /// `rate` rows).
     #[test]
     fn buildup_control_matches_the_original_rate_slice() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_construction.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_construction.json",
         ))
         .unwrap();
         let mut compared = 0;

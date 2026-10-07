@@ -482,8 +482,8 @@ mod tests {
     use super::*;
 
     fn native_keyboard_fixture() -> serde_json::Value {
-        serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/keyboard_bindings.json"
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/keyboard_bindings.json",
         ))
         .expect("preserved original keyboard fixture")
     }
@@ -700,8 +700,8 @@ mod tests {
         unsafe extern "system" {
             fn GetKeyboardLayoutNameW(name: *mut u16) -> i32;
         }
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/keyboard_key_names.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/keyboard_key_names.json",
         ))
         .unwrap();
         let mut layout = [0u16; 9];

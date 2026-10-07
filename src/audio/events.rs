@@ -66,6 +66,9 @@ pub enum GameSoundEvent {
         event: String,
         type_override: Option<crate::rules::sound_ini::EvaType>,
     },
+    /// `VoxClass::RemoveFromQueues @ 0x00752A40` for a `[DialogList]` event:
+    /// its queued lines are dropped (`SfxPlayer::remove_eva`).
+    EvaRemove { event: String },
 
     /// Start/report sound owned by one authoritative animation object.
     AnimationStarted {
@@ -414,7 +417,7 @@ impl GameSoundEvent {
             Self::AnimationReleased { .. } => "",
             // The event name, not a sample: the sample is a per-side column
             // the `VoxClass` consumer resolves.
-            Self::Eva { event, .. } => event,
+            Self::Eva { event, .. } | Self::EvaRemove { event } => event,
         }
     }
 
@@ -615,12 +618,9 @@ impl GameSoundEvent {
 ///
 /// **Superweapon launch cues are landed** — see
 /// [`GameSoundEvent::SuperWeaponActivated`] and
-/// [`crate::app::match_runtime::sound_dispatch::superweapon_launch_cue`]. Two
-/// residuals remain there: the EVA suppression flag `[0x00A8B538]` has no VERA
-/// equivalent (VERA has no defeated-spectator state), and the `MultiMissile`,
-/// `ChronoSphere`, `ChronoWarp`, `PsychicDominator` and `SpyPlane` cases have
-/// no sim launch handler yet, so their rows in the table are mapped but never
-/// reached.
+/// [`crate::app::match_runtime::sound_dispatch::superweapon_launch_cue`]. One
+/// residual remains there: the EVA suppression flag `[0x00A8B538]` has no VERA
+/// equivalent (VERA has no defeated-spectator state).
 #[derive(Debug, Default)]
 pub struct SoundEventQueue {
     events: Vec<GameSoundEvent>,

@@ -15,14 +15,19 @@
 //! (with its draw) and `own_building` rows replay in `recruit_oracle_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 2, 5, 6, 11, 19, 24, 49, 53, 54 and 58 are not
-//!   ported. A team that reaches one stays on it, as a native handler that
-//!   has not finished does, and records the first as its refusal; the rest
-//!   of its update runs. Trigger: 83 of the 163 retail AIMD TeamTypes reach
-//!   one; the first they reach is 63 (17 TeamTypes), 14 (16), 46 (15), 47
-//!   (12), 61 (9), 55 (7), 9 (3), 57 (2), 21 or 62 (1 each). Effect: the
+//! - Actions other than 0, 2, 5, 6, 11, 19, 24, 49, 53, 54, 55, 57 and 58
+//!   are not ported. A team that reaches one stays on it, as a native
+//!   handler that has not finished does, and records the first as its
+//!   refusal; the rest of its update runs. Trigger: 74 of the 163 retail
+//!   AIMD TeamTypes reach one; the first they reach is 63 (17 TeamTypes), 14
+//!   (16), 46 (15), 47 (12), 61 (9), 9 (3), 21 or 62 (1 each). Effect: the
 //!   team idles on that action for good, keeping its members and its
-//!   TeamType's `Max=` slot, and nothing else sends those units out.
+//!   TeamType's `Max=` slot, and nothing else sends those units out. Action
+//!   56 (`0x006EFE60`), the Chronosphere's other script action, takes
+//!   `(mode << 16) | BuildingType index` and picks its target with
+//!   `Find_Best_Target_Building @ 0x006EEBD0`, which actions 46 and 47 need
+//!   too; no AIMD script names it, but four scripts of the retail campaign
+//!   map SOV02SMD.MAP do, whose teams idle on it.
 //! - `Coordinate_Attack` keeps a cell target that only a terrain object
 //!   blocks: a team target holds no terrain object. Trigger: a cell target,
 //!   which no ported caller gives (`Greatest_Threat`'s wall fallback is not
@@ -60,7 +65,10 @@ use super::{TeamScriptAction, TeamScriptRefusal, TeamTarget, script_action_at};
 
 /// Whether the dispatch ports `action_id`'s handler.
 pub(super) const fn action_is_ported(action_id: i32) -> bool {
-    matches!(action_id, 0 | 2 | 5 | 6 | 11 | 19 | 24 | 49 | 53 | 54 | 58)
+    matches!(
+        action_id,
+        0 | 2 | 5 | 6 | 11 | 19 | 24 | 49 | 53 | 54 | 55 | 57 | 58
+    )
 }
 
 /// A member's NavCom (`+0x5A4`) names `target`.
@@ -268,6 +276,8 @@ impl Simulation {
             }
             53 => self.team_action_gather_at_enemy_base(team_id, first, rules, registry),
             54 => self.team_action_regroup_at_base(team_id, first, rules, registry),
+            55 => self.team_action_iron_curtain(team_id, rules, registry),
+            57 => self.team_action_chronoshift(team_id, action.argument, rules, registry),
             58 => self.team_action_move_to_own_building(
                 team_id,
                 action.argument,
@@ -366,7 +376,7 @@ impl Simulation {
     /// The member with the highest `LeadershipRating=` (signed, the first in
     /// list order on a tie) among the live joined members, else the head
     /// (`0x006EE621..0x006EE683`, `0x006EFA2B..0x006EFA81`).
-    fn team_leader(&self, team_id: u64, rules: &RuleSet) -> Option<u64> {
+    pub(super) fn team_leader(&self, team_id: u64, rules: &RuleSet) -> Option<u64> {
         let team = self.team_script_vm.teams.get(&team_id)?;
         let mut leader = team.members.first()?.id;
         let mut best = -1i32;
@@ -493,7 +503,7 @@ impl Simulation {
     ) {
         let cell = speed_type
             .and_then(|speed_type| {
-                self.team_find_passable_cell(
+                self.find_plain_passable_cell(
                     seed,
                     speed_type,
                     None,
@@ -615,7 +625,7 @@ impl Simulation {
             object.movement_zone,
             leader.on_bridge,
         )?;
-        self.team_find_passable_cell(
+        self.find_plain_passable_cell(
             seed,
             object.speed_type,
             Some(zone),
@@ -626,10 +636,11 @@ impl Simulation {
     }
 
     /// `MapClass::Find_Nearby_Passable_Cell @ 0x0056DC20` as both team
-    /// actions call it: no bridge-aware zone, overlay, height, obstacle or
-    /// occupancy test, bridges allowed, no target cell (the frame-counter
+    /// actions and `HouseClass::AI_GroundRallyPoint` (`0x00509D61..
+    /// 0x00509D9A`) call it: no bridge-aware zone, overlay, height, obstacle
+    /// or occupancy test, bridges allowed, no target cell (the frame-counter
     /// pick), no quadrant skip.
-    fn team_find_passable_cell(
+    pub(crate) fn find_plain_passable_cell(
         &self,
         seed: (i32, i32),
         speed_type: crate::rules::locomotor_type::SpeedType,
@@ -927,6 +938,39 @@ impl Simulation {
         }
     }
 
+    /// The leader's `Greatest_Threat` (vt+0x3C4) for a script argument's
+    /// quarry, as actions 0 and 57 call it (`0x006ED120..0x006ED15E`,
+    /// `0x006F0210..0x006F0253`), around a copy of the leader's Location
+    /// with [`Self::team_quarry_mission`].
+    pub(super) fn team_quarry_threat(
+        &mut self,
+        team_id: u64,
+        leader: u64,
+        quarry: i32,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> Option<u64> {
+        let mission = self.team_quarry_mission(team_id, quarry);
+        crate::sim::world::team_leader_greatest_threat(self, rules, registry, leader, mission)
+    }
+
+    /// What [`Self::team_quarry_threat`] asks for: `Quarry_To_Threat`'s mask
+    /// of `quarry` and the team's TeamType's `OnlyTargetHouseEnemy=`
+    /// (`+0xF7`).
+    pub(super) fn team_quarry_mission(&self, team_id: u64, quarry: i32) -> ScanMission {
+        let vm = &self.team_script_vm;
+        let only_target_house_enemy = vm
+            .teams
+            .get(&team_id)
+            .and_then(|team| team.team_type_id)
+            .and_then(|id| vm.team_type_ini.get(&id))
+            .is_some_and(|metadata| metadata.only_target_house_enemy);
+        ScanMission::TeamQuarry {
+            mask: quarry_mask(quarry),
+            only_target_house_enemy,
+        }
+    }
+
     /// Script action 0 (`0x006ED090`, `first` unread), attack quarry: a team
     /// with members and no mission target takes as one its leader's
     /// `Greatest_Threat` (`vt+0x3C4`) for the quarry ([`quarry_mask`]) around
@@ -942,27 +986,13 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
-        let vm = &self.team_script_vm;
-        let Some(team) = vm.teams.get(&team_id) else {
+        let Some(team) = self.team_script_vm.teams.get(&team_id) else {
             return;
         };
         if team.mission_target.is_none()
             && let Some(leader) = self.team_leader(team_id, rules)
         {
-            let only_target_house_enemy = team
-                .team_type_id
-                .and_then(|id| vm.team_type_ini.get(&id))
-                .is_some_and(|metadata| metadata.only_target_house_enemy);
-            let target = crate::sim::world::team_leader_greatest_threat(
-                self,
-                rules,
-                registry,
-                leader,
-                ScanMission::TeamQuarry {
-                    mask: quarry_mask(quarry),
-                    only_target_house_enemy,
-                },
-            );
+            let target = self.team_quarry_threat(team_id, leader, quarry, rules, registry);
             self.team_assign_mission_target(
                 team_id,
                 target.map(TeamTarget::Object),

@@ -933,6 +933,13 @@ fn advance_one_simulation_frame(
             // match without a minimap renderer has no such client, so nothing
             // is admitted and the radar-gated EVA lines stay silent.
             let radar_frame = sim.session.tick;
+            super::super_selection::follow_selection_writes(
+                &mut state.match_state.input.targeting_mode,
+                &frame_sound_events,
+                sim,
+                &resources.rules,
+                local_owner_name.as_deref(),
+            );
             let minimap = &mut state.match_state.match_presentation.minimap;
             let mut admit_radar = |request: crate::sim::radar::RadarEventRequest| {
                 minimap.as_mut().is_some_and(|minimap| {
@@ -950,6 +957,16 @@ fn advance_one_simulation_frame(
                     .as_mut()
                     .map(|player| player as &mut dyn super::sound_dispatch::SoundEventRandom),
                 &mut admit_radar,
+                &mut state.match_state.match_audio.sound_events,
+            );
+            super::super_selection::hide_placement_anims(
+                &mut state.match_state.match_presentation.hidden_super_anims,
+                sim,
+                super::super_selection::chrono_warp_selected(
+                    state.match_state.input.targeting_mode.as_ref(),
+                    &resources.rules,
+                ),
+                local_owner_name.as_deref(),
                 &mut state.match_state.match_audio.sound_events,
             );
             if tick_result.destroyed_structure {

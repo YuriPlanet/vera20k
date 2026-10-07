@@ -71,8 +71,8 @@ fn fixture() -> (Simulation, RuleSet) {
 /// its death lifecycle remain outside this original corpus's coverage.
 #[test]
 fn object_turn_resets_foot_idle_latch_only_on_native_live_continuation() {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_enter_idle.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_enter_idle.json",
     ))
     .expect("unchanged original Foot EnterIdle corpus");
     for alive in [false, true] {

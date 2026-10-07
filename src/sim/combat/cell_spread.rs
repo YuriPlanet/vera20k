@@ -96,8 +96,24 @@ pub fn splash_count_index(cell_spread: SimFixed) -> usize {
 /// count index is clamped to the 12-entry table bound (stock `CS <= 10` never reaches 11; a modded
 /// out-of-range value clamps to band 11 rather than reading past the table).
 pub fn splash_cells(cell_spread: SimFixed) -> &'static [(i16, i16)] {
-    let idx = splash_count_index(cell_spread).min(MAX_COUNT_INDEX);
-    &OFFSET_TABLE[..COUNT_TABLE[idx] as usize]
+    sweep(splash_count_index(cell_spread))
+}
+
+/// The cells of radius band `band`: the first `count_table[band]` offsets,
+/// the band clamped to the table. `PsyDom::MindControlArea @ 0x0053B080`
+/// walks them with its own cap of 10 (`0x0053B17C..0x0053B186`).
+pub fn sweep(band: usize) -> &'static [(i16, i16)] {
+    &OFFSET_TABLE[..COUNT_TABLE[band.min(MAX_COUNT_INDEX)] as usize]
+}
+
+/// The sweep through the entry at band `band`'s count, inclusive:
+/// `offset_table[..=count_table[band]]`, for the walks that read the count
+/// table as their last index rather than their length
+/// (`HouseClass::AI_Fire_GenMutator @ 0x00509F60` with band 1, `0x00509FEB`
+/// and `0x0050A0AD..0x0050A0BD`: ten cells, the last `(-1, -2)`).
+pub fn inclusive_sweep(band: usize) -> &'static [(i16, i16)] {
+    let last = (COUNT_TABLE[band.min(MAX_COUNT_INDEX)] as usize).min(OFFSET_TABLE.len() - 1);
+    &OFFSET_TABLE[..=last]
 }
 
 /// gamemd splash fine-filter radius in leptons = `ftol(CellSpread * 256)` (multiply by 256, then

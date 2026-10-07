@@ -636,8 +636,8 @@ mod map_wall_owner_candidate_tests {
         // Native 554A80 -> 554AF0(mode0): every affected Cell483E30 call occurs
         // before return. The original-byte fixture binds the stock radius/area;
         // this scene exceeds the old 8192-cell app budget using unchanged lamps.
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/light_publication.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/light_publication.json",
         ))
         .unwrap();
         let terrain = flat_terrain(128, 128);
@@ -904,6 +904,130 @@ mod map_wall_owner_candidate_tests {
         assert_eq!(lights.grid().cell_light_at((31, 31)).unwrap(), &distant);
     }
 
+    /// A full cell relight's Ground/Level in each storm and Dominator state
+    /// against the native rows (`tools/superweapon_oracle.json` `relight`,
+    /// `CellClass::ProcessColourComponents @ 0x00484180`), through the match's
+    /// lighting: the lamp turning off relights the cells around it. In the
+    /// Dominator arm the top scalar reads NukeLevel. The NukeFlash rows are a
+    /// residual (VERA has no nuke flash). Then the Dominator's end refreshes
+    /// no cell, and the next relight reads the ordinary arm.
+    #[test]
+    fn match_lighting_relight_profiles_match_native() {
+        use crate::app::presentation::lighting::MatchLighting;
+        use crate::sim::scenario_session::{ScenarioLightProfileUnits, ScenarioLightingState};
+        use crate::sim::superweapon::lightning_storm::LightningStormState;
+        use crate::sim::superweapon::psychic_dominator::PsychicDominatorState;
+        let native: serde_json::Value =
+            serde_json::from_str(crate::test_fixture::text("tools/superweapon_oracle.json"))
+                .unwrap();
+        let int = |value: &serde_json::Value| i32::try_from(value.as_i64().unwrap()).unwrap();
+        // Cells inside the lamp's light, by level.
+        let cells = [((3, 5), 0u8), ((5, 5), 2), ((6, 5), 7), ((4, 6), 4)];
+        let terrain = crate::map::resolved_terrain::test_grid(16, 16, |rx, ry| {
+            let mut cell = crate::map::resolved_terrain::test_loader_clear_cell(rx, ry);
+            cell.level = cells
+                .iter()
+                .find(|(at, _)| *at == (rx, ry))
+                .map_or(0, |(_, level)| *level);
+            cell
+        });
+        let cell_at = |level: i32| {
+            cells
+                .iter()
+                .find(|(_, at)| i32::from(*at) == level)
+                .map(|(cell, _)| *cell)
+                .unwrap()
+        };
+        let rules = lighting_rules();
+        let world = |row: &serde_json::Value| {
+            let mut sim = Simulation::with_seed(0x1e);
+            seed_live_lamp(&mut sim, &rules);
+            let owner = sim.interner.intern("House");
+            // The oracle's Ground/Level stand-ins (RELIGHT_GROUND_LEVEL).
+            sim.session.lighting = ScenarioLightingState::new(
+                ScenarioLightProfileUnits {
+                    ground_units: 21,
+                    level_units: 13,
+                    ..ScenarioLightProfileUnits::normal_default()
+                },
+                ScenarioLightProfileUnits {
+                    ground_units: 30,
+                    level_units: 40,
+                    ..ScenarioLightProfileUnits::ion_default()
+                },
+                ScenarioLightProfileUnits {
+                    ground_units: 3,
+                    level_units: 7,
+                    ..ScenarioLightProfileUnits::dominator_default()
+                },
+                1,
+            );
+            sim.session.lighting.current_ambient = int(&row["ambient"]) / 10;
+            sim.lightning_storm = row["storm"]
+                .as_bool()
+                .unwrap()
+                .then(|| LightningStormState::raging_for_test(owner, (10, 10)));
+            sim.psychic_dominator = PsychicDominatorState::for_test(
+                u8::try_from(int(&row["psydom"])).unwrap(),
+                (10, 10),
+                Some(owner),
+                None,
+            );
+            let mut lights = MatchLighting::default();
+            lights.install(
+                CellLightGrid::new(),
+                LightingConfig::default(),
+                2,
+                Some((&terrain, &sim, &rules)),
+            );
+            sim.discard_lighting_events();
+            (sim, lights)
+        };
+        let scalars = |lights: &MatchLighting, cell| {
+            let light = lights.grid().cell_light_at(cell).unwrap();
+            (light.raw_top_scalar, light.raw_bottom_scalar)
+        };
+        let rows = native["relight"].as_array().unwrap();
+        let mut replayed = 0;
+        for row in rows.iter().filter(|row| int(&row["nuke"]) == 0) {
+            let (mut sim, mut lights) = world(row);
+            sim.set_building_light_active(41, false);
+            apply_lighting_events(&mut lights, &terrain, &mut sim);
+            assert_eq!(
+                scalars(&lights, cell_at(int(&row["level"]))),
+                (int(&row["top"]), int(&row["bottom"])),
+                "{row}"
+            );
+            replayed += 1;
+        }
+        assert_eq!(replayed, 20);
+
+        let row_for = |psydom: i32| {
+            rows.iter()
+                .find(|row| {
+                    int(&row["psydom"]) == psydom
+                        && int(&row["level"]) == 2
+                        && int(&row["nuke"]) == 0
+                        && !row["storm"].as_bool().unwrap()
+                })
+                .unwrap()
+        };
+        let (mut sim, mut lights) = world(row_for(5));
+        let cell = cell_at(2);
+        let lit = scalars(&lights, cell);
+        sim.psychic_dominator = PsychicDominatorState::for_test(0, (0, 0), None, None);
+        sim.publish_relight_profile();
+        apply_lighting_events(&mut lights, &terrain, &mut sim);
+        assert_eq!(scalars(&lights, cell), lit);
+        sim.set_building_light_active(41, false);
+        apply_lighting_events(&mut lights, &terrain, &mut sim);
+        let ordinary = row_for(0);
+        assert_eq!(
+            scalars(&lights, cell),
+            (int(&ordinary["top"]), int(&ordinary["bottom"]))
+        );
+    }
+
     #[test]
     fn match_lighting_fatal_then_global_survives_production_frame_output() {
         use crate::app::presentation::lighting::MatchLighting;
@@ -939,7 +1063,7 @@ mod map_wall_owner_candidate_tests {
             .expect("fixture frame must complete");
         assert!(matches!(frame.lighting_events.as_slice(),
             [LightingEvent::Building { id: 41, source: Some(source) },
-             LightingEvent::Global(_)] if !source.active));
+             LightingEvent::Global { .. }] if !source.active));
         lights.apply_events(&terrain, &frame.lighting_events);
         let cell = lights.grid().cell_light_at((4, 5)).unwrap();
         assert_eq!(cell.raw_rgb, [0; 3]);
@@ -1022,7 +1146,7 @@ mod map_wall_owner_candidate_tests {
             [
                 LightingEvent::Building { .. },
                 LightingEvent::Radiation { .. },
-                LightingEvent::Global(_),
+                LightingEvent::Global { .. },
                 LightingEvent::Building { .. },
                 LightingEvent::Radiation { .. }
             ]
@@ -1047,7 +1171,9 @@ mod map_wall_owner_candidate_tests {
         assert!(actual.raw_top_scalar > 2000);
         let mut incorrectly_global_last = actual.clone();
         incorrectly_global_last.refresh_retained_scalars(
-            derive_lighting_view(&LightingConfig::default(), Some(&sim), Some(&rules), 2).profile,
+            derive_lighting_view(&LightingConfig::default(), Some(&sim), Some(&rules), 2)
+                .profile
+                .units,
             0,
         );
         assert_eq!(incorrectly_global_last.common_scalar, 1325);
@@ -1077,7 +1203,8 @@ mod map_wall_owner_candidate_tests {
             Some((&terrain, &sim, &rules)),
         );
         let original_key = lights.grid().cell_light_at((4, 5)).unwrap().rgb_key;
-        sim.select_lighting_profile(ScenarioLightingProfile::Ion);
+        sim.session.lighting.select(ScenarioLightingProfile::Ion);
+        sim.publish_global_lighting();
         seed_live_lamp(&mut sim, &rules);
         apply_lighting_events(&mut lights, &terrain, &mut sim);
         let normal_cell = lights.grid().cell_light_at((4, 5)).unwrap().clone();
@@ -1100,7 +1227,8 @@ mod map_wall_owner_candidate_tests {
             PaletteLight::new([200, 900, 400], rows, normal_cell.common_scalar, false)
         );
         let ion_tint = lights.grid().unit_tint_at((4, 5), 0);
-        sim.select_lighting_profile(ScenarioLightingProfile::Normal);
+        sim.session.lighting.select(ScenarioLightingProfile::Normal);
+        sim.publish_global_lighting();
         apply_lighting_events(&mut lights, &terrain, &mut sim);
         let restored = lights.grid().cell_light_at((4, 5)).unwrap();
         assert_eq!(restored.rgb_key, normal_cell.rgb_key);
@@ -1300,7 +1428,7 @@ mod map_wall_owner_candidate_tests {
 
         let terrain = flat_terrain(10, 10);
         let view = derive_lighting_view(&LightingConfig::default(), Some(&sim), Some(&rules), 2);
-        assert_eq!(view.profile.ambient_percent, 80);
+        assert_eq!(view.profile.units.ambient_percent, 80);
         assert_eq!(
             view.point_lights.len(),
             2,
@@ -1835,23 +1963,8 @@ impl MapLoadInitial {
                 Some(bound_scenario_prefix.projection()),
             ),
             pixel_conversion_bounds,
-            lighting: crate::sim::scenario_session::ScenarioLightingState::new(
-                crate::sim::scenario_session::ScenarioLightProfileUnits {
-                    ambient_percent: lighting_profiles.normal.ambient_percent,
-                    red_percent: lighting_profiles.normal.red_percent,
-                    green_percent: lighting_profiles.normal.green_percent,
-                    blue_percent: lighting_profiles.normal.blue_percent,
-                    ground_units: lighting_profiles.normal.ground_units,
-                    level_units: lighting_profiles.normal.level_units,
-                },
-                crate::sim::scenario_session::ScenarioLightProfileUnits {
-                    ambient_percent: lighting_profiles.ion.ambient_percent,
-                    red_percent: lighting_profiles.ion.red_percent,
-                    green_percent: lighting_profiles.ion.green_percent,
-                    blue_percent: lighting_profiles.ion.blue_percent,
-                    ground_units: lighting_profiles.ion.ground_units,
-                    level_units: lighting_profiles.ion.level_units,
-                },
+            lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(
+                &lighting_profiles,
             ),
         };
         let (mut simulation, scenario_prefix_projection) = bootstrap_rng
@@ -2534,24 +2647,7 @@ pub(crate) fn load_map_from_initial(
             Some(bound_scenario_prefix.projection()),
         ),
         pixel_conversion_bounds: Default::default(),
-        lighting: crate::sim::scenario_session::ScenarioLightingState::new(
-            crate::sim::scenario_session::ScenarioLightProfileUnits {
-                ambient_percent: lighting_profiles.normal.ambient_percent,
-                red_percent: lighting_profiles.normal.red_percent,
-                green_percent: lighting_profiles.normal.green_percent,
-                blue_percent: lighting_profiles.normal.blue_percent,
-                ground_units: lighting_profiles.normal.ground_units,
-                level_units: lighting_profiles.normal.level_units,
-            },
-            crate::sim::scenario_session::ScenarioLightProfileUnits {
-                ambient_percent: lighting_profiles.ion.ambient_percent,
-                red_percent: lighting_profiles.ion.red_percent,
-                green_percent: lighting_profiles.ion.green_percent,
-                blue_percent: lighting_profiles.ion.blue_percent,
-                ground_units: lighting_profiles.ion.ground_units,
-                level_units: lighting_profiles.ion.level_units,
-            },
-        ),
+        lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(&lighting_profiles),
     };
     log::info!("Match seed: 0x{:08X}", scenario_descriptor.seed);
     // Consume the paired RNG/native-ID prefix here: Fill and every later load

@@ -4,7 +4,10 @@ use super::*;
 use serde_json::Value;
 
 fn oracle() -> Value {
-    serde_json::from_str(include_str!("../../tools/ai_base_building_oracle.json")).unwrap()
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/ai_base_building_oracle.json",
+    ))
+    .unwrap()
 }
 
 fn rows<'a>(oracle: &'a Value, section: &str) -> &'a [Value] {
@@ -302,8 +305,10 @@ fn whole_searches_repeat_the_native_transcripts() {
 /// (`tools/ai_base_defense_oracle.py`).
 #[test]
 fn defense_key_searches_repeat_the_native_transcripts() {
-    let oracle: Value =
-        serde_json::from_str(include_str!("../../tools/ai_base_defense_oracle.json")).unwrap();
+    let oracle: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/ai_base_defense_oracle.json",
+    ))
+    .unwrap();
     let searches = rows(&oracle, "site");
     let failed = replay_searches(searches, |row| {
         let bounds = row["rect"].as_array().unwrap();

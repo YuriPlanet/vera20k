@@ -300,7 +300,10 @@ pub(super) fn dispatch_sim_sound_events(
                 }
             }
             SimSoundEvent::SuperWeaponLaunched {
-                sw_type, rx, ry, ..
+                owner,
+                sw_type,
+                rx,
+                ry,
             } => {
                 // `SuperClass::Launch @ 0x006CC390` switches on the
                 // launched type's `Type=` index and plays that case's
@@ -320,14 +323,38 @@ pub(super) fn dispatch_sim_sound_events(
                     .eva_event
                     .filter(|_| local_owner_name.is_some())
                     .map(str::to_string);
-                if cue.sound_id.is_none() && eva_event.is_none() {
+                let activated = (cue.sound_id.is_some() || eva_event.is_some()).then(|| {
+                    GameSoundEvent::SuperWeaponActivated {
+                        sound_id: cue.sound_id.unwrap_or_default(),
+                        source: cue.positional.then(|| sound_source_at_cell(rx, ry)),
+                        eva_event,
+                    }
+                });
+                // The player's tail of cases 4 (`0x006CCD17..0x006CCD2D`),
+                // 5, 6 and 8 (`0x006CD51E`) and 7 (`0x006CCE3C..0x006CCE52`):
+                // after the case's line, the queued Ready line is dropped.
+                if let Some(ready) = launch_drops_ready_line(sw.kind)
+                    && owner_is_local(&sim.interner, owner, local_owner_name)
+                {
+                    if let Some(activated) = activated {
+                        output.push(activated);
+                    }
+                    output.push(GameSoundEvent::EvaRemove {
+                        event: ready.to_string(),
+                    });
                     continue;
                 }
-                GameSoundEvent::SuperWeaponActivated {
-                    sound_id: cue.sound_id.unwrap_or_default(),
-                    source: cue.positional.then(|| sound_source_at_cell(rx, ry)),
-                    eva_event,
-                }
+                let Some(activated) = activated else {
+                    continue;
+                };
+                activated
+            }
+            SimSoundEvent::SuperWeaponRadarEvent { radar } => {
+                // `SuperClass::Launch` case 4 (`0x006CC4BE`, `0x006CC4D2`):
+                // a type-13 event at the source cell, then the target's,
+                // with no local-player test; it plays nothing.
+                let _ = admit_radar(radar);
+                continue;
             }
             SimSoundEvent::LightningStormBegan => {
                 // The deferred half of case 2: the sky flips to Ion and
@@ -834,6 +861,9 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
+            // The selection clear is `super_selection`'s; the pass plays
+            // nothing.
+            SimSoundEvent::SuperWeaponStatusChanged { .. } => continue,
             SimSoundEvent::SuperWeaponDetected { owner, sw_type } => {
                 // `BuildingClass::OnConstructionComplete
                 // 0x004468AD..0x00446995`; the gates are the
@@ -964,6 +994,28 @@ fn base_under_attack_siren(
     Some(GameSoundEvent::BaseUnderAttackSfx {
         sound_id: sound_id.to_string(),
     })
+}
+
+/// The Ready line `VoxClass::RemoveFromQueues @ 0x00752A40` drops after the
+/// local player's launch: the Chrono Warp's case 4 drops the Chronosphere's
+/// (`0x006CCD2D`, `EVA_ChronosphereReady`), the Psychic Dominator's case 7
+/// its own (`0x006CCE52`, `EVA_PsychicDominatorReady`), and cases 5, 6 and 8
+/// theirs through the shared tail `0x006CD51E`: the paradrops
+/// `EVA_ReinforcementsReady` (`0x006CD519`), the Spy Plane
+/// `EVA_SpyPlaneReady` (`0x006CD702`). Each tail also clears the local
+/// selection (`super_selection::follow_selection_writes`, whose RESIDUAL
+/// lists the cases whose tails neither owner ports yet).
+fn launch_drops_ready_line(
+    kind: crate::rules::superweapon_type::SuperWeaponKind,
+) -> Option<&'static str> {
+    use crate::rules::superweapon_type::SuperWeaponKind as K;
+    match kind {
+        K::ChronoWarp => Some("EVA_ChronosphereReady"),
+        K::PsychicDominator => Some("EVA_PsychicDominatorReady"),
+        K::ParaDrop | K::AmerParaDrop => Some("EVA_ReinforcementsReady"),
+        K::SpyPlane => Some("EVA_SpyPlaneReady"),
+        _ => None,
+    }
 }
 
 /// `HouseClass::IsHumanPlayer @ 0x0050B6F0` as the EVA sites use it: in a
@@ -1550,6 +1602,137 @@ mod tests {
                 ] if first == "MenuScold" && second == "OtherRulesSound"
             ));
             assert!(random.calls.is_empty());
+        }
+    }
+
+    /// Launch case 4's tail (`0x006CCCF0..0x006CCD2D`): `PlayEVA`
+    /// (`EVA_ChronosphereActivated`) for every launcher, then for the
+    /// launching player only `RemoveFromQueues(EVA_ChronosphereReady)`; its
+    /// two radar events reach the client's radar and play nothing.
+    #[test]
+    fn launch_drops_the_ready_line_for_its_player_only() {
+        for (name, activated, ready) in [
+            (
+                "ChronoWarpSpecial",
+                "EVA_ChronosphereActivated",
+                "EVA_ChronosphereReady",
+            ),
+            (
+                "PsychicDominatorSpecial",
+                "EVA_PsychicDominatorActivated",
+                "EVA_PsychicDominatorReady",
+            ),
+        ] {
+            launch_drops_the_ready_line(name, activated, ready);
+        }
+    }
+
+    fn launch_drops_the_ready_line(name: &str, activated: &str, ready: &str) {
+        use crate::sim::radar::{RadarEventRequest, RadarEventType};
+
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[General]\nFixtureOnly=1\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
+                 [BuildingTypes]\n[SuperWeaponTypes]\n0=ChronoWarpSpecial\n\
+                 1=PsychicDominatorSpecial\n[ChronoWarpSpecial]\nType=ChronoWarp\n\
+                 [PsychicDominatorSpecial]\nType=PsychicDominator\n",
+            ))
+            .unwrap();
+        let mut sim = Simulation::new();
+        let local = sim.interner.intern("Local");
+        let remote = sim.interner.intern("Remote");
+        let sw_type = sim.interner.intern(name);
+        let launched = |owner| SimSoundEvent::SuperWeaponLaunched {
+            owner,
+            sw_type,
+            rx: 40,
+            ry: 40,
+        };
+        let radar = |rx, ry| SimSoundEvent::SuperWeaponRadarEvent {
+            radar: RadarEventRequest::new(RadarEventType::ImpactSilent, rx, ry),
+        };
+        let mut admitted = Vec::new();
+        let mut output = SoundEventQueue::new();
+        dispatch_sim_sound_events(
+            [
+                radar(21, 21),
+                radar(40, 40),
+                launched(remote),
+                launched(local),
+            ],
+            &sim,
+            &rules,
+            Some("LOCAL"),
+            None,
+            &mut |request| {
+                admitted.push((request.rx, request.ry));
+                true
+            },
+            &mut output,
+        );
+        assert_eq!(admitted, [(21, 21), (40, 40)]);
+        let emitted = output.drain();
+        assert!(
+            matches!(
+                emitted.as_slice(),
+                [
+                    GameSoundEvent::SuperWeaponActivated { eva_event: Some(remote_line), .. },
+                    GameSoundEvent::SuperWeaponActivated { eva_event: Some(local_line), .. },
+                    GameSoundEvent::EvaRemove { event },
+                ] if remote_line == activated
+                    && local_line == activated
+                    && event == ready
+            ),
+            "{emitted:?}"
+        );
+    }
+
+    /// Cases 5, 6 and 8 play nothing, but their player's launch still drops
+    /// the queued Ready line through the shared tail `0x006CD51E`.
+    #[test]
+    fn silent_launches_drop_their_ready_line_for_their_player_only() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[General]\nFixtureOnly=1\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
+                 [BuildingTypes]\n[SuperWeaponTypes]\n0=ParaDropSpecial\n\
+                 1=AmericanParaDropSpecial\n2=SpyPlaneSpecial\n[ParaDropSpecial]\n\
+                 Type=ParaDrop\n[AmericanParaDropSpecial]\nType=AmerParaDrop\n\
+                 [SpyPlaneSpecial]\nType=SpyPlane\n",
+            ))
+            .unwrap();
+        for (name, ready) in [
+            ("ParaDropSpecial", "EVA_ReinforcementsReady"),
+            ("AmericanParaDropSpecial", "EVA_ReinforcementsReady"),
+            ("SpyPlaneSpecial", "EVA_SpyPlaneReady"),
+        ] {
+            let mut sim = Simulation::new();
+            let local = sim.interner.intern("Local");
+            let remote = sim.interner.intern("Remote");
+            let sw_type = sim.interner.intern(name);
+            let launched = |owner| SimSoundEvent::SuperWeaponLaunched {
+                owner,
+                sw_type,
+                rx: 40,
+                ry: 40,
+            };
+            let mut output = SoundEventQueue::new();
+            dispatch_sim_sound_events(
+                [launched(remote), launched(local)],
+                &sim,
+                &rules,
+                Some("LOCAL"),
+                None,
+                &mut |_| true,
+                &mut output,
+            );
+            let emitted = output.drain();
+            assert!(
+                matches!(
+                    emitted.as_slice(),
+                    [GameSoundEvent::EvaRemove { event }] if event == ready
+                ),
+                "{name}: {emitted:?}"
+            );
         }
     }
 

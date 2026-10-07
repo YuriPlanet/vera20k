@@ -11,8 +11,8 @@ fn bits(value: &Value) -> u64 {
 
 #[test]
 fn read_double_percent_product_matches_original() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../tools/rules_oracle/read_double_percent.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/read_double_percent.json",
     ))
     .unwrap();
     let reader = &native["reader"];

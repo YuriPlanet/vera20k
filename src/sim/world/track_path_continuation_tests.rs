@@ -49,8 +49,8 @@ const UNITS: &str = "[VehicleTypes]\n0=DRV\n1=SHP\n\
     Locomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n";
 
 fn corpus() -> Vec<Value> {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/track_path_continuation.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/track_path_continuation.json",
     ))
     .unwrap()
 }
@@ -763,8 +763,8 @@ fn three_depot_waiters_are_repaired_in_turn_without_pad_intrusion() {
 /// changes the power byte.
 #[test]
 fn first_process_request_waits_for_the_movement_timer_and_keeps_power() {
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/track_order_path.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/track_order_path.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 8);
@@ -972,8 +972,8 @@ fn forced_track_end_requests_its_own_cell_in_the_same_process() {
 #[test]
 fn after_active_rows_gate_the_same_call_continuation() {
     use crate::sim::movement::track_process::TrackFamily;
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/track_outer_continuation.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/track_outer_continuation.json",
     ))
     .unwrap();
     let destination = DriveCoord {

@@ -46,8 +46,8 @@ pub(crate) fn apply_air_state(entity: &mut GameEntity, input: &Value) {
 
 #[test]
 fn air_motion_matches_original_queries_independently_of_orders_and_restore() {
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/air_locomotor_moving.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/air_locomotor_moving.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 44);

@@ -1743,8 +1743,8 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         }
     }
 
-    let golden: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/building_repair.depot_service.json"
+    let golden: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_repair.depot_service.json",
     ))
     .unwrap();
     let arrival = &golden["arrival_terminal"];
@@ -2091,8 +2091,8 @@ fn idle_base_fixture(category: EntityCategory) -> Simulation {
 }
 
 fn idle_base_native_rows() -> Vec<serde_json::Value> {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_enter_idle.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_enter_idle.json",
     ))
     .expect("unchanged original Foot EnterIdle corpus")
 }

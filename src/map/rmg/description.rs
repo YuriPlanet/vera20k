@@ -71,8 +71,8 @@ mod tests {
 
     #[test]
     fn fresh_seed_descriptions_match_original_reader_vectors() {
-        let vectors: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/sed_description.json"
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/sed_description.json",
         ))
         .unwrap();
         let cases = vectors["cases"].as_array().unwrap();

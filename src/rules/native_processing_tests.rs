@@ -4,8 +4,8 @@ use super::*;
 
 #[test]
 fn building_foundation_pass_matches_original_art_reads() {
-    let oracle: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/engineer_bridge_cursor_caller.json"
+    let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/engineer_bridge_cursor_caller.json",
     ))
     .unwrap();
     let rows = oracle["foundation_reads"].as_array().unwrap();
@@ -234,8 +234,8 @@ fn building_foundation_survives_registry_handoff_and_resets_with_owner() {
 #[test]
 fn bridge_animation_lists_match_original_retained_vectors() {
     use crate::rules::ruleset::RuleSet;
-    let oracle: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/rules_oracle/bridge_anim_lists.json"
+    let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/bridge_anim_lists.json",
     ))
     .unwrap();
     let mut layers = RulesLayerStack::new(IniFile::empty());
@@ -300,8 +300,8 @@ fn retail_bridge_animation_vectors_match_original_reader_and_unread_d() {
     let Some((ini, fixed_art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
         return;
     };
-    let oracle: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/rules_oracle/bridge_anim_lists.json"
+    let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/bridge_anim_lists.json",
     ))
     .unwrap();
     let processed = RulesLayerStack::new(ini)
@@ -354,8 +354,10 @@ fn retail_bridge_animation_vectors_match_original_reader_and_unread_d() {
 #[test]
 fn projectile_flat_matches_original_art_reader_and_retained_defaults() {
     use crate::rules::ruleset::RuleSet;
-    let cases: serde_json::Value =
-        serde_json::from_str(include_str!("../../tools/projectile_oracle/flat_art.json")).unwrap();
+    let cases: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/flat_art.json",
+    ))
+    .unwrap();
     let cases = cases.as_array().unwrap();
     assert_eq!(cases.len(), 38);
     for case in cases {

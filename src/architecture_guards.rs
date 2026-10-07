@@ -5,7 +5,8 @@
 //! cfg(any(test, debug_assertions)) remains production because debug builds use it.
 //! A separate guard checks the entire sim tree, including tests, for upper-layer
 //! references. Other guards pin frame API and raw INI walk callers and
-//! AppState owner boundaries.
+//! AppState owner boundaries, and keep test fixtures out of `include_str!` and
+//! `include_bytes!`.
 //!
 //! The app pseudo-root matches crate::app paths and retired root app_* modules.
 //! The ui rule also forbids the retired skirmish_scenarios root. These checks
@@ -19,8 +20,14 @@ use std::path::Path;
 /// name. The simulation direction contract is in AGENTS.md; the remaining
 /// rules preserve the established lower-layer boundaries.
 const LAYER_RULES: &[(&str, &[&str])] = &[
-    ("assets", &["sim", "rules", "map", "render", "sidebar", "ui", "app"]),
-    ("util", &["sim", "rules", "map", "render", "sidebar", "ui", "app"]),
+    (
+        "assets",
+        &["sim", "rules", "map", "render", "sidebar", "ui", "app"],
+    ),
+    (
+        "util",
+        &["sim", "rules", "map", "render", "sidebar", "ui", "app"],
+    ),
     ("rules", &["sim", "map"]),
     ("map", &["sim", "render", "app"]),
     ("render", &["app"]),
@@ -209,13 +216,11 @@ fn scan_forbidden_edges(src_root: &Path) -> BTreeSet<(String, String)> {
             if name == "tests.rs" || name.ends_with("_tests.rs") {
                 return;
             }
-            let source = fs::read_to_string(path)
-                .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+            let source =
+                fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
             let production = strip_test_items(&blank_comments_and_literals(&source));
             for root in *forbidden {
-                if contains_crate_ref(&production, root)
-                    || group_contains_root(&production, root)
-                {
+                if contains_crate_ref(&production, root) || group_contains_root(&production, root) {
                     let rel = path
                         .strip_prefix(src_root)
                         .expect("scanned file under src")
@@ -231,9 +236,7 @@ fn scan_forbidden_edges(src_root: &Path) -> BTreeSet<(String, String)> {
 
 fn visit_rust_files(dir: &Path, visit: &mut dyn FnMut(&Path)) {
     let entries = fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
-    let mut paths: Vec<_> = entries
-        .map(|e| e.expect("dir entry").path())
-        .collect();
+    let mut paths: Vec<_> = entries.map(|e| e.expect("dir entry").path()).collect();
     paths.sort();
     for path in paths {
         if path.is_dir() {
@@ -295,7 +298,14 @@ fn blank_comments_and_literals(source: &str) -> String {
                 out.resize(out.len() + (j - i) + 1, b' ');
                 i = j + 1;
                 while i < bytes.len() {
-                    if bytes[i] == b'"' && bytes[i + 1..].iter().take(hashes).filter(|&&c| c == b'#').count() == hashes {
+                    if bytes[i] == b'"'
+                        && bytes[i + 1..]
+                            .iter()
+                            .take(hashes)
+                            .filter(|&&c| c == b'#')
+                            .count()
+                            == hashes
+                    {
                         out.resize(out.len() + 1 + hashes, b' ');
                         i += 1 + hashes;
                         break;
@@ -541,7 +551,10 @@ fn bare_and_aliased_app_imports_cannot_evade_the_scan() {
     assert!(contains_crate_ref("use crate::app as shell;\n", "app"));
     assert!(contains_crate_ref("use crate::app::AppState;\n", "app"));
     assert!(!contains_crate_ref("use crate::apple::pie;\n", "app"));
-    assert!(group_contains_root("use crate::{app as a, ui::x};\n", "app"));
+    assert!(group_contains_root(
+        "use crate::{app as a, ui::x};\n",
+        "app"
+    ));
     assert!(!group_contains_root("use crate::{apple, ui::x};\n", "app"));
 }
 
@@ -595,8 +608,7 @@ fn app_state_contains_only_named_owners() {
         "persistence",
     ];
     assert_eq!(
-        fields,
-        expected,
+        fields, expected,
         "AppState must contain exactly the eight F12 owners. A new per-match \
          fact belongs in MatchState (or one of its owners); a new process fact \
          belongs in the platform/process/renderer/audio/frontend/persistence/\
@@ -653,4 +665,112 @@ fn sim_names_no_upper_layer_root_even_in_tests() {
          modules (e.g. render::locomotor_visual tests, \
          net::lockstep_sim_convergence_tests), never inside sim/."
     );
+}
+
+/// Tests read fixture files at run time through `crate::test_fixture`;
+/// `include_str!`/`include_bytes!` stay for data the program itself needs.
+/// Embedded fixtures made up most of the test executable and recompiled the
+/// crate on every fixture edit. A literal fixture path must name a file, so a
+/// removed fixture fails here even when only ignored tests read it.
+#[test]
+fn test_fixtures_are_read_at_run_time_from_existing_files() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let (mut embedded, mut missing) = (Vec::new(), Vec::new());
+    visit_rust_files(&root.join("src"), &mut |path| {
+        let source =
+            fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let rel = path
+            .strip_prefix(root)
+            .expect("scanned file under the crate");
+        let (file_embedded, file_missing) =
+            fixture_violations(root, &rel.display().to_string(), &source);
+        embedded.extend(file_embedded);
+        missing.extend(file_missing);
+    });
+    assert!(
+        embedded.is_empty(),
+        "test fixtures embedded in the build: {embedded:?}\n\
+         Read them with crate::test_fixture::text or ::bytes and a path from \
+         the crate root."
+    );
+    assert!(
+        missing.is_empty(),
+        "test fixture paths that name no file: {missing:?}"
+    );
+}
+
+#[test]
+fn fixture_scan_flags_embeds_and_missing_paths_but_not_program_data() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = r#"
+        const SHADER: &str = include_str!("batch_shader.wgsl");
+        // include_str!("../../tools/commented_out.json")
+        fn a() -> &'static str { include_str!("../../tools/spatial_oracle/a.json") }
+        fn b() -> &'static [u8] {
+            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/b.bin"))
+        }
+        fn c() -> &'static str { crate::test_fixture::text("tools/README.md") }
+        fn d() -> &'static str {
+            crate::test_fixture::text(
+                "tools/no_such_fixture.json",
+            )
+        }
+    "#;
+    let (embedded, missing) = fixture_violations(root, "x.rs", source);
+    assert_eq!(embedded.len(), 2, "{embedded:?}");
+    assert_eq!(missing, ["x.rs: tools/no_such_fixture.json"]);
+}
+
+/// Fixture embeds, and literal fixture paths that name no file, in one source
+/// file shown as `rel`.
+fn fixture_violations(root: &Path, rel: &str, source: &str) -> (Vec<String>, Vec<String>) {
+    let code = blank_comments_and_literals(source);
+    let mut embedded = Vec::new();
+    for needle in ["include_str!(", "include_bytes!("] {
+        for (at, _) in code.match_indices(needle) {
+            let arguments = macro_arguments(source, &code, at + needle.len());
+            let fixture = arguments.split('"').skip(1).step_by(2).any(|literal| {
+                literal
+                    .split('/')
+                    .any(|part| matches!(part, "tools" | "tests" | "fixtures"))
+            });
+            if fixture {
+                embedded.push(format!("{rel}: {}", arguments.trim()));
+            }
+        }
+    }
+    let mut missing = Vec::new();
+    for needle in ["test_fixture::text(", "test_fixture::bytes("] {
+        for (at, _) in code.match_indices(needle) {
+            let argument = macro_arguments(source, &code, at + needle.len());
+            let argument = argument.trim().trim_end_matches(',').trim_end();
+            let literal = argument.strip_prefix('"').and_then(|a| a.strip_suffix('"'));
+            if let Some(file) = literal.filter(|file| !file.contains('"'))
+                && !root.join(file).is_file()
+            {
+                missing.push(format!("{rel}: {file}"));
+            }
+        }
+    }
+    (embedded, missing)
+}
+
+/// Source text of the argument list that opens just before `start`, ending
+/// at its matching parenthesis. `code` is `source` with comments and
+/// literals blanked, so literal parentheses do not count.
+fn macro_arguments<'a>(source: &'a str, code: &str, start: usize) -> &'a str {
+    let mut depth = 1;
+    for (at, byte) in code.bytes().enumerate().skip(start) {
+        match byte {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &source[start..at];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("unclosed argument list at byte {start}")
 }

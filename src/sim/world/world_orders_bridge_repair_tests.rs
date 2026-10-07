@@ -430,8 +430,8 @@ fn capture_building_command_accepts_collapsed_noncapturable_hut_for_every_relati
 /// Native execution: engineer_repair_joined own_damaged/allied_damaged.
 #[test]
 fn ordinary_friendly_repair_uses_capture_event_without_hut_exception() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/engineer_repair_joined.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/engineer_repair_joined.json",
     ))
     .unwrap();
     let strength = native["native_building_inputs"]
@@ -797,13 +797,13 @@ fn c4_on_invulnerable_cabhut_still_dispatches_bridge_and_clears_pending() {
         .entities
         .get_mut(cabhut)
         .unwrap()
-        .invulnerability = Some(InvulnerabilityState {
-        timer: crate::sim::timer::CdTimer::started(
+        .invulnerability = Some(InvulnerabilityState::new(
+        crate::sim::timer::CdTimer::started(
             sim.session.tick as i32,
             rules.c4_delay_ticks as i32 + 20,
         ),
-        kind: InvulnKind::IronCurtain,
-    });
+        InvulnKind::IronCurtain,
+    ));
 
     let mut bridge_state_changed_seen = false;
     for _ in 0..(rules.c4_delay_ticks as u64 + 1) {

@@ -65,21 +65,20 @@
 //! `ChronoSparkle1=`; `[CombatDamage] OpenToppedWarpDistance=`.
 //!
 //! RESIDUALS:
-//! - TeleportLocomotionClass also writes `+0x270` (warp-out start
-//!   `0x007197D0`) and owns `+0x271`. [`GameEntity::is_warped_out`] folds it in
-//!   for every reader, but the per-class AI prologue (the sparkle and the
-//!   frozen AI, Unit `0x00736217..0x0073634D` and its Infantry, Aircraft and
-//!   Building twins) and the phase gates ([`GameEntity::ai_frozen`]) cover the
-//!   temporal writer only: VERA's teleport state machine keeps its own
-//!   destination, which the frozen branch's `Set_Destination(0, 1)` would
-//!   cancel. Trigger: a Chrono Legionnaire or Chrono Miner teleporting.
-//!   Effect: no ChronoSparkle1 during the teleport and the object's own AI
-//!   keeps running. Frequency: every Chrono teleport.
-//! - A warped object's locomotor processes only when `+0x271`, or `+0x270`
-//!   with `+0x27C` (written 1 by `SuperClass::Launch @ 0x006CCC3D` and two
-//!   unnamed Foot sites `0x004DF9EA`/`0x005231C1`), is set; VERA has no
-//!   `+0x27C` and never processes a temporal victim's locomotor. Trigger: a
-//!   Chronosphere launch on an object being erased. Effect: none observed.
+//! - `+0x270` is one byte that TemporalClass and the Chronosphere's Teleport
+//!   states share; VERA keeps each writer's half and reads their union
+//!   ([`GameEntity::is_warped_out`]). Natively the Chronosphere's state 2
+//!   clears the byte under a live chain, and LetGo clears it under a
+//!   Chronosphere warp-out. Trigger: a Temporal weapon fired at an object in
+//!   its Chronosphere warp-out (60 frames). Effect: VERA keeps the object
+//!   frozen until the chain lets go; native thaws it once its warp-in ends,
+//!   or when the chain lets go before the warp.
+//! - The ordinary teleport's warp-in (`+0x271`) also takes the prologue's
+//!   extra Process, whose Teleport Process runs TimerCheck (`0x00719322`):
+//!   its expiry scans for a target or enters idle mode. VERA's retained
+//!   countdown ends the warp-in without either. Trigger: a Chrono
+//!   Legionnaire or Chrono Ivan materializing with no target. Effect: no
+//!   scan or idle mode at the end of the delay.
 //! - `Mark(2)` at warp start and release (vtable `+0x124`) and the building's
 //!   paused animation slots (`0x004521C0`/`0x00452210` pause and resume the 21
 //!   slots) are presentation; the online latch they share is
@@ -100,9 +99,10 @@
 //!   - `HouseClass::CanBuild`'s upgrade-prerequisite scan
 //!     (`0x004F7DE6..0x004F7E4E`: an upgrade prerequisite counts only on an
 //!     online, unsold host; plain prerequisites use the house counters), the
-//!     AI's AI_ManageProduction (`0x0050B020`), CheckDockArrayOccupancy
-//!     (`0x0044E855`) and PowerCheck_Upgrade (`0x00450605`). Effect: an
-//!     option enabled by a warped upgrade host stays available.
+//!     owned-Super pass (`HouseClass__Update_Owned_Supers`, `0x0050B020`),
+//!     CheckDockArrayOccupancy (`0x0044E855`) and PowerCheck_Upgrade
+//!     (`0x00450605`). Effect: an option enabled by a warped upgrade host
+//!     stays available.
 //!   - The player-only BuildingClass virtual `+0x4E0` (`0x004456D0`,
 //!     unidentified) and the sensor-range circle (`0x00456750`,
 //!     presentation). `0x0044017E` lies past BuildingClass::Update's frozen
@@ -237,23 +237,25 @@ impl TemporalState {
 
 impl GameEntity {
     /// `TechnoClass+0x270` BeingWarpedOut (vtable `+0x1D4`, `0x0070C5B0`):
-    /// written by TemporalClass and by TeleportLocomotionClass's warp-out.
+    /// written by TemporalClass and by the Chronosphere's Teleport states
+    /// (state 0 sets it, state 2 clears it). The ordinary teleport never
+    /// writes it.
     pub fn is_warped_out(&self) -> bool {
-        self.temporal.is_warped()
-            || self
-                .teleport_state()
-                .is_some_and(|teleport| teleport.warp_out_active())
+        self.temporal.is_warped() || self.chrono_warp().is_some_and(|warp| warp.warped_out())
     }
 
-    /// The frozen branch of every class's AI while a Temporal chain warps the
-    /// object: the leaf returns (Unit `0x0073635A`, Infantry `0x0051BC17`,
+    /// The frozen branch of every class's AI while the object is warped
+    /// out: the leaf returns (Unit `0x0073635A`, Infantry `0x0051BC17`,
     /// Aircraft `0x00414D2B`, Building `0x0043FD14` -> `0x0044057A`) before
     /// FootClass::AI (`0x0073647B`, `0x0051BC9F`, `0x00414DA3`) or
     /// TechnoClass::AI_Update (`0x0043FE56`), so none of its missions,
     /// managers, repair, stance, deploy or animation work runs. VERA runs
-    /// parts of that AI in their own frame phases; each consults this.
+    /// parts of that AI in their own frame phases; each consults this. The
+    /// Unit and Aircraft test is `WarpingIn && chain head || BeingWarpedOut`
+    /// and Infantry's `BeingWarpedOut`: a chain head always comes with
+    /// BeingWarpedOut, so all three read it alone.
     pub fn ai_frozen(&self) -> bool {
-        self.temporal.is_warped()
+        self.is_warped_out()
     }
 
     /// `TechnoClass+0x271` (vtable `+0x1D8`, `0x0070C5C0`): the teleport's
@@ -261,6 +263,7 @@ impl GameEntity {
     pub fn is_warping_in(&self) -> bool {
         self.teleport_state()
             .is_some_and(|teleport| teleport.warp_in_active())
+            || self.chrono_warp().is_some_and(|warp| warp.warping_in())
     }
 
     /// `BuildingClass+0x660`, the online latch: cleared at a warp's start
@@ -552,8 +555,8 @@ impl Simulation {
 
     /// `TemporalClass::CanWarpTarget @ 0x0071AE50`: a `Warpable=` type, not
     /// under the Iron Curtain or a Force Shield (vtable `+0x160`), and not a
-    /// Unit still standing in the war factory its radio contact slot 0 names
-    /// (`0x0065AD30(0)`: the slot itself, not the first filled one).
+    /// Unit still standing in its war factory
+    /// ([`Self::unit_in_contact_war_factory`]).
     fn can_warp_target(&self, target: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(target) else {
             return false;
@@ -570,22 +573,31 @@ impl Simulation {
         ) {
             return false;
         }
-        if entity.category == EntityCategory::Unit
-            && let Some(contact) = entity.radio_contacts.slot(0)
-            && let Some(factory) = self.substrate.entities.get(contact)
-            && factory.category == EntityCategory::Structure
-            && self
-                .object_type(factory.type_ref(), rules)
-                .is_some_and(|object| object.weapons_factory)
-            && crate::sim::credit_income::building_at_cell(
-                self,
-                entity.position.rx,
-                entity.position.ry,
-            ) == Some(contact)
-        {
+        !self.unit_in_contact_war_factory(target, rules)
+    }
+
+    /// A Unit whose radio contact slot 0 (`0x0065AD30(0)`: the slot itself,
+    /// not the first filled one) is a `WeaponsFactory=` building that is also
+    /// the building in the Unit's own cell: one still leaving its factory.
+    /// TemporalClass::CanWarpTarget and the Chrono Warp (`SuperClass::Launch`
+    /// `0x006CC7BC..0x006CC858`) inline the same test.
+    pub(crate) fn unit_in_contact_war_factory(&self, id: u64, rules: &RuleSet) -> bool {
+        let Some(entity) = self.substrate.entities.get(id) else {
             return false;
-        }
-        true
+        };
+        entity.category == EntityCategory::Unit
+            && entity.radio_contacts.slot(0).is_some_and(|contact| {
+                self.substrate.entities.get(contact).is_some_and(|factory| {
+                    factory.category == EntityCategory::Structure
+                        && self
+                            .object_type(factory.type_ref(), rules)
+                            .is_some_and(|object| object.weapons_factory)
+                }) && crate::sim::credit_income::building_at_cell(
+                    self,
+                    entity.position.rx,
+                    entity.position.ry,
+                ) == Some(contact)
+            })
     }
 
     /// `TemporalClass::Update @ 0x0071A760`, run for `head` by its target.
@@ -1079,19 +1091,34 @@ impl Simulation {
         }
     }
 
-    /// The warped object's AI prologue: its chain head's Update, the sparkle,
-    /// and the frozen body (Unit `0x00736204..0x0073635A`, Infantry
+    /// Every class AI's prologue (Unit `0x00736204..0x0073635A`, Infantry
     /// `0x0051BADE..0x0051BC17`, Aircraft `0x00414BDB..0x00414D2B`, Building
-    /// `0x0043FCF9..0x0043FD26` then `0x004403D4..0x00440573`). Returns true
-    /// when the rest of the object's AI must not run this frame. An erase
-    /// leaves the dead target's head in place, so it still sparkles and
-    /// returns frozen, as native does.
+    /// `0x0043FCF9..0x0043FD26` then `0x004403D4..0x00440573`):
+    /// 1. the chain head's Update, and a Foot's sparkle while BeingWarpedOut
+    ///    or WarpingIn ([`Self::warp_foot_sparkle`]), Infantry's before the
+    ///    Update and the others' after;
+    /// 2. a Foot warping in, or warped out with the Chronosphere's latch,
+    ///    runs its locomotor's Process an extra time (Unit
+    ///    `0x007362A7..0x007362F5`, Infantry `0x0051BB7D..0x0051BBCB`,
+    ///    Aircraft `0x00414C78..0x00414CC6`) and returns if that killed it.
+    ///    VERA runs that call only for the Chronosphere's warp
+    ///    (`movement::teleport_chrono`): the ordinary warp-in's twin is its
+    ///    TimerCheck (`0x00719322`), which the retained countdown stands in
+    ///    for (module residual);
+    /// 3. a warped-out object ([`GameEntity::ai_frozen`]) drops its target
+    ///    and NavCom and returns.
+    ///
+    /// Returns true when the rest of the object's AI must not run this
+    /// frame. An erase leaves the dead target's head in place, so it still
+    /// sparkles and returns frozen, as native does.
     pub(crate) fn temporal_ai_prologue(
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+        ctx: crate::sim::world::ObjectAiCtx<'_>,
+        bridge_state_changed: &mut bool,
     ) -> bool {
+        let registry = ctx.overlay_registry;
         let Some(category) = self
             .substrate
             .entities
@@ -1102,7 +1129,7 @@ impl Simulation {
         };
         // Infantry sparkles before its head's Update; the others after.
         if category == EntityCategory::Infantry {
-            self.temporal_foot_sparkle(id, rules);
+            self.warp_foot_sparkle(id, rules);
         }
         if let Some(head) = self
             .substrate
@@ -1113,13 +1140,33 @@ impl Simulation {
             self.temporal_update_head(head, rules, registry);
         }
         if matches!(category, EntityCategory::Unit | EntityCategory::Aircraft) {
-            self.temporal_foot_sparkle(id, rules);
+            self.warp_foot_sparkle(id, rules);
+        }
+        if category != EntityCategory::Structure
+            && self.substrate.entities.get(id).is_some_and(|entity| {
+                entity.chrono_warp().is_some()
+                    && (entity.is_warping_in()
+                        || (entity.is_warped_out() && entity.chrono_warp_latch()))
+            })
+        {
+            match self.process_chrono_warp(id, rules, ctx) {
+                Ok(changed) => *bridge_state_changed |= changed,
+                Err(error) => log::warn!("chrono warp {id} prologue Process: {}", error.cause),
+            }
+            if self
+                .substrate
+                .entities
+                .get(id)
+                .is_none_or(|entity| entity.dying || !entity.lifecycle.object_alive)
+            {
+                return true;
+            }
         }
         if !self
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.temporal.is_warped())
+            .is_some_and(GameEntity::ai_frozen)
         {
             return false;
         }
@@ -1153,19 +1200,28 @@ impl Simulation {
         true
     }
 
-    /// A Foot's `ChronoSparkle1=` every 24th frame while warped, 0x78 leptons
-    /// east and south of its Location.
-    fn temporal_foot_sparkle(&mut self, id: u64, rules: &RuleSet) {
+    /// A Foot's `ChronoSparkle1=` every 24th frame while BeingWarpedOut or
+    /// WarpingIn (`+0x270 || +0x271`): 0x78 leptons east and south of a Unit's
+    /// or an infantryman's Location, at an Aircraft's own Location (its
+    /// constructor row copies the Location unshifted, `0x00414C38..0x00414C60`).
+    fn warp_foot_sparkle(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if !entity.temporal.is_warped() || !sparkle_frame(self.session.binary_frame, 0) {
+        if !(entity.is_warped_out() || entity.is_warping_in())
+            || !sparkle_frame(self.session.binary_frame, 0)
+        {
             return;
         }
+        let offset = if entity.category == EntityCategory::Aircraft {
+            0
+        } else {
+            SPARKLE_OFFSET_LEPTONS
+        };
         let location = location_coord(entity);
         let coord = AnimWorldCoord {
-            x: location.x.wrapping_add(SPARKLE_OFFSET_LEPTONS),
-            y: location.y.wrapping_add(SPARKLE_OFFSET_LEPTONS),
+            x: location.x.wrapping_add(offset),
+            y: location.y.wrapping_add(offset),
             z: location.z,
         };
         let name = rules.general.chrono_sparkle1.name.clone();

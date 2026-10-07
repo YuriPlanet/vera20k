@@ -64,6 +64,11 @@ pub(crate) fn commit_prepared_load(
         .match_presentation
         .line_trails
         .clear_on_load();
+    state
+        .match_state
+        .match_presentation
+        .hidden_super_anims
+        .clear();
     // The restored world's strips are seeded silently on the first refresh
     // below (`SidebarClass::AddCameo` init gate), not read as insertions
     // against the outgoing timeline's cameos.

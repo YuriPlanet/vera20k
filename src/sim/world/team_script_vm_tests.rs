@@ -575,3 +575,194 @@ fn a_computer_engineer_team_attacks_the_enemy_factory() {
         "the members attack the barracks"
     );
 }
+
+/// [`team_fixture`] with armed `HTNK` vehicles, the retail order of the first
+/// five `[SuperWeaponTypes]`, and the computer's `IRON` (Iron Curtain) and
+/// `CHRONO` (Chronosphere and Chrono Warp) at (4,4) and (4,8), each Super
+/// granted and charged; `Human` owns the power plants `PLANTA`
+/// (`Power=100`) at (18,8) and `PLANTB` (`Power=200`) at (18,13).
+fn super_team_fixture(script: &str) -> (Simulation, RuleSet, u64, [u64; 2], [u64; 2]) {
+    let (mut sim, rules, team, members, plants) = team_fixture(
+        "[General]\nAISafeDistance=4\n\
+         [VehicleTypes]\n0=HTNK\n[HTNK]\nStrength=400\nPrimary=M60\nSpeed=6\n\
+         Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [BuildingTypes]\n0=PLANTA\n1=PLANTB\n2=IRON\n3=CHRONO\n\
+         [PLANTA]\nStrength=750\nPower=100\n[PLANTB]\nStrength=750\nPower=200\n\
+         [IRON]\nStrength=750\nSuperWeapon=IronCurtainSpecial\n\
+         [CHRONO]\nStrength=750\nSuperWeapon=ChronoSphereSpecial\n\
+         [M60]\nDamage=15\nROF=20\nRange=4\nWarhead=SA\n[SA]\nVerses=100%\n\
+         [SuperWeaponTypes]\n0=NukeSpecial\n1=IronCurtainSpecial\n2=LightningStormSpecial\n\
+         3=ChronoSphereSpecial\n4=ChronoWarpSpecial\n\
+         [NukeSpecial]\nType=MultiMissile\n[IronCurtainSpecial]\nType=IronCurtain\nRechargeTime=5\n\
+         [LightningStormSpecial]\nType=LightningStorm\n\
+         [ChronoSphereSpecial]\nType=ChronoSphere\nPreClick=yes\nRechargeTime=7\n\
+         [ChronoWarpSpecial]\nType=ChronoWarp\nPostClick=yes\nPreDependent=ChronoSphere\n\
+         RechargeTime=1\n",
+        "HTNK",
+        [("PLANTA", 18, 8), ("PLANTB", 18, 13)],
+        script,
+    );
+    for (building, rx, ry) in [("IRON", 4, 4), ("CHRONO", 4, 8)] {
+        sim.spawn_object_at_height(building, "Computer", rx, ry, 0, 0, &rules)
+            .expect("building spawns");
+    }
+    // As retail GACSPH, CHRONO grants no Chrono Warp: Fire_SW reaches that
+    // Super ungranted.
+    let owner = sim.interner.intern("Computer");
+    for name in ["IronCurtainSpecial", "ChronoSphereSpecial"] {
+        let id = sim.interner.intern(name);
+        let mut instance = crate::sim::superweapon::SuperWeaponInstance::new(id, owner);
+        instance.activate(
+            rules.super_weapon(name).unwrap().recharge_time_frames,
+            sim.session.binary_frame,
+        );
+        instance.is_ready = true;
+        sim.super_weapons
+            .entry(owner)
+            .or_default()
+            .insert(id, instance);
+    }
+    (sim, rules, team, members, plants)
+}
+
+/// Each Fire_SW the frames make while the team runs (at most 40 frames, until
+/// its script ends), as (`[SuperWeaponTypes]` name, cell).
+fn super_fires(sim: &mut Simulation, rules: &RuleSet, team_id: u64) -> Vec<(String, (u16, u16))> {
+    use crate::sim::superweapon::ai_fire::{AI_FIRE_LOG, AiFireEvent};
+    AI_FIRE_LOG.set(Some(Vec::new()));
+    for _ in 0..40 {
+        sim.advance_tick(&[], Some(rules), None, None, 67);
+        if sim.team_script_vm.team(team_id).is_none() {
+            break;
+        }
+    }
+    AI_FIRE_LOG
+        .take()
+        .unwrap()
+        .into_iter()
+        .filter_map(|event| match event {
+            AiFireEvent::Fire(id, cell) => Some((sim.interner.resolve(id).to_string(), cell)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Script action 55 then 49: once formed, the team's house fires its charged
+/// Iron Curtain at the team's centre, the cell (11,10) between its members,
+/// whose 3x3 block holds both; the script then runs to its end.
+#[test]
+fn a_computer_team_iron_curtains_itself() {
+    let (mut sim, rules, team_id, members, _) = super_team_fixture("0=55,0\n1=49,0");
+    let fires = super_fires(&mut sim, &rules, team_id);
+    assert_eq!(fires, vec![("IronCurtainSpecial".to_string(), (11, 10))]);
+    assert!(
+        sim.team_script_vm.team(team_id).is_none(),
+        "the script ran to its end"
+    );
+    for member in members {
+        let entity = sim.entities().get(member).expect("member");
+        assert_eq!(
+            entity.invulnerability.as_ref().map(|state| state.kind),
+            Some(crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain),
+            "member {member} is under the Iron Curtain"
+        );
+    }
+    let owner = sim.interner.get("Computer").unwrap();
+    let curtain = sim.interner.get("IronCurtainSpecial").unwrap();
+    assert!(
+        !sim.super_weapons[&owner][&curtain].is_ready,
+        "it recharges"
+    );
+}
+
+/// Script action 55 with the Iron Curtain 30 frames short of its charge: the
+/// team stays on the action while the Super charges and fires on the next
+/// frame after it does, because the teams run before the house update that
+/// charges it (`0x0055B502..0x0055B59F`).
+#[test]
+fn a_computer_team_waits_on_its_charging_iron_curtain() {
+    use crate::sim::superweapon::ai_fire::{AI_FIRE_LOG, AiFireEvent};
+    let (mut sim, rules, team_id, _, _) = super_team_fixture("0=55,0\n1=49,0");
+    let owner = sim.interner.get("Computer").unwrap();
+    let curtain = sim.interner.get("IronCurtainSpecial").unwrap();
+    let frame = sim.session.binary_frame as i32;
+    let instance = sim
+        .super_weapons
+        .get_mut(&owner)
+        .and_then(|weapons| weapons.get_mut(&curtain))
+        .unwrap();
+    instance.is_ready = false;
+    instance.charge_start_tick = frame;
+    instance.charge_duration = 30;
+    AI_FIRE_LOG.set(Some(Vec::new()));
+    let (mut waited, mut charged, mut fired) = (false, None, None);
+    for tick in 0..60 {
+        sim.advance_tick(&[], Some(&rules), None, None, 67);
+        let fire = AI_FIRE_LOG.with_borrow(|log| {
+            log.as_ref()
+                .unwrap()
+                .iter()
+                .any(|event| matches!(event, AiFireEvent::Fire(..)))
+        });
+        if fire {
+            fired = Some(tick);
+            break;
+        }
+        let ready = sim.super_weapons[&owner][&curtain].is_ready;
+        let team = sim.team_script_vm.team(team_id).expect("the team waits");
+        waited |= !ready && team.formed() && team.cursor() == 0 && !team.advance_pending();
+        if ready && charged.is_none() {
+            charged = Some(tick);
+        }
+    }
+    AI_FIRE_LOG.set(None);
+    assert!(
+        waited,
+        "the team stood on the action while the Super charged"
+    );
+    let charged = charged.expect("the Super charged without firing that frame");
+    assert_eq!(fired, Some(charged + 1));
+}
+
+/// Script action 57 with quarry 9 (power plants) then 49: the leader's scan
+/// picks the bigger plant, the house fires its Chronosphere at the team's
+/// centre (11,10) and its Chrono Warp at the plant's cell, and the warp
+/// carries each member from the source block to the same place in the
+/// destination block, beside the plant.
+#[test]
+fn a_computer_team_chronoshifts_onto_the_enemy_power_plant() {
+    let (mut sim, rules, team_id, members, [_, bigger]) = super_team_fixture("0=57,9\n1=49,0");
+    let fires = super_fires(&mut sim, &rules, team_id);
+    let plant = sim.entities().get(bigger).expect("plant");
+    let plant_cell = (plant.position.rx, plant.position.ry);
+    assert_eq!(
+        fires,
+        vec![
+            ("ChronoSphereSpecial".to_string(), (11, 10)),
+            ("ChronoWarpSpecial".to_string(), plant_cell),
+        ]
+    );
+    assert!(
+        sim.team_script_vm.team(team_id).is_none(),
+        "the script ran to its end"
+    );
+    let owner = sim.interner.get("Computer").unwrap();
+    let sphere = sim.interner.get("ChronoSphereSpecial").unwrap();
+    assert!(!sim.super_weapons[&owner][&sphere].is_ready, "it recharges");
+    for _ in 0..200 {
+        sim.advance_tick(&[], Some(&rules), None, None, 67);
+    }
+    // (10,10) and (12,10) lie west and east of the source block's centre.
+    let expected = [
+        (plant_cell.0 - 1, plant_cell.1),
+        (plant_cell.0 + 1, plant_cell.1),
+    ];
+    for (member, cell) in members.into_iter().zip(expected) {
+        let entity = sim.entities().get(member).expect("member");
+        assert_eq!(
+            (entity.position.rx, entity.position.ry),
+            cell,
+            "member {member} arrived beside the plant"
+        );
+    }
+}

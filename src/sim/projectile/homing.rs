@@ -414,8 +414,8 @@ mod tests {
 
     #[test]
     fn original_38_cardinal_ramp_visits_keep_fractional_velocity() {
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../../tools/rules_oracle/weapon_speed.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/rules_oracle/weapon_speed.json",
         ))
         .unwrap();
         let mut guidance = ProjectileGuidance {
@@ -462,8 +462,8 @@ mod tests {
     #[ignore = "requires verified gamemd.exe math tables"]
     fn original_guided_boundaries_preserve_null_aircraft_and_signed_controls() {
         use super::super::{ProjectileStore, ProjectileTarget};
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/ifv_guided_controls.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ifv_guided_controls.json",
         ))
         .unwrap();
         let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
@@ -582,8 +582,8 @@ mod tests {
         assert_eq!(kind.rot, 60);
         let (trig, _) = crate::map::retail_trig::required_math_tables();
         assert!(trig.matches_retail());
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/ifv_launch.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ifv_launch.json",
         ))
         .unwrap();
         let mut compared = 0;
@@ -733,8 +733,8 @@ mod tests {
     fn original_guided_steps_preserve_velocity_phase_and_bridge_clearance() {
         let (trig, _) = crate::map::retail_trig::required_math_tables();
         assert!(trig.matches_retail());
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../../tools/projectile_oracle/guided_step.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/guided_step.json",
         ))
         .unwrap();
         for row in corpus["rows"].as_array().unwrap() {

@@ -246,7 +246,7 @@ mod tests {
 
     fn contract_ids() -> TileIds {
         let lookup = parse_tileset_ini(
-            include_bytes!("../../../tests/fixtures/ini/rmg_theater_tiles_contract.ini"),
+            crate::test_fixture::bytes("tests/fixtures/ini/rmg_theater_tiles_contract.ini"),
             "tem",
         )
         .expect("parse synthetic theater contract");

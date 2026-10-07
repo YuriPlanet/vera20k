@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="Заглавное изображение VERA20k" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.md" lang="en">English</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <strong>Русский</strong> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <strong>Русский</strong> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
   &nbsp;&nbsp;
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Последний запуск тестов библиотеки на macOS (запускаются вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Тесты библиотеки на macOS" height="20" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Последний запуск тестов библиотеки на Linux (запускаются вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Тесты библиотеки на Linux" height="20" align="middle"></a>
@@ -14,18 +14,22 @@
 Red Alert 2: Yuri's Revenge — переписанная на Rust для масштабных многопользовательских сражений.
 
 VERA20k — новая реализация оригинального движка `gamemd.exe`. Она использует оригинальные
-файлы игры, поэтому тебе понадобится собственная копия Yuri's Revenge. Игра входит в
+файлы игры, поэтому тебе понадобится собственная копия Red Alert 2: Yuri's Revenge. Игра входит в
 *Command & Conquer The Ultimate Collection*, доступную в
 [Steam](https://store.steampowered.com/bundle/39394/) и
 [EA](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection/buy/pc).
+
+VERA20k делают игроки для игроков, и последнее слово в том, куда движется проект, остаётся за
+игроками.
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20k: настройки схватки и кадр из игры" width="100%">
 
 ## Цели проекта
 
-1. Сохранить игровой процесс, графику и атмосферу оригинальной Yuri's Revenge.
+1. Сохранить игровой процесс, графику и атмосферу оригинальной Red Alert 2: Yuri's Revenge.
 2. Поддерживать более крупные сражения: до **30 игроков** и **20 000 юнитов** на больших картах.
 3. Добавлять новые возможности RTS.
+4. Встроенный клиент для мультиплеера
 
 ## Текущее состояние
 
@@ -58,7 +62,7 @@ cargo run --release --bin vera20k
 Большую часть кода пишут ИИ-агенты для программирования, которыми я руковожу. Мы изучаем
 оригинальный движок в Ghidra, затем переносим его поведение на Rust и проверяем его
 [инструментами сравнения](tools/native_oracle.md) и игровыми тестами. Правила работы описаны
-в [AGENTS.md](AGENTS.md), а подробности — в наших [исследовательских заметках](docs/research/README.md).
+в [AGENTS.md](AGENTS.md).
 
 ## Как помочь
 
@@ -69,7 +73,7 @@ cargo run --release --bin vera20k
 Прочитай [CONTRIBUTING.md](CONTRIBUTING.md), посмотри
 [задачи для начинающих](https://github.com/YuriPlanet/vera20k/labels/good%20first%20issue)
 или поздоровайся в [Discord](https://discord.gg/kmjRUn5m5F).
-[Обзор архитектуры](https://yuriplanet.github.io/vera20k/) объясняет, как устроен движок.
+[Обзор архитектуры](https://yuriplanet.github.io/vera20k/ru/) объясняет, как устроен движок.
 
 ## Благодарности и правовая информация
 

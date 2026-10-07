@@ -4,8 +4,8 @@ use crate::render::sinking::SinkingWaterlines;
 use crate::util::sha256::sha256_hex;
 
 fn admission_corpus() -> serde_json::Value {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/naval_sinking_clip.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/naval_sinking_clip.json",
     ))
     .unwrap();
     corpus["admission"].clone()
@@ -132,8 +132,8 @@ fn retail_aegis_raster_and_parent_waterline_match_original_ship_draw() {
         crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
     )
     .unwrap();
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/naval_draw_bounds.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/naval_draw_bounds.json",
     ))
     .unwrap();
     for (name, provenance) in corpus["files"].as_object().unwrap() {

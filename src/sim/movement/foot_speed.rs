@@ -249,8 +249,8 @@ mod tests {
         use super::{SimFixed, owner_current_speed_from_fraction};
         use crate::sim::components::FootSpeedState;
         use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/track_speed_native.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/track_speed_native.json",
         ))
         .unwrap();
         let bits64 = |value: &serde_json::Value| {

@@ -59,8 +59,8 @@ impl SearchFootEntry for NativeReceiptEntry<'_> {
 
 #[test]
 fn production_finisher_forwards_native_real_and_mutable_dummy_receipts() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_path_finishing.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_path_finishing.json",
     ))
     .unwrap();
     let mut callers = BTreeSet::new();

@@ -12,8 +12,8 @@ use crate::sim::world::edge_cell;
 use serde_json::Value;
 
 fn oracle() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_states.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_states.json",
     ))
     .expect("aircraft_states.json")
 }

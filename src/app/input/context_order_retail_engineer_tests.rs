@@ -75,8 +75,8 @@ fn building_orders(
 #[ignore = "physical AnyTown, retail rules/ART/audio binding and Walk repair composition"]
 fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
     let retail = std::path::PathBuf::from(std::env::var_os("RA2_DIR").unwrap());
-    let profile: Value = serde_json::from_str(include_str!(
-        "../../../tools/map_observation.building-opening.example.json"
+    let profile: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/map_observation.building-opening.example.json",
     ))
     .unwrap();
     let launch = serde_json::from_value(profile["launch"].clone()).unwrap();
@@ -85,8 +85,8 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
     let mut scene =
         crate::headless_scenario::load_with_launch(&retail, "XMP03T4.MAP", 0x1234_5678, descriptor)
             .unwrap();
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/engineer_repair_joined.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/engineer_repair_joined.json",
     ))
     .unwrap();
     let row = native["routes"]

@@ -152,8 +152,8 @@ mod tests {
         use crate::sim::components::Health;
         use crate::sim::game_entity::GameEntity;
         use crate::util::fixed_math::SimFixed;
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../../tools/procedural_drawing_oracle/rally_input.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/rally_input.json",
         ))
         .unwrap();
         let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -238,8 +238,8 @@ mod tests {
     /// controls still search: transport admission belongs after this resolver.
     #[test]
     fn rally_cell_input_matches_25_defined_original_building_clicks() {
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../../tools/procedural_drawing_oracle/rally_input.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/rally_input.json",
         ))
         .unwrap();
         let rows = corpus["cases"].as_array().unwrap();

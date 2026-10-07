@@ -56,8 +56,10 @@ struct InverseCase {
 }
 
 fn vectors() -> Vectors {
-    let vectors: Vectors =
-        serde_json::from_str(include_str!("../../tools/bridge_click_oracle/vectors.json")).unwrap();
+    let vectors: Vectors = serde_json::from_str(crate::test_fixture::text(
+        "tools/bridge_click_oracle/vectors.json",
+    ))
+    .unwrap();
     assert_eq!(vectors.source, "unicorn/gamemd.exe");
     vectors
 }

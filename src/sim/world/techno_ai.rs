@@ -14,14 +14,17 @@
 //! Dispatch is `match category` only — no trait object / dyn / vtable
 //! (invariant #2).
 
+mod building_missile;
 mod building_missions;
 mod building_retaliation;
+pub(crate) use building_missions::queue_and_commence;
 mod mission_handlers;
 mod target_scan;
 pub(crate) use mission_handlers::dispatch_foot_mission;
 pub(crate) use mission_handlers::foot_enter_idle_mode_selection;
 pub(crate) use mission_handlers::foot_unlimbo_idle_mode;
 pub(crate) use mission_handlers::queue_foot_enter_idle_mode;
+pub(crate) use target_scan::passive_target_acquire;
 pub(crate) use target_scan::team_leader_greatest_threat;
 
 use mission_handlers::*;
@@ -569,7 +572,7 @@ fn techno_ai_shell(
         if category == EntityCategory::Structure {
             sim.update_building_damage_fire(id, rules);
         }
-        if sim.temporal_ai_prologue(id, rules, ctx.overlay_registry) {
+        if sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed) {
             return;
         }
     }
@@ -755,17 +758,12 @@ fn techno_ai_shell(
             }
             drop_unsensed_cloaked_target_step(sim, id);
             mission_counter_step(sim, id);
-            // The Aircraft Unload slot `0x004151E0` (vtable `+0x23C`), the one
-            // aircraft mission handler absorbed so far; timer-gated inside.
+            // The aircraft mission handlers absorbed so far: Unload and the
+            // Spy Plane's two, behind MissionClass::AI's timer gate.
             if let Some(rules) = rules
                 && mission_handlers_run(sim, id)
             {
-                crate::sim::transport_unload::dispatch_aircraft_unload(
-                    sim,
-                    id,
-                    rules,
-                    ctx.overlay_registry,
-                );
+                crate::sim::aircraft::dispatch_native_mission(sim, id, rules, ctx.overlay_registry);
                 // The remaining aircraft missions dispatch here too, inside
                 // this slot and before Fly Process (FootClass::AI4DA530).
                 if crate::sim::aircraft::dispatch_aircraft_mission(
@@ -997,6 +995,7 @@ pub(crate) fn mission_handlers_run(sim: &Simulation, id: u64) -> bool {
 }
 
 /// `TechnoClass::AI_Update`'s leading common steps, in native order: the
+/// Iron Curtain tint stage (`0x006F9EAF`, [`iron_tint_step`]), the
 /// promotion sample (`0x006FA054`), the drain blocks (`0x006FA14B..
 /// 0x006FA224`, directly after the rank-cache write at `0x006FA145`), the
 /// CaptureManager update (`0x006FA730`), then the IsAlive gate (`0x006FA735`)
@@ -1020,6 +1019,7 @@ fn techno_common_steps(
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> bool {
+    iron_tint_step(sim, id);
     veterancy_promotion_step(sim, id, rules);
     crate::sim::credit_income::drain_common_step(sim, id, rules);
     allied_target_drop_step(sim, id, rules);
@@ -1040,6 +1040,32 @@ fn techno_common_steps(
         entity.advance_door(sim.session.binary_frame);
     }
     true
+}
+
+/// `TechnoClass::UpdateIronTint` (`0x006F9EAF`), the first step of
+/// `TechnoClass::AI_Update` after the hover flag and the Gattling sound: a
+/// curtained object's tint stage, whose stage 2 draws from the Scenario
+/// stream ([`InvulnerabilityState::update_tint`]).
+///
+/// RESIDUAL: the next step, `TechnoClass::UpdateAirstrikeTint`
+/// (`0x0070E920`, called at `0x006F9EB6`), steps the airstrike tint of a
+/// building its own AirstrikeClass (`+0x294`) targets and makes the same
+/// Scenario `RandomRanged(-5, 5)` draw at that stage machine's stage 2 step.
+/// VERA has no AirstrikeClass (Boris' airstrike), so the draw is missing with
+/// it. Trigger: a building marked by Boris. Downstream: later Scenario draws
+/// shift.
+///
+/// [`InvulnerabilityState::update_tint`]: crate::sim::superweapon::invulnerability::InvulnerabilityState::update_tint
+fn iron_tint_step(sim: &mut Simulation, id: u64) {
+    let frame = sim.session.binary_frame as i32;
+    if let Some(curtain) = sim
+        .substrate
+        .entities
+        .get_mut(id)
+        .and_then(|entity| entity.invulnerability.as_mut())
+    {
+        curtain.update_tint(frame, &mut sim.scenario_rng);
+    }
 }
 
 /// Techno6FA4FB follows target validity and precedes mission dispatch. The
@@ -1372,8 +1398,7 @@ fn techno_common_pre(
     }
     // `UnitClass::UpdateDisguise @ 0x007468C0` asks the locomotor's Is_Moving
     // (ILocomotion+0x10 at `0x007468F4` and `0x0074693D`), not whether an
-    // order is pending. A locomotor that query does not answer (Rocket) reads
-    // as still; no retail `DisguiseWhenStill=` type has one.
+    // order is pending. A locomotor without its runtime reads as still.
     let is_moving = crate::sim::movement::motion_query::is_moving(entity) == Some(true);
     if is_moving {
         if let Some(disguise) = sim
@@ -4952,10 +4977,7 @@ mod tests {
         if gates.lifecycle_countdown_exit {
             return Err(HostTraceError::LifecyclePath);
         }
-        if entity.teleport_state().is_some()
-            || entity.rocket_state.is_some()
-            || entity.parachute_state.is_some()
-        {
+        if entity.teleport_state().is_some() || entity.parachute_state.is_some() {
             return Err(HostTraceError::SpecialLocomotorPath);
         }
 
@@ -6347,10 +6369,9 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
         // Original Unit736473 Commence -> Foot/Techno ->6FA64E increments C4.
         // The executed MTNK first visit is pinned in this native projection;
         // Infantry51BC51 has the same instruction-established call ordering.
-        let native: serde_json::Value = serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tools/spatial_oracle/anytown_damage/mission_test_vectors.json"
-        )))
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/anytown_damage/mission_test_vectors.json",
+        ))
         .unwrap();
         for category in [EntityCategory::Unit, EntityCategory::Infantry] {
             let rules = promotion_rules();

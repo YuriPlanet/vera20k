@@ -49,8 +49,8 @@ fn fixture(relative_z: i32) -> (Simulation, RuleSet, u64) {
 
 #[test]
 fn native_sink_suffix_preserves_cadence_coordinates_and_complete_rng_states() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/naval_sink_tick.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/naval_sink_tick.json",
     ))
     .unwrap();
     for row in corpus["cases"].as_array().unwrap() {
@@ -65,7 +65,7 @@ fn native_sink_suffix_preserves_cadence_coordinates_and_complete_rng_states() {
         sim.mapgen_rng = SimRng::new(seed);
         sim.substrate.entities.get_mut(id).unwrap().sinking.active =
             input["sinking"].as_u64().unwrap_or(1) != 0;
-        let terminal = sim.tick_ship_sinking(id, &rules);
+        let terminal = sim.tick_ship_sinking(id, &rules, None);
         let entity = sim.substrate.entities.get(id).unwrap();
         let coord = position_world_coord(&entity.position);
         assert_eq!(
@@ -165,8 +165,8 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
     for frame in 1..=60 {
         sim.session.binary_frame = frame;
         loaded.session.binary_frame = frame;
-        let terminal = sim.tick_ship_sinking(id, &rules);
-        assert_eq!(loaded.tick_ship_sinking(id, &rules), terminal);
+        let terminal = sim.tick_ship_sinking(id, &rules, None);
+        assert_eq!(loaded.tick_ship_sinking(id, &rules, None), terminal);
         assert_eq!(loaded.state_hash(), sim.state_hash(), "frame {frame}");
         assert_eq!(loaded.rng_state(), sim.rng_state(), "frame {frame}");
         if terminal {
@@ -197,8 +197,8 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
     use crate::rules::sound_ini::SoundRegistry;
 
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/naval_lifetime_audio.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/naval_lifetime_audio.json",
     ))
     .unwrap();
     let sounds =
@@ -343,8 +343,8 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
 fn load_preserves_sinking_edge_and_resets_shared_foot_sound_bytes() {
     use crate::rules::sound_ini::SoundRegistry;
     use crate::sim::snapshot::GameSnapshot;
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/naval_lifetime_controls.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/naval_lifetime_controls.json",
     ))
     .unwrap();
     for row in corpus["load"].as_array().unwrap() {

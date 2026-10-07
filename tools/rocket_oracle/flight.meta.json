@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "RocketLocomotionClass constructor, Move_To and one Process per frame through Detonate for the V3, DMisl and CMisl blocks: pause, tilt, climb, LazyCurve and level cruise, dive, the Boomer raise, the V3TAKOFF/V3TRAIL puffs, AircraftTracker calls, the impact predictor (destination height, structural-bridge deck, ground), the health tail, In_Bounds refusals and the Detonate explosion, light and area damage with normal and elite payloads. Not the owner Mark, SetLocation, display, tracker, sound, anim or damage bodies.",
+  "assumptions": [
+    "FPCW 0E7F (WinMain _controlfp(0x300, 0x300) at 0x006BBFC1) after the rocket module initializers at 0x008147C4 run under the CRT startup word 027F; frame counter from the row first_frame; owner Foot+0x560 zero as the FootClass constructor 0x004D31E0 leaves it; owner +0x8C clear; RulesClass blocks at +0x4B0/+0x4E4/+0x518 and warheads at +0xFB0..+0xFC4 written per row; MapClass Size at 0x0087F7E8+0xF4 per row; the owner type +0x678 speed and +0x52C AuxSound1 per row; the spawn owner veterancy at +0x150 or no spawn owner."
+  ],
+  "substitutions": [
+    "Owner Mark(+0x124), SetLocation(+0x1B4, writes Location only), GetTechnoType(+0x84), the retained tracker cell(+0x2F4), GetCell(+0x1BC) and UnInit(+0xF8) are supplied; AircraftTracker Add/Update/Remove are recorded and Add/Update retain +0x560; Submit, PlayAt, operator new, FindIndex, the AnimClass constructor, GetCellAt, SelectAnim, the impact light, Apply_area_damage and the floor height 0x00578080 are recorded seams; the GetCell answer is one cell object whose +0x140 bridge bit and GetCoords (cell centre, row bridge_floor) follow the row."
+  ],
+  "entry_points": {
+    "constructor": "0x00661EC0",
+    "move_to": "0x006632E0",
+    "process": "0x006622C0",
+    "predictor": "0x006620F0",
+    "detonate": "0x00663030",
+    "is_moving_now": "0x00661F90",
+    "facing_set": "0x004C9220",
+    "facing_current": "0x004C93D0",
+    "in_bounds": "0x00568300"
+  },
+  "payload_sha256": "8497d2f14ac9059c1d6e5f5cd45b553c1782eac39bff527734a52003a4597f06"
+}

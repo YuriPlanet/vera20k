@@ -295,6 +295,11 @@ impl EntityStore {
         self.infantry_registry.get(index).copied()
     }
 
+    /// The native InfantryClass array's length.
+    pub(crate) fn infantry_registry_len(&self) -> usize {
+        self.infantry_registry.len()
+    }
+
     fn remove_infantry_index(&mut self, id: u64) {
         if let Ok(index) = self.infantry_registry.binary_search(&id) {
             self.infantry_registry.remove(index);

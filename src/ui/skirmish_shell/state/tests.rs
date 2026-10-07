@@ -271,8 +271,8 @@ fn credits_thumb_x(shell: &SkirmishShellState, rect: RectPx) -> i32 {
 /// The original instructions' Credits samples for the runtime window
 /// (`tools/storage_oracle/launcher_trackbar.py`): `(x, position)` pairs.
 fn native_credits_pointers() -> Vec<(i32, i32)> {
-    let golden: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/storage_oracle/launcher_trackbar.json"
+    let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/launcher_trackbar.json",
     ))
     .unwrap();
     let geometry = golden["geometries"]
@@ -2488,8 +2488,8 @@ fn player_name_programmatic_seed_is_not_subject_to_edit_limit() {
 /// The help table lookup `0x006040B0` executed for `dialog`'s `control`
 /// (`tools/storage_oracle/shell_help_keys.py`).
 fn native_help_key(dialog: u64, control: u64) -> Option<String> {
-    let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/storage_oracle/shell_help_keys.json"
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/shell_help_keys.json",
     ))
     .unwrap();
     let case = fixture["cases"]

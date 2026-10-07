@@ -95,12 +95,12 @@ fn snapshot(sim: &Simulation, coord: (u16, u16)) -> Value {
 
 #[test]
 fn bridge_rim_stock_damage_events_match_original_body_perpendicular_and_cleanup() {
-    let input: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_rim_stock_inputs.json"
+    let input: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_stock_inputs.json",
     ))
     .unwrap();
-    let original: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_rim_body.json"
+    let original: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_body.json",
     ))
     .unwrap();
     let coords: Vec<(u16, u16)> = input["cells"]
@@ -204,8 +204,8 @@ fn bridge_rim_stock_damage_events_match_original_body_perpendicular_and_cleanup(
 
 #[test]
 fn bridge_rim_middle_section_fallout_and_restored_navigation() {
-    let input: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_rim_stock_inputs.json"
+    let input: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_stock_inputs.json",
     ))
     .unwrap();
     let rules = rules();

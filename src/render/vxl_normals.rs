@@ -393,8 +393,10 @@ mod tests {
 
     #[test]
     fn native_lighting_initializer_matches_all_flat_facings_and_both_modes() {
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/voxel_oracle/lighting.json")).unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/lighting.json",
+        ))
+        .unwrap();
         let light: Vec<u32> = vectors["light_bits"]
             .as_array()
             .unwrap()

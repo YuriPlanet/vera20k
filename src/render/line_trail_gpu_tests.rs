@@ -8,8 +8,8 @@ use serde_json::Value;
 #[test]
 #[ignore = "requires GPU; original LineTrail full ordered pixels and unchanged shared depth"]
 fn production_line_trail_matches_original_full_line_pixels() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../tools/projectile_oracle/line_trail.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/line_trail.json",
     ))
     .unwrap();
     let gpu = Gpu::new();
@@ -146,8 +146,8 @@ fn ordered_viewport(row: &Value) -> LineTrailViewport {
 #[test]
 #[ignore = "requires GPU; original reverse-registry trail overlap and bounded operation chunks"]
 fn production_line_trail_preserves_native_overlap_across_chunks() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../tools/projectile_oracle/line_trail.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/line_trail.json",
     ))
     .unwrap();
     let gpu = Gpu::new();
@@ -224,8 +224,8 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
 #[ignore = "requires quiet GPU; reports bounded debug preparation + completed submission timing, not FPS"]
 fn line_trail_native_fixture_submission_timings() {
     use std::time::Instant;
-    let native: Value = serde_json::from_str(include_str!(
-        "../../tools/projectile_oracle/line_trail.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/line_trail.json",
     ))
     .unwrap();
     let gpu = Gpu::new();

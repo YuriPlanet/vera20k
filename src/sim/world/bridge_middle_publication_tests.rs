@@ -16,8 +16,8 @@ fn retail_middle_perpendicular_live_tiles_match_original_sequences() {
                 .ra2_dir
         });
     let map = std::env::var("VERA20K_C3Y03MD_MAP").unwrap_or_else(|_| "c3y03md.map".into());
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_middle_tiles.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_middle_tiles.json",
     ))
     .unwrap();
     let cases = corpus["cases"].as_array().unwrap();

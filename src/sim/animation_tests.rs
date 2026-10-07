@@ -398,12 +398,8 @@ fn gsi_13_06_counter_suppressions_hold_the_persistent_value() {
     falling.set_falling_down_for_test(true);
     variants.push(("falling", falling));
     let mut warp_out = base.clone();
-    warp_out.install_teleport_state_for_test(Some(TeleportState::for_test(
-        TeleportPhase::Relocate,
-        8,
-        8,
-        0,
-    )));
+    // BeingWarpedOut (`+0x270`): a Temporal chain's head.
+    warp_out.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(99);
     variants.push(("warp out", warp_out));
     let mut warp_in = base.clone();
     warp_in.install_teleport_state_for_test(Some(TeleportState::for_test(
@@ -1379,8 +1375,8 @@ fn raw_infantry_frames_match_whole_original_selector_rows() {
     rules.install_art_data(ArtRegistry::from_ini(&art));
     rules.bind_animation_sequences(&parse_infantry_sequence_registry(&art));
     let set = rules.animation_sequence("E1").unwrap();
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/anytown_damage/foot_missions.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/anytown_damage/foot_missions.json",
     ))
     .unwrap();
     let receipt = &corpus["infantry_frame_selection_receipt"];
@@ -1483,8 +1479,8 @@ fn raw_infantry_frames_match_whole_original_selector_rows() {
 
 #[test]
 fn unit_body_counter_matches_original_foot_cadence() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/unit_simple_deploy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_simple_deploy.json",
     ))
     .unwrap();
     let speed = Gsi1306Speed::new();
@@ -1514,16 +1510,17 @@ fn unit_body_counter_matches_original_foot_cadence() {
                 entity.attack_target = Some(AttackTarget::new(42));
             }
             entity.foot_locomotor_swap_active = flag("locomotor_swap");
-            if flag("warp_out") || flag("warp_in") {
+            // BeingWarpedOut (`+0x270`) through a Temporal chain's head,
+            // WarpingIn (`+0x271`) through the teleport's warp-in.
+            if flag("warp_out") {
+                entity.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(99);
+            }
+            if flag("warp_in") {
                 entity.install_teleport_state_for_test(Some(TeleportState::for_test(
-                    if flag("warp_out") {
-                        TeleportPhase::Relocate
-                    } else {
-                        TeleportPhase::ChronoDelay
-                    },
+                    TeleportPhase::ChronoDelay,
                     8,
                     8,
-                    u32::from(flag("warp_in")),
+                    1,
                 )));
             }
             tick_unit_body_frame_counter(

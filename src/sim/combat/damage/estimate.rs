@@ -137,8 +137,8 @@ mod tests {
 
     #[test]
     fn estimated_damage_matches_the_original() {
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/estimated_damage.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/estimated_damage.json",
         ))
         .unwrap();
         let mut compared = 0;

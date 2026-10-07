@@ -280,8 +280,10 @@ fn native_bomb(fields: &serde_json::Value) -> Bomb {
 /// `native_fire_error_corpus`.
 #[test]
 fn native_bomb_corpus() {
-    let cases: Vec<NativeBombCase> =
-        serde_json::from_str(include_str!("../../tools/spatial_oracle/bomb_class.json")).unwrap();
+    let cases: Vec<NativeBombCase> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bomb_class.json",
+    ))
+    .unwrap();
     assert_eq!(cases.len(), 97);
     let mut compared = 0;
     for case in cases {
@@ -340,8 +342,10 @@ fn native_fire_error_corpus() {
          [Cannon]\nAG=yes\n",
         RULES.replace("[LTNK]\n", "[LTNK]\nPrimary=TankGun\n")
     ));
-    let cases: Vec<NativeBombCase> =
-        serde_json::from_str(include_str!("../../tools/spatial_oracle/bomb_class.json")).unwrap();
+    let cases: Vec<NativeBombCase> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bomb_class.json",
+    ))
+    .unwrap();
     let mut compared = 0;
     for case in cases
         .iter()
@@ -597,8 +601,10 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
 /// campaign-visibility residual).
 #[test]
 fn native_update_all_corpus() {
-    let cases: Vec<NativeBombCase> =
-        serde_json::from_str(include_str!("../../tools/spatial_oracle/bomb_class.json")).unwrap();
+    let cases: Vec<NativeBombCase> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bomb_class.json",
+    ))
+    .unwrap();
     let rules = rules();
     let mut compared = 0;
     for case in cases

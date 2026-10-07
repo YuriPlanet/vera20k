@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -61,6 +62,41 @@ class CargoRunTests(unittest.TestCase):
         self.assertNotEqual(second['source_sha256'], third['source_sha256'])
         (self.root / 'new.rs').write_text('new')
         self.assertNotEqual(third['source_sha256'], cargo_run.source_identity(self.root)['source_sha256'])
+
+    def test_second_fingerprint_reads_only_files_that_may_have_changed(self):
+        settled = time.time() - 60
+        for name in ('.gitignore', 'source.rs'):
+            os.utime(self.root / name, (settled, settled))
+        hashes = {}
+        first = cargo_run.source_identity(self.root, hashes)
+        with patch.object(Path, 'read_bytes', side_effect=AssertionError('unchanged file was read again')):
+            self.assertEqual(cargo_run.source_identity(self.root, hashes), first)
+        (self.root / 'source.rs').write_text('other')  # Same length, new timestamp.
+        self.assertNotEqual(cargo_run.source_identity(self.root, hashes)['source_sha256'],
+                            first['source_sha256'])
+
+    def test_file_written_just_before_a_fingerprint_is_read_again(self):
+        # A coarse filesystem clock would not move on a second write this soon,
+        # so a timestamp inside the window cannot vouch for the cached digest.
+        path = self.root / 'source.rs'
+        now = time.time_ns()
+        os.utime(path, ns=(now - 10 ** 9, now - 10 ** 9))
+        os.utime(self.root / '.gitignore', ns=(now - 60 * 10 ** 9, now - 60 * 10 ** 9))
+        hashes = {}
+        with patch.object(cargo_run.time, 'time_ns', return_value=now):
+            first = cargo_run.source_identity(self.root, hashes)
+        written = path.stat()
+        path.write_text('other')  # Same length.
+        os.utime(path, ns=(written.st_atime_ns, written.st_mtime_ns))
+        reads = []
+        original = Path.read_bytes
+        def counting(target):
+            reads.append(target.name)
+            return original(target)
+        with patch.object(Path, 'read_bytes', counting):
+            second = cargo_run.source_identity(self.root, hashes)
+        self.assertEqual(reads, ['source.rs'])
+        self.assertNotEqual(second['source_sha256'], first['source_sha256'])
 
     def test_lock_excludes_other_process_and_releases_after_owner_exit(self):
         lock = self.root / 'build.lock'
@@ -190,8 +226,44 @@ class CargoRunTests(unittest.TestCase):
              patch.object(cargo_run.subprocess, 'Popen', side_effect=start):
             with self.assertRaisesRegex(ValueError, 'Build blocked'):
                 cargo_run.run(self.root, ['build'], 'blocked-artifact', 0, policy=policy)
-        self.assertEqual(measured, [target, store])
+        # Both volumes are measured to find the short reserve, and again after cleanup.
+        self.assertEqual(measured, [target, store, target, store])
         self.assertFalse((store / 'artifacts/blocked-artifact').exists())
+
+    def retention_order(self, *, free, due):
+        """When the retention pass runs relative to Cargo in one successful run."""
+        from tools import _cargo_cache
+        policy = _cargo_cache.CachePolicy(1 << 40, 1 << 40, 4096)
+        events = []
+        child = unittest.mock.MagicMock()
+        child.__enter__.return_value = child
+        child.stdout = io.StringIO('')
+        child.wait.return_value = 0
+        original = subprocess.Popen
+        def start(command, **kwargs):
+            if command[0] == 'cargo':
+                events.append('cargo')
+                return child
+            return original(command, **kwargs)
+        def cleanup(*args):
+            nonlocal free
+            events.append('retention')
+            free = 4096
+        with patch.object(cargo_run, 'build_processes', return_value=[]), \
+             patch.object(_cargo_cache, 'automatic_locked', side_effect=cleanup), \
+             patch.object(_cargo_cache, 'retention_due', return_value=due), \
+             patch.object(cargo_run.shutil, 'disk_usage', side_effect=lambda path: unittest.mock.Mock(free=free)), \
+             patch.object(cargo_run.subprocess, 'Popen', side_effect=start):
+            self.assertEqual(cargo_run.run(self.root, ['check'], None, 0, policy=policy), 0)
+        return events
+
+    def test_retention_pass_runs_only_when_it_can_matter(self):
+        # Reserve intact and a recent pass: no cache inventory around this command.
+        self.assertEqual(self.retention_order(free=4096, due=False), ['cargo'])
+        # Soft budgets are enforced after the build, once the cache has grown.
+        self.assertEqual(self.retention_order(free=4096, due=True), ['cargo', 'retention'])
+        # A short reserve is restored before admission, whatever ran recently.
+        self.assertEqual(self.retention_order(free=4095, due=False), ['retention', 'cargo'])
 
     def test_free_space_measurement_failure_never_launches_cargo(self):
         from tools import _cargo_cache

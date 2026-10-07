@@ -295,8 +295,8 @@ mod tests {
 
     #[test]
     fn production_prefix_passive_special_and_nonaccelerating_gates_match_original() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/track_speed_native.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/track_speed_native.json",
         ))
         .unwrap();
         let fixed = |value: &serde_json::Value| {
@@ -366,8 +366,8 @@ mod tests {
     /// says `bridge`. The destination's own Z never matters.
     #[test]
     fn braking_distance_matches_original_rows() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/track_speed_native.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/track_speed_native.json",
         ))
         .unwrap();
         let mut compared = 0;
@@ -427,8 +427,8 @@ mod tests {
     fn speed_prefix_matches_original_rows_within_fixed_point() {
         use crate::sim::movement::drive_locomotion::{TrackSpeedPrefix, track_speed_prefix};
         use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/track_speed_native.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/track_speed_native.json",
         ))
         .unwrap();
         let integer = |input: &serde_json::Value, key: &str, fallback: i32| {

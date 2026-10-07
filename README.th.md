@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="ภาพหน้าปก VERA20k" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.md" lang="en">English</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <strong>ไทย</strong> · <a href="README.tr.md" lang="tr">Türkçe</a>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <strong>ไทย</strong> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
   &nbsp;&nbsp;
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="การทดสอบไลบรารีบน macOS ครั้งล่าสุด (สั่งรันด้วยตนเอง)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="การทดสอบไลบรารีบน macOS" height="20" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="การทดสอบไลบรารีบน Linux ครั้งล่าสุด (สั่งรันด้วยตนเอง)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="การทดสอบไลบรารีบน Linux" height="20" align="middle"></a>
@@ -14,17 +14,20 @@
 Red Alert 2: Yuri's Revenge — เขียนขึ้นใหม่ด้วย Rust สำหรับการต่อสู้แบบผู้เล่นหลายคนขนาดใหญ่
 
 VERA20k คือการเขียนเอนจินเกมต้นฉบับ `gamemd.exe` ขึ้นใหม่ โดยใช้ไฟล์จากเกมต้นฉบับ
-คุณจึงต้องมี Yuri's Revenge ของตัวเอง เกมนี้มีรวมอยู่ใน *Command & Conquer The Ultimate Collection*
+คุณจึงต้องมี Red Alert 2: Yuri's Revenge ของตัวเอง เกมนี้มีรวมอยู่ใน *Command & Conquer The Ultimate Collection*
 บน [Steam](https://store.steampowered.com/bundle/39394/) และ
 [EA](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection/buy/pc)
+
+VERA20k สร้างโดยเกมเมอร์ เพื่อเกมเมอร์ และผู้เล่นคือผู้ตัดสินใจขั้นสุดท้ายว่าโครงการจะไปในทิศทางใด
 
 <img src="docs/images/vera20k-screenshots.png" alt="หน้าตั้งค่าการต่อสู้และภาพขณะเล่น VERA20k" width="100%">
 
 ## เป้าหมายของโครงการ
 
-1. คงรูปแบบการเล่น ภาพ และบรรยากาศของ Yuri's Revenge ต้นฉบับไว้
+1. คงรูปแบบการเล่น ภาพ และบรรยากาศของ Red Alert 2: Yuri's Revenge ต้นฉบับไว้
 2. รองรับการต่อสู้ที่ใหญ่ขึ้น: สูงสุด **30 ผู้เล่น** และ **20,000 ยูนิต** บนแผนที่ขนาดใหญ่ขึ้น
 3. เพิ่มฟีเจอร์ใหม่สำหรับเกม RTS
+4. ไคลเอนต์ผู้เล่นหลายคนในตัว
 
 ## สถานะปัจจุบัน
 
@@ -56,7 +59,6 @@ cargo run --release --bin vera20k
 โค้ดส่วนใหญ่เขียนโดยเอเจนต์ AI ที่ฉันคอยกำกับ เราใช้ Ghidra ศึกษาเอนจินต้นฉบับ
 แล้วนำพฤติกรรมของมันมาเขียนใน Rust และตรวจสอบด้วย[เครื่องมือเปรียบเทียบ](tools/native_oracle.md)
 และการทดลองเล่น กติกาการทำงานอยู่ใน [AGENTS.md](AGENTS.md)
-ส่วนรายละเอียดอยู่ใน[บันทึกการค้นคว้า](docs/research/README.md)
 
 ## ร่วมพัฒนา
 
@@ -65,7 +67,7 @@ cargo run --release --bin vera20k
 
 อ่าน [CONTRIBUTING.md](CONTRIBUTING.md) ดู[งานที่เหมาะสำหรับผู้เริ่มต้น](https://github.com/YuriPlanet/vera20k/labels/good%20first%20issue)
 หรือแวะมาทักทายใน [Discord](https://discord.gg/kmjRUn5m5F)
-[ภาพรวมสถาปัตยกรรม](https://yuriplanet.github.io/vera20k/) อธิบายว่าส่วนต่าง ๆ ของเอนจินทำงานร่วมกันอย่างไร
+[ภาพรวมสถาปัตยกรรม](https://yuriplanet.github.io/vera20k/th/) อธิบายว่าส่วนต่าง ๆ ของเอนจินทำงานร่วมกันอย่างไร
 
 ## เครดิตและข้อกฎหมาย
 

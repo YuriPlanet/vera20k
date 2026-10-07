@@ -160,8 +160,8 @@ fn doing(sim: &Simulation, id: u64) -> i32 {
 /// firing arm's walker FireUp path, covered by the ground firing corpus.
 #[test]
 fn jumpjet_infantry_actions_match_the_native_bodies() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/jumpjet_infantry_actions.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/jumpjet_infantry_actions.json",
     ))
     .expect("corpus parses");
     let mut compared = 0;
@@ -273,8 +273,8 @@ fn a_native_speed_fraction_is_truncated_below_its_thresholds() {
 /// `0x00520F1C` and `0x00520EFC` in the corpus.
 #[test]
 fn the_default_arm_follows_the_native_sequencer_tables() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/jumpjet_infantry_actions.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/jumpjet_infantry_actions.json",
     ))
     .expect("corpus parses");
     let arms = corpus["sequencer_arms"].as_array().expect("arms");
@@ -353,8 +353,8 @@ fn walk_consumer(input: &Value) -> (Simulation, RuleSet, u64) {
 /// +0x36, image frame and stage clock.
 #[test]
 fn walk_locomotion_actions_match_original_consumer_rows() {
-    let corpus: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/infantry_movement_action.json"
+    let corpus: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_movement_action.json",
     ))
     .unwrap();
     let mut compared = 0;
@@ -417,8 +417,8 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
     rules.bind_animation_sequences(
         &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&retail_art),
     );
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/infantry_default_motion.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_default_motion.json",
     ))
     .unwrap();
     // These values come from original523D00 on physical ClegSequence, not

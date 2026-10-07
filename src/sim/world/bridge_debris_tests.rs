@@ -7,8 +7,8 @@ use crate::rules::{art_data::ArtRegistry, retail_ini_fixture::retail_ini};
 use serde_json::Value;
 
 fn native() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_debris_producer.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_debris_producer.json",
     ))
     .unwrap()
 }
@@ -114,8 +114,8 @@ fn retail_bridge_anim_inputs_match_original_full_art_reader() {
     // physical ART strings and complete retail SHP bytes at archive I/O.
     // This independent corpus establishes the inputs used by the producer and
     // flight oracles; no VERA scalar value initialized its native type fields.
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/rules_oracle/bridge_anim_inputs.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/bridge_anim_inputs.json",
     ))
     .unwrap();
     let rows = native["rows"].as_array().unwrap();

@@ -4,8 +4,8 @@ use super::*;
 use crate::render::sinking::SinkingWaterlines;
 
 fn native_saved_waterline() -> i16 {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/naval_lifetime_controls.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/naval_lifetime_controls.json",
     ))
     .unwrap();
     let loads = corpus["load"].as_array().unwrap();

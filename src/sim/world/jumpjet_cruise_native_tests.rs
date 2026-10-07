@@ -16,7 +16,7 @@
 
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::map::playfield::PlayfieldBounds;
-use crate::map::retail_trig::{required_atan_table, required_math_tables};
+use crate::map::retail_trig::required_math_tables;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::retail_ini_fixture::retail_battle_rules_for_map;
 use crate::rules::ruleset::RuleSet;
@@ -42,8 +42,8 @@ use std::sync::OnceLock;
 fn corpus() -> &'static Value {
     static CORPUS: OnceLock<Value> = OnceLock::new();
     CORPUS.get_or_init(|| {
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/jumpjet_states.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/jumpjet_states.json",
         ))
         .expect("native Jumpjet corpus");
         assert_eq!(corpus["schema_version"], 2);
@@ -748,7 +748,6 @@ fn execute_step(
                     sim,
                     frame,
                     trig,
-                    atan: required_atan_table(),
                     rules: Some(rules),
                     registry: Some(registry),
                     stable_id: actor,
@@ -802,7 +801,7 @@ fn stock_shad_state1_scatter_publishes_before_following_translate() {
         return;
     };
     let (trig, _) = required_math_tables();
-    assert!(trig.matches_retail() && required_atan_table().matches_retail());
+    assert!(trig.matches_retail());
     let control = control_named("stock_taken_state1_arrival");
     let output = &control["output"];
     assert_stock_type(&retail.rules, &output["input_final"]);
@@ -961,7 +960,7 @@ fn native_scatter_result_survives_snapshot_and_continues_through_touchdown() {
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.retain_in_scenario_process_state_from(&sim);
     let native_seed0_hex =
-        include_str!("../../../tests/fixtures/rng/mapgen_seed0_native_0x3f4.hex")
+        crate::test_fixture::text("tests/fixtures/rng/mapgen_seed0_native_0x3f4.hex")
             .split_whitespace()
             .collect::<String>()
             .to_ascii_lowercase();

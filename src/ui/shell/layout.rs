@@ -240,8 +240,8 @@ pub(crate) mod tests {
         width: i32,
         height: i32,
     ) -> RectPx {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/shell_relayout.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/shell_relayout.json",
         ))
         .unwrap();
         let case = fixture["cases"]
@@ -467,8 +467,8 @@ pub(crate) mod tests {
 
     #[test]
     fn in_game_options_ordinary_children_match_original_procedure() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/in_game_shell_geometry.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/in_game_shell_geometry.json",
         ))
         .unwrap();
         let cases = native["child_layout"].as_array().unwrap();

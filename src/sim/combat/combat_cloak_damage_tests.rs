@@ -230,10 +230,10 @@ fn a_type_immune_sibling_splash_leaves_a_cloaked_dolphin_submerged() {
 fn an_iron_curtained_cloaked_dolphin_stays_submerged() {
     let rules = dolphin_rules();
     let mut entities = store("DEST", "Americans");
-    entities.get_mut(2).unwrap().invulnerability = Some(InvulnerabilityState {
-        timer: crate::sim::timer::CdTimer::started(TICK as i32 - 10, 100),
-        kind: InvulnKind::IronCurtain,
-    });
+    entities.get_mut(2).unwrap().invulnerability = Some(InvulnerabilityState::new(
+        crate::sim::timer::CdTimer::started(TICK as i32 - 10, 100),
+        InvulnKind::IronCurtain,
+    ));
     let landed = hit(&mut entities, &rules, "SonicWH", &HouseAllianceMap::new());
 
     assert_eq!(landed.victim_hp, 100, "IronCurtain nullifies the damage");

@@ -8,8 +8,8 @@ use std::collections::HashMap;
 /// implementation. Retail asset/raster coverage lives in unit_atlas_tests.
 #[test]
 fn building_voxel_parts_follow_native_frames_order_and_translation() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/voxel_oracle/building_barrel.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/building_barrel.json",
     ))
     .unwrap();
     for (case_index, case) in native["draw_cases"].as_array().unwrap().iter().enumerate() {

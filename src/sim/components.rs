@@ -951,8 +951,8 @@ mod tests {
     #[test]
     fn speed_fraction_setter_matches_the_original() {
         use crate::util::native_x87::NativeF64Bits;
-        let cases: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/foot_speed_owner.json"
+        let cases: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/foot_speed_owner.json",
         ))
         .unwrap();
         let bits = |row: &serde_json::Value, hex: &str, float: &str| {

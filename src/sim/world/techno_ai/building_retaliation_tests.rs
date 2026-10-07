@@ -27,8 +27,8 @@ const IN_RANGE: (u16, u16) = (8, 5);
 const OUT_OF_RANGE: (u16, u16) = (15, 5);
 
 fn golden() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/building_retaliation.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_retaliation.json",
     ))
     .unwrap()
 }

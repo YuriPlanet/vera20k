@@ -722,7 +722,7 @@ fn test_ready_buildings_do_not_auto_arm_placement() {
         queue_category: crate::sim::production::ProductionCategory::Building,
     }];
 
-    sync_targeting_mode(&mut armed, &mut preview, &ready, &[], None);
+    sync_targeting_mode(&mut armed, &mut preview, &ready, None);
 
     assert!(
         armed.is_none(),
@@ -748,68 +748,28 @@ fn test_invalid_armed_building_clears_when_not_ready() {
         wall_autofill_cells: Vec::new(),
     });
 
-    sync_targeting_mode(&mut armed, &mut preview, &[], &[], None);
+    sync_targeting_mode(&mut armed, &mut preview, &[], None);
 
     assert!(armed.is_none());
     assert!(preview.is_none());
 }
 
+/// No writer of the selected Super (`0x008809A0`) tests its charge or
+/// grant, so the sidebar sync keeps a selection its view no longer shows
+/// ready, or never showed: the Chrono Warp case 3 selects.
 #[test]
-fn test_sw_armed_preserved_when_ready() {
-    use crate::sim::superweapon::SuperWeaponView;
+fn test_sw_selection_is_not_the_sidebar_syncs_to_drop() {
     let mut armed = Some(crate::app::types::TargetingMode::SuperWeapon(
-        "LightningStormSpecial".to_string(),
-    ));
-    let mut preview = None;
-    let sw = SuperWeaponView {
-        type_id: crate::sim::intern::test_intern("LightningStormSpecial"),
-        display_name: "LightningStormSpecial".to_string(),
-        progress: 1.0,
-        is_ready: true,
-        is_online: true,
-        sidebar_image: Some("INTICON".to_string()),
-        kind: crate::rules::superweapon_type::SuperWeaponKind::LightningStorm,
-    };
-
-    sync_targeting_mode(&mut armed, &mut preview, &[], &[sw], None);
-
-    assert!(armed.is_some(), "armed SW should be preserved while ready");
-}
-
-#[test]
-fn test_sw_armed_cleared_when_not_ready() {
-    use crate::sim::superweapon::SuperWeaponView;
-    let mut armed = Some(crate::app::types::TargetingMode::SuperWeapon(
-        "LightningStormSpecial".to_string(),
-    ));
-    let mut preview = None;
-    let sw = SuperWeaponView {
-        type_id: crate::sim::intern::test_intern("LightningStormSpecial"),
-        display_name: "LightningStormSpecial".to_string(),
-        progress: 0.5,
-        is_ready: false, // Charging, not yet ready.
-        is_online: true,
-        sidebar_image: Some("INTICON".to_string()),
-        kind: crate::rules::superweapon_type::SuperWeaponKind::LightningStorm,
-    };
-
-    sync_targeting_mode(&mut armed, &mut preview, &[], &[sw], None);
-
-    assert!(armed.is_none(), "armed SW should clear when not ready");
-}
-
-#[test]
-fn test_sw_armed_cleared_when_view_gone() {
-    let mut armed = Some(crate::app::types::TargetingMode::SuperWeapon(
-        "LightningStormSpecial".to_string(),
+        "ChronoWarpSpecial".to_string(),
     ));
     let mut preview = None;
 
-    // No SW views — granting building destroyed.
-    sync_targeting_mode(&mut armed, &mut preview, &[], &[], None);
+    sync_targeting_mode(&mut armed, &mut preview, &[], None);
 
-    assert!(
-        armed.is_none(),
-        "armed SW should clear when view disappears"
+    assert_eq!(
+        armed,
+        Some(crate::app::types::TargetingMode::SuperWeapon(
+            "ChronoWarpSpecial".to_string()
+        ))
     );
 }

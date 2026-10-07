@@ -161,8 +161,8 @@ mod tests {
 
     #[test]
     fn all_native_stock_geometry_rectangles_and_counts_match() {
-        let fixture: Fixture = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/in_game_shell_geometry.json"
+        let fixture: Fixture = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/in_game_shell_geometry.json",
         ))
         .unwrap();
         assert_eq!(fixture.cases.len(), 9);

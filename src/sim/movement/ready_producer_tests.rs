@@ -310,8 +310,8 @@ fn walk_stop_keeps_paid_head_readiness_until_retirement_and_restore() {
 #[test]
 fn retained_motion_and_walk_readiness_match_original_queries() {
     use crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload;
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/locomotor_moving.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/locomotor_moving.json",
     ))
     .unwrap();
     assert_eq!(rows.as_array().unwrap().len(), 84);

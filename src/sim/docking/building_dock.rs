@@ -1525,9 +1525,10 @@ mod tests {
     /// including omitted/repeated entries and the empty0x0 row.
     #[test]
     fn foundation_exit_lists_match_native_rows() {
-        let native: serde_json::Value =
-            serde_json::from_str(include_str!("fixtures/building_exit_tables_native.json"))
-                .unwrap();
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "src/sim/docking/fixtures/building_exit_tables_native.json",
+        ))
+        .unwrap();
         let rows = native["rows"].as_array().unwrap();
         assert_eq!(rows.len(), 22);
         for (foundation, row) in crate::rules::foundation::FOUNDATION_TABLE.iter().zip(rows) {

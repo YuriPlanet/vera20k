@@ -24,8 +24,8 @@ use crate::sim::world::SimSoundEvent;
 const ROF: [i32; 6] = [16, 16, 16, 8, 16, 4];
 
 fn golden() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/building_gattling.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_gattling.json",
     ))
     .unwrap()
 }

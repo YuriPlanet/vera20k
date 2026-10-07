@@ -554,8 +554,8 @@ mod tests {
     /// native control word.
     #[test]
     fn accumulate_matches_the_original() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/veterancy_add.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/veterancy_add.json",
         ))
         .unwrap();
         let mut compared = 0;
@@ -730,8 +730,8 @@ mod tests {
 
     #[test]
     fn live_crate_and_faster_speed_match_original_staged_truncation() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/track_speed_native.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/track_speed_native.json",
         ))
         .unwrap();
         let object = object_with(&[Ability::Faster], &[]);

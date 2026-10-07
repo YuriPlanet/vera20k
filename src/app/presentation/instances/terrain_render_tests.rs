@@ -6,8 +6,8 @@ use crate::render::overlay_atlas::OverlaySpriteEntry;
 
 #[test]
 fn terrain_retained_xyz_projection_and_piece_z_match_original_render() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/terrain_render.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/terrain_render.json",
     ))
     .unwrap();
     let static_rows = native["rows"].as_array().unwrap();

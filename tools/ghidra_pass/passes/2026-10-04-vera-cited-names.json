@@ -1,0 +1,2988 @@
+{
+ "format": 1,
+ "pass": "2026-10-04 VERA-cited names",
+ "tag": "[2026-10-04 VERA-cited names]",
+ "program_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+ "planned_against": "Saved shared gamemd.exe on 2026-10-05, with current entries and original PE body/table bytes admitted. The earlier working archive remains historical context; this pass creates no missing functions.",
+ "atomic": true,
+ "description": "Conservative names and static evidence for Rust-cited addresses; no signatures, typed this, type layouts, function boundaries, reachability or arithmetic/RNG parity are certified by this name pass. Atomic conflicts require individual review.",
+ "ops": [
+  {
+   "op": "rename_function",
+   "address": "0x00401000",
+   "from": "FUN_00401000",
+   "to": "InterpGroup__Init"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00401000",
+   "text": "Initializes the three audio interpolators at receiver+0/+0x28/+0x50, using native initial values 0x4000/100/0x2000 and rate helper 0x4071A0, then tail-calls the immediate-target helper. Native channel constructor 0x40207A..0x402080 passes channel+0xD8. Descriptive audio-group receiver; no exact original C++ symbol or full struct layout claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00401000",
+    "InterpGroup__Init"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00401080",
+   "from": "FUN_00401080",
+   "to": "InterpGroup__Tick"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00401080",
+   "text": "Calls the interpolation tick helper on receiver+0/+0x28/+0x50, tail-jumping for the third component. Native channel start caller 0x402745..0x402748 passes channel+0x10, then recomputes its effective interpolation group. Descriptive group tick role; return is the third helper result. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00401080",
+    "InterpGroup__Tick"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004010C0",
+   "from": "FUN_004010c0",
+   "to": "InterpGroup__Combine"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004010C0",
+   "text": "Combines the source audio interpolation group in EDX into the destination in ECX, updates its volume/percent/pan components and ticks the results. Native caller 0x40223C..0x402240 passes channel+0xD8 and channel+0x10. The original integer instructions establish control/data flow; numerical equivalence was not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004010c0",
+    "InterpGroup__Combine"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00401190",
+   "from": "FUN_00401190",
+   "to": "InterpGroup__ScaleFrequency"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00401190",
+   "text": "Scales the EDX sample frequency by the receiver percent interpolator at +0x28. Native apply caller 0x40A749..0x40A761 passes channel+0xD8 and sends the result to the DirectSound buffer frequency slot. Signed integer arithmetic was read, not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00401190",
+    "InterpGroup__ScaleFrequency"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004019E0",
+   "from": "FUN_004019e0",
+   "to": "SampleTracker__Create"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004019E0",
+   "text": "Allocates the sample-tracker object and its data-block/entry pools, initializes the list, and cleans up on pool failure. Native pool initializer 0x403F29..0x403F47 supplies index, storage/block sizing and stores the result at 0x87E298. Exact pool-count arithmetic is outside this admission. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004019e0",
+    "SampleTracker__Create"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00402220",
+   "from": "FUN_00402220",
+   "to": "DSoundBuffer__CombineInterps"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00402220",
+   "text": "Resets channel+0xD8, combines its own group, optional chained groups and device groups, and clears changed flags. Native channel start calls it at 0x40274F before dispatching driver start slot +0x0C. DSoundBuffer denotes the channel/driver role, without certifying an original C++ class or unrelated receiver layouts. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00402220",
+    "DSoundBuffer__CombineInterps"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00403770",
+   "from": "FUN_00403770",
+   "to": "Audio__PausePlaybackChannelsByKind"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00403770",
+   "text": "Walks the audio device channel list, selecting the requested kind in EDX (or all for -1), and pauses active channels through 0x402600. Native movie-suspend caller 0x406EA0..0x406EAF loads the output device pointer and passes kind 1. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00403770",
+    "Audio__PausePlaybackChannelsByKind"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00404DD0",
+   "from": "FUN_00404dd0",
+   "to": "SoundEvent__ReturnToPool"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00404DD0",
+   "text": "Unlinks a sound event, clears its serial, deletes it for flag 0x80 or returns it to the pool at 0x87E2A8, and decrements 0x87E28C. Native sound-event update call 0x40462E..0x404630 passes the same event removed from list 0x87E180. Descriptive pooled event release role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00404dd0",
+    "SoundEvent__ReturnToPool"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00404FD0",
+   "from": "FUN_00404fd0",
+   "to": "SoundSystem__SuspendAll"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00404FD0",
+   "text": "Walks events at 0x87E180 when the sound system is enabled, converts a depth-zero pre-delay deadline to remaining time, then increments suspension depth. Native movie suspension calls it at 0x406EB4. Static SoundSystem module role; there is no this receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00404fd0",
+    "SoundSystem__SuspendAll"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00405040",
+   "from": "FUN_00405040",
+   "to": "SoundSystem__ResumeAll"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00405040",
+   "text": "Walks events at 0x87E180, decrements nonzero suspension depth and restores a pre-delay absolute deadline when depth reaches zero. Native movie-resume path calls it at 0x406EC5. Static SoundSystem module role; there is no this receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00405040",
+    "SoundSystem__ResumeAll"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004059D0",
+   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x004055E4. Entries in storage order: 0x00405639, 0x004059C9, 0x004055EB, 0x004057DC, 0x00405974. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00405AC0",
+   "from": "FUN_00405ac0",
+   "to": "SoundEvent_OnChannelSampleEnd"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00405AC0",
+   "text": "Native 0x4056C9 stores this callback in channel+0xB4, with owning event in channel+0xC0; channel needs-data code calls the callback on sample end. Advances the playlist. Delay-max below 0x21 queues immediately; for the other path, flag/sample state can bypass the RNG call, and a drawn delay below 0x21 also queues immediately. Only a drawn delay at least 0x21 is stored at event+0x13C with sample at +0x148. See native branches 0x405AF8..0x405B3E. RNG behavior was read, not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00405ac0",
+    "SoundEvent_OnChannelSampleEnd"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00407000",
+   "from": "FUN_00407000",
+   "to": "Audio__HasOutputDevice"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00407000",
+   "text": "Returns whether output device pointer 0x87E728 is nonzero. Native availability caller 0x411B4F..0x411B56 branches on the result. Static audio-module role; no exact universal caller count or initialization outcome claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00407000",
+    "Audio__HasOutputDevice"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00407100",
+   "from": "FUN_00407100",
+   "to": "VolumeInterp__Init"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00407100",
+   "text": "Initializes an audio interpolator using the value in EDX, clears/stamps its state, sets target/rate/cap fields and tail-jumps to its tick helper. Group caller 0x401005..0x40100A passes 0x4000 and the first embedded member. No full layout or timing-equivalence certification. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00407100",
+    "VolumeInterp__Init"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004071A0",
+   "from": "FUN_004071a0",
+   "to": "VolumeInterp__SetRate"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004071A0",
+   "text": "Sets the audio interpolation rate/cap from EDX and the two stack duration words. Native group caller 0x40102D..0x40103B passes span 10 and duration words 1000/0. The original divide/store widths are recorded in the body; arithmetic was not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004071a0",
+    "VolumeInterp__SetRate"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00407450",
+   "from": "FUN_00407450",
+   "to": "IntrusiveList_Unlink"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00407450",
+   "text": "Unlinks receiver from its intrusive doubly linked list by rewiring its neighbors, then self-links both node pointers. Native sample-pool caller 0x401A59..0x401A60 passes a live node; sound-event release also uses it. This is a structural helper with no original class identity claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00407450",
+    "IntrusiveList_Unlink"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00408230",
+   "from": "FUN_00408230",
+   "to": "Audio__ReleaseAllStreamPlayerStopHolds"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00408230",
+   "text": "Walks stream-player list 0x87E810 and decrements nonzero stop-hold counters at +0x88. Native movie path calls it at 0x5BEE6F, immediately before stream resume at 0x5BEE74. Static audio-module role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00408230",
+    "Audio__ReleaseAllStreamPlayerStopHolds"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00409880",
+   "from": "FUN_00409880",
+   "to": "Audio__FillDirectSoundBuffer"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00409880",
+   "text": "Refills the DirectSound per-channel buffer using its source/decode callbacks and silence fallback. Performs one initial Lock plus up to three retries; every nonzero Lock result enters the Restore path, not just a compared buffer-lost HRESULT. Native control is 0x409918/0x409925/0x409928, with retry count test at 0x4099D1..0x4099D6 and retry Lock at 0x4099FE. Receiver is the driver state, whose first dword points to the channel; return success is in AL. No decode arithmetic or timing execution claim. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00409880",
+    "Audio__FillDirectSoundBuffer"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00409C40",
+   "from": "FUN_00409c40",
+   "to": "Audio__ConfigureSampleDecoder"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00409C40",
+   "text": "Configures current-sample decode callbacks, resets decode state, and resizes the driver-state input/output buffers according to format/compression. Native refill caller 0x409A9B..0x409A9D passes the same driver state after its channel needs-data callback supplies a sample. Return types and codec numerical behavior are not certified. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00409c40",
+    "Audio__ConfigureSampleDecoder"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0040A340",
+   "from": "FUN_0040a340",
+   "to": "DSoundBuffer__StartPlayback"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0040A340",
+   "text": "Native driver-table slot 0x816334 (table 0x816328, offset +0x0C) points here. Starts the channel: prepares/reuses its secondary buffer, configures decoder, fills it, applies parameters and calls looping Play. Dispatcher 0x402765..0x402767 calls the slot using the channel receiver. This establishes the driver/channel role; no unrelated data-label identity claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0040a340",
+    "DSoundBuffer__StartPlayback"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0040A6D0",
+   "from": "FUN_0040a6d0",
+   "to": "DSoundBuffer__ApplyVolumePanFrequency"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0040A6D0",
+   "text": "Native driver-table slot 0x816348 (table 0x816328, offset +0x20) points here. Applies the channel effective volume/pan/frequency to its DirectSound buffer. Native start caller 0x40A5CB..0x40A5CF passes the channel. Original table-index arithmetic and API calls were read, not numerically executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0040a6d0",
+    "DSoundBuffer__ApplyVolumePanFrequency"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0040F270",
+   "from": "FUN_0040f270",
+   "to": "VoxelCachePool_StaticInit"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0040F270",
+   "text": "Initializer-table slot 0x8122D8 points here. Passes size 0x3D0900 and receiver 0x887460 to 0x6C89B0, which stores size at +0 and allocated buffer/cursor at +4/+8; registers 0x40F290 with 0x7C978A. Native draw callers 0x706A0C..0x706A11 and 0x706D4D..0x706D52 pass this same arena to the image-copy allocator 0x6C89E0. Descriptive voxel-cache pool role; no exact original C++ class name claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0040f270",
+    "VoxelCachePool_StaticInit"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00412870",
+   "from": "FUN_00412870",
+   "to": "AircraftTrackerClass_StaticInit"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00412870",
+   "text": "Initializer-table slot 0x812400 points here. Constructs 400 vectors at 0x887888, stride 0x18, then the result vector at 0x889E08, and registers 0x4128F0. Vtable 0x7E17AC has native RTTI DynamicVectorClass<TechnoClass*>. Helper 0x4134A0 obtains an object cell, selects one of the 20 by 20 buckets and appends the object; native Fly and Jumpjet callers pass the same global tracker. AircraftTrackerClass is the descriptive tracker role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00412870",
+    "AircraftTrackerClass_StaticInit"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004135A0",
+   "from": "FUN_004135a0",
+   "to": "AircraftTrackerClass__IsJumpjetCellTakenByOther"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004135A0",
+   "text": "Reads the object argument on the stack, calls its virtual slot +0x1BC, and returns AL=1 exactly when the returned cell has a non-null +0xE0 pointer different from that object. Jumpjet callers, including 0x54BAE4..0x54BAEA and 0x54C23C..0x54C241, pass their linked object and load ECX=0x887888. ECX is unused in this helper: the tracker prefix describes its module context and does not establish a this receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004135a0",
+    "AircraftTrackerClass__IsJumpjetCellTakenByOther"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00418D98",
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x00418345. Entries in storage order: 0x00, 0x04, 0x01, 0x02, 0x04, 0x04, 0x04, 0x04, 0x04, 0x03. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00418DB8",
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x0041861C. Entries in storage order: 0x00, 0x04, 0x01, 0x02, 0x04, 0x04, 0x04, 0x04, 0x04, 0x03. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00418DD0",
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x004187EB. Entries in storage order: 0x00, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01, 0x00. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00418DE8",
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x004188FA. Entries in storage order: 0x00, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01, 0x00. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00418E00",
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x00418A09. Entries in storage order: 0x00, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01, 0x00. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00418E14",
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x00418B18. Entries in storage order: 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0041957C",
+   "text": "Native switch index table: 26 entries of 1 byte(s), used by the indirect JMP at 0x00419102. Entries in storage order: 0x00, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x01, 0x02, 0x0A, 0x0A, 0x03, 0x04, 0x0A, 0x05, 0x0A, 0x06, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x07, 0x0A, 0x08, 0x0A, 0x09. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00421E20",
+   "from": "FUN_00421e20",
+   "to": "StaticInit_AnimBridgeHeight"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00421E20",
+   "text": "Initializer-table slot 0x812550 points here. Loads integer 0x89A1C0, forms four times that value, converts through the x87 path with constant 0.5 and 0x7C5F00, then stores integer 0x89A1B4. Native animation code, e.g. 0x423CB1..0x423CBC, adds this value to the map ground-height result before its height test. This establishes the animation bridge-height role; arithmetic was read, not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00421e20",
+    "StaticInit_AnimBridgeHeight"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0042EBE0",
+   "from": "FUN_0042ebe0",
+   "to": "BaseClass__Read_INI"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0042EBE0",
+   "text": "ECX is the embedded base object: 0x501132 forms house+0x5700 before the call at 0x501141. Reads PercentBuilt, NodeCount and numbered %03d records through the native INI readers; parses Type,X,Y and appends 16-byte nodes to its +4 vector. Constructor 0x42E6F0 stores vtable 0x7E3880 with native RTTI BaseClass. No source C++ signature or interpretation of the node trailing dwords is asserted. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0042ebe0",
+    "BaseClass__Read_INI"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0042FCB0",
+   "from": "FUN_0042fcb0",
+   "to": "VectorClass_Cell__Constructor"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0042FCB0",
+   "text": "Stores vtable 0x7E38D0, whose native RTTI is VectorClass<Cell>, then capacity, buffer and allocation flags. Uses a supplied buffer or allocates capacity*4 bytes; EAX returns the receiver and RET 8 consumes the two stack arguments. Caller 0x42E71D constructs an embedded vector before installing the dynamic-vector vtable and count/growth fields. It does not append elements. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0042fcb0",
+    "VectorClass_Cell__Constructor"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00432750",
+   "from": "FUN_00432750",
+   "to": "BinkMovie_Open"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00432750",
+   "text": "Opens a Bink movie on the player object in ECX. Closes previous handles, selects the audio output, opens disk/MIX input, configures movie volume, timing and target rectangle, and records the Bink surface type. Constructors 0x432690 and 0x4326C0 pass their object receiver; the success/failure result is established in AL. Timing/rounding and library internals were not executed in this review. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00432750",
+    "BinkMovie_Open"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00437090",
+   "from": "FUN_00437090",
+   "to": "CoordStruct__Set_00437090"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00437090",
+   "text": "Stores the three stack dwords at ECX+0/+4/+8 and returns that pointer in EAX (RET 0xC). Original instruction bytes match 0x41C230. Native callers such as 0x4359D6..0x4359E0 pass integer conversion results as coordinate components; the float-argument sibling at 0x43A0B0 has separate caller evidence. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00437090",
+    "CoordStruct__Set_00437090"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00439610",
+   "from": "FUN_00439610",
+   "to": "StaticInit_BounceBridgeHeight"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00439610",
+   "text": "Initializer-table slot 0x812738 points here. Forms an integer bridge-height constant from 0x89C778 through the same instruction pattern as 0x421E20 and stores 0x89C76C. Native bounce update at 0x439BF3..0x439C02 adds it to map ground height, and 0x439A7A reads it in the stop test. No runtime numeric equivalence claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00439610",
+    "StaticInit_BounceBridgeHeight"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00439A10",
+   "from": "FUN_00439a10",
+   "to": "BounceClass__GetStopMagnitude"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00439A10",
+   "text": "Computes the bounce stop-test magnitude from position/velocity and ground or bridge height using integer conversions, a sum of squared terms and helper 0x4CAC40. Native update passes the same object at 0x43A085..0x43A087, compares the x87 return with 2.5, and selects its stopped result. The descriptive role is established; exact floating-point arithmetic remains unexecuted. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00439a10",
+    "BounceClass__GetStopMagnitude"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0043A0B0",
+   "from": "FUN_0043a0b0",
+   "to": "Vector3D_float__Constructor"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0043A0B0",
+   "text": "Stores three 32-bit stack values to receiver+0/+4/+8 and returns its pointer, RET 0xC. The float-vector role follows the callers, e.g. 0x439DE7..0x439DF6 uses FCHS/FSTP DWORD for the Y component and the result feeds float matrix code at 0x5AF4D0. Identical body bytes alone do not distinguish this from the integer coordinate copy. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0043a0b0",
+    "Vector3D_float__Constructor"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0043A0D0",
+   "from": "FUN_0043a0d0",
+   "to": "Vector3D_float__MultiplyAssign"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0043A0D0",
+   "text": "Uses FLD DWORD/FMUL DWORD/FSTP DWORD to multiply each receiver component at +0/+4/+8 by the stack float, then returns the receiver pointer and RET 4. Native bounce caller 0x439B89..0x439B8F supplies the x87 value through a DWORD stack slot. Descriptive float-vector scale operator; no arithmetic execution claim. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0043a0d0",
+    "Vector3D_float__MultiplyAssign"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0043A100",
+   "from": "FUN_0043a100",
+   "to": "Vector3D_float__AddAssign"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0043A100",
+   "text": "Uses x87 float operations to add the argument vector components to receiver+0/+4/+8, then returns the receiver pointer and RET 4. Native bounce update at 0x439BBD..0x439BC0 passes its velocity vector to its position vector; particle caller 0x62BEEC supplies another float-vector context. No arithmetic execution claim. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0043a100",
+    "Vector3D_float__AddAssign"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00442C18",
+   "text": "Native switch jump table: 4 entries of 4 byte(s), used by the indirect JMP at 0x00442476. Entries in storage order: 0x004426AC, 0x004426C8, 0x004424A2, 0x0044247D. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00446FC0",
+   "text": "Native switch jump table: 10 entries of 4 byte(s), used by the indirect JMP at 0x00446948. Entries in storage order: 0x0044694F, 0x0044695B, 0x00446967, 0x0044698B, 0x0044699A, 0x0044699A, 0x0044699A, 0x00446973, 0x0044699A, 0x0044697F. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0044B728",
+   "text": "Native switch jump table: 11 entries of 4 byte(s), used by the indirect JMP at 0x0044B0D7. Entries in storage order: 0x0044B2BC, 0x0044B0DE, 0x0044B187, 0x0044B1DE, 0x0044B14E, 0x0044B0DE, 0x0044B0DE, 0x0044B14E, 0x0044B0DE, 0x0044B284, 0x0044B24F. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0045C300",
+   "from": "FUN_0045c300",
+   "to": "BuildingFoundationExitLists_StaticInit"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0045C300",
+   "text": "Initializer-table slot 0x8127F0 points to thunk 0x45C2F0, which jumps here. Writes the packed two-word cell-offset rows at 0x89D368, with 0x78 row stride, 0x7FFF7FFF end markers and zero padding. Native type readers at 0x461563..0x46156A and 0x4651FB..0x46522E index these rows by Foundation at +0xEF0 and store the pointer at +0xED4. No comparison against a TS source table is claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0045c300",
+    "BuildingFoundationExitLists_StaticInit"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0045E970",
+   "from": "FUN_0045e970",
+   "to": "BuildingTypeClass__InitTheater"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0045E970",
+   "text": "Static theater initializer: ECX is the theater index, as passed from scenario+0x1258 at 0x4AD07C..0x4AD082, rather than a BuildingType receiver. Loads the native named building support shapes, iterates building types at 0xA83C6C, updates theater shapes/buildup, and rebuilds the cloak surface using the maximum type radius. The class prefix denotes a static type-module role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0045e970",
+    "BuildingTypeClass__InitTheater"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00466270",
+   "from": "FUN_00466270",
+   "to": "Bullet_StaticInit_ZeroCell"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00466270",
+   "text": "Initializer-table slot 0x81281C points here. Writes zero words to 0x89DDF0/+2. Native bullet routines compare against this packed cell at 0x468494/0x4684A2 and 0x46856E/0x46857C, and copy it at 0x469291/0x4692A8. This review does not establish that it is the only writer. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00466270",
+    "Bullet_StaticInit_ZeroCell"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00471F90",
+   "from": "FUN_00471f90",
+   "to": "CaptureManagerClass__RemoveNode"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00471F90",
+   "text": "Walks the receiver node vector backward, frees every node whose first pointer matches the object argument and compacts the vector, returning AL=1. Native pointer-expiration caller 0x707B09..0x707B14 passes Techno+0x2BC and the expiring object. Native producer 0x6F40E9 calls constructor 0x4717D0 and 0x6F40F2 stores the result at the same +0x2BC; that constructor writes 0x7E4B40, whose native RTTI is CaptureManagerClass. No ownership restoration occurs in this body. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00471f90",
+    "CaptureManagerClass__RemoveNode"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00476340",
+   "from": "FUN_00476340",
+   "to": "CCINIClass__ReadFloatTokens"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00476340",
+   "text": "Uses the INI receiver to read into a 0x200 buffer, then obtains three comma tokens and converts each through atof to an output float triple; a zero ReadString result copies the supplied default. The conversion path has no per-token null check. Native caller 0x644467..0x64447B supplies the field/default at ParticleSystemType+0x2BC and key SpawnDirection. CCINI identity is supported by native constructor RTTI 0x7E1AF4. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00476340",
+    "CCINIClass__ReadFloatTokens"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00476B20",
+   "from": "FUN_00476b20",
+   "to": "CCINIClass__ReadColorList"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00476B20",
+   "text": "Uses the INI receiver to read comma-delimited groups, strips the first/last token boundary bytes, converts three components with atoi, and appends three-byte RGB entries for complete groups. A missing value copies the supplied default list. Native caller 0x644F93..0x644FA7 supplies ColorList, then assigns the result to ParticleType+0x2B8. No universal caller-count claim or source ABI type is asserted. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00476b20",
+    "CCINIClass__ReadColorList"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00477440",
+   "from": "FUN_00477440",
+   "to": "CCINIClass__Read3IntTokens"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00477440",
+   "text": "Uses the INI receiver to read a string and conditionally converts up to three comma tokens into three separate integer output pointers. A missing string or token leaves the corresponding output unchanged. Native caller 0x698077..0x69808A passes three slot-setting outputs. This is a separate-pointer reader, not a coordinate-returning reader. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00477440",
+    "CCINIClass__Read3IntTokens"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004802A0",
+   "from": "FUN_004802a0",
+   "to": "CellClass__DrawTileShadow"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004802A0",
+   "text": "Native visible-cell callers, e.g. 0x6D7ED1..0x6D7EDD, pass the result of map cell lookup as ECX. Chooses the isometric tile pointer using Cell+0x38 or default index, checks tile+0x2E1, computes draw parameters using Cell+0x11A/+0x11B and calls 0x547230. CellClass and IsometricTileTypeClass identities have native constructor RTTI and matching array producer evidence. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004802a0",
+    "CellClass__DrawTileShadow"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00484AE0",
+   "from": "FUN_00484ae0",
+   "to": "CellClass__IsNearTubeNW"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00484AE0",
+   "text": "Cell receiver is established by 0x51F880 calling the map cell lookup and passing its returned pointer as ECX at 0x51F885..0x51F887. Tests tube index +0x116, land type +0xEC and north/west neighboring tube transitions within two cells, returning AL. Native CellClass constructor RTTI is anchored at vtable 0x7E4EEC. No exact source TS symbol claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00484ae0",
+    "CellClass__IsNearTubeNW"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004870F0",
+   "from": "FUN_004870f0",
+   "to": "CellClass__IsDisguiseDetectedByHouse"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004870F0",
+   "text": "Returns the signed greater-than-zero test of the per-house word at Cell+0xAC+house*2. Native visibility/disguise callers, e.g. 0x4DEDF1..0x4DEDF9, pass a cell and the player-house index. Cell receiver identity is established by native map lookup/Cell constructor; exact writer exclusivity is not claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004870f0",
+    "CellClass__IsDisguiseDetectedByHouse"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00487110",
+   "from": "FUN_00487110",
+   "to": "CellClass__SetCloakedByHouse"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00487110",
+   "text": "Sets the requested house bit in receiver dword +0x78 using the native x86 shift instruction. Native building field-update caller 0x455197..0x4551B9 obtains the cell through map lookup, tests the same mask through 0x4870B0 and sets it only when absent. Descriptive cloak-field mask setter; no general visibility-bit interpretation claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00487110",
+    "CellClass__SetCloakedByHouse"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00487130",
+   "from": "FUN_00487130",
+   "to": "CellClass__ClearCloakedByHouse"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00487130",
+   "text": "Clears the requested house bit in receiver dword +0x78 using a complemented native x86 shift mask. Native building field-update caller 0x455399..0x4553B3 obtains the cell through map lookup, tests the same mask through 0x4870B0 and clears it only when present. Descriptive cloak-field mask clearer. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00487130",
+    "CellClass__ClearCloakedByHouse"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00487C10",
+   "from": "FUN_00487c10",
+   "to": "CellClass__CanBuildHere"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00487C10",
+   "text": "Build/deploy cell test: rejects nonzero slope +0x11C and, when the global active-game byte is set, an occupant whose virtual type ID is 6. Otherwise returns the land-type table byte at 0x89EA60+LandType*0x24. Native approach caller 0x4D5833..0x4D583F passes a map-returned cell and branches on AL. No retail-key parse or numerical test claim. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00487c10",
+    "CellClass__CanBuildHere"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00487DF0",
+   "from": "FUN_00487df0",
+   "to": "CellClass__IsTiberiumLand"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00487DF0",
+   "text": "Returns AL from Cell land-type dword +0xEC == 5. Native harvesting caller 0x522EAE..0x522EBD passes its occupied cell; the original land-type name table associates index 5 with Tiberium. No shroud, resource-count or cell-content test is performed by this body. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00487df0",
+    "CellClass__IsTiberiumLand"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0048ABC0",
+   "from": "FUN_0048abc0",
+   "to": "Ballistic_Can_Reach"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0048ABC0",
+   "text": "Ballistic feasibility helper; ECX/EDX and stack inputs feed the original x87 discriminant/root checks, with a special zero-distance substitution. Native range caller 0x6F74B4 obtains launch speed, passes the geometry/gravity inputs at 0x6F74C1..0x6F74CA, and rejects the range path when AL is zero. Exact arithmetic and rounding were not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0048abc0",
+    "Ballistic_Can_Reach"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0048ACE0",
+   "from": "FUN_0048ace0",
+   "to": "Explosion_Z_Adjust"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0048ACE0",
+   "text": "Body sets EAX=-15 and returns with RET 0xC, ignoring its three stack dwords. Native impact callers such as 0x438820..0x438825 pass this result onward as the animation Z-adjust argument. No universal enumeration of all call paths or exact source TS name claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0048ace0",
+    "Explosion_Z_Adjust"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0048DE70",
+   "from": "FUN_0048de70",
+   "to": "Powerup_From_Name"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0048DE70",
+   "text": "Searches the native 19-pointer table at 0x7E523C case-insensitively for the name in ECX. Native strings begin Money, Unit, HealBase, Cloak; result is the index or 0 for null/unmatched input. INI reader 0x475A1B..0x475A1F passes its read buffer here. This establishes the powerup-name conversion role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0048de70",
+    "Powerup_From_Name"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0048DED0",
+   "from": "FUN_0048ded0",
+   "to": "Shake_The_Screen_Stub"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0048DED0",
+   "text": "The original body is a single RET. Native destruction callers include 0x441C21..0x441C34, passing a positive count derived from Rules+0x5C8, and 0x7387FC. This is a descriptive screen-shake entry-point stub; only the effect of this body is established. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0048ded0",
+    "Shake_The_Screen_Stub"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004AE450",
+   "from": "FUN_004ae450",
+   "to": "DisplayClass__ReinitCellDrawers"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004AE450",
+   "text": "Native option handlers, including 0x4E1F03..0x4E1F15, call this on display 0x87F7E8 after changing detail level. Recreates tile drawers through 0x545000, clears 0xABDC84, walks the map applying default light-convert initialization, and calls receiver virtual slot +0x38 with 1. DisplayClass identity follows its native vtable/COL/TD, 0x7E6114/0x7FFCB8/0x816BD8. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004ae450",
+    "DisplayClass__ReinitCellDrawers"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004B2608",
+   "text": "Native switch jump table: 7 entries of 4 byte(s), used by the indirect JMP at 0x004B1C4D. Entries in storage order: 0x004B1C54, 0x004B1E52, 0x004B1C54, 0x004B1E6D, 0x004B1F48, 0x004B1F48, 0x004B1EC0. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004BA770",
+   "from": "FUN_004ba770",
+   "to": "DSurface__Create_Primary"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004BA770",
+   "text": "Primary DirectDraw surface creation is named by its native log strings at 0x8206F0/0x82061C. Allocates a DSurface wrapper, installs vtable 0x7E85D4 with native DSurface RTTI, creates a primary surface and clipper, and derives pixel-format masks/shift fields. Native caller 0x560D2B..0x560D32 passes ECX=0 and stores EAX to 0x887308. Pixel arithmetic was not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004ba770",
+    "DSurface__Create_Primary"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004C4EF0",
+   "from": "FUN_004c4ef0",
+   "to": "TaskForceEntryStruct__Constructor"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004C4EF0",
+   "text": "Builds an eight-byte {count,type-pointer} entry from text: clears it, scans with native format %d,%s, then resolves infantry, unit and aircraft type IDs in that order. Returns its receiver. Native TaskForce read caller 0x6E8491 copies its two dwords to +0xA4/+0xA8 with stride eight; caller is anchored by native TaskForce vtable slot 0x7F46E4. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004c4ef0",
+    "TaskForceEntryStruct__Constructor"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004C64A0",
+   "from": "FUN_004c64a0",
+   "to": "HalfDiagonalSlopeAngle_StaticInit_004C64A0"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004C64A0",
+   "text": "Initializer-table slot 0x812F60 points here. Passes twice integer 0x8A39F8 divided by double 0x8A39A0 to 0x4CADE0, and stores the x87 result as a double at 0x8A39C8. The input producers 0x4C6360/0x4C6430 form the diagonal/level-height geometry constants. No claim that the result is unused or that no runtime reader exists; arithmetic was not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004c64a0",
+    "HalfDiagonalSlopeAngle_StaticInit_004C64A0"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004C8114",
+   "text": "Native switch jump table: 46 entries of 4 byte(s), used by the indirect JMP at 0x004C6CD7. Entries in storage order: 0x004C6CF0, 0x004C6D4D, 0x004C6DEE, 0x004C71CA, 0x004C71CA, 0x004C74CB, 0x004C7859, 0x004C7BDF, 0x004C76BC, 0x004C7823, 0x004C70E1, 0x004C7929, 0x004C794B, 0x004C711B, 0x004C7140, 0x004C7163, 0x004C718C, 0x004C78D6, 0x004C7903, 0x004C6FDE, 0x004C6ED2, 0x004C6F12, 0x004C6FB3, 0x004C6E48, 0x004C8109, 0x004C8109, 0x004C79FF, 0x004C8109, 0x004C7A14, 0x004C6DAA, 0x004C7B4D, 0x004C800C, 0x004C80B1, 0x004C80F6, 0x004C7B73, 0x004C7F35, 0x004C8109, 0x004C8109, 0x004C7CF5, 0x004C7BF1, 0x004C7C12, 0x004C6CDE, 0x004C6CDE, 0x004C6CDE, 0x004C6E2E, 0x004C7188. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004C91E0",
+   "from": "FUN_004c91e0",
+   "to": "FacingClass__Constructor"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004C91E0",
+   "text": "Initializes facing words +0/+4 to zero, writes the current frame and zero timer duration, and writes the shifted rate word at +0x14 after the signed upper clamp at 127. Returns receiver, RET 4. Native Hover constructor caller 0x513C61..0x513C67 passes its embedded facing at +0x30; other callers pass embedded facing objects. No full FacingClass layout certification implied. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004c91e0",
+    "FacingClass__Constructor"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004C9470",
+   "from": "FUN_004c9470",
+   "to": "FacingClass__Desired"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004C9470",
+   "text": "Copies receiver dword +0 through the stack output pointer, returns that output pointer in EAX and RET 4. Native caller 0x4CE773..0x4CE788 copies the linked object facing at +0x388 into +0x3A0 through the facing setter. This is the desired-facing accessor rather than the time-interpolated current-facing path. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004c9470",
+    "FacingClass__Desired"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004C9530",
+   "from": "FUN_004c9530",
+   "to": "FacingClass__Difference"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004C9530",
+   "text": "Computes the low-word desired-minus-current facing difference and copies a dword through a hidden stack output pointer, returning that pointer in EAX (RET 4). Only the low word of the result local is written; its upper word is not initialized by this body. Native Jumpjet call 0x54C0D9 passes the output pointer and dereferences EAX at 0x54C0E1. Exact interpolation arithmetic was read, not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004c9530",
+    "FacingClass__Difference"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004CBC40",
+   "from": "FUN_004cbc40",
+   "to": "FootClass__Safety_Point"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004CBC40",
+   "text": "Searches outward between the supplied cell positions and accepts cells for which the receiver virtual slot +0x1AC returns zero; writes a packed cell through its output pointer, including empty-cell fallback 0x8B3B48. Native team retreat call 0x6EA34B..0x6EA362 passes start 2/max 4 and a member object receiver. Foot identity follows the member chain and native Foot vtable 0x7E8C94. No universal caller or exact source C++ signature claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004cbc40",
+    "FootClass__Safety_Point"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004D0180",
+   "from": "FUN_004d0180",
+   "to": "FlyLocomotionClass__Needs_To_Land"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004D0180",
+   "text": "Landing/slowdown gate on a Fly receiver. Checks the linked aircraft/control interface, landing state bytes +0x51/+0x5C, type flag +0xE0B, aircraft control flags and ammo +0x2FC. Native speed path 0x4CE1DE..0x4CE1E7 and arrival path 0x4CF4E6..0x4CF4E8 branch on AL. Fly constructor 0x4CC9A0 writes vtables with native FlyLocomotionClass RTTI. Interface roles are descriptive, not a new ABI signature. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004d0180",
+    "FlyLocomotionClass__Needs_To_Land"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004D0540",
+   "from": "FUN_004d0540",
+   "to": "StaticInit_Zero_008B3CE0"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004D0540",
+   "text": "Initializer-table slot 0x813094 points here. Writes zero dwords at 0x8B3CE0/+4/+8/+0xC. Type and purpose remain unnamed. Static operand-search absence does not establish that this storage is unused, and initializer ordering does not establish a translation unit. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004d0540",
+    "StaticInit_Zero_008B3CE0"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004DE1D0",
+   "from": "FUN_004de1d0",
+   "to": "FootClass__Resolve_Move_Order_Cell"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004DE1D0",
+   "text": "Resolves a requested move cell through action/playfield/shroud and movement-zone checks, then calls nearby-passable-cell helper 0x56DC20 when necessary. Writes a packed cell through the output pointer or uses empty cell 0x8B3D88; RET 0xC. Native caller 0x4D7DFD..0x4D7DFF passes its same Foot receiver before constructing the move event; caller 0x4D7D50 is native Foot vtable slot +0x140. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004de1d0",
+    "FootClass__Resolve_Move_Order_Cell"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004E0080",
+   "from": "FUN_004e0080",
+   "to": "FootClass__Is_Seeking_Building_Entry"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004E0080",
+   "text": "Returns 1 when any byte +0x68F/+0x690/+0x691 is set, else 0. Native team membership caller 0x6EA79B..0x6EA7A4 rejects the candidate when true. Native Foot vtable seek slots +0x340/+0x348/+0x34C and their corresponding flag setters establish the pending building-entry role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004e0080",
+    "FootClass__Is_Seeking_Building_Entry"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004E3560",
+   "from": "FUN_004e3560",
+   "to": "Get_Country_Insignia_Surface"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004E3560",
+   "text": "Maps ECX selections -2/-3/0..9 to native PCX names from 0x844AE8..0x844B14 and calls 0x6BA140 with PCX instance 0xAC4848. Native strings include rani.pcx, obsi.pcx and the ten country insignias; unsupported input returns zero. Caller 0x4E37AD..0x4E37AF passes the country-selection value. Return pointer identity is not further typed by this rename. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004e3560",
+    "Get_Country_Insignia_Surface"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004E6BE0",
+   "from": "FUN_004e6be0",
+   "to": "StaticInit_AircraftClass_Array"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004E6BE0",
+   "text": "Initializer-table slot 0x813230 points here. Initializes vector 0xA8E390 with vtable 0x7E9E64, zero capacity/count, and growth 10, then registers 0x4E6C20. Native COL/TD bytes identify DynamicVectorClass<AircraftClass*>. No claim about adjacent MissionControl storage or a negative-index alias is needed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004e6be0",
+    "StaticInit_AircraftClass_Array"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004F18B0",
+   "from": "FUN_004f18b0",
+   "to": "AbortDialog__DlgProc_B6"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004F18B0",
+   "text": "Callback 0x4F18B0 is passed in EDX with dialog resource 0xB6 in ECX by 0x4F1844..0x4F1856. Handles dialog initialization and button commands; stores the selected action code through the window-associated output pointer. Body uses RET 0x10. Descriptive abort-dialog callback role; downstream state-machine actions and original source-file name are not certified here. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004f18b0",
+    "AbortDialog__DlgProc_B6"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004F50A0",
+   "from": "FUN_004f50a0",
+   "to": "House_StaticInit_EmptyCell"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004F50A0",
+   "text": "Initializer-table slot 0x8133D4 points here. Writes zero words to packed cell 0xA8EF98. Native house constructor uses the same value, and 0x50DFF0..0x50DFF5 copies it to house+0x5494. This establishes the house empty-cell initializer role, without a universal reader count or source translation-unit claim. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004f50a0",
+    "House_StaticInit_EmptyCell"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x004F6540",
+   "from": "FUN_004f6540",
+   "to": "HouseClass__Can_Make_Money"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x004F6540",
+   "text": "Economic recovery gate on the House receiver. Checks positive refinery/harvester/factory/construction counts, native rules type lists and available money against missing infrastructure costs. Native AI caller 0x4FD9E2..0x4FD9EB only enters recovery when AL is zero. Thresholds differ: several paths allow money equal to cost (JGE/failed JL), but the refinery-only path at 0x4F680F..0x4F6811 requires money STRICTLY GREATER than the refinery cost. No universal available-money-covers-cost summary or executed parity claim. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_004f6540",
+    "HouseClass__Can_Make_Money"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0050A490",
+   "from": "FUN_0050a490",
+   "to": "HouseClass__Invalidate_Base_Node_Position"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0050A490",
+   "text": "Invalidates matching base-plan node positions after building removal, with global suppression at 0xA8ED6B. Native building limbo caller 0x445DCC..0x445DD3 passes owner house from +0x21C and the building. Matches type/cell in the house base-plan vector, clears duplicates to 0xA8EF98, and conditionally resets the matched defense node. Descriptive house base-plan role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0050a490",
+    "HouseClass__Invalidate_Base_Node_Position"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0050DA80",
+   "from": "FUN_0050da80",
+   "to": "HouseClass__GetEdge"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0050DA80",
+   "text": "Returns receiver edge dword +0x577C if it lies in 0..3, otherwise returns 0. Native aircraft move caller 0x415A60..0x415A75 passes the owner house as fallback after checking starting edge +0x1E0. Direction naming/source signature is outside this bounded admission. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0050da80",
+    "HouseClass__GetEdge"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0050DFE0",
+   "from": "FUN_0050dfe0",
+   "to": "HouseClass__Set_Base_Center"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0050DFE0",
+   "text": "Copies the packed stack cell dword to receiver+0x5494, RET 4. Native trigger action call 0x6E4526..0x6E4529 passes the house and resolved cell. Native base-center readers use this field and empty-cell sentinel 0xA8EF98. Descriptive house base-center setter. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0050dfe0",
+    "HouseClass__Set_Base_Center"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0050DFF0",
+   "from": "FUN_0050dff0",
+   "to": "HouseClass__Reset_Base_Center"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0050DFF0",
+   "text": "Copies packed empty cell 0xA8EF98 to receiver+0x5494. Native trigger action 0x6E4540..0x6E454D calls it on the supplied non-null house. Native base-center readers fall back to the starting cell when this field equals that empty cell. Descriptive house base-center resetter. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0050dff0",
+    "HouseClass__Reset_Base_Center"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00518D58",
+   "text": "Native switch jump table: 10 entries of 4 byte(s), used by the indirect JMP at 0x005185CE. Entries in storage order: 0x005185D5, 0x00518635, 0x00518647, 0x0051869D, 0x005186F7, 0x0051875A, 0x005187C0, 0x00518826, 0x005188AE, 0x00518B3E. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00520EFC",
+   "text": "Native switch jump table: 8 entries of 4 byte(s), used by the indirect JMP at 0x00520B27. Entries in storage order: 0x00520BC6, 0x00520CB8, 0x00520B2E, 0x00520B89, 0x00520E52, 0x00520BB9, 0x00520B61, 0x00520CE6. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00520F1C",
+   "text": "Native switch index table: 28 entries of 1 byte(s), used by the indirect JMP at 0x00520B27. Entries in storage order: 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x07, 0x07, 0x07, 0x01, 0x01, 0x07, 0x07, 0x07, 0x07, 0x07, 0x02, 0x07, 0x07, 0x07, 0x03, 0x07, 0x04, 0x05, 0x07, 0x01, 0x07, 0x06. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00528C00",
+   "from": "FUN_00528c00",
+   "to": "INIClass__ReadString_StringObject"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00528C00",
+   "text": "String-object overload of the INI reader. Uses its +4/+8 section cache and +0x28 index, copies a value/default into a bounded 0x400 byte buffer, trims it and assigns the output using 0x7B48D0. The string access/assignment bodies 0x7B5440 and 0x7B48D0 establish NUL-terminated 8-bit storage, not an original class name or a wide-character type. Returns output length; RET 0x10 describes the physical stack cleanup only. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00528c00",
+    "INIClass__ReadString_StringObject"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0052D848",
+   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x0052D7E5. Entries in storage order: 0x0052D816, 0x0052D7EC, 0x0052D7FA, 0x0052D808, 0x0052D840. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0052D85C",
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x0052D7E5. Entries in storage order: 0x00, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x01, 0x02, 0x03. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0052F620",
+   "from": "FUN_0052f620",
+   "to": "Parse_Command_Line"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0052F620",
+   "text": "Parses command-line arguments with argc in ECX and argv in EDX, beginning at argv[1]. Uppercases arguments and dispatches native literal switches including -NOAUDIO, -CD, -WIN, screen-size and -X paths; clears 0xA8ED6B on entry. Native WinMain call 0x6BC08A..0x6BC093 tests AL for success. This does not establish an original source C++ bool signature. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0052f620",
+    "Parse_Command_Line"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00534E50",
+   "from": "FUN_00534e50",
+   "to": "InitNeutralMixFiles"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00534E50",
+   "text": "Releases the current neutral MIX objects, then constructs NTRLMD.MIX and NEUTRAL.MIX using 0x5B3C20 and stores them to 0x884E58/0x884E5C. The archive strings are original bytes at 0x827DA0/0x827D80. Native sidebar/shell caller 0x72AB0A reaches this initializer. The body returns success/failure in AL; archive parsing behavior is outside this review. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00534e50",
+    "InitNeutralMixFiles"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00544CE0",
+   "from": "FUN_00544ce0",
+   "to": "IsometricTileTypeClass__FindIndexOfName"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00544CE0",
+   "text": "Case-insensitive lookup of name ECX over tile array 0xA8ED2C/count 0xA8ED38, comparing item ID +0x24. Returns first matching index, or 0xFFFF for null/unmatched input. Constructor 0x5447C0 registers native IsometricTileTypeClass objects in that same array; native building reader 0x465517..0x465531 checks the index and stores the tile pointer. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00544ce0",
+    "IsometricTileTypeClass__FindIndexOfName"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00547230",
+   "from": "FUN_00547230",
+   "to": "IsometricTileTypeClass__Draw_Tile_Shadow"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00547230",
+   "text": "Draws a selected native C_SHADOW shape frame for a tile/subtile through 0x4AED70 with flags 0x4601, using tile index +0x294, flag +0x2E1 and the native frame/offset tables. Native cell draw body 0x4802A6..0x4802BE loads the tile pointer from array 0xA8ED2C and passes it in ECX at 0x480337..0x480339. Constructor 0x5447C0 both appends to that array and writes native IsometricTileTypeClass RTTI vtables. Pixel result/flag interpretation was not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00547230",
+    "IsometricTileTypeClass__Draw_Tile_Shadow"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0054AA30",
+   "from": "FUN_0054aa30",
+   "to": "StaticInit_CellDiagonal_00ABC590"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0054AA30",
+   "text": "Initializer-table slot 0x81373C points here. Reads original constants at 0x7E1710/0x7E1708, calls 0x7C8FB0, doubles the x87 result, passes it to 0x4CAC40, and stores a DOUBLE at 0xABC590. This is the geometric cell-diagonal initializer; numeric output bits and source-module ownership are not certified by this reading. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0054aa30",
+    "StaticInit_CellDiagonal_00ABC590"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0054AAC0",
+   "from": "FUN_0054aac0",
+   "to": "StaticInit_Rad60_00ABC598"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0054AAC0",
+   "text": "Initializer-table slot 0x81374C points here. Multiplies double 0x7ECD38 (radians per degree) by original double 60.0 at 0x7E1728 and stores a DOUBLE at 0xABC598. Sibling geometry initializer 0x54AB00 reads it. No universal reader count, exact mathematical equality after rounding, or source-module ownership claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0054aac0",
+    "StaticInit_Rad60_00ABC598"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0054AAE0",
+   "from": "FUN_0054aae0",
+   "to": "StaticInit_Rad90_00ABC570"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0054AAE0",
+   "text": "Initializer-table slot 0x813750 points here. Multiplies double 0x7ECD38 (radians per degree) by original double 90.0 at 0x7E1730 and stores a DOUBLE at 0xABC570. Sibling geometry initializer 0x54AB00 reads it. No universal reader count, exact mathematical equality after rounding, or source-module ownership claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0054aae0",
+    "StaticInit_Rad90_00ABC570"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0054AB00",
+   "from": "FUN_0054ab00",
+   "to": "Jumpjet_StaticInit_LevelHeight"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0054AB00",
+   "text": "Static height initializer referenced by startup pointer 0x813754. It stores the 4CAD50/7C5F00 calculation in 0xABC5E8 after scaling by 0.5. Jumpjet configuration code at 0x54AD95 uses twice this value as a minimum height; altitude code at 0x54D2E6 uses four times it. This plate records static instruction evidence; the initialized numeric value was not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0054ab00",
+    "Jumpjet_StaticInit_LevelHeight"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0054B19C",
+   "text": "Native switch jump table: 7 entries of 4 byte(s), used by the indirect JMP at 0x0054B03C. Entries in storage order: 0x0054B043, 0x0054B04D, 0x0054B057, 0x0054B061, 0x0054B06B, 0x0054B075, 0x0054B07D. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0054E220",
+   "from": "FUN_0054e220",
+   "to": "StaticInit_ThreeDword_00ABC678"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0054E220",
+   "text": "Startup initializer at 0x8137A4: writes the three DWORD components at 0xABC678/0xABC67C/0xABC680 to (128,128,0). No object receiver is used. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0054e220",
+    "StaticInit_ThreeDword_00ABC678"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0054F450",
+   "from": "FUN_0054f450",
+   "to": "Input__KeyToASCII"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0054F450",
+   "text": "Translates the encoded key argument through MapVirtualKeyA and ToAscii using the input-state receiver from [0x87F770]; the key-state array begins at receiver+0x14. Release flag 0x800 returns 0. Keys 0x24/0x23 return 8/0x5C. Modifier flags temporarily set state bytes for Shift/Ctrl/Alt; the function clears those temporary bytes afterward. It returns the low character byte only when ToAscii reports exactly one character. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0054f450",
+    "Input__KeyToASCII"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00559D30",
+   "from": "FUN_00559d30",
+   "to": "CompareFileEntriesNewestFirst"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00559D30",
+   "text": "Load-dialog pointer-array comparator. It compares the FILETIME at entry+0x1AC through CompareFileTime and returns the negated comparison, ordering newer timestamps first. Caller 0x559999 registers it with element size 4. Equal timestamps receive no secondary comparison in this callback. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00559d30",
+    "CompareFileEntriesNewestFirst"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0055AF40",
+   "from": "FUN_0055af40",
+   "to": "Game__SetMinFrameRate"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0055AF40",
+   "text": "Scalar minimum-frame-rate setter: stores incoming ECX into 0x829FF4. Rules reads the DetailMinFrameRateNormal/Movie keys, and the frame threshold routine 0x55AF60 uses 0x829FF4. Incoming ECX is the integer value, not an object receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0055af40",
+    "Game__SetMinFrameRate"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005617E0",
+   "from": "FUN_005617e0",
+   "to": "StaticInit_MapLevelHeightLeptons"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005617E0",
+   "text": "Map height-unit initializer referenced by startup pointer 0x813A88. Stores the 4CAD50/7C5F00 calculation in 0xABDE88 after multiplying by 0.5. Map code divides coordinate Z by this value and multiplies cell height byte +0x11B by it (0x5673B1, 0x5694FB). Later initializers derive related height constants. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005617e0",
+    "StaticInit_MapLevelHeightLeptons"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00588C60",
+   "from": "FUN_00588c60",
+   "to": "MapCoord_Sub"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00588C60",
+   "text": "Subtracts two packed WORD cell-coordinate components: ECX is the left pair, the second stack argument is the right pair, and the first stack argument is the output pointer. The component subtraction wraps at 16 bits. Returns the output pointer and RET 8. Caller 0x6B0104 reads the result as signed cell components. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00588c60",
+    "MapCoord_Sub"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0058B820",
+   "from": "FUN_0058b820",
+   "to": "ComputeScenarioHeaderFromMap"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0058B820",
+   "text": "Derives scenario header/start-position data from the map. It examines waypoint slots starting at 0 and stops at the first undefined waypoint, up to eight entries; it does not skip holes. Defined waypoint cells are converted through world/screen helpers. A separate map scan derives bounds and terrain/header fields in the scenario object. Caller: 0x594EE3. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0058b820",
+    "ComputeScenarioHeaderFromMap"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0059B940",
+   "from": "FUN_0059b940",
+   "to": "Rmg__BlobDirectedGrowthKey"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0059B940",
+   "text": "Computes the floating priority key used by blob-growth heap insertion. Caller 0x59C1AB selects it when parameter byte +0x24 is set, stores the result in node+4, and orders the heap by that value. A rectangle matching the four DWORD sentinel at 0xABE2F0 selects the simple distance branch; other rectangles use the weighted rectangle/distance calculation. RET 0x18. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0059b940",
+    "Rmg__BlobDirectedGrowthKey"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0059BAB0",
+   "from": "FUN_0059bab0",
+   "to": "Rmg__IsCellInRectOrEllipse"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0059BAB0",
+   "text": "RMG cell-region predicate. A rectangle matching the four DWORD sentinel at 0xABE2F0 accepts the cell. Otherwise the clear shape flag selects half-open rectangle bounds, and the set flag selects the weighted squared-distance/ellipse test with a strict threshold of 1.0. The rectangle and two coefficients are stack arguments; RET 0x1C. Callers: 0x59B618 and 0x59C13D. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0059bab0",
+    "Rmg__IsCellInRectOrEllipse"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005A2F50",
+   "from": "FUN_005a2f50",
+   "to": "Rmg__HillHeightRandomWalk"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005A2F50",
+   "text": "RMG hill-height random walk over the 0x50-byte scratch records at [0xABED10]. It reads parameter receiver+0x44, updates height/velocity state and respects the record flag at +0x45. Calls to 0x5980C0 are present inside rejection branches. Before integer conversion through 0x7C5F00, positive heights add 0.5 and negative heights subtract 0.5. Caller 0x5A3600 forwards its parameter receiver. This plate establishes static flow only. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005a2f50",
+    "Rmg__HillHeightRandomWalk"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005A33F0",
+   "from": "FUN_005a33f0",
+   "to": "Rmg__HillsWaterAdjacencySeed"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005A33F0",
+   "text": "Seeds the scratch records used by RMG hills. It scans map cells and terrain-classification helpers, tests eight adjacent offsets for a clear-cell neighbor, and sets the matching scratch height to 0.5 with the +0x45 flag. The water-classification branch sets +0x45 without the same neighbor-height write. Called at 0x5A35F9 immediately before the hill-height random walk. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005a33f0",
+    "Rmg__HillsWaterAdjacencySeed"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005AF4D0",
+   "from": "FUN_005af4d0",
+   "to": "Matrix3D__RotateVector"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005AF4D0",
+   "text": "Transforms a three-float vector by the 3x3 linear portion of a 3x4 float matrix. ECX points to the matrix; stack arguments are output buffer then input vector. Translation fields +0x0C/+0x1C/+0x2C are not used. Returns the output pointer; RET 8. Used in bounce and particle collision calculations. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005af4d0",
+    "Matrix3D__RotateVector"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005B34E8",
+   "text": "Native switch jump table: 32 entries of 4 byte(s), used by the indirect JMP at 0x005B30C1. Entries in storage order: 0x005B30C8, 0x005B3172, 0x005B334E, 0x005B34C4, 0x005B3194, 0x005B32E8, 0x005B3480, 0x005B310C, 0x005B330A, 0x005B332C, 0x005B31B6, 0x005B31D8, 0x005B31FA, 0x005B321C, 0x005B323E, 0x005B3370, 0x005B3260, 0x005B34A2, 0x005B312E, 0x005B3150, 0x005B3282, 0x005B3392, 0x005B32C6, 0x005B30EA, 0x005B32A4, 0x005B33B4, 0x005B33D6, 0x005B33F8, 0x005B345E, 0x005B34C4, 0x005B341A, 0x005B343C. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005B67F0",
+   "from": "FUN_005b67f0",
+   "to": "ModemGuest__DecodeGameOptions"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005B67F0",
+   "text": "Decodes modem guest game-option packet data into global session state. It returns AL=0 when the compared options are unchanged; otherwise it copies option/map fields, invalidates the cached map descriptor and returns AL=1. Caller 0x5B635F supplies the packet pointer. The incoming ECX receiver is not used by this function. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005b67f0",
+    "ModemGuest__DecodeGameOptions"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005B7090",
+   "from": "FUN_005b7090",
+   "to": "ModemGuest__StartGame"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005B7090",
+   "text": "Starts the modem guest game using the preserved dialog receiver. Byte argument value 1 returns AL=0 immediately. The normal path reads the guest dialog, prepares two player records, performs the network start wait and updates scenario/session state before AL=1. Caller 0x5B65BF passes the same guest receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005b7090",
+    "ModemGuest__StartGame"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005BAC60",
+   "from": "FUN_005bac60",
+   "to": "ModemHost__StartGame"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005BAC60",
+   "text": "Modem host start-game method, identified by its native ModemHost.StartGame enter/exit logs. It uses the incoming dialog receiver for player state. Byte argument value 1 returns AL=0; the normal path prepares player/options data and performs the modem start handshake. Caller 0x5B7903 consumes the boolean result. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005bac60",
+    "ModemHost__StartGame"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005BC6E0",
+   "from": "FUN_005bc6e0",
+   "to": "DebugOutputDialog__Proc_F8"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005BC6E0",
+   "text": "Dialog callback registered for resource 0xF8 at 0x5BC545. Handles paint/character/command messages, paints the 80x25 diagnostic display, dispatches character controls through tables 0x5BCACC/0x5BCB10, and includes audio/test operations. The command branch hides the dialog window. RET 0x10. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005bc6e0",
+    "DebugOutputDialog__Proc_F8"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005C9AE0",
+   "from": "FUN_005c9ae0",
+   "to": "CompareScoreRowsDescending"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005C9AE0",
+   "text": "Score-dialog pointer-array comparator. Compares signed row metric at +0x60 in descending order, returning 0 for a tie. Caller 0x5C9D6D supplies it to the sort with four-byte pointer elements derived from the 0x70-byte score rows. No secondary tie comparison occurs in this callback. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005c9ae0",
+    "CompareScoreRowsDescending"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005D93D0",
+   "from": "FUN_005d93d0",
+   "to": "FirewallHelper__ReadSavedSettings"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005D93D0",
+   "text": "Reads saved MultiPlayer firewall settings through the INI object at 0x8870C0. FirewallSettings defaults to 0 and is stored at receiver+4; FirewallDelta defaults to 1 and is stored at receiver+0x0C. The session reader passes receiver 0xABFEC8 at 0x6981E1. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005d93d0",
+    "FirewallHelper__ReadSavedSettings"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005E2E40",
+   "from": "FUN_005e2e40",
+   "to": "StdButtonMessageBox__DlgProc"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005E2E40",
+   "text": "Callback for the standard-button message-box wrapper at 0x5E2CD0. Handles painting, background erase and owner-draw messages. In WM_COMMAND the original dispatch tables select ids 1,2,6,7 for the close path through 0x7757E0; other ids take the zero-return path. RET 0x10. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005e2e40",
+    "StdButtonMessageBox__DlgProc"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005E7460",
+   "from": "FUN_005e7460",
+   "to": "PregameSetup"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005E7460",
+   "text": "Pregame setup identified by the native Pregame setup for %d players log. Copies player-count/session state into scenario/game globals, sets game-start flags and protocol state, then tail-calls 0x6B8B10. No incoming object receiver is used. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005e7460",
+    "PregameSetup"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005F37C0",
+   "from": "FUN_005f37c0",
+   "to": "StaticInit_ObjectLevelHeightLeptons"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005F37C0",
+   "text": "Object height-unit initializer referenced by startup pointer 0x8141F0. Stores the 4CAD50/7C5F00 calculation in 0xAC13C8 after scaling by 0.5. Object height predicates at 0x5F6B6F/0x5F6B9F compare against twice this value, and 0x5F3860 derives the related four-level height. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005f37c0",
+    "StaticInit_ObjectLevelHeightLeptons"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005F3860",
+   "from": "FUN_005f3860",
+   "to": "StaticInit_ObjectBridgeHeightLeptons"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005F3860",
+   "text": "Startup initializer at 0x8141FC. Computes 4*[0xAC13C8], adds 0.5 before conversion through 0x7C5F00 and stores 0xAC13BC. Object height get/set paths subtract/add this offset when the +0x8C state byte is set, and floor-height tests also use it. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005f3860",
+    "StaticInit_ObjectBridgeHeightLeptons"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005F3890",
+   "from": "FUN_005f3890",
+   "to": "StaticInit_ObjectZeroCell"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005F3890",
+   "text": "Startup initializer at 0x814200. Writes the two WORD components at 0xAC1360/0xAC1362 to zero. Object paths such as 0x5F5609 and 0x5F5631 pass the packed cell pair to downstream calls. No receiver is used. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005f3890",
+    "StaticInit_ObjectZeroCell"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005F96B0",
+   "from": "FUN_005f96b0",
+   "to": "Theater__ApplyNamingConvention"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005F96B0",
+   "text": "Applies theater filename naming convention in place. For theater index -1 it leaves the name unchanged. After ASCII case folding for the test, names beginning with G/N/C/Y followed by A/T have byte 1 replaced by the theater letter at 0x7E1BCE + index*0x70. Original letters are T,A,U,D,N,L. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005f96b0",
+    "Theater__ApplyNamingConvention"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005F9710",
+   "from": "FUN_005f9710",
+   "to": "Theater__ApplyGenericLetter"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005F9710",
+   "text": "Writes ASCII G into filename byte 1. An inspected image-loading path calls this after the theater naming attempt and retries the load (0x427BDE/0x427BFC). ECX is the mutable filename buffer, not a class receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005f9710",
+    "Theater__ApplyGenericLetter"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005F99E0",
+   "from": "FUN_005f99e0",
+   "to": "DestroyVoxelCaches"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005F99E0",
+   "text": "Clears the global voxel cache entries. For each entry it frees the four cache blocks at +0x244/+0x258/+0x26C/+0x280 and resets their accompanying state. It then rewinds the shared pool cursor [0x887468] to the base [0x887464]. The voxel allocation path calls it at 0x706AE0. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005f99e0",
+    "DestroyVoxelCaches"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005FA510",
+   "from": "FUN_005fa510",
+   "to": "OptionsClass__Set_Sound_Volume"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005FA510",
+   "text": "Sets sound-effects volume on the options receiver 0xA8EB60. Clamps only the upper bound to 1.0, stores the float at +0x38 and forwards the scaled integer target to 0x407150 on [0x87E748]. A nonzero feedback byte triggers the sound at Rules+0x710. Logs SoundVolume = %f. RET 8. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005fa510",
+    "OptionsClass__Set_Sound_Volume"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x005FF420",
+   "from": "FUN_005ff420",
+   "to": "InitSpotlightResources"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x005FF420",
+   "text": "Initializes the shared SpotLight drawing resources. Flag 0xAC1834 guards the procedural circle-mask arrays at 0xAC1698/0xAC1798. It also updates 0x833588 and builds the optional color lookup at 0xAC1838. The native SpotLightClass pointer-vector draw loop calls 0x5FF850, which consumes these resources. Caller: 0x531753. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_005ff420",
+    "InitSpotlightResources"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00603D30",
+   "from": "FUN_00603d30",
+   "to": "OwnerDraw__SetStaticImage"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00603D30",
+   "text": "Assigns an image to an owner-draw control. ECX is the control handle and EDX is the image/surface pointer. After hash lookup it adds 4 to the matched node to reach the payload, sets payload+0x70 to 2 and payload+0x14 to the image pointer, then invalidates the control window. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00603d30",
+    "OwnerDraw__SetStaticImage"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0060B7A0",
+   "from": "FUN_0060b7a0",
+   "to": "ShellDialog__LayoutOrdinaryChild"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0060B7A0",
+   "text": "Layouts an ordinary shell-dialog child when the 0x69BBE0 gate permits it. ECX is the child HWND. It obtains parent and rectangles, centers relative to the base dimensions at 0x7F5BE4/0x7F5BF0, clamps the new origin to nonnegative values and calls MoveWindow with the existing dimensions and repaint disabled. Caller: 0x60C3F8. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0060b7a0",
+    "ShellDialog__LayoutOrdinaryChild"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0062C6E0",
+   "from": "FUN_0062c6e0",
+   "to": "ParticleClass__AI_Spark"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0062C6E0",
+   "text": "ParticleClass Spark behavior update. Constructor 0x62B767 installs the native ParticleClass vptr; dispatcher 0x62CE40 selects this path through type+0x314 slot 3, whose native behavior-name entry is Spark. The body updates gravity/velocity, handles cell/building/wall collision and reflection, then updates color state. A direct Scenario RNG helper call occurs at 0x62CA86; total downstream RNG behavior was not executed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0062c6e0",
+    "ParticleClass__AI_Spark"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00630250",
+   "from": "FUN_00630250",
+   "to": "DynamicVectorClass_ParticleClass_ptr__Add"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00630250",
+   "text": "DynamicVectorClass<ParticleClass*>::Add. Checks count against capacity and grows through the receiver virtual resize when ownership/growth rules permit; returns AL=0 on failure. Otherwise stores the ParticleClass pointer from the stack argument into items[count], increments count and returns AL=1. RET 4. ParticleSystem stores this vector at +0xBC with native vptr 0x7E9D64. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00630250",
+    "DynamicVectorClass_ParticleClass_ptr__Add"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00632C40",
+   "from": "FUN_00632c40",
+   "to": "RemainderTable__Increment"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00632C40",
+   "text": "Advances a prime-remainder table by the low WORD of its increment argument. Uses count 0xDB7 from 0x5C61E0 and the WORD table at 0x82E174 from 0x5C61D0, repeatedly subtracting each prime to reduce its remainder. The receiver flag records whether a zero remainder occurs. Prime-search caller 0x632252 advances one table by 2 and another by 4. RET 4. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00632c40",
+    "RemainderTable__Increment"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006379C0",
+   "from": "FUN_006379c0",
+   "to": "Planning__StartMode"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006379C0",
+   "text": "Enters waypoint planning mode when byte 0xAC4CF4 is clear, writes that byte, plays the configured start sound and posts message 0x11C7. Native press handler 0x731A5C reaches it. Static planning-module role; exact source class/function identity is not claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006379c0",
+    "Planning__StartMode"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00637A10",
+   "from": "FUN_00637a10",
+   "to": "Planning__EndMode"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00637A10",
+   "text": "When planning mode is active, queues event type 0x2B for the local house, clears planning state/mode, plays the end sound and posts message 0x11C8. Native release handler 0x731A73 and defeat path 0x4FC1EE call it. Static planning-module role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00637a10",
+    "Planning__EndMode"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00637D00",
+   "from": "FUN_00637d00",
+   "to": "Planning__QueueNodeDeleteEvent"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00637D00",
+   "text": "Builds and queues planning node-delete event 0x2C from the node in ECX, using a valid target from the node member event. Native delete handler 0x731A10..0x731A1B obtains the current node and tail-jumps here. ECX is the planning node input, not a manager this receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00637d00",
+    "Planning__QueueNodeDeleteEvent"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00637E00",
+   "from": "FUN_00637e00",
+   "to": "Planning__ExecuteEvent"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00637E00",
+   "text": "Dispatches planning event types, connecting, committing or deleting plan nodes and creating nodes for planning-marked mission events. Native event dispatcher at 0x4C6CDE..0x4C6CE0 passes the event object in ECX; event jump-table slots for 0x2A/0x2B/0x2C all reach that block. Static planning-module role with an event input, not manager this. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00637e00",
+    "Planning__ExecuteEvent"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0063AC70",
+   "from": "FUN_0063ac70",
+   "to": "Planning__GetInvalidNodeReason"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0063AC70",
+   "text": "Checks selected planning paths for conflicts with the node in ECX and returns the conflict code or -1. Native mouse/planning caller 0x638F5C..0x638F66 compares the result against -1. The numeric code meanings follow the original branches; no universal caller count asserted. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0063ac70",
+    "Planning__GetInvalidNodeReason"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0063AD50",
+   "from": "FUN_0063ad50",
+   "to": "Planning__ConnectSelectionToNode"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0063AD50",
+   "text": "Connects current selection to the pressed planning node by collecting/deduplicating techno owners and queuing type 0x2A events, or makes the node current when selection is empty. Native mouse-release caller 0x63AA49..0x63AA5E requires the pressed/released node match. Static planning-module role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0063ad50",
+    "Planning__ConnectSelectionToNode"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00645BF8",
+   "text": "Native switch jump table: 11 entries of 4 byte(s), used by the indirect JMP at 0x00645BB8. Entries in storage order: 0x00645BF5, 0x00645BBF, 0x00645BC5, 0x00645BCB, 0x00645BD1, 0x00645BD7, 0x00645BDD, 0x00645BF5, 0x00645BE3, 0x00645BE9, 0x00645BEF. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00645ED0",
+   "from": "FUN_00645ed0",
+   "to": "Quaternion_Multiply"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00645ED0",
+   "text": "Four-float quaternion product helper. ECX is the output buffer, EDX the first operand and the stack argument the second operand; returns the output pointer and RET 4. After the Hamilton product it divides each component by the sum of squared components when that sum is nonzero; there is no square root in this body. Bounce caller 0x43A073 supplies the +0x30/+0x40 four-float states. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00645ed0",
+    "Quaternion_Multiply"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00648350",
+   "from": "FUN_00648350",
+   "to": "Wait_For_Players_At_Game_End"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00648350",
+   "text": "Waits for network player completion at game end. Receives packets, services the presentation loop and compares connection frame progress with the current frame/send horizon. Native logs identify the all-finished score-screen path, end-game timeout and full DoList condition. Called at 0x68568D and 0x685DDD. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00648350",
+    "Wait_For_Players_At_Game_End"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0064C380",
+   "from": "FUN_0064c380",
+   "to": "Execute_DoList"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0064C380",
+   "text": "Executes admitted DoList event records for the current frame/house state, marking their execution and calling 0x4C6CB0. It checks event timing and the frame/CRC records; failure paths return 0 and successful completion returns 1. Records use a 0x6F-byte stride and ring mask 0x3FFF. RET 0x0C. Incoming ECX/EDX are not object receivers read by this body. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0064c380",
+    "Execute_DoList"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00655990",
+   "from": "FUN_00655990",
+   "to": "RadarClass__ResetTrackingAndSurfaces"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00655990",
+   "text": "Resets radar tracking/surfaces on the display receiver 0x87F7E8 after view bounds change. Recreates the tracker at +0x1258, invokes bounds and surface rebuild helpers, and clears byte +0x423 on the current techno entries. The action caller writes rectangle 0x87F8E4 before the call at 0x6E2209. Native RadarClass RTTI and self-named initialization paths corroborate the receiver role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00655990",
+    "RadarClass__ResetTrackingAndSurfaces"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00661020",
+   "from": "FUN_00661020",
+   "to": "RGBClass__Lerp"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00661020",
+   "text": "Interpolates two three-byte RGB values with a float weight. ECX is the output record; stack arguments are the two color pointers and the weight. Each component is clamped to [0,255] and converted through 0x7C5F00; returns the output pointer and RET 0x0C. Particle caller 0x62BAEE uses the native StartColor1/StartColor2 records. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00661020",
+    "RGBClass__Lerp"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0067BB10",
+   "from": "FUN_0067bb10",
+   "to": "INI__ReadInfantryTypeList"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0067BB10",
+   "text": "Reads a comma-separated InfantryType list from INI into the output vector. Nonempty values are tokenized using the comma delimiter at 0x817F70 and resolved through 0x524CB0, whose allocation path constructs native InfantryTypeClass objects. Missing/empty read takes the default-list copy path. ECX is the output vector and EDX the INI object; RET 0x0C. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0067bb10",
+    "INI__ReadInfantryTypeList"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0067BCE0",
+   "from": "FUN_0067bce0",
+   "to": "INI__ReadBuildingType"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0067BCE0",
+   "text": "Reads an INI BuildingType name. Nonempty string is resolved through 0x4653C0, whose allocation path constructs native BuildingTypeClass objects; missing/empty value returns the supplied default pointer. ECX is the INI receiver and EDX the section; RET 8. Rules caller 0x671144 uses it for PrismType. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0067bce0",
+    "INI__ReadBuildingType"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0067BD30",
+   "from": "FUN_0067bd30",
+   "to": "INI__ReadAircraftType"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0067BD30",
+   "text": "Reads an INI AircraftType name. Nonempty string is resolved through 0x41CEF0, whose allocation path constructs native AircraftTypeClass objects; missing/empty value returns the supplied default pointer. ECX is the INI receiver and EDX the section; RET 8. Used by Rules rocket-type and techno spawn-type reads. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0067bd30",
+    "INI__ReadAircraftType"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0067F7E0",
+   "from": "FUN_0067f7e0",
+   "to": "Save_Misc_Values"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0067F7E0",
+   "text": "Writes miscellaneous game globals, pointer lists and data-table blocks through the incoming stream interface. Checked negative write results return early; the final nonnegative result is normalized to 0. The auxiliary call to 0x539890 at 0x67F895 is followed without testing its result, so this body does not propagate every subordinate failure. Save caller: 0x67D421. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0067f7e0",
+    "Save_Misc_Values"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0067F9C0",
+   "from": "FUN_0067f9c0",
+   "to": "Load_Misc_Values"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0067F9C0",
+   "text": "Reads miscellaneous game globals, pointer lists and data-table blocks through the incoming stream interface and registers pointer fields for fixup through 0x6CF240. Checked negative read results return early; the final nonnegative result is normalized to 0. The auxiliary call to 0x539AE0 at 0x67FB09 is followed without testing its result. Load caller: 0x67E8B5. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0067f9c0",
+    "Load_Misc_Values"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00684C30",
+   "from": "FUN_00684c30",
+   "to": "Fill_In_Data"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00684C30",
+   "text": "Rebuilds derived scenario state after map setup. It temporarily raises global counter 0xA8E7AC while updating building entries and distributing tag state, then processes map/cell-derived state and ensures the GasCloudSys particle-system instance. A later ore-animation loop is gated by the Rules pointer at +0x1870 and qualifying cell tests before its direct RNG/animation calls. Callers: 0x684ACE and 0x599A5B. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00684c30",
+    "Fill_In_Data"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00685120",
+   "from": "FUN_00685120",
+   "to": "Post_Load_Game"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00685120",
+   "text": "Post-load rebuild phase invoked at 0x67E685 after state loading and pointer fixup. It calls state/resource rebuild helpers, refreshes Radar, rebases a saved timer against the current frame, restores path/view state and invalidates the game window before the remaining view refresh. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00685120",
+    "Post_Load_Game"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00689B20",
+   "from": "FUN_00689b20",
+   "to": "ScenarioClass__Read_Local_Variables"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00689B20",
+   "text": "INI section string at 0x83D824 is VariableNames; whole body clears 100 strided 0x29-byte names, parses numeric keys, and writes a bool at entry+0x28. Direct caller 0x68A737 passes its original Scenario receiver in ESI and the INI argument. This is not an INI receiver. Receiver scope: Scenario object passed unchanged by 0x689E90, corroborated by +0x248A/stride0x29 local-variable writes. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00689b20",
+    "ScenarioClass__Read_Local_Variables"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006AFD40",
+   "text": "Native switch jump table: 6 entries of 4 byte(s), used by the indirect JMP at 0x006AF734. Entries in storage order: 0x006AF73B, 0x006AF8A4, 0x006AF8E4, 0x006AF9FE, 0x006AFCC3, 0x006AFCFC. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006B0238",
+   "text": "Native switch jump table: 7 entries of 4 byte(s), used by the indirect JMP at 0x006AFD73. Entries in storage order: 0x006AFD7A, 0x006AFDC1, 0x006AFEC0, 0x006AFF43, 0x006AFF8E, 0x006B003C, 0x006B020F. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006B1A70",
+   "from": "FUN_006b1a70",
+   "to": "CellStruct__Length"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006B1A70",
+   "text": "Reads two signed 16-bit components through ECX; multiplies/sums with x87, calls approximate square-root 0x4CAC40, then integer conversion 0x7C5F00. Caller 0x6AFB05 constructs a cell-coordinate difference and compares sign-extended AX. Role and 4-byte record are established; numeric accuracy is not executed. Receiver scope: 4-byte CellStruct offset record in ECX, constructed on caller stack. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006b1a70",
+    "CellStruct__Length"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006B5210",
+   "from": "FUN_006b5210",
+   "to": "StaticInit_SmudgeZeroCell"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006B5210",
+   "text": "Writes two zero words to 0xB0B788/0xB0B78A; raw initializer pointer is at 0x814C1C inside the table traversed by 0x7CBED3. Smudge placers compare this pair at 0x6B59CE/0x6B59D7 and 0x6B5CBE/0x6B5CC7 then return without placement. Receiver scope: receiverless CRT initializer. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006b5210",
+    "StaticInit_SmudgeZeroCell"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006B8B30",
+   "from": "FUN_006b8b30",
+   "to": "ScenarioClass__Write_SpecialFlags"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006B8B30",
+   "text": "Whole body makes 13 INI bool writes from bitfields in its first dword. Section pointers 0x8401C8/CC both resolve to SpecialFlags. Direct caller 0x68B0A4 passes the scenario object base, so the Scenario prefix is contextual to its first flags member. Receiver scope: Scenario base used as its first 4-byte SpecialFlags member. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006b8b30",
+    "ScenarioClass__Write_SpecialFlags"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006B8CA0",
+   "from": "FUN_006b8ca0",
+   "to": "ScenarioClass__Read_SpecialFlags"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006B8CA0",
+   "text": "INI bool reads update the first dword, use current bit values as defaults, and gate the later seven reads on 0xA8B238 == 0 or 0xA8ED6B != 0. Direct caller 0x689EAB passes its unchanged scenario base. Receiver scope: Scenario base used as its first 4-byte SpecialFlags member. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006b8ca0",
+    "ScenarioClass__Read_SpecialFlags"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006CAE00",
+   "from": "FUN_006cae00",
+   "to": "StaticInit_SuperCellOffsets3x3"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006CAE00",
+   "text": "Whole body constructs the stated nine 4-byte signed-word offsets, including all zero/one/minus-one components; pointer 0x814DD4 is inside the CRT init range. SuperClass launch consumes this base at 0x6CC679, 0x6CCF34 and 0x6CD916 and adds each pair to a target cell. Receiver scope: receiverless CRT initializer; Super prefix is table consumer/module role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006cae00",
+    "StaticInit_SuperCellOffsets3x3"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006CBEA8",
+   "text": "Native switch jump table: 12 entries of 4 byte(s), used by the indirect JMP at 0x006CBDE6. Entries in storage order: 0x006CBDED, 0x006CBDF9, 0x006CBE11, 0x006CBE29, 0x006CBE68, 0x006CBE35, 0x006CBE35, 0x006CBE1D, 0x006CBE41, 0x006CBE4D, 0x006CBE05, 0x006CBE59. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006D6410",
+   "from": "FUN_006d6410",
+   "to": "Tactical__CoordToVisibleCell"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006D6410",
+   "text": "Whole body derives cell centers, scans diagonally back in 8-lepton increments from +0x600, adjusts probes using signed cell level and masks 0x1000/0x100, then writes a covering cell or the base cell. All eight decoded direct call sites pass [0x887324] in ECX and compare returned cells. Receiver scope: Tactical instance is supplied by callers, but this body never reads ECX; do not invent receiver fields. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006d6410",
+    "Tactical__CoordToVisibleCell"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006D7C00",
+   "from": "FUN_006d7c00",
+   "to": "Tactical__DrawCliffShadowsInRect"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006D7C00",
+   "text": "Tactical receiver +0xB0/+0xB4 offsets are used to walk the projected cells under a rectangle; in-bounds cells are looked up then passed to 0x4802A0 with screen point and clipping argument. Four decoded call sites are inside the tactical overlay draw path. Receiver scope: Tactical receiver passed unchanged by draw caller. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006d7c00",
+    "Tactical__DrawCliffShadowsInRect"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006DAD60",
+   "from": "FUN_006dad60",
+   "to": "Tactical__DrawWaypointPaths"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006DAD60",
+   "text": "Whole body iterates House slots +0x210 through +0x23C, accesses waypoint records, dispatches marker/text drawing and lines, selects pattern draw +0x4C for House+0x20C matching path, and +0x50 otherwise. Map-editor byte causes early exit. Caller 0x6D463F supplies 0 and 0x6D46C6 supplies 1. Receiver scope: Tactical receiver, with local-house state fetched through 0xA83D4C. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006dad60",
+    "Tactical__DrawWaypointPaths"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006E8220",
+   "from": "FUN_006e8220",
+   "to": "TaskForceClass__LoadFromINIList"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006E8220",
+   "text": "Whole body scans literal TaskForces INI registry, compares IDs, allocates 0xD4-byte records and constructs them through 0x6E7E80, then invokes +0x64 and stores original EDX at +0xA0. Native callsites 0x6879B4/BD pass INI pointers in ECX with EDX 1/0. A null pointer on the none sentinel path is directly dereferenced. Receiver scope: ECX is CCINI input; name is a TaskForce registry/module function, not TaskForce this. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006e8220",
+    "TaskForceClass__LoadFromINIList"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006E8780",
+   "from": "FUN_006e8780",
+   "to": "TaskForceClass__Needed_Tech_Level"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006E8780",
+   "text": "Scans the receiver eight-byte member entries at +0xA4/+0xA8, taking their type field +0x634 into a running maximum. A member value -1 assigns 11 when global game mode is nonzero. Native AI trigger reader 0x41FA66..0x41FA90 passes TeamType+0xE4 and folds the result into its requirement. TaskForce member-vector producer and native RTTI support the class role. No source-TS equivalence claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006e8780",
+    "TaskForceClass__Needed_Tech_Level"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006E9F74",
+   "text": "Native switch jump table: 65 entries of 4 byte(s), used by the indirect JMP at 0x006E945B. Entries in storage order: 0x006E9783, 0x006E9605, 0x006E95AB, 0x006E95EC, 0x006E95B3, 0x006E97CE, 0x006E98AE, 0x006E98C9, 0x006E9CC8, 0x006E97B5, 0x006E9832, 0x006E9812, 0x006E982B, 0x006E9879, 0x006E979C, 0x006E9637, 0x006E961E, 0x006E972C, 0x006E96BD, 0x006E984B, 0x006E9683, 0x006E9650, 0x006E9583, 0x006E98E5, 0x006E94BA, 0x006E9901, 0x006E9921, 0x006E993E, 0x006E9958, 0x006E99C8, 0x006E99E1, 0x006E99FD, 0x006E9A74, 0x006E9AAE, 0x006E9ACF, 0x006E9B6B, 0x006E9B86, 0x006E954D, 0x006E9530, 0x006E9BA1, 0x006E9BBE, 0x006E9BDB, 0x006E9C09, 0x006E9C22, 0x006E9462, 0x006E94C9, 0x006E9C64, 0x006E9C7D, 0x006E9CAF, 0x006E9CE1, 0x006E9CF7, 0x006E9D29, 0x006E9D42, 0x006E9D63, 0x006E9D7C, 0x006E9D95, 0x006E9DAE, 0x006E9DC7, 0x006E9C96, 0x006E9DE0, 0x006E9DF9, 0x006E9E3E, 0x006E9E83, 0x006E9EC8, 0x006E9F0D. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006EF110",
+   "from": "FUN_006ef110",
+   "to": "TeamClass__Script_Unload"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006EF110",
+   "text": "Whole body walks team member list (+0x54, member +0x5D8), checks transport passengers (+0x118), queues mission 0x10 through member vtable+0x1E8, removes member categories for action argument 1/2/3, and sets team+0x80. Direct caller 0x6E9CD4 passes team ESI and action record. No temporal execution performed. Receiver scope: Team receiver in ECX. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006ef110",
+    "TeamClass__Script_Unload"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006F1E20",
+   "from": "FUN_006f1e20",
+   "to": "TeamTypeClass__Can_Recruit"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006F1E20",
+   "text": "Recruitment predicate on the TeamType receiver with Foot and House stack inputs. Checks existing team/type, life/activity/limbo, radio state, owner, mission recruitability, recruit flags, type priority and aircraft weapon/ammo state. Native house scan 0x50967A..0x5096B2 takes objects from the Foot array and branches on AL. No campaign-unreachability or exact source C++ signature claimed. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006f1e20",
+    "TeamTypeClass__Can_Recruit"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x006F2A40",
+   "from": "FUN_006f2a40",
+   "to": "TechnoStaticInit__ZeroCell"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x006F2A40",
+   "text": "Stores zero X/Y words into 0xB0EA50/52; pointer 0x815068 belongs to the CRT init range. Exact consumer 0x7040A3 initializes its selected cell from this pair, with comparisons at 0x704102/110; other static reads are captured in global_scan.json. Receiver scope: receiverless CRT initializer, Techno is translation-unit/consumer scope. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_006f2a40",
+    "TechnoStaticInit__ZeroCell"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00702D24",
+   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x00702049. Entries in storage order: 0x007027F7, 0x00702713, 0x00702695, 0x007027F7, 0x00702050. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00703CC0",
+   "from": "FUN_00703cc0",
+   "to": "TechnoClass__IsNearBridgeFlag400"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00703CC0",
+   "text": "Whole body looks up receiver current cell, returns false for missing cell or receiver +0x8C, otherwise tests cell+0x140 mask0x400 on own and four table-offset cells with per-axis0x800 conditions. Caller 0x703EB3 passes the same techno receiver after a 0x703B10 test. The name deliberately preserves unknown 0x400 semantics. Receiver scope: Techno receiver, corroborated by virtual current-cell call and +0x8C state. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00703cc0",
+    "TechnoClass__IsNearBridgeFlag400"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00704000",
+   "from": "FUN_00704000",
+   "to": "TechnoClass__TunnelZFudgeScore"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00704000",
+   "text": "Whole body returns integer0/1 from tube-cell tests, excludes receiver+0x8C, and uses a zero cell sentinel when none of own/first two table-offset cells qualifies. Caller 0x4DB023 multiplies the result by TechnoType+0xDC8 in the Z-adjustment calculation. Receiver scope: Techno/Foot receiver in ECX, original receiver passed by Foot draw-depth calculation. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00704000",
+    "TechnoClass__TunnelZFudgeScore"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00704240",
+   "from": "FUN_00704240",
+   "to": "TechnoClass__CliffZFudgeScore"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00704240",
+   "text": "Returns the cliff adjustment score used at native call 0x4DB03F and multiplied by type field +0xDC0 at 0x4DB044..0x4DB04C. Checks object bridge flag and map-cell level deltas one/two steps in native direction-offset entry 3, returning 0/2/1. Caller is the native Foot vtable Z-adjustment routine and passes the same object; Foot inherits the Techno base. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00704240",
+    "TechnoClass__CliffZFudgeScore"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00707280",
+   "from": "FUN_00707280",
+   "to": "TechnoClass__DrawVoxelShadow_Uncached"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00707280",
+   "text": "Whole body copies HVA frame0 section matrix, multiplies it, constructs a flattened transform with ConsideredAircraft0.5 scale, invokes voxel buffer render helpers, optionally blits with receiver depth adjustment, then copies six dwords to the output. Direct caller0x706D27 passes the techno in ESI and a skip-blit flag derived from cache-key != -1. Receiver scope: Techno receiver in ECX, supported by virtual type/depth calls. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00707280",
+    "TechnoClass__DrawVoxelShadow_Uncached"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0070DC60",
+   "from": "FUN_0070dc60",
+   "to": "TechnoClass__TypeHasTurrets"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0070DC60",
+   "text": "Obtains the receiver type through virtual slot +0x84 and tail-jumps to 0x717880. Native Unit voxel-body caller 0x73B7B1..0x73B7BA and other unit callers test AL. The helper tests the type turret-count field; this is distinct from a per-object turret-presence helper. Techno prefix is supported by the inherited base receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0070dc60",
+    "TechnoClass__TypeHasTurrets"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00720480",
+   "from": "FUN_00720480",
+   "to": "ThemeControl__Fill_In"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00720480",
+   "text": "Whole body checks the receiver-named INI section, reads theme Sound/Scenario/Normal/Repeat/Side and CSF Name text, strips a run of leading $/# from Sound, and returns bool. Caller searches/allocates 0x290-byte records and passes them at0x7206F6. Receiver scope: 0x290-byte ThemeControl record; not singleton ThemeClass. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00720480",
+    "ThemeControl__Fill_In"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00720960",
+   "from": "FUN_00720960",
+   "to": "ThemeClass__Constructor"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00720960",
+   "text": "Whole body initializes -1 first three dwords, volume-like dword0xFF, three zero flags, empty vector at+0x14 and trailing+0x2C zero; returns original ECX. Static caller0x4E7E35 supplies singleton0xA83D10 and registers its destructor. Receiver scope: ThemeClass singleton0xA83D10, separate from ThemeControl records. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00720960",
+    "ThemeClass__Constructor"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00723CA0",
+   "from": "FUN_00723ca0",
+   "to": "ScriptActionNode__Fill_In"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00723CA0",
+   "text": "Whole body parses literal \"%d,%d\" (0x81C000) into two local stack slots and copies them to receiver+0/+4; NULL text leaves receiver unchanged. Caller0x69191A uses an 8-byte temporary then copies to script entries at+0xA4/+0xA8, stride8. Partial parse stale values are visible in stack data flow. Receiver scope: 8-byte ScriptActionNode temporary; not ScriptType this. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00723ca0",
+    "ScriptActionNode__Fill_In"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0072AA10",
+   "from": "FUN_0072aa10",
+   "to": "Rect_Inset"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0072AA10",
+   "text": "Whole body writes X+=EDX, Y+=stack arg, Width-=2*EDX, Height-=2*stack arg. Caller0x5CA0E5 passes -4/-8 on its constructed rect and later draws it; OwnerDraw calls use -1/-1. Receiver scope: 16-byte rect input/output buffer in ECX, EDX dx, stack dy; generic helper. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0072aa10",
+    "Rect_Inset"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0072AA40",
+   "from": "FUN_0072aa40",
+   "to": "Shell__LoadUIArt"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0072AA40",
+   "text": "Whole body loads UI shapes using filename pointers and builds palette converters; exact pointer strings include PUDLGBGN/A/S/Y.SHP, MNBTTN.SHP, SHELL.PAL and SHELL2.PAL. Guard0xB0FBE0 surrounds later assets. Init_Game caller0x52BBBC provides no receiver. Receiver scope: receiverless Shell module loader. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0072aa40",
+    "Shell__LoadUIArt"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0072E280",
+   "from": "FUN_0072e280",
+   "to": "Shell__GetShellPalConvert"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0072E280",
+   "text": "Whole body returns pointer global0xB0FBCC. Its concrete producer0x72ABF1 receives SHELL.PAL from pointer0x844BE4, palette output0xB0FBC8 and converter output0xB0FBCC; four menu-render caller sites consume the getter. Receiver scope: receiverless Shell module getter. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0072e280",
+    "Shell__GetShellPalConvert"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0072FBC0",
+   "from": "FUN_0072fbc0",
+   "to": "LeftPanel__LoadPalettes"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0072FBC0",
+   "text": "Whole body selects side-specific background/radar palette strings and invokes palette/converter builder for all five output pairs. Caller0x72F559 invokes it under first-draw guard0xB0FC0C. Receiver scope: receiverless LeftPanel module helper; no LeftPanel this. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0072fbc0",
+    "LeftPanel__LoadPalettes"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00730EA0",
+   "from": "FUN_00730ea0",
+   "to": "Selection__IssueStopCommand"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00730EA0",
+   "text": "Walks the current selection, queues event 6 for eligible objects, stops on a failure, and plays the stop sound after success. Native command wrapper 0x536B80 calls this as its whole behavior. Static selection-command role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00730ea0",
+    "Selection__IssueStopCommand"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00731A10",
+   "from": "FUN_00731a10",
+   "to": "DeleteCommand__DeletePlanNodeOrBeacon"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00731A10",
+   "text": "Obtains the current planning node; tail-jumps to node-delete queueing when present, otherwise calls beacon deletion with -1/-1 on 0x89C3B0. Native command wrapper 0x537F90 calls this as its whole behavior. Static command-module role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00731a10",
+    "DeleteCommand__DeletePlanNodeOrBeacon"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00731A50",
+   "from": "FUN_00731a50",
+   "to": "PlanningModeCommand__OnPress"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00731A50",
+   "text": "Planning-mode press handler: when 0xA8B538 is clear calls planning start and its introductory hint path. Native command wrapper 0x536750 chooses this call at 0x536765 for its press branch and passes CL=0. The prefix denotes command behavior, not a this receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00731a50",
+    "PlanningModeCommand__OnPress"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00731A70",
+   "from": "FUN_00731a70",
+   "to": "PlanningModeCommand__OnRelease"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00731A70",
+   "text": "Planning-mode release handler: calls planning end and, when 0xA8B538 is clear, its release hint. Native command wrapper 0x536750 chooses this call at 0x53675B for its release branch and passes CL=0. The prefix denotes command behavior, not a this receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00731a70",
+    "PlanningModeCommand__OnRelease"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00731D90",
+   "from": "FUN_00731d90",
+   "to": "TacticalSelection__FormatNavFeedback"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00731D90",
+   "text": "Formats selection-navigation feedback into the wide output buffer in ECX using the category label in EDX, current selection/count/value and native MSG strings. Native health-navigation caller 0x733569..0x73356F passes its output buffer and category label. No source fastcall signature is asserted beyond the observed register inputs. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00731d90",
+    "TacticalSelection__FormatNavFeedback"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00732280",
+   "from": "FUN_00732280",
+   "to": "CombatantSelectCommand__SelectCombatants"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00732280",
+   "text": "Whole body gathers screen/map technos, filters non-building selectable combatants and selection eligibility, replaces selection when CL is set, selects through vtable+0x14C and emits literal NothingSelected/SelAcrossMap/SelAcrossScreen messages. Command Execute wrapper0x5367FC derives CL by shifting, complementing and masking its command argument. Receiver scope: CL is replace-selection boolean; module command body, not command-class this. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00732280",
+    "CombatantSelectCommand__SelectCombatants"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007336C0",
+   "from": "FUN_007336c0",
+   "to": "TacticalSelection__CycleVeterancyCategory"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007336C0",
+   "text": "Cycles the tactical selection snapshot by veterancy category and formats feedback through 0x731D90. Native wrapper 0x5369F0 derives CL from the input flags and calls at 0x5369FC. Rank helper 0x750030 and native Elite/Veteran/LittleExperience strings identify the categories. No exact key-binding claim or full selection state certification. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007336c0",
+    "TacticalSelection__CycleVeterancyCategory"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007342C0",
+   "from": "FUN_007342c0",
+   "to": "TypeSelect__IsTechnoPredicate"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007342C0",
+   "text": "Whole body returns false for null ECX and otherwise reads low byte of object+0x14 masked with1; screen-selection callers0x73237D/0x732A4B pass drawn-list objects before ownership/health checks. Receiver scope: Abstract object pointer predicate argument in ECX; TypeSelect is module scope. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007342c0",
+    "TypeSelect__IsTechnoPredicate"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00735180",
+   "from": "FUN_00735180",
+   "to": "UnitGeometry__InitializeCellDiagonalLeptons"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00735180",
+   "text": "Whole body computes pow using original double constants256/2, doubles it, invokes approximate square-root0x4CAC40, and stores double0xB1CFD0. Table slot0x8154E0 is immediately before the two ratio initializers; consumers0x7351B0,0x735267,0x7352D4 and unit voxel draw establish geometry role. Receiver scope: receiverless CRT initializer, UnitGeometry module role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00735180",
+    "UnitGeometry__InitializeCellDiagonalLeptons"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007351B0",
+   "from": "FUN_007351b0",
+   "to": "UnitGeometry__InitializeLeptonsPerPixel"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007351B0",
+   "text": "Whole body divides the cell diagonal global by original double60 and stores double0xB1D0B0. Table slot0x8154E4 orders it after diagonal producer; reciprocal consumer0x7351D6 directly reads it. Receiver scope: receiverless CRT initializer, ratio used by unit geometry. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007351b0",
+    "UnitGeometry__InitializeLeptonsPerPixel"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007351D0",
+   "from": "FUN_007351d0",
+   "to": "UnitGeometry__InitializePixelsPerLepton"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007351D0",
+   "text": "Whole body divides original double1 by0xB1D0B0 and writes0xB1D008. Table slot0x8154E8 establishes order; unit voxel draw instructions0x73B852/0x73B870/0x73BA5A multiply by this global. Receiver scope: receiverless CRT initializer, reciprocal unit geometry scale. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007351d0",
+    "UnitGeometry__InitializePixelsPerLepton"
+   ]
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00737148",
+   "text": "Native switch jump table: 12 entries of 4 byte(s), used by the indirect JMP at 0x00736E77. Entries in storage order: 0x00736EE9, 0x00737063, 0x00736F78, 0x00737063, 0x00737063, 0x00736E7E, 0x00737054, 0x00737063, 0x0073704B, 0x00737023, 0x00737063, 0x0073704B. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0073E5C0",
+   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x0073D707. Entries in storage order: 0x0073D70E, 0x0073D892, 0x0073E289, 0x0073D8B7, 0x0073DCBA. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00746DB0",
+   "from": "FUN_00746db0",
+   "to": "UnitClass__IsDeployingOrUndeploying"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00746DB0",
+   "text": "Returns 1 if either transition byte Unit+0x6E1/+0x6E2 is set, else 0; does not read +0x6E0. Native fire-error caller 0x6FC3C9..0x6FC3E7 checks virtual type ID 1 before passing the cast object, and branches on the result. Native Unit RTTI and deploy/undeploy writers establish the class/transition role. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00746db0",
+    "UnitClass__IsDeployingOrUndeploying"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007500E0",
+   "from": "FUN_007500e0",
+   "to": "VeterancyStruct__SetFromPercent"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007500E0",
+   "text": "Whole body converts signed integer stack argument to x87, multiplies exact file double0.01 and stores float to ECX. All three direct callers pass techno+0x150 after atoi of a map token; this is a veterancy subobject rather than the enclosing Techno receiver. Receiver scope: VeterancyStruct float subobject at Techno+0x150. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007500e0",
+    "VeterancyStruct__SetFromPercent"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007502B0",
+   "from": "FUN_007502b0",
+   "to": "VocClass_StaticInit_ZeroCell"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007502B0",
+   "text": "Writes two zero words0xB1D310/12. Init slot0x81562C is within CRT range0x812000..0x815DA4. Sound volume/pan body compares both at0x750B51/6C and returns float0 when equal, before cell lookup. Receiver scope: receiverless sound-module CRT initializer. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007502b0",
+    "VocClass_StaticInit_ZeroCell"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00755C60",
+   "from": "FUN_00755c60",
+   "to": "VXL_GetMirrorMatrix"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00755C60",
+   "text": "Whole body copies48 bytes from matrix table0xB450B8 indexed by signed EDX, subtracting4 once if EDX>=4. Bounce caller0x43A00B passes cliff-face result, then applies the matrix to velocity. Producer0x755904 initializes four3x4 matrices and overrides mirror entries at0x75591E..0x755978. Receiver scope: ECX is output/result buffer, EDX index; no VXL object receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00755c60",
+    "VXL_GetMirrorMatrix"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00763690",
+   "from": "FUN_00763690",
+   "to": "Waypoint_FromLetters"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00763690",
+   "text": "Whole body uses isalpha/toupper and letter arithmetic; returns-1 for first non-letter, zero-based single-letter index or 26-based pair. Team INI callers read Waypoint/TransportWaypoint tokens then pass their buffers; TAction reader passes final token. ECX is a string, not this. Receiver scope: const character pointer in ECX; standalone conversion. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00763690",
+    "Waypoint_FromLetters"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00771620",
+   "from": "FUN_00771620",
+   "to": "WorldDominationTour_UpdateVoiceQueue"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00771620",
+   "text": "Whole body checks timer/active voice, shifts a Wstring queue after popping its front and queues the next name through0x753250/0x752480, or marks empty after a pop. Three animation callbacks pass their+0x1C member in ECX. Constructor0x770270 initializes exactly these timer/queue offsets. Receiver scope: WorldDominationTour controller subobject passed by animation callbacks; class prefix is descriptive screen scope. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00771620",
+    "WorldDominationTour_UpdateVoiceQueue"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00772A50",
+   "from": "FUN_00772a50",
+   "to": "Armor_From_Name"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00772A50",
+   "text": "Whole body searches11 literal armor-name pointers with strcmpi and returns matching index or0. Exact table strings read from PE match none/flak/plate/light/medium/heavy/wood/steel/concrete/special_1/special_2. INI armor reader caller0x475425 passes its key buffer. Receiver scope: const armor name in ECX; standalone conversion. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00772a50",
+    "Armor_From_Name"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x00772AC0",
+   "from": "FUN_00772ac0",
+   "to": "WeaponTypeClass__IsWallDestroyer"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x00772AC0",
+   "text": "Whole body tests nonnull weapon+0xAC then warhead+0x144. Infantry cell-entry caller0x51C200 passes weapon returned fromGetWeapon(0). Warhead INI store0x75D508 follows ReadBool with literal Wall key0x81AC58. Receiver scope: WeaponType receiver; +0xAC Warhead pointer supported by caller and INI producer. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_00772ac0",
+    "WeaponTypeClass__IsWallDestroyer"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x0077DC90",
+   "from": "FUN_0077dc90",
+   "to": "WOL__LaunchBrowser"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x0077DC90",
+   "text": "Whole body creates temp html, invokes file association/browser process, optionally confirms through literal TXT_LAUNCHBROWSER with answer6, formats \"[open] %s\", waits/pumps messages and restores window. Callers include WOL welcome/community registry paths; ECX is URL and EDX is skip-confirm boolean. Receiver scope: URL argument in ECX and boolean in EDX; WOL module scope, not class this. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_0077dc90",
+    "WOL__LaunchBrowser"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007A0EA0",
+   "from": "FUN_007a0ea0",
+   "to": "WOL__SetPlayerPing"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007A0EA0",
+   "text": "Whole body compares exact narrowed player names, writes matching player ping to0xB76440[i] for8slots, then chooses icon index-1/0/1/2 at thresholds0/300/500. Four callers supply name/ping pairs. Helper0x4E34A0 maps slot indices to controls0x754+i. Receiver scope: Player name in ECX, ping in EDX; WOL module scope. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007a0ea0",
+    "WOL__SetPlayerPing"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007B51D0",
+   "from": "FUN_007b51d0",
+   "to": "StringObject__TrimLeft"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007B51D0",
+   "text": "Whole body scans leading bytes while each occurs in argument charset, then removes the prefix through0x7B5020. Representative caller0x5D7708 constructs a narrow string record(\" \") and passes separate input string record. Companion constructor0x7B4630 creates a4-byte narrow-buffer-owning record. Receiver scope: Four-byte narrow string record, buffer pointer at +0; exact native C++ class spelling is unestablished. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007b51d0",
+    "StringObject__TrimLeft"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007B5230",
+   "from": "FUN_007b5230",
+   "to": "StringObject__TrimRight"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007B5230",
+   "text": "Whole body scans trailing bytes against charset, allocates kept prefix, frees old buffer, allocates/stores another copy and frees temporary. Representative caller0x5D772D supplies a narrow string record(\" \"). Null buffer is treated as empty and still rebuilt. Receiver scope: Four-byte narrow string record, buffer pointer at +0; exact native C++ class spelling is unestablished. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007b5230",
+    "StringObject__TrimRight"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007B6280",
+   "from": "FUN_007b6280",
+   "to": "StringObject__ToInt"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007B6280",
+   "text": "Whole body passes receiver+0 buffer to atoi wrapper0x7C9BFD and returns its result, with no null guard. All21 decoded direct call sites are captured; checked representative MapSelect and game-mode/token callers construct narrow string records. Receiver scope: Four-byte narrow string record, buffer pointer at +0; exact native C++ class spelling is unestablished. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007b6280",
+    "StringObject__ToInt"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007BB920",
+   "from": "FUN_007bb920",
+   "to": "XSurface__FillCircle"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007BB920",
+   "text": "Whole body implements midpoint-circle stepping with decision3-2r and fills symmetric horizontal spans using receiver vtable+0x2C, with rectangle-by-value clip and color. Gap-generator caller passes a concrete surface and its clip rect; spotlight resource caller supplies mask surface. Role as filled-circle surface helper is supported. Original RTTI descriptor0x817890 names XSurface; COL0x7FB2C8 is referenced before vtable0x7E2104. BSurface COL0x7FB260 precedes vtable0x7E2070 and hierarchy0x7FB250 has XSurface descriptor via0x7FB290 and Surface via0x7FB278. Both tables have DrawLineEx0x7BA610 at+0x2C. Spotlight constructor path0x5FF4BB/0x5FF4D0 writes these vtables on the same stack object passed at0x5FF520. Receiver scope: XSurface base-compatible receiver in ECX; concrete BSurface caller, RTTI confirms zero-offset XSurface and Surface bases. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007bb920",
+    "XSurface__FillCircle"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007C8C9C",
+   "from": "FUN_007c8c9c",
+   "to": "CRT__shortsort"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007C8C9C",
+   "text": "Whole body is max-selection sort: strict comparator>0 updates first maximum, swaps it with hi and decrements hi by width. qsort caller0x7C8B9E supplies lo/hi/width/comparator only when partition count<=8. This supports CRT shortsort role and instability from control flow; no sort execution done. Receiver scope: cdecl standalone CRT helper, four stack arguments. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007c8c9c",
+    "CRT__shortsort"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007CB49D",
+   "from": "FUN_007cb49d",
+   "to": "_srand"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007CB49D",
+   "text": "Whole body stores stack seed at per-thread block+0x14 returned by0x7D140B. Adjacent rand body reads/updates same offset with constants0x343FD/0x269EC3; callers seed before rand. No RNG draw in this body. Receiver scope: cdecl standalone CRT srand, seed stack argument. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007cb49d",
+    "_srand"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007D13F8",
+   "from": "FUN_007d13f8",
+   "to": "_initptd"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007D13F8",
+   "text": "Whole body initializes thread-data+0x50 table pointer and+0x14 seed1. Two native callers allocate0x74-byte per-thread blocks and initialize them, then set thread identity/TLS. CRT srand/rand use the same+0x14 block. Receiver scope: cdecl CRT per-thread data initializer, pointer stack argument. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007d13f8",
+    "_initptd"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007DE200",
+   "from": "FUN_007de200",
+   "to": "LightConvert_BuildRowRGB565"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007DE200",
+   "text": "All four census ranges and four returns were read. Whole body writes a256-word RGB565 row using distinct MMX/CMOV/scalar paths and per-index flags/scales; masks0xF8/0xFC and packing shifts establish5:6:5. LightConvert UpdateColors caller0x556344 passes palette/row/scales/flags. Receiver scope: cdecl row-builder function, no LightConvert this. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007de200",
+    "LightConvert_BuildRowRGB565"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007DEEFA",
+   "from": "FUN_007deefa",
+   "to": "Spotlight_BrightenRGB565"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007DEEFA",
+   "text": "Whole body skips zero-mask pixels, expands5:6:5 channels, scales added brightness by mask/256 with saturation and repacks; pitches/width/height are stack args. Spotlight draw caller0x5FFAC6 invokes it from untinted branch (tinted branch calls0x7DF280). Formula is instruction-derived, not executed. Receiver scope: cdecl raster inputs on stack, no Spotlight this. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007deefa",
+    "Spotlight_BrightenRGB565"
+   ]
+  },
+  {
+   "op": "rename_function",
+   "address": "0x007DFAE0",
+   "from": "FUN_007dfae0",
+   "to": "VXL_Rasterizer_ShadedReverse"
+  },
+  {
+   "op": "append_plate",
+   "address": "0x007DFAE0",
+   "text": "Whole body reads column span-end table, traverses counts/pairs/skip bytes backward, shades normal/color through0xB45990/0xB41178 and writes voxel buffer0xB2FF78. Exact pointer0x846854 (slot5 of0x846840) is0x7DFAE0; 0x756843 dispatches this table. Slot4 points to forward sibling0x7DF9C0. Receiver scope: cdecl voxel raster parameter-block pointer on stack; no class receiver. Static instruction/caller/table reading; arithmetic and RNG were not executed. Evidence: tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json. A module prefix alone does not establish a typed this.",
+   "function": [
+    "FUN_007dfae0",
+    "VXL_Rasterizer_ShadedReverse"
+   ]
+  }
+ ],
+ "reviewed": "2026-10-05; 191 proposed names reviewed: 189 admitted, 10 neutral replacements, 5 C-identifier spellings, 2 held; 11 additional speculative FUN notes held.",
+ "evidence": "tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json"
+}

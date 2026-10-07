@@ -1,3 +1,6 @@
+# Evidence pins the bytes of Python tool helpers, so they stay LF in every checkout,
+# including Git for Windows' default CRLF conversion. The -text lines below override it.
+tools/**/*.py text eol=lf
 # Native replay and proof identities hash exact bytes, including LF endings.
 tools/spatial_oracle/_factory_infantry_output/** -text
 tools/spatial_oracle/factory_infantry_output_replay/** -text

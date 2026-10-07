@@ -1457,10 +1457,10 @@ fn ic_target_takes_zero_damage() {
     install_entity_attack_target_for_test(&mut store, 1, 2);
     // Apply IronCurtain invulnerability to the target.
     if let Some(target) = store.get_mut(2) {
-        target.invulnerability = Some(InvulnerabilityState {
-            timer: crate::sim::timer::CdTimer::started(0, 1000),
-            kind: InvulnKind::IronCurtain,
-        });
+        target.invulnerability = Some(InvulnerabilityState::new(
+            crate::sim::timer::CdTimer::started(0, 1000),
+            InvulnKind::IronCurtain,
+        ));
     }
     let initial_hp = store.get(2).expect("target alive").health.current;
     let mut main_rng = SimRng::new(1);
@@ -1790,7 +1790,6 @@ fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
             &[detonation],
             &[],
             None,
-            &[],
             &mut scenario_rng,
             &mut main_rng,
             None,
@@ -2031,7 +2030,6 @@ fn retaliates(case: RetaliationCase) -> bool {
         &[detonation],
         &[],
         None,
-        &[],
         &mut SimRng::new(11),
         &mut SimRng::new(13),
         None,
@@ -2553,7 +2551,6 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
             &[detonation],
             &[],
             None,
-            &[],
             &mut scenario_rng,
             &mut main_rng,
             None,
@@ -2753,10 +2750,10 @@ fn gsi_04_07_damage_invulnerability_impact_precedes_warping_and_postlude() {
             .spawn_object("VICTIM", "VictimHouse", rx, 5, 0, &rules)
             .expect("protected victim spawns");
         let victim = sim.substrate.entities.get_mut(id).unwrap();
-        victim.invulnerability = Some(InvulnerabilityState {
-            timer: crate::sim::timer::CdTimer::started(0, 100),
+        victim.invulnerability = Some(InvulnerabilityState::new(
+            crate::sim::timer::CdTimer::started(0, 100),
             kind,
-        });
+        ));
         if warping {
             victim.install_teleport_state_for_test(Some(TeleportState::for_test(
                 TeleportPhase::Relocate,
@@ -2774,10 +2771,11 @@ fn gsi_04_07_damage_invulnerability_impact_precedes_warping_and_postlude() {
         .spawn_object("VICTIM", "VictimHouse", 12, 5, 0, &rules)
         .expect("ignore-defenses control spawns");
     for id in [healing_id, ignored_id] {
-        sim.substrate.entities.get_mut(id).unwrap().invulnerability = Some(InvulnerabilityState {
-            timer: crate::sim::timer::CdTimer::started(0, 100),
-            kind: InvulnKind::IronCurtain,
-        });
+        sim.substrate.entities.get_mut(id).unwrap().invulnerability =
+            Some(InvulnerabilityState::new(
+                crate::sim::timer::CdTimer::started(0, 100),
+                InvulnKind::IronCurtain,
+            ));
     }
     sim.substrate
         .entities
@@ -4925,7 +4923,6 @@ fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
         &[],
         &[],
         None,
-        &[],
         &mut scenario_rng,
         &mut human_rng,
         None,
@@ -7057,7 +7054,6 @@ fn persistent_projectile_delays_damage_across_save_load_continuation() {
         &detonations,
         &[],
         None,
-        &[],
         &mut scenario_rng,
         &mut main_rng,
         None,
@@ -7653,8 +7649,8 @@ fn rad_combat_tick(
 /// final health/admission, not the known intermediate radiation precision gap.
 #[test]
 fn rad_damage_fires_on_application_delay_boundary_only() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/radiation_damage_boundary.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/radiation_damage_boundary.json",
     ))
     .unwrap();
     let native_row = |frame: u32, armor: u8| {
@@ -8542,7 +8538,6 @@ fn projectile_shrapnel_targets_hostile_head_before_random_cell_child() {
         &[detonation],
         &[],
         None,
-        &[],
         &mut scenario_rng,
         &mut main_rng,
         None,
@@ -8625,7 +8620,6 @@ fn projectile_shrapnel_count_measures_to_the_targets_get_coords() {
         &[detonation],
         &[],
         None,
-        &[],
         &mut scenario_rng,
         &mut main_rng,
         None,
@@ -8697,7 +8691,6 @@ fn projectile_shrapnel_aims_at_a_building_foundation_center() {
         &[detonation],
         &[],
         None,
-        &[],
         &mut scenario_rng,
         &mut main_rng,
         None,
@@ -8902,10 +8895,10 @@ fn gsi_04_10_near_center_iron_curtain_isolates_earlier_terrain_receiver() {
             .entities
             .get_mut(victim_id)
             .unwrap()
-            .invulnerability = Some(InvulnerabilityState {
-            timer: crate::sim::timer::CdTimer::started(0, 100),
+            .invulnerability = Some(InvulnerabilityState::new(
+            crate::sim::timer::CdTimer::started(0, 100),
             kind,
-        });
+        ));
 
         let terrain_id = 700;
         let terrain_ref = sim.interner.intern("TREE01");
@@ -9850,8 +9843,8 @@ fn gsi_08_06_a_failed_arc_launch_skips_the_rest_of_the_shot() {
 /// frame and the `+0x2F8` copy, which VERA does not keep.)
 #[test]
 fn gsi_08_05_rearm_frames_match_the_original() {
-    let vectors: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/rearm_timer.json"
+    let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/rearm_timer.json",
     ))
     .unwrap();
     let rows = vectors["fire"].as_array().unwrap();

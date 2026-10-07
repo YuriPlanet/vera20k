@@ -166,9 +166,12 @@ pub(crate) fn put_location(position: &mut Position, coord: DriveCoord) {
 /// [`open_topped_riders_follow`]). Drive, Ship, Walk, Hover, Jumpjet, the
 /// tube, Fly crash fall and Unit sinking move a Foot through it.
 ///
-/// RESIDUAL: its marked branch (`0x004DB83F..0x004DB866`, Mark(UP),
-/// `ObjectClass::SetLocation`, Mark(DOWN) while `+0x74` is set) is not
-/// ported. Every native call a Rust caller ports runs it unmarked: Drive,
+/// This is its unmarked arm; [`Simulation::foot_set_location_marked`] adds
+/// the marked one (`0x004DB83F..0x004DB866`, Mark(UP),
+/// `ObjectClass::SetLocation`, Mark(DOWN) while `+0x74` is set), which the
+/// Chronosphere's warp-in, a hull its PostWarpValidation sank and every
+/// Rocket Process move (`0x006622C0`) reach. Every
+/// other native call a Rust caller ports runs it unmarked: Drive,
 /// Hover and Walk Mark(UP) first on a cell change (`0x004B2071`,
 /// `0x005148E3`, `0x0075BD7D`, `0x0075C11E`) and Drive and Hover clear
 /// `+0x74` around it otherwise (`0x004B209F`, `0x005149F7`); Jumpjet clears
@@ -481,6 +484,37 @@ pub(crate) fn set_height(
 }
 
 impl Simulation {
+    /// `FootClass::SetLocation` in full: a marked object (`+0x74`) leaves its
+    /// cell through Mark(UP) and rejoins it through Mark(DOWN) around the
+    /// write (`0x004DB83F..0x004DB866`); either way [`foot_set_location`]
+    /// does the write and the OpenTopped riders.
+    pub(crate) fn foot_set_location_marked(
+        &mut self,
+        id: u64,
+        coord: DriveCoord,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    ) {
+        let marked = self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.lifecycle.cell_marked);
+        if marked {
+            self.foot_mark_remove(id, rules, registry);
+        }
+        foot_set_location(
+            &mut self.substrate.entities,
+            id,
+            coord,
+            rules,
+            &self.interner,
+        );
+        if marked {
+            self.foot_mark_put(id, rules, registry);
+        }
+    }
+
     /// `ObjectClass::SetHeight @ 0x005F5FA0` for an object id. A marked object
     /// (`+0x74`) leaves its cell through its own Mark (vt+0x124, `0x005F5FC8`)
     /// before the Z write and marks again after it (`0x005F6009`), so a Foot

@@ -58,6 +58,7 @@ mod move_cell_input;
 mod native_cell_input_test_fixture;
 mod rally_cell_input;
 mod navigation;
+mod rocket_flight;
 mod object_turn;
 pub use frame_error::FrameAdvanceError;
 pub(crate) use world_orders::EngineerBuildingAction;
@@ -68,11 +69,12 @@ use object_turn::unit_body_counter_admitted;
 mod projectile_collision;
 mod substrate;
 mod techno_ai;
-#[cfg(test)]
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::dispatch_foot_mission;
 pub(crate) use techno_ai::foot_enter_idle_mode_selection;
 pub(crate) use techno_ai::foot_unlimbo_idle_mode;
+pub(crate) use techno_ai::passive_target_acquire;
+pub(crate) use techno_ai::queue_and_commence;
 pub(crate) use techno_ai::queue_foot_enter_idle_mode;
 pub(crate) use techno_ai::team_leader_greatest_threat;
 mod command_schedule;
@@ -609,6 +611,16 @@ pub enum SimSoundEvent {
         owner: InternedId,
         sw_type: InternedId,
     },
+    /// `HouseClass @ 0x0050AF10` (label `HouseClass__Update_Owned_Supers`):
+    /// a granted Super's hold changed (`SuperClass::Suspend @ 0x006CB4D0`
+    /// returned true) or it was lost (`SuperClass @ 0x006CB7B0` returned
+    /// true). For the player's house native then clears the selected Super
+    /// (`0x008809A0`) when it is this one (`0x0050B181..0x0050B190`); the app
+    /// applies that local-owner half.
+    SuperWeaponStatusChanged {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
     /// `BuildingClass::OnConstructionComplete @ 0x00445F80`
     /// (`0x004468AD..0x00446995`): a building whose type carries
     /// `SuperWeapon=` finished building up. Native speaks only when the owner
@@ -652,6 +664,10 @@ pub enum SimSoundEvent {
         rx: u16,
         ry: u16,
     },
+    /// `CreateRadarEvent(13, cell)` from `SuperClass::Launch` case 4
+    /// (`0x006CC4BE` at the Chronosphere's source, `0x006CC4D2` at its
+    /// target), on every client: each admits it on its own radar.
+    SuperWeaponRadarEvent { radar: RadarEventRequest },
     /// The lightning storm actually began — the moment the sky flips to Ion,
     /// which on retail data is ~250 frames *after* the Weather Controller
     /// fired. This is where `StormSound` belongs, not on the launch.
@@ -1078,16 +1094,6 @@ pub struct Simulation {
     /// immediately after the movement call returns.
     #[serde(skip)]
     pub(crate) pending_lifecycle_requests: Vec<LifecycleRequest>,
-    /// Missiles whose rocket flight reached its target during this tick's
-    /// movement pass. Drained at the end of that pass, in live-object order.
-    #[serde(skip)]
-    pub(crate) pending_rocket_detonations: Vec<u64>,
-    /// Missile impacts awaiting the combat phase, which expands each into
-    /// ordinary damage events so the shared damage → death → despawn pipeline
-    /// resolves them. Filled during the movement pass, drained after combat in
-    /// the same tick.
-    #[serde(skip)]
-    pub(crate) pending_missile_detonations: Vec<crate::sim::spawn_manager::MissileDetonation>,
     /// The shots the objects' own missions asked the combat phase for this
     /// frame (aircraft strike visits, building FireAt arms). Filled by the
     /// live pass, drained by combat in the same frame.
@@ -1241,6 +1247,10 @@ pub struct Simulation {
     /// Not saved: a load clears it and rebuilds the carriers.
     #[serde(skip)]
     pub(crate) bombs: crate::sim::bomb::BombList,
+    /// The kamikaze tracker (`0x00ABC5F8`): missiles out of their launcher's
+    /// control and the cells they fly at, owned by `kamikaze`. Its timer is
+    /// not saved; a load restarts it.
+    pub(crate) kamikaze: crate::sim::kamikaze::KamikazeTracker,
     /// The map's isometric playfield diamond ([Map] Size width + the raw
     /// LocalSize rect), set at map init. Threaded into the cell-rect occupancy
     /// validator's final playfield-corner test (the engine diamond, not a
@@ -1288,6 +1298,9 @@ pub struct Simulation {
     /// Active lightning storm state (global — only one at a time).
     pub(crate) lightning_storm:
         Option<crate::sim::superweapon::lightning_storm::LightningStormState>,
+    /// The Psychic Dominator's globals (one at a time).
+    pub(crate) psychic_dominator:
+        crate::sim::superweapon::psychic_dominator::PsychicDominatorState,
     /// Whether superweapon grants have been initialized from map-placed buildings.
     pub(crate) super_weapons_initialized: bool,
     /// Per-cell terrain speed modifier config (slope climb/descend).
@@ -1969,6 +1982,7 @@ impl Simulation {
         for projectile in projectile_spawns {
             let stable_id = self.allocate_stable_id();
             self.admit_projectile(stable_id, projectile);
+            self.construct_bullet_scheme(stable_id, rules);
         }
         let receipt = damage_consequences::DamageConsequences::live_fire(
             effects,
@@ -2009,6 +2023,7 @@ impl Simulation {
         for projectile in commit.projectile_spawns {
             let stable_id = self.allocate_stable_id();
             self.admit_projectile(stable_id, projectile);
+            self.construct_bullet_scheme(stable_id, rules);
         }
         #[cfg(test)]
         if let Some(fixture) = self.receiver_fixture.as_mut() {
@@ -2993,10 +3008,12 @@ impl Simulation {
         ));
     }
 
-    /// Intern every rules type id (infantry, vehicle, aircraft, building) so
-    /// `interner.get(type_id)` succeeds for any type this ruleset references.
-    /// Moved from `RuleSet::intern_all_ids` (F04): interning is sim-side work
-    /// over rules-owned canonical names.
+    /// Intern every rules type id (infantry, vehicle, aircraft, building,
+    /// `[SuperWeaponTypes]`) so `interner.get(type_id)` succeeds for any type
+    /// this ruleset references, and a command naming one carries the same id
+    /// in every world built from these rules: the Chrono Warp is clicked
+    /// without ever being granted. Moved from `RuleSet::intern_all_ids` (F04):
+    /// interning is sim-side work over rules-owned canonical names.
     pub fn intern_rule_type_ids(&mut self, rules: &RuleSet) {
         for id in rules
             .infantry_ids
@@ -3004,6 +3021,7 @@ impl Simulation {
             .chain(&rules.vehicle_ids)
             .chain(&rules.aircraft_ids)
             .chain(&rules.building_ids)
+            .chain(&rules.super_weapon_order)
         {
             self.interner.intern(id);
         }
@@ -3104,8 +3122,6 @@ impl Simulation {
             frame_overlay_removals: Vec::new(),
             terminal_score_snapshot: None,
             pending_lifecycle_requests: Vec::new(),
-            pending_rocket_detonations: Vec::new(),
-            pending_missile_detonations: Vec::new(),
             fire_requests: Default::default(),
             pending_projectile_detonations: Vec::new(),
             pending_wave_damage_requests: Vec::new(),
@@ -3147,6 +3163,7 @@ impl Simulation {
             smudge_grid: None,
             radiation: crate::sim::radiation::RadiationState::default(),
             bombs: crate::sim::bomb::BombList::default(),
+            kamikaze: crate::sim::kamikaze::KamikazeTracker::default(),
             playfield_bounds: None,
             playfield_size_height: None,
             playfield_revision: 0,
@@ -3158,6 +3175,7 @@ impl Simulation {
             power_states: BTreeMap::new(),
             super_weapons: BTreeMap::new(),
             lightning_storm: None,
+            psychic_dominator: Default::default(),
             super_weapons_initialized: false,
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
             debug_event_logging: false,
@@ -3591,11 +3609,21 @@ impl Simulation {
 
     /// Advance the global ambient scalar before ore and active superweapons.
     /// A storm selecting Ion later in this frame can first move it next frame.
-    fn tick_scenario_lighting_transition(&mut self, rules: &RuleSet) {
+    /// `LogicClass::PerTickUpdate` (`0x0055B33D..0x0055B4D7`) restarts the
+    /// fade timer with `DominatorAmbientChangeRate=` while the Psychic
+    /// Dominator is active (`PsyDom::Active`, `0x0055B3A4`), else with
+    /// `AmbientChangeRate=`; its NukeFlash and chrono screen arm
+    /// (`NukeAmbientChangeRate=`) is not modelled.
+    pub(crate) fn tick_scenario_lighting_transition(&mut self, rules: &RuleSet) {
+        let interval_frames = if crate::sim::superweapon::psychic_dominator::active(self) {
+            self.session.lighting.dominator_change_rate
+        } else {
+            rules.general.ambient_change_interval_frames
+        };
         if self.session.lighting.advance_transition_if_due(
             self.session.binary_frame,
             rules.general.ambient_change_rate_nonzero,
-            rules.general.ambient_change_interval_frames,
+            interval_frames,
             rules.general.ambient_change_step,
         ) {
             self.publish_global_lighting();
@@ -3820,14 +3848,7 @@ impl Simulation {
         // virtual (`0x0070ADC0`), only for human-owned live nonlimbo mobiles;
         // Buildings are explicitly excluded. Rust's owned equivalent commits
         // the sight reveal immediately, before this action returns.
-        let reveal_config = crate::sim::vision::VisionConfig {
-            require_playfield_membership: true,
-            veteran_sight: rules.map_or(0.0, |rules| rules.general.veteran_sight),
-            leptons_per_sight_increase: rules
-                .map_or(0, |rules| rules.general.leptons_per_sight_increase),
-            reveal_by_height: rules.is_none_or(|rules| rules.general.reveal_by_height),
-            fog_of_war: self.session.game_options.fog_of_war,
-        };
+        let reveal_config = self.sight_reveal_config(rules);
         let height_grid = reveal_config
             .reveal_by_height
             .then(|| {
@@ -4050,6 +4071,26 @@ impl Simulation {
                 .push(LifecycleOutput::LineTrailConstructed { stable_id, style });
         }
         stable_id
+    }
+
+    /// `BulletClass::Construct @ 0x004664C0`, `0x00466519..0x0046653B`: a
+    /// `FirersPalette=` BulletType (`+0x2A9`) whose Owner (`+0xB0`) exists
+    /// keeps the Owner's House colour scheme at `+0x114`; every other bullet
+    /// keeps -1. Runs after each admission and re-Construct.
+    pub(crate) fn construct_bullet_scheme(&mut self, bullet: u64, rules: &RuleSet) {
+        let Some(projectile) = self.projectiles.get(bullet) else {
+            return;
+        };
+        let firers_palette = rules
+            .weapon(self.interner.resolve(projectile.payload.weapon))
+            .and_then(|weapon| weapon.projectile.as_deref())
+            .and_then(|id| rules.projectile(id))
+            .is_some_and(|kind| kind.firers_palette);
+        let house = firers_palette
+            .then(|| self.substrate.entities.get(projectile.source_id))
+            .flatten()
+            .map(|owner| owner.owner());
+        self.projectiles.set_firer_house(bullet, house);
     }
 
     pub(crate) fn admit_wave(&mut self, stable_id: u64, wave: crate::sim::wave::Wave) -> u64 {
@@ -6279,8 +6320,10 @@ impl Simulation {
             self.tick_ore_growth_rungs(rules, overlay_registry);
             // `BombListClass::UpdateAll` follows growth and spread (0x0055B4E1).
             self.bomb_list_update(rules);
+            // `Kamikaze__Update` follows it (0x0055B4F0).
+            self.kamikaze_update(rules);
             if self.session.game_options.super_weapons {
-                crate::sim::superweapon::tick_active_superweapon_effects(
+                bridge_state_changed |= crate::sim::superweapon::tick_active_superweapon_effects(
                     self,
                     rules,
                     overlay_registry,
@@ -6308,23 +6351,6 @@ impl Simulation {
         destroyed_structure |= object_pass.destroyed_structure;
         bridge_state_changed |= object_pass.bridge_state_changed;
         let tube_turn_owned_ids = object_pass.tube_turn_owned_ids;
-        // Spawn-manager missiles that reached their target during the movement
-        // pass are consumed here — the missile leaves the world at the moment
-        // `RocketLocomotion::Process` would have called Detonate. The impact
-        // itself is queued for the combat phase below, which runs it through
-        // the same damage → death → despawn pipeline as any other detonation.
-        if rules.is_some() {
-            if !self.pending_rocket_detonations.is_empty() {
-                let detonated = std::mem::take(&mut self.pending_rocket_detonations);
-                crate::sim::spawn_manager::detonate_missiles(self, &detonated);
-            }
-        } else {
-            // No RuleSet means no spawner could have launched anything; drop
-            // both queues rather than letting them accumulate across ticks that
-            // never reach the combat phase.
-            self.pending_rocket_detonations.clear();
-            self.pending_missile_detonations.clear();
-        }
         //Gate Open runs in Building Mission AI; factory clearance runs in
         //the arriving Unit's Per_Cell_Process before Ready/Commence.
         // Movement-side wall crush (part of the ground-movement stage): a Crusher

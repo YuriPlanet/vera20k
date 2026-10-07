@@ -563,9 +563,77 @@ pub struct HouseState {
     /// incremental rounding/clamping and diplomacy history.
     #[serde(default)]
     spatial_threat: crate::sim::house_threat::HouseSpatialThreat,
+    #[serde(default)]
+    super_weapon_cells: HouseSuperWeaponCells,
+}
+
+/// The super weapon cells a House keeps: where its nuclear missile flies
+/// (`HouseClass+0x5784`) and its last super weapon alert (`+0x54F4` cell,
+/// `+0x54FC` frame).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+struct HouseSuperWeaponCells {
+    /// `+0x5784` NukeTarget: `SuperClass::Launch`'s MultiMissile arm stores
+    /// the target cell (`0x006CDDC4`) and the silo's Mission_Missile reads
+    /// it for the warning anim and the missile (`0x0044C9DC`, `0x0044CAA9`).
+    /// Constructor (0, 0) (`0x004F5C8D`).
+    nuke_target: (u16, u16),
+    /// `+0x54F4` PreferredDefensiveCell: the base the launch alert
+    /// (`0x004FB0BD`) asks the computer to shield. `HouseClass::AI_TryFireSW
+    /// @ 0x005098F0` aims its ForceShield there (`0x00509A6D..0x00509A9B`)
+    /// while the alert is younger than `[General] AISuperDefenseFrames=`
+    /// (`superweapon::ai_fire`). Constructor (0, 0) (`0x004F5A8F`); trigger
+    /// actions also write it (`0x0050DA20`, `0x0050DA50`), which VERA does not
+    /// run.
+    defense_cell: (u16, u16),
+    /// `+0x54FC`: the frame of that alert (`0x004FB0C9`); constructor -100
+    /// (`0x004F5AB1`).
+    defense_frame: i32,
+}
+
+impl Default for HouseSuperWeaponCells {
+    fn default() -> Self {
+        Self {
+            nuke_target: (0, 0),
+            defense_cell: (0, 0),
+            defense_frame: -100,
+        }
+    }
 }
 
 impl HouseState {
+    /// The cell the house's nuclear missile flies to (`HouseClass+0x5784`).
+    pub(crate) fn nuke_target(&self) -> (u16, u16) {
+        self.super_weapon_cells.nuke_target
+    }
+
+    /// `SuperClass::Launch 0x006CDDC4`: the MultiMissile arm's target.
+    pub(crate) fn set_nuke_target(&mut self, cell: (u16, u16)) {
+        self.super_weapon_cells.nuke_target = cell;
+    }
+
+    /// The last super weapon alert's defence cell and frame (`+0x54F4`,
+    /// `+0x54FC`).
+    pub(crate) fn super_weapon_defense(&self) -> ((u16, u16), i32) {
+        (
+            self.super_weapon_cells.defense_cell,
+            self.super_weapon_cells.defense_frame,
+        )
+    }
+
+    /// The launch alert's stores (`0x004FB0BD`, `0x004FB0C9`).
+    pub(crate) fn alert_super_weapon_defense(&mut self, cell: (u16, u16), frame: i32) {
+        self.super_weapon_cells.defense_cell = cell;
+        self.super_weapon_cells.defense_frame = frame;
+    }
+
+    /// Folded only off the constructor values, so houses that never saw a
+    /// super weapon hash as earlier schemas did.
+    pub(crate) fn hash_super_weapon_cells(&self, hasher: &mut impl std::hash::Hasher) {
+        if self.super_weapon_cells != HouseSuperWeaponCells::default() {
+            std::hash::Hash::hash(b"house-super-weapon-cells-v1", hasher);
+            std::hash::Hash::hash(&self.super_weapon_cells, hasher);
+        }
+    }
     /// The old House's notification before the arrival's Building ChangeOwner.
     pub(crate) fn notify_building_capture(&mut self) {
         self.building_capture_notified = true;
@@ -877,6 +945,7 @@ impl HouseState {
             repair_start_latch: false,
             repair_latch_timer: CdTimer::started(0, 0),
             spatial_threat: Default::default(),
+            super_weapon_cells: HouseSuperWeaponCells::default(),
         }
     }
 }
@@ -1423,8 +1492,8 @@ mod difficulty_tests {
     /// through [`HouseState::set_difficulty`].
     #[test]
     fn set_difficulty_matches_the_original() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/house_difficulty.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/house_difficulty.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 72);

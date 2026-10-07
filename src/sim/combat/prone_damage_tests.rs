@@ -11,8 +11,8 @@ use crate::sim::game_entity::{GameEntity, InfantryRuntime};
 use serde_json::Value;
 
 fn native() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/rules_oracle/read_double_percent.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/read_double_percent.json",
     ))
     .unwrap()
 }

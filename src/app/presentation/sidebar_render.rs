@@ -221,7 +221,6 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         &mut state.match_state.input.targeting_mode,
         &mut state.match_state.input.building_placement_preview,
         &ready_buildings,
-        &sw_views,
         state
             .match_state
             .sim_runtime
@@ -307,15 +306,17 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .replace_view(Some(view));
 }
 
+/// Drops a building placement whose building is no longer ready. A selected
+/// Super is not the sidebar's to drop: its writers are
+/// `super_selection::follow_selection_writes`'s.
 pub(crate) fn sync_targeting_mode(
     targeting_mode: &mut Option<crate::app::types::TargetingMode>,
     building_placement_preview: &mut Option<crate::sim::production::BuildingPlacementPreview>,
     ready_buildings: &[production::ReadyBuildingView],
-    super_weapons: &[crate::sim::superweapon::SuperWeaponView],
     interner: Option<&crate::sim::intern::StringInterner>,
 ) {
     let still_valid = match targeting_mode.as_ref() {
-        None => true,
+        None | Some(crate::app::types::TargetingMode::SuperWeapon(_)) => true,
         Some(crate::app::types::TargetingMode::BuildingPlacement(armed)) => {
             ready_buildings.iter().any(|ready| {
                 interner.map_or(false, |i| {
@@ -323,9 +324,6 @@ pub(crate) fn sync_targeting_mode(
                 })
             })
         }
-        Some(crate::app::types::TargetingMode::SuperWeapon(section)) => super_weapons
-            .iter()
-            .any(|sw| sw.is_ready && sw.display_name.eq_ignore_ascii_case(section)),
     };
     if !still_valid {
         *targeting_mode = None;

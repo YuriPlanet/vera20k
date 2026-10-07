@@ -535,8 +535,8 @@ pub(crate) mod tests {
     /// Native getters executed under Unicorn by
     /// `tools/storage_oracle/shell_static_timers.py`.
     pub(crate) fn native_static_timer_cases() -> Vec<serde_json::Value> {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/shell_static_timers.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/shell_static_timers.json",
         ))
         .unwrap();
         fixture["cases"].as_array().unwrap().clone()

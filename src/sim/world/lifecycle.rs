@@ -2346,6 +2346,12 @@ impl Simulation {
         if !represented {
             return false;
         }
+        if self.classify_object(stable_id) == Some(ObjectKind::Projectile) {
+            // `ObjectClass::UnInit @ 0x005F65F0` broadcasts the bullet's
+            // expiry before it leaves Logic; an anim riding it ends
+            // (`AnimClass::PointerExpired @ 0x00425150`, `+0x17C`).
+            self.expire_anim_attached_bullet(stable_id, None);
+        }
         let _ = self.unregister_non_entity_object(stable_id);
         self.substrate.pending_delete.push(stable_id);
         #[cfg(test)]
@@ -2610,7 +2616,8 @@ impl Simulation {
         {
             log::debug!("infantry {stable_id} Limbo Stop_Driver: {cause}");
         }
-        self.release_track_occupation_before_foot_limbo(stable_id);
+        // 0x004DB324: the active locomotor's +9C(0) on the first Limbo.
+        self.locomotor_mark_all_occupation_bits_up(stable_id);
         // The Drive instance retains head-to and handoff projections of that
         // +9C(0) release; they leave with it on the first Limbo.
         if let Some(entity) = self.substrate.entities.get_mut(stable_id)
@@ -2623,7 +2630,6 @@ impl Simulation {
                 stable_id,
             );
         }
-        self.release_walk_occupation_before_foot_limbo(stable_id);
         // FootClass::Limbo (0x004DB260) then Locks the locomotor (+0xB0) on
         // the first Limbo, so a boarded or stored man keeps no Walk
         // destination or head to resume.
@@ -2633,8 +2639,6 @@ impl Simulation {
         {
             locomotor.walk_lock();
         }
-        self.release_teleport_occupation_before_foot_limbo(stable_id);
-        self.release_jumpjet_occupation_before_foot_limbo(stable_id);
         self.release_foot_air_tracker_before_limbo(stable_id);
         if self
             .substrate
@@ -2926,7 +2930,12 @@ impl Simulation {
             .is_some_and(|entity| entity.spawn_manager.is_some())
         {
             crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
-            crate::sim::spawn_manager::clear_all_spawn_targets(self, stable_id);
+            crate::sim::spawn_manager::clear_all_spawn_targets(
+                self,
+                stable_id,
+                context.rules(),
+                context.registry(),
+            );
         }
     }
 
@@ -3007,7 +3016,12 @@ impl Simulation {
         }
         crate::sim::radio::broadcast_break(self, stable_id, None);
         crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
-        crate::sim::spawn_manager::clear_all_spawn_targets(self, stable_id);
+        crate::sim::spawn_manager::clear_all_spawn_targets(
+            self,
+            stable_id,
+            context.rules(),
+            context.registry(),
+        );
         // Unit737E58 repeats Stun after restoring Health1/+3CD. Its
         // Techno6FCD9B Detach_All(1) cannot use the Health0 elision above:
         // self and other pointer-expiry callbacks observe the restored hull.
@@ -3410,7 +3424,13 @@ impl Simulation {
                 registry,
             );
             // Techno707B24 forwards this manager independently of control.
-            crate::sim::spawn_manager::notify_pointer_expired(self, listener_id, hut_id);
+            crate::sim::spawn_manager::notify_pointer_expired(
+                self,
+                listener_id,
+                hut_id,
+                Some(rules),
+                registry,
+            );
         }
     }
 
@@ -3979,7 +3999,13 @@ impl Simulation {
                 // destroyed wing target, so without it a Carrier keeps sending
                 // its Hornets at a corpse. The forward sits OUTSIDE the control
                 // test, so it runs on a cloak dive as well as on UnInit.
-                crate::sim::spawn_manager::notify_pointer_expired(self, listener_id, expired_id);
+                crate::sim::spawn_manager::notify_pointer_expired(
+                    self,
+                    listener_id,
+                    expired_id,
+                    context.rules(),
+                    context.registry(),
+                );
                 // The CaptureManager forward — `0x00707B14 CALL 0x00471F90` —
                 // sits inside the `if (control != 0)` block opened at
                 // `0x00707AE7`, so a dive leaves mind-control links alone while
@@ -4097,6 +4123,10 @@ impl Simulation {
                 }
             }
         }
+        // The kamikaze tracker's Remove (`0x00725972`) follows the listeners
+        // and the BombList; a SpawnManager's slot guard reads the membership
+        // before it.
+        self.kamikaze.remove(expired_id);
     }
 
     /// ObjectClass::UnInit represented ordering.  Physical removal is deferred.

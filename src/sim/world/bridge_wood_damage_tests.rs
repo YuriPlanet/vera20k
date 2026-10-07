@@ -84,10 +84,9 @@ fn retail_wood_damage_repair_and_restore_publish_navigation() {
         save_scene(&scene, "healthy"),
         navigation_authority(scene.sim(), points()),
     )];
-    let scalar: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/shrapnel_damage/scalar_test_vectors.json"
-    )))
+    let scalar: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/shrapnel_damage/scalar_test_vectors.json",
+    ))
     .unwrap();
     let physical = &scalar["physical_sequences"][1];
     for (step, phase, collapsed) in [(0, "damaged", false), (1, "collapsed", true)] {

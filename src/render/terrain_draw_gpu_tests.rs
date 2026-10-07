@@ -303,7 +303,7 @@ pub(crate) fn sprite(position: [f32; 2], size: [f32; 2], z_adjust: f32) -> Sprit
 #[ignore = "requires a GPU; executes actual production snapshot/edit/upload"]
 fn production_shadow_exhausts_all_65536_destination_words() {
     let gpu = Gpu::new();
-    let goldens = include_bytes!("../../tools/terrain_draw_oracle/fixtures/half-rgb565.bin");
+    let goldens = crate::test_fixture::bytes("tools/terrain_draw_oracle/fixtures/half-rgb565.bin");
     for format in [
         wgpu::TextureFormat::Bgra8UnormSrgb,
         wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -382,8 +382,8 @@ fn production_tree_signed_depth_and_repeated_overlap_match_original_leaves() {
     let gpu = Gpu::new();
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
     let size = [32, 4];
-    let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/terrain_draw_oracle/fixtures/leaf.json"
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/terrain_draw_oracle/fixtures/leaf.json",
     ))
     .unwrap();
     let cases = fixture["depth_cases"].as_array().unwrap();
@@ -491,8 +491,8 @@ fn production_tree_signed_depth_and_repeated_overlap_match_original_leaves() {
 fn production_tree_clipping_and_viewport_origin_match_original_rows() {
     let gpu = Gpu::new();
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/terrain_draw_oracle/fixtures/rows.json"
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/terrain_draw_oracle/fixtures/rows.json",
     ))
     .unwrap();
     let cases = fixture["cases"].as_array().unwrap();

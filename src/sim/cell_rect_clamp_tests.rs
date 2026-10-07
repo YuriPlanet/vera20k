@@ -15,8 +15,8 @@ struct ClampRow {
 
 #[test]
 fn native_house_playfield_clamp_matches_all_72_original_rows() {
-    let provenance: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/house_cell_clamp.meta.json"
+    let provenance: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/house_cell_clamp.meta.json",
     ))
     .unwrap();
     assert_eq!(provenance["schema_version"], 1);
@@ -24,8 +24,8 @@ fn native_house_playfield_clamp_matches_all_72_original_rows() {
         provenance["native_sha256"],
         "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
-    let rows: Vec<ClampRow> = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/house_cell_clamp.json"
+    let rows: Vec<ClampRow> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/house_cell_clamp.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 72);

@@ -764,8 +764,8 @@ mod tests {
     fn assert_native_peer_suffix(name: &str, probe: (i16, i16), occupied: (u16, u16)) {
         // Native slot40 executions preserve the complete head/handoff query.
         //42B08A..0AB supplies signed-cell center XYZ, then42B172 calls it.
-        let data: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/locomotor_at_coord.json"
+        let data: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/locomotor_at_coord.json",
         ))
         .unwrap();
         let case = data["cases"]

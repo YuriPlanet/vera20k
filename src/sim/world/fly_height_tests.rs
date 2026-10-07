@@ -10,8 +10,8 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::util::fixed_math::SimFixed;
 
 fn vectors() -> Vec<serde_json::Value> {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fly_height.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fly_height.json",
     ))
     .unwrap()
 }
@@ -412,8 +412,8 @@ fn assert_native_move_takeoff(sim: &mut Simulation, rules: &RuleSet, row: &serde
 
 #[test]
 fn carryall_native_landing_base_reaches_production_move_orders() {
-    let vectors: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fly_landing_base.json"
+    let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fly_landing_base.json",
     ))
     .unwrap();
     let rows = vectors["moves"].as_array().unwrap();
@@ -426,8 +426,8 @@ fn carryall_native_landing_base_reaches_production_move_orders() {
 
 #[test]
 fn carryall_landing_base_is_recomputed_from_saved_cargo_contacts_and_mission() {
-    let vectors: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fly_landing_base.json"
+    let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fly_landing_base.json",
     ))
     .unwrap();
     let rows = vectors["moves"].as_array().unwrap();
@@ -463,8 +463,8 @@ fn carryall_landing_base_is_recomputed_from_saved_cargo_contacts_and_mission() {
 }
 
 fn destination_vectors() -> Vec<serde_json::Value> {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fly_destination.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fly_destination.json",
     ))
     .unwrap()
 }
@@ -801,8 +801,8 @@ fn assert_native_takeoff_result(sim: &Simulation, row: &serde_json::Value) {
 
 #[test]
 fn fly_takeoff_callback_matches_all_original_histories() {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fly_takeoff.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fly_takeoff.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 80);
@@ -818,8 +818,8 @@ fn fly_takeoff_callback_matches_all_original_histories() {
 #[test]
 fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
     use super::display_layers::DisplayLayer;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fly_takeoff_phase.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fly_takeoff_phase.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 75);
@@ -881,8 +881,8 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
 #[test]
 fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
     use super::display_layers::DisplayLayer;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fly_nonlandable_phase.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fly_nonlandable_phase.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 64);
@@ -1107,8 +1107,8 @@ fn fly_cruise_mode_hashes_separately_from_destination() {
 
 #[test]
 fn fly_production_process_resets_enter_mode_using_native_mission_precedence() {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fly_mission_mode.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fly_mission_mode.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 30);
@@ -1194,8 +1194,8 @@ fn fly_production_tick_uses_primary_current_and_continues_after_restore() {
 #[test]
 fn fly_paid_step_matches_native_math_and_production_type_speed() {
     use crate::sim::movement::ground_pose::position_world_coord;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fly_paid_step.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fly_paid_step.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 199);

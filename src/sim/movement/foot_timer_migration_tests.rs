@@ -96,8 +96,8 @@ fn json_i32(value: &Value) -> i32 {
 
 #[test]
 fn accepted_direct_and_regular_orders_keep_signed_rules_delays_and_retry_word() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/path_delay_rules.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/path_delay_rules.json",
     ))
     .unwrap();
     let rows = native["blockage_path_delay"].as_array().unwrap();
@@ -173,8 +173,8 @@ fn install_stationary_path_request(sim: &mut Simulation) {
 
 #[test]
 fn ordinary_drive_and_ship_process_do_not_age_native_waiting_timer_fields() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/track_blocked_timers.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/track_blocked_timers.json",
     ))
     .unwrap();
     let rules = rules("0.01", "65536", false);
@@ -246,8 +246,8 @@ fn ordinary_drive_and_ship_process_do_not_age_native_waiting_timer_fields() {
 
 #[test]
 fn rules_driven_sentinel_timers_survive_snapshot_and_same_frame_process() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/path_delay_rules.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/path_delay_rules.json",
     ))
     .unwrap();
     let expected_path = native["path_delay"]

@@ -215,8 +215,8 @@ fn wooden_body_damage_collapses_through_the_live_publication_host() {
 
 #[test]
 fn signed_bridge_strength_survives_reader_runtime_dispatch_and_snapshot() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_damage_admission.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_damage_admission.json",
     ))
     .unwrap();
     for strength in [-1, 0, 65536] {

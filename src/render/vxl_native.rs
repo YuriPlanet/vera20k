@@ -514,8 +514,8 @@ mod tests {
 
     #[test]
     fn native_sections_match_all_geometry_and_visibility_bytes() {
-        let fixture: Value = serde_json::from_str(include_str!(
-            "../../tools/voxel_oracle/raster_fixtures.json"
+        let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/raster_fixtures.json",
         ))
         .unwrap();
         let mut compared = 0;
@@ -715,8 +715,8 @@ mod tests {
                 std::fs::read(directory.join(format!("{name}.HVA"))).unwrap(),
             ));
         }
-        let fixture: Value = serde_json::from_str(include_str!(
-            "../../tools/voxel_oracle/raster_fixtures.json"
+        let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/raster_fixtures.json",
         ))
         .unwrap();
         for model in fixture["models"].as_array().unwrap().iter().take(2) {

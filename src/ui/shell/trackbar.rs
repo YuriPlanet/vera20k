@@ -238,8 +238,8 @@ mod tests {
         // Reproduced by tools/storage_oracle/launcher_trackbar.py from the
         // hash-checked retail executable. This compares the separate native
         // range+1 pointer partition and range-only retained paint calculation.
-        let golden: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/launcher_trackbar.json"
+        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/launcher_trackbar.json",
         ))
         .unwrap();
         // BBB/B8 add geometries to the shared oracle; retain original D5 coverage.
@@ -261,8 +261,8 @@ mod tests {
         // sliders 129, Generate Map 226, the D5 plain sliders 181) with their
         // owners' ranges; Credits runs 5000..10000 in steps of 100 (retail
         // Rules).
-        let golden: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/launcher_trackbar.json"
+        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/launcher_trackbar.json",
         ))
         .unwrap();
         let geometries: Vec<_> = golden["geometries"]
@@ -307,8 +307,8 @@ mod tests {
         // (tools/storage_oracle/launcher_trackbar.py): saved values outside
         // the range, the stepped read-back, a zero step and a minimum off
         // the step.
-        let golden: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/launcher_trackbar.json"
+        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/launcher_trackbar.json",
         ))
         .unwrap();
         let setups = golden["setups"].as_array().unwrap();

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "The kamikaze tracker at 0x00ABC5F8: Push (MissileSpawn test and Crash, the target-cell and facing-step arms, Ammo and +0x6CA, node append and vector growth), Update (the {Frame, 30} cadence and the per-node Ammo, Assign_Target and Queue_Mission), Remove (child arm, scanned from the back) and Clear (the {Frame, 1} restart), with the callers' {Frame, 2} restarts. Not the Remove cell arm, Save/Load, or the dummy cell GetCellAt answers off the cell array.",
+  "assumptions": [
+    "FPCW 0E7F; the tracker static initializer and Clear run at frame 0; the cell-delta table initializer 0x0049F2F0 runs first; MapClass+0x13C/+0x140 name a 0x40000-entry cell array whose cells (0..127, 0..127) exist; child facings are built at the row facing_frame; child +0x6C4 names a type whose +0xD68 MissileSpawn byte follows the row; child Ammo +0x2FC and +0x6CA start from the row."
+  ],
+  "substitutions": [
+    "Child Crash(+0x3DC), Assign_Target(+0x3C8) and Queue_Mission(+0x1E8) are recorded seams; the target GetCoords(+0x48) answers the row coordinate; operator new is a bump allocator; operator delete and atexit return."
+  ],
+  "entry_points": {
+    "static_init": "0x0054E260",
+    "push": "0x0054E3B0",
+    "update": "0x0054E4D0",
+    "remove": "0x0054E590",
+    "clear": "0x0054E6F0",
+    "facing_current": "0x004C93D0",
+    "occupied_cell": "0x005F6960",
+    "adjacent_cell": "0x00481810",
+    "get_cell_at": "0x005657A0"
+  },
+  "payload_sha256": "92eb79a1a60d2c610b2f148a301671ef19873751ad3e0d6fa76f35b761731307"
+}

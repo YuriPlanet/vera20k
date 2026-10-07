@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 description = "Vera20k Engine — a from-scratch Rust engine for Red Alert 2: Yuri's Revenge"
 autobins = false
+# Shipped as release builds (.github/workflows/release.yml), never on crates.io.
+publish = false
 
 # Main game client
 [[bin]]

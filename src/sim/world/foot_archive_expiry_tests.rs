@@ -9,10 +9,9 @@ use crate::sim::vision::FogState;
 
 #[test]
 fn native_foot_archive_expiry_matches_all_22_original_class_rows() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/foot_archive_expiry.json",
-    )))
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_archive_expiry.json",
+    ))
     .unwrap();
     assert_eq!(corpus["schema_version"], 1);
     let rows = corpus["rows"].as_array().unwrap();

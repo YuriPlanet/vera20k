@@ -294,8 +294,8 @@ fn capture_takes_the_target_and_records_its_house() {
 /// lower.
 #[test]
 fn a_captured_buildings_ring_sits_height_levels_above_its_centre() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/capture_ring_height.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/capture_ring_height.json",
     ))
     .unwrap();
     assert_eq!(
@@ -595,8 +595,8 @@ fn the_fate_table_walk() {
 /// instead of the controller's would change the reason.
 #[test]
 fn native_decide_unit_fate_corpus() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/capture_decide_fate.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/capture_decide_fate.json",
     ))
     .unwrap();
     let rows = corpus.as_array().unwrap();
@@ -724,8 +724,8 @@ fn native_decide_unit_fate_corpus() {
 /// killing case, whose captives do not exist (no fate draws either side).
 #[test]
 fn native_overload_update_corpus() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/capture_overload_update.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/capture_overload_update.json",
     ))
     .unwrap();
     let cases = corpus.as_array().unwrap();

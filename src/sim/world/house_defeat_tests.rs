@@ -116,8 +116,8 @@ struct NativeGateCase {
 /// set).
 #[test]
 fn native_defeat_gate_corpus() {
-    let cases: Vec<NativeGateCase> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/house_defeat_gate.json"
+    let cases: Vec<NativeGateCase> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/house_defeat_gate.json",
     ))
     .unwrap();
     assert_eq!(cases.len(), 21);
@@ -203,8 +203,8 @@ struct NativeBlowupCase {
 /// re-reading the slot, so the call order is the same.
 #[test]
 fn native_blowup_all_corpus() {
-    let cases: Vec<NativeBlowupCase> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/house_blowup_all.json"
+    let cases: Vec<NativeBlowupCase> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/house_blowup_all.json",
     ))
     .unwrap();
     assert_eq!(cases.len(), 10);

@@ -90,8 +90,9 @@ fn fixture_with_art(extra: &str, art: Option<&IniFile>) -> (Simulation, RuleSet)
 fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry: u16) {
     let owner = sim.interner.intern("Americans");
     let sw_type_id = sim.interner.intern(name);
+    // Charged on a running timer: ClickFire refuses a stopped one.
     let mut instance = SuperWeaponInstance::new(sw_type_id, owner);
-    instance.is_active = true;
+    instance.activate(1, sim.session.binary_frame);
     instance.is_ready = true;
     sim.super_weapons
         .entry(owner)
@@ -561,8 +562,8 @@ fn infantry_terminal_zero_count_death_request_retains_the_previous_action() {
 
 #[test]
 fn infantry_terminal_retained_zero_count_death_retires_at_the_native_boundary() {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/infantry_death_completion.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_death_completion.json",
     ))
     .unwrap();
     let native = rows

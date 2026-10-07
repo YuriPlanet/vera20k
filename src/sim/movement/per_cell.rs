@@ -443,11 +443,7 @@ impl Simulation {
         if let Some(archive) = archive
             .filter(|archive| Some(*archive) != nav_com.map(crate::sim::combat::TargetKind::from))
         {
-            let target = match archive {
-                crate::sim::combat::TargetKind::Cell(rx, ry) => NavTargetRef::cell(rx, ry),
-                crate::sim::combat::TargetKind::Entity(id) => NavTargetRef::Entity { id },
-            };
-            self.set_unit_destination(id, target, rules, true);
+            self.set_unit_destination(id, NavTargetRef::from(archive), rules, true);
         } else {
             if let Some(unit) = self.substrate.entities.get_mut(id) {
                 super::navcom::foot_stop_moving(unit);

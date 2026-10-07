@@ -1,7 +1,9 @@
 //! Per-match lighting lifetime and ordered publication before drawing.
 //! Simulation supplies source/global events; this owner retains cell sampling
 //! history and publishes each affected area across install, restore and refresh.
-use crate::map::lighting::{self, CellLightGrid, LightingConfig, LightingProfileUnits, PointLight};
+use crate::map::lighting::{
+    self, CellLightGrid, CellRelightProfile, LightingConfig, LightingProfileUnits, PointLight,
+};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
@@ -94,13 +96,9 @@ pub(crate) fn anim_palette_light(
 pub(crate) fn color_scheme_rgb(
     scenario: Option<&crate::sim::scenario_session::ScenarioLightingState>,
 ) -> [i32; 3] {
-    use crate::sim::scenario_session::ScenarioLightingProfile;
-    match scenario {
-        Some(s) if s.selected_profile == ScenarioLightingProfile::Ion => {
-            [s.ion.red_percent, s.ion.green_percent, s.ion.blue_percent].map(|v| v.wrapping_mul(10))
-        }
-        _ => [1000; 3],
-    }
+    scenario
+        .and_then(ScenarioLightingState::alternate_rgb)
+        .unwrap_or([1000; 3])
 }
 
 use crate::sim::light_sources::LightingEvent;
@@ -112,7 +110,7 @@ pub(crate) struct MatchLighting {
     config: LightingConfig,
     buildings: BTreeMap<u64, PointLight>,
     radiation: BTreeMap<(u16, u16), PointLight>,
-    profile: LightingProfileUnits,
+    profile: CellRelightProfile,
     scenario: Option<ScenarioLightingState>,
     detail_level: u32,
 }
@@ -124,7 +122,7 @@ impl Default for MatchLighting {
             config: LightingConfig::default(),
             buildings: BTreeMap::new(),
             radiation: BTreeMap::new(),
-            profile: lighting::normal_profile_units(&LightingConfig::default()),
+            profile: lighting::normal_profile_units(&LightingConfig::default()).into(),
             scenario: None,
             detail_level: 2,
         }
@@ -149,7 +147,7 @@ impl MatchLighting {
             detail_level: detail_level.min(2),
             ..Self::default()
         };
-        self.profile = lighting::normal_profile_units(&self.config);
+        self.profile = lighting::normal_profile_units(&self.config).into();
         if let Some((terrain, sim, rules)) = live {
             let view = derive_lighting_view(&self.config, Some(sim), Some(rules), detail_level);
             self.grid = build_lighting_grid_from_view(terrain, &view);
@@ -199,15 +197,24 @@ impl MatchLighting {
                     queue_area(old.as_ref(), terrain, 2, &mut dirty);
                     queue_area(source.as_ref(), terrain, 2, &mut dirty);
                 }
-                LightingEvent::Global(state) => {
+                LightingEvent::Global {
+                    state,
+                    cell_profile,
+                } => {
                     self.commit_source_cells(terrain, &mut dirty);
-                    self.profile = scenario_profile(state);
+                    self.profile = scenario_profile(state, *cell_profile);
                     self.grid.refresh_retained_scalars(
                         terrain.iter().map(|cell| ((cell.rx, cell.ry), cell.level)),
-                        self.profile,
+                        self.profile.units,
                     );
-                    self.grid.set_alternate_rgb(alternate_rgb(state));
+                    self.grid.set_alternate_rgb(state.alternate_rgb());
                     self.scenario = Some(*state);
+                }
+                LightingEvent::RelightProfile { cell_profile } => {
+                    self.commit_source_cells(terrain, &mut dirty);
+                    if let Some(state) = &self.scenario {
+                        self.profile = scenario_profile(state, *cell_profile);
+                    }
                 }
             }
         }
@@ -294,8 +301,14 @@ impl MatchLighting {
                 });
             }
         }
+        let cell_profile = sim.lighting_cell_profile();
         if self.scenario != Some(sim.session.lighting) {
-            events.push(LightingEvent::Global(sim.session.lighting));
+            events.push(LightingEvent::Global {
+                state: sim.session.lighting,
+                cell_profile,
+            });
+        } else if self.profile != scenario_profile(&sim.session.lighting, cell_profile) {
+            events.push(LightingEvent::RelightProfile { cell_profile });
         }
         self.apply_events(terrain, &events);
     }
@@ -335,38 +348,32 @@ fn source_maps(
     )
 }
 
-fn scenario_profile(state: &ScenarioLightingState) -> LightingProfileUnits {
-    let selected = state.selected();
-    LightingProfileUnits {
-        ambient_percent: state.current_ambient,
-        red_percent: state.normal.red_percent,
-        green_percent: state.normal.green_percent,
-        blue_percent: state.normal.blue_percent,
-        ground_units: selected.ground_units,
-        level_units: selected.level_units,
+/// The cells' sampling profile: the current ambient, the ordinary RGB, the
+/// Ground/Level of `cell_profile`, and the Level a full relight's top scalar
+/// reads ([`ScenarioLightingState::relight_top_level`]).
+fn scenario_profile(
+    state: &ScenarioLightingState,
+    cell_profile: crate::sim::scenario_session::ScenarioLightingProfile,
+) -> CellRelightProfile {
+    let cell = state.profile(cell_profile);
+    CellRelightProfile {
+        units: LightingProfileUnits {
+            ambient_percent: state.current_ambient,
+            red_percent: state.normal.red_percent,
+            green_percent: state.normal.green_percent,
+            blue_percent: state.normal.blue_percent,
+            ground_units: cell.ground_units,
+            level_units: cell.level_units,
+        },
+        top_level_units: state.relight_top_level(cell_profile),
     }
-}
-
-fn alternate_rgb(state: &ScenarioLightingState) -> Option<[i32; 3]> {
-    matches!(
-        state.selected_profile,
-        crate::sim::scenario_session::ScenarioLightingProfile::Ion
-    )
-    .then(|| {
-        [
-            state.ion.red_percent,
-            state.ion.green_percent,
-            state.ion.blue_percent,
-        ]
-        .map(|v| v.wrapping_mul(10))
-    })
 }
 
 /// Fully-derived render-facing lighting view. The simulation owns only the
 /// scenario controller and source inputs; the per-cell grid remains app state.
 #[derive(Debug, PartialEq)]
 pub(crate) struct DerivedLightingView {
-    pub(crate) profile: LightingProfileUnits,
+    pub(crate) profile: CellRelightProfile,
     pub(crate) alternate_rgb: Option<[i32; 3]>,
     pub(crate) point_lights: Vec<PointLight>,
     pub(crate) detail_level: u32,
@@ -380,24 +387,10 @@ pub(crate) fn derive_lighting_view(
     detail_level: u32,
 ) -> DerivedLightingView {
     let profile = simulation.map_or_else(
-        || lighting::normal_profile_units(lighting_config),
-        |sim| {
-            let state = &sim.session.lighting;
-            let selected = match state.selected_profile {
-                crate::sim::scenario_session::ScenarioLightingProfile::Normal => state.normal,
-                crate::sim::scenario_session::ScenarioLightingProfile::Ion => state.ion,
-            };
-            LightingProfileUnits {
-                ambient_percent: state.current_ambient,
-                red_percent: state.normal.red_percent,
-                green_percent: state.normal.green_percent,
-                blue_percent: state.normal.blue_percent,
-                ground_units: selected.ground_units,
-                level_units: selected.level_units,
-            }
-        },
+        || lighting::normal_profile_units(lighting_config).into(),
+        |sim| scenario_profile(&sim.session.lighting, sim.lighting_cell_profile()),
     );
-    let alternate_rgb = simulation.and_then(|sim| alternate_rgb(&sim.session.lighting));
+    let alternate_rgb = simulation.and_then(|sim| sim.session.lighting.alternate_rgb());
 
     let building_lights = collect_live_building_lights(simulation, detail_level);
     let radiation_lights = match (simulation, rules) {

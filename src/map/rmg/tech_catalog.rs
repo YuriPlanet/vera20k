@@ -56,11 +56,11 @@ fn footprint_for(art: &IniFile, name: &str) -> Vec<(i16, i16)> {
 
 #[cfg(test)]
 pub(crate) fn stock_contract_catalog() -> Vec<TechType> {
-    let rules = IniFile::from_str(include_str!(
-        "../../../tests/fixtures/ini/rmg_neutral_tech_rules_contract.ini"
+    let rules = IniFile::from_str(crate::test_fixture::text(
+        "tests/fixtures/ini/rmg_neutral_tech_rules_contract.ini",
     ));
-    let art = IniFile::from_str(include_str!(
-        "../../../tests/fixtures/ini/rmg_neutral_tech_art_contract.ini"
+    let art = IniFile::from_str(crate::test_fixture::text(
+        "tests/fixtures/ini/rmg_neutral_tech_art_contract.ini",
     ));
     resolve(&rules, &art)
 }

@@ -68,8 +68,8 @@ pub(crate) mod tests {
     use serde_json::Value;
 
     pub(crate) fn unit_rows() -> Vec<Value> {
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/naval_sinking_clip.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/naval_sinking_clip.json",
         ))
         .unwrap();
         corpus["cases"]

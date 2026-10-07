@@ -470,8 +470,8 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
     use serde_json::{Value, json};
     use std::collections::BTreeMap;
 
-    let data: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/anytown_damage/unit_unlimbo.json"
+    let data: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/anytown_damage/unit_unlimbo.json",
     ))
     .unwrap();
     assert_eq!(data["schema_version"], 1);
@@ -1162,8 +1162,8 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
     use serde_json::{Value, json};
 
     // Retained physical scenario layers, parsed by the production reader.
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/building_death_anims_limbo_cancel.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_death_anims_limbo_cancel.json",
     ))
     .unwrap();
     let mut ini = IniFile::from_str("[BuildingTypes]\n0=GAPOWR\n[VehicleTypes]\n0=MTNK\n");

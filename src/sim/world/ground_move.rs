@@ -190,21 +190,15 @@ impl Simulation {
     /// The Teleport Process warps; it follows no route.
     /// - Infantry: the Infantry setter (`0x0051AA40`), which never reads
     ///   `Teleporter=`.
-    /// - A `Teleporter=` Unit (the Chrono Miner): the Unit setter
-    ///   (`0x00741970`), whose Teleporter arm drives it except onto a dock.
-    /// - Another Unit: Teleport Move_To. The retail ones are CMON and SMON,
-    ///   `UnloadingClass=` harvesters.
+    /// - A Unit: the Unit setter (`0x00741970`). A `Teleporter=` one (the
+    ///   Chrono Miner) takes its Teleporter arm, which drives it except onto a
+    ///   dock; the others on Teleport are CMON and SMON (`UnloadingClass=`
+    ///   harvesters) and the Chrono Warp's.
     ///
-    /// RESIDUALS:
-    /// - The last arm skips the rest of the Unit setter, which does not
-    ///   represent a Unit on Teleport without `Teleporter=`: its same-NavCom
-    ///   return and NavCom write. Trigger: an order to a Chrono Miner while it
-    ///   unloads. Effect: a repeated order re-arms the warp, and NavCom keeps
-    ///   the previous order. Frequency: rare.
-    /// - The order's queue flag and object destination are not carried: a
-    ///   queued waypoint replaces the order, and an object order warps to the
-    ///   object's cell. Trigger: a queued or object order to a Chrono unit.
-    ///   Frequency: uncommon.
+    /// RESIDUAL: the order's queue flag and object destination are not
+    /// carried: a queued waypoint replaces the order, and an object order
+    /// warps to the object's cell. Trigger: a queued or object order to a
+    /// Chrono unit. Frequency: uncommon.
     pub(crate) fn teleport_destination(
         &mut self,
         id: u64,
@@ -227,18 +221,8 @@ impl Simulation {
                     log::debug!("Teleport infantry order {id} refused: {error}");
                     false
                 }),
-            EntityCategory::Unit if self.unit_setter_receiver(id, Some(rules)) => {
-                self.set_unit_destination(id, NavTargetRef::cell(cell.0, cell.1), rules, true)
-            }
             EntityCategory::Unit => {
-                let harvester = self
-                    .object_type(entity.type_ref(), rules)
-                    .is_some_and(|object| object.harvester);
-                self.teleport_move_to(id, cell, rules, harvester, registry)
-                    .unwrap_or_else(|error| {
-                        log::debug!("Unit Teleport order {id}: {error}");
-                        false
-                    })
+                self.set_unit_destination(id, NavTargetRef::cell(cell.0, cell.1), rules, true)
             }
             EntityCategory::Aircraft | EntityCategory::Structure => return None,
         })

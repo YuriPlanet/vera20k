@@ -228,6 +228,9 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                     audio_indices,
                 );
             }
+            GameSoundEvent::EvaRemove { event: eva_event } => {
+                sfx.remove_eva(eva_event, eva_registry);
+            }
             // UI events — always full volume (non-positional).
             GameSoundEvent::UiSound { .. } => {
                 sfx.play_sound(event.sound_id(), registry, assets, audio_indices);

@@ -78,6 +78,17 @@ pub(crate) struct BuildingMissionLeaf {
     ready_latch: u8,
     /// Independent Building+620 StageClass (ctor43B7F5; Repair44BBF2).
     repair_progress: crate::sim::stage::StageClass,
+    /// Building `+0x5F8`: the super weapon a Missile mission fires.
+    /// `SuperClass::Launch` stores the type's `Type=` value (`+0xB4`,
+    /// `0x006CDDD7`), which Mission_Missile then indexes the SuperWeaponType
+    /// array with (`0x0044CABA`); retail lists every type at the index of its
+    /// `Type=`. Constructor -1 (`0x0043B7B9`).
+    #[serde(default = "no_firing_super_weapon")]
+    firing_super_weapon: i32,
+}
+
+const fn no_firing_super_weapon() -> i32 {
+    -1
 }
 
 /// A Doing value rejected by the verified Infantry writer domain.
@@ -122,6 +133,7 @@ impl MissionLeafState {
             EntityCategory::Structure => Self::Building(BuildingMissionLeaf {
                 ready_latch: 0,
                 repair_progress: crate::sim::stage::StageClass::constructed(now),
+                firing_super_weapon: no_firing_super_weapon(),
             }),
         }
     }
@@ -285,6 +297,11 @@ impl MissionLeafState {
     /// cleared by Update's ready checks (`0x0043FE4D`, `0x0043FFAD`).
     pub(crate) fn set_building_ready_latch(&mut self, raw: u8) {
         self.expect_building_mut().ready_latch = raw;
+    }
+
+    /// Building `+0x5F8`, written by `SuperClass::Launch` (`0x006CDDD7`).
+    pub(crate) fn set_building_firing_super_weapon(&mut self, super_weapon_type: i32) {
+        self.expect_building_mut().firing_super_weapon = super_weapon_type;
     }
 
     #[track_caller]
@@ -479,6 +496,11 @@ impl BuildingMissionLeaf {
 
     pub(crate) const fn ready_latch(&self) -> u8 {
         self.ready_latch
+    }
+
+    /// Building `+0x5F8` (see the field).
+    pub(crate) const fn firing_super_weapon(&self) -> i32 {
+        self.firing_super_weapon
     }
 }
 

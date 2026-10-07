@@ -166,10 +166,9 @@ mod tests {
             ]
         );
         apply(&mut sim, &rules, None, 4, 4);
-        let native: serde_json::Value = serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tools/spatial_oracle/bridge_zero_health_receiver.json"
-        )))
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/bridge_zero_health_receiver.json",
+        ))
         .unwrap();
         let repeat = native["cases"]
             .as_array()

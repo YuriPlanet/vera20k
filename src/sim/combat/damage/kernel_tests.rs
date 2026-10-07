@@ -49,8 +49,8 @@ struct Store {
 }
 
 fn corpus() -> Corpus {
-    serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/estimated_damage.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/estimated_damage.json",
     ))
     .expect("original estimated-damage/kernel corpus")
 }

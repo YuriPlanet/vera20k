@@ -79,8 +79,8 @@ mod tests {
     /// change subsequent production RNG even when two selections agree.
     #[test]
     fn selection_and_rng_match_original_pickup_prefix() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/crate_pickup.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/crate_pickup.json",
         ))
         .unwrap();
         let mut compared = 0;

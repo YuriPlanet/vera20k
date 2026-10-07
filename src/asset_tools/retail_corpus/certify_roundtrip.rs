@@ -25,10 +25,9 @@ fn native_palette_components() -> [u8; 256] {
         raw: Vec<u8>,
         rgb: Vec<u8>,
     }
-    let packet: Packet = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/sidebar_oracle/palette.json"
-    )))
+    let packet: Packet = serde_json::from_str(crate::test_fixture::text(
+        "tools/sidebar_oracle/palette.json",
+    ))
     .expect("checked native palette fixture");
     let mut cases = packet
         .cases

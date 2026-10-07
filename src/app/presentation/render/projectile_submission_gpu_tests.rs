@@ -19,7 +19,7 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
     // native-buffer pool before any submission in the former implementation.
     const ROUNDS: usize = 640;
     let native_half =
-        include_bytes!("../../../../tools/projectile_oracle/bridge_render_pixels.rgb565.bin");
+        crate::test_fixture::bytes("tools/projectile_oracle/bridge_render_pixels.rgb565.bin");
     for format in [
         wgpu::TextureFormat::Bgra8UnormSrgb,
         wgpu::TextureFormat::Rgba8UnormSrgb,

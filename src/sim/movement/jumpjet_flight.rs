@@ -13,7 +13,7 @@
 //!   and Mark(PUT), so its own cell no longer lists it while it samples cell
 //!   tops.
 //! - `JumpjetLocomotionClass::State3_Translate @ 0x0054BFF0`: desired facing
-//!   toward the destination through the retail atan table, four distance speed
+//!   toward the destination through the retail arctangent, four distance speed
 //!   zones with a turn-error slowdown, target-height choice, and arrival below
 //!   20 leptons.
 //! - The crash: `Process`'s latch (`0x0054AF2E..0x0054B02C`) turns a crashing
@@ -56,7 +56,7 @@
 //!   sim/movement only.
 
 use super::JumpjetRuntime;
-use crate::map::retail_trig::{AtanTable, TrigTable};
+use crate::map::retail_trig::TrigTable;
 use crate::rules::jumpjet_params::JumpjetParams;
 use crate::sim::movement::facing_class::FacingClass;
 use crate::util::direction_tables::{CELL_DELTAS, LEPTON_DELTAS};
@@ -68,12 +68,8 @@ const ARRIVAL_RADIUS: i32 = 20;
 /// Extra reference height for a non-building techno in a cell (`ADD EBP,0x55`
 /// at `0x004850EF`).
 const CELL_OBJECT_LIFT: i32 = 0x55;
-/// `0x007E2810`: -2pi/65536.
+/// `0x007E2810`: -2pi/65534.
 const NEG_RADIANS_PER_FACING_UNIT: u64 = 0xBF19_222D_989F_5E57;
-/// `0x007E2818`: -65536/2pi.
-const NEG_FACING_UNITS_PER_RADIAN: u64 = 0xC0C4_5F07_AF68_ECEF;
-/// `0x007E2820`: pi/2.
-const HALF_PI: u64 = 0x3FF9_21FB_5444_2D18;
 /// `0x007E3CC0`: 2pi.
 const TWO_PI: u64 = 0x4019_21FB_5444_2D18;
 /// `0x007ECE60`: 15.0.
@@ -227,7 +223,6 @@ impl FlightOwnerKind {
 pub(crate) trait JumpjetFlightHost {
     fn binary_frame(&self) -> u32;
     fn trig(&self) -> &TrigTable;
-    fn atan(&self) -> &AtanTable;
     fn owner_kind(&self) -> FlightOwnerKind;
     /// Object+90, checked after Update54AF24 before the state dispatch.
     fn is_object_alive(&self) -> bool;
@@ -632,7 +627,7 @@ pub(crate) fn state3_translate(
     runtime
         .flight
         .facing
-        .set(desired_facing(destination, location, host), frame);
+        .set(desired_facing(destination, location), frame);
     // `FUN_004C9530` is destination minus animated current; the error byte
     // rounds the unsigned 16-bit difference to eighths of a byte, so any turn
     // to the left reads as a large error.
@@ -818,17 +813,12 @@ fn crash_latch(state: i32, flight: &mut JumpjetFlight, host: &mut impl JumpjetFl
 }
 
 /// The desired facing toward `destination` (`0x0054C081..C0CD`, and the same
-/// sequence in State 1 and State 2): the retail arctangent, less a quarter
-/// turn, scaled by `-65536/2pi` and truncated.
-fn desired_facing(destination: [i32; 3], location: [i32; 3], host: &impl JumpjetFlightHost) -> u16 {
-    let angle = host.atan().atan2(
-        X87Chop53::sub(int(location[1]), int(destination[1])),
-        X87Chop53::sub(int(destination[0]), int(location[0])),
-    );
-    X87Chop53::ftol_i32_low_masked(X87Chop53::mul(
-        X87Chop53::sub(angle, double(HALF_PI)),
-        double(NEG_FACING_UNITS_PER_RADIAN),
-    )) as u16
+/// sequence in State 1 and State 2).
+fn desired_facing(destination: [i32; 3], location: [i32; 3]) -> u16 {
+    crate::util::direction_tables::facing16_between(
+        [location[0], location[1]],
+        [destination[0], destination[1]],
+    )
 }
 
 /// `MapCoord_StepByDir_GetCell @ 0x00481810` adds the signed-word entries
@@ -934,7 +924,7 @@ pub(crate) fn state1_ascend(
             runtime
                 .flight
                 .facing
-                .set(desired_facing(destination, location, host), frame);
+                .set(desired_facing(destination, location), frame);
             let dest_cell = host.cell_of([destination[0], destination[1]]);
             if here == dest_cell && !host.balloon_hover() {
                 // Already over the destination: hold this height and translate.
@@ -977,7 +967,7 @@ pub(crate) fn state2_hold(
     if destination[0] != location[0] || destination[1] != location[1] {
         flight
             .facing
-            .set(desired_facing(destination, location, host), frame);
+            .set(desired_facing(destination, location), frame);
         // 0x0054BF60..0x0054BFBC: with the current cell's slot empty, the
         // owner's independently retained tracker cell (+560) is released
         // when it still holds this owner; the setter's Foot notification
@@ -1188,7 +1178,7 @@ pub(crate) fn cell_top_height(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::retail_trig::{required_atan_table, required_math_tables};
+    use crate::map::retail_trig::required_math_tables;
     use crate::sim::components::DriveCoord;
     use crate::sim::movement::jumpjet_movement::{JumpjetOrderHost, JumpjetRuntime};
     use crate::util::fixed_math::SimFixed;
@@ -1201,7 +1191,6 @@ mod tests {
     struct FixtureHost<'a> {
         frame: u32,
         trig: &'a TrigTable,
-        atan: &'a AtanTable,
         kind: FlightOwnerKind,
         location: [i32; 3],
         balloon_hover: bool,
@@ -1263,9 +1252,6 @@ mod tests {
         }
         fn trig(&self) -> &TrigTable {
             self.trig
-        }
-        fn atan(&self) -> &AtanTable {
-            self.atan
         }
         fn owner_kind(&self) -> FlightOwnerKind {
             self.kind
@@ -1432,18 +1418,17 @@ mod tests {
     #[test]
     fn flight_matches_the_native_update_and_translate_corpus() {
         let (trig, _) = required_math_tables();
-        let atan = required_atan_table();
-        if !trig.matches_retail() || !atan.matches_retail() {
+        if !trig.matches_retail() {
             // With RA2_DIR set, a mismatched table is a failure, not a skip.
             assert!(
                 std::env::var_os("RA2_DIR").is_none(),
-                "RA2_DIR is set but the retail sine or atan table does not match"
+                "RA2_DIR is set but the retail sine table does not match"
             );
             eprintln!("skipped: set RA2_DIR to the retail install to run this");
             return;
         }
-        let rows: Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/jumpjet_flight.json"
+        let rows: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/jumpjet_flight.json",
         ))
         .expect("corpus parses");
         let rows = rows.as_array().expect("row list");
@@ -1479,7 +1464,6 @@ mod tests {
             let mut host = FixtureHost {
                 frame: first_frame,
                 trig,
-                atan,
                 kind: if int(&input["rtti"]) == 15 {
                     FlightOwnerKind::Infantry
                 } else {
@@ -1566,7 +1550,6 @@ mod tests {
     struct StatesHost<'a> {
         frame: u32,
         trig: &'a TrigTable,
-        atan: &'a AtanTable,
         kind: FlightOwnerKind,
         location: [i32; 3],
         balloon_hover: bool,
@@ -1728,9 +1711,6 @@ mod tests {
         }
         fn trig(&self) -> &TrigTable {
             self.trig
-        }
-        fn atan(&self) -> &AtanTable {
-            self.atan
         }
         fn owner_kind(&self) -> FlightOwnerKind {
             self.kind
@@ -1912,17 +1892,16 @@ mod tests {
     #[test]
     fn states_match_the_native_process_corpus() {
         let (trig, _) = required_math_tables();
-        let atan = required_atan_table();
-        if !trig.matches_retail() || !atan.matches_retail() {
+        if !trig.matches_retail() {
             assert!(
                 std::env::var_os("RA2_DIR").is_none(),
-                "RA2_DIR is set but the retail sine or atan table does not match"
+                "RA2_DIR is set but the retail sine table does not match"
             );
             eprintln!("skipped: set RA2_DIR to the retail install to run this");
             return;
         }
-        let rows: Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/jumpjet_states.json"
+        let rows: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/jumpjet_states.json",
         ))
         .expect("corpus parses");
         assert_eq!(rows["schema_version"], 2);
@@ -1981,7 +1960,6 @@ mod tests {
             let mut host = StatesHost {
                 frame: first_frame,
                 trig,
-                atan,
                 kind: if int(&input["rtti"]) == 15 {
                     FlightOwnerKind::Infantry
                 } else {
@@ -2177,17 +2155,16 @@ mod tests {
     #[test]
     fn a_crashing_jumpjet_falls_like_the_native_state5() {
         let (trig, _) = required_math_tables();
-        let atan = required_atan_table();
-        if !trig.matches_retail() || !atan.matches_retail() {
+        if !trig.matches_retail() {
             assert!(
                 std::env::var_os("RA2_DIR").is_none(),
-                "RA2_DIR is set but the retail sine or atan table does not match"
+                "RA2_DIR is set but the retail sine table does not match"
             );
             eprintln!("skipped: set RA2_DIR to the retail install to run this");
             return;
         }
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/jumpjet_crash.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/jumpjet_crash.json",
         ))
         .expect("corpus parses");
         let rows = corpus["fall"].as_array().expect("fall rows");
@@ -2238,7 +2215,6 @@ mod tests {
             let mut host = StatesHost {
                 frame: first_frame,
                 trig,
-                atan,
                 kind: FlightOwnerKind::Unit,
                 location: triple(&killed["coord"]),
                 balloon_hover: input["balloon_hover"].as_bool().expect("flag"),
@@ -2396,14 +2372,12 @@ mod tests {
 
     fn edge_host(
         trig: &'static TrigTable,
-        atan: &'static AtanTable,
         tops: Vec<((i16, i16), i32)>,
         bridges: Vec<(i16, i16)>,
     ) -> FixtureHost<'static> {
         FixtureHost {
             frame: 10,
             trig,
-            atan,
             kind: FlightOwnerKind::Unit,
             // Cell (3,3) centre, far from the terrain fixture's sloped cell.
             location: [3 * 256 + 128, 3 * 256 + 128, 500],
@@ -2439,7 +2413,7 @@ mod tests {
     #[test]
     fn a_bridge_ahead_raises_the_current_reference_sample() {
         let (trig, _) = required_math_tables();
-        let host = edge_host(trig, required_atan_table(), Vec::new(), vec![(4, 3)]);
+        let host = edge_host(trig, Vec::new(), vec![(4, 3)]);
         let location = host.location;
         assert_eq!(
             reference_height(&eastbound_flight(4.0), &host, location),
@@ -2453,19 +2427,14 @@ mod tests {
     #[test]
     fn a_higher_cell_ahead_sets_the_reference() {
         let (trig, _) = required_math_tables();
-        let host = edge_host(trig, required_atan_table(), vec![((4, 3), 300)], Vec::new());
+        let host = edge_host(trig, vec![((4, 3), 300)], Vec::new());
         let location = host.location;
         assert_eq!(
             reference_height(&eastbound_flight(4.0), &host, location),
             300
         );
         // A lower cell ahead averages instead: (100 + 300) / 2 from the current cell.
-        let host = edge_host(
-            trig,
-            required_atan_table(),
-            vec![((3, 3), 300), ((4, 3), 100)],
-            Vec::new(),
-        );
+        let host = edge_host(trig, vec![((3, 3), 300), ((4, 3), 100)], Vec::new());
         assert_eq!(
             reference_height(&eastbound_flight(4.0), &host, location),
             200

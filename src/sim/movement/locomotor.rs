@@ -249,6 +249,22 @@ impl LocomotorState {
         }
     }
 
+    pub(crate) fn rocket_runtime(&self) -> Option<&super::rocket_movement::RocketRuntime> {
+        match (self.kind, &self.runtime_payload) {
+            (LocomotorKind::Rocket, LocomotorRuntimePayload::Rocket(state)) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn rocket_runtime_mut(
+        &mut self,
+    ) -> Option<&mut super::rocket_movement::RocketRuntime> {
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Rocket, LocomotorRuntimePayload::Rocket(state)) => Some(state),
+            _ => None,
+        }
+    }
+
     pub(crate) fn fly_target_height(&self) -> i32 {
         self.fly_runtime().map_or(0, |state| state.target_height())
     }

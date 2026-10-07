@@ -115,8 +115,8 @@ fn fixture(case: &Value) -> Simulation {
 }
 #[test]
 fn native_bounce_ground_deck_contacts_match_original_update() {
-    let cases: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bounce_height.json"
+    let cases: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bounce_height.json",
     ))
     .unwrap();
     assert_eq!(cases.as_array().unwrap().len(), 48);
@@ -293,8 +293,8 @@ impl<'a> BounceTerrain for RecordingTerrain<'a> {
 
 #[test]
 fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection() {
-    let cases: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bounce_height.json"
+    let cases: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bounce_height.json",
     ))
     .unwrap();
     let rules = fixture_rules();
@@ -369,8 +369,8 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
 fn a_debris_chunk_flight_matches_original_update() {
     const CENTER: i32 = 100;
     const RADIUS: i32 = 12;
-    let rows: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/anim_bouncer_flight.json"
+    let rows: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/anim_bouncer_flight.json",
     ))
     .unwrap();
     let rows = rows.as_array().unwrap();

@@ -145,8 +145,8 @@ mod tests {
 
     #[test]
     fn dead_fresh_head_preserves_native_scold_byte() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/foot_scold_latch.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/foot_scold_latch.json",
         ))
         .unwrap();
         let mut checked = 0;
@@ -331,8 +331,8 @@ mod tests {
 
     #[test]
     fn placement_and_raw_history_match_original_infantry_bodies() {
-        let data: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/walk_head_occupation.json"
+        let data: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/walk_head_occupation.json",
         ))
         .unwrap();
         let selections = data["selection"].as_array().unwrap();
@@ -516,8 +516,8 @@ mod tests {
             mission::{MissionId, state::MissionTestFixture},
             occupancy::OccupancyGrid,
         };
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/walk_first_step.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/walk_first_step.json",
         ))
         .unwrap();
         let terrain = ResolvedTerrainGrid::from_cells(

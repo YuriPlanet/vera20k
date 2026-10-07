@@ -367,8 +367,8 @@ fn ordinary_building_atlas_retains_native_completed_health_frames() {
     // The production draw path uses GetCurrentFrame43EF90 for completed
     // buildings. Retain every ordinary idle frame reached by original native
     // execution, including the damaged body needed before fatal damage.
-    let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/building_body_transition.json"
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_body_transition.json",
     ))
     .unwrap();
     let mut needed = HashSet::new();
@@ -547,8 +547,8 @@ fn raw_infantry_atlas_covers_saved_native_signed_remainders() {
     // in-asset remainders must be included by cache membership; a narrow marker
     // asset never grows to the declared sequence count. This is not a complete
     // native frame-selection comparison.
-    let receipt: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/anytown_damage/foot_missions.json"
+    let receipt: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/anytown_damage/foot_missions.json",
     ))
     .unwrap();
     let rows = receipt["draw_stage_modulo_receipt"]["rows"]

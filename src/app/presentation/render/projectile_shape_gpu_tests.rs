@@ -132,8 +132,8 @@ fn retail_bullet_atlas_geometry_and_layer_replay_match_original_shape_pixels() {
                 .ra2_dir
         });
     let assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../../tools/projectile_oracle/bridge_render_shape.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/bridge_render_shape.json",
     ))
     .unwrap();
     let rules = physical_rules(&assets, false);
@@ -275,6 +275,7 @@ fn compare_shape_corpus(
                 sim.projectiles.get(id).unwrap(),
                 &kind,
                 type_id,
+                crate::rules::house_colors::HouseColorIndex(0),
                 atlas,
                 grid,
                 camera_pos,
@@ -295,6 +296,7 @@ fn compare_shape_corpus(
                 restored_store.get(id).unwrap(),
                 &kind,
                 type_id,
+                crate::rules::house_colors::HouseColorIndex(0),
                 atlas,
                 grid,
                 camera_pos,
@@ -420,6 +422,7 @@ fn compare_shape_corpus(
                     sim.projectiles.get(id).unwrap(),
                     &kind,
                     type_id,
+                    crate::rules::house_colors::HouseColorIndex(0),
                     atlas,
                     sim.resolved_terrain.as_ref().unwrap(),
                     camera_pos,
@@ -470,8 +473,8 @@ fn retail_ifv_dragon_all_frames_and_flight_match_original_shape_pixels() {
     let mut rules =
         RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&text), &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../../tools/projectile_oracle/ifv_render.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/ifv_render.json",
     ))
     .unwrap();
     let rows: Vec<_> = native["draws"].as_array().unwrap().iter().collect();

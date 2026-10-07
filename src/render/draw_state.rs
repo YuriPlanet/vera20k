@@ -230,8 +230,13 @@ impl DrawState {
                 }),
                 warp_out,
                 warp_in,
-                // The current invulnerability producer has no authoritative YR
-                // +0x1A4 mode byte, so tint remains an explicit residual.
+                // RESIDUAL: the curtain's tint stage (+0x1A4) is kept by
+                // `sim::superweapon::invulnerability`, but no draw reads it yet:
+                // DrawVoxelBody's intensity scale and IronCurtainColor add
+                // (0x0073BF9C..0x0073C07A) and the other draws are unported, and
+                // `invulnerability_tint_intensity` reads elapsed time where
+                // 0x0070E380 reads time left, divides stage 3 by 10 (native 20)
+                // and floors at 0 (native only caps at 2000).
                 invulnerability: None,
                 ..DrawStateInput::default()
             },
@@ -485,10 +490,10 @@ mod tests {
     #[test]
     fn invulnerability_without_native_mode_remains_an_explicit_residual() {
         let mut entity = entity();
-        entity.invulnerability = Some(InvulnerabilityState {
-            timer: crate::sim::timer::CdTimer::started(40, 20),
-            kind: InvulnKind::IronCurtain,
-        });
+        entity.invulnerability = Some(InvulnerabilityState::new(
+            crate::sim::timer::CdTimer::started(40, 20),
+            InvulnKind::IronCurtain,
+        ));
         let state = DrawState::for_entity(&entity, 45, 3, ObserverDrawContext::default()).state;
         assert_eq!(state.fx_flags, 0);
         assert_eq!(state.fx_params, [1.0, 0.0, 1.0, 0.0]);
@@ -498,10 +503,10 @@ mod tests {
     #[test]
     fn expired_invulnerability_keeps_normal_draw_state() {
         let mut entity = entity();
-        entity.invulnerability = Some(InvulnerabilityState {
-            timer: crate::sim::timer::CdTimer::started(40, 5),
-            kind: InvulnKind::ForceShield,
-        });
+        entity.invulnerability = Some(InvulnerabilityState::new(
+            crate::sim::timer::CdTimer::started(40, 5),
+            InvulnKind::ForceShield,
+        ));
         let state = DrawState::for_entity(&entity, 45, 2, ObserverDrawContext::default()).state;
         assert_eq!(state.fx_flags, 0);
         assert_eq!(state.effect_tint, [1.0; 4]);

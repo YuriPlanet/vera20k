@@ -10,8 +10,8 @@ use serde_json::Value;
 const WIDTH: u16 = 160;
 
 fn threat_packet() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fv_cell_attack/zone_threat.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/zone_threat.json",
     ))
     .unwrap()
 }
@@ -268,8 +268,8 @@ fn expected_pops(events: &Value) -> Vec<(usize, ZoneId, u32, u32)> {
 
 #[test]
 fn native_controls_cover_heap_ties_head_admission_and_binary32_costs() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fv_cell_attack/zone_cost.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/zone_cost.json",
     ))
     .unwrap();
     let (mut sim, rules, id) = simulation();
@@ -336,8 +336,8 @@ fn native_controls_cover_heap_ties_head_admission_and_binary32_costs() {
 
 #[test]
 fn physical_fv_candidate_and_fallback_costs_match_four_native_bridge_states() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fv_cell_attack/zone_cost_vectors.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/zone_cost_vectors.json",
     ))
     .unwrap();
     let (mut sim, rules, id) = simulation();
@@ -403,8 +403,8 @@ fn physical_fv_candidate_and_fallback_costs_match_four_native_bridge_states() {
 
 #[test]
 fn structural_bridge_cost_exits_match_original_six_probe_order() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fv_cell_attack/zone_exits.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/zone_exits.json",
     ))
     .unwrap();
     for row in native["controls"].as_array().unwrap() {

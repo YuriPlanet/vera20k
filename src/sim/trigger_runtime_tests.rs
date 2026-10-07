@@ -119,8 +119,8 @@ fn parsed_event_records_match_native_list_and_production_predicates() {
         conditions: Vec<NativeCondition>,
         frames: Vec<u32>,
     }
-    let rows: Vec<NativeRow> = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/trigger_event_records.json"
+    let rows: Vec<NativeRow> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_event_records.json",
     ))
     .unwrap();
     for row in rows {
@@ -210,8 +210,8 @@ fn parsed_variable_actions_match_native_reader_dispatch_and_restore() {
         globals: BTreeSet<u32>,
         locals: BTreeSet<u32>,
     }
-    let rows: Vec<NativeRow> = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/trigger_action_values.json"
+    let rows: Vec<NativeRow> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_action_values.json",
     ))
     .unwrap();
     for row in rows {

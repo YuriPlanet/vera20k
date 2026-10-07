@@ -90,6 +90,33 @@ pub(crate) fn native_atan2_f32(y: NativeF32Bits, x: NativeF32Bits) -> X87Value {
     angle
 }
 
+/// `Math::AtanFromTable @ 0x004CADE0`: the arctangent of one double.
+///
+/// gamemd-derived (disassembly read 2026-10-07): the argument is stored as
+/// binary32 (`FST float`), but the index divides the full double, still on the
+/// stack, by the binary32 step (`FDIV float [0x008650B8]`). The index is
+/// `|ftol(...)|`; 0x1001 or more reads binary32 pi/2 (`0x007E897C`). The entry
+/// is negated when the binary32 copy is below zero (`FCOMP float [0x007E1748]`).
+pub(crate) fn native_atan_from_table(value: X87Value) -> X87Value {
+    let zero = load_f32(NativeF32Bits::POSITIVE_ZERO);
+    let value32 = X87Chop53::store_f32(value)
+        .and_then(X87Chop53::load_f32)
+        .unwrap_or(zero);
+    let index = X87Chop53::div(value, load_f32(ATAN_STEP)).map_or(0, |ratio| {
+        X87Chop53::ftol_i32_low_masked(ratio).unsigned_abs() as usize
+    });
+    let entry = if index < ATAN_TABLE_LEN {
+        load_f32(NativeF32Bits::from_bits(atan_bits()[index]))
+    } else {
+        load_f32(PI_OVER_TWO_F32)
+    };
+    if X87Chop53::compare(value32, zero) == X87Ordering::Less {
+        X87Chop53::neg(entry)
+    } else {
+        entry
+    }
+}
+
 /// Returns the full native facing word for a screen-relative coordinate delta.
 pub fn facing16_from_delta(dx: i32, dy: i32) -> u16 {
     let angle = native_atan2(dy.wrapping_neg(), dx);
@@ -131,6 +158,58 @@ mod tests {
 
     fn stored_f32_bits(value: X87Value) -> u32 {
         X87Chop53::store_f32(value).unwrap().bits()
+    }
+
+    /// The embedded table is the retail one: FNV-1a64 over its 0x4004
+    /// little-endian bytes is that of the table at `0x008610B4` in the
+    /// retail `gamemd.exe`, which `Math::atan2` and `AtanFromTable` index.
+    #[test]
+    fn embedded_table_hashes_to_the_retail_table() {
+        let hash = atan_bits()
+            .iter()
+            .fold(crate::util::fnv::FNV1A64_OFFSET_BASIS, |hash, bits| {
+                crate::util::fnv::fnv1a64_fold_bytes(hash, &bits.to_le_bytes())
+            });
+        assert_eq!(hash, 0x4056_c36f_7f1e_ab9c);
+    }
+
+    /// The branches of `Math::atan2 @ 0x004CAE30` that do not depend on table
+    /// contents: the zero-denominator answers, the saturated index, and the
+    /// quadrant reflections through binary64 pi.
+    #[test]
+    fn atan2_branches_follow_the_original_quadrant_rules() {
+        let atan2 = |y: f32, x: f32| {
+            f64::from_bits(
+                X87Chop53::store_f64(native_atan2_f32(
+                    NativeF32Bits::from_bits(y.to_bits()),
+                    NativeF32Bits::from_bits(x.to_bits()),
+                ))
+                .unwrap()
+                .bits(),
+            )
+        };
+        let half_pi = f64::from(f32::from_bits(PI_OVER_TWO_F32.bits()));
+        let pi = f64::from_bits(PI_F64.bits());
+        assert_eq!(atan2(0.0, 0.0), 0.0);
+        assert_eq!(atan2(5.0, 0.0), half_pi);
+        assert_eq!(atan2(-5.0, 0.0), -half_pi);
+        // |y/x| / step >= 0x1001 saturates to binary32 pi/2 before reflection.
+        assert_eq!(atan2(1000.0, 1.0), half_pi);
+        let reflected = f64::from_bits(
+            X87Chop53::store_f64(X87Chop53::sub(load_f64(PI_F64), load_f32(PI_OVER_TWO_F32)))
+                .unwrap()
+                .bits(),
+        );
+        assert_eq!(atan2(1000.0, -1.0), reflected);
+        assert_eq!(atan2(-1000.0, -1.0), -reflected);
+        // Index 0 in every quadrant: exact zero, pi, and their negations.
+        assert_eq!(atan2(0.0, 7.0), 0.0);
+        assert_eq!(atan2(0.0, -7.0), pi);
+        // A one-step ratio reads entry 1, truncated toward zero for fractions.
+        let step = f32::from_bits(ATAN_STEP.bits());
+        let entry1 = f64::from(f32::from_bits(atan_bits()[1]));
+        assert_eq!(atan2(step * 1.5, 1.0), entry1);
+        assert_eq!(atan2(-step * 1.5, 1.0), -entry1);
     }
 
     #[test]

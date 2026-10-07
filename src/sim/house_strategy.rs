@@ -24,8 +24,9 @@
 //!    writer after the constructor.
 //! 2. A defeated enemy's anger is cancelled and the enemy forgotten
 //!    (`0x004FD723..0x004FD772`).
-//! 3. AI_TryFireSW (`0x005098F0`) in a nonzero game mode or from `[IQ]
-//!    SuperWeapons=`: see RESIDUALS.
+//! 3. AI_TryFireSW (`0x005098F0`, `superweapon::ai_fire`) in a nonzero game
+//!    mode or from `[IQ] SuperWeapons=` (`0x004FD77C..0x004FD79B`): the
+//!    house fires its charged superweapons.
 //! 4. The emergency block ([`advance_emergency_state`]); state four sells
 //!    everything and sends everyone hunting.
 //! 5. In a nonzero game mode, a house outside state three with no live
@@ -36,19 +37,17 @@
 //! Strategy with the original UpdateAngerNodes, Fire_Sale and All_To_Hunt;
 //! `house_strategy_tests.rs` replays every row.
 //!
+//! All_To_Hunt draws nothing itself. The damage its Dominator arm deals
+//! ([`all_to_hunt`]) goes through the shared ReceiveDamage receiver, where a
+//! kill's random draws, anims and detach run as for any other damage.
+//!
 //! RESIDUALS:
-//! - AI_TryFireSW (`0x005098F0`) is not ported: a computer house never fires
-//!   a charged superweapon. Trigger: every Strategy tick of a skirmish
-//!   computer house (of a campaign one from `[IQ] SuperWeapons=`) that owns
-//!   a charged superweapon; its targeting draws are missing from the
-//!   Scenario stream from the first such tick.
 //! - Check_Build_Need (`0x004FD9A0`) and Manage_Build_Queue (`0x004FDD10`),
 //!   the economic recovery, are not ported. Trigger: a skirmish computer
 //!   house whose refinery or harvesters are gone (`0x004F6540`); natively it
 //!   sells, abandons and rechooses production to rebuild them, drawing in
 //!   AI_Choose_Building; VERA's keeps its queue.
-//! - All_To_Hunt's Psychic Dominator arm (`+0x2C4`, `sim::capture_manager`'s
-//!   residual) never applies; an occupied building's release with Hunt
+//! - All_To_Hunt's release of an occupied building with Hunt
 //!   (`0x00457DE0(1, 0)`, whose occupants also leave their teams at
 //!   `0x0045812B`) is not ported: no VERA computer house garrisons a
 //!   building, as no garrison script action is ported.
@@ -122,7 +121,15 @@ fn building_strategy(
 ) -> i32 {
     pick_enemy(sim, owner);
     forget_defeated_enemy(sim, owner);
-    // `0x004FD77C..0x004FD79B`: AI_TryFireSW is a residual.
+    // `0x004FD77C..0x004FD79B`: a signed IQ (`+0x24C`) compare.
+    if sim.session.game_mode_nonzero
+        || sim
+            .houses
+            .get(&owner)
+            .is_some_and(|house| house.current_iq >= rules.general.iq_super_weapons)
+    {
+        crate::sim::superweapon::ai_fire::try_fire(sim, rules, owner, registry);
+    }
 
     // Available_Money (IHouse vt+0x18) is a pure read; the block's second
     // query sees the same value.
@@ -165,7 +172,7 @@ fn sell_off_and_hunt(
         sim.interner.resolve(owner)
     );
     fire_sale(sim, rules, owner, registry);
-    all_to_hunt(sim, rules, owner);
+    all_to_hunt(sim, rules, owner, registry);
 }
 
 /// `0x004FD538..0x004FD71E`: see the module doc.
@@ -287,28 +294,66 @@ pub(crate) fn fire_sale(
 
 /// IHouse `All_To_Hunt @ 0x00501400`: from the last Techno to the first
 /// (TechnoClass::Array, stable-id order, its length read once), each of the
-/// house's objects that is on the map (`+0x74`) and not in limbo, if a Foot,
-/// leaves its team (`0x005014C5..0x005014D4`, with its idle order) and
-/// queues Hunt (vt+0x1E8, `Queue_Mission(Hunt, 0)`); then the All-To-Hunt
-/// latch (`+0x249`) is set. The Dominator and garrison arms are residuals
-/// (module doc).
-pub(crate) fn all_to_hunt(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
-    // Leaving a team and queueing a mission change neither another object's
-    // place nor its limbo, so every test can be read before the first one.
-    let hunters: Vec<u64> = sim
+/// house's objects that is on the map (`+0x74`) and not in limbo, read at
+/// its turn:
+/// - one the Psychic Dominator holds (`+0x2C4`) whose type is
+///   `Insignificant=` (`+0x232`) takes its type's `Strength=` as
+///   `C4Warhead=` damage, with no attacker, ignoring defences and keeping
+///   its passengers in (`ReceiveDamage`, vt+0x16C, `0x0050144B..0x005014AA`),
+///   unless the house's IsHuman byte (`+0x1EC`) is set (on retail rules:
+///   the civilians, their vehicles and the animals the computer's Dominator
+///   took);
+/// - otherwise a Foot (`+0x14 & 4`) leaves its team (`0x005014C5..
+///   0x005014D4`, with its idle order) and queues Hunt (vt+0x1E8,
+///   `Queue_Mission(Hunt, 0)`).
+///
+/// Then the All-To-Hunt latch (`+0x249`) is set. The garrison arm is a
+/// residual (module doc).
+pub(crate) fn all_to_hunt(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+) {
+    let technos: Vec<u64> = sim
         .substrate
         .entities
         .values()
-        .filter(|techno| {
-            techno.owner() == owner
-                && techno.lifecycle.cell_marked
-                && !techno.lifecycle.in_limbo
-                && techno.category != EntityCategory::Structure
-        })
         .map(|techno| techno.stable_id())
         .collect();
+    let human = sim.houses.get(&owner).is_some_and(|house| house.is_human);
     let hunt = MissionId::from_known(MissionType::Hunt);
-    for id in hunters.into_iter().rev() {
+    for id in technos.into_iter().rev() {
+        let Some(techno) = sim.substrate.entities.get(id) else {
+            continue;
+        };
+        if techno.owner() != owner || !techno.lifecycle.cell_marked || techno.lifecycle.in_limbo {
+            continue;
+        }
+        let dominated_strength = (techno.mind_control.permanent() && !human)
+            .then(|| rules.object(sim.interner.resolve(techno.type_ref())))
+            .flatten()
+            .filter(|object| object.insignificant)
+            .map(|object| object.strength);
+        if let Some(strength) = dominated_strength {
+            let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
+                id,
+                strength,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                sim.rule_handles().c4,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: true,
+                },
+            );
+            sim.commit_direct_damage_receiver(rules, registry, event);
+            continue;
+        }
+        if techno.category == EntityCategory::Structure {
+            continue;
+        }
         sim.leave_team(id, false, Some(rules));
         let _ = sim.mission_queue_exact(
             id,

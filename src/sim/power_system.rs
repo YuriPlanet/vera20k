@@ -506,8 +506,8 @@ mod tests {
 
     #[test]
     fn original_signed_operational_and_drained_generator_assessment() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_power_state.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_power_state.json",
         ))
         .unwrap();
         let rules = rules_from_ini(
@@ -629,9 +629,10 @@ BuildSpeed=0.02
 
     #[test]
     fn original_signed_health_power_corpus_through_owner_recalculation() {
-        let corpus: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/spatial_oracle/power_health.json"))
-                .unwrap();
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/power_health.json",
+        ))
+        .unwrap();
         assert_eq!(corpus["rows"].as_array().unwrap().len(), 429);
         let mut compared = 0;
         for row in corpus["rows"].as_array().unwrap() {
@@ -703,9 +704,10 @@ BuildSpeed=0.02
 
     #[test]
     fn native_power_admission_uses_cell_mark_not_object_alive_or_signed_health() {
-        let corpus: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/spatial_oracle/power_health.json"))
-                .unwrap();
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/power_health.json",
+        ))
+        .unwrap();
         let rules = test_rules();
         for row in corpus["admission_rows"].as_array().unwrap() {
             let input = &row["input"];
@@ -732,9 +734,10 @@ BuildSpeed=0.02
 
     #[test]
     fn native_empty_house_scan_clears_retained_power_totals() {
-        let corpus: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/spatial_oracle/power_health.json"))
-                .unwrap();
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/power_health.json",
+        ))
+        .unwrap();
         let rules = test_rules();
         let owner = intern::test_intern("Allies");
         for row in corpus["empty_contribution_rows"].as_array().unwrap() {

@@ -1,8 +1,8 @@
 #[test]
 fn native_tube_hierarchy_pairs_match_original_executable() {
     use crate::map::tube_facts::{TubeFact, TubeId};
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/tube_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/tube_hierarchy.json",
     ))
     .unwrap();
     let cases = corpus["cases"].as_array().unwrap();
@@ -259,8 +259,8 @@ fn tube_hierarchy_generated_records_connect_full_and_local_precheck() {
 fn tube_hierarchy_native_read_tubes_tail_publishes_retained_dummy_index() {
     use crate::map::tube_facts::TubeFact;
     use crate::map::tubes::{ConstructedMapTube, NativeMapTubeReceipt, TubeNativeInit};
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/tube_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/tube_hierarchy.json",
     ))
     .unwrap();
     let writes = corpus["dummy_writes"].as_array().unwrap();
@@ -312,8 +312,8 @@ fn tube_hierarchy_native_read_tubes_tail_publishes_retained_dummy_index() {
 
 #[test]
 fn tube_hierarchy_constant_walk_endpoints_match_original_executable() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/tube_hierarchy.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/tube_hierarchy.json",
     ))
     .unwrap();
     let terrain = redirect_terrain(1, 1, None, None, |_| {});

@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20k hero image" width="100%">
 
 <p align="center" dir="ltr">
-  <strong>English</strong> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <strong>English</strong>
   &nbsp;&nbsp;
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Latest macOS library test run (run manually)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="macOS library tests" height="20" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Latest Linux library test run (run manually)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux library tests" height="20" align="middle"></a>
@@ -13,20 +13,19 @@
 
 # VERA20k
 
-Red Alert 2: Yuri's Revenge — rebuilt in Rust for large multiplayer battles.
-
 VERA20k is a rewrite of the original engine, `gamemd.exe`. It uses the original game files,
-so you'll need your own copy of Yuri's Revenge. It's available in *Command & Conquer The
-Ultimate Collection* on [Steam](https://store.steampowered.com/bundle/39394/) and
-[EA](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection/buy/pc).
+so you'll need your own copy of Red Alert 2: Yuri's Revenge.
+
+VERA20k is made by gamers, for gamers, and players have the final say in where it goes.
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20k skirmish setup screen and in-game view" width="100%">
 
 ## Project goals
 
-1. Keep the gameplay, visuals and atmosphere of the original Yuri's Revenge.
+1. Keep the gameplay, visuals and atmosphere of the original Red Alert 2: Yuri's Revenge.
 2. Support bigger battles: up to **30 players** and **20,000 units** on larger maps.
 3. Incorporate new RTS features.
+4. Integrated multiplayer client
 
 ## Current status
 
@@ -59,7 +58,7 @@ Use `--release` to play; debug builds are too slow. See
 Most of the code is written by AI coding agents that I direct. We use Ghidra to study the
 original engine, then port its behavior to Rust and check it with
 [comparison tools](tools/native_oracle.md) and playtesting. The working rules are in
-[AGENTS.md](AGENTS.md), with the details in our [research notes](docs/research/README.md).
+[AGENTS.md](AGENTS.md).
 
 ## Contributing
 

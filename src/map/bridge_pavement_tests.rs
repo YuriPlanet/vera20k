@@ -96,12 +96,12 @@ fn coord(row: &Value) -> Coord {
 
 #[test]
 fn pavement_flags_match_original_control_and_stock_footprint() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/bridge_pavement.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_pavement.json",
     ))
     .unwrap();
-    let stock: Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/bridge_pavement_stock_inputs.json"
+    let stock: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_pavement_stock_inputs.json",
     ))
     .unwrap();
     let mut cases = corpus["control"].as_array().unwrap().clone();

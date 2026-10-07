@@ -35,7 +35,7 @@ pub(super) fn native_cells_3x3(rx: u16, ry: u16) -> impl Iterator<Item = (i16, i
 /// (IC 0x006CCF6A..0x006CCFEE). The existing GetCell facade owns fixed-stride
 /// aliases, allocation and dummy stamping; requested coordinates are not keys.
 /// The shared dummy has no represented object-list members in the Rust substrate.
-pub(super) fn selected_cell_list(
+pub(crate) fn selected_cell_list(
     sim: &Simulation,
     x: i16,
     y: i16,
@@ -56,6 +56,18 @@ pub(super) fn selected_cell_list(
             }
             None
         }
+    }
+}
+
+/// Whether `MapClass::GetCellAt @ 0x005657A0`'s cell for `(x, y)` carries
+/// the bridge flag (`CellClass+0x140 & 0x100`). The shared dummy an off-map
+/// lookup returns carries none.
+pub(super) fn cell_has_bridge_flag(sim: &Simulation, x: i16, y: i16) -> bool {
+    match get_cellclass_fallback(sim.resolved_terrain.as_ref(), i32::from(x), i32::from(y)) {
+        CellRef::Real(cell) => {
+            cell.bridge_facts.raw_flags & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0
+        }
+        CellRef::Dummy { .. } => false,
     }
 }
 

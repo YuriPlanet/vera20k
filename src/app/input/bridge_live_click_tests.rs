@@ -11,8 +11,8 @@ use crate::sim::runtime::SimRuntime;
 use crate::sim::snapshot::GameSnapshot;
 
 fn vectors() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/bridge_click_state_oracle/vectors.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/bridge_click_state_oracle/vectors.json",
     ))
     .unwrap()
 }

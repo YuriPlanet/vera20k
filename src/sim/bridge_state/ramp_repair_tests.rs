@@ -235,8 +235,8 @@ impl RepairHost for Host {
 
 #[test]
 fn ramp_host_errors_retain_native_prefix_and_stop_later_callbacks() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_repair.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_repair.json",
     ))
     .unwrap();
     for (name, failure) in [
@@ -346,8 +346,8 @@ impl bridge_pavement::PavementHost for Pavement<'_> {
 }
 #[test]
 fn high_and_low_ramp_repair_control_matches_original_execution() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_repair.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_repair.json",
     ))
     .unwrap();
     for case in corpus["cases"].as_array().unwrap() {

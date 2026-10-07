@@ -45,6 +45,13 @@ The [procedural drawing comparisons](procedural_drawing_oracle/README.md)
 bind these observations to separately executed native readers/getters and retain
 an observer-off replay proving unchanged frame bytes and gameplay boundaries.
 
+Optional v2 `observe_super_weapons: true` adds a `super_weapons` list to each
+observed House row: every Super the House holds, ordered by the interned type id
+an ordinary `LaunchSuperWeapon` command names, with its grant, readiness, hold,
+charge start, duration and remaining frames. The rows count toward the sample
+budget. `false` or an absent field adds nothing; version 1 rejects the option,
+and present null/nonboolean values are invalid.
+
 `render.frame_wall_mean_ms`, when present, reads the existing frame timer's last
 up-to-60 intervals. It includes simulation, diagnostic observation, rendering and
 presentation pacing. It is cadence metadata, not GPU duration or ordinary play
@@ -445,6 +452,291 @@ parity. Native cache-pool lifetime, custom barrel overrides, upgrade-provided
 turrets and EMP cannon missions remain separate mechanisms. The retained
 three-pixel drawing anchor and measured subpixel float rounding remain visual
 residuals.
+
+## Nuclear missile observation
+
+[`map_observation.nuclear-missile.example.json`](map_observation.nuclear-missile.example.json)
+starts Russia/Battle with stock rules and assets on an
+[authored clear-ground map](map_observation/examples/nuclear_missile.map), the
+Grand Cannon fixture's terrain with a pre-placed NAMISL, two NAPOWR and three
+Neutral MTNK at (40,62), (42,62) and (40,64), and no type overrides.
+`IgnoreGlobalAITriggers=yes` keeps the Yuri opponent from forming attack teams.
+`observe_super_weapons` adds the Super rows: NukeSpecial is granted on the
+first step (interned id 28, charge start 0, 9000 frames) and is ready from step
+9001. An ordinary `LaunchSuperWeapon` at step 9010 targets (41,63). Run it
+from the repository root; for an external profile copy, set
+`launch.selected_map_file` to the absolute path of the tracked map.
+
+With release binary SHA-256
+`4b355bff0a1b26c441d0637bd3deac718ca3c29b5008cdf48b4a69ee84527459`
+(31,936,464 bytes) and map SHA-256
+`0a3861e8bf90a61cc122ed0233e46cc8764e0074eb9ab852aa76dc48b1883499`, tick 9010
+restarts the charge (start 9010) and the silo runs Missile (mission 22) until it
+returns to Guard at 9019. The three tanks are gone at 9413 and the silo keeps
+its 1000 health. The 9700-step run ends with state hash `10887219944228002058`
+and BGRA SHA-256
+`85bb143954f0443a7629487e3146129a0cfccb664ce231382f2676bf6e8ebd22`. Shorter
+copies end at 9040 (the missile leaving the open silo, `camera_cell` (47,44))
+and 9428 (the explosion over the tanks). The same binary loaded the unchanged
+retail `XMP03T4.MAP` (`multimd.mix`, SHA-256
+`7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e`) and
+completed 300 steps (state hash `17740950413039122668`). These are Rust
+production observations: the chain's native comparisons are the
+`tools.superweapon_oracle` rows, and no whole-run timing or pixel equivalence
+with gamemd is claimed.
+
+## Computer nuclear missile observation
+
+[`map_observation.ai-nuclear-missile.example.json`](map_observation.ai-nuclear-missile.example.json)
+starts Russia/Battle against a Russia computer opponent (`Computer1`, Easy) with stock
+rules and assets on an [authored map](map_observation/examples/ai_nuclear_missile.map):
+the nuclear-missile fixture's terrain with the computer's pre-placed NAMISL and two
+NAPOWR, the observer's NACNST at (40,62), and no commands. `observe_super_weapons`
+adds the Super rows; NACNST is the only observed type, which keeps the 9600 steps
+under the 100,000-sample budget (the computer's own yard, deployed from its MCV at
+(61,61), is observed too). The loader looks a relative map name up in the retail
+root: run a profile copy whose `launch.selected_map_file` is the tracked map's
+absolute path.
+
+With release binary SHA-256
+`af46874fdacdaa102cf3a0b75f31c1a6713c67f291968560e16fdb7a47998bc1`
+(31,944,480 bytes) and map SHA-256
+`3cc2686b370b82a91766b5c848bc34f2cd35ba60f772d5587f583778004f9ae7`, the computer's
+NukeSpecial is granted on the first step (charge start 0, 9000 frames) and is ready
+from step 9001. Its Strategy tick fires it at frame 9034 (the charge restarts there):
+AI_TryFireSW aims at the observer's construction yard, the enemy object it values
+most, which drops from 1000 to 358 health at step 9437 while the computer's own yard
+keeps 1000. The radar the computer builds grants SpyPlaneSpecial at 4013; it is ready
+from 7613 and stays charged, as Launch case 8 was not yet ported (the
+[Computer Spy Plane observation](#computer-spy-plane-observation) fires it). The run ends with state hash `9684770977057573241` and BGRA SHA-256
+`d33afe5c56fc30aae551da0ae37c8bac965b71b570b2b0d541aabcbb7e5f3a14`. The same binary
+loaded the unchanged retail `XMP03T4.MAP` (`multimd.mix`) and completed 300 steps
+(state hash `16055468414702849029`). These are Rust production observations: the
+chain's native comparisons are the `tools.superweapon_oracle` `ai_*` rows, and no
+whole-run timing or pixel equivalence with gamemd is claimed.
+
+## Chronosphere observation
+
+[`map_observation.chronosphere.example.json`](map_observation.chronosphere.example.json)
+starts America/Battle against a Yuri computer opponent (Easy) with stock rules and
+assets on an [authored map](map_observation/examples/chronosphere.map): the
+nuclear-missile fixture's terrain with the observer's GACSPH at (46,42) and two GAPOWR,
+its MTNK at (40,62) and (42,62), CLEG at (41,63) and E1 at (40,64), and a Neutral HTNK
+at (44,54) beside a Neutral GAPOWR at (46,54). `observe_super_weapons` adds the Super
+rows: ChronoSphereSpecial is granted on the first step (interned id 32, charge start 0,
+6300 frames) and is ready from step 6301. An ordinary `LaunchSuperWeapon` at step 6310
+aims the Chronosphere at (41,63); its launch selects the Chrono Warp, and a tactical
+click at the view's centre, (316,284) with `camera_cell` (45,55), fires it at step 6320
+through ordinary input. The loader looks a relative map name up in the retail root: run
+a profile copy whose `launch.selected_map_file` is the tracked map's absolute path.
+
+With release binary SHA-256
+`99f036abd074c37628968852dc65e89b273b8d89eb76793129a27504522b0498`
+(31,961,040 bytes) and map SHA-256
+`803e3f904b9e80c1ffd934f1a0fa4435224d7dd0356ac0ef85c4b1a3f6aa2f96`, the click queues
+ChronoWarpSpecial at (45,55). The Chronosphere's charge drops at tick 6310, its expired
+timer readies it again the next tick, and the warp clears it and restarts the recharge
+(start 6320). The E1 dies at the warp (step 6321). At step 6383 the MTNK from (40,62)
+stands at (44,54), where the HTNK is gone, and the CLEG at (45,55); the MTNK from
+(42,62), whose cell (46,54) holds the GAPOWR, stands beside it at (47,53) from step
+6384. The run ends with state hash `1787085792753166979` and BGRA SHA-256
+`c6b8215386fa5806fceab04abe014ae4c9f29d33f2c4da6b0656723a578d269f`. The same binary
+loaded the unchanged retail `XMP03T4.MAP` (`multimd.mix`) and completed 300 steps
+(state hash `17265848597308621850`). These are Rust production observations: the
+chain's native comparisons are the `tools.superweapon_oracle` `chrono_*` rows, and no
+whole-run timing or pixel equivalence with gamemd is claimed.
+
+## Psychic Dominator observation
+
+[`map_observation.psychic-dominator.example.json`](map_observation.psychic-dominator.example.json)
+starts America/Battle against a Yuri computer opponent (Easy) with stock rules and
+assets on an [authored map](map_observation/examples/psychic_dominator.map): the
+Chronosphere fixture's terrain with the observer's YAPPET at (46,42) and two GAPOWR, its
+MTNK at (43,53), a Neutral HTNK at (44,54), a Neutral E1 at (45,55), a Neutral HTNK at
+(40,54) and a Neutral GAPOWR at (46,54). `observe_super_weapons` adds the Super rows:
+PsychicDominatorSpecial is granted on the first step (interned id 32, charge start 0,
+9000 frames) and is ready from step 9001. An ordinary `LaunchSuperWeapon` at step 9010
+aims it at (44,54). The loader looks a relative map name up in the retail root: run a
+profile copy whose `launch.selected_map_file` is the tracked map's absolute path.
+
+With release binary SHA-256
+`e9af53f1ab23f251bfa5f9fe54a4ac195132d3280e930035c5f48505560e6cab`
+(31,986,528 bytes) and map SHA-256
+`df5895378341e5c89fa97a215037ee14bf0acfe4d9db6eaeb30657f00e11d99e`, the charge restarts
+at tick 9010. At step 9048, 38 frames later, the strike lands: the Neutral HTNK and E1
+in the 3x3 block (`DominatorCaptureRange=1`) become the observer's, and the observer's
+own MTNK in the block stays its own. The Neutral HTNK three cells off stays Neutral. A
+copy that ends at 9060 shows the Dominator tint, the head over the target and the
+strike on the cell (state hash `3819314389922297142`, BGRA SHA-256
+`43f40774b0ec72121450645a22bec90d51c3a044788e93bc1c134f3834419911`). The 9200-step run
+ends under the ordinary lighting, with the captives still the observer's, ringed, and
+the Neutral GAPOWR in rubble (state hash `16683750687468866032`, BGRA SHA-256
+`18ba69648a0fdda1052dfac0e97de7cd6c13aa1c108ece577f035c51cc0d10c6`). The map is flat,
+so these frames don't show a full relight's NukeLevel top, which only raised cells
+reach. Before the head and ring anims were binder roots, the same run struck at step
+9013. The same binary
+loaded the unchanged retail `XMP03T4.MAP` (`multimd.mix`) and completed 300 steps
+(state hash `17265848597308621850`). These are Rust production observations: the
+chain's native comparisons are the `tools.superweapon_oracle` `psydom_*`,
+`update_lighting`, `ambient_step`, `dominator_lighting_read` and `relight` rows, and no
+whole-run timing or pixel equivalence with gamemd is claimed.
+
+## Computer Psychic Dominator observation
+
+[`map_observation.ai-psychic-dominator.example.json`](map_observation.ai-psychic-dominator.example.json)
+starts America/Battle against a Yuri computer opponent (`Computer1`, Easy) with stock
+rules and assets on an [authored map](map_observation/examples/ai_psychic_dominator.map):
+the Psychic Dominator fixture's terrain with the computer's pre-placed YAPPET at (46,42)
+and two GAPOWR, the observer's GACNST at (40,62), observer MTNK at (43,53), (44,54) and
+(45,55) and a fourth at (52,62), and no commands. `observe_super_weapons` adds the Super
+rows; MTNK is the only observed type. The loader looks a relative map name up in the
+retail root: run a profile copy whose `launch.selected_map_file` is the tracked map's
+absolute path.
+
+With release binary SHA-256
+`663c9daa0318802c1f5b59a6632b4023eeda38089f8db82232a4e4d7a6ba99ef`
+(32,000,368 bytes) and map SHA-256
+`ef6f27be8492ec94ef547460a6afe41f55ae0fd7bd0614e375fa6c9556ce9aab`, the computer's
+PsychicDominatorSpecial is granted on the first step (charge start 0, 9000 frames) and
+is ready from step 9001. Its Strategy tick fires it at frame 9067 (the charge restarts
+there). Each grouped tank counts all three in its 38 cells, and the last-to-first scan
+keeps the last of them, (45,55): at step 9105, 38 frames after the launch, the tanks at
+(44,54) and (45,55) in the 3x3 block (`DominatorCaptureRange=1`) become Computer1's and
+hunt, while the tank at (43,53), outside the block, and the one at (52,62) stay the
+observer's. A copy that ends at 9117 shows the Dominator tint, the head and the strike on
+(45,55) (state hash `1609889408460178425`, BGRA SHA-256
+`f02e8c715978d9cd6dd28c61041cc9a35bb684f1aa9579ddcd3a39da366a863d`). The 9200-step run
+ends with the two captives fighting the observer's tank at (43,53) (state hash
+`15283598945734857348`, BGRA SHA-256
+`8601e5c851079d6afe783bd0d68bcb374776bd4e885a6d403ba4e8a70dd981fd`). The same binary
+loaded the unchanged retail `XMP03T4.MAP` (`multimd.mix`) and completed 300 steps
+(state hash `17265848597308621850`). These are Rust production observations: the
+chain's native comparisons are the `tools.superweapon_oracle` `ai_psydom` rows and the
+`tools.ai_strategy_oracle` `all_to_hunt` rows. The run never reaches All_To_Hunt, and no
+whole-run timing or pixel equivalence with gamemd is claimed.
+
+## Spy Plane observation
+
+[`map_observation.spy-plane.example.json`](map_observation.spy-plane.example.json)
+starts Russia/Battle against a Yuri computer opponent (Easy) with stock rules and
+assets and the shroud on, on an [authored map](map_observation/examples/spy_plane.map):
+the nuclear-missile fixture's terrain with the observer's NARADR at (46,42) and two
+NAPOWR, and no other objects. `observe_super_weapons` adds the Super rows:
+SpyPlaneSpecial is granted on the first step (interned id 27, charge start 0, 3600
+frames) and is ready from step 3601. An ordinary `LaunchSuperWeapon` at step 3610
+aims it at (61,61), where the computer's YACNST stands from step 14 under the
+observer's shroud. The loader looks a relative map name up in the retail root: run a
+profile copy whose `launch.selected_map_file` is the tracked map's absolute path.
+
+With release binary SHA-256
+`c9a45150d4fd1f749f5c468151048854494e4ccf241f0dc5bac727512f05d9e3`
+(31,962,592 bytes) and map SHA-256
+`b647901c17d20a14ffa642e1c6330d94cba06406c75f8e1f3881a57871b09c57`, the charge
+restarts at tick 3610 and one SPYP appears at step 3611 at (80,36), on the observer's
+East edge, in Spyplane Approach (mission 30). It turns to Spyplane Overfly (31) at step
+3852 at (62,60), crosses the target, flies on straight to (45,92) and is gone at step
+4099, past the map's `Size=`. A copy that ends at 3858 shows the plane over the yard
+and the first snapshots revealed above it (state hash `8840531564177474398`, BGRA
+SHA-256 `62870ae8d39282529b8219a50dffc53b48eae99d346f2c852a58700d3fe2c5d7`). The
+4300-step run ends with the computer's base revealed in a band along the flight
+(SpyCameraWeapon `Range=20`, `Damage=6`) and the rest of its side still shrouded
+(state hash `11954129574118268278`, BGRA SHA-256
+`27459b63f5e34ad3bfed8498ff38f3f5ec1b41792397af0ff9575cb946c96041`). The same binary
+loaded the unchanged retail `XMP03T4.MAP` (`multimd.mix`) and completed 300 steps
+(state hash `17265848597308621850`). These are Rust production observations: the
+chain's native comparisons are the `tools.superweapon_oracle` `spy_plane_launch`,
+`send_spy_planes`, `spyplane_missions` and `aircraft_leave_map` rows, and no whole-run
+timing or pixel equivalence with gamemd is claimed.
+
+## Computer Spy Plane observation
+
+[`map_observation.ai-spy-plane.example.json`](map_observation.ai-spy-plane.example.json)
+starts Russia/Battle against a Russia computer opponent (`Computer1`, Easy) with stock
+rules and assets on an [authored map](map_observation/examples/ai_spy_plane.map): the
+computer nuclear-missile fixture with the computer's NARADR in place of its NAMISL,
+beside its two NAPOWR, the observer's NACNST at (40,62), and no commands.
+`observe_super_weapons` adds the Super rows; SPYP and NACNST are the observed types.
+The loader looks a relative map name up in the retail root: run a profile copy whose
+`launch.selected_map_file` is the tracked map's absolute path.
+
+With the same binary and map SHA-256
+`908edb41ffd794c8d40c6a0c821adba675def5713dd3508e9aacac8224a1cbfa`, the computer's
+SpyPlaneSpecial is granted on the first step (charge start 0, 3600 frames) and is ready
+from step 3601. Its Strategy tick fires it at frame 3703 (the charge restarts there),
+and one SPYP appears at step 3704 at (51,84), on the computer's South edge. It flies
+toward the observer's start at (59,33), the base AI_GroundRallyPoint seeds its search
+with, turns to Overfly at step 4025 at (61,38), flies on straight and is gone at step
+4162. The run ends with state hash `11400018388069219856` and BGRA SHA-256
+`a5d57cf3d7fcba530ea7475d607252976121a2e10e11fdaa66d8029e3d67844f`. These are Rust
+production observations: the chain's native comparisons are the
+`tools.superweapon_oracle` rows named above and the `ai_*` rows, and no whole-run
+timing or pixel equivalence with gamemd is claimed.
+
+## Computer Iron Curtain observation
+
+[`map_observation.ai-iron-curtain.example.json`](map_observation.ai-iron-curtain.example.json)
+starts Russia/Battle against a Russia computer opponent (`Computer1`, Easy) with stock
+rules and assets on an [authored map](map_observation/examples/ai_iron_curtain.map): the
+computer's pre-placed NAIRON at (55,62), NAPOWR at (66,56) and (66,52), NAWEAP at (56,56)
+and six HTNK at (50..52,58..59) near its start (62,62); the observer's NACNST at (32,33)
+near its start (37,37); no commands. The HTNK lines end `1,1`, the two recruit flags
+(`Techno+0x421`/`+0x422`): with `0,0` no Autocreate team may take them. The observer's
+yard stands far from the computer's tanks, because the AI triggers' zone test reads the
+enemy's base centre, which a house without buildings lacks. `observe_super_weapons` adds
+the Super rows; HTNK and NAIRON are the observed types. The loader looks a relative map
+name up in the retail root: run a profile copy whose `launch.selected_map_file` is the
+tracked map's absolute path.
+
+With release binary SHA-256
+`8b44496850c4fe123a5db50821e82aad3e3cf34e84d484179f15b2e6d93bac58`
+(31,917,728 bytes) and map SHA-256
+`2db0b369a31466407936ed3a887be7cc9dfc2068b0ff9ddee732f215ad17b97c`, the computer's
+IronCurtainSpecial is granted on the first step (charge start 0, 4500 frames) and is
+ready from step 4501. Its first team pass with an enemy, at frame 3675, creates the
+base-defense team `UseMinDefenseRule=` asks for; the next, at frame 7175, creates the
+Soviet Iron Curtain Team (`0ACDAEFC-G`, six HTNK, AI trigger condition 5). The six leave
+at steps 7183..7185 for (51,51), 20 cells (`AISafeDistance=`) from the observer's base
+towards the computer's (script action 53), guard (action 5), and at frame 7512 the house
+fires its Iron Curtain at the team's centre (action 55; the charge restarts there). The
+team then attacks the observer's yard under the curtain. Ten frames into the curtain each
+HTNK draws its tint number from the Scenario stream (`TechnoClass::UpdateIronTint`).
+The 8000-step run ends with state hash `14395597863552765605` and BGRA SHA-256
+`04134b470752b79a8cbdb41144210b6367884c3e2b42399190866925eac92704`. A copy that ends at
+7530 with `camera_cell` (51,51) shows the team at its gathering point among the
+curtain's anims (state hash `3678630503708879027`, BGRA SHA-256
+`2d549f944794aef1a46bfcd70448e4adf4e896eebc49bb211e2c53a8e73d33c2`); the units' own
+tint is not drawn yet (the superweapons checkpoint's next chains).
+
+## Computer Chronosphere observation
+
+[`map_observation.ai-chronosphere.example.json`](map_observation.ai-chronosphere.example.json)
+starts America/Battle against an America computer opponent (`Computer1`, Easy) on an
+[authored map](map_observation/examples/ai_chronosphere.map) laid out as the Iron Curtain
+one: the computer's GACSPH at (55,62), GAPOWR at (66,56) and (66,52), GAWEAP at (56,56)
+and three recruitable MTNK at (50..52,58); the observer's GACNST at (32,33), GAPOWR at
+(38,31) and a GAPILE at (66,30) that keeps it in the game. MTNK is the observed type.
+
+With the same binary and map SHA-256
+`561e0c682f54e8e84d621cd7683cf87e40cd1bb3137a22ecff550db2ed0171ac`, the computer's
+ChronoSphereSpecial is granted on the first step (6300 frames) and is ready from step
+6301. The team pass at frame 7175 creates the Allied Chrono Unit Easy team
+(`0D2701DC-G`, three MTNK, condition 6). It regroups 20 cells from the computer's base
+towards the observer's (action 54), and at frame 7340 the house fires its Chronosphere at
+the team's centre and its Chrono Warp, which no building grants, at the observer's
+GAPOWR (action 57, quarry 9). The two MTNK in the 3x3 block appear at (39,33), under the
+power plant, at steps 7402 and 7403; the third, outside the block, drives after them. The
+two share one spot until they move off: the second's own landing cell, (39,32), lies
+under the plant, and the warp's blocked search moves it to the cell where the first had
+landed (read from `movement/teleport_chrono.rs`, not compared with gamemd). The team then
+destroys the observer's yard and moves on to its barracks. The 9000-step run
+ends with state hash `11801351645231858838` and BGRA SHA-256
+`dc0794bbf93373d106354519149a88a068751905eb0f13834d08fe536b44a409`; a copy that ends at
+7405 with `camera_cell` (41,36) shows the arrival (state hash `11728301622766041197`,
+BGRA SHA-256 `62ad0af511ef1c65ab607fad0e7f1ac878a9daf65a7cf979eff24a31707390a6`). The
+same binary loaded the unchanged retail `XMP03T4.MAP` (`multimd.mix`) and completed 300
+steps (state hash `8142462839629644773`). These are Rust production observations: the
+chains' native comparisons are the `tools.superweapon_oracle` `team_super_actions` and
+`iron_tint` rows, and no whole-run timing or pixel equivalence with gamemd is claimed.
 
 ## Siege Chopper deployment observation
 

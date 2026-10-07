@@ -8,7 +8,7 @@ use crate::rules::{
 use serde_json::Value;
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!("../../tools/voxel_oracle/recoil.json")).unwrap()
+    serde_json::from_str(crate::test_fixture::text("tools/voxel_oracle/recoil.json")).unwrap()
 }
 
 fn ini(sections: &Value) -> IniFile {

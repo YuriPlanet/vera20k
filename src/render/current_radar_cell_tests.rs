@@ -322,8 +322,8 @@ fn gsi_04_01_structural_high_bridge_wins_in_full_and_incremental_paths() {
 
 #[test]
 fn native_constructor_side_cells_use_structural_radar_without_own_sprite() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/bridge_constructor.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_constructor.json",
     ))
     .unwrap();
     let colors = HashMap::new();

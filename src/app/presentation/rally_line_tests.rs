@@ -4,8 +4,8 @@ use serde_json::Value;
 pub(super) fn rally_native() -> &'static Value {
     static NATIVE: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
     NATIVE.get_or_init(|| {
-        serde_json::from_str(include_str!(
-            "../../../tools/procedural_drawing_oracle/rally.json"
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/rally.json",
         ))
         .unwrap()
     })
@@ -171,8 +171,8 @@ fn native_rally_producer_clipped_rows_phase_and_abuffer_passes() {
 
 #[test]
 fn rally_crossing_stock_shroud_frontier_matches_the_original_combined_draw() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/procedural_drawing_oracle/shroud.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/procedural_drawing_oracle/shroud.json",
     ))
     .unwrap();
     let scene = corpus["scenes"]

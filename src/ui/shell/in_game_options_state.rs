@@ -152,8 +152,8 @@ mod tests {
     fn plain_192_rail_matches_original_thumb_and_partition_boundaries() {
         // Original-instruction fixture includes the ordinary BBB width192,
         // reserve0, range6 path, preserving D5 comparisons in the same oracle.
-        let golden: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/launcher_trackbar.json"
+        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/launcher_trackbar.json",
         ))
         .unwrap();
         let geometry = golden["geometries"]

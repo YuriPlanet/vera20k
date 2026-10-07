@@ -14,8 +14,8 @@ use crate::util::fixed_math::SimFixed;
 use serde_json::Value;
 
 fn native_rows() -> Vec<Value> {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_approach_range.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_approach_range.json",
     ))
     .unwrap()
 }

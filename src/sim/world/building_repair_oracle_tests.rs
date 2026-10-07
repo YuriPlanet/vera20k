@@ -43,8 +43,8 @@ use serde_json::{Value, json};
 const SOUNDS: [(i64, &str); 2] = [(42, "OracleClick"), (43, "OracleScold")];
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/building_repair.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_repair.json",
     ))
     .unwrap()
 }

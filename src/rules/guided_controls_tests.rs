@@ -21,8 +21,8 @@ fn authored_ini(sections: &Value) -> IniFile {
 
 #[test]
 fn sequential_general_controls_match_original_and_survive_registry_handoff() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../tools/rules_oracle/guided_controls.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/guided_controls.json",
     ))
     .unwrap();
     let sequence = &native["sequential"];

@@ -32,8 +32,8 @@ const SECOND_RADAR: u64 = 10;
 const PRODUCER: u64 = 30;
 
 fn corpus() -> Value {
-    let value: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/house_power_consumers.json"
+    let value: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/house_power_consumers.json",
     ))
     .unwrap();
     assert_eq!(

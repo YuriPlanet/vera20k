@@ -68,10 +68,9 @@ numeric boundary, not proof that the mission admits an off-map carrier. Stock
 rules do not supply any value to this numeric prefix: its radius is native data.
 
 The adjacent shared-helper audit also found a separate Rocket distance concern:
-`int_distance_to_sim(2,2)` estimates 3, and `(4,8)` estimates 9, because a fixed
-number of integer Newton steps can stop on the upper member of a two-cycle.
-Its sole production consumer is Rocket flight progress/phase timing. Native
-Rocket behavior was not established here; [issue #1027](https://github.com/YuriPlanet/vera20k/issues/1027)
-records the separate investigation.
+`int_distance_to_sim` could stop on the upper member of an integer Newton
+two-cycle. The native Rocket locomotor port (`sim::movement::rocket_movement`)
+replaced its only consumer and the helper is deleted
+([issue #1027](https://github.com/YuriPlanet/vera20k/issues/1027)).
 No ordinary-map overflow was demonstrated in the other inspected shared helpers;
 the documentation now states their result/intermediate bounds explicitly.

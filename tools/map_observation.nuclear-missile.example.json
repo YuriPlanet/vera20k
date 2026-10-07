@@ -1,0 +1,135 @@
+{
+  "schema_version": "vera20k.map-observation-profile.v2",
+  "launch": {
+    "mode": {
+      "id": 1,
+      "ui_name_key": "GUI:Battle",
+      "tooltip_key": "STT:ModeBattle",
+      "override_file": "MPBattleMD.ini",
+      "map_filter": "standard",
+      "random_maps_allowed": true,
+      "allies_allowed": true,
+      "must_ally": false
+    },
+    "player_name": "VERA-OBSERVER",
+    "local": {
+      "country": "Russia",
+      "country_random": false,
+      "color_index": 0,
+      "color_random": false,
+      "start_position": {
+        "Position": 0
+      },
+      "team": "None"
+    },
+    "opponents": [
+      {
+        "country": "Yuri",
+        "country_random": false,
+        "color_index": 1,
+        "color_random": false,
+        "start_position": {
+          "Position": 1
+        },
+        "team": "None",
+        "difficulty": "Easy"
+      }
+    ],
+    "options": {
+      "starting_credits": 10000,
+      "unit_count": 0,
+      "tech_level": 10,
+      "game_speed": 1,
+      "default_ai_difficulty": 0,
+      "short_game": false,
+      "bases": true,
+      "bridges_destroyable": true,
+      "super_weapons": true,
+      "build_off_ally": true,
+      "crates": false,
+      "mcv_redeploy": true,
+      "fog_of_war": false,
+      "shroud": false,
+      "tiberium_grows": false,
+      "multi_engineer": false,
+      "harvester_truce": false,
+      "ally_change_allowed": true
+    },
+    "selected_map_file": "tools/map_observation/examples/nuclear_missile.map",
+    "pre_fill_house_roster": {
+      "human_nodes": [
+        {
+          "priority": 0,
+          "source_order": 0,
+          "observer": false
+        }
+      ],
+      "ai_slots": [
+        {
+          "slot_index": 0,
+          "valid": true
+        },
+        {
+          "slot_index": 1,
+          "valid": false
+        },
+        {
+          "slot_index": 2,
+          "valid": false
+        },
+        {
+          "slot_index": 3,
+          "valid": false
+        },
+        {
+          "slot_index": 4,
+          "valid": false
+        },
+        {
+          "slot_index": 5,
+          "valid": false
+        },
+        {
+          "slot_index": 6,
+          "valid": false
+        }
+      ],
+      "fixed_tail": [
+        "Neutral",
+        "Special"
+      ]
+    }
+  },
+  "seed": 305419896,
+  "input_delay_ticks": 2,
+  "ticks": 9700,
+  "width": 800,
+  "height": 600,
+  "timeout_seconds": 900,
+  "observe_owners": [
+    "VERA-OBSERVER",
+    "Neutral"
+  ],
+  "observe_types": [
+    "NAMISL",
+    "MTNK"
+  ],
+  "commands": [
+    {
+      "issue_after_step": 9010,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "LaunchSuperWeapon": {
+          "sw_type_id": 28,
+          "target_rx": 41,
+          "target_ry": 63
+        }
+      }
+    }
+  ],
+  "camera_cell": [
+    41,
+    63
+  ],
+  "observe_super_weapons": true
+}

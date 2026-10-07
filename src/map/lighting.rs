@@ -116,11 +116,40 @@ pub struct LightingProfileUnits {
     pub level_units: i32,
 }
 
-/// Ordinary and Lightning/Ion profiles parsed from one map `[Lighting]` section.
+/// A full cell relight's scenario inputs (`CellClass::ProcessColourComponents
+/// @ 0x00484180`): the profile, and the Level its top scalar multiplies by the
+/// cell's height. That Level is the profile's own except in the Psychic
+/// Dominator arm, whose top reads NukeLevel (`+0x3574`, `0x004844DB`) while
+/// its bottom reads `DominatorLevel=` (`+0x3590`, `0x00484503`). The retained
+/// refresh (`0x00484680`) reads the profile's Level for both. Executed:
+/// `tools/superweapon_oracle.py` `relight`, replayed through the match's
+/// lighting by `match_lighting_relight_profiles_match_native`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CellRelightProfile {
+    pub units: LightingProfileUnits,
+    pub top_level_units: i32,
+}
+
+impl From<LightingProfileUnits> for CellRelightProfile {
+    fn from(units: LightingProfileUnits) -> Self {
+        Self {
+            units,
+            top_level_units: units.level_units,
+        }
+    }
+}
+
+/// Ordinary, Lightning/Ion and Psychic Dominator profiles parsed from one map
+/// `[Lighting]` section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ParsedLightingProfiles {
     pub normal: LightingProfileUnits,
     pub ion: LightingProfileUnits,
+    /// `Dominator*=` (`ScenarioClass+0x357C..+0x3590`).
+    pub dominator: LightingProfileUnits,
+    /// `DominatorAmbientChangeRate=` (`+0x3594`): the ambient fade's interval
+    /// in frames while the Dominator is active, on the 1000 scale.
+    pub dominator_change_rate: i32,
 }
 
 /// Integer RGB identity used by the light profile cache.
@@ -620,8 +649,27 @@ pub fn parse_lighting_profiles(ini: &IniFile) -> ParsedLightingProfiles {
             ground_units: ground_level("IonGround", 0.0),
             level_units: ground_level("IonLevel", 0.0),
         },
+        // `ScenarioClass::Read_INI_Basic @ 0x00689E90` (`0x0068AAFD..
+        // 0x0068AC9A`): each default is the Set_Defaults value (`0x00683915..
+        // 0x006839B7`) times 0.01 (double) or 0.001f, and each read
+        // converts like the Ion keys.
+        dominator: LightingProfileUnits {
+            ambient_percent: percent("DominatorAmbient", 1.5),
+            red_percent: percent("DominatorRed", 0.85),
+            green_percent: percent("DominatorGreen", 0.2),
+            blue_percent: percent("DominatorBlue", 0.3),
+            ground_units: ground_level("DominatorGround", 0.0),
+            level_units: ground_level("DominatorLevel", 0.0),
+        },
+        dominator_change_rate: ground_level(
+            "DominatorAmbientChangeRate",
+            f64::from(DOMINATOR_CHANGE_RATE_DEFAULT as f32 * 0.001_f32),
+        ),
     }
 }
+
+/// `DominatorAmbientChangeRate=`'s Set_Defaults value (`0x00683941`).
+const DOMINATOR_CHANGE_RATE_DEFAULT: i32 = 1;
 
 impl Default for ParsedLightingProfiles {
     fn default() -> Self {
@@ -642,6 +690,15 @@ impl Default for ParsedLightingProfiles {
                 ground_units: 0,
                 level_units: 0,
             },
+            dominator: LightingProfileUnits {
+                ambient_percent: 150,
+                red_percent: 85,
+                green_percent: 20,
+                blue_percent: 30,
+                ground_units: 0,
+                level_units: 0,
+            },
+            dominator_change_rate: DOMINATOR_CHANGE_RATE_DEFAULT,
         }
     }
 }
@@ -681,7 +738,7 @@ pub fn build_cell_light_grid_from_heights_and_units<I>(
 where
     I: IntoIterator<Item = ((u16, u16), u8)>,
 {
-    build_cell_light_grid_from_heights_and_units_with_detail(heights, profile, 2)
+    build_cell_light_grid_from_heights_and_units_with_detail(heights, profile.into(), 2)
 }
 
 /// Exact initial `CellClass +0x10A` ground Z-adjust for one elevation level.
@@ -699,21 +756,21 @@ pub fn cell_ground_z_adjust(profile: LightingProfileUnits, level: u8) -> i32 {
 /// Build a cell-light grid using the native Options detail-level RGB cache mask.
 pub fn build_cell_light_grid_from_heights_and_units_with_detail<I>(
     heights: I,
-    profile: LightingProfileUnits,
+    profile: CellRelightProfile,
     detail_level: u32,
 ) -> CellLightGrid
 where
     I: IntoIterator<Item = ((u16, u16), u8)>,
 {
     let mut grid = CellLightGrid::with_detail_level(detail_level);
-    let units = scenario_units_from_profile(profile);
+    let units = scenario_units_from_profile(profile.units);
     for (cell, z) in heights {
         if cell == (0, 0) {
             let light = neutral_cell_light(&mut grid.profiles);
             grid.insert_light(cell, light);
             continue;
         }
-        let raw_top = units.ambient + units.level * i32::from(z) - units.ground;
+        let raw_top = units.ambient + profile.top_level_units * i32::from(z) - units.ground;
         let raw_bottom =
             units.ambient + units.level * (i32::from(z) + BOTTOM_LEVEL_OFFSET) - units.ground;
         let light = build_cell_light_from_raw(
@@ -760,7 +817,7 @@ pub struct PointLight {
 #[derive(Debug, Clone)]
 pub struct DeferredCellLightRefresh {
     cells: Vec<((u16, u16), u8)>,
-    profile: LightingProfileUnits,
+    profile: CellRelightProfile,
     detail_level: u32,
     lights: Vec<PointLight>,
     samples: Vec<Option<CellLightSample>>,
@@ -782,12 +839,12 @@ impl DeferredCellLightRefresh {
     where
         I: IntoIterator<Item = ((u16, u16), u8)>,
     {
-        Self::new_with_profile(heights, normal_profile_units(config), 2, lights)
+        Self::new_with_profile(heights, normal_profile_units(config).into(), 2, lights)
     }
 
     pub fn new_with_profile<I>(
         heights: I,
-        profile: LightingProfileUnits,
+        profile: CellRelightProfile,
         detail_level: u32,
         lights: Vec<PointLight>,
     ) -> Self
@@ -1063,7 +1120,7 @@ pub fn accumulate_point_lights(grid: &mut CellLightGrid, lights: &[PointLight]) 
 fn sample_cell_light(
     cell: (u16, u16),
     height: u8,
-    profile: LightingProfileUnits,
+    profile: CellRelightProfile,
     lights: &[PointLight],
 ) -> CellLightSample {
     if cell == (0, 0) {
@@ -1076,10 +1133,11 @@ fn sample_cell_light(
             raw_bottom_scalar: LIGHT_UNIT,
         };
     }
-    let units = scenario_units_from_profile(profile);
+    let units = scenario_units_from_profile(profile.units);
     let mut raw_rgb = [units.red, units.green, units.blue];
     let mut raw_additive_intensity = 0;
-    let mut raw_top_scalar = units.ambient + units.level * i32::from(height) - units.ground;
+    let mut raw_top_scalar =
+        units.ambient + profile.top_level_units * i32::from(height) - units.ground;
     let mut raw_bottom_scalar =
         units.ambient + units.level * (i32::from(height) + BOTTOM_LEVEL_OFFSET) - units.ground;
     accumulate_light_sample(
@@ -1349,7 +1407,7 @@ mod tests {
         // every clamped maximum in each dominant-channel branch, detail0..2,
         // top/common caps, negative values and the near-black reset.
         let bytes =
-            include_bytes!("../../tools/palette_oracle/fixtures/cell-light-finalization.bin");
+            crate::test_fixture::bytes("tools/palette_oracle/fixtures/cell-light-finalization.bin");
         assert_eq!(bytes.len() % 60, 0);
         for record in bytes.chunks_exact(60) {
             let row: Vec<i32> = record
@@ -1385,8 +1443,8 @@ mod tests {
 
     #[test]
     fn native_ground_level_ini_quantization_matches_all_four_original_sites() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/palette_oracle/fixtures/ground-level.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/palette_oracle/fixtures/ground-level.json",
         ))
         .expect("original instruction fixture");
         for record in fixture["authored"].as_array().unwrap() {
@@ -1413,8 +1471,8 @@ mod tests {
 
     #[test]
     fn native_ground_level_defaults_and_authored_values_reach_cell_grid() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/palette_oracle/fixtures/ground-level.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/palette_oracle/fixtures/ground-level.json",
         ))
         .expect("original instruction fixture");
         // Distinguish absent section, empty section, either key absent, explicit
@@ -1545,7 +1603,7 @@ mod tests {
         let key_at = |detail_level| {
             build_cell_light_grid_from_heights_and_units_with_detail(
                 [((3, 4), 0)],
-                profile,
+                profile.into(),
                 detail_level,
             )
             .cell_light_at((3, 4))
@@ -2297,8 +2355,8 @@ mod tests {
 
     #[test]
     fn retained_scalar_refresh_matches_original_cell_484680() {
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/light_retained_scalar.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/light_retained_scalar.json",
         ))
         .unwrap();
         let cases = native["cases"].as_array().unwrap();

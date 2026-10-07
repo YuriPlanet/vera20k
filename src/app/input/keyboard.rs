@@ -484,8 +484,8 @@ mod tests {
     }
     #[test]
     fn field_state_matches_scoped_windows_control_probe_and_native_ext_rejection() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/keyboard_key_names.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/keyboard_key_names.json",
         ))
         .unwrap();
         let cases = fixture["capture"].as_array().unwrap();

@@ -185,7 +185,7 @@ pub(crate) fn native_fixtures() -> [NativePaletteFixture; 9] {
                 rgb: $rgb,
                 house: $house,
                 plain: false,
-                bytes: include_bytes!(concat!("../../tools/palette_oracle/fixtures/", $file)),
+                bytes: crate::test_fixture::bytes(concat!("tools/palette_oracle/fixtures/", $file)),
             }
         };
     }
@@ -212,14 +212,14 @@ pub(crate) fn native_fixtures() -> [NativePaletteFixture; 9] {
             rgb: [1000; 3],
             house: false,
             plain: true,
-            bytes: include_bytes!("../../tools/palette_oracle/fixtures/palette-1-plain.bin"),
+            bytes: crate::test_fixture::bytes("tools/palette_oracle/fixtures/palette-1-plain.bin"),
         },
         NativePaletteFixture {
             rows: 53,
             rgb: [1000; 3],
             house: false,
             plain: true,
-            bytes: include_bytes!("../../tools/palette_oracle/fixtures/palette-53-plain.bin"),
+            bytes: crate::test_fixture::bytes("tools/palette_oracle/fixtures/palette-53-plain.bin"),
         },
     ]
 }
@@ -235,8 +235,8 @@ mod tests {
             return;
         };
         let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/procedural_drawing_oracle/house_color.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/house_color.json",
         ))
         .unwrap();
         assert_eq!(native["constructor_palette_index"], 16);
@@ -278,7 +278,8 @@ mod tests {
 
     #[test]
     fn all_clamped_base_scales_match_original_x87_bytes() {
-        let golden = include_bytes!("../../tools/palette_oracle/fixtures/base-scales-0-2000.bin");
+        let golden =
+            crate::test_fixture::bytes("tools/palette_oracle/fixtures/base-scales-0-2000.bin");
         for (light, value) in golden.chunks_exact(4).enumerate() {
             assert_eq!(
                 native_scale16(light as i32),
@@ -293,11 +294,11 @@ mod tests {
         for (n, bytes) in [
             (
                 27,
-                include_bytes!("../../tools/palette_oracle/fixtures/intensity-27.bin"),
+                crate::test_fixture::bytes("tools/palette_oracle/fixtures/intensity-27.bin"),
             ),
             (
                 53,
-                include_bytes!("../../tools/palette_oracle/fixtures/intensity-53.bin"),
+                crate::test_fixture::bytes("tools/palette_oracle/fixtures/intensity-53.bin"),
             ),
         ] {
             for b in -1i32..=2000 {

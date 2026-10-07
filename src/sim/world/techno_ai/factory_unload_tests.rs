@@ -28,8 +28,8 @@ use serde_json::{Value, json};
 const NATIVE_SHA256: &str = "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c";
 
 fn corpus() -> Value {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/anytown_damage/unit_unlimbo.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/anytown_damage/unit_unlimbo.json",
     ))
     .unwrap();
     assert_eq!(corpus["schema_version"], 1);

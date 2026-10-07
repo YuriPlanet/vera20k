@@ -63,8 +63,8 @@ const SOUNDS: [(i64, &str); 2] = [(41, "OracleSellSound"), (9, "OraclePackupSoun
 const WALK: &str = "{4A582744-9839-11D1-B709-00A024DDAFD1}";
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/building_sale.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_sale.json",
     ))
     .unwrap()
 }

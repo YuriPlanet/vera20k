@@ -211,6 +211,25 @@ impl VoxQueue {
             .or_else(|| self.interrupt_list.iter().find(|node| node.event == event))
     }
 
+    /// `VoxClass::RemoveFromQueues @ 0x00752A40`: every queued node of the
+    /// entry, wherever `FindInQueues` finds one (the lists and the pending
+    /// slot), is dropped; the current entry plays on.
+    pub fn remove_from_queues(&mut self, event: &str) {
+        let event = event.to_ascii_uppercase();
+        self.critical_list.retain(|node| node.event != event);
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|node| node.event == event)
+        {
+            self.pending = None;
+        }
+        for list in &mut self.priority_lists {
+            list.retain(|node| node.event != event);
+        }
+        self.interrupt_list.retain(|node| node.event != event);
+    }
+
     /// The dequeue half of `VoxClass::PlayNextQueued @ 0x00752760`.
     ///
     /// Gate: `StreamPlayer::IsPlaying() == 0` (`0x00752794`), `now >
@@ -418,6 +437,36 @@ mod tests {
         let event = node.event.clone();
         q.started(node);
         Some(event)
+    }
+
+    /// `VoxClass::RemoveFromQueues @ 0x00752A40` frees every node
+    /// `FindInQueues` finds for the entry, wherever it waits; the current
+    /// line and other entries stay.
+    #[test]
+    fn remove_from_queues_drops_every_waiting_node_of_the_entry() {
+        let mut q = VoxQueue::new();
+        q.queue_voice(construction_complete(), None);
+        play_next(&mut q, 1);
+        let ready = |eva_type| req("EVA_ChronosphereReady", eva_type, EvaPriority::Important);
+        assert!(q.queue_voice(ready(EvaType::Standard), None).inserted);
+        assert!(q.queue_voice(ready(EvaType::Queue), None).inserted);
+        assert!(
+            q.queue_voice(ready(EvaType::QueuedInterrupt), None)
+                .inserted
+        );
+        assert!(q.queue_voice(low_power(), None).inserted);
+        assert_eq!(q.queued_count(), 4);
+
+        q.remove_from_queues("EVA_ChronosphereReady");
+
+        assert_eq!(q.queued_count(), 1);
+        assert_eq!(
+            q.current().map(|node| node.event.as_str()),
+            Some("EVA_CONSTRUCTIONCOMPLETE")
+        );
+        q.stream_ended(1_000);
+        assert_eq!(play_next(&mut q, 1_501).as_deref(), Some("EVA_LOWPOWER"));
+        assert_eq!(q.queued_count(), 0);
     }
 
     /// `InsertIntoQueue 0x0075264A`: the pending slot is replaced only by a

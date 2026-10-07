@@ -2002,8 +2002,8 @@ mod tests {
              [ENGINEER]\nStrength=75\nEngineer=yes\nC4=yes\n\
              [CABHUT]\nStrength=200\nFoundation=1x1\nBridgeRepairHut=yes\nCanC4=yes\nRepairable=yes\nCapturable=yes\n",
         )).unwrap();
-        let native: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/engineer_bridge_cursor_caller.json"
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/engineer_bridge_cursor_caller.json",
         ))
         .unwrap();
         for relation in ["hostile", "allied", "self"] {

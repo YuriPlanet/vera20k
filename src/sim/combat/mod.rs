@@ -367,6 +367,190 @@ fn classify_projectile_delivery(
     }
 }
 
+/// One bullet as `BulletClass::Construct @ 0x004664C0` builds it and its
+/// launch, `BulletClass::Fire @ 0x00468670` (vt+0x1F0), places it, whoever
+/// fires it: FireAt, a silo's nuclear missile (`0x0044CAED`), the warhead
+/// `NukeMaker=` drops (`0x0046B408`).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FiredBullet {
+    /// The AbstractClass identity the constructor took.
+    native_unique_id: i32,
+    /// Construct's owner (`+0xB0`).
+    source_id: u64,
+    /// Construct's target (`+0x10C`).
+    target: ProjectileTarget,
+    /// The target coordinate Fire keeps (`+0x140`), also a guided bullet's
+    /// fuse reference.
+    target_position: ProjectileCoord,
+    payload: ProjectilePayload,
+    /// Construct's speed (`+0x110`): the ceiling of a Vertical or guided
+    /// flight.
+    max_speed: i32,
+    /// Fire's coordinate and velocity.
+    origin: ProjectileCoord,
+    velocity: crate::sim::projectile::ProjectileVelocity,
+    /// The current speed.
+    speed: u16,
+}
+
+impl FiredBullet {
+    /// A bullet `BulletClass::Fire` launches from `origin` at `velocity` and
+    /// that moves at the velocity's magnitude, as the silo's missile and
+    /// NukeMaker's warhead do (FireAt keeps its own launch speed and its own
+    /// read of the aim). Fire keeps the target's vt+0x58 (`0x00468707`, into
+    /// `+0x140`): a cell's aim, raised over a structural bridge deck
+    /// ([`cell_target_coord`]), the shared dummy cell's, or an object's
+    /// GetCoords (Object vt+0x58 forwards vt+0x48). `None` for a missing
+    /// target, which native dereferences.
+    ///
+    /// [`cell_target_coord`]: crate::sim::projectile::cell_target_coord
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn launched(
+        world: &Simulation,
+        native_unique_id: i32,
+        source_id: u64,
+        target: ProjectileTarget,
+        payload: ProjectilePayload,
+        max_speed: i32,
+        origin: ProjectileCoord,
+        velocity: crate::sim::projectile::ProjectileVelocity,
+    ) -> Option<Self> {
+        let terrain = world.resolved_terrain.as_ref();
+        let target_position = match target {
+            ProjectileTarget::Cell { rx, ry } => {
+                crate::sim::projectile::cell_target_coord(terrain, rx, ry)
+            }
+            ProjectileTarget::DummyCell => crate::sim::projectile::dummy_cell_target_coord(
+                &world.effective_shared_cell_dummy(),
+            ),
+            ProjectileTarget::Entity(id) => {
+                let coords = crate::sim::movement::ground_pose::object_get_coords(
+                    world.substrate.entities.get(id)?,
+                    terrain,
+                );
+                ProjectileCoord::new(coords.x, coords.y, coords.z)
+            }
+            ProjectileTarget::None => return None,
+        };
+        Some(Self {
+            native_unique_id,
+            source_id,
+            target,
+            target_position,
+            payload,
+            max_speed,
+            origin,
+            velocity,
+            speed: crate::sim::projectile::projectile_velocity_magnitude(velocity)
+                .clamp(0.0, f64::from(u16::MAX)) as u16,
+        })
+    }
+}
+
+impl ProjectileDelivery {
+    /// The spawn of `bullet`, a bullet of this delivery's BulletType
+    /// (`projectile_type`, absent for a weapon naming none).
+    fn spawn(
+        &self,
+        entities: &EntityStore,
+        rules: &RuleSet,
+        projectile_type: Option<&crate::rules::projectile_type::ProjectileType>,
+        bullet: FiredBullet,
+    ) -> ProjectileSpawn {
+        let guidance = self.guidance.map(|guidance| ProjectileGuidance {
+            fuse_reference: bullet.target_position,
+            max_speed: bullet.max_speed,
+            ..guidance
+        });
+        ProjectileSpawn {
+            native_unique_id: bullet.native_unique_id,
+            line_trail: projectile_type.and_then(|kind| {
+                crate::sim::projectile::ProjectileLineTrail::from_type(
+                    kind,
+                    rules.general.line_trail_color_override,
+                )
+            }),
+            flat: projectile_type.is_some_and(|projectile| projectile.flat),
+            source_id: bullet.source_id,
+            origin: bullet.origin,
+            target: bullet.target,
+            initial_target_position: bullet.target_position,
+            payload: bullet.payload,
+            speed_leptons_per_frame: bullet.speed,
+            velocity: bullet.velocity,
+            trajectory: match self.vertical {
+                Some(detonation_altitude) => ProjectileTrajectory::Vertical {
+                    detonation_altitude,
+                    acceleration: self.acceleration,
+                    max_speed: bullet.max_speed,
+                },
+                None if self.ballistic || guidance.is_none() => ProjectileTrajectory::Ballistic,
+                None => ProjectileTrajectory::Straight,
+            },
+            guidance,
+            visual: projectile_type.map_or(ProjectileVisualState::new(0, 0, 0), |projectile| {
+                ProjectileVisualState::new(
+                    projectile.anim_low as u8,
+                    projectile.anim_high as u8,
+                    projectile.anim_rate as u8,
+                )
+            }),
+            arm_frames: projectile_arm_delay(self.arm_frames, bullet.target, entities),
+            fuse_frames: None,
+            // AI 467C0C calls Check for ROT>0 or Ranged even when
+            // Dropping later suppresses detector-only admission.
+            ranged_fuse: self.tracks_target
+                || projectile_type.is_some_and(|projectile| projectile.ranged),
+            tracks_target: self.tracks_target,
+            target_expiry: TargetExpiryPolicy::DetonateAtLastKnown,
+            collision: self.collision,
+        }
+    }
+}
+
+/// Admit `bullet`, fired with `weapon`'s BulletType, as `bullet_id`. Fire
+/// Unlimbos it at its coordinate, which appends it to the Logic vector
+/// (`0x005F5040`): it takes its first AI later in this frame's pass. An
+/// `Inviso=` bullet then stands on its target ([`ProjectileStore::fire_inviso`]
+/// with the target's OnBridge, as FireAt copies it at `0x006FF08B`).
+///
+/// [`ProjectileStore::fire_inviso`]: crate::sim::projectile::ProjectileStore::fire_inviso
+pub(crate) fn admit_fired_bullet(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    weapon: &WeaponType,
+    bullet_id: u64,
+    bullet: FiredBullet,
+) {
+    let projectile_type = weapon
+        .projectile
+        .as_deref()
+        .and_then(|projectile_id| rules.projectile(projectile_id));
+    let delivery = classify_projectile_delivery(weapon, rules);
+    let spawn = delivery.spawn(&world.substrate.entities, rules, projectile_type, bullet);
+    world.admit_projectile(bullet_id, spawn);
+    world.construct_bullet_scheme(bullet_id, rules);
+    #[cfg(test)]
+    if let Some(fixture) = world.receiver_fixture.as_mut() {
+        fixture
+            .admitted_spawns
+            .push((bullet_id, delivery.inviso, spawn));
+    }
+    if delivery.inviso {
+        let on_bridge = match bullet.target {
+            ProjectileTarget::Entity(id) => world
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|target| target.on_bridge),
+            _ => false,
+        };
+        world
+            .projectiles
+            .fire_inviso(bullet_id, bullet.target_position, on_bridge);
+    }
+}
+
 #[cfg(test)]
 mod projectile_delivery_tests {
     use super::*;
@@ -595,6 +779,16 @@ impl From<crate::sim::components::NavTargetRef> for TargetKind {
             NavTargetRef::Entity { id }
             | NavTargetRef::Object { id }
             | NavTargetRef::Building { id } => Self::Entity(id),
+        }
+    }
+}
+
+impl From<TargetKind> for crate::sim::components::NavTargetRef {
+    /// A target as a destination (a Target handed to `Assign_Destination`).
+    fn from(target: TargetKind) -> Self {
+        match target {
+            TargetKind::Entity(id) => Self::Entity { id },
+            TargetKind::Cell(rx, ry) => Self::cell(rx, ry),
         }
     }
 }
@@ -3234,8 +3428,8 @@ mod impact_height_tests {
         };
         let mut rules =
             crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-        let golden: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/bridge_debris_producer.json"
+        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/bridge_debris_producer.json",
         ))
         .unwrap();
         // Use the exact retained image-header inputs supplied to the original

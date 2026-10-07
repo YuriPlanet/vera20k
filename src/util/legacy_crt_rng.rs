@@ -14,9 +14,10 @@ mod tests {
 
     #[test]
     fn supplied_seeds_match_original_crt_instructions() {
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/storage_oracle/crt_random.json"))
-                .unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/crt_random.json",
+        ))
+        .unwrap();
         let cases = vectors["cases"].as_array().unwrap();
         assert_eq!(cases.len(), 7);
         for (case, seed) in

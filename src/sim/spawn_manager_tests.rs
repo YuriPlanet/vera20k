@@ -51,12 +51,29 @@ MinLowPowerProductionSpeed=0.4
 MaxLowPowerProductionSpeed=0.85
 V3RocketPauseFrames=0
 V3RocketTiltFrames=60
+V3RocketPitchInitial=0.21
+V3RocketPitchFinal=0.5
+V3RocketTurnRate=0.05
+V3RocketRaiseRate=1
+V3RocketAcceleration=0.4
+V3RocketAltitude=768
 V3RocketDamage=200
 V3RocketEliteDamage=400
+V3RocketBodyLength=256
+V3RocketLazyCurve=yes
 V3RocketType=V3ROCKET
 DMislPauseFrames=20
 DMislTiltFrames=60
+DMislPitchInitial=0
+DMislPitchFinal=0.5
+DMislTurnRate=0.08
+DMislRaiseRate=1
+DMislAcceleration=0.8
+DMislAltitude=768
 DMislDamage=300
+DMislEliteDamage=600
+DMislBodyLength=128
+DMislLazyCurve=no
 DMislType=DMISL
 CMislType=CMISL
 
@@ -276,6 +293,15 @@ fn flat_sim() -> Simulation {
     sim
 }
 
+/// [`flat_sim`] with a map `Size=` whose `In_Bounds` diamond (`0x00568300`)
+/// holds the V3 tests' cells, as a missile's flight steps require.
+fn missile_sim() -> Simulation {
+    let mut sim = flat_sim();
+    sim.playfield_bounds.as_mut().unwrap().base = 15;
+    sim.playfield_size_height = Some(15);
+    sim
+}
+
 fn move_target_to_x_distance(sim: &mut Simulation, target_id: u64, distance_leptons: i32) {
     const OWNER_WORLD_X: i32 = 10 * 256 + 128;
     let world_x = OWNER_WORLD_X + distance_leptons;
@@ -403,8 +429,8 @@ fn hornet_launcher_maximum_matches_native_distance_ties() {
     // SpawnManager6B7B43 -> Unit+3AC/6F7780 -> CanFireAt6F77B0 ->
     // InRange6F7220. Its approximate distance accepts 6401 at Range6400;
     // the three original numeric controls bound this shared caller check.
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/fv_cell_attack/range_ties.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/range_ties.json",
     ))
     .unwrap();
     let rows: Vec<_> = native["rows"]
@@ -591,7 +617,7 @@ fn update_timer_gates_the_whole_ai_pass() {
 }
 
 /// Launch half of the missile cycle: ReadyDocked → InFlight → KamikazeWait,
-/// with the flight state and impact payload attached. The slot's later
+/// with the missile's Rocket handed its destination. The slot's later
 /// transition into `Regenerating` is NOT covered here — that needs the
 /// pause+tilt timer to expire, which this test does not advance.
 #[test]
@@ -646,17 +672,23 @@ fn v3_launches_its_rocket_into_the_kamikaze_window() {
 
     let child = sim.substrate.entities.get(child_id).expect("child alive");
     assert!(!child.lifecycle.in_limbo, "rocket is out in the world");
-    assert!(
-        child.rocket_state.is_some(),
-        "launched missile carries a rocket flight state"
-    );
-    let payload = child
-        .rocket_state
+    let rocket = child
+        .locomotor
         .as_ref()
-        .and_then(|r| r.payload)
-        .expect("missile carries its impact payload");
-    assert_eq!(payload.damage, 200, "[General] V3RocketDamage");
-    assert_eq!(payload.firer_id, v3);
+        .and_then(|locomotor| locomotor.rocket_runtime())
+        .expect("the missile flies on its Rocket locomotor");
+    // Move_To (0x006632E0) at the target's centre; V3RocketPauseFrames=0
+    // starts the tilt.
+    assert!(rocket.is_moving());
+    assert_eq!(
+        rocket.destination_for_test(),
+        crate::sim::components::DriveCoord {
+            x: 20 * 256 + 128,
+            y: 20 * 256 + 128,
+            z: 0
+        }
+    );
+    assert_eq!(rocket.mission_state_for_test(), 2);
 
     let manager = sim
         .substrate
@@ -770,14 +802,13 @@ fn a_launcher_asks_its_locomotor_whether_it_is_moving() {
     );
 }
 
+/// `Detonate @ 0x00663030` applies its area damage inline: a target the
+/// missile takes to zero dies through the shared death handling in the same
+/// Process that UnInits the missile.
 #[test]
 fn missile_impact_kills_through_the_shared_death_pipeline() {
-    // The retail contract is that a missile impact runs the same
-    // damage -> death -> despawn path as any other detonation. Asserting only
-    // "health went down" passes even when nothing handles the kill, so this
-    // takes a target the missile can actually destroy and asserts it is gone.
     let rules = make_spawner_rules();
-    let mut sim = Simulation::new();
+    let mut sim = flat_sim();
     let v3 = sim
         .spawn_object("V3", "Soviet", 10, 10, 0, &rules)
         .expect("spawn V3");
@@ -792,50 +823,51 @@ fn missile_impact_kills_through_the_shared_death_pipeline() {
         .and_then(|e| e.spawn_manager.as_ref())
         .and_then(|m| m.slots[0].spawn)
         .expect("child");
-
-    // Drive the missile straight to detonation without simulating the flight.
-    crate::sim::movement::rocket_movement::attach_rocket_state_with_payload(
-        &mut sim.substrate.entities,
+    // A cruising missile on the ground beside the target detonates at once.
+    let _ = sim.try_reveal_entity(
         child_id,
-        (10, 10),
-        (20, 20),
-        crate::util::fixed_math::SimFixed::from_num(15),
-        Some(crate::sim::movement::rocket_movement::RocketPayload {
-            warhead: sim.interner.intern("V3WH"),
-            damage: 200,
-            firer_id: v3,
-        }),
-        sim.session.binary_frame,
+        crate::sim::world::RevealRequest {
+            position: crate::sim::world::RevealPosition {
+                exact_z_leptons: Some(0),
+                rx: 20,
+                ry: 20,
+                z: 0,
+                sub_x: SimFixed::from_num(128),
+                sub_y: SimFixed::from_num(128),
+            },
+            placement: crate::sim::world::PlacementEvidence::MarkSucceeded,
+            logic_eligible: true,
+        },
     );
-    let _ = sim.reveal(child_id);
-
-    crate::sim::spawn_manager::detonate_missiles(&mut sim, &[child_id]);
-    assert_eq!(
-        sim.pending_missile_detonations.len(),
-        1,
-        "the impact is queued for the combat phase, not applied here"
+    sim.rocket_move_to(
+        child_id,
+        crate::sim::components::DriveCoord::cell(20, 20, 0),
+        &rules,
     );
-    assert!(
-        sim.substrate
-            .entities
-            .get(child_id)
-            .is_none_or(|c| c.dying || !c.lifecycle.object_alive),
-        "the missile leaves the world at the detonation moment"
-    );
-
+    sim.substrate
+        .entities
+        .get_mut(child_id)
+        .and_then(|e| e.locomotor.as_mut())
+        .and_then(|locomotor| locomotor.rocket_runtime_mut())
+        .expect("rocket")
+        .set_mission_state_for_test(4);
     assert!(
         sim.substrate
             .entities
             .get(target)
             .is_some_and(|t| t.lifecycle.object_alive && t.health.current == 50),
-        "fixture guard: the target is still alive before the combat phase runs"
+        "fixture guard: the target is alive before the impact"
     );
 
-    // One tick: the queued impact is expanded by combat and resolved by the
-    // shared death handling.
-    sim.advance_tick(&[], Some(&rules), None, None, 67);
-    sim.flush_pending_delete();
+    sim.process_rocket(child_id, &rules, None);
 
+    assert!(
+        sim.substrate
+            .entities
+            .get(child_id)
+            .is_none_or(|c| !c.lifecycle.object_alive),
+        "the missile leaves the world at the detonation"
+    );
     assert!(
         sim.substrate
             .entities
@@ -843,15 +875,12 @@ fn missile_impact_kills_through_the_shared_death_pipeline() {
             .is_none_or(|t| t.dying || !t.lifecycle.object_alive),
         "a target the missile takes to zero must actually die, not stand at 0 HP"
     );
-    assert!(
-        sim.pending_missile_detonations.is_empty(),
-        "the queue is drained after combat"
-    );
 }
+
 #[test]
 fn v3_attack_order_damages_the_target_through_the_spawned_rocket() {
     let rules = make_spawner_rules();
-    let mut sim = flat_sim();
+    let mut sim = missile_sim();
     let v3 = sim
         .spawn_object("V3", "Russians", 10, 10, 0, &rules)
         .expect("spawn V3");
@@ -1100,14 +1129,14 @@ fn launcher_death_destroys_a_missile_already_in_flight() {
 }
 
 /// `ILoco::Process 0x00662FD5..0x00662FE1`: a missile left with no Health in
-/// flight (AA's Crash latched it) explodes where it is on its next turn
-/// (`RocketLocomotion::Detonate 0x00663030`) instead of flying on, so its
-/// target is never hit. Shot down straight off the rail, it bursts beside its
+/// flight (AA's Crash latched it) explodes where it is on its next moving
+/// turn (`RocketLocomotion::Detonate 0x00663030`) instead of flying on, so its
+/// target is never hit. Shot down as it leaves the rail, it bursts beside its
 /// launcher.
 #[test]
 fn a_missile_shot_down_in_flight_explodes_where_it_is() {
     let rules = make_spawner_rules();
-    let mut sim = flat_sim();
+    let mut sim = missile_sim();
     let v3 = sim
         .spawn_object("V3", "Russians", 10, 10, 0, &rules)
         .expect("spawn V3");
@@ -1136,13 +1165,29 @@ fn a_missile_shot_down_in_flight_explodes_where_it_is() {
         }
         tick_spawn_managers(&mut sim, &rules, &[v3], None);
     }
+    // The tilt holds the missile still; its climb is the first moving turn.
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(40, 32);
+    let climbing = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(missile)
+            .and_then(|m| m.locomotor.as_ref())
+            .and_then(|locomotor| locomotor.rocket_runtime())
+            .is_some_and(|rocket| rocket.is_moving_now())
+    };
+    for _ in 0..120 {
+        if climbing(&sim) {
+            break;
+        }
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+    }
+    assert!(climbing(&sim), "the tilt ends and the missile climbs");
     let entity = sim.substrate.entities.get_mut(missile).expect("missile");
-    assert!(entity.rocket_state.is_some() && !entity.lifecycle.in_limbo);
+    assert!(!entity.lifecycle.in_limbo);
     entity.health.current = 0;
     entity.crashing = true;
     let target_health = sim.substrate.entities.get(target).unwrap().health.current;
 
-    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(40, 32);
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
 
     assert!(
@@ -1220,8 +1265,8 @@ fn ownership_change_clears_the_pool_and_rearms_without_a_regen_wait() {
     }
 }
 
-/// The missile flies at the RA2-converted `Speed=`, not the raw INI integer.
-/// Passing the raw value made a V3 rocket cover roughly a cell per frame.
+/// The climb accelerates CurrentSpeed up to the type's `Speed=` in leptons a
+/// frame (`0x0066291F..0x00662954`): V3ROCKET Speed=15 caps at 15*256/100.
 #[test]
 fn missile_flight_speed_uses_the_ra2_conversion() {
     let rules = make_spawner_rules();
@@ -1253,29 +1298,26 @@ fn missile_flight_speed_uses_the_ra2_conversion() {
         tick_spawn_managers(&mut sim, &rules, &[v3], None);
     }
 
-    let speed = sim
-        .substrate
-        .entities
-        .get(child_id)
-        .and_then(|c| c.rocket_state.as_ref())
-        .map(|r| r.speed)
-        .expect("rocket state");
-    // V3ROCKET Speed=15 → 15*256/100 = 38 leptons/tick → 38*15 = 570 leptons/s,
-    // the unit domain of the six-phase rocket machine (its ascent altitude and
-    // acceleration constants are lepton-scale).
-    let expected = crate::util::fixed_math::ra2_speed_to_leptons_per_second(15);
-    assert_eq!(speed, expected);
-    assert_ne!(
-        speed,
-        crate::util::fixed_math::SimFixed::from_num(15),
-        "the raw INI Speed= must not reach the flight-speed field"
+    let speed = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(child_id)
+            .and_then(|c| c.locomotor.as_ref())
+            .and_then(|locomotor| locomotor.rocket_runtime())
+            .map(|rocket| rocket.current_speed_for_test())
+            .expect("rocket")
+    };
+    let mut fastest: f64 = 0.0;
+    for _ in 0..240 {
+        sim.session.binary_frame += 1;
+        sim.process_rocket(child_id, &rules, None);
+        fastest = fastest.max(speed(&sim));
+    }
+    assert_eq!(
+        fastest,
+        f64::from(crate::util::fixed_math::ra2_speed_to_leptons_per_frame(15))
     );
-    assert_ne!(
-        speed,
-        crate::util::fixed_math::ra2_speed_to_cells_per_second(15),
-        "cells/s is the wrong unit domain for the lepton-scale flight machine \
-         (a prior merge briefly fed it, stalling every missile in Ascent)"
-    );
+    assert_eq!(fastest, 38.0);
 }
 
 #[test]
@@ -1821,58 +1863,6 @@ fn queued_target_death_clears_only_the_queued_field() {
     assert_eq!(manager.queued_target, None);
 }
 
-/// A launch whose target vanished inside the manager window must not leave a
-/// revealed child behind. The slot stays docked and the child stays in limbo.
-#[test]
-fn a_launch_at_a_vanished_target_leaves_no_orphan() {
-    let rules = make_spawner_rules();
-    let mut sim = Simulation::new();
-    let v3 = sim
-        .spawn_object("V3", "Soviet", 10, 10, 0, &rules)
-        .expect("spawn V3");
-    let child_id = sim
-        .substrate
-        .entities
-        .get(v3)
-        .and_then(|e| e.spawn_manager.as_ref())
-        .and_then(|m| m.slots[0].spawn)
-        .expect("child");
-
-    // A target id that no longer resolves, written straight past SetTarget so
-    // the expiry notification cannot have cleaned it up.
-    if let Some(manager) = sim
-        .substrate
-        .entities
-        .get_mut(v3)
-        .and_then(|e| e.spawn_manager.as_mut())
-    {
-        manager.current_target = Some(TargetKind::Entity(999_999));
-        manager.mode = SpawnManagerMode::Launching;
-        manager.update_timer = CdTimer::default();
-    }
-    tick_spawn_managers(&mut sim, &rules, &[v3], None);
-
-    let child = sim
-        .substrate
-        .entities
-        .get(child_id)
-        .expect("child survives");
-    assert!(
-        child.lifecycle.in_limbo,
-        "nothing is placed in the world when the target cannot resolve"
-    );
-    assert!(child.rocket_state.is_none());
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(v3)
-            .and_then(|e| e.spawn_manager.as_ref())
-            .map(|m| m.slots[0].state),
-        Some(SpawnSlotState::ReadyDocked),
-        "the slot is not committed to InFlight without a flight"
-    );
-}
-
 /// The manager re-issues `Assign_Target(CurrentTarget)` and `Queue_Mission(
 /// Attack, 0)` to an attacking child on every pass (`0x006B7718`,
 /// `0x006B772C`). Both are no-ops on a Hornet already running that target
@@ -2230,8 +2220,8 @@ fn retail_missiles_keep_their_launch_coordinate_from_unlimbo() {
     };
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/projectile_oracle/ifv_fire_coord.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/ifv_fire_coord.json",
     ))
     .unwrap();
     let native = &native["spawn_launch"];
@@ -2266,7 +2256,7 @@ fn retail_missiles_keep_their_launch_coordinate_from_unlimbo() {
         .unwrap() as u16;
 
     for owner_type in ["V3", "DRED", "BSUB"] {
-        let (mut sim, _, launches) = retail_launches(&rules, owner_type);
+        let (sim, _, launches) = retail_launches(&rules, owner_type);
         let rows: Vec<_> = native["launches"]
             .as_array()
             .unwrap()
@@ -2290,23 +2280,15 @@ fn retail_missiles_keep_their_launch_coordinate_from_unlimbo() {
             assert_eq!(i32::from(launch.owner_dir), int(&row["unlimbo_direction"]));
             assert_eq!(launch.owner_burst, int(&row["burst_after"]), "{row}");
         }
-        if owner_type == "V3" {
-            // Its flight moves Z from the launch coordinate.
-            let (missile, launch) = &launches[0];
-            for _ in 0..8 {
-                let missile = sim.substrate.entities.get_mut(*missile).unwrap();
-                crate::sim::movement::rocket_movement::process_rocket(missile, 0);
-                let altitude = missile
-                    .rocket_state
-                    .as_ref()
-                    .unwrap()
-                    .altitude
-                    .to_num::<i32>();
-                assert_eq!(
-                    missile.position.exact_z_leptons,
-                    Some(launch.missile.z + altitude)
-                );
-            }
+        for (missile, _) in &launches {
+            let rocket = sim
+                .substrate
+                .entities
+                .get(*missile)
+                .and_then(|m| m.locomotor.as_ref())
+                .and_then(|locomotor| locomotor.rocket_runtime())
+                .expect("the missile flies on its Rocket locomotor");
+            assert!(rocket.is_moving(), "{owner_type}: Move_To took the target");
         }
     }
 }

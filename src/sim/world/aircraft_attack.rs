@@ -13,13 +13,6 @@ use crate::sim::components::NavTargetRef;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::air_movement;
 
-fn navigation_target(target: TargetKind) -> NavTargetRef {
-    match target {
-        TargetKind::Entity(id) => NavTargetRef::Entity { id },
-        TargetKind::Cell(rx, ry) => NavTargetRef::cell(rx, ry),
-    }
-}
-
 impl Simulation {
     ///418006..418030: raw Target presence chooses1/10, preserving pending ammo.
     /// The caller already cleared readiness. Search belongs to the next visit.
@@ -48,7 +41,7 @@ impl Simulation {
             .filter(|attack| {
                 attack_mission::aircraft_target_present(Some(attack), &self.substrate.entities)
             })
-            .map(|a| navigation_target(a.target));
+            .map(|a| NavTargetRef::from(a.target));
         let ammo = entity.aircraft_ammo.as_ref().map_or(-1, |a| a.current);
         let state = if target.is_some() && ammo != 0 {
             let destination = self.aircraft_find_fire_location(id, target, rules);
@@ -123,7 +116,7 @@ impl Simulation {
             if distance < weapon.range_leptons {
                 return 4;
             }
-            self.assign_aircraft_attack_destination(id, Some(navigation_target(target)), rules);
+            self.assign_aircraft_attack_destination(id, Some(target.into()), rules);
         } else if object.fighter
             || !crate::sim::movement::motion_query::is_moving_now(
                 entity,

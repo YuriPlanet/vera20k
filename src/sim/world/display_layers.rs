@@ -197,8 +197,8 @@ mod tests {
 
     #[test]
     fn original_registration_removal_and_adjacent_sort_sequences() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/crate_ground_membership.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/crate_ground_membership.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 6);

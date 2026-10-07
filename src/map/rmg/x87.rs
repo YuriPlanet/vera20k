@@ -354,8 +354,6 @@ pub fn ftol(value: f64) -> i32 {
 mod tests {
     use super::*;
 
-    const VECTORS: &str = include_str!("../../../tools/rmg_oracle/vectors/x87.json");
-
     /// Retail entries read from the game binary's 16384-entry square-root
     /// mantissa table (data section at 0x008650BC). Spot values chosen to pin
     /// the boundaries: entry 0, the first buckets, a mid-range value, the
@@ -494,7 +492,10 @@ mod tests {
 
     #[test]
     fn gaussian_matches_golden_vectors() {
-        let doc: serde_json::Value = serde_json::from_str(VECTORS).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/rmg_oracle/vectors/x87.json",
+        ))
+        .unwrap();
         assert_eq!(doc["source"].as_str(), Some("unicorn/gamemd.exe"));
 
         let mut seed_in_progress = None;

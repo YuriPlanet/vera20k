@@ -12,8 +12,8 @@ use crate::sim::intern::StringInterner;
 use serde_json::Value;
 
 fn packet() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_threat_inputs.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_threat_inputs.json",
     ))
     .unwrap()
 }

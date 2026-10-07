@@ -137,9 +137,10 @@ mod tests {
     // inputs; executable identity and fixture bounds: ore_queue.md.
     #[test]
     fn timer_and_percentage_readers_match_original_constructor_and_read_ini() {
-        let corpus: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/spatial_oracle/ore_queue.json"))
-                .unwrap();
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/ore_queue.json",
+        ))
+        .unwrap();
         let rows = corpus["timer_reader_cases"].as_array().unwrap();
         assert_eq!(rows.len(), 16);
         let retail = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini");

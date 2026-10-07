@@ -379,8 +379,8 @@ mod dead_body_tests {
     /// state after.
     #[test]
     fn leave_dead_body_matches_the_original() {
-        let rows: Vec<Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/infantry_death_completion.json"
+        let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/infantry_death_completion.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 68);

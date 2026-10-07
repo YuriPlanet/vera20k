@@ -7,8 +7,8 @@ use crate::sim::world::common_raw_test_terrain_cell;
 
 #[test]
 fn spread_heights_and_band_match_the_original_slices() {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/group_spread_gates.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/group_spread_gates.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 524);

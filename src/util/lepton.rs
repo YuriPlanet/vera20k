@@ -153,9 +153,12 @@ pub const BRIDGE_DECK_HEIGHT_LEVELS: i32 = 4;
 /// `0x005F37C0..0x005F3890`, `LEA ECX,[EAX*4]` at `0x005F3866`, added by
 /// `ObjectClass::SetHeight 0x005F5FA0`), Bounce `[0x0089C76C]` (initializer
 /// `0x00439610`, read by `0x00439A10`/`0x00439B00`), Jumpjet `[0x00ABC5DC]`,
-/// the parasite release deck `[0x00AC497C]`, and Anim `[0x0089A1B4]`
+/// the parasite release deck `[0x00AC497C]`, Anim `[0x0089A1B4]`
 /// (initializer `0x00421E20`, the same `4 * level + 0.5` truncation, read by
-/// the MakeInfantry mark and clear at `0x0042629B`/`0x00426328`). None is
+/// the MakeInfantry mark and clear at `0x0042629B`/`0x00426328`), and Rocket
+/// `[0x00B04E6C]` (one of the initializers at `0x008147C4`, read by the
+/// impact predictor `0x006620F0`; 416 when those initializers run under
+/// Unicorn). None is
 /// INI-read and every captured value is 416, so one constant serves them all,
 /// as [`LEPTONS_PER_LEVEL`] does for their level steps.
 pub const BRIDGE_DECK_HEIGHT_LEPTONS: i32 = BRIDGE_DECK_HEIGHT_LEVELS * GROUND_LEVEL_HEIGHT_LEPTONS;

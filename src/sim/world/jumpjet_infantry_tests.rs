@@ -989,8 +989,8 @@ fn scenario_draws(before: i32, after: i32) -> i32 {
 /// calls FootClass::AI at any Health, `0x0051BC9D`) but the oracle does not.
 #[test]
 fn a_shot_down_rocketeer_falls_like_the_native_crash() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/jumpjet_infantry_crash.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/jumpjet_infantry_crash.json",
     ))
     .expect("corpus parses");
     let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);

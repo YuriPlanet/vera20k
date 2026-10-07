@@ -627,9 +627,10 @@ mod tests {
     /// Find_Path and the post-search PathDelay restart are outside the oracle.
     #[test]
     fn walk_code2_gate_matches_native_vectors() {
-        let data: serde_json::Value =
-            serde_json::from_str(include_str!("../../../tools/infantry_scatter_oracle.json"))
-                .unwrap();
+        let data: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/infantry_scatter_oracle.json",
+        ))
+        .unwrap();
         assert_eq!(data["source"], "unicorn/gamemd.exe");
         let cases = data["walk_code2_timers"].as_array().unwrap();
         assert_eq!(cases.len(), 30);

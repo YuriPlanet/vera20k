@@ -333,8 +333,8 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
     use crate::sim::house_state::HouseState;
     use crate::util::native_x87::NativeF64Bits;
 
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_threat_inputs.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_threat_inputs.json",
     ))
     .unwrap();
     let reader = native["type_readers"]
@@ -716,7 +716,7 @@ fn nighthawk_unloads_only_when_landed() {
                 .expect("locomotor");
             loco.altitude = SimFixed::from_num(600);
         }
-        super::dispatch_aircraft_unload(&mut fx.sim, shad, &fx.rules, None);
+        crate::sim::aircraft::dispatch_native_mission(&mut fx.sim, shad, &fx.rules, None);
         fx.sim.session.binary_frame += 1;
     }
     assert_eq!(fx.cargo_ids(shad).len(), 2, "airborne: nothing leaves");
@@ -735,7 +735,7 @@ fn nighthawk_unloads_only_when_landed() {
     }
     let mut frames = Vec::new();
     for _ in 0..80 {
-        super::dispatch_aircraft_unload(&mut fx.sim, shad, &fx.rules, None);
+        crate::sim::aircraft::dispatch_native_mission(&mut fx.sim, shad, &fx.rules, None);
         fx.sim.session.binary_frame += 1;
         for &id in &pax {
             if fx.revealed(id) && !frames.iter().any(|(seen, _)| *seen == id) {
@@ -1017,7 +1017,7 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
 
     // First dispatch: state 0 → 2 with exactly one epilogue draw.
     let before = fx.sim.scenario_rng.state();
-    super::dispatch_aircraft_unload(&mut fx.sim, shad, &fx.rules, None);
+    crate::sim::aircraft::dispatch_native_mission(&mut fx.sim, shad, &fx.rules, None);
     fx.sim.session.binary_frame += 1;
     assert_eq!(handler_state(&fx, shad), super::AIR_STATE_WAIT_STOP);
     assert_ne!(
@@ -1033,7 +1033,7 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
         altitude -= 20;
         set_altitude(&mut fx, shad, altitude);
         let before = fx.sim.scenario_rng.state();
-        super::dispatch_aircraft_unload(&mut fx.sim, shad, &fx.rules, None);
+        crate::sim::aircraft::dispatch_native_mission(&mut fx.sim, shad, &fx.rules, None);
         fx.sim.session.binary_frame += 1;
         if fx.sim.scenario_rng.state() != before {
             airborne_draws += 1;
@@ -1048,7 +1048,7 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
     assert_eq!(handler_state(&fx, shad), super::AIR_STATE_EJECT);
     assert_eq!(fx.cargo_ids(shad).len(), 2);
     let before = fx.sim.scenario_rng.state();
-    super::dispatch_aircraft_unload(&mut fx.sim, shad, &fx.rules, None);
+    crate::sim::aircraft::dispatch_native_mission(&mut fx.sim, shad, &fx.rules, None);
     assert!(
         fx.revealed(pax[1]),
         "cargo head ejected on the state-3 dispatch"
@@ -1227,14 +1227,14 @@ fn landed_aircraft_transport_unload_asks_the_locomotor_not_the_order() {
         fx.board(shad, 2);
         set_altitude(&mut fx, shad, 600);
         assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
-        super::dispatch_aircraft_unload(&mut fx.sim, shad, &fx.rules, None);
+        crate::sim::aircraft::dispatch_native_mission(&mut fx.sim, shad, &fx.rules, None);
         fx.sim.session.binary_frame += 1;
         assert_eq!(handler_state(&fx, shad), super::AIR_STATE_WAIT_STOP);
         set_altitude(&mut fx, shad, 0);
         setup(fx.sim.substrate.entities.get_mut(shad).expect("aircraft"));
         // State 2 polls once its dispatch timer is due.
         for _ in 0..120 {
-            super::dispatch_aircraft_unload(&mut fx.sim, shad, &fx.rules, None);
+            crate::sim::aircraft::dispatch_native_mission(&mut fx.sim, shad, &fx.rules, None);
             fx.sim.session.binary_frame += 1;
             if handler_state(&fx, shad) != super::AIR_STATE_WAIT_STOP {
                 break;
@@ -1288,12 +1288,12 @@ fn nighthawk_failed_ejection_keeps_cargo_and_leaves_for_guard() {
     assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
 
     // State 0 → 3 (landed, team-less), one draw.
-    super::dispatch_aircraft_unload(&mut fx.sim, shad, &fx.rules, None);
+    crate::sim::aircraft::dispatch_native_mission(&mut fx.sim, shad, &fx.rules, None);
     assert_eq!(handler_state(&fx, shad), super::AIR_STATE_EJECT);
     // Advance to the state-3 dispatch: the ejection is refused.
     for _ in 0..20 {
         fx.sim.session.binary_frame += 1;
-        super::dispatch_aircraft_unload(&mut fx.sim, shad, &fx.rules, None);
+        crate::sim::aircraft::dispatch_native_mission(&mut fx.sim, shad, &fx.rules, None);
         if fx.mission_queued(shad) == MissionId::from_known(MissionType::Guard) {
             break;
         }
@@ -1324,7 +1324,7 @@ fn nighthawk_failed_ejection_keeps_cargo_and_leaves_for_guard() {
     let before = fx.sim.scenario_rng.state();
     for _ in 0..60 {
         fx.sim.session.binary_frame += 1;
-        super::dispatch_aircraft_unload(&mut fx.sim, shad, &fx.rules, None);
+        crate::sim::aircraft::dispatch_native_mission(&mut fx.sim, shad, &fx.rules, None);
     }
     assert_eq!(
         fx.sim.scenario_rng.state(),

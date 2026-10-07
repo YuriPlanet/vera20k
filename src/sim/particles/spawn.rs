@@ -496,8 +496,8 @@ mod tests {
     fn original_96_receiver_height_rows_gate_constructor_and_rng() {
         use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
         use crate::sim::game_entity::GameEntity;
-        let rows: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/receiver_smoke_height.json"
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/receiver_smoke_height.json",
         ))
         .unwrap();
         assert_eq!(rows.as_array().unwrap().len(), 96);

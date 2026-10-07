@@ -43,9 +43,8 @@
 //!   `0x006E330E`) are not ported. The same Read_Scenario_INI seeds a map
 //!   house's team timer (`0x005010F1..0x00501138`); VERA's map-roster houses
 //!   keep the constructor's.
-//! - A super weapon's charge compares against its type's `RechargeTime=`;
-//!   the per-Super override (`SuperClass+0x24`, `0x006CC260`) is not kept.
-//!   Trigger: a map trigger that changes a super weapon's charge time.
+//! - Conditions 5 and 6 compare a super weapon's charge against its type's
+//!   `RechargeTime=` ([`super_nearly_ready`]'s residual).
 
 use std::hash::{Hash, Hasher};
 
@@ -58,19 +57,17 @@ use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::intern::InternedId;
 use crate::sim::production::find_factory;
+use crate::sim::superweapon::{super_nearly_ready, super_types_with_type};
 use crate::sim::team_script_vm::{
     TeamAiTriggerDefinition, TeamAiTriggerOwner, TeamMemberTypeIdentity, TeamTypeDefinition,
 };
 use crate::sim::timer::CdTimer;
 use crate::sim::world::Simulation;
-use crate::util::native_x87::{NativeF32Bits, X87Chop53, X87Ordering};
+use crate::util::native_x87::X87Chop53;
 
 /// The AI trigger weight that takes precedence (`0x006F0C72`): once one
 /// qualifies, only triggers of this weight compete.
 const PRIORITY_WEIGHT: i32 = 5000;
-
-/// `1.0f` (`[0x007E2AC8]`).
-const ONE_F32: NativeF32Bits = NativeF32Bits::from_bits(0x3F80_0000);
 
 /// A house's team creation state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -551,55 +548,17 @@ fn civilian_house(sim: &Simulation, rules: &RuleSet) -> Option<InternedId> {
 }
 
 /// `0x0041F0D0` (Iron Curtain) and `0x0041F180` (Chronosphere): the house's
-/// first super weapon of `kind`, in `[SuperWeaponTypes]` order, is granted
-/// (`+0x6D`) and, in PC53/chop, its remaining charge over its recharge time
-/// is not above `1.0f - [General] AIMinorSuperReadyPercent=` (`FCOMPP`,
-/// `TEST AH,0x1`, so an unordered compare fails it).
+/// first super weapon of `kind`, in `[SuperWeaponTypes]` order, is
+/// [`super_nearly_ready`].
 fn super_weapon_nearly_ready(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
     kind: SuperWeaponKind,
 ) -> bool {
-    let Some(type_name) = rules
-        .super_weapon_order
-        .iter()
-        .find(|id| rules.super_weapon(id).is_some_and(|sw| sw.kind == kind))
-    else {
-        return false;
-    };
-    let Some(instance) = sim.interner.get(type_name).and_then(|type_id| {
-        sim.super_weapons
-            .get(&owner)
-            .and_then(|weapons| weapons.get(&type_id))
-    }) else {
-        return false;
-    };
-    if !instance.is_active {
-        return false;
-    }
-    let remaining = instance.charge_remaining(sim.session.binary_frame as i32);
-    let recharge = rules
-        .super_weapon(type_name)
-        .map_or(0, |sw| sw.recharge_time_frames);
-    charge_nearly_full(
-        remaining,
-        recharge,
-        rules.general.ai_minor_super_ready_percent,
-    )
-}
-
-/// `0x0041F148..0x0041F167`: in PC53/chop, `remaining / recharge` is not
-/// above `1.0f - percent` (`FCOMPP`, `TEST AH,0x1`); a zero recharge gives
-/// +inf or NaN, which fail, or -inf, which passes.
-pub(crate) fn charge_nearly_full(remaining: i32, recharge: i32, percent: NativeF32Bits) -> bool {
-    type X = X87Chop53;
-    let Ok(ratio) = X::div(X::load_i32(remaining), X::load_i32(recharge)) else {
-        return remaining < 0;
-    };
-    let percent = X::load_f32(percent).expect("AIMinorSuperReadyPercent is finite");
-    let threshold = X::sub(X::load_f32(ONE_F32).expect("1.0f is finite"), percent);
-    X::compare(threshold, ratio) != X87Ordering::Less
+    super_types_with_type(rules, kind.native_index())
+        .next()
+        .is_some_and(|type_name| super_nearly_ready(sim, rules, owner, type_name))
 }
 
 /// `0x0041FEE0` for TeamType `team_type`: with `+0xF0` and an enemy, the

@@ -16,7 +16,10 @@ fn cached_ini(sections: &Value) -> IniFile {
 }
 
 fn scalar_corpus() -> Value {
-    serde_json::from_str(include_str!("../../tools/rules_oracle/weapon_speed.json")).unwrap()
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/weapon_speed.json",
+    ))
+    .unwrap()
 }
 
 #[test]
@@ -58,8 +61,8 @@ fn retained_weapon_speed_matches_original_reader_controls() {
 #[test]
 fn full_process_speed_uses_prior_gravity_across_absent_sections_and_owner_handoff() {
     use crate::sim::projectile::launch::{LaunchSpeedProjectile, weapon_launch_speed};
-    let native: Value = serde_json::from_str(include_str!(
-        "../../tools/rules_oracle/weapon_speed_order.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/weapon_speed_order.json",
     ))
     .unwrap();
     let mut first_pass_hashes = Vec::new();

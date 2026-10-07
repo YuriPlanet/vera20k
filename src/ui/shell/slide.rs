@@ -815,8 +815,8 @@ mod tests {
     /// (`tools/storage_oracle/shell_slide_engine.py`).
     #[test]
     fn column_schedule_matches_the_executed_slide_engine() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/shell_slide_engine.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/shell_slide_engine.json",
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();

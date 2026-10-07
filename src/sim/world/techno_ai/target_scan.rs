@@ -165,9 +165,7 @@ pub(super) fn scan(
 /// - only once the targeting timer has run out (a stopped timer counts as
 ///   run out only with a zero duration);
 /// - only on Move (2), Harvest (10) or Guard (5);
-/// - only through [`passive_acquire_gate`];
-/// - then `+0x4FC = Frame`, the scan with mask 1, and `+0x50C = 1` when the
-///   scan holds a target that differs from the one before it (`0x006FA6EE`).
+/// - then [`passive_target_acquire`]'s body, which the block inlines.
 ///
 /// RESIDUALS:
 /// - The attack-move divert (`vt+0x4C4`: a saved mission `+0x5C4 == 0x1D`,
@@ -198,11 +196,36 @@ pub(super) fn passive_acquire_step(
     ) {
         return;
     }
+    passive_target_acquire(sim, id, rules, ctx);
+}
+
+/// `TechnoClass::Passive_Target_Acquire @ 0x00709480`: false unless
+/// [`passive_acquire_gate`] passes (it reads the current mission itself);
+/// then `+0x4FC = Frame`, the scan with mask 1, and `+0x50C = 1` when the scan
+/// holds a target that differs from the one before it (`0x007094C8`).
+/// Answers whether the scan holds a target. TeleportLocomotionClass's
+/// TimerCheck (`0x00719C31`) calls it; AI_Update's passive block inlines the
+/// same body.
+pub(crate) fn passive_target_acquire(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    ctx: ObjectAiCtx<'_>,
+) -> bool {
+    let Some(mission) = sim
+        .substrate
+        .entities
+        .get(id)
+        .map(|entity| entity.passive_acquire_mission())
+    else {
+        return false;
+    };
     if !passive_acquire_gate(sim, id, rules, mission) {
-        return;
+        return false;
     }
+    let now = sim.session.binary_frame;
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
-        return;
+        return false;
     };
     entity.last_target_scan_frame = now;
     let before = entity.attack_target.as_ref().map(|attack| attack.target);
@@ -213,6 +236,7 @@ pub(super) fn passive_acquire_step(
     {
         entity.passively_acquired_target = true;
     }
+    held
 }
 
 /// `TechnoClass::PassiveAcquireGate @ 0x00709290`, in native order:
@@ -612,7 +636,12 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     }
 
     fn clear_spawn_targets(&mut self) {
-        crate::sim::spawn_manager::clear_all_spawn_targets(self.sim, self.id);
+        crate::sim::spawn_manager::clear_all_spawn_targets(
+            self.sim,
+            self.id,
+            Some(self.rules),
+            None,
+        );
     }
 
     fn assign_target(&mut self, target: Option<TargetKind>) {
@@ -735,8 +764,9 @@ impl Simulation {
     }
 }
 
-/// A team leader's `Greatest_Threat` for script action 0 (`0x006ED15E`):
-/// its `+0x3C4` override with the quarry's mask, directly.
+/// A team leader's `Greatest_Threat` for script actions 0 and 57
+/// (`0x006ED15E`, `0x006F0253`): its `+0x3C4` override with the quarry's
+/// mask, directly.
 pub(crate) fn team_leader_greatest_threat(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -907,8 +937,8 @@ mod tests {
     /// target, passive flag, last-scan frame, timer and estimates.
     #[test]
     fn retaliate_and_scan_matches_the_original() {
-        let rows: Vec<Value> = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/techno_target_scan.json"
+        let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/techno_target_scan.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 171);
@@ -1000,8 +1030,8 @@ mod tests {
         use crate::sim::game_entity::GameEntity;
         use crate::sim::house_state::HouseState;
 
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/passive_acquire_gate.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/passive_acquire_gate.json",
         ))
         .expect("corpus parses");
         let native_only = |input: &Value| {

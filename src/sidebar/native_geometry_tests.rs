@@ -81,8 +81,10 @@ fn view(screen: [i32; 2], side: usize, count: usize, scroll: usize) -> SidebarVi
 }
 #[test]
 fn native_21_screen_and_theme_layouts_drive_actual_view() {
-    let packet: LayoutPacket =
-        serde_json::from_str(include_str!("../../tools/sidebar_oracle/geometry.json")).unwrap();
+    let packet: LayoutPacket = serde_json::from_str(crate::test_fixture::text(
+        "tools/sidebar_oracle/geometry.json",
+    ))
+    .unwrap();
     assert_eq!(packet.cases.len(), 21);
     for c in packet.cases {
         let v = view(c.screen, c.side, 100, 0);
@@ -148,8 +150,10 @@ fn native_21_screen_and_theme_layouts_drive_actual_view() {
 }
 #[test]
 fn native_126_scroll_cases_drive_both_disabled_frames() {
-    let packet: ScrollPacket =
-        serde_json::from_str(include_str!("../../tools/sidebar_oracle/scroll.json")).unwrap();
+    let packet: ScrollPacket = serde_json::from_str(crate::test_fixture::text(
+        "tools/sidebar_oracle/scroll.json",
+    ))
+    .unwrap();
     assert_eq!(packet.cases.len(), 126);
     for c in packet.cases {
         let v = view(c.screen, c.side, c.count, usize::MAX);

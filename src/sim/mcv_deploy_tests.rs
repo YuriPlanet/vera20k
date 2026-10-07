@@ -251,7 +251,7 @@ fn pending_turn_roundtrips_through_save_and_hashes_its_latches() {
 #[test]
 fn facing_matches_original_drive_oracle() {
     let vectors: serde_json::Value =
-        serde_json::from_str(include_str!("../../tools/mcv_deploy_oracle.json")).unwrap();
+        serde_json::from_str(crate::test_fixture::text("tools/mcv_deploy_oracle.json")).unwrap();
     for row in vectors["turns"].as_array().unwrap() {
         let rate = row["rate"].as_u64().unwrap() as u16;
         if rate % 256 != 0 {
@@ -365,7 +365,7 @@ fn move_order_during_turn_prevents_conversion_at_the_old_site() {
 #[test]
 fn continuation_result_and_rotation_edge_match_original_blocks() {
     let v: serde_json::Value =
-        serde_json::from_str(include_str!("../../tools/mcv_deploy_oracle.json")).unwrap();
+        serde_json::from_str(crate::test_fixture::text("tools/mcv_deploy_oracle.json")).unwrap();
     for row in v["mission_branches"].as_array().unwrap() {
         let kind = row["kind"].as_str().unwrap();
         if kind == "state0" {
@@ -694,7 +694,7 @@ fn yard_cells(sim: &Simulation) -> Vec<(u16, u16)> {
 #[test]
 fn try_to_deploy_sites_match_the_original_table() {
     let vectors: serde_json::Value =
-        serde_json::from_str(include_str!("../../tools/mcv_deploy_oracle.json")).unwrap();
+        serde_json::from_str(crate::test_fixture::text("tools/mcv_deploy_oracle.json")).unwrap();
     let native: Vec<(i16, i16)> = vectors["try_to_deploy_sites"]
         .as_array()
         .unwrap()

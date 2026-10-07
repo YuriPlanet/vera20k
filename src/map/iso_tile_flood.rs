@@ -174,8 +174,8 @@ mod tests {
 
     #[test]
     fn connected_tile_replacement_matches_original_control_flow() {
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/iso_tile_flood.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/iso_tile_flood.json",
         ))
         .unwrap();
         for case in corpus["cases"].as_array().unwrap() {

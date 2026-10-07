@@ -116,8 +116,8 @@ fn commandable_movers() -> (Simulation, crate::sim::intern::InternedId, [u64; 2]
 /// same containing world pixel and carry the native cell through ordinary Move.
 #[test]
 fn native_bridge_destinations_survive_camera_zoom_and_ordinary_move_records() {
-    let fixtures: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/bridge_click_oracle/vectors.json"
+    let fixtures: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/bridge_click_oracle/vectors.json",
     ))
     .expect("native bridge inverse fixture JSON");
     let (mut sim, owner, movers) = commandable_movers();

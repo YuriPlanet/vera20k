@@ -60,8 +60,8 @@ pub(crate) fn rows() -> Vec<Row> {
     struct Corpus {
         rows: Vec<Row>,
     }
-    let corpus: Corpus = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/health_ratio_predicates.json"
+    let corpus: Corpus = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/health_ratio_predicates.json",
     ))
     .expect("original health ratio caller corpus");
     assert_eq!(corpus.rows.len(), 103);

@@ -343,7 +343,6 @@ pub(crate) fn tick_combat_with_fog(
         &[],
         &[],
         radiation,
-        &[],
         scenario_rng,
         &mut unused_main_rng,
         None,
@@ -373,7 +372,6 @@ pub(crate) fn tick_combat_with_fog_and_main_rng(
     projectile_detonations: &[ProjectileDetonation],
     wave_damage_events: &[WaveDamageEvent],
     radiation: Option<&mut crate::sim::radiation::RadiationState>,
-    missile_detonations: &[crate::sim::spawn_manager::MissileDetonation],
     scenario_rng: &mut SimRng,
     main_rng: &mut SimRng,
     inline_hooks: Option<&mut FixtureTrace>,
@@ -405,7 +403,6 @@ pub(crate) fn tick_combat_with_fog_and_main_rng(
         projectile_detonations,
         wave_damage_events,
         radiation,
-        missile_detonations,
         scenario_rng,
         main_rng,
         inline_hooks,
@@ -723,7 +720,6 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
     projectile_detonations: &[ProjectileDetonation],
     wave_damage_events: &[WaveDamageEvent],
     radiation: Option<&mut crate::sim::radiation::RadiationState>,
-    missile_detonations: &[crate::sim::spawn_manager::MissileDetonation],
     scenario_rng: &mut SimRng,
     main_rng: &mut SimRng,
     inline_hooks: Option<&mut FixtureTrace>,
@@ -762,7 +758,6 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                 .unwrap()
                 .require_playfield_membership = require_playfield_membership;
             world.active_wave_links = active_wave_owners.iter().map(|&owner| (owner, 0)).collect();
-            world.pending_missile_detonations = missile_detonations.to_vec();
             if let Some(radiation) = radiation.as_deref() {
                 world.radiation = radiation.clone();
             }

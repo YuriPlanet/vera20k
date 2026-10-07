@@ -36,15 +36,14 @@ use crate::sim::world::SimSoundEvent;
 use serde_json::Value;
 
 /// Rows whose native prestate or path VERA does not represent:
-/// - `latch_27c`, `lifted_2b0`: Techno+0x27C (the Chronosphere's transit
-///   latch) and +0x2B0 (a lifted owner) have no Rust producer and read clear.
+/// - `lifted_2b0`: +0x2B0 (a lifted owner) has no Rust producer and reads
+///   clear.
 /// - `pad_cannot_enter*`: Teleport Move_To's destination resolution
 ///   (`0x00718B70`) — the Can_Enter_Cell refusal of a cell whose occupy bit
 ///   is set with no Unit in its list, and the nearby-cell fallback.
 /// - `move_to_guard_deploying`: Move_To's `vt+0x37C` (the EMP lock or the
 ///   Unit death-frame counter +0x6D8), unrepresented as for the Drive.
-const UNREPRESENTED: [&str; 5] = [
-    "latch_27c",
+const UNREPRESENTED: [&str; 4] = [
     "lifted_2b0",
     "pad_cannot_enter",
     "pad_cannot_enter_no_cell",
@@ -61,7 +60,10 @@ pub(super) const CMIN: &str = "[CMIN]\nStrength=400\nSpeed=4\nROT=5\nHarvester=y
     Locomotor={4A582747-9839-11D1-B709-00A024DDAFD1}\n";
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!("../../../tools/spatial_oracle/cmin_dock.json")).unwrap()
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/cmin_dock.json",
+    ))
+    .unwrap()
 }
 
 fn skipped(row: &Value) -> bool {
@@ -215,6 +217,21 @@ pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
     }
     if input["warp_out"] == true {
         entity.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(s.other);
+    }
+    if input["latch_27c"] == true {
+        // Techno+0x27C, which only the Chronosphere's warp writes in VERA:
+        // its payload on the active Teleport.
+        let house = entity.owner();
+        entity
+            .locomotor
+            .as_mut()
+            .and_then(|locomotor| locomotor.teleport_runtime_mut())
+            .expect("latched miner on its Teleport")
+            .arm_chrono(crate::sim::movement::teleport_movement::ChronoWarp::new(
+                DriveCoord { x: 0, y: 0, z: 0 },
+                house,
+                frame,
+            ));
     }
     if input["warp_in"] == true {
         entity.install_teleport_state_for_test(Some(TeleportState::for_test(
@@ -409,6 +426,18 @@ fn unit_setter_teleporter_arm_matches_the_original_assign_destination() {
         }
         compare_swap(before, &s, row["events"].as_array().unwrap(), &context);
         compare_cmin(&s, &row["state"], &context);
+        if input["latch_27c"] == true {
+            // The latched resolver's raw PUTs: Marked as it stood (the null
+            // coordinate's cell) and Location.
+            for reserved in row["state"]["reserved"].as_array().unwrap() {
+                let (x, y) = cell(reserved);
+                assert_ne!(
+                    s.sim.substrate.raw_cell_occupation.ground_bits(x, y) & 0x20,
+                    0,
+                    "{context}: raw PUT at ({x}, {y})"
+                );
+            }
+        }
     }
 }
 

@@ -12,10 +12,9 @@ impl OrdinaryRepairHost for Host {
 
 #[test]
 fn ordinary_repair_matches_original_overlay_and_callback_corpus() {
-    let corpus: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/bridge_ordinary_repair.json"
-    )))
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_ordinary_repair.json",
+    ))
     .unwrap();
     for case in corpus["cases"].as_array().unwrap() {
         let input = &case["input"];

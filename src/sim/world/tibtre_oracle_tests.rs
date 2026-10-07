@@ -14,7 +14,10 @@ use crate::util::native_x87::NativeF32Bits;
 use serde_json::{Value, json};
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!("../../../tools/spatial_oracle/tibtre.json")).unwrap()
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/tibtre.json",
+    ))
+    .unwrap()
 }
 
 fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {

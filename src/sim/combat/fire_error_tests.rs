@@ -480,8 +480,8 @@ impl FireQuery for RowQuery<'_> {
 /// own slots, so it is left out of the comparison.
 #[test]
 fn original_fire_error_rows() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/fire_error.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fire_error.json",
     ))
     .unwrap();
     let rows = corpus["rows"].as_array().unwrap();

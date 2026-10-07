@@ -13,6 +13,7 @@ use crate::render::palette_light::PaletteLight;
 use crate::render::sprite_atlas::SpriteAtlas;
 use crate::render::tactical_draw_plan::{RenderZPolicy, SpriteEncoding};
 use crate::render::terrain_draw::TerrainPiece;
+use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::projectile_type::ProjectileType;
 use crate::sim::projectile::{Projectile, ProjectileCoord, projectile_shp_frame};
 use crate::util::lepton::{absolute_leptons_to_screen, ground_height_leptons};
@@ -96,6 +97,12 @@ pub(crate) fn build_projectile_visual_instances(
     let width = width as f32 / input.zoom_level;
     let height = height as f32 / input.zoom_level;
     let axis = super::helpers::depth_axis(state);
+    // Bullet468090's FirersPalette arm (`0x004683A1..0x004683D1`): the
+    // retained +114 House's scheme, else the local player's.
+    let house_colors = &state.match_state.match_presentation.house_color_map;
+    let local_scheme = crate::app::input::commands::preferred_local_owner_name(state)
+        .and_then(|owner| house_colors.get(&owner).copied())
+        .unwrap_or(crate::rules::house_colors::NO_REMAP);
     for (_, projectile) in sim.projectiles.iter() {
         let Some(type_id) = rules
             .weapon(sim.interner.resolve(projectile.payload.weapon))
@@ -106,10 +113,15 @@ pub(crate) fn build_projectile_visual_instances(
         let Some(kind) = rules.projectile(type_id) else {
             continue;
         };
+        let scheme = projectile
+            .firer_house()
+            .and_then(|house| house_colors.get(sim.interner.resolve(house)).copied())
+            .unwrap_or(local_scheme);
         if let Some(object) = projectile_draw_instance(
             projectile,
             kind,
             type_id,
+            scheme,
             atlas,
             terrain,
             [input.camera_x, input.camera_y],
@@ -129,6 +141,7 @@ pub(crate) fn projectile_draw_instance(
     projectile: &Projectile,
     kind: &ProjectileType,
     type_id: &str,
+    scheme: HouseColorIndex,
     atlas: &SpriteAtlas,
     terrain: &ResolvedTerrainGrid,
     camera: [f32; 2],
@@ -141,9 +154,7 @@ pub(crate) fn projectile_draw_instance(
         return None;
     }
     let frame = u16::from(projectile_shp_frame(projectile, kind));
-    let Some(entry) = atlas.projectile_sprite(type_id, kind, frame, None) else {
-        return None;
-    };
+    let entry = atlas.projectile_sprite(type_id, kind, frame, scheme)?;
     let (ground_z, structural) = ground_probe(terrain, projectile.position);
     let geometry = geometry(
         projectile.position,

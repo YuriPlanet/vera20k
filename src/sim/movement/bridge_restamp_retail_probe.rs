@@ -102,8 +102,8 @@ fn retail_inactive_high_record_restamp_inventory() {
             }))})
         }).collect();
         if map_name.eq_ignore_ascii_case("Deadman.mmx") {
-            let native: serde_json::Value = serde_json::from_str(include_str!(
-                "../../../tools/spatial_oracle/bridge_restamp_retail.json"
+            let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+                "tools/spatial_oracle/bridge_restamp_retail.json",
             ))
             .unwrap();
             for change in native["changes"].as_array().unwrap() {

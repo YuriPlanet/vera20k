@@ -48,8 +48,8 @@ fn retail_docking_inputs_match_original_readers_and_installed_art() {
         // asset-free CI retains the repository's usual optional retail gate.
         return;
     };
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/refinery_dock.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/refinery_dock.json",
     ))
     .unwrap();
     let input = &corpus["retail_inputs"];

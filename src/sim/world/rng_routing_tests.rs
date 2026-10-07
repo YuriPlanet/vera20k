@@ -10,8 +10,6 @@ use crate::sim::rng::SimRng;
 use crate::sim::snapshot::GameSnapshot;
 
 const RNG_INDEX_B_START: i32 = 0x67;
-const NATIVE_MAPGEN_SEED0_HEX: &str =
-    include_str!("../../../tests/fixtures/rng/mapgen_seed0_native_0x3f4.hex");
 
 fn hex_nibble(byte: u8) -> Option<u8> {
     match byte {
@@ -421,7 +419,9 @@ fn production_in_scenario_load_retains_live_seed_main_and_mapgen() {
 fn mapgen_fresh_state_matches_native_seed_zero_full_object() {
     let sim = Simulation::with_seed(0xDEAD_BEEF);
     let mapgen = sim.rng_views().mapgen;
-    let raw = decode_hex_fixture(NATIVE_MAPGEN_SEED0_HEX);
+    let raw = decode_hex_fixture(crate::test_fixture::text(
+        "tests/fixtures/rng/mapgen_seed0_native_0x3f4.hex",
+    ));
 
     assert_eq!(raw.len(), 0x3F4, "native fixture must be one RNG object");
     assert_eq!(

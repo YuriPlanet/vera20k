@@ -147,8 +147,8 @@ mod tests {
     /// through [`get_rof`] from the same seed.
     #[test]
     fn get_rof_matches_the_original() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/techno_rearm.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/techno_rearm.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 535);

@@ -294,8 +294,8 @@ mod tests {
     use super::*;
     #[test]
     fn ordinary_a3_rectangles_match_original_60b7a0_execution() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/keyboard_shell_layout.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/keyboard_shell_layout.json",
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();

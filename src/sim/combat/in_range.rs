@@ -899,8 +899,8 @@ mod tests {
 
     #[test]
     fn retained_cell_range_matches_original_geometry_and_query_order() {
-        let rows: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/walk_cell_range.json"
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/walk_cell_range.json",
         ))
         .unwrap();
         let mut rules = rules_with_weapon(

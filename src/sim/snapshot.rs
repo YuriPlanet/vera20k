@@ -830,7 +830,22 @@ use crate::sim::world::Simulation;
 // These Cells affect synchronous Jumpjet callbacks and lockstep continuation;
 // neither can be reconstructed from position, phase or Cell+E0. Prior bincode
 // records lack the Cells and cannot resume the callback chain.
-const SNAPSHOT_VERSION: u32 = 290;
+// 290 -> 291: the nuclear missile saves Anim+17C/+180 (attached Bullet, owner
+// House), Building+5F8 (the Super a Missile mission fires), the House's
+// NukeTarget, PreferredDefensiveCell and its frame, and Bullet+114 (the
+// FirersPalette House). Prior records lack them.
+// 291 -> 292: the Chronosphere's Super saves its source cell and placement
+// anim (+0x62/+0x68) and the Teleport its Chronosphere warp state (both
+// added without a bump at 291); the Psychic Dominator's globals, the
+// Techno's permanent-control byte (+0x2C4) and the map's Dominator lighting
+// profile are added. Prior records lack them.
+// 292 -> 293: the Rocket locomotor saves its native object (destination, both
+// timers, mission state, speed, latch, elite byte, pitch and cruise start
+// distance) in its payload; the entity's rocket phase machine is removed; the
+// kamikaze tracker saves its nodes.
+// 293 -> 294: the Iron Curtain's state saves the Techno's tint stage (+0x1A4)
+// and its timer (+0x198). Prior records lack them.
+const SNAPSHOT_VERSION: u32 = 294;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -2207,6 +2222,8 @@ impl Simulation {
         self.rebuild_logic_membership();
         self.rebuild_building_anim_slot_indices();
         self.rebuild_bomb_carriers();
+        // The kamikaze tracker's Load (`0x0054E7B0`) follows its Clear.
+        self.kamikaze.restart_after_load(self.session.binary_frame);
         self.substrate
             .occupancy
             .restore_memberships(&self.substrate.entities)
@@ -3834,7 +3851,14 @@ mod tests {
         // 287 -> 288: complete Drive/Ship instance-owned retained state.
         // 288 -> 289: Factory publication and shared Foot idle latch.
         // 289 -> 290: independent Foot air tracker/slot Cells and callbacks.
-        assert_eq!(super::SNAPSHOT_VERSION, 290);
+        // 290 -> 291: the nuclear missile's Anim, Building, House and Bullet
+        // fields.
+        // 291 -> 292: the Chronosphere's Super and Teleport state, the Psychic
+        // Dominator's globals, permanent control and Dominator lighting.
+        // 292 -> 293: the native Rocket locomotor object; no rocket phase
+        // machine; the kamikaze tracker's nodes.
+        // 293 -> 294: the Iron Curtain's tint stage and timer.
+        assert_eq!(super::SNAPSHOT_VERSION, 294);
     }
 
     #[test]

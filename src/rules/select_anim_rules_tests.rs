@@ -26,8 +26,8 @@ fn names(values: &Value) -> Vec<String> {
 
 #[test]
 fn select_anim_inputs_match_native_retained_passes() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../tools/rules_oracle/select_anim_inputs.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/select_anim_inputs.json",
     ))
     .unwrap();
     let rows = native["rows"].as_array().unwrap();
@@ -96,8 +96,8 @@ fn select_anim_inputs_match_native_retained_passes() {
 
 #[test]
 fn type_reset_clears_retired_references_then_rebuilds_native_physical_bindings() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../tools/rules_oracle/select_anim_reset.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/select_anim_reset.json",
     ))
     .unwrap();
     let selected = &native["physical_reread"];

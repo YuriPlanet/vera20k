@@ -45,8 +45,8 @@ fn check(sprite: &VxlSprite, case: &Value, label: &str) {
 
 #[test]
 fn native_generated_shadow_geometry_and_body_mask() {
-    let fixture: Value = serde_json::from_str(include_str!(
-        "../../tools/voxel_oracle/shadow_fixtures.json"
+    let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/shadow_fixtures.json",
     ))
     .unwrap();
     let vxl = VxlFile::from_bytes(&bytes(fixture["vxl"].as_str().unwrap())).unwrap();

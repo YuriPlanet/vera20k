@@ -84,8 +84,8 @@ fn aircraft_release_control_matches_316_original_mission_suffixes() {
     // Native witness replaces FireAt with a NULL-return callback. Here actual
     // shared emission runs; only loop count, pending ammo and suffix are parity
     // assertions. Projectile math and GetROF are outside that native witness.
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/aircraft_attack_release.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_attack_release.json",
     ))
     .unwrap();
     let rows = corpus["releases"].as_array().unwrap();

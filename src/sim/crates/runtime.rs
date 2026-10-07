@@ -256,8 +256,8 @@ mod tests {
     fn pickup_removal_matches_original_cell_pickup_outputs() {
         // Compare only rows that reach Map56C020; guard/selection/effect
         // coverage belongs to the complete pickup dispatcher, not this owner.
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/crate_pickup.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/crate_pickup.json",
         ))
         .unwrap();
         let mut compared = 0;

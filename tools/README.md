@@ -27,6 +27,7 @@ points; the exhaustive oracle/tool inventory remains tracked in issue #746.
 | Compare empty-IFV bridge pursuit, missiles, collapse, Stop and restoration | [conditional native continuation and input provenance](spatial_oracle/fv_cell_attack/README.md) |
 | Read/disassemble native VAs; scan callers, fields and bytes | [native inspection](native_inspect.md), `python -m tools.native_inspect` |
 | Compare Ghidra decompiles, callers and native stack frames | [Ghidra comparisons](ghidra_compare.md), `python -m tools.ghidra_compare` |
+| Replay a recorded annotation pass onto another copy of the Ghidra database | [Ghidra annotation passes](ghidra_pass.md), `ApplyGhidraPass.java` |
 | Reproduce Foot coordinates and bridge source-layer / reachability queries | [checked Foot bridge-layer oracle](spatial_oracle/foot_bridge_layer.md) |
 | Run pinned native executable comparisons | [native oracle runner](native_oracle.md) |
 | Preserve failed native execution context and diagnose timeouts | [native failure reports](native_oracle.md#investigating-a-failed-native-run) |
@@ -56,7 +57,8 @@ python -m unittest tools.tests.test_cargo_run -v
 `--wait-seconds 60` bounds the wait (default one hour). Ctrl-C interrupts the
 runner. It does not kill other owners. Failed commands retain their exit code,
 produce no label and leave compiler diagnostics visible. Source edits during a
-run fail validation even if Cargo succeeds.
+run fail validation even if Cargo succeeds: labelled builds compare file
+contents, other runs compare sizes and timestamps.
 
 One kernel lock in the shared Git directory serializes cooperating worktrees.
 The runner also waits for any observed `cargo` or `rustc` process on this host.
@@ -80,8 +82,9 @@ The printed directory's `manifest.json` gives the executable filenames, SHA-256s
 checkout, commit, dirty status, combined tracked/nonignored source hash, command,
 Cargo/Rust versions and common build environment overrides. Labels cannot be
 replaced. This supports builds of selected binaries and `test --lib --no-run`;
-labels are not attached to checks or executed tests. Run a preserved test binary
-from its checkout so relative fixtures still resolve.
+labels are not attached to checks or executed tests. A preserved test binary reads
+its fixtures from the checkout that built it when it runs (`src/test_fixture.rs`),
+so run it from that checkout while it still matches the manifest's source hash.
 
 The manifest identifies source and executable bytes; it is **not** a hermetic
 reproducibility claim. Ignored/local retail inputs, external dependencies, Cargo
@@ -90,12 +93,24 @@ Capture and native-oracle tools retain responsibility for their own input eviden
 Debug-symbol sidecars are not copied. Retention preserves required debug objects
 and sidecars; keep the source checkout when debugging a preserved binary.
 
-Cargo runs automatically check retention before and after compiling (also after
-failed builds), under the same build lock. Defaults are **32 GiB total compiler
+Cargo runs check retention automatically, under the same build lock. A retention
+pass inventories every registered cache, which takes seconds and grows with each
+worktree, so the runner starts one only when it can matter:
+
+- **Before compiling**, when the target volume is below the minimum free space
+  (labelled builds also measure the saved-artifact volume).
+- **After compiling**, also after failed builds, at most once every 30 minutes
+  (`AUTOMATIC_INTERVAL_SECONDS`), or at once when a volume is below the minimum
+  or cannot be measured. Any applied pass counts, including one that ended
+  blocked or partial; a dry run does not. `--trim-cache` always runs one.
+
+Between passes the cache can exceed its budgets; the free-space reserve is still
+measured on every invocation. Defaults are **32 GiB total compiler
 cache**, **4 GiB incremental cache**, and **16 GiB minimum free space** per cache
 volume. Set `VERA20K_CACHE_GIB`, `VERA20K_INCREMENTAL_GIB`, and
 `VERA20K_MIN_FREE_GIB`, or pass `--cache-gib`, `--incremental-gib`, and
-`--min-free-gib` before `--`. Sizes accept finite nonnegative decimal GiB.
+`--min-free-gib` before `--`; they set the policy the next pass applies. Sizes
+accept finite nonnegative decimal GiB.
 Cache budgets are soft when protected files prevent reclaiming enough space.
 The minimum free-space target also controls build admission: after cleanup, the
 runner measures the target volume again and blocks Cargo below that target.
@@ -103,8 +118,8 @@ Labelled builds also check the saved-artifact volume. Measurement failure blocks
 the build; it never permits unsafe deletion. This reserve cannot predict the
 peak size of a future build or prevent unrelated applications consuming space.
 
-Before a large build, check the runner’s free-space result. If its minimum
-free-space target remains unmet, resolve the owned retention pressure before
+Before a large build, check the free-space result of `--trim-cache --dry-run`. If
+its minimum free-space target remains unmet, resolve the owned retention pressure before
 starting another large build; preserve required files and report any remaining
 shortfall. The runner enforces the free-space admission check for every Cargo
 invocation using the configured target, including checks and unlabelled builds.

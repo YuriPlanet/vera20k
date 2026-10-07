@@ -1092,8 +1092,8 @@ fn area_guard_nulls_the_walk_destination() {
 fn walk_null_setter_matches_original_caller_rows() {
     use crate::sim::components::{DriveCoord, FootPathQueue, MovementTarget, NavTargetRef};
     use crate::sim::mission::{MissionDispatchTimer, MissionId, state::MissionTestFixture};
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/walk_percell_stop.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/walk_percell_stop.json",
     ))
     .unwrap();
     for row in corpus

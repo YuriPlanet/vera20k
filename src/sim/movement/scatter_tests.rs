@@ -29,8 +29,8 @@ fn with_mission(actor: &GameEntity, mission: MissionType) -> GameEntity {
 /// them to the flags). A refusal draws no RNG and writes nothing.
 #[test]
 fn unit_refusals_match_native_and_leave_orders_and_rng_untouched() {
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/unit_scatter_state.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_scatter_state.json",
     ))
     .unwrap();
     let rules = no_rules();
@@ -296,8 +296,8 @@ fn scatter_eligibility_defaults_are_the_rules_constructor_values() {
 #[test]
 fn cell_scatter_dispatch_matches_original_execution() {
     use crate::rules::ini_parser::IniFile;
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/cell_scatter.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/cell_scatter.json",
     ))
     .unwrap();
     let mut checked = 0;
@@ -518,8 +518,8 @@ fn unit_null_arm_moves_hover_and_jumpjet_units() {
 #[test]
 fn unit_null_arm_matches_original_execution() {
     use crate::rules::ini_parser::IniFile;
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/unit_null_scatter.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_null_scatter.json",
     ))
     .unwrap();
     let rules = RuleSet::from_ini(&IniFile::from_str(

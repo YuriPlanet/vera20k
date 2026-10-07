@@ -21,8 +21,8 @@ use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};
 
 fn packet() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/engineer_bridge_cursor_caller.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/engineer_bridge_cursor_caller.json",
     ))
     .unwrap()
 }
@@ -266,9 +266,7 @@ fn probe_healthy_hut(
 fn record_receipt(map: &str, stages: Vec<Value>, orders: Vec<Value>) {
     let receipt = json!({
         "schema": "vera20k.retail-hut-input-composition.v1", "map": map,
-        "native_packet_sha256": crate::util::sha256::sha256_hex(include_bytes!(
-            "../../../tools/spatial_oracle/engineer_bridge_cursor_caller.json"
-        )),
+        "native_packet_sha256": crate::util::sha256::sha256_hex(crate::test_fixture::bytes("tools/spatial_oracle/engineer_bridge_cursor_caller.json")),
         "fixture_tick_ms": crate::headless_scenario::SIM_TICK_MS,
         "stages": stages, "orders": orders,
         "limits": [

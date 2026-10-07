@@ -121,8 +121,8 @@ fn retained(value: &Value) -> Option<DriveCoord> {
 
 #[test]
 fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/walk_completion.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/walk_completion.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 42);
@@ -279,8 +279,8 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
 
 #[test]
 fn paid_walk_world_scold_tails_match_original_boundaries() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_scold_latch.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_scold_latch.json",
     ))
     .unwrap();
     let mut checked = 0;

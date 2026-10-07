@@ -1,6 +1,7 @@
 {
   "all_to_hunt": [
     {
+      "c4_warhead": 12895428,
       "events": [
         [
           "damage",
@@ -195,6 +196,7 @@
       ]
     },
     {
+      "c4_warhead": 12895428,
       "events": [
         [
           "release",
@@ -379,6 +381,7 @@
       ]
     },
     {
+      "c4_warhead": 12895428,
       "events": [],
       "human": false,
       "label": "empty",
@@ -387,6 +390,7 @@
       "technos": []
     },
     {
+      "c4_warhead": 12895428,
       "events": [],
       "human": false,
       "label": "only_foreign",

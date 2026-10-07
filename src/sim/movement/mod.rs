@@ -135,6 +135,7 @@ pub mod locomotion;
 pub mod locomotor;
 pub mod parachute_descent;
 pub mod rocket_movement;
+mod teleport_chrono;
 pub mod teleport_movement;
 pub mod tube_movement;
 pub mod turret;

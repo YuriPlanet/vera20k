@@ -180,6 +180,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .match_presentation
         .line_trails
         .clear_on_load();
+    state
+        .match_state
+        .match_presentation
+        .hidden_super_anims
+        .clear();
     // A new simulation is a new scenario for `SidebarClass::AddCameo`'s
     // init gate: its first projection must seed the strip silently.
     state

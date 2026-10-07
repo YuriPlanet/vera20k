@@ -38,8 +38,8 @@ pub(super) const CODES: [FireError; 12] = [
 ];
 
 fn golden() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/building_guard_attack.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_guard_attack.json",
     ))
     .unwrap()
 }

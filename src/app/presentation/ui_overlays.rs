@@ -1438,8 +1438,8 @@ mod tests {
     /// DrawExtras picks over every stored game speed.
     #[test]
     fn the_repair_wrench_frame_matches_the_original() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/building_repair.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_repair.json",
         ))
         .unwrap();
         let mut compared = 0;

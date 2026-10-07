@@ -11,8 +11,8 @@ use crate::sim::world::Simulation;
 use serde_json::Value;
 
 fn capture_accounting_corpus() -> Value {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/engineer_capture_accounting.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/engineer_capture_accounting.json",
     ))
     .unwrap();
     assert_eq!(corpus["schema_version"], 1);
@@ -281,8 +281,8 @@ fn native_totals(fields: &Value) -> MatchStatistics {
 #[test]
 fn native_house_statistics_survive_snapshot_and_retained_ship_terminal_record() {
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/naval_house_stats.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/naval_house_stats.json",
     ))
     .unwrap();
     let rows = corpus["cases"].as_array().unwrap();

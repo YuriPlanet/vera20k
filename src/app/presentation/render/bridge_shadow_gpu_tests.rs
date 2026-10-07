@@ -14,8 +14,8 @@ fn bridge_shadow_submission_matches_native_color_depth_and_repeat() {
     // 0047F510 flags 0x4601 select Convert +0x114 -> 00497390, the
     // already-executed Terrain shadow leaf. Reuse its original-instruction
     // corpus; do not calculate expected darkening or depth stores in Rust.
-    let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/terrain_draw_oracle/fixtures/leaf.json"
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/terrain_draw_oracle/fixtures/leaf.json",
     ))
     .unwrap();
     assert_eq!(fixture["leaves"][1], "00497390");
@@ -277,8 +277,8 @@ impl RetailBridgeFixture {
 }
 
 fn native_bridge_packet() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/bridge_shadow_render.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_shadow_render.json",
     ))
     .unwrap()
 }

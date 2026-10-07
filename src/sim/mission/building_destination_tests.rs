@@ -14,16 +14,16 @@ use crate::sim::world::Simulation;
 use serde_json::Value;
 
 fn corpus() -> Value {
-    let metadata: Value = serde_json::from_str(include_str!(
-        "../../../tools/procedural_drawing_oracle/factory_destination.meta.json"
+    let metadata: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/procedural_drawing_oracle/factory_destination.meta.json",
     ))
     .unwrap();
     assert_eq!(
         metadata["native_sha256"],
         "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
-    serde_json::from_str(include_str!(
-        "../../../tools/procedural_drawing_oracle/factory_destination.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/procedural_drawing_oracle/factory_destination.json",
     ))
     .unwrap()
 }

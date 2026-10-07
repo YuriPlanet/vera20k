@@ -29,8 +29,8 @@ const EXTRA: &str = "[ENGINEER]\nMovementZone=Infantry\n\
     CloakingSpeed=4\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n";
 
 fn corpus() -> Vec<Value> {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/walk_prehead_response.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/walk_prehead_response.json",
     ))
     .unwrap()
 }
@@ -508,8 +508,8 @@ fn exhausted_walk_retry_emits_native_retained_scold_request() {
     // with the native0/1/255 guard controls and valid MenuScold binding. This
     // checks production Walk reaches the sound owner before clearing its byte;
     // sound_dispatch separately checks the centred registered-Voc consumer.
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_scold_latch.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_scold_latch.json",
     ))
     .unwrap();
     let row = corpus()

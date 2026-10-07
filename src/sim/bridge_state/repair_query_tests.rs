@@ -14,8 +14,8 @@ fn point(value: &Value) -> (i16, i16) {
 
 #[test]
 fn complete_native_query_corpus_matches_al_and_retained_dummy() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_repair_query.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_repair_query.json",
     ))
     .unwrap();
     let rows = corpus["cases"].as_array().unwrap();

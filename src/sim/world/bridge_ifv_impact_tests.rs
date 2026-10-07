@@ -17,8 +17,8 @@ use crate::sim::projectile::{
 };
 
 fn translated_stock() -> Value {
-    let mut input: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_rim_stock_inputs.json"
+    let mut input: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_stock_inputs.json",
     ))
     .unwrap();
     // Exactly the supplied crop transformation in ifv_bridge_impact.prepare;
@@ -93,8 +93,8 @@ fn retail_rules(native: &Value) -> Option<(RuleSet, OverlayTypeRegistry)> {
     // Independent original ART/image reads establish actual frame counts.
     // Shared bridge_anim_inputs also establishes the Bouncer constructor
     // scalars; no frame count or Bounce value comes from a Rust golden.
-    let bridge: Value = serde_json::from_str(include_str!(
-        "../../../tools/rules_oracle/bridge_anim_inputs.json"
+    let bridge: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/bridge_anim_inputs.json",
     ))
     .unwrap();
     for row in bridge["rows"].as_array().unwrap() {
@@ -146,8 +146,8 @@ fn assert_cells(world: &Simulation, rows: &Value, label: &str) {
 
 #[test]
 fn native_ifv_bridge_impact_orders_live_selection_debris_ids_and_rng() {
-    let native: Value = serde_json::from_str(include_str!(
-        "../../../tools/projectile_oracle/ifv_bridge_impact.json"
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/ifv_bridge_impact.json",
     ))
     .unwrap();
     let Some((rules, overlays)) = retail_rules(&native) else {
@@ -174,8 +174,8 @@ fn native_ifv_bridge_impact_orders_live_selection_debris_ids_and_rng() {
                 (10, 20),
                 Family::High,
             );
-            let body: Value = serde_json::from_str(include_str!(
-                "../../../tools/spatial_oracle/bridge_rim_body.json"
+            let body: Value = serde_json::from_str(crate::test_fixture::text(
+                "tools/spatial_oracle/bridge_rim_body.json",
             ))
             .unwrap();
             // The first original body call changes 9 -> 15 but returns zero;

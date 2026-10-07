@@ -98,8 +98,8 @@ fn check_row(input: &Value, row: &Value, terrain: &ResolvedTerrainGrid) {
 
 #[test]
 fn retained_bullet_geometry_and_read_only_live_bridge_probe_match_native() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../../tools/projectile_oracle/bridge_render.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/bridge_render.json",
     ))
     .unwrap();
     for row in corpus["rows"].as_array().unwrap() {

@@ -40,8 +40,8 @@ fn native_sequence_entry(record: [i32; 5]) -> InfantrySequenceEntry {
 
 #[test]
 fn signed_action_records_match_original_partial_reader_corpus() {
-    let corpus: NativeSequenceCorpus = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/infantry_sequence_rules.json"
+    let corpus: NativeSequenceCorpus = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_sequence_rules.json",
     ))
     .unwrap();
     assert_eq!(corpus.names, NATIVE_SEQUENCE_NAMES);
@@ -148,8 +148,8 @@ fn auto_deploy_difficulty_vector_matches_original_retained_reader() {
         raw: Option<String>,
         output: Vec<i32>,
     }
-    let rows: Vec<Row> = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/infantry_deploy_rules.json"
+    let rows: Vec<Row> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_deploy_rules.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 42);

@@ -49,6 +49,7 @@ pub(crate) mod estimated_health;
 pub mod game_entity;
 pub(crate) mod house_threat;
 pub mod intern;
+pub(crate) mod kamikaze; // missiles out of their launcher's control (0x00ABC5F8)
 pub(crate) mod lifecycle_request;
 pub(crate) mod light_sources;
 pub mod multiplayer_checksum;

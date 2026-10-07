@@ -2395,8 +2395,8 @@ mod anim_runtime_metadata_tests {
             triples: Vec<Triple>,
             gate_stages: Vec<Scalar>,
         }
-        let fixture: Fixture = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_body_rules.json"
+        let fixture: Fixture = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_body_rules.json",
         ))
         .unwrap();
         let keys = ["AnimIdle", "AnimActive", "AnimAux1", "AnimAux2"];

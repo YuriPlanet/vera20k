@@ -8,8 +8,8 @@ use crate::sim::timer::CdTimer;
 use serde_json::Value;
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/ifv_turret_switching.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/ifv_turret_switching.json",
     ))
     .unwrap()
 }

@@ -32,6 +32,18 @@ impl Edge {
         Self::from_index(waypoint_edge).unwrap_or(Edge::North)
     }
 
+    /// `HouseClass @ 0x0050DAC0`: the edge across from `+0x577C`, through
+    /// its jump table `0x0050DAE8` (North to South, East to West and back);
+    /// a value past 3 is North (`0x0050DAE4`).
+    pub(crate) fn opposite_edge(waypoint_edge: u8) -> Self {
+        match Self::from_index(waypoint_edge) {
+            Some(Edge::North) => Edge::South,
+            Some(Edge::East) => Edge::West,
+            Some(Edge::West) => Edge::East,
+            Some(Edge::South) | None => Edge::North,
+        }
+    }
+
     pub fn from_index(i: u8) -> Option<Self> {
         match i {
             0 => Some(Edge::North),

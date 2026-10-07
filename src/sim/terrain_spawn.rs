@@ -697,8 +697,10 @@ mod tests {
 
     #[test]
     fn probability_boundaries_match_original_executable_controls() {
-        let native: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/spatial_oracle/tibtre.json")).unwrap();
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/tibtre.json",
+        ))
+        .unwrap();
         for row in native["probability_controls"].as_array().unwrap() {
             let input = &row["input"];
             assert_eq!(
@@ -716,8 +718,10 @@ mod tests {
 
     #[test]
     fn animation_constructor_matches_original_frame_anchored_timer() {
-        let native: serde_json::Value =
-            serde_json::from_str(include_str!("../../tools/spatial_oracle/tibtre.json")).unwrap();
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/tibtre.json",
+        ))
+        .unwrap();
         for row in native["instance_constructor_controls"].as_array().unwrap() {
             let state = TerrainAnimationState::new(
                 StringInterner::default().intern("TIBTRE01"),

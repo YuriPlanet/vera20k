@@ -30,10 +30,9 @@ struct DragCase {
 }
 
 fn vectors() -> serde_json::Value {
-    serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/input_oracle/fast_scroll.json"
-    )))
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/input_oracle/fast_scroll.json",
+    ))
     .unwrap()
 }
 

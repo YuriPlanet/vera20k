@@ -123,6 +123,53 @@ pub(crate) fn collect_area(
     )
 }
 
+/// `Apply_area_damage @ 0x00489280` outside a damage transaction (an
+/// anim's landing at `0x00423EAB`, the Psychic Dominator at `0x0053B16B`):
+/// the area's receivers around `impact` committed in order, then its bridge
+/// continuation (`0x00489E87`). `origin` is the source object, the source
+/// house and the warhead's id. Returns whether a bridge changed.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn apply_area_damage(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    impact: ProjectileCoord,
+    damage: i32,
+    warhead: &WarheadType,
+    origin: (u64, Option<InternedId>, InternedId),
+) -> bool {
+    let (rx, ry, sub_x, sub_y, z_leptons) = projectile_impact_cell(impact);
+    let routed_wall = area_routes_to_wall(world, overlay_registry, (rx, ry), warhead);
+    let aoe = collect_area(
+        world,
+        rules,
+        overlay_registry,
+        (rx, ry),
+        damage,
+        warhead,
+        origin,
+        Some(combat_aoe::AoEAirImpact {
+            sub_x,
+            sub_y,
+            z_leptons,
+        }),
+        z_leptons.div_euclid(LEPTONS_PER_LEVEL as i32),
+    );
+    let receipt = world.commit_noncombat_aoe_receivers(rules, overlay_registry, &aoe.receivers);
+    let bridge_continued = continue_area_bridge_damage(
+        world,
+        rules,
+        overlay_registry,
+        (rx, ry),
+        damage,
+        origin.2,
+        z_leptons,
+        routed_wall,
+        receipt.area_result.expect("area receiver receipt"),
+    );
+    receipt.bridge_state_changed || bridge_continued
+}
+
 fn commit_smudges(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1789,17 +1836,22 @@ enum SpecialArmTarget {
 /// `LAB_00469AA4` after this returns. `owner` is the bullet's `+0xB0`.
 ///
 /// RESIDUAL: the ElectricAssault (`0x0046937A`), IsLocomotor (`0x004694CB`),
-/// Airstrike (`0x00469705`), DirectRocker (`0x0046978E`), MakesDisguise
-/// (`0x00469A03`) and NukeMaker (`0x00469A2C`) bodies are not ported; those
-/// arms claim the impact and do nothing else (see `SpecialDetonationAction`).
+/// Airstrike (`0x00469705`), DirectRocker (`0x0046978E`) and MakesDisguise
+/// (`0x00469A03`) bodies are not ported; those arms claim the impact and do
+/// nothing else (see `SpecialDetonationAction`).
 fn run_special_detonation_arm(
     world: &mut Simulation,
     rules: &RuleSet,
     action: SpecialDetonationAction,
-    owner: u64,
-    target: SpecialArmTarget,
+    detonation: &ProjectileDetonation,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
 ) {
+    let owner = detonation.source_id;
+    let target = match detonation.target {
+        ProjectileTarget::Entity(id) => SpecialArmTarget::Object(id),
+        ProjectileTarget::Cell { .. } | ProjectileTarget::DummyCell => SpecialArmTarget::Cell,
+        ProjectileTarget::None => SpecialArmTarget::None,
+    };
     let object = match target {
         SpecialArmTarget::Object(id) => Some(id),
         SpecialArmTarget::Cell | SpecialArmTarget::None => None,
@@ -1849,12 +1901,12 @@ fn run_special_detonation_arm(
                 world.bomb_defuse(id);
             }
         }
+        SpecialDetonationAction::NukeMaker => nuke_maker(world, rules, detonation),
         SpecialDetonationAction::ElectricAssault
         | SpecialDetonationAction::Locomotor
         | SpecialDetonationAction::Airstrike
         | SpecialDetonationAction::DirectRocker
-        | SpecialDetonationAction::MakesDisguise
-        | SpecialDetonationAction::NukeMaker => {
+        | SpecialDetonationAction::MakesDisguise => {
             log::debug!(
                 "special detonation {action:?} from {owner} claimed with its body unported; \
                  shrapnel and area damage suppressed, the shared tail still runs"
@@ -1862,6 +1914,79 @@ fn run_special_detonation_arm(
         }
     }
 }
+
+/// `BulletClass::NukeMaker @ 0x0046B310` (Ghidra `SpawnDownwardNuke`), the
+/// arm of a `NukeMaker=` warhead (`0x00469A2C`): the nuclear missile's
+/// falling warhead. A bullet of the `NukePayload` weapon (the literal at
+/// `0x0081AFA0`, `0x0046B371`) is built with that weapon's BulletType,
+/// damage, warhead and speed (`BulletClass::Construct @ 0x004664C0`), the
+/// detonating bullet's target and owner, bright, and given the weapon
+/// (`+0x130`). It falls from the GetCoords of the cell under the target's
+/// GetCoords (`0x0046B32E..0x0046B36C`), raised by the detonating weapon's
+/// BulletType's `DetonationAltitude=` (`+0x2BC`, `0x0046B459`), straight
+/// down ([`missile_launch_velocity`] at -1.0).
+///
+/// Native dereferences a missing target, NukePayload weapon or warhead; VERA
+/// drops nothing then.
+///
+/// [`missile_launch_velocity`]: crate::sim::projectile::launch::missile_launch_velocity
+fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDetonation) {
+    /// `[0x007E4900]` = -1.0.
+    const FALL_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0xbff0_0000_0000_0000);
+    let terrain = world.resolved_terrain.as_ref();
+    let target_coords = match detonation.target {
+        ProjectileTarget::Entity(id) => object_get_coords(world, id),
+        ProjectileTarget::Cell { rx, ry } => {
+            Some(crate::sim::projectile::cell_ground_coord(terrain, rx, ry))
+        }
+        ProjectileTarget::DummyCell => Some(crate::sim::projectile::dummy_cell_ground_coord(
+            &world.effective_shared_cell_dummy(),
+        )),
+        ProjectileTarget::None => None,
+    };
+    let altitude = rules
+        .weapon(world.interner.resolve(detonation.payload.weapon))
+        .and_then(|weapon| weapon.projectile.as_deref())
+        .and_then(|projectile| rules.projectile(projectile))
+        .map_or(0, |projectile| projectile.detonation_altitude);
+    let weapon = rules.weapon(NUKE_PAYLOAD_WEAPON);
+    let warhead = weapon
+        .and_then(|weapon| weapon.warhead.as_deref())
+        .and_then(|name| rules.warhead(name));
+    let (Some(target_coords), Some(weapon), Some(warhead)) = (target_coords, weapon, warhead)
+    else {
+        return;
+    };
+    let (rx, ry) = (
+        (target_coords.x / 256) as u16,
+        (target_coords.y / 256) as u16,
+    );
+    let ground = crate::sim::projectile::cell_ground_coord(terrain, rx, ry);
+    let origin = ProjectileCoord::new(ground.x, ground.y, ground.z.wrapping_add(altitude));
+    let bullet_id = world.allocate_stable_id();
+    let native_unique_id = world.next_native_runtime_id();
+    let velocity = crate::sim::projectile::launch::missile_launch_velocity(FALL_SCALE);
+    let payload = ProjectilePayload::new(
+        weapon.damage,
+        world.interner.intern(&warhead.id),
+        world.interner.intern(&weapon.id),
+    );
+    if let Some(bullet) = super::FiredBullet::launched(
+        world,
+        native_unique_id,
+        detonation.source_id,
+        detonation.target,
+        payload,
+        weapon.speed,
+        origin,
+        velocity,
+    ) {
+        super::admit_fired_bullet(world, rules, weapon, bullet_id, bullet);
+    }
+}
+
+/// The weapon NukeMaker drops, named by the literal `0x0081AFA0`.
+const NUKE_PAYLOAD_WEAPON: &str = "NukePayload";
 
 /// Snapshot the native primary-cell wall branch before its receiver collection
 /// mutates the overlay. Its return skips the bridge tail even if the wall dies.
@@ -2053,21 +2178,7 @@ fn emit_detonation_receivers(
             Some(routed_wall)
         }
         claimed => {
-            let target = match detonation.target {
-                ProjectileTarget::Entity(id) => SpecialArmTarget::Object(id),
-                ProjectileTarget::Cell { .. } | ProjectileTarget::DummyCell => {
-                    SpecialArmTarget::Cell
-                }
-                ProjectileTarget::None => SpecialArmTarget::None,
-            };
-            run_special_detonation_arm(
-                world,
-                rules,
-                claimed,
-                detonation.source_id,
-                target,
-                overlay_registry,
-            );
+            run_special_detonation_arm(world, rules, claimed, detonation, overlay_registry);
             None
         }
     }
@@ -2318,113 +2429,6 @@ pub(crate) fn commit_projectiles(
         projectile_spawns: emit.projectile_spawns,
         effects: emit.effects,
         under_attack_events,
-    }
-}
-
-fn emit_missile_detonations(
-    world: &mut Simulation,
-    rules: &RuleSet,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    detonations: &[crate::sim::spawn_manager::MissileDetonation],
-    out: &mut CombatEmit,
-) {
-    for det in detonations {
-        let warhead_name = world.interner.resolve(det.warhead).to_string();
-        let Some(warhead) = rules.warhead(&warhead_name) else {
-            continue;
-        };
-        let wh_iid = world.interner.intern(&warhead.id);
-        // A missile that exploded in flight carries its own coordinate; an
-        // arrival detonates on the ground of its target cell's centre.
-        let (rx, ry, sub_x, sub_y, impact_z, air_impact) = match det.impact {
-            Some(impact) => {
-                let (rx, ry, sub_x, sub_y, z_leptons) = projectile_impact_cell(impact);
-                let air_impact = combat_aoe::AoEAirImpact {
-                    sub_x,
-                    sub_y,
-                    z_leptons,
-                };
-                let impact_z = z_leptons.div_euclid(LEPTONS_PER_LEVEL as i32);
-                (rx, ry, sub_x, sub_y, impact_z, Some(air_impact))
-            }
-            None => {
-                let impact_z = combat_aoe::bridge_adjusted_impact_z(
-                    world.resolved_terrain.as_ref(),
-                    det.rx,
-                    det.ry,
-                );
-                let air_impact = combat_aoe::air_impact_from_layer_z(
-                    world.resolved_terrain.as_ref(),
-                    det.rx,
-                    det.ry,
-                    crate::util::lepton::CELL_CENTER_LEPTON,
-                    crate::util::lepton::CELL_CENTER_LEPTON,
-                    impact_z,
-                );
-                (
-                    det.rx,
-                    det.ry,
-                    crate::util::lepton::CELL_CENTER_LEPTON,
-                    crate::util::lepton::CELL_CENTER_LEPTON,
-                    impact_z,
-                    air_impact,
-                )
-            }
-        };
-        let world_z_leptons = air_impact
-            .map(|impact| impact.z_leptons)
-            .unwrap_or_else(|| impact_z.wrapping_mul(LEPTONS_PER_LEVEL as i32));
-        // Rocket66327D selects on its computed crash coordinate and current
-        // Cell land; constructor66328A precedes light and area damage.
-        let coordinate = ProjectileCoord::new(
-            i32::from(rx) * 256 + sub_x.to_num::<i32>(),
-            i32::from(ry) * 256 + sub_y.to_num::<i32>(),
-            world_z_leptons,
-        );
-        let land = detonation_anim::land_at(world, coordinate);
-        if let Some(effect) = detonation_anim::effect(
-            world, rules, warhead, det.damage, land, coordinate, coordinate,
-        ) {
-            crate::sim::world::damage_consequences::admit_explosion_effect(world, rules, effect);
-        }
-        // `RocketLocomotion::Detonate` lights every impact after its anim and
-        // before the area damage (`0x006632AF`: damage, warhead, the impact
-        // coordinate, not forced, no CLDisable flags) — no `Bright=` gate.
-        out.effects.combat_light_requests.push(CombatLightRequest {
-            target_id: None,
-            damage: det.damage,
-            warhead_ref: wh_iid,
-            coord: ProjectileCoord::new(
-                i32::from(rx) * 256 + sub_x.to_num::<i32>(),
-                i32::from(ry) * 256 + sub_y.to_num::<i32>(),
-                world_z_leptons,
-            ),
-            force_create: false,
-            flags: 0,
-        });
-        let aoe = {
-            let collected = collect_area(
-                world,
-                rules,
-                overlay_registry,
-                (rx, ry),
-                det.damage,
-                warhead,
-                (det.firer_id, Some(det.owner), wh_iid),
-                air_impact,
-                impact_z,
-            );
-            append_fixture_tiberium(world, &mut out.effects.tiberium_reduction_requests);
-            collected
-        };
-        #[cfg(test)]
-        out.effects.wall_mutations.extend(aoe.wall_mutations);
-
-        #[cfg(test)]
-        out.effects
-            .cell_target_detaches
-            .extend(aoe.cell_target_detaches);
-        out.damage_events.extend(aoe.receivers);
     }
 }
 
@@ -3537,15 +3541,12 @@ pub(super) fn emit_admitted_fire(
     let warhead = selected.warhead;
     let base_damage = fireat_damage(world, rules, snap, obj, weapon, is_garrison);
     let ProjectileDelivery {
-        arm_frames,
-        tracks_target,
         collision,
         ballistic,
         vertical,
-        acceleration,
         launch_scatter_is_flak,
-        mut guidance,
-        inviso,
+        guidance,
+        ..
     } = classify_projectile_delivery(weapon, rules);
     // `CreateBullet @ 0x0046B050` (called at `0x006FE55D`) takes the bullet's
     // unique id (`0x00410230`) before the launch math, so a launch that then
@@ -3737,9 +3738,6 @@ pub(super) fn emit_admitted_fire(
                     .wrapping_mul(200)
                     .wrapping_sub(pivot_z)
             });
-        if let Some(guidance) = guidance.as_mut() {
-            guidance.fuse_reference = frozen_target_position;
-        }
         let launch = fireat_launch(FireAtLaunch {
             delta,
             speed: launch_geometry.speed,
@@ -3769,18 +3767,6 @@ pub(super) fn emit_admitted_fire(
             speed: launch_speed,
         }) = launch
         {
-            let visual = projectile_type
-                .map(|projectile| {
-                    ProjectileVisualState::new(
-                        projectile.anim_low as u8,
-                        projectile.anim_high as u8,
-                        projectile.anim_rate as u8,
-                    )
-                })
-                .unwrap_or_else(|| ProjectileVisualState::new(0, 0, 0));
-            // `BulletClass::Fire` (`0x006FF014`) Unlimbos the bullet at the
-            // launch source, which appends it to the Logic vector
-            // (`0x005F5040`): it takes its first AI later in this frame's pass.
             // ProcessDelayedFire writes its support bonus on the bullet this
             // FireAt returns (`0x00450496..0x004504CD`). The rest of FireAt
             // reads neither the bullet's multiplier nor the count, save the
@@ -3797,62 +3783,24 @@ pub(super) fn emit_admitted_fire(
                 world.interner.intern(selected.weapon_id),
             )
             .with_damage_multiplier(damage_multiplier);
-            let arm_frames = projectile_arm_delay(arm_frames, target, &world.substrate.entities);
-            let spawn = ProjectileSpawn {
-                native_unique_id,
-                line_trail: projectile_type.and_then(|kind| {
-                    crate::sim::projectile::ProjectileLineTrail::from_type(
-                        kind,
-                        rules.general.line_trail_color_override,
-                    )
-                }),
-                flat: projectile_type.is_some_and(|projectile| projectile.flat),
-                source_id: snap.stable_id,
-                origin,
-                target,
-                initial_target_position: frozen_target_position,
-                payload,
-                speed_leptons_per_frame: launch_speed.clamp(0, i32::from(u16::MAX)) as u16,
-                velocity,
-                trajectory: match vertical {
-                    Some(detonation_altitude) => ProjectileTrajectory::Vertical {
-                        detonation_altitude,
-                        acceleration,
-                        max_speed: weapon.speed,
-                    },
-                    None if ballistic || guidance.is_none() => ProjectileTrajectory::Ballistic,
-                    None => ProjectileTrajectory::Straight,
+            // `BulletClass::Fire` (`0x006FF014`) at the launch source.
+            super::admit_fired_bullet(
+                world,
+                rules,
+                weapon,
+                bullet_id,
+                super::FiredBullet {
+                    native_unique_id,
+                    source_id: snap.stable_id,
+                    target,
+                    target_position: frozen_target_position,
+                    payload,
+                    max_speed: weapon.speed,
+                    origin,
+                    velocity,
+                    speed: launch_speed.clamp(0, i32::from(u16::MAX)) as u16,
                 },
-                guidance,
-                visual,
-                arm_frames,
-                fuse_frames: None,
-                // AI 467C0C calls Check for ROT>0 or Ranged even when
-                // Dropping later suppresses detector-only admission.
-                ranged_fuse: tracks_target
-                    || projectile_type.is_some_and(|projectile| projectile.ranged),
-                tracks_target,
-                target_expiry: TargetExpiryPolicy::DetonateAtLastKnown,
-                collision,
-            };
-            world.admit_projectile(bullet_id, spawn);
-            #[cfg(test)]
-            if let Some(fixture) = world.receiver_fixture.as_mut() {
-                fixture.admitted_spawns.push((bullet_id, inviso, spawn));
-            }
-            if inviso {
-                let on_bridge = match snap.target {
-                    TargetKind::Entity(id) => world
-                        .substrate
-                        .entities
-                        .get(id)
-                        .is_some_and(|target| target.on_bridge),
-                    TargetKind::Cell(..) => false,
-                };
-                world
-                    .projectiles
-                    .fire_inviso(bullet_id, frozen_target_position, on_bridge);
-            }
+            );
         }
         launched
     };
@@ -4466,7 +4414,6 @@ pub(crate) fn tick_combat(
             .is_none_or(|fixture| fixture.fog_enabled)
     });
     let active_wave_owners: BTreeSet<_> = world.active_wave_links.keys().copied().collect();
-    let missile_detonations = std::mem::take(&mut world.pending_missile_detonations);
 
     if tick_ms == 0 {
         return CombatTickResult {
@@ -4498,25 +4445,6 @@ pub(crate) fn tick_combat(
         &mut emit,
         &mut under_attack_events,
     );
-    for detonation in &missile_detonations {
-        let damage_start = emit.damage_events.len();
-        emit_missile_detonations(
-            world,
-            rules,
-            overlay_registry,
-            std::slice::from_ref(detonation),
-            &mut emit,
-        );
-        let (inline_death, mut pings) = commit_area(
-            world,
-            run,
-            &emit.damage_events[damage_start..],
-            rules,
-            overlay_registry,
-        );
-        emit.effects.append(inline_death);
-        under_attack_events.append(&mut pings);
-    }
 
     // Pre-scan: collect entities whose attack routine does not run.
     let fire_blocked = combat_fire_gate::collect_fire_blocked_entities(&world.substrate.entities);
@@ -5218,3 +5146,7 @@ mod reveal_on_fire_tests {
 #[cfg(test)]
 #[path = "ifv_area_receipt_tests.rs"]
 mod ifv_area_receipt_tests;
+
+#[cfg(test)]
+#[path = "nuke_maker_tests.rs"]
+mod nuke_maker_tests;

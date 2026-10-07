@@ -35,9 +35,9 @@
 //! `launch` owns the native scalar FireAt math; combat resolves its receivers.
 //! RESIDUAL (GSI-08.06/07): FLH/pivot slope translation, directed Building
 //! heading, the flight of `Inviso=` shrapnel children
-//! (native places them at their target, `BulletClass::Fire @ 0x00468670`) and
-//! active NukeMaker child production remain open. Those producers can still change the inputs delivered to this exact
-//! motion/collision consumer; the complete projectile row remains open.
+//! (native places them at their target, `BulletClass::Fire @ 0x00468670`)
+//! remain open. Those producers can still change the inputs delivered to this
+//! exact motion/collision consumer; the complete projectile row remains open.
 
 mod homing;
 pub(crate) mod launch;
@@ -756,16 +756,16 @@ pub fn projectile_shrapnel_count(
 /// RESIDUAL — **six special effect bodies are not implemented in VERA.**
 /// MindControl (`capture_manager`), IvanBomb and BombDisarm (`bomb`), Parasite
 /// (`combat/parasite.rs`; the Giant Squid's grapple is its own residual there)
-/// and Temporal (`temporal`) run their bodies. ElectricAssault, Locomotor,
-/// Airstrike, DirectRocker, MakesDisguise and NukeMaker claim the detonation,
+/// and Temporal (`temporal`) run their bodies, and NukeMaker
+/// (`combat::world_receiver`) drops the nuclear warhead. ElectricAssault,
+/// Locomotor, Airstrike, DirectRocker and MakesDisguise claim the detonation,
 /// suppress damage and shrapnel exactly as native does, and then run the
 /// shared tail without performing their effect.
 /// - Trigger: a stock weapon whose warhead carries one of those flags: the
 ///   Tesla Trooper's `[AssaultBolt]` at its own coil, the Magnetron's
-///   `[MagneticBeam]`/`[MagneticBeamE]`, Boris's `[Flare]`, the Spy's
-///   `[MakeupKit]` and the nuclear missile's `[NukeCarrier]`
-///   (`[TankMakeupKit]`/`[CRMakeupKit]` are mounted by nothing; DirectRocker
-///   has no live stock line).
+///   `[MagneticBeam]`/`[MagneticBeamE]`, Boris's `[Flare]` and the Spy's
+///   `[MakeupKit]` (`[TankMakeupKit]`/`[CRMakeupKit]` are mounted by nothing;
+///   DirectRocker has no live stock line).
 /// - Player effect: the shot lands, plays its animation and leaves its crater,
 ///   but no coil is charged, no vehicle lifted, no airstrike called and no Spy
 ///   disguised, and the target takes no damage from that shot.
@@ -840,8 +840,9 @@ pub enum SpecialDetonationAction {
     /// UNIMPLEMENTED.
     MakesDisguise,
     /// `NukeMaker=` (`+0x176`), test `0x00469a2c` ->
-    /// `BulletClass::SpawnDownwardNuke @ 0x0046b310`. UNIMPLEMENTED (its only
-    /// stock weapon, `[NukeCarrier]`, is the superweapon's launch).
+    /// `BulletClass::NukeMaker @ 0x0046b310` (Ghidra `SpawnDownwardNuke`),
+    /// ported in `combat::world_receiver`; its only stock weapon,
+    /// `[NukeCarrier]`, is the nuclear missile's.
     NukeMaker,
     /// The final else at `0x00469a3f`: shrapnel plus `Apply_area_damage`.
     OrdinaryDamage,
@@ -1105,9 +1106,24 @@ pub struct Projectile {
     /// measures from the bridge deck.
     #[serde(default)]
     pub on_bridge: bool,
+    /// Bullet `+0x114`: `BulletClass::Construct @ 0x004664C0` keeps its
+    /// Owner's House colour scheme for a `FirersPalette=` type
+    /// (`0x00466519..0x0046653B`; -1 otherwise), which the draw selects
+    /// (`0x004683A1`). VERA keeps that House; the presentation maps it to its
+    /// scheme. Written by [`Simulation::construct_bullet_scheme`].
+    ///
+    /// [`Simulation::construct_bullet_scheme`]: crate::sim::world::Simulation::construct_bullet_scheme
+    #[serde(default)]
+    firer_house: Option<InternedId>,
 }
 
 impl Projectile {
+    /// The House whose colour scheme draws a `FirersPalette=` bullet
+    /// (`+0x114`); `None` is native's -1.
+    pub fn firer_house(&self) -> Option<InternedId> {
+        self.firer_house
+    }
+
     /// The facts [`resolve_impact_coord`] reads, with the bullet at its
     /// committed Location.
     fn impact_ladder_bullet(&self, impact_flag: bool) -> ImpactLadderBullet {
@@ -1275,9 +1291,17 @@ impl ProjectileStore {
                 target_expiry: spawn.target_expiry,
                 collision: spawn.collision,
                 on_bridge: false,
+                firer_house: None,
             },
         );
         id
+    }
+
+    /// Bullet `+0x114` as `BulletClass::Construct` leaves it.
+    pub(crate) fn set_firer_house(&mut self, id: u64, house: Option<InternedId>) {
+        if let Some(projectile) = self.projectiles.get_mut(&id) {
+            projectile.firer_house = house;
+        }
     }
 
     /// `BulletClass::Construct @ 0x004664C0`'s Owner (`+0xB0`) on a re-fired
@@ -1946,8 +1970,8 @@ fn ordinary_motion_candidate(
 #[test]
 fn original_ordinary_repeated_live_gravity_preserves_both_coordinate_versions() {
     use crate::util::native_x87::NativeF64Bits;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../tools/projectile_oracle/ordinary_motion.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/ordinary_motion.json",
     ))
     .unwrap();
     for (index, row) in rows.iter().enumerate() {
@@ -2046,8 +2070,8 @@ fn vertical_velocity_ramp(
 #[test]
 fn original_vertical_repeated_motion_preserves_binary64_and_integer_add_order() {
     use crate::util::native_x87::NativeF64Bits;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../tools/projectile_oracle/vertical_motion.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/vertical_motion.json",
     ))
     .unwrap();
     for (index, row) in rows.iter().enumerate() {
@@ -2222,8 +2246,8 @@ mod tests {
 
     #[test]
     fn resolve_impact_coord_matches_the_original() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../tools/projectile_oracle/impact_ladder.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/impact_ladder.json",
         ))
         .unwrap();
         const TARGET: [i32; 3] = [5000, 6000, 416];
@@ -2301,8 +2325,8 @@ mod tests {
 
     #[test]
     fn homing_impact_admission_matches_executed_retail_vectors() {
-        let vectors: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/projectile_oracle/homing_impact_vectors.json"
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/homing_impact_vectors.json",
         ))
         .unwrap();
         for row in vectors["admissions"].as_array().unwrap() {
@@ -2329,8 +2353,8 @@ mod tests {
 
     #[test]
     fn homing_source_fuse_mode_matches_executed_retail_vectors() {
-        let vectors: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/projectile_oracle/homing_impact_vectors.json"
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/homing_impact_vectors.json",
         ))
         .unwrap();
         for row in vectors["source_modes"].as_array().unwrap() {
@@ -2667,8 +2691,8 @@ mod tests {
 
     #[test]
     fn frame_inverse_rotates_and_animation_precedence_match_original_draws() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/projectile_oracle/bridge_render.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/bridge_render.json",
         ))
         .unwrap();
         let ini = crate::rules::ini_parser::IniFile::from_str("[P]\nImage=P\n");
@@ -2711,8 +2735,8 @@ mod tests {
     #[test]
     fn projectile_load_timers_match_original_fire_save_load_and_check() {
         use crate::sim::timer::CdTimer;
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../tools/projectile_oracle/load_timers.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/load_timers.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 877);
@@ -2937,8 +2961,8 @@ mod tests {
     /// impact and every later one `0x0049F420(impact, distance, draw)`.
     #[test]
     fn native_cluster_loop_scatters_around_the_impact() {
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/projectile_oracle/launch_scatter.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/launch_scatter.json",
         ))
         .unwrap();
         let rows = corpus["cluster_loop"].as_array().unwrap();
@@ -3067,8 +3091,8 @@ mod tests {
                     "the arm ends only once z passes DetonationAltitude"
                 );
                 assert_eq!(detonation.impact.x, 0, "no horizontal drift straight up");
-                let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-                    "../../tools/projectile_oracle/vertical_motion.json"
+                let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+                    "tools/projectile_oracle/vertical_motion.json",
                 ))
                 .unwrap();
                 let row = rows
@@ -3206,8 +3230,8 @@ mod tests {
 
     #[test]
     fn native_common_final_handoff_near_target_vectors() {
-        let oracle: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/projectile_oracle/ordinary_collision_vectors.json"
+        let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ordinary_collision_vectors.json",
         ))
         .unwrap();
         for row in oracle["final_handoffs"].as_array().unwrap() {
@@ -3242,8 +3266,8 @@ mod tests {
 
     #[test]
     fn native_slope_matrix_and_elastic_reflection_vectors() {
-        let oracle: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/projectile_oracle/ordinary_collision_vectors.json"
+        let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ordinary_collision_vectors.json",
         ))
         .unwrap();
         for (slope, row) in oracle["slope_matrices"]

@@ -58,6 +58,26 @@ instructions and C: at `0x740E2B`, the exported `INT_NOTEQUAL`/`CBRANCH` target
 appears reversed relative to the original `JE` and matching C. A predicate and
 target alone cannot establish which branch executes.
 
+Raw tuples can also be reused within one instruction. At `0x6F188A`, an address
+input has the same unique tuple as a later `LOAD` output. Resolve only definitions
+before each use within that instruction; a later output cannot establish the input.
+Keep entry values opaque unless original instructions and connected C establish their role.
+
+An exported operation's `seq.address` does not prove its native operand role.
+Ghidra 12.1.2 can insert a phi-edge `COPY` tagged with the predecessor block's
+last address. At `0x41028C`, the native instruction reads the receiver at entry
+stack `+4`, while a high-p-code `COPY` from stack `+8` seeds the GUID comparison
+loop at `0x410290`. Grouping operands by that address reports a false frame
+mismatch. Check the original instruction and the operation's block/operand role
+before classifying a shift; preserve the raw diagnostic and separately check
+the native receiver and call inputs.
+
+The repository's `NativeFrames.code` skips memory operands at function entry.
+At `0x465380`, original `MOV EAX,[ESP+8]` (`8B 44 24 08`) reads a four-byte stack
+input, while the mapper reports no stack operands for that body. Check the entry
+instruction and its input/output in C and high p-code separately; an empty frame
+map does not certify their absence or survival.
+
 In installed GhidraMCP 5.14.2 with Ghidra 12.1.2, `clone_data_type` can rename a
 stored function definition instead of creating an independent copy. The handler
 calls `source.clone(current_manager)` and then `setName`; both
@@ -87,6 +107,10 @@ when cloned into their own manager. Do not use this route to fork a callback typ
 - Find state writers and initialization. Zero-filled image data may be populated
   at runtime. Confirm active-YR gates and retail inputs; inherited TS code alone
   does not establish a feature's applicability.
+- A scan finding no absolute pointer or direct branch to an address does not
+  establish that it never runs. Computed pointers and indirect dispatch are
+  outside that scan. Record its coverage; unreachable claims need breakpoint
+  or flag-to-leaf evidence.
 - A missing field in a register-tracking scan does not prove it is unused. Check
   indexed operands and receiver preservation across compiler helpers. `_chkstk`
   saves ECX at `0x7CA650` and restores it at `0x7CA678`; treating that call as an
@@ -108,6 +132,29 @@ when cloned into their own manager. Do not use this route to fork a callback typ
   above the return address. The repository's
   [`ghidra_compare frames`](../../tools/ghidra_compare.md#stack-frames-against-the-native-instructions)
   command compares the decompiler's offsets with ESP computed from the code.
+  Typing the function pointer does not change the pop: the decompiler applies a pointer's
+  prototype only after its stack analysis (`ActionDeindirect`). A user
+  `CALL_OVERRIDE_UNCONDITIONAL` reference on the call does: the decompile then shows a
+  direct call with the target's prototype and pop. Add one only where the target is
+  proven to be a single function ([Virtual-call references](#virtual-call-references)).
+  The override takes effect only as the operand's primary reference. Where analysis
+  propagated the vtable, the operand already holds a primary `READ` of the vtable slot;
+  an override added beside it is ignored, and removing the `READ` afterwards does not
+  promote it. Remove every reference on the operand, then add the override alone
+  (`add_memory_reference` then reports `is_primary: true`). The overrides at the second
+  Fetch_ID call of four Load functions (`0x41B534`, `0x521A5A`, `0x71CEB6`, `0x74456A`)
+  sat beside such `READ`s and changed nothing until they were redone on 2026-10-07.
+- In a method typed with an interface view (`<Class>_ILocomotionView`, the object seen
+  from its interface pointer at +4), `this[-1].<last view field>`, with or without `&`,
+  is `this - 4`, the object itself. An owner typed `FootClass *` that is an AircraftClass
+  shows AircraftClass fields as `pLinkedTo[1].<field>`, offsets past FootClass's size.
+- A method that gets `this` on the stack (COM interface methods, view methods) may store
+  another value in `this`'s slot. From there on the decompile shows that value as `this`.
+  Check writes to entry stack +4 before trusting a later `this`.
+- MSVC's `_ftol` (`Math__ftol`, 0x7C5F00) takes its input in ST0, which a prototype set
+  over HTTP cannot express. Its callers show `Math__ftol()`, and the decompiler drops the
+  x87 expression that computes the input. A parameter used only there looks unused:
+  Rocket's FUN_006620f0 reads `pRocketRules` +0x28 (0x662100, `fimul` at 0x66218E).
 - A typed stack aggregate can change the displayed base without moving the address
   the code uses. Follow the full constant pointer expression in high p-code, including
   member offsets: the native LEA at `0x425713` addresses entry stack `-24`; after typing
@@ -128,6 +175,16 @@ a loaded asset or working helper does not prove the final result. Keep address,
 verified role and reproducible evidence together, naming uncertainty honestly.
 
 ## Names and their sources
+
+For recorded name/comment passes, use the
+[annotation replay runner](../../tools/ghidra_pass.md). Check both `pending=0`
+and `conflict=0` after saving: a non-atomic pass can skip conflicts while reaching
+zero pending operations. Existing names and comments remain evidence leads;
+transferring them does not establish class layouts or receiver types.
+GhidraMCP's `get_plate_comment` and `set_plate_comment` address function headers.
+For a plate on switch data, read `audit_global.plate_comment`, append to the
+existing text, write only `batch_set_comments.plate_comment`, and read it back.
+Do not treat a function-only read error as an empty data comment.
 
 Bulk passes append a dated, tagged paragraph to each plate they touch (data labels
 get a plate on the data address). The tag says where the name came from and what
@@ -178,9 +235,9 @@ was checked:
 - Trigger actions: `TriggerAction__Execute` 0x6DD8B0 (the fork's
   `TActionClass::Execute`) switches on the action kind. Of the 131 handlers the fork
   binds, it calls 47 from the case its enum names. The other 84 have no call, jump or
-  pointer anywhere in the image, so the game never runs them; the fork notes that
-  Execute inlines most handlers. Port an action from its Execute case; the handler's
-  plate says whether the game runs it.
+  pointer found by the static image scan; that alone does not prove they never
+  run. The fork notes that Execute inlines most handlers. Port an action from its
+  Execute case and establish the active path there.
 - `[2026-09-30 destructor audit]`: a destructor an older pass had named
   `__Constructor`, with the byte evidence.
 - `[2026-09-30 duplicate names]`: a name several functions shared, or a
@@ -210,6 +267,21 @@ was checked:
   the older one stays primary, and listings and decompiles show it: `vtable_BuildingClass`,
   `vtable_MapClass` and the other map and sidebar layers, and the locomotors'
   `<Class>__ILocomotion_vtable`, `__IUnknown_vtable` and `__IPiggyback_vtable`.
+- `[2026-10-04 VERA-cited names]`: a function the Rust code cites as a `0x…` or
+  `FUN_…` address that still had its default `FUN_` name, named from its
+  instructions, callers and receiver; the plate gives the evidence and the citing
+  Rust files. 191 functions were named. For 11 of them the only match was a number
+  inside the body from the FFmpeg tables in `bink_data.rs`, not a citation; they are
+  named from their code alone. Eleven matched functions have no call, jump or stored
+  pointer anywhere in the image; they keep `FUN_`, and their plates say what the body
+  does. The scan missed citations written without `0x` (such as
+  `comparison410A40`), so some cited functions are still `FUN_`. Switch tables the
+  Rust code cites
+  got a plate listing their cases. Prefixes on functions without a receiver (static
+  initializers and helpers such as `Shell__`, `Rmg__` and `Planning__`) are module
+  labels, not class claims. The pass is recorded for replay on other copies of the
+  database as
+  [`2026-10-04-vera-cited-names.json`](../../tools/ghidra_pass/passes/2026-10-04-vera-cited-names.json).
 
 Destructor and COM-interface method names rest on the bytes. For the 2,356 method
 names taken from YRpp's declaration order, each body's `ret N` was compared with
@@ -300,6 +372,20 @@ and the list of added references are in the research folder listed in `LOCAL.md`
   method without callers may still be called virtually.
 - `get_bulk_function_hashes` hashes cover references, so the hashes of the functions
   that got one changed that day.
+
+Since 2026-10-06, locomotor calls whose target is proven to be a single function carry
+user-defined `CALL_OVERRIDE_UNCONDITIONAL` references instead (`add_memory_reference`,
+operand 0), and their decompiles show direct calls with correct stack pops:
+
+- calls through the object's own vtables (no locomotor class derives from another);
+- calls through the owner's vtable in slots that UnitClass, InfantryClass, AircraftClass
+  and FootClass all fill with the same function;
+- calls through a cell that the map's cell getters returned (CellClass has no subclasses).
+
+Each function's plate lists its overrides; the evidence is in the same research folder.
+Other virtual calls keep the decompiler's guess that they pop nothing. Ghidra's per-call
+signature override would fix them, but it is stored as a label in the function's
+`override` namespace, and GhidraMCP's `create_label` writes only global labels.
 
 ## Class layouts
 
@@ -409,11 +495,14 @@ Notes for readers:
   `_com_issue_error` cannot return either, but it stays unmarked and untyped; its plate
   says why. No switch table has a case the flows lack. 10,088 functions without a
   prototype still have an unknown stack purge.
-- **Stack objects.** Since 2026-10-01 the 923 functions that callers hand a stack object
-  in ECX take it: 735 are `__thiscall`, and 188 are `__fastcall` because they read EDX
-  first too. `this` is `void *`, and each prototype declares the stack bytes its RETs pop.
-  Before, the decompiler did not see the object passed, so it kept the values last stored
-  there: a COM smart pointer folded to NULL, and the branches that test it vanished
+- **Stack-address inputs.** The 2026-10-01 pass assigned an ECX input to 923 functions:
+  735 were `__thiscall`, and 188 were `__fastcall` because they read EDX first too.
+  `this` was `void *`, and each prototype declared the stack bytes its RETs pop. Those
+  signatures and the `[stack objects 2026-10-01]` label record incoming storage, not
+  established object identity; check the pointee in the original body and callers.
+  For the stack-object cases, the decompiler previously missed the passed object and
+  kept the values last stored there: a COM smart pointer folded to NULL, and the branches
+  that test it vanished
   (FootClass__ChronoWarpTo 0x4DF7F0, SuperClass__Launch 0x6CC390). 9,407 of the 10,674
   calls that pass a stack address in ECX now reach a typed function. Plates tagged
   `[stack objects 2026-10-01]` say why each takes ECX: it reads it first, or it passes it
@@ -485,11 +574,21 @@ Once that scope is granted, do not ask permission for every edit. Read back stru
 repairs immediately, including layout/offsets and affected decompilation. Byte patches,
 bulk reanalysis and unrelated database changes need their own task scope.
 
+Several copies of the database exist. Record a pass as a ledger for
+[`ApplyGhidraPass.java`](../../tools/ghidra_pass.md) so the other copies can replay it
+instead of redoing it.
+
 Use one writer per shared program and coordinate changes affecting other workers'
 evidence. Small coherent annotation batches are allowed. Inspect per-item results,
 explicitly save the intended program, and read back the changes before unrelated
 work or handoff. A committed analysis transaction is not a disk save. After a timeout,
 inspect actual state before retrying; report partial or unsaved work accurately.
+
+Quiet-window checks and frozen local files do not keep database evidence current.
+Unsaved signature, calling-convention, purge or storage changes can leave project
+file hashes unchanged; name/body hashes omit those properties too. After a backup
+or any wait, reread the affected function metadata and full C/p-code at the final
+prewrite boundary. Invalidate that admission after an intervening change or batch.
 
 Label/type changes affect analysis, not executable bytes. Inspect current analyzer
 settings when relevant; do not assume historical settings are still in force or
@@ -516,8 +615,37 @@ Checked 2026-09-30 against the headless GhidraMCP 5.14.2 server:
 - `create_label` at an address that already has a label adds a second one; the first
   stays primary. `audit_global` reports only the primary label; `list_globals` with
   `name_substring` finds the others.
+- `set_global` checks the name against `NamingConventions.java`: after `g_` it needs a
+  recognized Hungarian prefix (`p`, `n`, `dw`, `sz`, `ab`, ...), and where the server
+  maps the prefix to types, the type must fit. No prefix stands for a struct, so it
+  rejected `g_MouseCursorTimer` (a CDTimerClass) and `g_aMouseCursors` (an array of
+  structs) on 2026-10-07. Only a prefix without a type mapping, such as `ab`, gets
+  through, and it misdescribes the type. `apply_data_type` types a global and keeps
+  its label; a default `DAT_` label then shows as the type and address
+  (`CDTimerClass_00abf2a0`).
+- Labels inside a struct-typed global stop showing in decompiles. Once
+  g_DisplaySingleton (0x87F7E8) was typed MouseClass, CreditsClass__AI's write to
+  0x884B90 read `...base_SidebarClass.fCreditsChanged = true`, not the label
+  `g_SidebarNeedsRedraw` at that address (checked 2026-10-07). A name search still
+  finds such labels, so check each one against the field it lands in when typing
+  the global.
 - The `find_code_gaps` records carry the neighbouring function names; compare gap
   positions and sizes, not the text, across renames.
+- Longer names can rewrap caller C while basic p-code stays unchanged (checked in
+  Ghidra 12.1.2/MCP 5.14.2 on 2026-10-06: 0x4144B0's call to 0x4DB0D0).
+  For rename-only checks, compare C tokens with only the admitted identifier
+  substitutions. Preserve literal contents and operator boundaries; compare
+  comments, warnings and p-code separately.
+- The decompiler exports plate text inside a block comment. An inner annotation
+  such as `/*ECX*/` or `/*bridge*/` closes that exported comment early and can make
+  complete-body readers reject intact function code. Use plain parentheses in
+  plate text. Preserve the failing raw export when repairing delimiters; a syntax
+  repair does not establish the annotation's claims or a passing before comparison.
+- Saved-copy readers with the same Java filename in multiple script directories
+  can dispatch an older copy despite the supplied script path. Give a modified
+  private reader a unique filename and matching public class name. Check the
+  actual `SCRIPT:` path and output markers against the pinned reader source;
+  successful earlier post-scripts do not establish that the final reader ran.
 
 Checked 2026-10-01, struct tools:
 
@@ -537,8 +665,18 @@ Checked 2026-10-01, struct tools:
   found"). Change a live layout only by filling undefined bytes and retyping or renaming
   in place; a retype to a smaller type frees the tail bytes.
 
-Checked 2026-10-01 on a staging copy, receiver tools:
+Receiver tools, checked on staging copies:
 
+- An incoming ECX value does not establish an object receiver. Neither a class-name
+  prefix, a convention-generated auto `this`, nor `lea ecx, [esp + ...]` proves its
+  pointee identity. Confirm the input's use in the original body and its producer at
+  callers before assigning object `this` or a class namespace; distinguish a complete
+  object from a biased interface pointer. `BuildingTypeClass__FindIndexByName`
+  (`0x45E7B0`) and `BuildingTypeClass__FindOrAllocate` (`0x4653C0`) consume name bytes
+  in ECX, including caller-local text buffers, and compare them with BuildingType IDs.
+  Their compatible one-register `__fastcall` view keeps `char *pName` explicit in
+  `ECX:4` and uses the global namespace. It models the checked argument storage and
+  does not establish the original C++ static/member declaration.
 - `set_function_this_type` needs a `__thiscall` or `__fastcall` convention first. It
   moves the function into a class namespace named after the struct, and the auto
   `this` then takes that struct. It leaves an explicit custom-storage `this` with its
@@ -590,6 +728,12 @@ Checked 2026-10-01 on a staging copy, receiver tools:
   unresolved virtual targets or lifetimes. Keep established native receiver,
   argument and return contracts; changing them to silence a warning can conceal
   the underlying analysis problem.
+  In the screen-class passes (2026-10-07) the warning followed the depth of the
+  base chain. `TabClass__RemoveCommandBarButtons`, which only calls through the
+  vtable, warned with `this` typed TabClass, whose `pVtable` is six bases down. It
+  decompiled clean typed SidebarClass or PowerClass, and flattening a base did not
+  help. Typing the screen singleton as MouseClass gave the warning, and nothing
+  else, to 9 of its 1,082 readers.
 - `set_function_prototype` applies the parameters under the function's old convention
   and sets the new convention afterwards. Ghidra stores a stack purge only for a function
   that has none, and computes it from that first step. So a `__fastcall` prototype on a
@@ -604,6 +748,17 @@ Checked 2026-10-01 on a staging copy, receiver tools:
   with the census. Further prototype writes preserve an already valid purge, so this
   prelude cannot repair an existing incorrect stored value.
 - The server renumbers parameters named `param_N` by position.
+- `set_function_prototype` renames a function that still has its default `FUN_` name to
+  the name in the prototype text, although the tool description says that name is only
+  parsed. Use the intended name in the prototype, or rename afterwards.
+- `set_function_prototype` writes `void *` without an error for a pointer to a type name
+  it cannot find. Check that each named type exists before the write, and read the
+  signature back.
+- `create_function_signature` stores no calling convention and no parameter names, and
+  nothing reads its parameters back; check the type through a caller's decompile.
+- A PRE comment shows in the decompile only above a statement whose instruction keeps its
+  p-code. One on a register copy that the decompiler folds away does not appear; put it
+  on the call, store or cast of the statement.
 - A return-type-only write can pass metadata readback while leaving the decompile
   unusable. In the 2026-10-03 INI rehearsal, `undefined1` left eight inferred
   full-EAX returns unchanged; concrete `byte` then locked their still-unknown
@@ -626,6 +781,13 @@ Checked 2026-10-01 on a staging copy, receiver tools:
   as `ECX:4 (auto)`. Compare the literal storage and `isAutoParameter()` together.
   Removing the tag only from the expected string rejects a correctly stored
   automatic `this`.
+- Stack cleanup totals do not establish each argument's physical storage.
+  The research helper `protos.slot` rounds widths to four-byte homes, so
+  `Stack[0x4]:1` and `Stack[0x4]:4` have the same `stack_end`; duplicate homes also
+  leave that maximum unchanged. Check each saved datatype, storage varnode width,
+  ordinal, automatic-parameter flag and distinct home against the native contract.
+  A four-byte datatype display and matching `RET` cleanup cannot admit a narrowed
+  native four-byte argument.
 - A successful type-size lookup or `validate_function_prototype` reply does not
   establish that the signature parser can resolve a datatype. The validator checks
   format and convention without parsing the types. On 2026-10-02, two `GUID` entries

@@ -4,8 +4,8 @@ use crate::rules::{ini_parser::IniFile, retail_ini_fixture::retail_ini};
 use serde_json::Value;
 
 fn native() -> Value {
-    serde_json::from_str(include_str!(
-        "../../tools/projectile_oracle/bridge_render_inputs.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/bridge_render_inputs.json",
     ))
     .unwrap()
 }
@@ -201,34 +201,44 @@ fn bullet_frame_lookup_preserves_native_stencil_and_rejects_out_of_range() {
 }
 
 #[test]
-fn firer_registration_keeps_only_live_fallback_and_lookup_accepts_supplied_scheme() {
+fn firer_registration_covers_each_house_scheme_and_lookup_uses_the_supplied_one() {
     let rules = rules(
         "[VehicleTypes]\n0=MTNK\n[MTNK]\nPrimary=105mm\n[105mm]\nProjectile=Cannon\n[Cannon]\nImage=120MM\nFirersPalette=yes\n",
         "",
     );
     let projectile = rules.projectile("Cannon").unwrap();
     let assets = AssetManager::from_loose_root_for_test(&std::env::temp_dir());
-    // Already bound two-frame asset. Production has no retained Bullet scheme;
-    // atlas construction must materialize only the fallback it actually uses.
+    // Already bound two-frame asset. The draw selects the retained Bullet+114
+    // House's scheme or the local player's (`0x004683A1..0x004683D1`), so
+    // every House colour of the match is registered, and no ANIM.PAL key.
     let mut files = HashMap::from([("CANNON".to_string(), ("120MM.SHP".to_string(), 2))]);
+    let house_colors = HouseColorMap::from([
+        ("Russians".to_string(), HouseColorIndex(4)),
+        ("Americans".to_string(), HouseColorIndex(2)),
+        ("Neutral".to_string(), crate::rules::house_colors::NO_REMAP),
+    ]);
     let mut needed = HashSet::new();
     register_projectile_frames(
         &mut needed,
         &mut files,
         &assets,
         Some(&rules),
+        &house_colors,
         "tem",
         "TEMPERATE",
     );
-    assert_eq!(
-        needed.len(),
-        2,
-        "one fallback per frame, without unused house variants"
-    );
+    let expected: HashSet<_> = (0..2)
+        .flat_map(|frame| {
+            house_colors
+                .values()
+                .map(move |&color| projectile_key("Cannon", projectile, frame, color))
+        })
+        .collect();
+    assert_eq!(needed, expected);
     assert!(
         needed
             .iter()
-            .all(|key| key.palette_context == ShpPaletteContext::BulletAnim)
+            .all(|key| key.palette_context == ShpPaletteContext::BulletFirer)
     );
     let entry = |page| ShpSpriteEntry {
         uv_origin: [0.0; 2],
@@ -241,38 +251,28 @@ fn firer_registration_keeps_only_live_fallback_and_lookup_accepts_supplied_schem
         page,
     };
     for frame in 0..2 {
-        let fallback = unresolved_firer_key("Cannon", projectile, frame);
-        let retained = projectile_key("Cannon", projectile, frame, HouseColorIndex(4));
-        assert!(needed.contains(&fallback));
-        assert!(!needed.contains(&retained));
-        // This explicit entry checks context lookup only. It is supplied by the
-        // fixture, not registered for a live production retained House scheme.
+        let russian = projectile_key("Cannon", projectile, frame, HouseColorIndex(4));
+        let american = projectile_key("Cannon", projectile, frame, HouseColorIndex(2));
         let atlas = SpriteAtlas::new(
             Vec::new(),
-            HashMap::from([(fallback, entry(0)), (retained, entry(1))]),
+            HashMap::from([(russian, entry(0)), (american, entry(1))]),
         );
-        assert_eq!(
-            atlas
-                .projectile_sprite("Cannon", projectile, frame, None)
-                .unwrap()
-                .page,
-            0
-        );
-        assert_eq!(
-            atlas
-                .projectile_sprite("Cannon", projectile, frame, Some(HouseColorIndex(4)))
-                .unwrap()
-                .page,
-            1
-        );
+        for (scheme, page) in [(HouseColorIndex(4), 0), (HouseColorIndex(2), 1)] {
+            assert_eq!(
+                atlas
+                    .projectile_sprite("Cannon", projectile, frame, scheme)
+                    .unwrap()
+                    .page,
+                page
+            );
+        }
         assert!(
             atlas
-                .projectile_sprite("Cannon", projectile, 2, None)
+                .projectile_sprite("Cannon", projectile, 2, HouseColorIndex(4))
                 .is_none()
         );
     }
 }
-
 #[test]
 #[ignore = "requires physical retail archives; production selected Hills reader and SHP/palette binding"]
 fn retail_hills_projectile_assets_match_original_reader_and_physical_bytes() {
@@ -305,6 +305,7 @@ fn retail_hills_projectile_assets_match_original_reader_and_physical_bytes() {
         &mut files,
         &assets,
         Some(rules),
+        &HouseColorMap::new(),
         "tem",
         "TEMPERATE",
     );
@@ -383,8 +384,8 @@ impl Drop for ProjectileAssetDirectory {
 #[test]
 fn projectile_asset_binding_uses_native_last_load_not_current_image_text() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../tools/projectile_oracle/bridge_render_art_state.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/bridge_render_art_state.json",
     ))
     .unwrap();
     let bytes = native()["physical_image"]["hex"]
@@ -459,6 +460,7 @@ fn projectile_asset_binding_uses_native_last_load_not_current_image_text() {
                 &mut files,
                 &assets,
                 Some(&rules),
+                &HouseColorMap::new(),
                 "tem",
                 "TEMPERATE",
             );

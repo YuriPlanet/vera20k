@@ -141,7 +141,8 @@ fn relocation_constructs_departure_and_arrival_warp_anims_in_the_mover_turn() {
         })
         .collect();
     cells.sort_unstable();
-    assert_eq!(cells, vec![(5, 5, 2), (8, 9, 2)]);
+    // Each at the exact Location: the arrival's is the destination's (z 0).
+    assert_eq!(cells, vec![(5, 5, 2), (8, 9, 0)]);
     for anim in &anims {
         assert_eq!(anim.draw_flags, 0x600);
         assert_eq!(anim.z_adjust, 0);

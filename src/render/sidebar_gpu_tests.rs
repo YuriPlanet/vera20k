@@ -403,7 +403,8 @@ fn retail_command_bar_atlas_and_production_append_match_native_capture() {
         })
         .collect();
     let actual = Gpu::new().render(&layers, [800, 600], camera);
-    let expected = include_bytes!("../../tools/sidebar_oracle/command_bar/neutral-bar-rgb565.bin");
+    let expected =
+        crate::test_fixture::bytes("tools/sidebar_oracle/command_bar/neutral-bar-rgb565.bin");
     let mut differences = 0;
     for (i, word) in expected.chunks_exact(2).enumerate() {
         let word = u16::from_le_bytes(word.try_into().unwrap());

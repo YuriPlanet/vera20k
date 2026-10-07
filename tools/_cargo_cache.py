@@ -728,6 +728,40 @@ def trim(root: Path, policy: CachePolicy, timeout: float, *, dry_run=False) -> d
         return trim_locked(root, store, policy, dry_run=dry_run)
 
 
+# The soft budgets are enforced after a build at most this often; see retention_due.
+AUTOMATIC_INTERVAL_SECONDS = 30 * 60
+
+
+def _last_applied_pass(store: Path) -> float | None:
+    """Finish time of the newest receipt that was not a dry run; None if unknown."""
+    directory = store / 'retention'
+    try:
+        names = [name for name in os.listdir(directory) if re.fullmatch(r'\d+-[0-9a-f]{8}\.json', name)]
+        for name in sorted(names, key=lambda name: int(name.split('-')[0]), reverse=True):
+            receipt = json.loads((directory / name).read_text())
+            if receipt['dry_run'] is False:
+                return float(receipt['finished_unix'])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
+def retention_due(store: Path, policy: CachePolicy, volumes) -> bool:
+    """Whether a pass after a build can matter now.
+
+    A pass inventories every registered cache, which takes seconds and grows with
+    each worktree, so the soft budgets are enforced at most once per interval. A
+    volume below the reserve, or one that cannot be measured, always gets a pass.
+    """
+    try:
+        if any(shutil.disk_usage(volume).free < policy.min_free_bytes for volume in volumes):
+            return True
+    except OSError:
+        return True
+    finished = _last_applied_pass(store)
+    return finished is None or not 0 <= time.time() - finished < AUTOMATIC_INTERVAL_SECONDS
+
+
 def automatic_locked(root: Path, store: Path, policy: CachePolicy):
     receipt = trim_locked(root, store, policy)
     print(f"Cache retention: {receipt['state']}, removed {receipt['removed_allocated_bytes']} "

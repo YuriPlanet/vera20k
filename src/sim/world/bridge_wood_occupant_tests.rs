@@ -465,10 +465,9 @@ fn assert_span(sim: &Simulation, native: &Value, context: &str) {
 #[test]
 #[ignore = "requires physical Shrapnel and retail SNOW assets"]
 fn retail_wood_occupants_match_native_list_lifetime_detach_and_rng() {
-    let corpus: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/shrapnel_damage/occupants_joined_test_vectors.json"
-    )))
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/shrapnel_damage/occupants_joined_test_vectors.json",
+    ))
     .unwrap();
     assert_eq!(corpus["cases"].as_array().unwrap().len(), 7);
     for case in corpus["cases"].as_array().unwrap() {
@@ -583,10 +582,9 @@ fn retail_wood_occupants_match_native_list_lifetime_detach_and_rng() {
 #[test]
 #[ignore = "requires physical Shrapnel and retail SNOW assets"]
 fn retail_wood_hut_collapse_matches_native_live_occupants_and_animation_order() {
-    let corpus: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/shrapnel_damage/hut_joined_test_vectors.json"
-    )))
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/shrapnel_damage/hut_joined_test_vectors.json",
+    ))
     .unwrap();
     assert_eq!(corpus["cases"].as_array().unwrap().len(), 2);
     for case in corpus["cases"].as_array().unwrap() {

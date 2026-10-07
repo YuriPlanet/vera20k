@@ -6,8 +6,8 @@ use crate::sim::world::Simulation;
 
 #[test]
 fn original_conversion_health_corpus() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/spatial_oracle/conversion_health.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/conversion_health.json",
     ))
     .unwrap();
     for row in corpus["rows"].as_array().unwrap() {

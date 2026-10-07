@@ -9,6 +9,7 @@ use crate::rules::crate_rules::{CrateRules, CrateRulesAccumulator};
 use crate::rules::error::RulesError;
 use crate::rules::gunner_turrets::GunnerTurrets;
 use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
+use crate::rules::missile_spawn::MissileSpawnRules;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::powerups::{PowerupTable, PowerupsAccumulator};
 use crate::rules::projectile_type::ProjectileArtState;
@@ -133,20 +134,27 @@ impl RulesLayerStack {
         let mut processor = RulesPassProcessor::with_registry_state(registry_state);
         for (_, ini) in self.iter_passes() {
             if let Err(error) = processor.apply_pass(ini, fixed_art) {
-                let (_, partial_trace, _, _, _) = processor.finish();
+                let (_, partial_trace, _, _, _, _) = processor.finish();
                 return Err(NativeRulesProcessingFailure {
                     error,
                     partial_trace,
                 });
             }
         }
-        let (ini, native_type_construction_trace, crate_rules, powerups, general_anim_lists) =
-            processor.finish();
+        let (
+            ini,
+            native_type_construction_trace,
+            crate_rules,
+            powerups,
+            general_anim_lists,
+            missile_spawn,
+        ) = processor.finish();
         Ok(ProcessedRulesLayers {
             ini,
             crate_rules,
             powerups,
             general_anim_lists,
+            missile_spawn,
             content_hash: self.content_hash(),
             native_type_construction_trace,
         })
@@ -224,7 +232,7 @@ fn process_native_rules_cold_start_inner(
     let after_building_master = processor.native_type_construction_events.len();
     processor.process_techno_family(RulesTypeFamily::Building, selected_rules_root, fixed_art);
     let after_building_bodies = processor.native_type_construction_events.len();
-    let (_, trace, _, _, _) = processor.finish();
+    let (_, trace, _, _, _, _) = processor.finish();
     Ok((
         trace,
         [
@@ -265,7 +273,7 @@ fn process_native_noncampaign_rules_prepass_inner(
     let after_general = processor.native_type_construction_events.len();
     processor.process_house_family(selected_rules_root);
     let after_house_bodies = processor.native_type_construction_events.len();
-    let (_, trace, _, _, _) = processor.finish();
+    let (_, trace, _, _, _, _) = processor.finish();
     (trace, [after_countries, after_general, after_house_bodies])
 }
 
@@ -286,6 +294,7 @@ pub struct ProcessedRulesLayers {
     crate_rules: CrateRules,
     powerups: PowerupTable,
     general_anim_lists: GeneralAnimLists,
+    missile_spawn: MissileSpawnRules,
     content_hash: u64,
     native_type_construction_trace: NativeTypeConstructionTrace,
 }
@@ -495,6 +504,11 @@ impl ProcessedRulesLayers {
 
     pub fn powerups(&self) -> &PowerupTable {
         &self.powerups
+    }
+
+    /// The three `RocketStruct` blocks and their warheads after every pass.
+    pub fn missile_spawn(&self) -> &MissileSpawnRules {
+        &self.missile_spawn
     }
 
     pub(crate) fn metallic_debris(&self) -> &[String] {
@@ -875,6 +889,7 @@ struct RulesPassProcessor {
     crate_rules: CrateRulesAccumulator,
     powerups: PowerupsAccumulator,
     general_anim_lists: GeneralAnimLists,
+    missile_spawn: MissileSpawnRules,
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
     native_type_construction_events: Vec<NativeTypeConstructionEvent>,
     tiberiums: Vec<ProcessedType>,
@@ -897,6 +912,7 @@ impl Default for RulesPassProcessor {
             crate_rules: CrateRulesAccumulator::default(),
             powerups: PowerupsAccumulator::default(),
             general_anim_lists: GeneralAnimLists::default(),
+            missile_spawn: MissileSpawnRules::default(),
             families: HashMap::new(),
             native_type_construction_events: Vec::new(),
             tiberiums: Vec::new(),
@@ -961,6 +977,12 @@ impl RulesPassProcessor {
         self.crate_rules.apply_pass(pass);
         self.powerups.apply_pass(pass);
         self.allocate_combat_references(pass);
+        // ReadGeneral's rocket blocks and ReadCombatDamage's rocket warheads.
+        // They read and write no other Process state, so one call per pass
+        // keeps their order. RulesClass outlives scenarios, but retail
+        // rulesmd.ini sets every key each scenario re-reads, so a fresh
+        // constructor here is observably the same.
+        self.missile_spawn.apply_pass(pass);
         self.allocate_radiation_references(pass);
         // Elevation and Wall contain no Type factories.
         self.allocate_audio_visual_references(pass);
@@ -1987,6 +2009,7 @@ impl RulesPassProcessor {
         CrateRules,
         PowerupTable,
         GeneralAnimLists,
+        MissileSpawnRules,
     ) {
         let allocated_super_weapon_type_count = self
             .families
@@ -2084,6 +2107,7 @@ impl RulesPassProcessor {
             self.crate_rules.finish(),
             self.powerups.finish(),
             self.general_anim_lists,
+            self.missile_spawn,
         )
     }
 }

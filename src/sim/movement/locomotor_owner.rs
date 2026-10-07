@@ -22,13 +22,27 @@ pub(crate) fn try_restore_primary(entity: &mut GameEntity) -> bool {
     piggyback_end_admitted(entity) && restore_admitted_primary(entity)
 }
 
-/// The active locomotor's END gate for an entity-level caller. The one
-/// piggyback VERA installs is a Drive over a Teleport primary (the Unit
-/// setter's Teleporter arm), so the active Drive's own gate is the only one.
-/// A piggyback over any other primary needs the Chronosphere's
-/// ChangeLocomotorTo, which is not represented.
+/// The active locomotor's END gate for an entity-level caller. VERA installs
+/// two piggybacks: a Drive over a Teleport primary (the Unit setter's
+/// Teleporter arm), behind the Drive's own gate, and the Chrono Warp's
+/// Teleport over any Foot's locomotor (`SuperClass::Launch @ 0x006CCB4A`),
+/// behind Teleport's ([`teleport_end_admitted`]).
 pub(crate) fn piggyback_end_admitted(entity: &GameEntity) -> bool {
-    drive_end_admitted(entity)
+    drive_end_admitted(entity) || teleport_end_admitted(entity)
+}
+
+/// `TeleportLocomotionClass::Is_Ok_To_End @ 0x00719F30`: not moving (its
+/// Is_Moving, `+0x34`), a stash (`+0x48`), the constructor-only `+0x35`
+/// clear, no warp latch (Techno `+0x27C`), state (`+0x38`) 0 and no Foot
+/// locomotor swap (`+0x6AD`). The warp's payload holds the latch and the
+/// state and goes at state 7, so its absence is both tests.
+fn teleport_end_admitted(entity: &GameEntity) -> bool {
+    entity.locomotor.as_ref().is_some_and(|locomotor| {
+        locomotor.piggyback.is_some()
+            && locomotor
+                .teleport_runtime()
+                .is_some_and(|runtime| !runtime.is_moving() && runtime.chrono().is_none())
+    }) && !entity.foot_locomotor_swap_active
 }
 
 /// Drive IsOKToEnd4AF970 at Foot EnterIdle4D833D, before NavQueue.
@@ -67,6 +81,26 @@ pub(crate) fn restore_admitted_primary(entity: &mut GameEntity) -> bool {
         entity.position.exact_z_leptons = Some(physical.z);
     }
     restored
+}
+
+impl crate::sim::world::Simulation {
+    /// The active locomotor's `Mark_All_Occupation_Bits(0)` (ILocomotion
+    /// `+0x9C`): Drive `0x004B48D0` / Ship `0x006A3F00` release their track
+    /// occupation, Walk `0x0075CA30`, Teleport `0x0071A090` and Jumpjet
+    /// `0x0054D930` clear the owner's raw occupation at their head; Fly and
+    /// Rocket take the empty base (`0x004B6620`). Foot Limbo calls it on the
+    /// first Limbo (`0x004DB324`), the Chrono Warp on a Unit it arms
+    /// (`0x006CCA65`); each body is skipped for an object already in Limbo.
+    ///
+    /// RESIDUAL: Hover's body (`0x005171C0`, a clear at its Head_To_Coord) is
+    /// not ported. Trigger: a Hover Unit limboed or chronoshifted. Effect: its
+    /// raw occupation at its head stays until its next Mark.
+    pub(crate) fn locomotor_mark_all_occupation_bits_up(&mut self, id: u64) {
+        self.release_track_occupation_before_foot_limbo(id);
+        self.release_walk_occupation_before_foot_limbo(id);
+        self.release_teleport_occupation_before_foot_limbo(id);
+        self.release_jumpjet_occupation_before_foot_limbo(id);
+    }
 }
 
 /// Techno70C5B0/70C5C0 expose the represented warp bytes to Walk/Fly: the

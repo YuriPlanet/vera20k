@@ -148,8 +148,8 @@ mod tests {
 
     #[test]
     fn pause_rows_and_resume_follow_native_shell_geometry_at_each_stock_resolution() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/in_game_shell_geometry.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/in_game_shell_geometry.json",
         ))
         .unwrap();
         for case in fixture["cases"].as_array().unwrap() {

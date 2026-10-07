@@ -1819,10 +1819,10 @@ mod tests {
             protected.position.sub_y = CELL_CENTER_LEPTON;
             protected.lifecycle.in_limbo = false;
             protected.lifecycle.cell_marked = true;
-            protected.invulnerability = Some(InvulnerabilityState {
-                timer: crate::sim::timer::CdTimer::started(0, 100),
+            protected.invulnerability = Some(InvulnerabilityState::new(
+                crate::sim::timer::CdTimer::started(0, 100),
                 kind,
-            });
+            ));
             entities.insert(protected);
 
             let mut occupancy = OccupancyGrid::new();
@@ -3553,14 +3553,15 @@ mod tests {
                 if case["bunker"] == true {
                     victim.bunker_link = crate::sim::game_entity::BunkerLink::Installed(1);
                 }
-                if case["warp_in"] == true || case["warp_out"] == true {
+                // BeingWarpedOut (`+0x270`) through a Temporal chain's
+                // head, WarpingIn (`+0x271`) through the teleport's warp-in.
+                if case["warp_out"] == true {
+                    victim.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(99);
+                }
+                if case["warp_in"] == true {
                     use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};
                     victim.install_teleport_state_for_test(Some(TeleportState::for_test(
-                        if case["warp_out"] == true {
-                            TeleportPhase::Relocate
-                        } else {
-                            TeleportPhase::ChronoDelay
-                        },
+                        TeleportPhase::ChronoDelay,
                         8,
                         8,
                         3,
@@ -3773,8 +3774,8 @@ mod tests {
         // These witnesses execute original Scatter51D0D0 and Infantry51BF90
         // together. Exercise the production damage receiver, including HP,
         // queue/destination writes and fear, with the same entry prestates.
-        let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/infantry_scatter_entry.json"
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/infantry_scatter_entry.json",
         ))
         .unwrap();
         assert_eq!(corpus.as_array().unwrap().len(), 14);
@@ -3804,8 +3805,8 @@ mod tests {
                 })
             );
         }
-        let destinations: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/infantry_scatter_destination.json"
+        let destinations: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/infantry_scatter_destination.json",
         ))
         .unwrap();
         assert_eq!(destinations.as_array().unwrap().len(), 18);

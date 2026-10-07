@@ -97,8 +97,8 @@ fn fixture(input: &Value, other_flags: &str) -> (Simulation, RuleSet) {
 
 #[test]
 fn ordinary_per_cell_prefix_matches_original_effective_mission_and_ground_target() {
-    let rows: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/engineer_repair_admission.json"
+    let rows: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/engineer_repair_admission.json",
     ))
     .unwrap();
     assert_eq!(rows.as_array().unwrap().len(), 22);

@@ -320,7 +320,7 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
             .get(&entity.owner())
             .is_some_and(|house| house.is_controlled_by_human(game_mode))
         && sim.session.game_options.mcv_redeploy
-        && !entity.mind_control.is_mind_controlled()
+        && entity.mind_control.controller().is_none()
 }
 
 /// Sell's stage-0 visit (`0x0044A8DF..0x0044ABAC`): an undeploy's

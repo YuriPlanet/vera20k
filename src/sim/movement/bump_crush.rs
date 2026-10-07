@@ -1507,10 +1507,10 @@ mod tests {
         victim.category = EntityCategory::Infantry;
         victim.crushable = true;
         victim.invulnerability = Some(
-            crate::sim::superweapon::invulnerability::InvulnerabilityState {
-                timer: crate::sim::timer::CdTimer::started(10, 750),
-                kind: crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
-            },
+            crate::sim::superweapon::invulnerability::InvulnerabilityState::new(
+                crate::sim::timer::CdTimer::started(10, 750),
+                crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
+            ),
         );
         entities.insert(victim);
         let interner = crate::sim::intern::test_interner();

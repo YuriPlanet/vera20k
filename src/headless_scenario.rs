@@ -211,24 +211,7 @@ pub(crate) fn load_with_launch(
         .map(|wp| (wp.index, (wp.rx, wp.ry)))
         .collect(),
         pixel_conversion_bounds: Default::default(),
-        lighting: crate::sim::scenario_session::ScenarioLightingState::new(
-            crate::sim::scenario_session::ScenarioLightProfileUnits {
-                ambient_percent: lighting_profiles.normal.ambient_percent,
-                red_percent: lighting_profiles.normal.red_percent,
-                green_percent: lighting_profiles.normal.green_percent,
-                blue_percent: lighting_profiles.normal.blue_percent,
-                ground_units: lighting_profiles.normal.ground_units,
-                level_units: lighting_profiles.normal.level_units,
-            },
-            crate::sim::scenario_session::ScenarioLightProfileUnits {
-                ambient_percent: lighting_profiles.ion.ambient_percent,
-                red_percent: lighting_profiles.ion.red_percent,
-                green_percent: lighting_profiles.ion.green_percent,
-                blue_percent: lighting_profiles.ion.blue_percent,
-                ground_units: lighting_profiles.ion.ground_units,
-                level_units: lighting_profiles.ion.level_units,
-            },
-        ),
+        lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(&lighting_profiles),
     };
     let bootstrap_rng = ScenarioBootstrapRng::new(seed);
     let (mut sim, scenario_prefix_projection) = bootstrap_rng

@@ -355,11 +355,10 @@ fn a_garrison_fires_its_occupy_weapon_or_nothing() {
     );
 }
 
-/// T5 (`0x006FC109`): a unit in its Chronosphere relocation frame is
-/// ILLEGAL. `UnitClass::Fire_At_Target` (`0x00737148`) keeps the target of a
-/// weapon that does not heal, so the unit holds fire and its target.
+/// A unit warping in after its teleport (`+0x271`, vt+0x1D8) is REARM
+/// (`0x006FC0BA..0x006FC1B0`): it holds fire and its target.
 #[test]
-fn a_relocating_unit_holds_fire_and_its_target() {
+fn a_warping_in_unit_holds_fire_and_its_target() {
     let rules = rules();
     let mut store = EntityStore::new();
     spawn(
@@ -381,10 +380,10 @@ fn a_relocating_unit_holds_fire_and_its_target() {
     let tank = store.get_mut(1).unwrap();
     tank.attack_target = Some(AttackTarget::new(2));
     tank.install_teleport_state_for_test(Some(TeleportState::for_test(
-        TeleportPhase::Relocate,
+        TeleportPhase::ChronoDelay,
         10,
         10,
-        0,
+        10,
     )));
     combat_frame(&mut store, &rules, &Default::default());
     assert_eq!(store.get(2).unwrap().health.current, 300);

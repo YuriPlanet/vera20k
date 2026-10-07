@@ -7,10 +7,9 @@ use crate::sim::rng::SimRng;
 use serde_json::{Value, json};
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/spatial_oracle/bridge_damage_admission.json"
-    )))
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_damage_admission.json",
+    ))
     .unwrap()
 }
 

@@ -545,6 +545,7 @@ impl App {
                     show_save_load_panel: false,
                     combat_lights: Default::default(),
                     line_trails: Default::default(),
+                    hidden_super_anims: Default::default(),
                     minimap: None,
                     radar_anim: None,
                     radar_animation_source: None,

@@ -174,8 +174,8 @@ impl PathFinishingContext for TranscriptContext<'_> {
 
 #[test]
 fn successful_search_finishing_matches_original_caller_transcript() {
-    let packet: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/astar_path_finishing.json"
+    let packet: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_path_finishing.json",
     ))
     .unwrap();
     assert_eq!(

@@ -50,8 +50,8 @@ fn infantry_orders_leave_facing_to_fire_start() {
 
 #[test]
 fn infantry_fire_start_heading_matches_original_code_vectors() {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/infantry_fire_start.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_fire_start.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 59);
@@ -129,8 +129,8 @@ fn infantry_refused_or_reloading_does_not_snap() {
 
 #[test]
 fn infantry_fire_speed_refusal_matches_original_threshold() {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/infantry_fire_speed.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_fire_speed.json",
     ))
     .unwrap();
     let rules = infantry_fire_frame_rules();
@@ -417,8 +417,8 @@ fn production_zero_delay_shot_and_restore_use_new_heading() {
 
 #[test]
 fn cell_and_building_fire_headings_match_original_coordinate_getters() {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/infantry_fire_start.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_fire_start.json",
     ))
     .unwrap();
     let rules = production_rules(2);

@@ -570,8 +570,8 @@ fn refused_fresh_walk_head_restores_the_current_raw_occupation() {
 fn production_fresh_head_and_raw_history_match_original_walk_producer() {
     use crate::sim::components::DriveCoord;
     use crate::util::fixed_math::SimFixed;
-    let data: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/walk_head_occupation.json"
+    let data: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/walk_head_occupation.json",
     ))
     .unwrap();
     let cases = data["producer"].as_array().unwrap();
@@ -1474,8 +1474,8 @@ fn hut_queries_pending_uninit_and_active_tube_exit_before_other_gates() {
     let id = sim
         .spawn_object("ENGINEER", "Americans", 15, 15, 0, &rules)
         .unwrap();
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/hut_scatter.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/hut_scatter.json",
     ))
     .unwrap();
     let row = &rows[8];
@@ -1902,8 +1902,8 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
 fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
     use crate::sim::{components::DriveCoord, movement::jumpjet_movement::JumpjetRuntime};
     use serde_json::json;
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/jumpjet_stop_damage.json"
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/jumpjet_stop_damage.json",
     ))
     .unwrap();
     assert_eq!(

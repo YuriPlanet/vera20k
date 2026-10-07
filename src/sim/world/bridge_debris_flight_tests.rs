@@ -58,8 +58,8 @@ fn flight_rules(producer: &Value, inputs: &Value) -> Option<RuleSet> {
 // This compares actual production RuleSet values; VERA's exports did not seed
 // the native readers. Every HE/Super entry and sampled damage result must match.
 fn assert_native_landing_inputs(rules: &RuleSet) {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/rules_oracle/bridge_landing_inputs.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/bridge_landing_inputs.json",
     ))
     .unwrap();
     let retail = corpus["layers"].as_array().unwrap().last().unwrap();
@@ -180,8 +180,8 @@ fn bridge_landing_constructor_and_absent_keys_use_native_defaults() {
     use crate::rules::ruleset::GeneralRules;
     use crate::rules::terrain_object_type::TerrainObjectType;
 
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/rules_oracle/bridge_landing_inputs.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/bridge_landing_inputs.json",
     ))
     .unwrap();
     let native = &corpus["constructor"]["rules"];
@@ -371,12 +371,12 @@ fn compare_body(body: &BounceState, native: &str, terminal: bool, context: &str)
 
 #[test]
 fn native_bridge_producer_primary_flight_landing_and_rng_continuation() {
-    let rows: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_debris_flight.json"
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_debris_flight.json",
     ))
     .unwrap();
-    let inputs: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_debris_flight.inputs.json"
+    let inputs: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_debris_flight.inputs.json",
     ))
     .unwrap();
     let Some(rules) = flight_rules(&native(), &inputs) else {

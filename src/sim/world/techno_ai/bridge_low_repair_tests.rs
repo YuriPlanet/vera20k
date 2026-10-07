@@ -263,8 +263,8 @@ fn cross_repaired_road(scene: &mut HeadlessScenario) {
 fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
     use crate::sim::world::{LifecycleOutput, LifecycleTestEvent, TickLane};
 
-    let head_native: Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/naval_head_producer.json"
+    let head_native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/naval_head_producer.json",
     ))
     .unwrap();
     let head_input = &head_native["input"];
@@ -274,8 +274,8 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
         .iter()
         .find(|stage| stage["stage"] == "process")
         .unwrap()["state"];
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/naval_lifetime_cleanup.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/naval_lifetime_cleanup.json",
     ))
     .unwrap();
     let native = corpus["cases"]
@@ -287,8 +287,8 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
                 && row["input"]["moving_input"] == true
         })
         .unwrap();
-    let sink: Value = serde_json::from_str(include_str!(
-        "../../../../tools/spatial_oracle/naval_sink_tick.json"
+    let sink: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/naval_sink_tick.json",
     ))
     .unwrap();
     let suffix = |name| {

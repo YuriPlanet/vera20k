@@ -13,8 +13,8 @@ use serde_json::Value;
 use wgpu::util::DeviceExt;
 
 fn fixture() -> Value {
-    serde_json::from_str(include_str!(
-        "../../tools/procedural_drawing_oracle/blitter_a.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/procedural_drawing_oracle/blitter_a.json",
     ))
     .unwrap()
 }

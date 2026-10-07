@@ -4,8 +4,8 @@ use crate::rules::ruleset::RuleSet;
 use serde_json::Value;
 
 fn native() -> Value {
-    serde_json::from_str(include_str!(
-        "../../tools/projectile_oracle/line_trail.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/line_trail.json",
     ))
     .unwrap()
 }

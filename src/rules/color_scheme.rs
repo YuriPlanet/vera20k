@@ -159,9 +159,10 @@ mod tests {
             value: u8,
             rgb_by_hue: String,
         }
-        let vectors: Vectors =
-            serde_json::from_str(include_str!("../../tools/color_oracle/hsv_to_rgb.json"))
-                .expect("native HSV vectors");
+        let vectors: Vectors = serde_json::from_str(crate::test_fixture::text(
+            "tools/color_oracle/hsv_to_rgb.json",
+        ))
+        .expect("native HSV vectors");
         // Require the intended sample, not merely whichever rows remain in the file.
         let pairs = [
             (0, 255),

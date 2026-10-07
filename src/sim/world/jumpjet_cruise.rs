@@ -19,7 +19,7 @@ use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::map::retail_trig::{AtanTable, TrigTable, required_atan_table, required_math_tables};
+use crate::map::retail_trig::{TrigTable, required_math_tables};
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
@@ -43,7 +43,6 @@ struct CruiseHost<'a> {
     sim: &'a mut Simulation,
     frame: u32,
     trig: &'a TrigTable,
-    atan: &'a AtanTable,
     rules: Option<&'a RuleSet>,
     registry: Option<&'a OverlayTypeRegistry>,
     stable_id: u64,
@@ -100,9 +99,6 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     }
     fn trig(&self) -> &TrigTable {
         self.trig
-    }
-    fn atan(&self) -> &AtanTable {
-        self.atan
     }
     fn owner_kind(&self) -> FlightOwnerKind {
         FlightOwnerKind::of(self.owner().category)
@@ -475,7 +471,6 @@ impl Simulation {
                 sim,
                 frame,
                 trig,
-                atan: required_atan_table(),
                 rules,
                 registry,
                 stable_id,
@@ -604,11 +599,11 @@ mod tests {
 
     fn retail_tables_present() -> bool {
         let (trig, _) = required_math_tables();
-        if !trig.matches_retail() || !required_atan_table().matches_retail() {
+        if !trig.matches_retail() {
             // With RA2_DIR set, a mismatched table is a failure, not a skip.
             assert!(
                 std::env::var_os("RA2_DIR").is_none(),
-                "RA2_DIR is set but the retail sine or atan table does not match"
+                "RA2_DIR is set but the retail sine table does not match"
             );
             eprintln!("skipped: set RA2_DIR to the retail install to run this");
             return false;
@@ -617,8 +612,8 @@ mod tests {
     }
 
     fn native_row(name: &str) -> Value {
-        let rows: Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/jumpjet_flight.json"
+        let rows: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/jumpjet_flight.json",
         ))
         .expect("corpus parses");
         rows.as_array()
@@ -1206,8 +1201,8 @@ mod tests {
     /// the cell top height applies to a building's art `Height=`.
     #[test]
     fn building_height_factor_matches_the_native_startup_value() {
-        let native: Value = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/height_factor.json"
+        let native: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/height_factor.json",
         ))
         .expect("height factor parses");
         assert_eq!(

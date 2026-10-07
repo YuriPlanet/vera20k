@@ -213,8 +213,9 @@ impl SpawnManagerState {
         }
     }
 
-    /// `SpawnManagerClass::ClearAllTargets` (`0x006B7BB0`): drop both targets
-    /// and fall back to `Idle`.
+    /// The tail of `SpawnManagerClass::ClearAllTargets` (`0x006B7C26..`): drop
+    /// both targets and fall back to `Idle`. [`clear_all_spawn_targets`] walks
+    /// the slots first.
     fn clear_all_targets(&mut self) {
         self.current_target = None;
         self.queued_target = None;
@@ -489,8 +490,7 @@ fn step_ready_docked(
     else {
         return;
     };
-    let Some(target) = target else { return };
-    if !reload_due || mode == SpawnManagerMode::Returning {
+    if target.is_none() || !reload_due || mode == SpawnManagerMode::Returning {
         return;
     }
     let Some(child_id) = child_id else { return };
@@ -528,7 +528,6 @@ fn step_ready_docked(
     // The Unlimbo direction: the owner's PrimaryFacing `Current()` rounded to
     // a DirType (`0x006B74E9..0x006B74FC`).
     let launch_dir = owner.body_facing_dir(frame);
-    let owner_veterancy = owner.veterancy();
     let parent_missile_spawn = rules
         .object(&owner_type)
         .map(|o| o.missile_spawn)
@@ -538,29 +537,6 @@ fn step_ready_docked(
         LAUNCH_DELAY_FRAMES_MISSILE_PARENT
     } else {
         LAUNCH_DELAY_FRAMES
-    };
-
-    let missile_family = manager_field(sim, owner_id, |m| m.missile_family).flatten();
-
-    // Promote before the launch so the child receives the freshest target, and
-    // resolve the impact cell BEFORE anything is placed in the world. If the
-    // target cannot resolve there is nothing to launch at, and committing the
-    // slot anyway would leave a revealed child with no flight state that no
-    // later pass can reach — a permanent prop on the launcher's cell.
-    // **VERA-internal:** native cannot reach this state, because a target that
-    // dies is dropped from the manager by `PointerExpired` in the same tick
-    // rather than up to one manager period later.
-    let launch_target = if is_missile_slot {
-        with_manager(sim, owner_id, |m| m.promote_queued_target());
-        let promoted = manager_field(sim, owner_id, |m| m.current_target)
-            .flatten()
-            .unwrap_or(target);
-        match resolve_target_cell(sim, promoted) {
-            Some(cell) => Some((promoted, cell)),
-            None => return,
-        }
-    } else {
-        None
     };
 
     let Some(launch) = launch_coordinate(sim, rules, owner_id, slot_index, is_missile_slot) else {
@@ -583,16 +559,8 @@ fn step_ready_docked(
         return;
     }
 
-    if let Some((_, target_cell)) = launch_target {
-        launch_missile_child(
-            sim,
-            rules,
-            owner_id,
-            child_id,
-            target_cell,
-            missile_family,
-            owner_veterancy,
-        );
+    if is_missile_slot {
+        launch_missile_child(sim, rules, owner_id, child_id);
     } else {
         // Native case 0's aircraft arm does NOT send the child at the wing
         // target. It assigns a cell adjacent to the owner (direction 0) and
@@ -913,7 +881,7 @@ fn step_manager_mode(
                 )
             });
             if !can_fire_at {
-                with_manager(sim, owner_id, SpawnManagerState::clear_all_targets);
+                clear_all_spawn_targets(sim, owner_id, Some(rules), overlay_registry);
                 return;
             }
             with_manager(sim, owner_id, |m| m.mode = SpawnManagerMode::Launching);
@@ -928,7 +896,7 @@ fn step_manager_mode(
                 .flatten()
                 .is_none()
             {
-                with_manager(sim, owner_id, |m| m.clear_all_targets());
+                clear_all_spawn_targets(sim, owner_id, Some(rules), overlay_registry);
                 return;
             }
             // Wait until every slot is either out or rebuilding.
@@ -975,22 +943,23 @@ fn step_manager_mode(
                     .map(|obj| obj.missile_spawn)
                     .unwrap_or(is_missile_family);
                 if child_missile_spawn {
-                    // The child has left the launcher for good.
+                    // The child has left the launcher for good: the kamikaze
+                    // tracker takes it (`0x006B7A37`) and runs 2 frames later.
                     cleared_targets = true;
+                    if let Some(child) = child_slot {
+                        let target = manager_field(sim, owner_id, |m| m.current_target).flatten();
+                        sim.kamikaze_push(child, target, rules, overlay_registry);
+                        sim.kamikaze_restart_after_push();
+                    }
                     if is_missile_family {
                         with_slot(sim, owner_id, index, |slot| {
                             slot.state = SpawnSlotState::KamikazeWait;
                             slot.timer = CdTimer::started(frame as i32, kamikaze_frames as i32);
                         });
-                    } else {
-                        // No kamikaze window: the slot starts regenerating now.
-                        let regen_rate =
-                            manager_field(sim, owner_id, |m| m.regen_rate).unwrap_or(0);
-                        with_slot(sim, owner_id, index, |slot| {
-                            slot.spawn = None;
-                            slot.state = SpawnSlotState::Regenerating;
-                            slot.timer = CdTimer::started(frame as i32, regen_rate as i32);
-                        });
+                    } else if let Some(child) = child_slot {
+                        // No kamikaze window: PointerExpired (`0x006B7ACD`)
+                        // frees the slot, which starts regenerating now.
+                        notify_pointer_expired(sim, owner_id, child, Some(rules), overlay_registry);
                     }
                 } else {
                     let child = manager_field(sim, owner_id, |m| m.slots[index].spawn).flatten();
@@ -1003,12 +972,10 @@ fn step_manager_mode(
                     });
                 }
             }
-            with_manager(sim, owner_id, |m| {
-                if cleared_targets {
-                    m.clear_all_targets();
-                }
-                m.mode = SpawnManagerMode::Returning;
-            });
+            if cleared_targets {
+                clear_all_spawn_targets(sim, owner_id, Some(rules), overlay_registry);
+            }
+            with_manager(sim, owner_id, |m| m.mode = SpawnManagerMode::Returning);
         }
         SpawnManagerMode::Returning => {
             let Some(any_out) = manager_field(sim, owner_id, |m| {
@@ -1069,19 +1036,6 @@ fn with_slot(
         .and_then(|m| m.slots.get_mut(slot_index))
     {
         f(slot);
-    }
-}
-
-/// Cell a manager target currently occupies, or `None` when an entity target
-/// no longer resolves.
-fn resolve_target_cell(sim: &Simulation, target: TargetKind) -> Option<(u16, u16)> {
-    match target {
-        TargetKind::Cell(rx, ry) => Some((rx, ry)),
-        TargetKind::Entity(id) => sim
-            .substrate
-            .entities
-            .get(id)
-            .map(|t| (t.position.rx, t.position.ry)),
     }
 }
 
@@ -1245,210 +1199,63 @@ fn recall_child_to_owner(sim: &mut Simulation, rules: &RuleSet, owner_id: u64, c
     sim.issue_air_cell_destination(child_id, (rx, ry), speed, Some(rules));
 }
 
-/// Hand a launched missile child to the rocket locomotor with the impact
-/// payload attached.
+/// Case 0's missile tail after the child's Unlimbo (`0x006B750B..0x006B75CA`).
 ///
-/// **DRIFT (largely closed 2026-08-03) — missile flight arc.** The original
-/// record here predicted "the arc can be replaced in place by porting
-/// `RocketLocomotionClass` behind the same `RocketState` handoff" — that is
-/// exactly what happened: the foundations merge landed the six-phase machine
-/// (`ILoco::Process 0x006622C0` — ignition → tilt → ascent → cruise →
-/// terminal → secondary) in `rocket_movement`, and this launch path now rides
-/// it via `RocketFlightParameters::legacy`. What REMAINS open, recorded here:
-/// `legacy()` uses default acceleration/altitude/tilt constants rather than
-/// the per-family `*Acceleration`/`*Altitude`/`*LazyCurve`/`*TurnRate` table
-/// values (still unparsed — floats whose fixed-point form belongs to whoever
-/// wires the table), and the DMisl vertical raise is not selected. Silhouette
-/// nuance only; impact cell, damage and warhead are exact, and flight duration
-/// feeds nothing (the regen clock is Rules `PauseFrames + TiltFrames`).
+/// - A `CMislType=` pool puffs `V3TAKOFF` at the child (`[0x00840098]` names
+///   it too): `AnimClass(type, &Location, 2, 1, 0x600, -10, 0)`. The
+///   constructor draws only for `RandomRate=`, `IsMeteor=` or `Bouncer=`,
+///   which retail `[V3TAKOFF]` leaves unset.
+/// - The owner's burst index reset precedes it in [`launch_coordinate`].
+/// - The queued target is promoted (`0x006B759B..0x006B75A5`), then the child
+///   is sent at `CurrentTarget`: `Assign_Destination(target, 1)` (vt+0x480,
+///   `AircraftClass` `0x0041AA80`), whose Foot setter hands the target's
+///   coordinate to Rocket Move_To (`rocket_movement::move_to`), and
+///   `Queue_Mission(Move, 0)` (vt+0x1E8).
 ///
-/// The missile leaves from its Unlimbo coordinate ([`launch_coordinate`]),
-/// which it keeps as its Location: the flight's Z moves from there.
+/// The manager's next Launching pass hands the missile to the kamikaze
+/// tracker (`sim::kamikaze`), which gives it the target's cell and the
+/// Attack mission.
 ///
-/// RESIDUAL: a `CMislType=` launch also constructs a `V3TAKOFF` AnimClass at
-/// the missile's Location (`0x006B750B..0x006B7575`: LoopDelay 2, LoopCount
-/// 1, ZAdjust -10); VERA makes none. The constructor (`0x00421EA0`) draws
-/// only for `RandomRate=` (`0x004221C5..0x004221F5`), `IsMeteor=` or
-/// `Bouncer=` (`0x004222C9..0x004222F9`), which retail `[V3TAKOFF]`
-/// (`Translucent`, `Translucency`, `Rate`) leaves unset, so it makes no draw;
-/// its nonzero LoopDelay skips Start (`0x004226F6`). Trigger: every Boomer
-/// missile launch. Effect: no launch smoke, and the anim's object is missing.
-/// Frequency: every Boomer volley. Risk: the anim's ID allocation, its
-/// Unlimbo (`0x005F4EC0`, not traced) and its later AI are absent, so later
-/// IDs can differ from native.
-fn launch_missile_child(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    owner_id: u64,
-    child_id: u64,
-    target_cell: (u16, u16),
-    family: Option<MissileFamily>,
-    owner_veterancy: u16,
-) {
-    let Some(family) = family else { return };
-    let params = rules.missile_spawn.params(family);
-    let (target_rx, target_ry) = target_cell;
-    let (origin_rx, origin_ry) = match sim.substrate.entities.get(child_id) {
-        Some(c) => (c.position.rx, c.position.ry),
-        None => return,
-    };
-    let child_type = sim
-        .substrate
-        .entities
-        .get(child_id)
-        .map(|c| sim.interner.resolve(c.type_ref()).to_string());
-    // The six-phase rocket machine runs in LEPTONS per second (its ascent
-    // altitude, acceleration and terminal constants are lepton-domain, and its
-    // own attach test uses a 300-scale speed), so the raw INI `Speed=` goes
-    // through the leptons/s conversion. Two prior unit bugs on this exact line:
-    // the raw value (one cell per frame), then cells/s into the lepton-domain
-    // machine (~256x too slow — the missile never finished its ascent).
-    let speed = child_type
-        .as_deref()
-        .and_then(|name| rules.object(name))
-        .map(|o| crate::util::fixed_math::ra2_speed_to_leptons_per_second(o.speed.max(1)))
-        .unwrap_or_else(|| crate::util::fixed_math::ra2_speed_to_leptons_per_second(15));
-    let warhead_id = sim.interner.intern(params.warhead_for(owner_veterancy));
-    let payload = crate::sim::movement::rocket_movement::RocketPayload {
-        warhead: warhead_id,
-        damage: params.damage_for(owner_veterancy),
-        firer_id: owner_id,
-    };
-    crate::sim::movement::rocket_movement::attach_rocket_state_with_payload(
-        &mut sim.substrate.entities,
+/// RESIDUAL (next chain): the missile's own mission never runs, because the
+/// aircraft mission runner skips non-Fly locomotors. Natively each
+/// `Mission_Move @ 0x004166E0` visit from substate 0 (and each
+/// `Mission_Attack @ 0x00417FE0` epilogue) draws Scenario `RandomRanged(0,2)`,
+/// and Mission_Attack's substate 1 sends the missile at the tracker's cell
+/// (`Assign_Destination(FindFireLocation)`). Trigger: every launch. Effect:
+/// no flight change while Rocket Move_To holds its destination, but the
+/// Scenario RNG stream falls behind native from the first launch; a missile
+/// whose launch dropped a high-flying target (no destination) stays on its
+/// launcher instead of being re-sent at the target's cell. Risk: RNG parity
+/// and that stranded missile.
+fn launch_missile_child(sim: &mut Simulation, rules: &RuleSet, owner_id: u64, child_id: u64) {
+    let boomer_pool = manager_field(sim, owner_id, |m| m.spawn_type).is_some_and(|spawn_type| {
+        sim.interner
+            .resolve(spawn_type)
+            .eq_ignore_ascii_case(&rules.missile_spawn.cmisl.type_name)
+    });
+    if boomer_pool && let Some(child) = sim.substrate.entities.get(child_id) {
+        let location = crate::sim::movement::ground_pose::position_world_coord(&child.position);
+        sim.spawn_named_anim(
+            rules,
+            crate::rules::effect_asset_catalog::ROCKET_TAKEOFF_ANIM,
+            crate::sim::anim_class::AnimWorldCoord {
+                x: location.x,
+                y: location.y,
+                z: location.z,
+            },
+            2,
+            crate::sim::movement::rocket_movement::PUFF_DRAW_FLAGS,
+            -10,
+        );
+    }
+    with_manager(sim, owner_id, |m| m.promote_queued_target());
+    let target = manager_field(sim, owner_id, |m| m.current_target).flatten();
+    sim.assign_aircraft_attack_destination(
         child_id,
-        (origin_rx, origin_ry),
-        (target_rx, target_ry),
-        speed,
-        Some(payload),
-        sim.session.binary_frame,
+        target.map(crate::sim::components::NavTargetRef::from),
+        rules,
     );
-}
-
-/// One missile impact, queued for the combat phase to resolve.
-///
-/// `RocketLocomotion::Detonate` (`0x00663030`) selects the warhead by missile
-/// family and elite flag and then calls the engine's shared area-damage
-/// routine — the same one the ordinary warhead, bomb, nuke and lightning paths
-/// call. It does NOT have a private damage applicator. VERA's equivalent shared
-/// path is combat's damage → death → despawn pipeline, so the detonation
-/// records itself here and combat expands it; reimplementing the damage
-/// application in this module produced targets that could be damaged but never
-/// killed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MissileDetonation {
-    pub rx: u16,
-    pub ry: u16,
-    /// Interned warhead section name (family + elite selected at launch).
-    pub warhead: InternedId,
-    pub damage: i32,
-    /// Launcher stable id — kill credit and retaliation.
-    pub firer_id: u64,
-    /// House the missile carried, for the area-damage owner argument.
-    pub owner: InternedId,
-    /// The exact impact coordinate (world leptons) of a missile that
-    /// exploded in flight ([`detonate_dead_missile`]); `None` detonates on
-    /// the ground of the target cell `(rx, ry)`.
-    pub impact: Option<crate::sim::projectile::ProjectileCoord>,
-}
-
-/// Consume every missile that reached its target during this tick's movement
-/// pass: queue its impact for the combat phase and remove the missile.
-///
-/// The queue is drained inside `tick_combat_*` in the same tick, before the
-/// damage phase, so the impact runs the identical damage → `dead_entities` →
-/// `handle_entity_deaths` → despawn sequence as any ordinary bullet. Death
-/// weapons, crew ejection, explosion anims, smudges and kill credit all come
-/// from that shared path rather than from this module.
-///
-/// **DRIFT — within-tick timing.** Native applies the damage inline in the
-/// locomotor pass, so a unit killed by an impact never gets a combat pass that
-/// tick; here the damage lands a phase later, so a unit that will die to the
-/// impact still fires once. Trigger: every missile impact that kills.
-/// Player effect: one extra shot from a doomed unit, sub-tick. Frequency:
-/// every killing impact. Downstream risk: none beyond the extra shot — it is
-/// the same phase-batching VERA already applies to all combat damage, and the
-/// alternative (a private applicator in this module) is what let targets sit
-/// at zero health.
-pub fn detonate_missiles(sim: &mut Simulation, detonated: &[u64]) {
-    for &missile_id in detonated {
-        let Some((rx, ry, payload, owner)) = sim.substrate.entities.get(missile_id).and_then(|e| {
-            e.rocket_state
-                .as_ref()
-                .map(|r| (r.target_rx, r.target_ry, r.payload, e.owner()))
-        }) else {
-            continue;
-        };
-        if let Some(payload) = payload {
-            sim.pending_missile_detonations.push(MissileDetonation {
-                rx,
-                ry,
-                warhead: payload.warhead,
-                damage: payload.damage,
-                firer_id: payload.firer_id,
-                owner,
-                impact: None,
-            });
-        }
-        sim.uninit(missile_id);
-    }
-}
-
-/// `RocketLocomotion::Detonate` (`0x00663030`) for a missile that lost its
-/// Health in flight. `ILoco::Process` checks its owner after the flight step
-/// (`0x00662FD5..0x00662FE1`), so a missile shot down by AA — latched
-/// crashing by `FootClass::Crash`, which only a Fly locomotor then drops —
-/// explodes where it is on its next turn instead of flying on to its target.
-/// The payload is the one its launch selected, and the impact joins the
-/// arrival queue ([`detonate_missiles`], with the same within-tick drift).
-///
-/// RESIDUAL: native explodes `BodyLength=` ahead of the missile along its nose
-/// (`0x006630F7..0x006631C7`: X and Y by the facing, Z by the pitch `+0x54`);
-/// VERA's rocket flight keeps no native pitch, so the blast is at the
-/// missile's own coordinate. Trigger: AA kills a V3, Dreadnought or Boomer
-/// missile. Effect: the blast centre sits up to BodyLength behind native
-/// (stock 256 leptons for V3, 128 for the others). Frequency: every such
-/// shot-down. Downstream: the area damage's reach shifts by that distance.
-///
-/// RESIDUAL: the area damage's source is the launcher (the queued impact's
-/// owner, for kill credit), where native passes the missile itself
-/// (`0x006632B8`); `Apply_area_damage` leaves its source out of the ground
-/// list. Trigger: a missile shot down within its warhead's CellSpread of its
-/// launcher. Effect: the launcher is spared the blast. Frequency: rare (AA
-/// covering the launcher). Downstream: that launcher's health.
-pub(crate) fn detonate_dead_missile(sim: &mut Simulation, missile_id: u64) {
-    let Some((impact, rx, ry, payload, owner)) =
-        sim.substrate.entities.get(missile_id).and_then(|entity| {
-            let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
-            entity.rocket_state.as_ref().map(|rocket| {
-                (
-                    crate::sim::projectile::ProjectileCoord {
-                        x: coord.x,
-                        y: coord.y,
-                        z: coord.z,
-                    },
-                    entity.position.rx,
-                    entity.position.ry,
-                    rocket.payload,
-                    entity.owner(),
-                )
-            })
-        })
-    else {
-        return;
-    };
-    if let Some(payload) = payload {
-        sim.pending_missile_detonations.push(MissileDetonation {
-            rx,
-            ry,
-            warhead: payload.warhead,
-            damage: payload.damage,
-            firer_id: payload.firer_id,
-            owner,
-            impact: Some(impact),
-        });
-    }
-    sim.uninit(missile_id);
+    queue_child_mission(sim, child_id, crate::sim::mission::MissionType::Move);
 }
 
 /// `SpawnManagerClass::PointerExpired` (`decompile_function 0x006B7C60`) for
@@ -1481,19 +1288,26 @@ pub(crate) fn detonate_dead_missile(sim: &mut Simulation, missile_id: u64) {
 ///
 /// **Slot-arm alive-child guard** (`0x006B7CDD..0x006B7CF2`): the slot is
 /// kept, and nothing else happens, while `child+0x6C > 0 && child+0x6CA == 0
-/// && node+0x14 != 1`, i.e. the child has Health, is not on the retreat
+/// && node+0x14 != 1`, i.e. the child has Health, is not on the kamikaze
 /// tracker, and the slot is not a missile slot. `+0x6C` is Health, proven by
 /// state 6 writing `childType+0xA0` (`Strength=`) into `+0x6C`/`+0x70`. The
 /// guard exists because `ObjectClass::Limbo` broadcasts (`0x005F4D61`), and a
 /// Hornet docking through `step_landing`'s Limbo would otherwise expire its own
-/// slot and strand itself in limbo. `+0x6CA` needs no VERA field: on an
-/// aircraft the constructor clears it (`0x00413D4E`) and only
-/// `SpawnRetreat__Push` sets it (`0x0054E47D`, a `MissileSpawn=` child), and
-/// every Push caller frees the slot right after — Kill_All_Spawns directly
-/// (`0x006B71C2`), the launch and ClearAllTargets through this routine
-/// (`0x006B7ACD`, `0x006B7C16`) — except a missile slot's launch, and a
-/// missile slot is freed on any expiry by the `is_missile_spawn` test.
-pub fn notify_pointer_expired(sim: &mut Simulation, listener_id: u64, expired_id: u64) {
+/// slot and strand itself in limbo. `+0x6CA` is the tracker's membership: on
+/// an aircraft the constructor clears it (`0x00413D4E`) and only Push sets it
+/// (`0x0054E47D`), as it appends the node; the node goes at the child's
+/// pointer expiry, after the listeners (`0x00725972`), so this guard still
+/// sees it.
+///
+/// `rules` lets the target arm's ClearAllTargets hand state-2 missiles to the
+/// tracker ([`clear_all_spawn_targets`]).
+pub fn notify_pointer_expired(
+    sim: &mut Simulation,
+    listener_id: u64,
+    expired_id: u64,
+    rules: Option<&RuleSet>,
+    registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+) {
     if listener_id == expired_id {
         // The owner arm; `Simulation::spawn_manager_owner_expired` already ran it.
         return;
@@ -1517,13 +1331,10 @@ pub fn notify_pointer_expired(sim: &mut Simulation, listener_id: u64, expired_id
     let expired_target = TargetKind::Entity(expired_id);
 
     if current == Some(expired_target) {
-        let queued_empty = queued.is_none();
-        with_manager(sim, listener_id, |m| {
-            m.current_target = None;
-            if queued_empty {
-                m.clear_all_targets();
-            }
-        });
+        with_manager(sim, listener_id, |m| m.current_target = None);
+        if queued.is_none() {
+            clear_all_spawn_targets(sim, listener_id, rules, registry);
+        }
         return;
     }
     if queued == Some(expired_target) {
@@ -1538,7 +1349,7 @@ pub fn notify_pointer_expired(sim: &mut Simulation, listener_id: u64, expired_id
             .is_some_and(|child| child.health.current > 0);
         let missile_slot =
             manager_field(sim, listener_id, |m| m.slots[index].is_missile_spawn).unwrap_or(false);
-        if child_alive && !missile_slot {
+        if child_alive && !sim.kamikaze.contains(expired_id) && !missile_slot {
             return;
         }
         let frame = sim.session.binary_frame;
@@ -1550,31 +1361,58 @@ pub fn notify_pointer_expired(sim: &mut Simulation, listener_id: u64, expired_id
     }
 }
 
-/// `SpawnManagerClass::ClearAllTargets` (`0x006B7BB0`) as a standalone call.
+/// `SpawnManagerClass::ClearAllTargets` (`0x006B7BB0`).
 ///
-/// Kept separate from [`kill_all_spawns_with_context`] because the two are separate native
-/// calls: the owner-expired path makes both, the ownership-change path makes
-/// only the kill.
+/// Each slot in state 2 whose child's type sets `MissileSpawn=` (`+0xD68`)
+/// hands its child to the kamikaze tracker with the live target
+/// (`SpawnRetreat__Push`, `0x006B7BEB`; NULL when the target arm of
+/// [`notify_pointer_expired`] has just dropped it, so the missile takes the
+/// cell ahead of its facing), restarts the tracker for 2 frames
+/// (`0x006B7BF0`) and expires the child through [`notify_pointer_expired`]
+/// (`0x006B7C16`), which frees the slot: the Push has just tracked it. Then
+/// both targets and the mode reset.
 ///
-/// **Omission recorded.** The native routine is not a pure field reset: before
-/// zeroing the two targets and the mode, it walks the slots and, for any
-/// state-2 slot whose child type sets `MissileSpawn=`, pushes that child onto
-/// the retreat list and expires the slot. VERA does that walk nowhere.
+/// A Dreadnought or Boomer slot is still in state 2 while the manager waits
+/// out the inter-launch delay, so a target that dies then frees the slot at
+/// once and its missile flies on under the tracker.
 ///
-/// There are three callers of the native clear, not two. On the two that reach
-/// this public function — `Simulation::uninit` and the Launching arm — the
-/// omission is inert: no stock aircraft-flavoured child sets `MissileSpawn=`,
-/// and a missile-flavoured slot has already left state 2 for `KamikazeWait`.
-/// The third is the target arm of [`notify_pointer_expired`], and there it is
-/// **not** inert: a Dreadnought or Boomer slot can still be `InFlight` while it
-/// waits out the 20-frame inter-launch delay. Native frees that slot at
-/// target-death; VERA frees it later, when the missile impacts, so the regen
-/// clock starts late by the residual flight time. Trigger: a Dreadnought or
-/// Boomer target dying to other damage inside that window. Player effect: the
-/// next salvo arrives slightly later. Frequency: occasional in naval fights.
-/// Downstream risk: none — it shifts one timer, feeds nothing else.
-pub fn clear_all_spawn_targets(sim: &mut Simulation, owner_id: u64) {
-    with_manager(sim, owner_id, |m| m.clear_all_targets());
+/// Native callers: the manager AI (no target, out of range, after the
+/// Launching pass), the target arm of PointerExpired, its owner arm with
+/// Kill_All_Spawns, and the owner's target scan. The rules-less UnInit
+/// adapters (tests and fixtures only) skip the walk.
+pub(crate) fn clear_all_spawn_targets(
+    sim: &mut Simulation,
+    owner_id: u64,
+    rules: Option<&RuleSet>,
+    registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+) {
+    if let Some(rules) = rules {
+        let mut index = 0;
+        while let Some((state, child, target)) = manager_field(sim, owner_id, |m| {
+            m.slots
+                .get(index)
+                .map(|slot| (slot.state, slot.spawn, m.current_target))
+        })
+        .flatten()
+        {
+            index += 1;
+            let Some(child) = child.filter(|_| state == SpawnSlotState::InFlight) else {
+                continue;
+            };
+            let missile_spawn = sim
+                .substrate
+                .entities
+                .get(child)
+                .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+                .is_some_and(|kind| kind.missile_spawn);
+            if missile_spawn {
+                sim.kamikaze_push(child, target, rules, registry);
+                sim.kamikaze_restart_after_push();
+                notify_pointer_expired(sim, owner_id, child, Some(rules), registry);
+            }
+        }
+    }
+    with_manager(sim, owner_id, SpawnManagerState::clear_all_targets);
 }
 
 /// Tear down a parent's whole pool.
@@ -1586,28 +1424,28 @@ pub fn clear_all_spawn_targets(sim: &mut Simulation, owner_id: u64) {
 /// - **`ReadyDocked` / `Reloading`** — call the child's destroy slot
 ///   (`vtable+0xF8`), null the slot pointer, arm the regen timer.
 /// - **`KamikazeWait`** — a missile that has *already left the launcher*:
-///   remove it from the retreat list, then call the same destroy slot. The
-///   in-flight missile dies with its launcher; the salvo does **not** land.
+///   remove it from the kamikaze tracker (`0x006B7162`), then call the same
+///   destroy slot. The in-flight missile dies with its launcher; the salvo
+///   does **not** land.
 /// - **everything else** (`InFlight` / `ReturningToDock` / `LandingAtDock`,
 ///   i.e. the aircraft states) — the slot is marked regenerating, then
-///   `SpawnRetreat__Push @ 0x0054E3B0` (`0x006B71B7`). A child whose type is
-///   not `MissileSpawn=` (`+0xD68`, read at `0x00714F37`) crashes there
-///   (`Crash(0)`, `0x0054E3CA..0x0054E3D2`): the Hornets of a sunk Carrier
-///   fall out of the sky like shot-down aircraft (`Simulation::foot_crash`),
-///   and one already on the ground is refused and stays. A missile joins the
-///   global retreat list and flies on toward the last target.
+///   `SpawnRetreat__Push @ 0x0054E3B0` (`0x006B71B7`) with the manager's
+///   target and no timer restart. A child whose type is not `MissileSpawn=`
+///   (`+0xD68`, read at `0x00714F37`) crashes there (`Crash(0)`,
+///   `0x0054E3CA..0x0054E3D2`): the Hornets of a sunk Carrier fall out of the
+///   sky like shot-down aircraft (`Simulation::foot_crash`), and one already
+///   on the ground is refused and stays. A missile joins the tracker
+///   (`sim::kamikaze`) and flies on toward the last target.
 ///
 /// The regen duration is `SpawnRegenRate` when the owner is dead
 /// (`owner.Health < 1 || !owner.IsAlive`) and **zero** when it is still alive —
 /// so an ownership change or a deploy rebuilds the pool on the next AI pass
 /// rather than after a full regen wait.
 ///
-/// VERA has no global retreat list, so the missile arm releases the child
-/// (clears `spawn_owner_id`) and leaves it flying instead of re-issuing a
-/// destination each tick. **VERA-internal; the retreat list's per-tick
-/// re-issue and its `HP = 1` marking are UNCHECKED.** Crash needs the rules;
-/// the rules-less UnInit adapters (tests and fixtures only) release a crashing
-/// child the same way.
+/// The pushed child's `spawn_owner_id` is cleared here; native clears the
+/// child's spawn owner (`+0x2D4`) when the owner's pointer expires. Push needs
+/// the rules; the rules-less UnInit adapters (tests and fixtures only) release
+/// the child without it.
 ///
 /// This routine never touches `CurrentTarget`/`QueuedTarget`; the caller
 /// decides. `Simulation::spawn_manager_owner_expired` pairs it with
@@ -1641,10 +1479,10 @@ pub(crate) fn kill_all_spawns_with_context(
     owner_id: u64,
     context: UninitContext<'_>,
 ) {
-    let Some((slots, regen_rate)) = sim.substrate.entities.get(owner_id).and_then(|e| {
+    let Some((slots, regen_rate, target)) = sim.substrate.entities.get(owner_id).and_then(|e| {
         e.spawn_manager
             .as_ref()
-            .map(|m| (m.slots.clone(), m.regen_rate))
+            .map(|m| (m.slots.clone(), m.regen_rate, m.current_target))
     }) else {
         return;
     };
@@ -1669,30 +1507,26 @@ pub(crate) fn kill_all_spawns_with_context(
         }
         if let Some(child_id) = slot.spawn {
             match slot.state {
-                // Docked, reloading, or a missile still inside its post-launch
-                // tilt window: all three take the destroy slot.
-                SpawnSlotState::ReadyDocked
-                | SpawnSlotState::Reloading
-                | SpawnSlotState::KamikazeWait => {
+                // Docked or reloading: the destroy slot.
+                SpawnSlotState::ReadyDocked | SpawnSlotState::Reloading => {
                     sim.uninit_with_context(child_id, context);
                 }
-                // Aircraft already out: `SpawnRetreat__Push`, which crashes
-                // anything but a missile.
+                // A missile still inside its post-launch tilt window leaves
+                // the tracker first.
+                SpawnSlotState::KamikazeWait => {
+                    sim.kamikaze.remove(child_id);
+                    sim.uninit_with_context(child_id, context);
+                }
+                // Out: `SpawnRetreat__Push`, which crashes anything but a
+                // missile.
                 SpawnSlotState::InFlight
                 | SpawnSlotState::ReturningToDock
                 | SpawnSlotState::LandingAtDock => {
                     if let Some(child) = sim.substrate.entities.get_mut(child_id) {
                         child.spawn_owner_id = None;
                     }
-                    if let Some(rules) = context.rules()
-                        && sim
-                            .substrate
-                            .entities
-                            .get(child_id)
-                            .and_then(|child| sim.object_type(child.type_ref(), rules))
-                            .is_some_and(|child_type| !child_type.missile_spawn)
-                    {
-                        sim.foot_crash(child_id, None, rules, context.registry());
+                    if let Some(rules) = context.rules() {
+                        sim.kamikaze_push(child_id, target, rules, context.registry());
                     }
                 }
                 SpawnSlotState::Regenerating => unreachable!("skipped above"),

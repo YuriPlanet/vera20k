@@ -28,8 +28,8 @@ struct Corpus {
 
 #[test]
 fn native_object_flight_queries_use_live_ground_bridge_and_mark() {
-    let corpus: Corpus = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/object_flight_height.json"
+    let corpus: Corpus = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/object_flight_height.json",
     ))
     .unwrap();
     assert_eq!(

@@ -6,8 +6,8 @@ use crate::sim::movement::{FacingClass, locomotor::LocomotorState};
 
 #[test]
 fn paid_walk_matches_original_numeric_facing_and_boundary_vectors() {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/walk_paid_step.json"
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/walk_paid_step.json",
     ))
     .unwrap();
     assert_eq!(rows.len(), 40);
@@ -92,8 +92,8 @@ fn paid_walk_matches_original_numeric_facing_and_boundary_vectors() {
 
 #[test]
 fn idle_walk_scold_tails_match_original_through_ordinary_process() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_scold_latch.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_scold_latch.json",
     ))
     .unwrap();
     let mut checked = 0;
@@ -147,8 +147,8 @@ fn idle_walk_scold_tails_match_original_through_ordinary_process() {
 
 #[test]
 fn same_cell_paid_walk_scold_clear_matches_original_commit_tail() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/foot_scold_latch.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_scold_latch.json",
     ))
     .unwrap();
     let mut checked = 0;

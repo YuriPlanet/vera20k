@@ -14,13 +14,27 @@ use crate::sim::stage::StageClass;
 
 const ARCHIVE_LESS_UNDEPLOY_STAGE: i32 = 0x17;
 
-/// The two controls used by ordinary construction and sale. The stock
-/// BuildingType constructor initializes Idle to{0,1,0}; gate animation modes
-/// remain with the separate gate mechanism.
+/// Begin_Mode's body modes. Construction and sale use 0 and 1; a nuclear
+/// silo's Mission_Missile also steps through Active (2), Aux1 (4) and Aux2 (5)
+/// (`0x0044C9C7`, `0x0044CA88`, `0x0044CCC5`). Gate animation modes remain
+/// with the separate gate mechanism.
+///
+/// Begin_Mode reads each mode's {start, count, rate} from BuildingType
+/// `+0xF04 + 12 * mode` (art `AnimIdle=`, `AnimActive=`, `AnimAux1=`,
+/// `AnimAux2=`; constructor {0,1,0}). Only Construction binds its control
+/// here; the others take the constructor's {0,1,0}.
+/// RESIDUAL: art `AnimActive=` (stock GAWEAP/YAWEAP/NAWEAP {0,1,0}, the
+/// construction yards, NAINDP and YACOMD {0,26,3}, the repair depots and
+/// CAOUTP {0,7,2}) is not bound. No ported caller begins Active on those
+/// types; the silo (NAMISL) authors none of the four keys, so its modes run
+/// the constructor control exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BuildingBodyMode {
     Construction,
     Idle,
+    Active,
+    Aux1,
+    Aux2,
 }
 
 impl BuildingBodyMode {
@@ -28,6 +42,9 @@ impl BuildingBodyMode {
         match self {
             Self::Construction => 0,
             Self::Idle => 1,
+            Self::Active => 2,
+            Self::Aux1 => 4,
+            Self::Aux2 => 5,
         }
     }
 }
@@ -273,8 +290,8 @@ mod tests {
     use serde_json::Value;
 
     fn corpus() -> Value {
-        serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_construction.json"
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_construction.json",
         ))
         .unwrap()
     }
@@ -484,8 +501,8 @@ mod tests {
     /// type has no Buildup is Sell_Back's refusal, `production_sell`'s).
     #[test]
     fn sales_match_the_original_sell_visits() {
-        let corpus: Value = serde_json::from_str(include_str!(
-            "../../tools/spatial_oracle/building_sale.json"
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_sale.json",
         ))
         .unwrap();
         let mut compared = 0;

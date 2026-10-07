@@ -123,8 +123,8 @@ fn live_bridge_recalc_publishes_retained_attributes_before_connectivity() {
 
 #[test]
 fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_constructor.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_constructor.json",
     ))
     .unwrap();
     let original_cases = corpus["cases"].as_array().unwrap();
@@ -225,8 +225,8 @@ fn live_bridge_constructor_side_cells_restore_deck_without_overlay_sprites() {
     use crate::sim::world::{PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest};
     use crate::util::fixed_math::SimFixed;
 
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_constructor.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_constructor.json",
     ))
     .unwrap();
     // Original5FC380 success controls for24/25/237/238. Execute the actual
@@ -322,8 +322,8 @@ fn constructor_side_admission_matches_original_foot_receiver() {
     use crate::sim::movement::infantry_entry::InfantryEntryArgs;
     use crate::util::fixed_math::SimFixed;
 
-    let corpus: Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_side_admission.json"
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_side_admission.json",
     ))
     .unwrap();
     let rows = corpus["admission"].as_array().unwrap();

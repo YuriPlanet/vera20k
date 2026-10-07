@@ -290,24 +290,34 @@ fn queue_guard(sim: &mut Simulation, building_id: u64) {
     );
 }
 
-/// Clear-only teardown (super / temporal-non-building / unit death). Clears both
-/// links + plays the down sound/anim when occupied, but does NOT reposition the
-/// unit. This legacy clear-only adapter has not been audited as a native
-/// teardown; install/release do not imply a concealed or invulnerable occupant.
-#[cfg(test)]
-pub fn release_clear(sim: &mut Simulation, building_id: u64, rules: &RuleSet) {
-    if sim
+/// `BuildingClass::ClearBunker @ 0x00459470`, for an occupant that left
+/// without the release (the Chrono Warp, `0x006CC955`): anim slots 10 and 11
+/// are cleared; with an occupant, `BunkerWallsDownSound=`, the wall-down slots
+/// 12 and 13 (their damaged variants at or below ConditionYellow), BREAK to
+/// radio slot 0 (vt+0x274(3), `0x0065ACB0`), both links cleared, the bunker
+/// state reset and Guard queued. The occupant is not moved.
+pub(crate) fn clear_bunker(sim: &mut Simulation, building_id: u64, rules: &RuleSet) {
+    let occupant = sim
         .substrate
         .entities
         .get(building_id)
-        .and_then(|b| b.bunker_occupant)
-        .is_some()
-    {
-        emit_bunker_wall_anim(sim, building_id, false, rules);
-        emit_bunker_wall_sound(sim, building_id, false);
-        break_bunker_link(sim, building_id);
+        .and_then(|b| b.bunker_occupant);
+    let Some(unit_id) = occupant else {
+        sim.clear_building_anim_slot(building_id, 10);
+        sim.clear_building_anim_slot(building_id, 11);
+        return;
+    };
+    emit_bunker_wall_anim(sim, building_id, false, rules);
+    emit_bunker_wall_sound(sim, building_id, false);
+    break_first_contact(sim, building_id);
+    if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
+        u.bunker_link = BunkerLink::None;
+    }
+    if let Some(b) = sim.substrate.entities.get_mut(building_id) {
+        b.bunker_occupant = None;
     }
     reset_bunker_idle(sim, building_id);
+    queue_guard(sim, building_id);
 }
 
 /// Despawn safety net: if `id` is a bunker with an occupant, or a unit installed
@@ -648,9 +658,9 @@ mod tests {
     }
 
     #[test]
-    fn release_clear_plays_down_sound_but_does_not_reposition() {
+    fn clear_bunker_plays_down_sound_but_does_not_reposition() {
         let mut sim = installed_sim();
-        release_clear(&mut sim, 2, &rules());
+        clear_bunker(&mut sim, 2, &rules());
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker_link, BunkerLink::None);
         assert!(unit.in_logic_vector, "clear preserves live membership");
@@ -716,10 +726,10 @@ mod tests {
     }
 
     #[test]
-    fn release_clear_emits_one_walls_down_anim_event() {
+    fn clear_bunker_emits_one_walls_down_anim_event() {
         let mut sim = installed_sim();
         sim.bunker_wall_events.clear();
-        release_clear(&mut sim, 2, &rules());
+        clear_bunker(&mut sim, 2, &rules());
         assert_eq!(down_anim_events(&sim), 1, "one walls-down anim on clear");
     }
 

@@ -25,8 +25,8 @@ const SUPPLIED: DriveCoord = DriveCoord {
 fn corpus() -> &'static Value {
     static CORPUS: OnceLock<Value> = OnceLock::new();
     CORPUS.get_or_init(|| {
-        serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/locomotor_force_track.json"
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/locomotor_force_track.json",
         ))
         .expect("saved native Force_Track corpus")
     })

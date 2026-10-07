@@ -2567,8 +2567,8 @@ mod guard_rearm_tests {
     /// `guard` rows: paused, running, spent, and wrapping differences).
     #[test]
     fn guard_rearm_return_matches_the_original() {
-        let vectors: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../tools/spatial_oracle/rearm_timer.json"
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/rearm_timer.json",
         ))
         .unwrap();
         let rules = RuleSet::from_ini(&IniFile::from_str("[General]\n\n[Guard]\nRate=.016\n"))

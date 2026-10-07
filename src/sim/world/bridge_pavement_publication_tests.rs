@@ -17,8 +17,8 @@ fn retail_plain_pavement_native_entry_draw_selection_and_snapshot() {
         });
     let map = std::env::var("VERA20K_XMP34U4_MAP").unwrap();
     let mut scenario = crate::headless_scenario::load(&retail, &map, 0x0B21_D6E5).unwrap();
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/bridge_pavement.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_pavement.json",
     ))
     .unwrap();
     let original = &corpus["stock"]["perpendicular"]["result"];

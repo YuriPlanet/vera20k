@@ -25,8 +25,8 @@ mod tests {
 
     #[test]
     fn burst_index_matches_original_signed_increment_and_remainder() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/techno_burst_index.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/techno_burst_index.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 54);
@@ -211,8 +211,8 @@ mod tests {
 
     #[test]
     fn target_burst_reset_matches_original_setter_and_callers() {
-        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../tools/spatial_oracle/techno_target_burst.json"
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/techno_target_burst.json",
         ))
         .unwrap();
         assert_eq!(rows.len(), 108);

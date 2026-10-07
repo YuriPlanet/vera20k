@@ -12,8 +12,8 @@ use crate::sim::rng::SimRng;
 use crate::util::native_x87::NativeF32Bits;
 
 fn stage_payload() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/gattling_stage.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/gattling_stage.json",
     ))
     .expect("gattling_stage.json parses")
 }
@@ -281,8 +281,8 @@ fn original_fault_inputs_play_nothing() {
 // ---- the unit's per-frame firing update, through the production tail ----
 
 fn unit_fire_payload() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/gattling_unit_fire.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/gattling_unit_fire.json",
     ))
     .expect("gattling_unit_fire.json parses")
 }

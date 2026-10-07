@@ -208,8 +208,8 @@ mod tests {
 
     #[test]
     fn ordinary_controls_match_original_resource_bytes_and_native_placement() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tools/storage_oracle/saved_game_layout.json"
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/saved_game_layout.json",
         ))
         .unwrap();
         for case in fixture["cases"].as_array().unwrap() {

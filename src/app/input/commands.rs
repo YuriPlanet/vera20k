@@ -414,8 +414,8 @@ pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str
 /// the sidebar or minimap — this matters for the release of the arming
 /// click itself, which lands on the cameo. Leaving the mode armed lets
 /// the next real tactical-map click fire the SW. On a real tactical-map
-/// click, schedules the command and clears the mode. The sim-side
-/// dispatch validates `is_active && is_ready`; UI does not duplicate.
+/// click, schedules the command and clears the mode. The sim's ClickFire
+/// admits the Super; UI does not duplicate it.
 pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str) {
     // Guard: arming click's RELEASE lands on the cameo. Don't fire the SW
     // at a bogus off-map cell behind the sidebar panel; leave the mode
