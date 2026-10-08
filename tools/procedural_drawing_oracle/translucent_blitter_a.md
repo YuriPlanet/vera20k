@@ -156,7 +156,7 @@ isolated producer/selector/leaf coverage. Production Rust tests and GPU
 comparisons must separately cite their actual results; this file is not a
 claim of whole-game cloak or rendered-frame parity.
 
-The [preserved caller/producer packet](validation/native-controlflow/README.md)
+The preserved caller/producer packet
 records Building and constructor-installed locomotor virtual dispatch, checked
 static byte requests, Ghidra interpretation limits and the bounded signed
 truncation argument for the canonical Rust visual-character owner.

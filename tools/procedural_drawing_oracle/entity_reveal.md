@@ -54,5 +54,5 @@ correction does not claim special-tint or whole rendered mobile parity.
 In particular Infantry5190D1 calls487950 and5190DA clears its special tint
 argument before continuing to draw; admission independence does not establish
 that the full DrawIt body has no fog-dependent pixel operations. The independent
-[review](validation/mobile-reveal/review.md) also records an unconfirmed hidden-FX
+review also records an unconfirmed hidden-FX
 compatibility-composition risk outside these ordinary controls.

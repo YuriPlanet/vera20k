@@ -41,8 +41,6 @@ Flerspelarläge, kampanjer och originalets AI saknas fortfarande. Flygplan, sinn
 broar och flera vapen och effekter behöver mer arbete. Vi har ännu inte demonstrerat slag
 med 30 spelare och 20 000 enheter.
 
-Vanliga byggnader, landskapsobjekt och enheter går nu in i ritningen innan deras ankarruta har utforskats, så att krigsdimman gradvis visar deras pixlar. Särskilda ritvägar behöver fortfarande jämföras med originalet.
-
 ## Bygg och kör
 
 Du behöver Rust 1.88 eller senare, ett grafikkort med Vulkan, DirectX 12 eller Metal,

@@ -115,11 +115,11 @@ these handles before scheduling the command. Its physical art reader reports
 Foundation3x5 and `CTNEWY20.SHP` 260x228,8 frames; the ordinary theater loader
 and SHP builder consume the retail assets in the captures.
 
-On RTX3050 Laptop/Dx12, the saved [54-step image](validation/building-reveal/step-54.png)
-shows part of the roof, [75](validation/building-reveal/step-75.png) and
-[91](validation/building-reveal/step-91.png) show more of the building while the
+On RTX3050 Laptop/Dx12, the saved 54-step image
+shows part of the roof, 75 and
+91 show more of the building while the
 read-only anchor visibility remains false. It first becomes true at92;
-the [92-step image](validation/building-reveal/step-92.png) retains the already
+the 92-step image retains the already
 drawn body rather than admitting its whole sprite for the first time.
 All seven capture bundles passed the existing map-observation validator,
 including final offline revalidation after derived previews were moved outside
@@ -129,7 +129,7 @@ simulation fingerprints and final state hash15818579214581792755.
 
 Release label `building-shroud-reveal-20261006-v1` pins binary SHA-256
 `9c2d1476b62cf1bf71eda3c8a3ec659165681e97478dcd96b1001907f6a59e46`.
-[The receipt](validation/building-reveal/receipt.json) records its build-source
+The receipt records its build-source
 identity, actual map/GPU identity, profiles, manifest/frame hashes and endpoints.
 Raw capture bundles remain at the receipt's local evidence paths. The checked
 source's Rust changes were already present in this executable; the profile,
@@ -156,7 +156,7 @@ before changing install state. Its focused test and the repeated full suite pass
 production audio loading is unchanged. The admission regression's expected
 pre-fix failure and all actual logs remain in `logs/building-reveal-fix/logs/`.
 
-One fresh [read-only critic](validation/building-reveal/review.md) independently
+One fresh read-only critic independently
 replayed the native corpus, traced the changed consumers and checked the saved
 production evidence. It reported no confirmed implementation defects or blocking
 findings; the coverage limits above remain.

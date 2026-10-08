@@ -78,7 +78,7 @@ capture validation are recorded by the repair owner.
 
 ## Rust integration
 
-The [local scenery repair evidence](validation/scenery-reveal/README.md) links
+The local scenery repair evidence links
 production before/after retail captures, regression checks and the saved
 identity receipt. Those observations are Rust integration evidence, not native
 whole-scene pixel parity.

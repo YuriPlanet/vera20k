@@ -13,7 +13,7 @@ special-effect parity or future/unimplemented renderers.
 | Vehicles and aircraft, VXL bodies/shadows/turrets | `instances/units.rs` through the same drawing helper; retained Display, transport/limbo, cloak/sensors and projection remain | Original class-entry controls in [entity_reveal](entity_reveal.md); removed the remaining mobile anchor gate |
 | Infantry and SHP mobile bodies | `instances/shp.rs` through the same drawing helper | Same native Infantry5F4B10/518F90 controls; shared correction does not depend on type name |
 | Static Terrain trees and props | `instances/overlays.rs` Terrain loop; live/Logic/Display/frame/camera remain | Executed6D97D0/71CC50/71C1B0 controls in [terrain_reveal](../spatial_oracle/terrain_reveal.md); prior local repair |
-| Cell overlays: rocks, walls, resources, crates, low bridges | `instances/overlays.rs::build_overlay_instances_inner`; its input has no fog state; identity/frame/camera remain | Ordinary47FB90/47F6A0 route read; physical low-bridge executed controls and retail rock reader/render witnesses in [scenery evidence](../spatial_oracle/validation/scenery-reveal/README.md) |
+| Cell overlays: rocks, walls, resources, crates, low bridges | `instances/overlays.rs::build_overlay_instances_inner`; its input has no fog state; identity/frame/camera remain | Ordinary47FB90/47F6A0 route read; physical low-bridge executed controls and retail rock reader/render witnesses in scenery evidence |
 | High-bridge body/shadow/railings | Bridge builders consume retained/resolved cells and physical atlas without exploration input | Existing native bridge raster corpus and [bridge admission controls](../spatial_oracle/bridge_shadow_render.shroud-admission.md); no second anchor gate found |
 | TMP terrain/cliffs and smudges | `render/terrain_instances.rs`, `render/smudge.rs`; viewport/live art admission, no exploration input | Production source audit; no gate change or new full-scene native pixel claim |
 | AnimClass, bullets, parachutes and supported particles | Retained lifecycle/Display/coordinates/frame/atlas paths in `instances/overlays.rs`, `projectiles.rs`, `particles.rs` | Production source audit found no analogous whole-anchor exploration gate; no new effect raster parity claim |
@@ -60,8 +60,8 @@ local logs. The sim field ratchet remains2505/2505. Serial DX12 release output
 comparison validates eight sealed bundles: step110 changes only708 vehicle pixels
 before anchor exploration; step111, fully hidden and fully clear controls match
 exactly. Checked inputs, clocks, complete observations and simulation fingerprints
-match per pair; see [mobile runtime evidence](validation/mobile-reveal/README.md).
-One fresh [read-only review](validation/mobile-reveal/review.md) found no confirmed
+match per pair; see mobile runtime evidence.
+One fresh read-only review found no confirmed
 ordinary-material defect or blocker. It retained an unconfirmed hidden-FX outline
 risk in compatibility packed composition (cloak/warp/otherFX with stock A=2),
 requiring a separate native material mechanism rather than an invented cutoff.

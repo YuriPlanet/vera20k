@@ -4,14 +4,6 @@ tools/**/*.py text eol=lf
 # Native replay and proof identities hash exact bytes, including LF endings.
 tools/spatial_oracle/_factory_infantry_output/** -text
 tools/spatial_oracle/factory_infantry_output_replay/** -text
-# Packed drawing evidence pins raw native packets, corpus and receipt bytes.
-tools/procedural_drawing_oracle/validation/native-controlflow/** -text whitespace=cr-at-eol
-tools/procedural_drawing_oracle/validation/source-dependencies/** -text whitespace=cr-at-eol
-tools/procedural_drawing_oracle/validation/packed-reveal/** -text whitespace=cr-at-eol
-tools/procedural_drawing_oracle/translucent_blitter_a*.json -text whitespace=cr-at-eol
-# Preserve imported Ghidra transport endings and the packet's pinned EOF.
-tools/procedural_drawing_oracle/validation/native-controlflow/ghidra/*-decompile.c whitespace=-trailing-space,-blank-at-eof
-tools/procedural_drawing_oracle/validation/native-controlflow/building/README.md whitespace=cr-at-eol,-blank-at-eof
 tools/map_observation.barracks-*.example.json -text
 src/sim/docking/fixtures/building_exit_tables_native.json -text
 src/sim/production/fixtures/infantry_exit_native.json -text

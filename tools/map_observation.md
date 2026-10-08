@@ -1687,6 +1687,6 @@ The [tree-25](map_observation.scenery-tree-25.example.json),
 [rock-95](map_observation.scenery-rock-95.example.json) profiles retain
 the ordinary tank routes on retail XShrapnel.MAP immediately before and after
 the selected anchor first becomes explored. The
-[scenery evidence](spatial_oracle/validation/scenery-reveal/README.md) records
+scenery evidence records
 actual roster discovery, before/after output and unchanged simulation. It
 separates native admission evidence from bounded Rust rendering observation.
