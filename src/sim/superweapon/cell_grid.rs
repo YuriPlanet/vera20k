@@ -60,15 +60,17 @@ pub(crate) fn selected_cell_list(
 }
 
 /// Whether `MapClass::GetCellAt @ 0x005657A0`'s cell for `(x, y)` carries
-/// the bridge flag (`CellClass+0x140 & 0x100`). The shared dummy an off-map
-/// lookup returns carries none.
+/// the bridge flag (`CellClass+0x140 & 0x100`). Off the map that is the
+/// shared dummy's live flags: Launch reads `+0x140` of whatever cell the
+/// lookup returned, with no dummy test (cases 1, 3, 4, 9 and 10 at
+/// `0x006CCEA7`, `0x006CC409`, `0x006CC53A`, `0x006CD832` and `0x006CD0BD`;
+/// the Chrono Warp's destinations by coordinate through `0x00565730` at
+/// `0x006CCA31` and `0x006CCC13`).
 pub(super) fn cell_has_bridge_flag(sim: &Simulation, x: i16, y: i16) -> bool {
-    match get_cellclass_fallback(sim.resolved_terrain.as_ref(), i32::from(x), i32::from(y)) {
-        CellRef::Real(cell) => {
-            cell.bridge_facts.raw_flags & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0
-        }
-        CellRef::Dummy { .. } => false,
-    }
+    get_cellclass_fallback(sim.resolved_terrain.as_ref(), i32::from(x), i32::from(y))
+        .bridge_flags_0x1180()
+        & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+        != 0
 }
 
 /// Read an IC receiver's then-live link, including a callback that relayered
@@ -102,4 +104,29 @@ pub(super) fn live_successor(
         .find(|member| member.entity_id == current)?
         .layer;
     cell.next_on_layer(layer, current)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Launch reads `+0x140` of whatever cell the lookup returned
+    /// (`0x006CD0BD`), so an off-map cell carries the shared dummy's live
+    /// bridge flag.
+    #[test]
+    fn an_off_map_cell_reads_the_dummys_live_bridge_flag() {
+        let mut sim = Simulation::new();
+        sim.install_resolved_terrain_for_new_map(
+            crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
+                1,
+                1,
+                vec![crate::map::resolved_terrain::test_flat_cell(0, 0)],
+            ),
+        );
+        assert!(!cell_has_bridge_flag(&sim, 5, 5));
+        sim.effective_shared_cell_dummy()
+            .test_set_retained_bridge_flags(crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL);
+        assert!(cell_has_bridge_flag(&sim, 5, 5));
+        assert!(!cell_has_bridge_flag(&sim, 0, 0));
+    }
 }

@@ -24,6 +24,8 @@ pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
 pub mod lightning_storm;
+#[cfg(test)]
+mod lightning_storm_tests;
 pub(crate) mod nuke;
 #[cfg(test)]
 mod nuke_tests;
@@ -51,57 +53,36 @@ const INVOKE_ANIM_Z_LIFT_LEPTONS: i32 = 5;
 /// `AnimClass` draw flags of the superweapon cell animations.
 const INVOKE_ANIM_DRAW_FLAGS: u32 = 0x600;
 
-/// Construct a superweapon animation at a cell's centre coordinate.
+/// Construct a superweapon's invoke animation over a cell.
 ///
 /// `SuperClass::Launch @ 0x006CC390` builds all three the same way: Iron
 /// Curtain (`Rules+0x348`, `0x006CCF09`), Force Shield (`Rules+0x34C`,
 /// `0x006CD130`) and the Genetic Mutator's `IonBlast=` (`Rules+0x298`,
 /// `0x006CD8A5`) each call `AnimClass::AnimClass @ 0x00421EA0` with
-/// `(type, &coord, delay 0, loopCount 1, drawFlags 0x600, zAdjust 0, reverse 0)`.
-/// `LightningStorm::GroundStrike @ 0x0053A300` passes the same row for its bolt
-/// (`0x0053A387`).
-///
-/// The two differ in Z. An invoke row (`on_bridge_deck`) takes the cell's
-/// [`deck_coords`] plus 5 leptons: Iron Curtain `0x006CCE76..0x006CCF09`,
-/// Force Shield `0x006CD07D..0x006CD130` (executed in
-/// `tools/superweapon_oracle.py` `force_shield_launch`), Genetic Mutator
-/// `0x006CD7F9..0x006CD8A5`. The bolt takes `CellClass::Get_Center_Coords @
-/// 0x00480A30`, the ground with no bridge term.
+/// `(type, &coord, delay 0, loopCount 1, drawFlags 0x600, zAdjust 0, reverse 0)`
+/// at the cell's [`deck_coords`] plus 5 leptons: Iron Curtain
+/// `0x006CCE76..0x006CCF09`, Force Shield `0x006CD07D..0x006CD130` (executed
+/// in `tools/superweapon_oracle.py` `force_shield_launch`), Genetic Mutator
+/// `0x006CD7F9..0x006CD8A5`.
 ///
 /// A real `AnimClass` plays the art type's `Report=` from `AnimClass::Start`
 /// (retail `[IRONBLST] Report=IronCurtainBlast`) and follows its `Rate=` and
 /// `Translucent=`. The store does not build native `Middle @ 0x00424F00`
 /// (particles, `Scorch=`, `Crater=`).
-///
-/// RESIDUAL: the bolt's Z is taken as `level * 104`; Get_Center_Coords asks
-/// `0x0047B3A0` for the height at the centre, which carries a ramp's slope.
 pub(super) fn spawn_cell_anim(
     sim: &mut Simulation,
     rules: &RuleSet,
     anim_name: &str,
     rx: u16,
     ry: u16,
-    on_bridge_deck: bool,
 ) {
-    let coords = if on_bridge_deck {
-        let [x, y, z] = deck_coords(sim, (rx, ry));
-        [x, y, z.wrapping_add(INVOKE_ANIM_Z_LIFT_LEPTONS)]
-    } else {
-        let level = sim
-            .resolved_terrain
-            .as_ref()
-            .and_then(|terrain| terrain.cell(rx, ry))
-            .map_or(0, |cell| cell.level);
-        let world = crate::sim::anim_class::AnimWorldCoord::from_cell_sub_z(
-            rx,
-            ry,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            level,
-        );
-        [world.x, world.y, world.z]
-    };
-    spawn_super_anim(sim, rules, anim_name, coords);
+    let [x, y, z] = deck_coords(sim, (rx, ry));
+    spawn_super_anim(
+        sim,
+        rules,
+        anim_name,
+        [x, y, z.wrapping_add(INVOKE_ANIM_Z_LIFT_LEPTONS)],
+    );
 }
 
 /// A cell's GetCoords (vt+0x48, `0x00486840`) raised by the bridge height
@@ -123,10 +104,11 @@ fn deck_coords(sim: &Simulation, (x, y): (u16, u16)) -> [i32; 3] {
 
 /// `AnimClass::AnimClass @ 0x00421EA0` with the superweapons' row `(type,
 /// &coord, delay 0, loopCount 1, drawFlags 0x600, zAdjust 0, reverse 0)` at
-/// a world coordinate (leptons) its caller computed: the cell anims above,
-/// the Chronosphere's (`0x006CB431`, `0x006CC5C5..0x006CC674`) and the
-/// Psychic Dominator's (`0x0053AEE5`, `0x0053B139`). An empty name or an art
-/// type that never bound constructs nothing, as natively.
+/// a world coordinate (leptons) its caller computed: the invoke anims above,
+/// the Chronosphere's (`0x006CB431`, `0x006CC5C5..0x006CC674`), the Psychic
+/// Dominator's (`0x0053AEE5`, `0x0053B139`) and the Lightning Storm's clouds,
+/// bolts and debris (`0x0053A237`, `0x0053A387`, `0x0053A68B`). An empty name
+/// or an art type that never bound constructs nothing.
 pub(super) fn spawn_super_anim(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -654,7 +636,8 @@ pub fn tick_superweapon_instances(sim: &mut Simulation, rules: &RuleSet) {
 /// Tick already-active global superweapon effects in their native pre-object
 /// scheduler slot: `LightningStorm::Process @ 0x0053A6C0` steps the nuke's
 /// screen flash, then runs the Psychic Dominator's Process (`0x0053A742`)
-/// before the storm's own work. Returns whether a bridge changed.
+/// and, after the unported chrono screen (`0x0053A747`), the storm's own work.
+/// Returns whether a bridge changed.
 pub fn tick_active_superweapon_effects(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -668,9 +651,9 @@ pub fn tick_active_superweapon_effects(
         // `0x0053A705`; the screen redraw (`0x0053A711`) is presentation.
         sim.update_lighting();
     }
-    let bridge_changed = psychic_dominator::process(sim, rules, overlay_registry);
-    lightning_storm::process(sim, rules, overlay_registry);
-    bridge_changed
+    let dominator = psychic_dominator::process(sim, rules, overlay_registry);
+    let storm = lightning_storm::process(sim, rules, overlay_registry);
+    dominator || storm
 }
 
 /// Refresh superweapon grants for a specific owner by scanning their buildings.

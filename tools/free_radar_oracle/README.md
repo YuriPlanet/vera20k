@@ -19,8 +19,8 @@ calls. The nonlocal case executes the full House body. Local decisions stop
 before radar/UI side effects.
 
 There are 28 parser/prior cases and 70 empty-provider decisions. Rust tests
-currently compare only the 40 decisions whose distinct radar-blackout timer
-is stopped or expired. The other 30 native results remain preserved evidence
-for a future radar-blackout owner; power blackout is a separate mechanism.
+(`sim::radar`) compare all 70 through the House's radar outage timer
+(`HouseClass+0x2B0`, which `CreateRadarOutage @ 0x0050BCD0` starts); power
+blackout is a separate mechanism.
 No provider scan, live runtime, complete INI loader or sidebar pixel match is
 asserted by these prepared calls.

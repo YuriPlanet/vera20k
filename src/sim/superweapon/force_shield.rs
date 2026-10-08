@@ -75,7 +75,6 @@ pub fn launch(
         &general.force_shield_invoke_anim,
         target_rx,
         target_ry,
-        true,
     );
 
     // `0x006CD135..0x006CD162`: the countdown and where its sound plays.

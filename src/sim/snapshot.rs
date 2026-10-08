@@ -850,9 +850,14 @@ use crate::sim::world::Simulation;
 // NUKE impact's anim (+0x154/+0x158). Prior records lack them.
 // 295 -> 296: a Super saves the Force Shield's fade countdown (+0x50) and its
 // coordinate (+0x54). Prior records lack them.
-// 296 -> 297: remove cached cloak Rules/query fields and visual phase; retain
-// Techno+24C raw f32 displacement bits. Prior positional layouts cannot resume.
-const SNAPSHOT_VERSION: u32 = 297;
+// 296 -> 297: the Lightning Storm saves its native globals (Active, TimeToEnd,
+// Deferment, Duration, StartTime, Coords, Owner) and its two cloud lists in
+// place of VERA's storm record; a House's power state saves its radar outage
+// timer (+0x2B0). Prior records lack them.
+// 297 -> 298: remove cached cloak Rules/query fields and visual phase; retain
+// Techno+24C raw f32 displacement bits. The unmerged first-reveal candidate
+// also used version297 for a different layout; neither layout can resume.
+const SNAPSHOT_VERSION: u32 = 298;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3868,8 +3873,10 @@ mod tests {
         // 294 -> 295: the nuke flash and NukeAmbientChangeRate= in the
         // scenario's lighting; a bullet's wait on its NUKE anim.
         // 295 -> 296: the Force Shield's fade countdown and coordinate.
-        // 296 -> 297: canonical cloak query and retained native displacement.
-        assert_eq!(super::SNAPSHOT_VERSION, 297);
+        // 296 -> 297: the Lightning Storm's globals and cloud lists; a House's
+        // radar outage timer.
+        // 297 -> 298: canonical cloak query and retained native displacement.
+        assert_eq!(super::SNAPSHOT_VERSION, 298);
     }
 
     #[test]

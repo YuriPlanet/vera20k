@@ -2445,6 +2445,26 @@ mod tests {
     }
 
     #[test]
+    fn computer_bombard_examples_leave_the_attack_to_the_computer() {
+        for path in [
+            "tools/map_observation.ai-v3-bombard.example.json",
+            "tools/map_observation.ai-dred-bombard.example.json",
+        ] {
+            let profile: MapCaptureProfile =
+                serde_json::from_str(crate::test_fixture::text(path)).unwrap();
+            profile.validate().unwrap();
+            // Soviet Bombard Medium is enabled for Normal only, Soviet Navy
+            // Bombard for Normal and Hard.
+            assert_eq!(
+                profile.launch.opponents[0].difficulty,
+                crate::skirmish_launch::AiDifficulty::Normal
+            );
+            // A computer team's script orders the spawners' attacks.
+            assert!(profile.commands().is_empty());
+        }
+    }
+
+    #[test]
     fn computer_force_shield_example_answers_the_observers_nuke() {
         let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
             "tools/map_observation.ai-force-shield.example.json",

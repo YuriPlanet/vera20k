@@ -662,30 +662,23 @@ pub enum SimSoundEvent {
     },
     /// `CreateRadarEvent(13, cell)` from `SuperClass::Launch` case 4
     /// (`0x006CC4BE` at the Chronosphere's source, `0x006CC4D2` at its
-    /// target) or a `NUKE` warhead's impact (`BulletClass::AI`,
-    /// `0x00467EA7`), on every client: each admits it on its own radar.
+    /// target), case 7 (`0x006CCDD7`), a storm's start (`0x00539F89`) or a
+    /// `NUKE` warhead's impact (`BulletClass::AI`, `0x00467EA7`), on every
+    /// client: each admits it on its own radar.
     SuperWeaponRadarEvent { radar: RadarEventRequest },
-    /// The lightning storm actually began — the moment the sky flips to Ion,
-    /// which on retail data is ~250 frames *after* the Weather Controller
-    /// fired. This is where `StormSound` belongs, not on the launch.
-    ///
-    /// `SuperClass::Launch @ 0x006CC390` case 2 calls `LightningStorm::Start
-    /// @ 0x00539EB0` with `param_2 = [Rules+0x1794]` — `[General]
-    /// LightningDeferment`, whose key string `"LightningDeferment"` sits at
-    /// `0x0083BD18` and is pushed at `0x00670F82` in `RulesClass::ReadGeneral`
-    /// (read `0x00670F75`, stored `0x00670F8F`). `Start`'s body opens with
-    /// `if (param_2 != 0) { arm the countdown; store the duration; return; }`,
-    /// and that early return is *before* the cue at `0x0053A044`
-    /// (`VocClass::PlayAtPos @ 0x00750920`). `LightningStorm::Process @
-    /// 0x0053A6C0` decrements the countdown and, at zero, re-enters `Start`
-    /// with `param_2` zeroed (`0x0053AAC8 XOR EDX,EDX ; 0x0053AACA CALL
-    /// 0x00539EB0`); that second entry is the one that plays it.
-    ///
-    /// Stock `rulesmd.ini:130` is `LightningDeferment=250`, so the launch call
-    /// *always* takes the early return and the cue is always deferred.
+    /// A Lightning Storm started (`LightningStorm::Start @ 0x00539EB0`'s
+    /// undeferred half) under `[General] LightningPrintText=` (`0x0053A014`;
+    /// without it nothing is pushed): every client plays `StormSound` centred
+    /// (`0x0053A044`) and posts `TXT_LIGHTNING_STORM` in the player's colours
+    /// (`0x0053A076`). On retail data (`LightningDeferment=250`) this trails
+    /// the launch's EVA line by the whole countdown.
     LightningStormBegan,
-    /// A lightning bolt struck — play thunder sound.
-    SuperWeaponStrike { rx: u16, ry: u16 },
+    /// A deferred Lightning Storm's countdown reached a multiple of 225
+    /// (`LightningStorm::Process @ 0x0053AAD7`) under `LightningPrintText=`
+    /// (`0x0053AAE9`; without it nothing is pushed): every client speaks
+    /// `EVA_LightningStormCreated` (`0x0053AB11`) and posts
+    /// `TXT_LIGHTNING_STORM_APPROACHING` (`0x0053AB40`).
+    LightningStormApproaching,
     /// First occupant entered a CanBeOccupied building (cargo 0→1).
     /// Owner is the building owner at AddGarrisonOccupant time; civilian
     /// ownership transfer is reported separately from building reconciliation.
@@ -1292,9 +1285,8 @@ pub struct Simulation {
     /// Deterministic iteration via nested BTreeMap.
     pub(crate) super_weapons:
         BTreeMap<InternedId, BTreeMap<InternedId, crate::sim::superweapon::SuperWeaponInstance>>,
-    /// Active lightning storm state (global — only one at a time).
-    pub(crate) lightning_storm:
-        Option<crate::sim::superweapon::lightning_storm::LightningStormState>,
+    /// The Lightning Storm's globals (one at a time).
+    pub(crate) lightning_storm: crate::sim::superweapon::lightning_storm::LightningStorm,
     /// The Psychic Dominator's globals (one at a time).
     pub(crate) psychic_dominator:
         crate::sim::superweapon::psychic_dominator::PsychicDominatorState,
@@ -3171,7 +3163,7 @@ impl Simulation {
             tactical_dirty_cells: Vec::new(),
             power_states: BTreeMap::new(),
             super_weapons: BTreeMap::new(),
-            lightning_storm: None,
+            lightning_storm: Default::default(),
             psychic_dominator: Default::default(),
             super_weapons_initialized: false,
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
@@ -3764,6 +3756,17 @@ impl Simulation {
         self.playfield_bounds
             .zip(self.playfield_size_height)
             .map(|(bounds, height)| (bounds.base, height))
+    }
+
+    /// MapRect, `MapClass+0x124..+0x130` as `[left, top, width, height]`:
+    /// `MapClass::Resize @ 0x00565C10` writes `(1, 1, SizeW + SizeH - 1,
+    /// SizeW + SizeH - 1)`. Random cell draws read it
+    /// (`MapClass::PlaceCrateAtRandomCell @ 0x0056BD8B`,
+    /// `LightningStorm::Start @ 0x00539EE6`).
+    pub(crate) fn map_rect(&self) -> Option<[i32; 4]> {
+        let (width, height) = self.map_size_diamond()?;
+        let extent = width.wrapping_add(height).wrapping_sub(1);
+        Some([1, 1, extent, extent])
     }
 
     /// Install the initial normalized MapClass playfield authority.
@@ -4568,6 +4571,7 @@ impl Simulation {
             owner,
             &self.interner,
             self.session.free_radar,
+            self.session.binary_frame,
         );
     }
 

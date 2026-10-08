@@ -320,20 +320,6 @@ pub enum GameSoundEvent {
         source: Option<SoundSource>,
     },
 
-    /// A lightning-storm bolt reached the ground — the thunder crack.
-    ///
-    /// `LightningStorm::GroundStrike @ 0x0053A45F..0x0053A4A2` plays
-    /// `[AudioVisual] LightningSounds[n]` positionally at the strike cell
-    /// through `VocClass::PlayAt @ 0x007509E0`; the entry is chosen when the
-    /// event is built. Skipped upstream when the list is empty
-    /// (`0x0053A46A TEST ECX,ECX ; JLE`).
-    LightningStrike {
-        /// sound.ini ID for the chosen `LightningSounds=` entry.
-        sound_id: String,
-        /// Screen position for spatial audio.
-        source: Option<SoundSource>,
-    },
-
     /// A superweapon fired: its `[AudioVisual]` cue and/or its EVA warning.
     ///
     /// `SuperClass::Launch @ 0x006CC390` decides both per `Type=` case; see
@@ -347,7 +333,7 @@ pub enum GameSoundEvent {
     /// launch, so the cue is played only when the deferment expires
     /// (`0x0053A044`, `VocClass::PlayAtPos @ 0x00750920`, pan `0x2000`, volume
     /// `1.0f` — centred and full-volume). See
-    /// [`crate::app::match_runtime::sound_dispatch::lightning_storm_begin_cue`].
+    /// [`crate::sim::world::SimSoundEvent::LightningStormBegan`].
     ///
     /// The EVA line is not gated on the launching house: native calls
     /// `VoxClass::PlayEVA` behind `[0x00A8B538]` only, a client-side flag that
@@ -411,7 +397,6 @@ impl GameSoundEvent {
             | Self::BridgeRepaired { sound_id, .. }
             | Self::BuildingDamagedSfx { sound_id, .. }
             | Self::VoiceFeedback { sound_id, .. }
-            | Self::LightningStrike { sound_id, .. }
             | Self::SuperWeaponActivated { sound_id, .. } => sound_id,
             Self::AnimationStopped { stop_sound_id, .. } => stop_sound_id.as_deref().unwrap_or(""),
             Self::AnimationReleased { .. } => "",
@@ -446,7 +431,6 @@ impl GameSoundEvent {
             | Self::BridgeRepaired { source, .. }
             | Self::BuildingDamagedSfx { source, .. }
             | Self::VoiceFeedback { source, .. }
-            | Self::LightningStrike { source, .. }
             | Self::SuperWeaponActivated { source, .. } => *source,
             _ => None,
         }
@@ -524,7 +508,8 @@ impl GameSoundEvent {
 /// when a dying building's type carries no `DieSound=` of its own
 /// (`BuildingClass::DestructionEffects`, `0x0044173F`..`0x00441779`),
 /// `[AudioVisual] LightningSounds=` is played at each bolt strike
-/// (`LightningStorm::GroundStrike @ 0x0053A45F..0x0053A4A2`), and
+/// (`LightningStorm::GroundStrike @ 0x0053A45F..0x0053A4A2`, the entry drawn
+/// in the simulation), and
 /// `[AudioVisual] BaseUnderAttackSound=` now rides with the under-attack EVA
 /// line (`HouseClass::NotifyUnderAttack @ 0x004F95B8..0x004F95CF`), on the
 /// building branch only.

@@ -915,7 +915,7 @@ mod map_wall_owner_candidate_tests {
     fn match_lighting_relight_profiles_match_native() {
         use crate::app::presentation::lighting::MatchLighting;
         use crate::sim::scenario_session::{ScenarioLightProfileUnits, ScenarioLightingState};
-        use crate::sim::superweapon::lightning_storm::LightningStormState;
+        use crate::sim::superweapon::lightning_storm::LightningStorm;
         use crate::sim::superweapon::psychic_dominator::PsychicDominatorState;
         let native: serde_json::Value =
             serde_json::from_str(crate::test_fixture::text("tools/superweapon_oracle.json"))
@@ -967,10 +967,11 @@ mod map_wall_owner_candidate_tests {
                 .lighting
                 .set_nuke_flash_for_test(int(&row["nuke"]), 0, 30);
             sim.session.lighting.current_ambient = int(&row["ambient"]) / 10;
-            sim.lightning_storm = row["storm"]
-                .as_bool()
-                .unwrap()
-                .then(|| LightningStormState::raging_for_test(owner, (10, 10)));
+            sim.lightning_storm = if row["storm"].as_bool().unwrap() {
+                LightningStorm::raging_for_test(owner, (10, 10))
+            } else {
+                LightningStorm::default()
+            };
             sim.psychic_dominator = PsychicDominatorState::for_test(
                 u8::try_from(int(&row["psydom"])).unwrap(),
                 (10, 10),

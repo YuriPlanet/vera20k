@@ -5,7 +5,7 @@
 //! retail rules through production frames.
 
 use super::chronosphere_tests::{charge_super, click, retail_rules_binding, step, world_with};
-use super::lightning_storm::LightningStormState;
+use super::lightning_storm::LightningStorm;
 use super::psychic_dominator::{PsychicDominatorState, fires_for_test};
 use crate::map::lighting::{ParsedLightingProfiles, parse_lighting_profiles};
 use crate::rules::ini_parser::IniFile;
@@ -410,10 +410,11 @@ fn update_lighting_matches_native() {
         sim.session
             .lighting
             .set_nuke_flash_for_test(int(&row["nuke"]), 0, 30);
-        sim.lightning_storm = row["storm"]
-            .as_bool()
-            .unwrap()
-            .then(|| LightningStormState::raging_for_test(owner, (10, 10)));
+        sim.lightning_storm = if row["storm"].as_bool().unwrap() {
+            LightningStorm::raging_for_test(owner, (10, 10))
+        } else {
+            LightningStorm::default()
+        };
         sim.psychic_dominator =
             PsychicDominatorState::for_test(psydom, ORACLE_CELL, Some(owner), None);
         let lighting_before = global_lighting_events(&sim);

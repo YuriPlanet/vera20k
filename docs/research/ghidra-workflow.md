@@ -124,16 +124,17 @@ when cloned into their own manager. Do not use this route to fork a callback typ
   of a native function call; check the instruction and high p-code.
 - Check a decompile's stack offsets against the code when a parameter or local looks
   misplaced (`unaff_retaddr`, `in_stack_`, a parameter where another is pushed). For a
-  call whose stack change it does not know, the decompiler assumes the call pops nothing,
-  unless paths that meet pin the value. That covers every virtual or COM call, and every
-  direct call to a function without a stored purge. A call that pops its arguments then
-  leaves the rest of that path off by those bytes. FUN_007CA650 is MSVC's `_chkstk`,
-  which Ghidra does not recognise, so the decompiles of its 30 callers place their locals
-  above the return address. The repository's
-  [`ghidra_compare frames`](../../tools/ghidra_compare.md#stack-frames-against-the-native-instructions)
-  command compares the decompiler's offsets with ESP computed from the code.
-  Typing the function pointer does not change the pop: the decompiler applies a pointer's
-  prototype only after its stack analysis (`ActionDeindirect`). A user
+  call whose stack change it does not know, the decompiler assumes the call pops
+  nothing, unless paths that meet pin the value. That covers every virtual or COM call,
+  and every direct call to a function without a stored purge. A call that pops its
+  arguments then leaves the rest of that path off by those bytes. `__alloca_probe`
+  (0x7CA650) is MSVC's `_chkstk`, which Ghidra's stack analysis does not model, so the
+  decompiles of its 30 callers place their locals above the return address. The
+  repository's [`ghidra_compare
+  frames`](../../tools/ghidra_compare.md#stack-frames-against-the-native-instructions)
+  command compares the decompiler's offsets with ESP computed from the code. Typing the
+  function pointer does not change the pop: the decompiler applies a pointer's prototype
+  only after its stack analysis (`ActionDeindirect`). A user
   `CALL_OVERRIDE_UNCONDITIONAL` reference on the call does: the decompile then shows a
   direct call with the target's prototype and pop. Add one only where the target is
   proven to be a single function ([Virtual-call references](#virtual-call-references)).
@@ -149,8 +150,19 @@ when cloned into their own manager. Do not use this route to fork a callback typ
   is `this - 4`, the object itself. An owner typed `FootClass *` that is an AircraftClass
   shows AircraftClass fields as `pLinkedTo[1].<field>`, offsets past FootClass's size.
 - A method that gets `this` on the stack (COM interface methods, view methods) may store
-  another value in `this`'s slot. From there on the decompile shows that value as `this`.
-  Check writes to entry stack +4 before trusting a later `this`.
+  another value in `this`'s slot. From there on the decompile shows that value as
+  `this`. Check writes to entry stack +4 before trusting a later `this`. Any stack
+  parameter can be reused this way: CounterClass__Load reads its entry count into
+  `pStm`'s slot (0x49FC22), so the later `pStm` and the loop bound are that count.
+- A derived class's destructor that adds no cleanup compiles to its base's code: its own
+  vptr store is dead and dropped, so the body shows only the base vtable.
+  `~DynamicVectorClass<T>` and `~TypeList<T>` are `~VectorClass<T>`'s body, and
+  CounterClass's destructor (0x49F9D0) is `~VectorClass<int>`'s. Name such a destructor
+  from the object its callers destroy.
+- `new[]` of an element type with a destructor stores the element count in the 4 bytes
+  before the elements, also in a buffer the caller supplies, so the element pointer is
+  the block + 4. Such a vector constructor's items pointer is therefore not the
+  allocation itself.
 - MSVC's `_ftol` (`Math__ftol`, 0x7C5F00) takes its input in ST0, which a prototype set
   over HTTP cannot express. Its callers show `Math__ftol()`, and the decompiler drops the
   x87 expression that computes the input. A parameter used only there looks unused:
@@ -232,7 +244,7 @@ was checked:
   is `DrawIfVisible`: it tests visibility and then calls +0x114, so
   `ObjectClass__DrawIt` 0x5F4B10 and two overrides named after the wrong slot were
   corrected.
-- Trigger actions: `TriggerAction__Execute` 0x6DD8B0 (the fork's
+- Trigger actions: `TActionClass__Execute` 0x6DD8B0 (the fork's
   `TActionClass::Execute`) switches on the action kind. Of the 131 handlers the fork
   binds, it calls 47 from the case its enum names. The other 84 have no call, jump or
   pointer found by the static image scan; that alone does not prove they never
@@ -512,8 +524,8 @@ Notes for readers:
     folds the object's vtable, so a call through it shows as a slot call:
     `DynamicVectorClass<MSAnim*>__SetCapacity(n + 10, 0)` reads
     `(*(code *)vt[2])(n + growth, 0)`.
-  - FUN_007CA650's plate says it is MSVC's `_chkstk`. The plates of FUN_005271c0 and
-    FUN_005271e0 say they are one function split in two.
+  - `__alloca_probe`'s (0x7CA650) plate says it is MSVC's `_chkstk`. The plates of
+    FUN_005271c0 and FUN_005271e0 say they are one function split in two.
 
 Plates tagged `[2026-10-01 BuildingTypeClass layout]`,
 `[2026-10-01 TechnoTypeClass layout]`, `[2026-10-01 UnitTypeClass layout]`,
@@ -655,7 +667,9 @@ Checked 2026-10-01, struct tools:
 - Strict naming is the default when the project has no `.ghidra-mcp/conventions.json`.
   It puts a Hungarian type prefix on struct field names on create, `add_struct_field`
   and `modify_struct_field`, and a per-call `strict_mode` does not change that. Struct
-  types, `sbyte` and the plain `pointer` type keep the name as given.
+  types, `sbyte` and the plain `pointer` type keep the name as given. A `uint` field
+  gets `dw`. Readbacks spell `unsigned char` as `uchar` and a pointer to pointer as `T *
+  *`, so a plan compared with readbacks must use those spellings.
 - A retype clears the field name. Pass `new_name` to `modify_struct_field`;
   `modify_struct_field_type` always drops the name.
 - No struct tool clears a field in place. `remove_struct_field` deletes the component
@@ -677,6 +691,12 @@ Receiver tools, checked on staging copies:
   Their compatible one-register `__fastcall` view keeps `char *pName` explicit in
   `ECX:4` and uses the global namespace. It models the checked argument storage and
   does not establish the original C++ static/member declaration.
+- A body that never reads ECX can still be a `__thiscall` member. When every caller
+  loads ECX right before the call and nothing else uses that load, ECX is the receiver:
+  both callers of DisplayClass__UpdateCellLighting (0x4AE4C0) load the screen singleton
+  0x87F7E8 and load it again after the call, while the body names the singleton
+  directly. Its class still needs other evidence (here its position among DisplayClass's
+  members).
 - `set_function_this_type` needs a `__thiscall` or `__fastcall` convention first. It
   moves the function into a class namespace named after the struct, and the auto
   `this` then takes that struct. It leaves an explicit custom-storage `this` with its
@@ -715,6 +735,21 @@ Receiver tools, checked on staging copies:
   formal made Ghidra invent a widened `_NewStep` alias. Keep `undefined4` storage
   when the source declaration is unproved, and qualify the incoming low-byte flag
   in the plate. Inspect widened aliases as well as `in_stack_` warnings in rehearsals.
+- A struct passed by value is copied into the outgoing argument area below ESP. Typing
+  the copy constructor that builds it there can break the caller when the receiving call
+  is untyped: in MPCooperative__vt_entry_A8 (0x5C42D0) the DynamicVectorClass copy built
+  at 0x5C4437..0x5C4441 for an untyped virtual call (0x5C4449, the callee pops 0x28)
+  made five earlier untyped calls lose their arguments once 0x5C4F30 was typed. A call
+  override and a 40-byte prototype for the callee did not restore them, so that
+  constructor stays without a prototype until those calls are typed.
+- A register `bool` that the body forwards as a whole register (`mov ebx, ecx`, later
+  `push ebx`) shows its upper bytes as `in_register_` at the forward, e.g.
+  `CONCAT31(in_register_00000005, fOfficial)` in ScenarioClass__Post_Map_Init
+  (0x68692A). The callers set only CL, so `bool` stays; a PRE comment explains the
+  forward. `BOOL` would move the artifact into every caller.
+- For a printf-style sink whose body is a bare RET (Stub__DebugLog 0x4068E0), `void
+  __cdecl (char * pszFormat, ...)` keeps each call's arguments in its callers'
+  decompiles.
 - A new `Type propagation algorithm not settling` warning needs native producer and
   consumer checks alongside artifact and frame comparisons. Ghidra 12.1.2's
   [seven-round guard](https://github.com/NationalSecurityAgency/ghidra/blob/c0f584bf229fffba61b36431f3ce30c0c3e4e682/Ghidra/Features/Decompiler/src/decompile/cpp/coreaction.cc#L5425-L5467)
@@ -796,7 +831,9 @@ Receiver tools, checked on staging copies:
   `search_data_types` exposed both names; `get_struct_layout` checked the uniquely
   named, existing 16-byte `_GUID` view, whose pointer parsed successfully. Check a
   compatible unique type and rehearse the actual write; preserve ambiguous aliases
-  rather than deleting or recreating them.
+  rather than deleting or recreating them. `validate_data_type_exists` answered false
+  for existing types on 2026-10-08; test existence with `search_data_types` (`pattern=`,
+  a large `limit`, exact-name match).
 - `set_function_no_return` makes the decompiler end each caller's path at the call
   (`/* WARNING: Subroutine does not return */`) and remove blocks reached only after it.
   It also removes live code where the decompiler wrongly folds an error branch to

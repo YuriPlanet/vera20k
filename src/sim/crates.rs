@@ -334,19 +334,17 @@ fn place_one_random_crate(
     OneCrateResult::HardRejected
 }
 
-/// Active Map rectangle used by random placement. `MapClass` constructs it as
-/// `(1, 1, SizeW + SizeH - 1, SizeW + SizeH - 1)`; LocalSize and the canonical
-/// Rust cell-array extent do not own these draws.
+/// Active Map rectangle used by random placement ([`Simulation::map_rect`]);
+/// LocalSize and the canonical Rust cell-array extent do not own these draws.
 fn crate_random_frame(sim: &Simulation) -> Option<CrateRandomFrame> {
-    let size_width = sim.playfield_bounds?.base;
-    let size_height = sim.playfield_size_height?;
+    let (size_width, size_height) = sim.map_size_diamond()?;
     let size_sum = size_width.wrapping_add(size_height);
-    let width = size_sum.wrapping_sub(1);
+    let [left, top, width, height] = sim.map_rect()?;
     Some(CrateRandomFrame {
-        left: 1,
-        top: 1,
+        left,
+        top,
         width,
-        height: width,
+        height,
         // Native forwards min(SizeW + SizeH, 32) as a signed loop cap. A
         // nonpositive cap scans no FNPC rings, but the X/Y draws above still
         // occur. Zero is the Rust-native representation of that empty scan.

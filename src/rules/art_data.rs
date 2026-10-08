@@ -312,6 +312,10 @@ pub struct AnimTypeRuntimeConfig {
     pub explicit_loop_end: Option<i32>,
     /// Signed SHP frame count read from header offset +6 during asset binding.
     pub raw_shp_frame_count: Option<i32>,
+    /// Signed SHP height read from header offset +4 during asset binding:
+    /// `MOVSX [image+4]`, as `LightningStorm::CreateCloudBolt` reads its first
+    /// bolt's image (`0x0053A16B`).
+    pub raw_shp_height: Option<i32>,
     pub loop_count: i32,
     pub rate_logic_frames: u16,
     pub normalized: bool,
@@ -826,6 +830,7 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         explicit_end,
         explicit_loop_end,
         raw_shp_frame_count: None,
+        raw_shp_height: None,
         loop_count: section.read_int("LoopCount", 0),
         rate_logic_frames: read_anim_rate(section)
             .map_or(DEFAULT_ART_RATE_LOGIC_FRAMES, art_rate_to_logic_frames),
@@ -1495,6 +1500,15 @@ impl ArtRegistry {
         self.scheduler_anim_types.insert(key);
     }
 
+    /// The SHP header height `+4` asset binding would read for `name`.
+    #[cfg(test)]
+    pub(crate) fn bind_anim_shp_height_for_test(&mut self, name: &str, raw_height: i32) {
+        self.anim_runtime_configs
+            .get_mut(&name.to_ascii_uppercase())
+            .expect("test animation section must exist")
+            .raw_shp_height = Some(raw_height);
+    }
+
     /// Bind registered combat-explosion roots to the common animation runtime.
     /// Canonical processing records whether each AnimType reached fixed-ART
     /// ReadINI. Unread types retain constructor End0/LoopEnd0/Rate1:427D22 exits
@@ -1573,10 +1587,12 @@ impl ArtRegistry {
             .iter()
             .find_map(|candidate| asset_manager.get_ref(candidate))
             .ok_or_else(|| AnimAssetBindError::MissingShp(name.to_string()))?;
-        let raw_count = data
-            .get(6..8)
-            .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]) as i32)
-            .unwrap_or(0);
+        let header_word = |offset: usize| {
+            data.get(offset..offset + 2)
+                .map(|bytes| i32::from(i16::from_le_bytes([bytes[0], bytes[1]])))
+                .unwrap_or(0)
+        };
+        let raw_count = header_word(6);
         let (loaded_end, loaded_loop_end) = resolve_loaded_bounds(
             name,
             raw_count,
@@ -1589,6 +1605,7 @@ impl ArtRegistry {
             .get_mut(name)
             .expect("configuration was resolved above");
         bound.raw_shp_frame_count = Some(raw_count);
+        bound.raw_shp_height = Some(header_word(4));
         bound.end = loaded_end;
         bound.loop_end = loaded_loop_end;
         Ok(())

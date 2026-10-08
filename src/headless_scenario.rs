@@ -30,7 +30,9 @@ use crate::sim::scenario_session::ScenarioDescriptor;
 use crate::sim::world::Simulation;
 
 /// A Battle session on `selected_map_file` with the local player alone.
-fn battle_session(selected_map_file: &str) -> crate::skirmish_launch::SkirmishLaunchSession {
+pub(crate) fn battle_session(
+    selected_map_file: &str,
+) -> crate::skirmish_launch::SkirmishLaunchSession {
     use crate::skirmish_launch::{
         LaunchCountry, LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishLaunchMode,
         SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
@@ -516,7 +518,14 @@ mod retail_construction_tests {
                         crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
                         descriptor,
                         |sim| {
-                            sim.interner.intern("Americans");
+                            let americans = sim.interner.intern("Americans");
+                            sim.houses.insert(
+                                americans,
+                                crate::sim::house_state::HouseState::new(
+                                    americans, 0, None, true, 0, 10,
+                                ),
+                            );
+                            sim.session.house_order.push(americans);
                         },
                     );
                     Ok::<_, ()>(sim)
@@ -524,11 +533,15 @@ mod retail_construction_tests {
             )
             .unwrap();
             assert_eq!(playback.state.session.free_radar, expected);
+            // House 0x00508DF0 reads Scenario FreeRadar when the House's
+            // first update rechecks radar.
+            let mut sim = playback.state;
+            sim.advance_tick(&[], Some(&rules), None, None, 0);
             assert_eq!(
-                crate::sim::radar::has_radar_for_owner(&playback.state, &rules, "Americans"),
+                crate::sim::radar::has_radar_for_owner(&sim, &rules, "Americans"),
                 expected
             );
-            assert_eq!(playback.state.session.map_name, "radar.map");
+            assert_eq!(sim.session.map_name, "radar.map");
         }
     }
 

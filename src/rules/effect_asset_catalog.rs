@@ -12,11 +12,6 @@ use crate::assets::shp_file::ShpFile;
 use crate::rules::art_data;
 use crate::rules::ruleset::RuleSet;
 
-/// Current Rust producers whose animation names have not yet been lifted into
-/// parsed rules fields. Keep the producer and this binding root list together
-/// until that follow-up is complete.
-const LIGHTNING_BOLT_ANIMS: [&str; 3] = ["WCLBOLT1", "WCLBOLT2", "WCLBOLT3"];
-
 /// Raw and consumer-visible frame counts for one authoritative effect asset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EffectAssetFrameCounts {
@@ -298,8 +293,14 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     {
         insert(name);
     }
-    // Lightning Storm bolts (`sim::superweapon::lightning_storm`).
-    for name in LIGHTNING_BOLT_ANIMS {
+    // `[General] WeatherConClouds=` and `WeatherConBolts=`: the Lightning
+    // Storm's clouds and bolts (`sim::superweapon::lightning_storm`).
+    for name in rules
+        .general
+        .weather_con_clouds
+        .iter()
+        .chain(&rules.general.weather_con_bolts)
+    {
         insert(name);
     }
     // `[General] BridgeExplosions=`: `CellClass::BlowUpBridge` and the
@@ -555,13 +556,14 @@ mod anim_class_root_tests {
             "[General]\nWarpOut=MYWARP\nIronCurtainInvokeAnim=MYIRON\n\
              ForceShieldInvokeAnim=MYSHIELD\nIonBlast=MYRING\n\
              DominatorFirstAnim=MYHEAD\nDominatorSecondAnim=MYLOC\n\
+             WeatherConClouds=MYCLOUD1,MYCLOUD2\nWeatherConBolts=MYBOLT\n\
              [CombatDamage]\nControlledAnimationType=MYMIND\n\
              PermaControlledAnimationType=MYPERMA\n",
         ))
         .expect("rules");
         let roots = anim_class_roots(&rules);
         for name in [
-            "MYWARP", "MYIRON", "MYSHIELD", "MYRING", "WCLBOLT1", "WCLBOLT2", "WCLBOLT3", "MYHEAD",
+            "MYWARP", "MYIRON", "MYSHIELD", "MYRING", "MYCLOUD1", "MYCLOUD2", "MYBOLT", "MYHEAD",
             "MYLOC", "MYMIND", "MYPERMA",
         ] {
             assert!(

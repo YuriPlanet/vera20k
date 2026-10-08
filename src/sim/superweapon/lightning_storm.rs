@@ -1,1252 +1,821 @@
-//! Lightning Storm state machine — bolt generation and area damage.
+//! The Lightning Storm: `SuperClass::Launch @ 0x006CC390` case 2
+//! (`0x006CCD3F..0x006CCDBA`), `LightningStorm::Start @ 0x00539EB0`,
+//! `LightningStorm::Process @ 0x0053A6C0`, `LightningStorm::CreateCloudBolt
+//! @ 0x0053A140` and `LightningStorm::GroundStrike @ 0x0053A300`.
 //!
-//! Only one storm can be active globally at a time. The storm has a deferment
-//! countdown before bolts begin, then generates center + scatter bolts each
-//! tick for the configured duration.
+//! One storm runs at a time (the globals `0x00A9F9CC..0x00A9FAD0`,
+//! `0x00827FC0` and `0x00827FC4`). The launch hands Start `[General]
+//! LightningStormDuration=` and `LightningDeferment=`: a deferred storm counts
+//! down, warning every 225 frames, and starts when the count reaches zero.
+//! Starting puts every house the storm's house does not count as an ally under
+//! a radar outage for the duration, turns the sky to the Ion lighting and plays
+//! `StormSound`. While the storm rages a cloud gathers over its cell every
+//! `LightningHitDelay=` frames and another, up to half `LightningCellSpread=`
+//! cells off, every `LightningScatterDelay=` frames, kept
+//! `LightningSeparation=` cells from every cloud present. Past half its frames
+//! a cloud strikes its cell: a bolt, a `LightningSounds=` cue, the
+//! `WeatherConBoltExplosion=` explosion, `LightningDamage=` with
+//! `LightningWarhead=` and, where the strike changed the cell or hit open
+//! ground, `MetallicDebris=`. Once the duration is over the storm ends when
+//! its last cloud has played out.
 //!
-//! ## Dependency rules
-//! - Part of sim/ — depends on rules/, sim/components, sim/combat.
-//! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
+//! Process runs in the pre-object superweapon slot after the nuke flash and
+//! the Psychic Dominator ([`super::tick_active_superweapon_effects`]).
+//! ClickFire refuses a storm while one rages or counts down (`fire.rs`), and a
+//! computer house fires its own at its rally target unless one rages
+//! (`ai_fire.rs`).
+//!
+//! Evidence: instruction reading at the addresses cited here. Native
+//! execution (`tools/superweapon_oracle.py`, replayed in
+//! `lightning_storm_tests.rs`): Start's retargets, countdown minimum, empty
+//! cell draws, radar outages and lines (`storm_start`); CreateCloudBolt's
+//! coordinate, draw and lists (`storm_cloud`); `0x006D2120` over every half
+//! SHP height (`storm_pixel_heights`); GroundStrike's bolt, cue, explosion,
+//! flash, damage and debris (`storm_strike`); Process's lists, end,
+//! countdown and cadences (`storm_process`); the radar outage's expiry and
+//! its radar test (`radar_outage`, replayed in `power_system`).
+//!
+//! Scenario draws, in order: Start's empty-cell redraws (Y then X over
+//! MapRect, `RandomRanged`); each cloud's type (`Random() % count`); each
+//! scatter try's X and Y offsets (`RandomRanged(-spread/2, spread/2)`); each
+//! strike's bolt type and cue (`Random() % count` each), then its explosion's
+//! and area damage's own draws, then the debris count (`RandomRanged(2, 4)`)
+//! and each piece's type (`RandomRanged(0, count - 1)`). Every anim
+//! constructor's own draws follow its type's draw. The oracle stubs the anim
+//! constructor (`0x00421EA0`), the explosion selector and the area damage, so
+//! the draws inside them, and their places in this order, rest on
+//! instruction reading (`0x0053A1F5..0x0053A237`, `0x0053A345..0x0053A387`,
+//! `0x0053A4C2..0x0053A5D0`, `0x0053A62C..0x0053A68B`); retail's debris
+//! (`Bouncer=yes`, `RandomRate=`) draws in its constructor. Timer writes:
+//! each affected house's radar outage (`HouseClass+0x2B0`, `[frame,
+//! duration]`). Detach calls: none; nothing detaches an anim from the cloud
+//! lists natively (only save and load read them, `0x00539890`,
+//! `0x00539AE0`).
+//!
+//! GroundStrike also lists each bolt in BoltsPresent (`0x00A9FA18`), which
+//! Process empties of bolts past half their frames and nothing else reads;
+//! VERA keeps no such list.
+//!
+//! RESIDUALS:
+//! - A listed cloud whose anim has left VERA's store is dropped from both
+//!   lists, and a manifesting one strikes nothing. Natively the lists keep the
+//!   pointer and Process reads its stale stage. Trigger: a cloud anim deleted
+//!   before it has played half its frames. Dormant: the clouds play once and
+//!   nothing else deletes them.
+//! - A cloud, bolt or debris type VERA cannot construct (no bound SHP)
+//!   constructs nothing and a cloud is not listed; natively each constructs.
+//!   Retail art binds every cloud and bolt. Retail's `MetallicDebris=` read
+//!   keeps fourteen types and a `D` cut by its 0x80-byte buffer, which has no
+//!   image: one piece in fifteen is an imageless anim natively and nothing
+//!   in VERA.
+//! - A zero `LightningHitDelay=` or `LightningScatterDelay=` divides by zero
+//!   natively; VERA skips that cadence. An empty `WeatherConClouds=` or
+//!   `WeatherConBolts=` likewise divides by zero (and an empty bolt list is
+//!   read past its end for the clouds' height); VERA draws nothing for it and
+//!   reads the height as 0. No retail data sets one.
+//! - The draw for a strike's cue counts the `LightningSounds=` names as read;
+//!   natively the list keeps only names `soundmd.ini` defines. Trigger: a name
+//!   it lacks. Effect: another cue, and with no known name one extra Scenario
+//!   draw per strike. Retail's one name, `WeatherStrike`, is defined.
+//! - A null `LightningWarhead=` crashes natively; VERA skips the explosion,
+//!   flash and damage. A null `WeatherConBoltExplosion=` (or zero
+//!   `LightningDamage=`) hands AnimClass a null type natively; VERA constructs
+//!   nothing. Retail sets `IonWH`, `EXPLOLB` and 250.
+//! - A strike's debris picks its type by `RandomRanged(0, count - 1)` and
+//!   reads the `MetallicDebris=` list there, past its end when the list is
+//!   empty (`0x0053A665`); VERA takes the same draw and constructs nothing.
+//!   Retail's list is not empty.
+//! - Start skips every house's radar outage natively while `0x00A8B538` is
+//!   set, which `HouseClass::MPlayer_Defeated` does (`0x004FC205`) once the
+//!   local player is defeated and the game goes on; VERA has no such flag.
+//!   Trigger: every storm that starts after the local player's multiplayer
+//!   defeat. Effect: natively no house on that client loses radar; in VERA
+//!   the storm's enemies do, and that client's radar display shows it.
+//! - Start with the empty cell on a map without a Size loops forever
+//!   natively; VERA keeps the empty cell. Only headless fixtures lack a Size.
 
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::combat_aoe::{
-    AoELayerContext, TerrainCollectionView, apply_aoe_damage_with_terrain_and_scenario,
-    bridge_adjusted_impact_z,
-};
+use crate::sim::anim_class::{AnimId, AnimWorldCoord};
+use crate::sim::cell_rect::{CellRef, get_cellclass_fallback, get_cellclass_fallback_leptons};
 use crate::sim::intern::InternedId;
+use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::projectile::ProjectileCoord;
+use crate::sim::radar::{RadarEventRequest, RadarEventType};
 use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
 
-/// Lightning storm bolt animation names (WeatherConBolts from art.ini).
-const BOLT_ANIMS: &[&str] = &["WCLBOLT1", "WCLBOLT2", "WCLBOLT3"];
+/// The empty cell `0x00A9F9F8`, `(0, 0)`: Start draws a cell for it, and the
+/// end of a storm writes it.
+const EMPTY_CELL: (i16, i16) = (0, 0);
+/// Process warns of a deferred storm whenever this divides the frames left
+/// (`0x0053AAD8 MOV ECX,0xE1`).
+const APPROACHING_INTERVAL: i32 = 225;
+/// The scattered cloud's tries (`0x0053A986`).
+const SCATTER_TRIES: i32 = 3;
+/// The land types whose empty struck cell drops debris (`0x0053A56D` through
+/// the tables `0x0053A6A0`/`0x0053A6A8`): Road, Rock, Wall and Weeds.
+const DEBRIS_LANDS: [i32; 4] = [1, 3, 4, 11];
+/// The debris count's bounds (`0x0053A622 PUSH 4 ; PUSH 2`).
+const DEBRIS_COUNT: (i32, i32) = (2, 4);
 
-/// Maximum retry attempts for scatter bolt placement (avoid infinite loop).
-const MAX_SCATTER_RETRIES: u32 = 10;
-
-/// Rust-native representation of the explicit post-duration ending turn.
-/// `-1` remains the native infinite-duration sentinel.
-const ENDING_DURATION_SENTINEL: i32 = i32::MIN;
-
-/// Active lightning storm state.
-///
-/// Global — only one storm at a time (per original engine).
-/// Stored as `Simulation.lightning_storm: Option<LightningStormState>`. The
-/// world hash folds the fields in declaration order.
-#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
-pub struct LightningStormState {
-    /// House that launched the storm (`0x00A9FACC`).
-    owner: InternedId,
-    /// Storm center cell X.
-    target_rx: u16,
-    /// Storm center cell Y.
-    target_ry: u16,
-    /// Ticks remaining before bolts begin (deferment countdown).
-    deferment_remaining: i32,
-    /// Ticks remaining for active bolt generation.
-    duration_remaining: i32,
-    /// Ticks until next center bolt.
-    center_bolt_timer: i32,
-    /// Ticks until next scatter bolt.
-    scatter_bolt_timer: i32,
-    /// Last bolt cell X (for separation enforcement).
-    last_bolt_rx: u16,
-    /// Last bolt cell Y (for separation enforcement).
-    last_bolt_ry: u16,
+/// The storm's globals. Owned here; the world hash folds the fields in
+/// declaration order.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct LightningStorm {
+    /// `0x00A9FAB4` (`LightningStorm::IsActive @ 0x0053A100`): the storm
+    /// rages.
+    active: bool,
+    /// `0x00A9FAD0`: the duration is over; the storm ends once no cloud is
+    /// present.
+    time_to_end: bool,
+    /// `0x00A9FAB8`: frames until a deferred storm starts.
+    deferment: i32,
+    /// `0x00827FC4`: the storm's duration in frames; -1 never ends.
+    duration: i32,
+    /// `0x00827FC0`: the frame the storm started.
+    start_frame: i32,
+    /// `0x00A9F9CC`: the storm's cell.
+    cell: (i16, i16),
+    /// `0x00A9FACC`: the storm's house. Start writes it, deferred or not and
+    /// raging or not; the end clears it.
+    owner: Option<InternedId>,
+    /// CloudsPresent (`0x00A9F9D0`): every cloud until its last frame.
+    clouds_present: Vec<AnimId>,
+    /// CloudsManifesting (`0x00A9FA60`): every cloud until it strikes.
+    clouds_manifesting: Vec<AnimId>,
 }
 
-impl LightningStormState {
-    /// The storm's house, `0x00A9FACC`: `LightningStorm::Start` writes it
-    /// before its deferment test (`0x00539F4B`) and the storm's end clears it
-    /// (`0x0053A8E4`), so it names a house while a storm counts down or
-    /// rages.
-    pub(crate) fn owner(&self) -> InternedId {
-        self.owner
-    }
-
-    /// A storm of `owner`'s raging over `cell` with its bolts far off.
-    #[cfg(test)]
-    pub(crate) fn raging_for_test(owner: InternedId, (rx, ry): (u16, u16)) -> Self {
+/// The values `SuperWeaponEffects::ResetAll @ 0x00539760` leaves at each
+/// scenario's start (TimeToEnd is never reset; the first Process clears it
+/// with no other effect).
+impl Default for LightningStorm {
+    fn default() -> Self {
         Self {
-            owner,
-            target_rx: rx,
-            target_ry: ry,
-            deferment_remaining: 0,
-            duration_remaining: 100,
-            center_bolt_timer: 10,
-            scatter_bolt_timer: 10,
-            last_bolt_rx: rx,
-            last_bolt_ry: ry,
+            active: false,
+            time_to_end: false,
+            deferment: 0,
+            duration: -1,
+            start_frame: -1,
+            cell: EMPTY_CELL,
+            owner: None,
+            clouds_present: Vec::new(),
+            clouds_manifesting: Vec::new(),
         }
     }
 }
 
-/// The storm actually begins — the non-deferred half of
-/// `LightningStorm::Start @ 0x00539EB0`, which flips the sky and plays the
-/// `StormSound` cue at `0x0053A044` in that order. Every path that reaches the
-/// beginning goes through here so the lighting and the cue cannot separate:
-/// in gamemd they are two statements of one straight-line block, reached only
-/// once the deferment countdown is zero.
-fn begin(sim: &mut Simulation) {
-    // `0x0053A009`: the storm now rages, so UpdateLighting selects Ion.
-    sim.update_lighting();
-    sim.sound_events.push(SimSoundEvent::LightningStormBegan);
+impl LightningStorm {
+    /// The storm's house, `0x00A9FACC`, while a storm counts down or rages.
+    pub(crate) fn owner(&self) -> Option<InternedId> {
+        self.owner
+    }
 }
 
-/// `LightningStorm::HasDeferment @ 0x0053A0E0`: a storm rages (`0x00A9FAB4`)
-/// or counts down (`0x00A9FAB8 > 0`). VERA keeps both, and the ending turn
-/// that still counts as raging, in `Simulation::lightning_storm`.
+/// `LightningStorm::HasDeferment @ 0x0053A0E0`: a storm rages or counts down.
 pub(crate) fn has_deferment(sim: &Simulation) -> bool {
-    sim.lightning_storm.is_some()
+    let storm = &sim.lightning_storm;
+    storm.active || storm.deferment > 0
 }
 
-/// `LightningStorm::IsActive @ 0x0053A100` (`0x00A9FAB4`): a storm rages,
-/// its deferment over, through the ending turn that still counts as raging.
+/// `LightningStorm::IsActive @ 0x0053A100`: a storm rages, through the
+/// clouds that outlive its duration.
 pub(crate) fn raging(sim: &Simulation) -> bool {
-    sim.lightning_storm
-        .as_ref()
-        .is_some_and(|storm| storm.deferment_remaining <= 0)
+    sim.lightning_storm.active
 }
 
-/// Start a new lightning storm. An overlapping invocation retargets the one
-/// global storm without creating a second queued lifetime.
-pub fn start(
+/// Launch case 2 for `owner`'s Super of `sw_type` at `cell`: a charged Super
+/// (`+0x6F`) calls [`start`] with `LightningStormDuration=` and
+/// `LightningDeferment=` (`0x006CCD5D..0x006CCD69`). The launch event carries
+/// the rest, which the app plays: `EVA_LightningStormCreated` on every client
+/// (`0x006CCD81`) and, for the local player, the dropped selection and queued
+/// `EVA_LightningStormReady` (`0x006CCD95..0x006CCDAB`).
+pub(super) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    target_rx: u16,
-    target_ry: u16,
     sw_type: InternedId,
+    (rx, ry): (u16, u16),
 ) -> bool {
-    if let Some(storm) = sim.lightning_storm.as_mut() {
-        storm.owner = owner;
-        storm.target_rx = target_rx;
-        storm.target_ry = target_ry;
-        let begins_now = if storm.deferment_remaining > 0 {
-            let requested_deferment = rules.general.lightning_deferment;
-            if requested_deferment <= storm.deferment_remaining {
-                storm.deferment_remaining = requested_deferment;
-            }
-            storm.duration_remaining = rules.general.lightning_storm_duration;
-            log::info!("Deferred Lightning Storm retargeted to ({target_rx}, {target_ry})");
-            storm.deferment_remaining <= 0
-        } else {
-            log::info!("Active Lightning Storm retargeted to ({target_rx}, {target_ry})");
-            false
-        };
-        if begins_now {
-            begin(sim);
-        }
-        return true;
+    let charged = sim
+        .super_weapons
+        .get(&owner)
+        .and_then(|weapons| weapons.get(&sw_type))
+        .is_some_and(|instance| instance.is_ready);
+    if !charged {
+        return false;
     }
-
-    let state = LightningStormState {
-        owner,
-        target_rx,
-        target_ry,
-        deferment_remaining: rules.general.lightning_deferment,
-        duration_remaining: rules.general.lightning_storm_duration,
-        center_bolt_timer: rules.general.lightning_hit_delay,
-        scatter_bolt_timer: rules.general.lightning_scatter_delay,
-        last_bolt_rx: target_rx,
-        last_bolt_ry: target_ry,
-    };
-
-    let starts_active = state.deferment_remaining <= 0;
-    sim.lightning_storm = Some(state);
-    if starts_active {
-        // `LightningDeferment=0` is the only way the launch call reaches the
-        // cue: `Start`'s `if (param_2 != 0)` early return is skipped and the
-        // whole block runs inside `SuperClass::Launch` itself. Native plays it
-        // before the case-2 EVA line at `0x006CCD81`, hence this order.
-        begin(sim);
-    }
-
-    // `EVA_LightningStormCreated` — `0x006CCD81`, played by case 2 after
-    // `LightningStorm::Start` returns, deferred or not.
+    start(
+        sim,
+        rules,
+        rules.general.lightning_storm_duration,
+        rules.general.lightning_deferment,
+        (rx as i16, ry as i16),
+        Some(owner),
+    );
     sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
-        rx: target_rx,
-        ry: target_ry,
+        rx,
+        ry,
     });
-
-    log::info!(
-        "Lightning Storm started at ({}, {}) by '{}', deferment={} duration={}",
-        target_rx,
-        target_ry,
-        sim.interner.resolve(owner),
-        rules.general.lightning_deferment,
-        rules.general.lightning_storm_duration,
-    );
-
     true
 }
 
-/// Process the active lightning storm for one tick.
-/// Called from `tick_active_superweapon_effects()` each tick, which is what
-/// `World::advance_tick` reaches in production.
-pub fn process(
+/// `LightningStorm::Start @ 0x00539EB0`:
+/// 1. the empty cell, which is never in bounds, is drawn again (Y over
+///    MapRect's height, then X over its width) until `MapClass::In_Bounds @
+///    0x00568300` holds it (`0x00539EB6..0x00539F3C`); any other cell is kept;
+/// 2. the cell and house are stored (`0x00539F46`, `0x00539F4B`), and a
+///    raging storm takes nothing more;
+/// 3. a deferred start lowers a running countdown to `deferment` (or sets an
+///    idle one), stores the duration and returns (`0x00539F63..0x00539F80`);
+/// 4. otherwise the storm starts (`0x00539F83..0x0053A082`): a type-13 radar
+///    event at the cell, the duration and start frame, every house's radar
+///    outage ([`crate::sim::power_system::PowerState::start_radar_outage`],
+///    `HouseClass::CreateRadarOutage @ 0x0050BCD0`) unless the storm's house
+///    counts it an ally (`HouseClass::IsAlliedWith @ 0x004F9A50`) or it is
+///    defeated (`+0x1F5`), the player's radar recheck (`PlayerPtr+0x5779`),
+///    UpdateLighting and, under `LightningPrintText=` (`0x0053A014`),
+///    [`SimSoundEvent::LightningStormBegan`] (StormSound and
+///    `TXT_LIGHTNING_STORM`).
+pub(crate) fn start(
     sim: &mut Simulation,
     rules: &RuleSet,
-    overlay_registry: Option<&OverlayTypeRegistry>,
+    duration: i32,
+    deferment: i32,
+    mut cell: (i16, i16),
+    owner: Option<InternedId>,
 ) {
-    // Phase 1: deferment countdown.
-    let activates_now = match sim.lightning_storm.as_mut() {
-        None => return,
-        Some(storm) if storm.deferment_remaining > 0 => {
-            storm.deferment_remaining -= 1;
-            if storm.deferment_remaining > 0 {
-                return;
-            }
-            true
-        }
-        Some(_) => false,
-    };
-    if activates_now {
-        // `LightningStorm::Process @ 0x0053AAAD` decrements the countdown and
-        // at zero re-enters `Start` with `param_2` cleared (`0x0053AAC8 XOR
-        // EDX,EDX`), so this is the frame that runs the non-deferred block —
-        // Ion lighting and `StormSound`. On stock data (`LightningDeferment=
-        // 250`) this is the only frame the cue is ever heard on.
-        begin(sim);
-        // Native Process calls Start and returns on the countdown-zero frame;
-        // expiry and bolt cadence begin on the next object tick.
-        return;
-    }
-
-    // Phase 2: active storm. A positive countdown owns exactly that many
-    // complete processing turns and cleanup occurs on the following turn.
-    // The native -1 sentinel stays active indefinitely.
-    let duration = sim
-        .lightning_storm
-        .as_ref()
-        .expect("storm remains present after deferment processing")
-        .duration_remaining;
-    if duration == ENDING_DURATION_SENTINEL {
-        log::info!("Lightning Storm ended");
-        sim.lightning_storm = None;
-        // `0x0053A8F3`: an active Psychic Dominator's tint takes over.
-        sim.update_lighting();
-        return;
-    }
-    if duration == 0 {
-        // Native first enters its ending state and returns. With no modeled
-        // cloud objects, the following Process is the earliest cleanup turn.
-        sim.lightning_storm
-            .as_mut()
-            .expect("storm remains present while entering ending state")
-            .duration_remaining = ENDING_DURATION_SENTINEL;
-        return;
-    }
-
-    let storm = sim
-        .lightning_storm
-        .as_mut()
-        .expect("active storm remains present");
-
-    // Extract storm fields for bolt generation (avoid borrow conflict).
-    let target_rx = storm.target_rx;
-    let target_ry = storm.target_ry;
-    let last_rx = storm.last_bolt_rx;
-    let last_ry = storm.last_bolt_ry;
-    let owner = storm.owner;
-
-    // Center bolt
-    storm.center_bolt_timer -= 1;
-    let spawn_center = storm.center_bolt_timer <= 0;
-    if spawn_center {
-        storm.center_bolt_timer = rules.general.lightning_hit_delay;
-    }
-
-    // Scatter bolt
-    storm.scatter_bolt_timer -= 1;
-    let spawn_scatter = storm.scatter_bolt_timer <= 0;
-    if spawn_scatter {
-        storm.scatter_bolt_timer = rules.general.lightning_scatter_delay;
-    }
-
-    let spread = rules.general.lightning_cell_spread;
-    let separation = rules.general.lightning_separation;
-
-    if spawn_center {
-        spawn_bolt(sim, rules, target_rx, target_ry, owner, overlay_registry);
-    }
-
-    if spawn_scatter {
-        let (rx, ry) = pick_scatter_cell(
-            sim, target_rx, target_ry, last_rx, last_ry, spread, separation,
-        );
-        spawn_bolt(sim, rules, rx, ry, owner, overlay_registry);
-        // Update last bolt position on the storm state.
-        if let Some(ref mut storm) = sim.lightning_storm {
-            storm.last_bolt_rx = rx;
-            storm.last_bolt_ry = ry;
-        }
-    }
-
-    if let Some(storm) = sim.lightning_storm.as_mut()
-        && storm.duration_remaining > 0
+    if cell == EMPTY_CELL
+        && !sim.map_cell_in_bounds(cell)
+        && let Some([_, _, width, height]) = sim.map_rect()
     {
-        storm.duration_remaining -= 1;
-    }
-}
-
-/// Pick a random cell within `spread` of the storm center, enforcing
-/// `separation` manhattan distance from the last bolt.
-fn pick_scatter_cell(
-    sim: &mut Simulation,
-    center_rx: u16,
-    center_ry: u16,
-    last_rx: u16,
-    last_ry: u16,
-    spread: i32,
-    separation: i32,
-) -> (u16, u16) {
-    let diameter = (spread * 2 + 1) as u32;
-    for _ in 0..MAX_SCATTER_RETRIES {
-        // Random offset within [-spread, +spread] for both axes.
-        let dx = sim.superweapon_rng().next_range_u32(diameter) as i32 - spread;
-        let dy = sim.superweapon_rng().next_range_u32(diameter) as i32 - spread;
-        let rx = (center_rx as i32 + dx).max(0) as u16;
-        let ry = (center_ry as i32 + dy).max(0) as u16;
-
-        // Check manhattan distance from last bolt.
-        let manhattan = (rx as i32 - last_rx as i32).abs() + (ry as i32 - last_ry as i32).abs();
-        if manhattan >= separation {
-            return (rx, ry);
+        loop {
+            let y = sim.superweapon_rng().next_range_i32_inclusive(0, height);
+            let x = sim.superweapon_rng().next_range_i32_inclusive(0, width);
+            cell = (x as i16, y as i16);
+            if sim.map_cell_in_bounds(cell) {
+                break;
+            }
         }
     }
-    // Fallback: use the last attempted position (avoids infinite loop).
-    let dx = sim.superweapon_rng().next_range_u32(diameter) as i32 - spread;
-    let dy = sim.superweapon_rng().next_range_u32(diameter) as i32 - spread;
-    (
-        (center_rx as i32 + dx).max(0) as u16,
-        (center_ry as i32 + dy).max(0) as u16,
-    )
+    let storm = &mut sim.lightning_storm;
+    storm.cell = cell;
+    storm.owner = owner;
+    if storm.active {
+        return;
+    }
+    if deferment != 0 {
+        if storm.deferment == 0 || storm.deferment >= deferment {
+            storm.deferment = deferment;
+        }
+        storm.duration = duration;
+        return;
+    }
+
+    sim.sound_events.push(SimSoundEvent::SuperWeaponRadarEvent {
+        radar: RadarEventRequest::new(RadarEventType::ImpactSilent, cell.0 as u16, cell.1 as u16),
+    });
+    let frame = sim.session.binary_frame;
+    let storm = &mut sim.lightning_storm;
+    storm.duration = duration;
+    storm.start_frame = frame as i32;
+    storm.active = true;
+    // HouseClass::Array, in creation order.
+    for index in 0..sim.session.house_order.len() {
+        let house = sim.session.house_order[index];
+        if let Some(owner) = owner
+            && crate::map::houses::is_allied_with(
+                &sim.house_alliances,
+                sim.interner.resolve(owner),
+                sim.interner.resolve(house),
+            )
+        {
+            continue;
+        }
+        if sim.houses.get(&house).is_none_or(|state| state.is_defeated) {
+            continue;
+        }
+        sim.power_states
+            .entry(house)
+            .or_default()
+            .start_radar_outage(frame, duration);
+    }
+    if let Some(player) = sim.session.current_house
+        && sim.houses.contains_key(&player)
+    {
+        sim.power_states.entry(player).or_default().recheck_radar();
+    }
+    sim.update_lighting();
+    if rules.general.lightning_print_text {
+        sim.sound_events.push(SimSoundEvent::LightningStormBegan);
+    }
+    // The full-screen redraw (`0x0053A082`) is presentation.
 }
 
-/// Spawn a single lightning bolt at the given cell: visual effect + area damage.
-fn spawn_bolt(
+/// `LightningStorm::Process @ 0x0053A6C0` from its storm work (`0x0053A74C`)
+/// for one frame:
+/// 1. each manifesting cloud past half its frames strikes ([`ground_strike`])
+///    and leaves the list, the last listed first (`0x0053A7BA..0x0053A850`);
+/// 2. each present cloud at its last frame leaves its list
+///    (`0x0053A856..0x0053A8C4`); with none present, an ended duration stops
+///    the storm, its house and cell cleared and UpdateLighting run
+///    (`0x0053A8C6..0x0053A8F8`);
+/// 3. a raging storm whose duration has passed (`start + duration < frame`)
+///    ends now and does nothing more; otherwise a cloud gathers over its cell
+///    when `LightningHitDelay=` divides the frame and a scattered one when
+///    `LightningScatterDelay=` does ([`scatter`]) (`0x0053A8FF..0x0053AA9E`);
+/// 4. otherwise a running countdown steps (`0x0053AA9F..0x0053AB40`): at zero
+///    it calls [`start`] with the stored duration, cell and house (which a
+///    still raging storm ignores), and whenever 225 divides the frames left it
+///    warns under `LightningPrintText=` (`0x0053AAE9`,
+///    [`SimSoundEvent::LightningStormApproaching`]).
+///
+/// Returns whether a strike changed a bridge.
+pub(super) fn process(
     sim: &mut Simulation,
     rules: &RuleSet,
-    rx: u16,
-    ry: u16,
-    owner: InternedId,
     overlay_registry: Option<&OverlayTypeRegistry>,
-) {
-    let handles = sim.rule_handles;
-    // 1. Pick a random bolt animation.
-    let anim_idx = sim
-        .superweapon_rng()
-        .next_range_u32(BOLT_ANIMS.len() as u32) as usize;
-    let anim_name = BOLT_ANIMS[anim_idx];
-    // `LightningStorm::GroundStrike @ 0x0053A300` constructs the bolt at the
-    // cell's centre coordinate with the row `(type, &coord, 0, 1, 0x600, 0, 0)`
-    // (`0x0053A387`), the same row as the superweapon invoke animations.
-    super::spawn_cell_anim(sim, rules, anim_name, rx, ry, false);
+) -> bool {
+    let mut bridge_changed = false;
+    let mut index = sim.lightning_storm.clouds_manifesting.len();
+    while index > 0 {
+        index -= 1;
+        let anim = sim.lightning_storm.clouds_manifesting[index];
+        match cloud(sim, rules, anim) {
+            Some((stage, frames, coords)) => {
+                if stage > frames / 2 {
+                    bridge_changed |= ground_strike(sim, rules, overlay_registry, coords);
+                    sim.lightning_storm.clouds_manifesting.remove(index);
+                }
+            }
+            None => {
+                sim.lightning_storm.clouds_manifesting.remove(index);
+            }
+        }
+    }
 
-    // 2. Apply area damage via lightning warhead.
-    let warhead_id = &rules.general.lightning_warhead;
-    if let Some(warhead) = rules.warhead(warhead_id) {
-        let warhead_ref = sim.interner.intern(warhead_id);
-        let impact_z = bridge_adjusted_impact_z(sim.resolved_terrain.as_ref(), rx, ry);
-        let air_impact = crate::sim::combat::combat_aoe::air_impact_from_layer_z(
-            sim.resolved_terrain.as_ref(),
+    if sim.lightning_storm.clouds_present.is_empty() {
+        let storm = &mut sim.lightning_storm;
+        if storm.time_to_end {
+            if storm.active {
+                storm.active = false;
+                storm.owner = None;
+                storm.cell = EMPTY_CELL;
+                sim.update_lighting();
+            }
+            sim.lightning_storm.time_to_end = false;
+        }
+    } else {
+        let mut index = sim.lightning_storm.clouds_present.len();
+        while index > 0 {
+            index -= 1;
+            let anim = sim.lightning_storm.clouds_present[index];
+            if cloud(sim, rules, anim)
+                .is_none_or(|(stage, frames, _)| stage >= frames.wrapping_sub(1))
+            {
+                sim.lightning_storm.clouds_present.remove(index);
+            }
+        }
+    }
+
+    let frame = sim.session.binary_frame as i32;
+    let storm = &sim.lightning_storm;
+    if storm.active && !storm.time_to_end {
+        if storm.duration != -1 && storm.start_frame.wrapping_add(storm.duration) < frame {
+            sim.lightning_storm.time_to_end = true;
+            return bridge_changed;
+        }
+        let general = &rules.general;
+        if frame.checked_rem(general.lightning_hit_delay) == Some(0) {
+            let cell = sim.lightning_storm.cell;
+            create_cloud_bolt(sim, rules, cell);
+        }
+        if frame.checked_rem(general.lightning_scatter_delay) == Some(0) {
+            scatter(sim, rules);
+        }
+        return bridge_changed;
+    }
+
+    let storm = &mut sim.lightning_storm;
+    if storm.deferment > 0 {
+        storm.deferment -= 1;
+        if storm.deferment == 0 {
+            let (duration, cell, owner) = (storm.duration, storm.cell, storm.owner);
+            start(sim, rules, duration, 0, cell, owner);
+        } else if storm.deferment % APPROACHING_INTERVAL == 0 && rules.general.lightning_print_text
+        {
+            sim.sound_events
+                .push(SimSoundEvent::LightningStormApproaching);
+        }
+    }
+    bridge_changed
+}
+
+/// A listed cloud's stage and its image's frame count
+/// ([`Simulation::anim_stage_and_frames`]) and its coordinate (vt+0x48), or
+/// `None` once the anim has left the store (module residual).
+fn cloud(sim: &Simulation, rules: &RuleSet, id: AnimId) -> Option<(i32, i32, [i32; 3])> {
+    let (stage, frames) = sim.anim_stage_and_frames(id, rules)?;
+    let at = crate::sim::anim_class::anim_world_coords(
+        sim.anim(id)?,
+        &sim.substrate.entities,
+        sim.resolved_terrain.as_ref(),
+    );
+    Some((stage, frames, [at.x, at.y, at.z]))
+}
+
+/// Process's scattered cloud (`0x0053A980..0x0053AA92`): up to three tries,
+/// each offsetting the storm's cell by `RandomRanged(-spread/2, spread/2)` on
+/// X, then on Y (`LightningCellSpread=` halved by an arithmetic shift, word
+/// sums). The first cell In_Bounds that lies `LightningSeparation=` or more
+/// cells (Manhattan, against each present cloud's coordinate `/ 256`) from
+/// every cloud present gathers a cloud ([`create_cloud_bolt`]).
+fn scatter(sim: &mut Simulation, rules: &RuleSet) {
+    let half = rules.general.lightning_cell_spread >> 1;
+    for _ in 0..SCATTER_TRIES {
+        let centre = sim.lightning_storm.cell;
+        let dx = sim.superweapon_rng().next_range_i32_inclusive(-half, half);
+        let dy = sim.superweapon_rng().next_range_i32_inclusive(-half, half);
+        let cell = (
+            centre.0.wrapping_add(dx as i16),
+            centre.1.wrapping_add(dy as i16),
+        );
+        let view: &Simulation = sim;
+        let too_close = view
+            .lightning_storm
+            .clouds_present
+            .iter()
+            .filter_map(|&anim| cloud(view, rules, anim))
+            .any(|(_, _, [x, y, _])| {
+                let distance = (i32::from(cell.0) - i32::from((x / 256) as i16)).abs()
+                    + (i32::from(cell.1) - i32::from((y / 256) as i16)).abs();
+                distance < rules.general.lightning_separation
+            });
+        if sim.map_cell_in_bounds(cell) && !too_close {
+            create_cloud_bolt(sim, rules, cell);
+            return;
+        }
+    }
+}
+
+/// What the storm reads of a Map lookup's cell, the real one or the shared
+/// dummy off the map: MapCoords (`+0x24`), Level (`+0x11B`) and the bridge
+/// bit (`+0x140 & 0x100`).
+struct StormCell {
+    coords: (i16, i16),
+    level: i32,
+    bridge: bool,
+    real: bool,
+}
+
+impl StormCell {
+    fn of(cell: &CellRef<'_>) -> Self {
+        let (coords, real) = match cell {
+            CellRef::Real(cell) => ((cell.rx as i16, cell.ry as i16), true),
+            CellRef::Dummy { cell } => {
+                let (x, y) = cell.snapshot().coord;
+                ((x as i16, y as i16), false)
+            }
+        };
+        Self {
+            coords,
+            level: i32::from(cell.signed_level()),
+            bridge: cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+                != 0,
+            real,
+        }
+    }
+
+    /// The cell's centre at `z` (`(coord << 8) + 0x80` on both axes).
+    fn centre(&self, z: i32) -> [i32; 3] {
+        [
+            i32::from(self.coords.0) * 256 + 128,
+            i32::from(self.coords.1) * 256 + 128,
+            z,
+        ]
+    }
+}
+
+/// `LightningStorm::CreateCloudBolt @ 0x0053A140` for `cell` (looked up by
+/// `MapClass::operator[] @ 0x005657A0`): the cloud's coordinate is the cell's
+/// centre at its Level's height, the bridge height if the cell carries one,
+/// and the first `WeatherConBolts=` image's half height through
+/// [`crate::util::lepton::native_pixel_height_leptons`] (`0x006D2120`). A
+/// Scenario draw picks the `WeatherConClouds=` type (`Random() % count`,
+/// `0x0053A1F5`), which is constructed there with the row `(0, 1, 0x600, 0,
+/// 0)` and listed as manifesting and present. (The coordinate is compared with
+/// the zero coordinate `0x00A9FA30` first, which a cell centre never is.)
+pub(super) fn create_cloud_bolt(sim: &mut Simulation, rules: &RuleSet, cell: (i16, i16)) {
+    let target = StormCell::of(&get_cellclass_fallback(
+        sim.resolved_terrain.as_ref(),
+        i32::from(cell.0),
+        i32::from(cell.1),
+    ));
+    let general = &rules.general;
+    let image_height = general
+        .weather_con_bolts
+        .first()
+        .and_then(|bolt| rules.art().anim_runtime_config(bolt))
+        .and_then(|config| config.raw_shp_height)
+        .unwrap_or(0);
+    let z = target
+        .level
+        .wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS)
+        .wrapping_add(crate::util::lepton::native_pixel_height_leptons(
+            image_height / 2,
+        ))
+        .wrapping_add(if target.bridge {
+            BRIDGE_DECK_HEIGHT_LEPTONS
+        } else {
+            0
+        });
+    let coords = [
+        i32::from(cell.0) * 256 + 128,
+        i32::from(cell.1) * 256 + 128,
+        z,
+    ];
+    let clouds = &general.weather_con_clouds;
+    if clouds.is_empty() {
+        return;
+    }
+    let pick = sim.superweapon_rng().next_u32() % clouds.len() as u32;
+    if let Some(anim) = super::spawn_super_anim(sim, rules, &clouds[pick as usize], coords) {
+        let storm = &mut sim.lightning_storm;
+        storm.clouds_manifesting.push(anim);
+        storm.clouds_present.push(anim);
+    }
+}
+
+/// `LightningStorm::GroundStrike @ 0x0053A300` at a cloud's coordinate, on the
+/// cell `MapClass::GetCellAt @ 0x00565730` finds there:
+/// 1. a Scenario draw picks the `WeatherConBolts=` type (`Random() % count`),
+///    constructed at the cell's `Get_Center_Coords @ 0x00480A30` (its centre
+///    at the floor height `0x0047B3A0` gives, no bridge term) with the row
+///    `(0, 1, 0x600, 0, 0)`;
+/// 2. the strike coordinate is the cell's centre at its Level's height plus
+///    the bridge height if the cell carries one (`0x0053A3E7..0x0053A445`);
+/// 3. a nonempty `LightningSounds=` draws one cue played there (`Random() %
+///    count`, `VocClass::PlayAt @ 0x007509E0`);
+/// 4. `SelectAnim @ 0x0048A4F0` (`LightningDamage=`, `LightningWarhead=`, the
+///    cell's land) gives `WeatherConBoltExplosion=`, constructed with the
+///    combat explosion row `(0, 1, 0x2600, -15, 0)`;
+/// 5. the flash `0x0048A620` (not forced) and `Apply_area_damage @
+///    0x00489280` with no source object and the storm's house;
+/// 6. debris ([`debris_due`]): `RandomRanged(2, 4)` pieces, each a
+///    `MetallicDebris=` type drawn by `RandomRanged(0, count - 1)` and
+///    constructed at the strike coordinate with the row `(0, 1, 0x600, 0, 0)`.
+///
+/// Returns whether the area damage changed a bridge.
+pub(super) fn ground_strike(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    [x, y, _]: [i32; 3],
+) -> bool {
+    let general = &rules.general;
+    let (target, centre) = {
+        let terrain = sim.resolved_terrain.as_ref();
+        let cell = get_cellclass_fallback_leptons(terrain, x, y);
+        let target = StormCell::of(&cell);
+        let centre = match &cell {
+            CellRef::Real(_) => crate::sim::projectile::cell_ground_coord(
+                terrain,
+                target.coords.0 as u16,
+                target.coords.1 as u16,
+            ),
+            CellRef::Dummy { cell } => crate::sim::projectile::dummy_cell_ground_coord(cell),
+        };
+        (target, centre)
+    };
+
+    let bolts = &general.weather_con_bolts;
+    if !bolts.is_empty() {
+        let pick = sim.superweapon_rng().next_u32() % bolts.len() as u32;
+        let _ = super::spawn_super_anim(
+            sim,
+            rules,
+            &bolts[pick as usize],
+            [centre.x, centre.y, centre.z],
+        );
+    }
+
+    let strike = target.centre(
+        target
+            .level
+            .wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS)
+            .wrapping_add(if target.bridge {
+                BRIDGE_DECK_HEIGHT_LEPTONS
+            } else {
+                0
+            }),
+    );
+    let sounds = &general.lightning_sounds;
+    if !sounds.is_empty() {
+        let pick = sim.superweapon_rng().next_u32() % sounds.len() as u32;
+        let (rx, ry, sub_x, sub_y, _) = AnimWorldCoord {
+            x: strike[0],
+            y: strike[1],
+            z: strike[2],
+        }
+        .to_cell_sub_z();
+        sim.sound_events.push(SimSoundEvent::VocAt {
+            sound_id: sounds[pick as usize].clone(),
+            audible_to: None,
             rx,
             ry,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            impact_z,
-        );
-        let world_z_leptons = air_impact
-            .map(|impact| impact.z_leptons)
-            .unwrap_or_else(|| {
-                impact_z.wrapping_mul(crate::util::lepton::LEPTONS_PER_LEVEL as i32)
-            });
+            sub_x,
+            sub_y,
+            world_z_leptons: strike[2],
+        });
+    }
 
-        // GroundStrike selects and starts its explosion AnimClass before it
-        // enters Apply_area_damage; the anim's scorch or crater is its own
-        // Middle, at its middle frame.
-        // GroundStrike53A4C2 supplies the cell's land and the saved strike
-        // coordinate. Its LightningWarhead reference selects the retained
-        // WeatherConBoltExplosion through the common SelectAnim owner.
-        let coordinate = crate::sim::projectile::ProjectileCoord::new(
-            i32::from(rx) * 256 + 128,
-            i32::from(ry) * 256 + 128,
-            world_z_leptons,
-        );
+    let coordinate = ProjectileCoord::new(strike[0], strike[1], strike[2]);
+    let warhead = rules.warhead(&general.lightning_warhead);
+    if let Some(warhead) = warhead {
         let land = crate::sim::combat::detonation_anim::land_at(sim, coordinate);
         if let Some(effect) = crate::sim::combat::detonation_anim::effect(
             sim,
             rules,
             warhead,
-            rules.general.lightning_damage,
+            general.lightning_damage,
             land,
             coordinate,
             coordinate,
         ) {
             crate::sim::world::damage_consequences::admit_explosion_effect(sim, rules, effect);
         }
-
-        let scenario_no_damage = sim.session.no_damage;
-        let binary_frame = sim.session.binary_frame;
-        let spread_enabled = sim.production.ore_growth_config.spreads;
-        let mut cell_prelude = crate::sim::world::simulation_area_damage_cell_prelude(
-            rules,
-            warhead,
-            rules.general.lightning_damage,
-            true,
-            scenario_no_damage,
-            &mut sim.production.ore_growth_state,
-            &sim.production.tiberium_spawning_terrain_cells,
-            &sim.production.terrain_object_cells,
-            binary_frame,
-            spread_enabled,
-            &mut sim.radar_terrain_dirty_cells,
-            &mut sim.radar_terrain_dirty_generation,
-            &mut sim.tactical_dirty_cells,
-            &mut sim.terrain_costs,
-            &mut sim.zone_grid,
-            &mut sim.path_grid,
-            sim.bridge_state.as_ref(),
-            sim.playfield_bounds,
-        );
-        let terrain_objects = TerrainCollectionView {
-            objects: &sim.production.terrain_objects,
-            cells: &sim.production.terrain_object_cells,
-        };
-        let aoe = apply_aoe_damage_with_terrain_and_scenario(
-            &mut sim.substrate.entities,
-            rx,
-            ry,
-            rules.general.lightning_damage,
-            warhead,
-            rules,
-            &sim.interner,
-            handles,
-            (
-                crate::sim::combat::RAD_NO_ATTACKER,
-                Some(owner),
-                warhead_ref,
-            ),
-            AoELayerContext {
-                occupancy: Some(&sim.substrate.occupancy),
-                terrain: sim.resolved_terrain.as_mut(),
-                overlay_grid: sim.overlay_grid.as_mut(),
-                overlay_registry,
-                scenario_rng: Some(&mut sim.scenario_rng),
-                air_impact,
-                impact_z,
-            },
-            Some(terrain_objects),
-            scenario_no_damage,
-            Some(&mut cell_prelude as &mut dyn crate::sim::combat::combat_aoe::AoECellPrelude),
-        );
-        let receivers = aoe.receivers;
-        drop(cell_prelude);
-
-        // IonWH has Wall=yes in active retail. The borrowed cell prelude has
-        // already published every native tactical/radar callback inline.
-
-        // GroundStrike enters the ordinary ReceiveDamage transaction for each
-        // hit before returning. In particular, a fatal carrier detonates its
-        // DeathWeapon (and mutates walls/RNG/targets) before the next bolt or
-        // LogicClass visit.
-        sim.commit_noncombat_aoe_receivers(rules, overlay_registry, &receivers);
-    } else {
-        log::warn!("Lightning warhead '{}' not found in rules", warhead_id);
     }
 
-    // 3. Sound event for the bolt strike.
-    sim.sound_events
-        .push(SimSoundEvent::SuperWeaponStrike { rx, ry });
+    let before = StrikeCell::read(sim, &target, coordinate);
+    let mut bridge_changed = false;
+    if let Some(warhead) = warhead {
+        let warhead_ref = sim.interner.intern(&general.lightning_warhead);
+        sim.combat_light_requests
+            .push(crate::sim::combat::CombatLightRequest {
+                target_id: None,
+                damage: general.lightning_damage,
+                warhead_ref,
+                coord: coordinate,
+                force_create: false,
+                flags: 0,
+            });
+        let house = sim.lightning_storm.owner;
+        bridge_changed = crate::sim::combat::world_receiver::apply_area_damage(
+            sim,
+            rules,
+            overlay_registry,
+            coordinate,
+            general.lightning_damage,
+            warhead,
+            (crate::sim::combat::RAD_NO_ATTACKER, house, warhead_ref),
+        );
+    } else {
+        log::warn!(
+            "Lightning warhead '{}' not found in rules",
+            general.lightning_warhead
+        );
+    }
+    let after = {
+        let cell = get_cellclass_fallback_leptons(sim.resolved_terrain.as_ref(), x, y);
+        StrikeCell::read(sim, &StormCell::of(&cell), coordinate)
+    };
+    if !debris_due(&before, &after) {
+        return bridge_changed;
+    }
+
+    let count = sim
+        .superweapon_rng()
+        .next_range_i32_inclusive(DEBRIS_COUNT.0, DEBRIS_COUNT.1);
+    for _ in 0..count {
+        let last = sim.metallic_debris.len() as i32 - 1;
+        let pick = sim.superweapon_rng().next_range_i32_inclusive(0, last);
+        let Some(&debris) = usize::try_from(pick)
+            .ok()
+            .and_then(|pick| sim.metallic_debris.get(pick))
+        else {
+            continue;
+        };
+        let name = sim.interner.resolve(debris).to_string();
+        let _ = super::spawn_super_anim(sim, rules, &name, strike);
+    }
+    bridge_changed
+}
+
+/// What GroundStrike compares around its damage: the cell's first building
+/// (`Look_up_building_in_cell @ 0x0047C520`), the object nearest its (0, 0)
+/// point on the ground list (`CellClass::Find_Nearest_Object @ 0x0047C3D0`),
+/// its Level and land (`+0xEC`), and whether that object is infantry
+/// (WhatAmI 0xF). The dummy off the map holds no object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct StrikeCell {
+    pub(super) building: Option<u64>,
+    pub(super) nearest: Option<u64>,
+    pub(super) nearest_is_infantry: bool,
+    pub(super) level: i32,
+    pub(super) land: i32,
+}
+
+impl StrikeCell {
+    fn read(sim: &Simulation, cell: &StormCell, coordinate: ProjectileCoord) -> Self {
+        let (building, nearest) = if cell.real {
+            let at = (cell.coords.0 as u16, cell.coords.1 as u16);
+            (
+                sim.substrate
+                    .occupancy
+                    .first_building_on_layer(at.0, at.1, MovementLayer::Ground),
+                sim.nearest_cell_object(at, MovementLayer::Ground, None),
+            )
+        } else {
+            (None, None)
+        };
+        Self {
+            building,
+            nearest,
+            nearest_is_infantry: nearest
+                .and_then(|id| sim.substrate.entities.get(id))
+                .is_some_and(|object| {
+                    object.category == crate::map::entities::EntityCategory::Infantry
+                }),
+            level: cell.level,
+            land: crate::sim::combat::detonation_anim::land_at(sim, coordinate),
+        }
+    }
+}
+
+/// GroundStrike's debris test (`0x0053A513..0x0053A61B`): never when the
+/// nearest object before the damage was infantry; otherwise when the damage
+/// changed the cell's building, its nearest object or its Level, or when the
+/// cell held neither before and its land is Road, Rock, Wall or Weeds.
+pub(super) fn debris_due(before: &StrikeCell, after: &StrikeCell) -> bool {
+    if before.nearest_is_infantry {
+        return false;
+    }
+    let changed = after.building != before.building
+        || after.nearest != before.nearest
+        || after.level != before.level;
+    changed
+        || (before.building.is_none()
+            && before.nearest.is_none()
+            && DEBRIS_LANDS.contains(&before.land))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::map::bridge_facts::{BRIDGE_FLAG_STRUCTURAL, BridgeCellFacts};
-    use crate::map::entities::EntityCategory;
-    use crate::map::overlay_types::OverlayTypeRegistry;
-    use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
-    use crate::rules::art_data::ArtRegistry;
-    use crate::rules::ini_parser::IniFile;
-    use crate::sim::components::Health;
-    use crate::sim::game_entity::GameEntity;
-    use crate::sim::movement::locomotor::MovementLayer;
-    use crate::sim::occupancy::CellListInsertion;
-    use crate::sim::overlay_grid::OverlayGrid;
-    use crate::sim::rng::SimRng;
-    use crate::sim::scenario_session::ScenarioLightingProfile;
-    use crate::sim::world::Simulation;
-
-    fn lighting_timing_rules(deferment: i32, duration: i32, rate: &str) -> RuleSet {
-        RuleSet::from_ini(&IniFile::from_str(&format!(
-            "[General]\n\
-             LightningDeferment={deferment}\n\
-             LightningStormDuration={duration}\n\
-             LightningHitDelay=1000\n\
-             LightningScatterDelay=1000\n\
-             AmbientChangeRate={rate}\n\
-             AmbientChangeStep=.2\n"
-        )))
-        .expect("lighting timing rules should parse")
-    }
-
-    #[test]
-    fn gsi_04_20_deferment_activation_and_cleanup_follow_pre_ore_ambient_rung() {
-        let rules = lighting_timing_rules(1, 2, ".0012");
-        assert_eq!(rules.general.ambient_change_interval_frames, 1);
-        let mut sim = Simulation::with_seed(0x420);
-        let owner = sim.interner.intern("Americans");
-        let rng_before = sim.scenario_rng.state();
-
-        let sw_test = sim.interner.intern("SWTEST");
-        assert!(start(&mut sim, &rules, owner, 8, 9, sw_test));
-        assert_eq!(
-            sim.session.lighting.selected_profile,
-            ScenarioLightingProfile::Normal,
-            "a deferred request must not select Ion"
-        );
-
-        sim.advance_tick(&[], Some(&rules), None, None, 67);
-        assert_eq!(
-            sim.session.lighting.selected_profile,
-            ScenarioLightingProfile::Ion,
-            "the decrement-to-zero frame activates the storm"
-        );
-        assert_eq!(sim.session.lighting.target_ambient, 87);
-        assert_eq!(
-            sim.session.lighting.current_ambient, 100,
-            "the pre-ore ambient rung already ran before activation"
-        );
-
-        sim.advance_tick(&[], Some(&rules), None, None, 67);
-        assert!(sim.lightning_storm.is_some());
-        assert_eq!(sim.session.lighting.current_ambient, 87);
-        assert_eq!(
-            sim.lightning_storm
-                .as_ref()
-                .expect("first active duration turn")
-                .duration_remaining,
-            1
-        );
-
-        sim.advance_tick(&[], Some(&rules), None, None, 67);
-        assert!(sim.lightning_storm.is_some());
-        assert_eq!(
-            sim.lightning_storm
-                .as_ref()
-                .expect("storm remains through both duration turns")
-                .duration_remaining,
-            0
-        );
-        assert_eq!(
-            sim.session.lighting.selected_profile,
-            ScenarioLightingProfile::Ion
-        );
-
-        sim.advance_tick(&[], Some(&rules), None, None, 67);
-        assert_eq!(
-            sim.lightning_storm
-                .as_ref()
-                .expect("explicit ending turn retains the storm")
-                .duration_remaining,
-            ENDING_DURATION_SENTINEL
-        );
-        assert_eq!(
-            sim.session.lighting.selected_profile,
-            ScenarioLightingProfile::Ion,
-            "the explicit ending turn retains Ion lighting"
-        );
-
-        sim.advance_tick(&[], Some(&rules), None, None, 67);
-        assert!(sim.lightning_storm.is_none());
-        assert_eq!(
-            sim.session.lighting.selected_profile,
-            ScenarioLightingProfile::Normal
-        );
-        assert_eq!(sim.session.lighting.target_ambient, 100);
-        assert_eq!(
-            sim.session.lighting.current_ambient, 87,
-            "cleanup selects Normal after this frame's ambient rung"
-        );
-
-        sim.advance_tick(&[], Some(&rules), None, None, 67);
-        assert_eq!(sim.session.lighting.current_ambient, 100);
-        assert_eq!(sim.scenario_rng.state(), rng_before);
-    }
-
-    fn storm_began_count(sim: &Simulation) -> usize {
-        sim.sound_events
-            .iter()
-            .filter(|event| matches!(event, SimSoundEvent::LightningStormBegan))
-            .count()
-    }
-
-    fn launch_announced_count(sim: &Simulation) -> usize {
-        sim.sound_events
-            .iter()
-            .filter(|event| matches!(event, SimSoundEvent::SuperWeaponLaunched { .. }))
-            .count()
-    }
-
-    /// `StormSound` is deferred. `SuperClass::Launch @ 0x006CC390` case 2
-    /// hands `LightningStorm::Start @ 0x00539EB0` the `[Rules+0x1794]`
-    /// `LightningDeferment` value as `param_2`, and `Start` returns at
-    /// `if (param_2 != 0) { arm the countdown; return; }` — before the cue at
-    /// `0x0053A044`. `LightningStorm::Process @ 0x0053A6C0` decrements the
-    /// countdown (`0x0053AAAD`) and at zero re-enters `Start` with `param_2`
-    /// cleared (`0x0053AAC8 XOR EDX,EDX ; 0x0053AACA CALL 0x00539EB0`); that
-    /// second entry is what plays it. Stock `rulesmd.ini:130` is
-    /// `LightningDeferment=250`, so on retail data the cue never lands on the
-    /// launch frame — only the EVA line does.
-    #[test]
-    fn the_storm_cue_lands_on_the_deferment_expiry_not_on_the_launch() {
-        let rules = lighting_timing_rules(3, 2, ".2");
-        let mut sim = Simulation::with_seed(0x422);
-        let owner = sim.interner.intern("Americans");
-        let sw_test = sim.interner.intern("LightningStormSpecial");
-
-        assert!(start(&mut sim, &rules, owner, 8, 9, sw_test));
-        assert_eq!(
-            storm_began_count(&sim),
-            0,
-            "a deferred launch returns before the cue"
-        );
-        assert_eq!(
-            launch_announced_count(&sim),
-            1,
-            "the EVA line is still spoken at launch (0x006CCD81)"
-        );
-        assert_eq!(
-            sim.session.lighting.selected_profile,
-            ScenarioLightingProfile::Normal
-        );
-
-        for frame in 1..=2 {
-            process(&mut sim, &rules, None);
-            assert_eq!(
-                storm_began_count(&sim),
-                0,
-                "countdown frame {frame} has not reached zero"
-            );
-        }
-
-        process(&mut sim, &rules, None);
-        assert_eq!(
-            storm_began_count(&sim),
-            1,
-            "the countdown-zero frame re-enters Start and plays the cue"
-        );
-        assert_eq!(
-            sim.session.lighting.selected_profile,
-            ScenarioLightingProfile::Ion,
-            "the cue and the Ion flip are one block in Start"
-        );
-
-        process(&mut sim, &rules, None);
-        assert_eq!(
-            storm_began_count(&sim),
-            1,
-            "the non-deferred block runs once per storm"
-        );
-    }
-
-    /// The one launch that does reach the cue: `LightningDeferment=0` skips
-    /// `Start`'s early return, so the whole non-deferred block runs inside
-    /// `SuperClass::Launch` itself, before the case-2 EVA line.
-    #[test]
-    fn a_zero_deferment_storm_plays_its_cue_on_the_launch_frame() {
-        let rules = lighting_timing_rules(0, 2, ".2");
-        let mut sim = Simulation::with_seed(0x423);
-        let owner = sim.interner.intern("Americans");
-        let sw_test = sim.interner.intern("LightningStormSpecial");
-
-        assert!(start(&mut sim, &rules, owner, 8, 9, sw_test));
-        assert_eq!(storm_began_count(&sim), 1);
-        assert_eq!(launch_announced_count(&sim), 1);
-        let cue_first = sim
-            .sound_events
-            .iter()
-            .position(|event| matches!(event, SimSoundEvent::LightningStormBegan))
-            < sim
-                .sound_events
-                .iter()
-                .position(|event| matches!(event, SimSoundEvent::SuperWeaponLaunched { .. }));
-        assert!(
-            cue_first,
-            "native calls Start before the EVA line at 0x006CCD81"
-        );
-    }
-
-    #[test]
-    fn gsi_04_20_minus_one_duration_remains_active_and_ion_selected() {
-        let rules = lighting_timing_rules(0, -1, ".2");
-        let mut sim = Simulation::with_seed(0x421);
-        let owner = sim.interner.intern("Americans");
-
-        let sw_test = sim.interner.intern("SWTEST");
-        assert!(start(&mut sim, &rules, owner, 8, 9, sw_test));
-        for _ in 0..4 {
-            process(&mut sim, &rules, None);
-            assert_eq!(
-                sim.lightning_storm
-                    .as_ref()
-                    .expect("-1 storm remains active")
-                    .duration_remaining,
-                -1
-            );
-            assert_eq!(
-                sim.session.lighting.selected_profile,
-                ScenarioLightingProfile::Ion
-            );
+impl LightningStorm {
+    /// A storm raging over `cell` for `owner` with no end.
+    pub(crate) fn raging_for_test(owner: InternedId, cell: (i16, i16)) -> Self {
+        Self {
+            active: true,
+            owner: Some(owner),
+            cell,
+            ..Self::default()
         }
     }
 
-    #[test]
-    fn gsi_04_20_deferred_retarget_preserves_earliest_countdown_and_rewrites_duration() {
-        let first_rules = lighting_timing_rules(5, 20, ".2");
-        let second_rules = lighting_timing_rules(9, 37, ".2");
-        let mut sim = Simulation::with_seed(0x422);
-        let first_owner = sim.interner.intern("Americans");
-        let second_owner = sim.interner.intern("Soviet");
-
-        let sw_test = sim.interner.intern("SWTEST");
-        assert!(start(&mut sim, &first_rules, first_owner, 4, 5, sw_test));
-        sim.lightning_storm
-            .as_mut()
-            .expect("deferred storm")
-            .deferment_remaining = 3;
-        let sw_test = sim.interner.intern("SWTEST");
-        assert!(start(
-            &mut sim,
-            &second_rules,
-            second_owner,
-            17,
-            19,
-            sw_test
-        ));
-
-        let storm = sim.lightning_storm.as_ref().expect("one deferred storm");
-        assert_eq!(storm.owner, second_owner);
-        assert_eq!((storm.target_rx, storm.target_ry), (17, 19));
-        assert_eq!(storm.deferment_remaining, 3);
-        assert_eq!(storm.duration_remaining, 37);
-        assert_eq!(
-            sim.session.lighting.selected_profile,
-            ScenarioLightingProfile::Normal
-        );
-    }
-
-    #[test]
-    fn gsi_04_20_active_storm_start_retargets_without_a_queued_lifetime() {
-        let rules = lighting_timing_rules(0, 20, ".2");
-        let mut sim = Simulation::with_seed(1);
-        let first_owner = sim.interner.intern("Americans");
-        let second_owner = sim.interner.intern("Soviet");
-
-        let sw_test = sim.interner.intern("SWTEST");
-        assert!(start(&mut sim, &rules, first_owner, 4, 5, sw_test));
-        assert_eq!(
-            sim.session.lighting.selected_profile,
-            ScenarioLightingProfile::Ion
-        );
-        let duration = sim.lightning_storm.as_ref().unwrap().duration_remaining;
-
-        let sw_test = sim.interner.intern("SWTEST");
-        assert!(start(&mut sim, &rules, second_owner, 17, 19, sw_test));
-        let storm = sim
-            .lightning_storm
-            .as_ref()
-            .expect("one storm remains active");
-        assert_eq!(storm.owner, second_owner);
-        assert_eq!((storm.target_rx, storm.target_ry), (17, 19));
-        assert_eq!(storm.duration_remaining, duration);
-    }
-
-    #[test]
-    fn gsi_04_20_static_normal_map_does_not_advance_lighting_or_rng() {
-        let rules = lighting_timing_rules(250, 180, ".2");
-        let mut sim = Simulation::with_seed(0x42);
-        let lighting_before = sim.session.lighting;
-        let rng_before = sim.scenario_rng.state();
-
-        for _ in 0..400 {
-            sim.advance_tick(&[], Some(&rules), None, None, 67);
+    /// The globals as the oracle reads them: Active, TimeToEnd, Deferment,
+    /// Duration, StartTime, Coords and Owner.
+    pub(crate) fn for_test(
+        active: bool,
+        time_to_end: bool,
+        deferment: i32,
+        duration: i32,
+        start_frame: i32,
+        cell: (i16, i16),
+        owner: Option<InternedId>,
+    ) -> Self {
+        Self {
+            active,
+            time_to_end,
+            deferment,
+            duration,
+            start_frame,
+            cell,
+            owner,
+            ..Self::default()
         }
-
-        assert_eq!(sim.session.lighting, lighting_before);
-        assert_eq!(sim.scenario_rng.state(), rng_before);
     }
 
-    fn registry_only_warhead_lightning_test_setup() -> (Simulation, RuleSet) {
-        // LWH is declared only by [Warheads]; no object or ordinary weapon
-        // points to it. This mirrors stock IonWH's Lightning Storm route.
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n0=DUMMY\n\n\
-             [VehicleTypes]\n\n\
-             [AircraftTypes]\n\n\
-             [BuildingTypes]\n0=GAPOWR\n\n\
-             [Warheads]\n0=LWH\n\n\
-             [DUMMY]\nStrength=100\nArmor=none\nSpeed=4\n\n\
-             [GAPOWR]\nStrength=200\nArmor=wood\n\n\
-             [General]\nLightningDamage=100\nLightningWarhead=LWH\nWeatherConBoltExplosion=EXPLOSION\n\n\
-             [LWH]\nCellSpread=1\nPercentAtMax=1\nAnimList=EXPLOSION\n\
-             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        ))
-        .expect("lightning test rules should parse");
-        let sim = Simulation::with_seed(1);
-        (sim, rules)
+    pub(crate) fn globals_for_test(
+        &self,
+    ) -> (bool, bool, i32, i32, i32, (i16, i16), Option<InternedId>) {
+        (
+            self.active,
+            self.time_to_end,
+            self.deferment,
+            self.duration,
+            self.start_frame,
+            self.cell,
+            self.owner,
+        )
     }
 
-    #[test]
-    fn gsi_04_11_registry_only_lightning_anim_smudge_is_not_deferred() {
-        let (mut sim, mut rules) = registry_only_warhead_lightning_test_setup();
-        let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
-            "[EXPLOSION]
-Rate=900
-[WCLBOLT1]
-Layer=ground
-[WCLBOLT2]
-Layer=ground
-\n             [WCLBOLT3]
-Layer=ground
-",
-        ));
-        for name in ["EXPLOSION", "WCLBOLT1", "WCLBOLT2", "WCLBOLT3"] {
-            art.bind_anim_frame_count_for_test(name, 10);
-        }
-        rules.replace_art_registry_for_test(art);
-        let owner = sim.interner.intern("Americans");
-
-        spawn_bolt(&mut sim, &rules, 5, 5, owner, None);
-
-        assert!(sim.pending_smudge_requests.is_empty());
-
-        // Bolt and explosion are both real AnimClass instances at the struck
-        // cell; no second animation lane receives either.
-        let explosion_iid = sim.interner.intern("EXPLOSION");
-        let at_cell = |anim: &crate::sim::anim_class::AnimObject| {
-            let (rx, ry, ..) = anim.world_coord.to_cell_sub_z();
-            (rx, ry) == (5, 5)
-        };
-        let anims: Vec<_> = sim.substrate.anims.iter().map(|(_, anim)| anim).collect();
-        assert!(
-            anims.iter().any(|anim| anim.type_id == explosion_iid
-                && at_cell(anim)
-                && anim.draw_flags == 0x2600),
-            "the LightningWarhead selects WeatherConBoltExplosion and takes the combat explosion row"
-        );
-        assert!(
-            anims.iter().any(|anim| {
-                sim.interner.resolve(anim.type_id).starts_with("WCLBOLT")
-                    && at_cell(anim)
-                    && anim.draw_flags == 0x600
-            }),
-            "the bolt takes the (0, 1, 0x600, 0, 0) row"
-        );
+    pub(crate) fn clouds_for_test(&self) -> (&[AnimId], &[AnimId]) {
+        (&self.clouds_present, &self.clouds_manifesting)
     }
 
-    #[test]
-    fn gsi_04_11_lightning_anim_precedes_per_cell_ore_reduction() {
-        let ini = IniFile::from_str(
-            "[InfantryTypes]\n\
-             [VehicleTypes]\n\
-             [AircraftTypes]\n\
-             [BuildingTypes]\n\
-             [Warheads]\n0=LWH\n\
-             [OverlayTypes]\n0=ORE\n\
-             [SmudgeTypes]\n0=CR1\n\
-             [Tiberiums]\n0=Riparius\n\
-             [General]\nLightningDamage=100\nLightningWarhead=LWH\n\
-             [LWH]\nCellSpread=0\nAnimList=EXPLOSION\nTiberium=yes\n\
-             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
-             [ORE]\nTiberium=yes\nChainReaction=yes\n\
-             [Riparius]\nImage=1\nValue=25\n\
-             [CR1]\nCrater=yes\nWidth=1\nHeight=1\n",
-        );
-        let mut rules = RuleSet::from_ini(&ini).expect("ore-order lightning rules");
-        rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
-            "[EXPLOSION]\nCrater=yes\nScorch=no\nFrameWidth=100\nFrameHeight=100\n",
-        )));
-        let overlay_registry = OverlayTypeRegistry::from_ini(&ini, None);
-        let ore_id = overlay_registry.id_for_name("ORE").expect("ORE overlay id");
-
-        let mut sim = Simulation::with_seed(1);
-        let mut cells = Vec::new();
-        for ry in 0..10 {
-            for rx in 0..10 {
-                let mut cell = test_terrain_cell(rx, ry);
-                cell.filled_clear = true;
-                cell.accepts_smudge = true;
-                cell.allows_tiberium = true;
-                cells.push(cell);
-            }
-        }
-        sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(10, 10, cells));
-        sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(10, 10));
-        sim.production.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(10, 10);
-        let mut overlay = OverlayGrid::new(10, 10);
-        // Raw data 9 represents ten density units. The pre-AoE crater reduces
-        // six but remains blocked by the surviving overlay; Damage=100 then
-        // clears the four units left by AnimClass::Start.
-        overlay.place_overlay(5, 5, ore_id, 9);
-        sim.overlay_grid = Some(overlay);
-        let owner = sim.interner.intern("Americans");
-
-        spawn_bolt(&mut sim, &rules, 5, 5, owner, Some(&overlay_registry));
-
-        assert_eq!(
-            sim.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_id,
-            None,
-            "the later GroundStrike area pass still clears the partially reduced ore"
-        );
-        assert!(
-            sim.smudge_grid
-                .as_ref()
-                .unwrap()
-                .cell(5, 5)
-                .type_id
-                .is_none(),
-            "GroundStrike starts its crater Anim while dense ore still blocks placement"
-        );
-        assert!(sim.pending_smudge_requests.is_empty());
-
-        let mut expected_rng = SimRng::new(1);
-        let _ = expected_rng.next_range_u32(BOLT_ANIMS.len() as u32);
-        assert_eq!(sim.scenario_rng.state(), expected_rng.state());
-    }
-
-    #[test]
-    fn active_retail_lightning_wall_removal_publishes_navigation_and_radar_inline() {
-        let ini = IniFile::from_str(
-            "[InfantryTypes]\n\
-             [VehicleTypes]\n\
-             [AircraftTypes]\n\
-             [BuildingTypes]\n\
-             [Warheads]\n0=IonWH\n\
-             [OverlayTypes]\n0=TESTWALL\n\
-             [General]\nLightningDamage=100\nLightningWarhead=IonWH\n\
-             [IonWH]\nCellSpread=0\nWall=yes\n\
-             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
-             [TESTWALL]\nWall=yes\nArmor=concrete\nStrength=1\n",
-        );
-        let art = IniFile::from_str("[TESTWALL]\nDamageLevels=2\n");
-        let rules = RuleSet::from_ini(&ini).expect("active-retail lightning wall rules");
-        let registry = OverlayTypeRegistry::from_ini(&ini, Some(&art));
-        let wall_id = registry
-            .id_for_name("TESTWALL")
-            .expect("test wall overlay id");
-
-        let mut cells = Vec::new();
-        for ry in 0..12 {
-            for rx in 0..12 {
-                cells.push(test_terrain_cell(rx, ry));
-            }
-        }
-        let mut terrain = ResolvedTerrainGrid::from_cells(12, 12, cells);
-        let mut overlays = OverlayGrid::new(12, 12);
-        overlays.place_overlay(5, 5, wall_id, 0);
-        assert!(crate::sim::overlay_grid::recalc_overlay_passability(
-            &mut overlays,
-            &mut terrain,
-            &registry,
-            5,
-            5,
-        ));
-        let _ = overlays.take_dirty_cells();
-
-        let mut sim = Simulation::with_seed(1);
-        sim.overlay_grid = Some(overlays);
-        sim.resolved_terrain = Some(terrain);
-        assert!(sim.rebuild_dynamic_navigation(&rules));
-        assert!(!sim.path_grid().unwrap().is_walkable(5, 5));
-        let ground_zone_before = sim
-            .zone_grid
-            .as_ref()
-            .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
-            .expect("normal zone map")
-            .zone_at(5, 5, MovementLayer::Ground);
-        assert_eq!(
-            ground_zone_before,
-            crate::sim::pathfinding::zone_map::ZONE_INVALID
-        );
-
-        let owner = sim.interner.intern("Americans");
-        spawn_bolt(&mut sim, &rules, 5, 5, owner, Some(&registry));
-
-        assert_eq!(
-            sim.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_id,
-            None
-        );
-        assert!(sim.path_grid().unwrap().is_walkable(5, 5));
-        let ground_zone_after = sim
-            .zone_grid
-            .as_ref()
-            .and_then(|zones| zones.map_for(crate::rules::locomotor_type::MovementZone::Normal))
-            .expect("normal zone map")
-            .zone_at(5, 5, MovementLayer::Ground);
-        assert_ne!(
-            ground_zone_after,
-            crate::sim::pathfinding::zone_map::ZONE_INVALID
-        );
-        assert_eq!(
-            sim.radar_terrain_dirty_cells,
-            vec![
-                (5, 5),
-                (5, 3),
-                (6, 4),
-                (4, 4),
-                (5, 4),
-                (4, 6),
-                (3, 5),
-                (4, 5),
-                (6, 6),
-                (5, 7),
-                (5, 6),
-                (7, 5),
-                (6, 5),
-            ]
-        );
-        assert_eq!(sim.radar_terrain_dirty_generation, 13);
-        assert_eq!(
-            sim.tactical_dirty_cells,
-            vec![
-                (5, 5),
-                (5, 3),
-                (6, 4),
-                (5, 5),
-                (4, 4),
-                (5, 4),
-                (4, 4),
-                (5, 5),
-                (4, 6),
-                (3, 5),
-                (4, 5),
-                (5, 5),
-                (6, 6),
-                (5, 7),
-                (4, 6),
-                (5, 6),
-                (6, 4),
-                (7, 5),
-                (6, 6),
-                (5, 5),
-                (6, 5),
-            ]
-        );
-    }
-
-    #[test]
-    fn lightning_bridge_strike_damages_only_bridge_layer() {
-        let (mut sim, rules) = registry_only_warhead_lightning_test_setup();
-        add_same_cell_bridge_targets(&mut sim, "DUMMY");
-        let owner = sim.interner.intern("Americans");
-
-        spawn_bolt(&mut sim, &rules, 5, 5, owner, None);
-
-        assert_eq!(
-            sim.substrate.entities.get(1).unwrap().health.current,
-            100,
-            "ground occupant under the bridge must not be hit by a deck strike"
-        );
-        assert_eq!(
-            sim.substrate.entities.get(2).unwrap().health.current,
-            0,
-            "bridge-deck occupant must be hit by a bridge-targeted Lightning strike"
-        );
-    }
-
-    #[test]
-    fn registry_only_warhead_lightning_strike_damages_building_and_sets_damage_state() {
-        let (mut sim, rules) = registry_only_warhead_lightning_test_setup();
-        let owner = sim.interner.intern("Americans");
-        let type_ref = sim.interner.intern("GAPOWR");
-        let mut building = GameEntity::test_default_of_category(
-            10,
-            "GAPOWR",
-            "Soviet",
-            5,
-            5,
-            EntityCategory::Structure,
-        );
-        building.lifecycle.in_limbo = false;
-        building.lifecycle.cell_marked = true;
-        building.owner = sim.interner.intern("Soviet");
-        building.type_ref = type_ref;
-        building.health = Health { current: 150 };
-        sim.substrate.entities.insert(building);
-
-        spawn_bolt(&mut sim, &rules, 5, 5, owner, None);
-
-        let building = sim
-            .substrate
-            .entities
-            .get(10)
-            .expect("building remains in sim");
-        assert_eq!(building.health.current, 50);
-        assert!(matches!(
-            building.health.compare_ratio(
-                rules
-                    .object(sim.interner.resolve(building.type_ref()))
-                    .unwrap()
-                    .strength,
-                rules.general.condition_yellow,
-            ),
-            crate::util::native_x87::MaskedX87Ordering::Less
-                | crate::util::native_x87::MaskedX87Ordering::Equal
-        ));
-    }
-
-    #[test]
-    fn gsi_04_07_damage_lightning_fatal_uses_inline_death_transaction() {
-        fn run(carrier_hp: i32) -> (Simulation, u64) {
-            let ini = IniFile::from_str(
-                "[InfantryTypes]\n\
-                 [VehicleTypes]\n0=BOOMER\n\
-                 [AircraftTypes]\n\
-                 [BuildingTypes]\n\
-                 [Warheads]\n0=LightningWH\n1=WallWH\n\
-                 [OverlayTypes]\n0=TESTWALL\n\
-                 [BOOMER]\nStrength=101\nArmor=heavy\nExplodes=yes\nDeathWeapon=DeathBoom\n\
-                 [DeathBoom]\nDamage=214\nWarhead=WallWH\n\
-                 [General]\nLightningDamage=100\nLightningWarhead=LightningWH\n\
-                 [LightningWH]\nCellSpread=1\nPercentAtMax=1\n\
-                 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
-                 [WallWH]\nCellSpread=0\nWall=yes\n\
-                 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
-                 [TESTWALL]\nWall=yes\nArmor=concrete\nStrength=400\n",
-            );
-            let art = IniFile::from_str("[TESTWALL]\nDamageLevels=2\n");
-            let rules = RuleSet::from_ini(&ini).expect("lightning death transaction rules");
-            let registry = OverlayTypeRegistry::from_ini(&ini, Some(&art));
-            assert!(rules.warhead("LightningWH").is_some());
-            assert!(rules.warhead("WallWH").is_some());
-            assert_eq!(
-                rules.object("BOOMER").unwrap().death_weapon.as_deref(),
-                Some("DeathBoom")
-            );
-            let mut sim = Simulation::with_seed(1);
-            let owner = sim.interner.intern("Americans");
-            let mut carrier = GameEntity::test_default(10, "BOOMER", "Soviet", 5, 5);
-            carrier.owner = sim.interner.intern("Soviet");
-            carrier.type_ref = sim.interner.intern("BOOMER");
-            carrier.health = Health {
-                current: carrier_hp,
-            };
-            sim.substrate.entities.insert(carrier);
-            let _ = sim.reveal(10);
-            let mut overlays = OverlayGrid::new(12, 12);
-            overlays.place_overlay(5, 5, 0, 0);
-            sim.overlay_grid = Some(overlays);
-            sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(12, 12));
-
-            spawn_bolt(&mut sim, &rules, 5, 5, owner, Some(&registry));
-            let rng_state = sim.scenario_rng.state();
-            (sim, rng_state)
-        }
-
-        let (fatal, fatal_rng) = run(100);
-        assert!(fatal.substrate.entities.get(10).is_some_and(|entity| {
-            entity.health.current == 0 && entity.dying && !entity.in_logic_vector
-        }));
-        assert_eq!(
-            fatal.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_id,
-            None
-        );
-        assert!(fatal.substrate.pending_delete.contains(&10));
-        assert!(!fatal.live_object_order_snapshot().contains(&10));
-        let mut expected_fatal_rng = SimRng::new(1);
-        let _ = expected_fatal_rng.next_range_u32(BOLT_ANIMS.len() as u32);
-        let _ = expected_fatal_rng.next_range_u32_inclusive(0, 400);
-        assert_eq!(fatal_rng, expected_fatal_rng.state());
-
-        let (boundary, boundary_rng) = run(101);
-        assert_eq!(
-            boundary
-                .overlay_grid
-                .as_ref()
-                .unwrap()
-                .cell(5, 5)
-                .overlay_id,
-            Some(0)
-        );
-        assert!(boundary.substrate.pending_delete.is_empty());
-        assert!(boundary.live_object_order_snapshot().contains(&10));
-        assert_eq!(
-            boundary.substrate.entities.get(10).unwrap().health.current,
-            1
-        );
-        let mut expected_boundary_rng = SimRng::new(1);
-        let _ = expected_boundary_rng.next_range_u32(BOLT_ANIMS.len() as u32);
-        assert_eq!(boundary_rng, expected_boundary_rng.state());
-    }
-
-    fn add_same_cell_bridge_targets(sim: &mut Simulation, type_name: &str) {
-        let owner = sim.interner.intern("Soviet");
-        let type_ref = sim.interner.intern(type_name);
-
-        // Both stand in the cell's lists, so they are on the map: out of
-        // limbo and marked (`+0x74`), which Apply_area_damage's dispatch reads.
-        let mut ground = GameEntity::test_default(1, type_name, "Soviet", 5, 5);
-        ground.owner = owner;
-        ground.type_ref = type_ref;
-        ground.health = Health { current: 100 };
-        ground.lifecycle.in_limbo = false;
-        ground.lifecycle.cell_marked = true;
-
-        let mut bridge = GameEntity::test_default(2, type_name, "Soviet", 5, 5);
-        bridge.owner = owner;
-        bridge.type_ref = type_ref;
-        bridge.health = Health { current: 100 };
-        bridge.on_bridge = true;
-        bridge.position.z = 4;
-        bridge.lifecycle.in_limbo = false;
-        bridge.lifecycle.cell_marked = true;
-
-        sim.substrate.entities.insert(ground);
-        sim.substrate.entities.insert(bridge);
-        sim.substrate.occupancy.add(
-            5,
-            5,
-            1,
-            MovementLayer::Ground,
-            None,
-            CellListInsertion::PrependNonBuilding,
-        );
-        sim.substrate.occupancy.add(
-            5,
-            5,
-            2,
-            MovementLayer::Bridge,
-            None,
-            CellListInsertion::PrependNonBuilding,
-        );
-        sim.resolved_terrain = Some(bridge_terrain());
-    }
-
-    fn bridge_terrain() -> ResolvedTerrainGrid {
-        let mut cells = Vec::new();
-        for ry in 0..10 {
-            for rx in 0..10 {
-                cells.push(test_terrain_cell(rx, ry));
-            }
-        }
-        let idx = 5 * 10 + 5;
-        cells[idx].bridge_facts = BridgeCellFacts {
-            raw_flags: BRIDGE_FLAG_STRUCTURAL,
-            ..BridgeCellFacts::default()
-        };
-        cells[idx].has_bridge_deck = true;
-        cells[idx].bridge_walkable = true;
-        cells[idx].bridge_deck_level = 4;
-        ResolvedTerrainGrid::from_cells(10, 10, cells)
-    }
-
-    fn test_terrain_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
-        ResolvedTerrainCell {
-            ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
-        }
+    pub(crate) fn set_clouds_for_test(&mut self, present: Vec<AnimId>, manifesting: Vec<AnimId>) {
+        self.clouds_present = present;
+        self.clouds_manifesting = manifesting;
     }
 }

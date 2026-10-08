@@ -278,13 +278,18 @@ fn process_native_noncampaign_rules_prepass_inner(
 }
 
 /// Retained RulesClass vectors, distinct from the process-resident AnimType
-/// registry. The constructor @ 0x00665827 initializes both empty; ReadGeneral
-/// @ 0x0066DA90/0x0066DB93 replaces them only after a nonempty ReadString128.
-/// Native execution: tools/rules_oracle/bridge_anim_lists.{py,json}.
+/// registry. The constructor @ 0x00665827 initializes them empty; ReadGeneral
+/// @ 0x0066DA90/0x0066DB93 replaces MetallicDebris/BridgeExplosions only after
+/// a nonempty ReadString128. Native execution:
+/// tools/rules_oracle/bridge_anim_lists.{py,json}. WeatherConClouds
+/// (`+0x2BC`, `0x0066DD28`) and WeatherConBolts (`+0x2D8`, `0x0066DE2B`) take
+/// the same ReadString128/FindOrAllocate body.
 #[derive(Debug, Default)]
 struct GeneralAnimLists {
     metallic_debris: Vec<String>,
     bridge_explosions: Vec<String>,
+    weather_con_clouds: Vec<String>,
+    weather_con_bolts: Vec<String>,
 }
 
 /// Result of applying an ordered rules stack.
@@ -517,6 +522,14 @@ impl ProcessedRulesLayers {
 
     pub(crate) fn bridge_explosions(&self) -> &[String] {
         &self.general_anim_lists.bridge_explosions
+    }
+
+    pub(crate) fn weather_con_clouds(&self) -> &[String] {
+        &self.general_anim_lists.weather_con_clouds
+    }
+
+    pub(crate) fn weather_con_bolts(&self) -> &[String] {
+        &self.general_anim_lists.weather_con_bolts
     }
 
     #[cfg(test)]
@@ -1267,13 +1280,18 @@ impl RulesPassProcessor {
         self.rules_prism_support = self.rules_prism_support.read_pass(section);
 
         for &(key, family, is_list) in SITES {
-            if matches!(key, "MetallicDebris" | "BridgeExplosions") {
+            if matches!(
+                key,
+                "MetallicDebris" | "BridgeExplosions" | "WeatherConClouds" | "WeatherConBolts"
+            ) {
                 if let Some(resolved) = self.resolve_list_from(section, key, family, 0x80) {
-                    if key == "MetallicDebris" {
-                        self.general_anim_lists.metallic_debris = resolved;
-                    } else {
-                        self.general_anim_lists.bridge_explosions = resolved;
-                    }
+                    let lists = &mut self.general_anim_lists;
+                    *match key {
+                        "MetallicDebris" => &mut lists.metallic_debris,
+                        "BridgeExplosions" => &mut lists.bridge_explosions,
+                        "WeatherConClouds" => &mut lists.weather_con_clouds,
+                        _ => &mut lists.weather_con_bolts,
+                    } = resolved;
                 }
             } else if matches!(
                 key,

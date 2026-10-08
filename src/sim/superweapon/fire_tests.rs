@@ -127,9 +127,7 @@ fn click_fire_matches_native() {
         }
         if flag(&row["deferment"]) {
             // A storm already counts down.
-            assert!(super::super::lightning_storm::start(
-                &mut sim, &rules, owner, 3, 3, sw_type_id
-            ));
+            super::super::lightning_storm::start(&mut sim, &rules, 180, 250, (3, 3), Some(owner));
         }
         let launched = click_fire(&mut sim, &rules, owner, sw_type_id, &sw, (33, 44), None);
         let events = row["events"].as_array().unwrap();

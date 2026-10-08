@@ -853,6 +853,7 @@ fn advance_one_simulation_frame(
         let mut frame_overlay_updates = Vec::new();
         let mut frame_overlay_removals: Vec<(u16, u16)> = Vec::new();
         let mut trigger_effects: Vec<TriggerEffect> = Vec::new();
+        let mut storm_messages: Vec<&'static str> = Vec::new();
         // Carried out of the sim borrow so the census can read `state` freely below.
         let mut census_tick: Option<u64> = None;
         if let Some(rt) = state.match_state.sim_runtime.as_mut() {
@@ -940,6 +941,7 @@ fn advance_one_simulation_frame(
                 &resources.rules,
                 local_owner_name.as_deref(),
             );
+            storm_messages = super::sound_dispatch::lightning_storm_messages(&frame_sound_events);
             let minimap = &mut state.match_state.match_presentation.minimap;
             let mut admit_radar = |request: crate::sim::radar::RadarEventRequest| {
                 minimap.as_mut().is_some_and(|minimap| {
@@ -1065,6 +1067,9 @@ fn advance_one_simulation_frame(
         }
 
         apply_trigger_effects(state, &trigger_effects);
+        for csf_key in storm_messages {
+            crate::app::input::messages::post_lightning_storm_message(state, csf_key);
+        }
 
         // Simulation has already finalized identity, passability, navigation,
         // and the returned hash. The app only updates its render-side list.

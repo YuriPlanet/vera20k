@@ -827,6 +827,22 @@ impl Simulation {
         self.substrate.anims.iter()
     }
 
+    /// An anim's stage (`AnimClass+0xAC`) and its image's frame count (the
+    /// type's GetImage, vt+0x9C, SHP header `+0x6`; 0 for an image that never
+    /// bound), or `None` once the anim has left the store. The superweapons
+    /// pace themselves by it: the Psychic Dominator's followed anim
+    /// (`PsyDom::Process @ 0x0053AF40`) and the Lightning Storm's clouds
+    /// (`LightningStorm::Process @ 0x0053A6C0`).
+    pub(crate) fn anim_stage_and_frames(&self, id: AnimId, rules: &RuleSet) -> Option<(i32, i32)> {
+        let anim = self.anim(id)?;
+        let frames = rules
+            .art()
+            .anim_runtime_config(self.interner.resolve(anim.type_id))
+            .and_then(|config| config.raw_shp_frame_count)
+            .unwrap_or(0);
+        Some((anim.runtime.current_frame, frames))
+    }
+
     fn anim_mut_by_id(&mut self, id: AnimId) -> Option<&mut AnimObject> {
         self.substrate.anims.get_mut(id)
     }

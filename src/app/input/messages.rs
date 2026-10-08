@@ -24,6 +24,8 @@ const MESSAGE_RGB_SYSTEM: [f32; 3] = [1.0, 1.0, 1.0];
 const MISSION_TEXT_TIMEOUT_MS: u64 = 4_000;
 /// `0xF0` native 16 ms timer buckets.
 const TYPE_SELECT_MESSAGE_TIMEOUT_MS: u64 = 3_840;
+/// The Lightning Storm's `0x96` native 16 ms timer buckets.
+const LIGHTNING_STORM_MESSAGE_TIMEOUT_MS: u64 = 0x96 * 16;
 /// Native falls back to runtime color-scheme 3. Rust stores the undoubled
 /// `[Colors]` entry index, so that scheme is entry 1.
 const TYPE_SELECT_FALLBACK_SCHEME_ENTRY: crate::rules::house_colors::HouseColorIndex =
@@ -128,6 +130,45 @@ pub(crate) fn post_selection_navigation_text(state: &mut AppState, text: &str) {
         },
         now, &|s| font.text_width(s) as i32,
     );
+}
+
+/// Post one of the Lightning Storm's lines (`LightningStorm::Start @
+/// 0x0053A076`, `Process @ 0x0053AB40`): `MessageListClass::AddMessage(0, 0,
+/// text, PlayerPtr's colour scheme or 3, style, 0x96, not silent)` on every
+/// client, so the line takes the player's colours as TypeSelect's does and
+/// plays IncomingMessage. Its print styles (`0x4046`, `0x46`) are not
+/// represented.
+pub(crate) fn post_lightning_storm_message(state: &mut AppState, csf_key: &str) {
+    sync_view(state);
+    let now = message_now_ms(state);
+    let rgb = type_select_message_rgb(
+        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        &state.match_state.match_presentation.house_color_map,
+        state.rules().map(|rules| &rules.house_color_ramps),
+    );
+    let text = state
+        .process_assets
+        .csf
+        .as_ref()
+        .map_or_else(|| csf_key.to_string(), |table| table.text(csf_key).into_owned());
+    let font = &state.renderer.bit_font;
+    let outcome = state.match_state.match_presentation.message_list.add_message(
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &text,
+            rgb,
+            timeout_ms: Some(LIGHTNING_STORM_MESSAGE_TIMEOUT_MS),
+            silent: false,
+        },
+        now,
+        &|s| font.text_width(s) as i32,
+    );
+    if outcome.play_sound {
+        let sound = state
+            .rules()
+            .and_then(|r| r.general.incoming_message_sound.clone());
+        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    }
 }
 
 fn type_select_message_rgb(

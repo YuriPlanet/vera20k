@@ -11,13 +11,16 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
+/// Pixels Walk Move_To lifts a bridge destination (`0x0075AD4D MOV ECX,0x3C`).
+const WALK_BRIDGE_LIFT_PIXELS: i32 = 60;
+
 /// Drive Stop_Moving 0x4AFE00 and Ship 0x69F510 clamp the class target
 /// fraction to the float 0.3 at 0x7E6240 / 0x7F1308 (identical bodies).
 const TRACK_STOP_TARGET_FRACTION: SimFixed = SimFixed::lit("0.3");
 
 /// Accepted Walk75ACB0 destination store. This conversion is independent of
-/// HeadTo/OnBridge's416: original6D1830,6D18C0,6D1BF0 initialize the scale for
-/// 6D2120(60), whose result is414 under captured startup FPCW0E7F and027F.
+/// HeadTo/OnBridge's416: a bridge cell lifts the destination by
+/// `native_pixel_height_leptons(60)` (`0x0075AD52 CALL 0x006D2120`), 414.
 /// See walk_head_occupation.json destination rows, including actual Cell+4C.
 pub(crate) fn set_walk_destination_coord(
     entity: &mut GameEntity,
@@ -43,7 +46,9 @@ pub(crate) fn set_walk_destination_coord(
             let cell =
                 terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
             if terrain.native_cell_flags(cell) & 0x100 != 0 {
-                coord.z = coord.z.wrapping_add(414);
+                coord.z = coord.z.wrapping_add(
+                    crate::util::lepton::native_pixel_height_leptons(WALK_BRIDGE_LIFT_PIXELS),
+                );
             }
         }
     }

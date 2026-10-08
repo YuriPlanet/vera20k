@@ -1389,22 +1389,30 @@ pub struct GeneralRules {
     pub credit_reserve: i32,
 
     // -- Lightning Storm superweapon constants --
-    /// Duration of active storm in game frames (LightningStormDuration= in [General]).
-    /// Default 180 frames (12 seconds at 15 fps).
+    // `RulesClass::ReadGeneral` reads each with ReadInteger over its current
+    // value and no clamp (`0x00670F75..0x0067104D`); the constructor seeds
+    // them at `0x0066767E..0x006676B2`.
+    /// `[General] LightningStormDuration=` (`+0x179C`, constructor 900):
+    /// frames a storm rages; `-1` never ends.
     pub lightning_storm_duration: i32,
-    /// Damage per lightning bolt strike (LightningDamage= in [General]). Default 250.
+    /// `[General] LightningDamage=` (`+0x1798`, constructor 200).
     pub lightning_damage: i32,
-    /// Deferment countdown before storm bolts begin (LightningDeferment= in [General]).
-    /// Default 250 frames.
+    /// `[General] LightningDeferment=` (`+0x1794`, constructor 250): frames
+    /// between the launch and the storm.
     pub lightning_deferment: i32,
-    /// Frames between center bolt strikes (LightningHitDelay= in [General]). Default 10.
+    /// `[General] LightningHitDelay=` (`+0x17A0`, constructor 90): a cloud
+    /// over the storm's cell every frame this divides.
     pub lightning_hit_delay: i32,
-    /// Frames between scatter bolt strikes (LightningScatterDelay= in [General]). Default 5.
+    /// `[General] LightningScatterDelay=` (`+0x17A4`, constructor 10): a
+    /// scattered cloud every frame this divides.
     pub lightning_scatter_delay: i32,
-    /// Cell radius for scatter bolt placement (LightningCellSpread= in [General]). Default 10.
+    /// `[General] LightningCellSpread=` (`+0x17A8`, constructor 10): a
+    /// scattered cloud lands up to half this many cells off the storm's cell
+    /// on each axis.
     pub lightning_cell_spread: i32,
-    /// Minimum manhattan distance between consecutive bolts (LightningSeparation= in [General]).
-    /// Default 3.
+    /// `[General] LightningSeparation=` (`+0x17AC`, constructor 3): the
+    /// Manhattan distance in cells a scattered cloud keeps from every cloud
+    /// present.
     pub lightning_separation: i32,
     /// [General] LightningWarhead (+17B4), constructor null.
     /// Retained factory binding from General671053; empty string means null.
@@ -1502,6 +1510,14 @@ pub struct GeneralRules {
     /// ReadGeneral128/factory pass. Constructor default is empty, not retail's
     /// authored list. Mirrors Rules+0x140 (data) / +0x14C (count).
     pub metallic_debris: Vec<String>,
+    /// `[General] WeatherConClouds=` (`+0x2BC`, items `+0x2C0`, count
+    /// `+0x2CC`), the same reader as `metallic_debris`: the Lightning Storm's
+    /// clouds.
+    pub weather_con_clouds: Vec<String>,
+    /// `[General] WeatherConBolts=` (`+0x2D8`, items `+0x2DC`, count
+    /// `+0x2E8`): the storm's bolts; the first one's image sets the clouds'
+    /// height.
+    pub weather_con_bolts: Vec<String>,
 }
 
 /// Count of representable `roll` values for the damage-Spark prob-roll, i.e.
@@ -2010,11 +2026,11 @@ impl Default for GeneralRules {
             iq_sell_back: 2,
             credit_reserve: 1000,
             cliff_back_impassability: 2,
-            lightning_storm_duration: 180,
-            lightning_damage: 250,
+            lightning_storm_duration: 900,
+            lightning_damage: 200,
             lightning_deferment: 250,
-            lightning_hit_delay: 10,
-            lightning_scatter_delay: 5,
+            lightning_hit_delay: 90,
+            lightning_scatter_delay: 10,
             lightning_cell_spread: 10,
             lightning_separation: 3,
             lightning_warhead: String::new(),
@@ -2046,6 +2062,8 @@ impl Default for GeneralRules {
             mutate_explosion_warhead: "MutateExplosion".to_string(),
             mutate_explosion: true,
             metallic_debris: Vec::new(),
+            weather_con_clouds: Vec::new(),
+            weather_con_bolts: Vec::new(),
         }
     }
 }
@@ -2995,13 +3013,19 @@ impl GeneralRules {
             iq_sell_back: iq.read_int("SellBack", defaults.iq_sell_back),
             credit_reserve: ai.read_int("CreditReserve", defaults.credit_reserve),
             cliff_back_impassability: general.read_int("CliffBackImpassability", 2) as u8,
-            lightning_storm_duration: general.read_int("LightningStormDuration", 180),
-            lightning_damage: general.read_int("LightningDamage", 250),
-            lightning_deferment: general.read_int("LightningDeferment", 250),
-            lightning_hit_delay: general.read_int("LightningHitDelay", 10).max(1),
-            lightning_scatter_delay: general.read_int("LightningScatterDelay", 5).max(1),
-            lightning_cell_spread: general.read_int("LightningCellSpread", 10),
-            lightning_separation: general.read_int("LightningSeparation", 3),
+            lightning_storm_duration: general
+                .read_int("LightningStormDuration", defaults.lightning_storm_duration),
+            lightning_damage: general.read_int("LightningDamage", defaults.lightning_damage),
+            lightning_deferment: general
+                .read_int("LightningDeferment", defaults.lightning_deferment),
+            lightning_hit_delay: general
+                .read_int("LightningHitDelay", defaults.lightning_hit_delay),
+            lightning_scatter_delay: general
+                .read_int("LightningScatterDelay", defaults.lightning_scatter_delay),
+            lightning_cell_spread: general
+                .read_int("LightningCellSpread", defaults.lightning_cell_spread),
+            lightning_separation: general
+                .read_int("LightningSeparation", defaults.lightning_separation),
             lightning_warhead: general.read_string("LightningWarhead", "", 128),
             weather_con_bolt_explosion: general.read_string("WeatherConBoltExplosion", "", 128),
             weapon_nullify_anim: general.read_string("WeaponNullifyAnim", "", 128),
@@ -3040,6 +3064,8 @@ impl GeneralRules {
             // The processed RulesClass vector is authoritative; a merged INI
             // cannot reproduce successful-read replacement or factory identity.
             metallic_debris: Vec::new(),
+            weather_con_clouds: Vec::new(),
+            weather_con_bolts: Vec::new(),
         }
     }
 
@@ -3371,6 +3397,8 @@ impl RuleSet {
         rules.powerups = processed.powerups().clone();
         rules.missile_spawn = processed.missile_spawn().clone();
         rules.general.metallic_debris = processed.metallic_debris().to_vec();
+        rules.general.weather_con_clouds = processed.weather_con_clouds().to_vec();
+        rules.general.weather_con_bolts = processed.weather_con_bolts().to_vec();
         rules.bridge_rules.explosions = processed.bridge_explosions().to_vec();
         rules.general.gravity = processed.gravity();
         rules.general.prism_support = processed.prism_support();
@@ -4445,6 +4473,8 @@ impl RuleSet {
         // Selection order and duplicate references affect the scenario RNG's
         // consumers, including the truncated retail pool's unread AnimType D.
         self.general.metallic_debris.hash(&mut hasher);
+        self.general.weather_con_clouds.hash(&mut hasher);
+        self.general.weather_con_bolts.hash(&mut hasher);
         self.bridge_rules.explosions.hash(&mut hasher);
         self.animation_sequences.hash(&mut hasher);
         self.effect_assets.hash(&mut hasher);
@@ -5117,6 +5147,13 @@ impl RuleSet {
     pub(crate) fn bind_anim_frame_count_for_test(&mut self, name: &str, raw_count: i32) {
         self.art_registry
             .bind_anim_frame_count_for_test(name, raw_count);
+    }
+
+    /// The SHP header height `+4` asset binding would read for `name`.
+    #[cfg(test)]
+    pub(crate) fn bind_anim_shp_height_for_test(&mut self, name: &str, raw_height: i32) {
+        self.art_registry
+            .bind_anim_shp_height_for_test(name, raw_height);
     }
 
     /// A weapon's stored speed (after Process's postpass), as a native

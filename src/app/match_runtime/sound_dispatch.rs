@@ -18,15 +18,10 @@ mod bridge_child_sound_tests;
 /// Production delegates to the existing player RNG; absence of that player
 /// still suppresses the same random-dependent cues.
 pub(super) trait SoundEventRandom {
-    fn pick_index(&mut self, count: usize) -> usize;
     fn roll_percent(&mut self) -> i32;
 }
 
 impl SoundEventRandom for SfxPlayer {
-    fn pick_index(&mut self, count: usize) -> usize {
-        SfxPlayer::pick_index(self, count)
-    }
-
     fn roll_percent(&mut self) -> i32 {
         SfxPlayer::roll_percent(self)
     }
@@ -359,58 +354,34 @@ pub(super) fn dispatch_sim_sound_events(
                 continue;
             }
             SimSoundEvent::LightningStormBegan => {
-                // The deferred half of case 2: the sky flips to Ion and
-                // `LightningStorm::Start` plays `StormSound`
-                // (`0x0053A044`). Nothing else — the EVA line was
-                // already spoken at launch, ~250 frames earlier.
-                let Some(sound_id) = lightning_storm_begin_cue(&rules.general) else {
+                // The undeferred half of `LightningStorm::Start`, which a
+                // launch's countdown defers: `[AudioVisual] StormSound=`
+                // (`[Rules+0x730]`) through `VocClass::PlayAtPos @
+                // 0x00750920` (`0x0053A044`) with pan `0x2000` and volume
+                // 1.0, centred rather than at the storm cell. Its line
+                // follows through `lightning_storm_messages`; the EVA line
+                // was spoken at launch, the whole countdown earlier.
+                let Some(sound_id) = rules.general.storm_sound.clone() else {
                     continue;
                 };
                 GameSoundEvent::SuperWeaponActivated {
                     sound_id,
-                    // `PlayAtPos` with pan `0x2000`: centred, not at
-                    // the storm cell.
                     source: None,
                     eva_event: None,
                 }
             }
-            SimSoundEvent::SuperWeaponStrike { rx, ry } => {
-                // `LightningStorm::GroundStrike @
-                // 0x0053A45F..0x0053A4A2`: an empty `LightningSounds=`
-                // list plays nothing (`0x0053A46A TEST ECX,ECX ; JLE`),
-                // otherwise one entry is drawn and played at the strike
-                // coordinate through `VocClass::PlayAt @ 0x007509E0`.
-                let choices = &rules.general.lightning_sounds;
-                if choices.is_empty() {
+            SimSoundEvent::LightningStormApproaching => {
+                // `LightningStorm::Process @ 0x0053AB11`: `VoxClass::PlayEVA
+                // @ 0x00752700` of `EVA_LightningStormCreated` on every
+                // client; as for the launch's EVA, an app with no local
+                // player plays none (the line follows through
+                // `lightning_storm_messages`).
+                if local_owner_name.is_none() {
                     continue;
                 }
-                // DRIFT, recorded: native's index comes from the
-                // SCENARIO RNG (`0x0053A46E MOV EDX,[g_ScenarioClass
-                // @ 0x00A8B230]; LEA ECX,[EDX+0x218]; CALL 0x0065C780`,
-                // then `0x0053A48D DIV [Rules+0x744]`), so gamemd
-                // spends one deterministic draw per bolt. VERA draws
-                // from the presentation RNG instead, the same one
-                // `audio::sfx` already uses for sample selection.
-                // Trigger: every lightning bolt. Player effect: none on
-                // retail — stock `LightningSounds=WeatherStrike` is a
-                // one-entry list, so `rand % 1` is 0 either way and the
-                // same cue plays. Frequency: several bolts per storm.
-                // Downstream risk: gamemd spends one scenario draw
-                // per bolt that VERA never spends, so VERA's scenario
-                // stream runs one draw BEHIND from the first bolt
-                // onward. On stock data VERA spends no draw at all —
-                // `pick_index` short-circuits at `count <= 1` — and a
-                // modded multi-entry list would also pick a different
-                // entry.
-                // Closing it means selecting the entry in `sim/` and
-                // re-baselining whatever goldens the extra draw moves.
-                let index = match random.as_deref_mut() {
-                    Some(player) => player.pick_index(choices.len()),
-                    None => continue,
-                };
-                GameSoundEvent::LightningStrike {
-                    sound_id: choices[index].clone(),
-                    source: Some(sound_source_at_cell(rx, ry)),
+                GameSoundEvent::Eva {
+                    event: "EVA_LightningStormCreated".to_string(),
+                    type_override: None,
                 }
             }
             SimSoundEvent::UnitComplete { owner, radar } => {
@@ -987,9 +958,11 @@ fn base_under_attack_siren(
 }
 
 /// The Ready line `VoxClass::RemoveFromQueues @ 0x00752A40` drops after the
-/// local player's launch: the Chrono Warp's case 4 drops the Chronosphere's
-/// (`0x006CCD2D`, `EVA_ChronosphereReady`), the Psychic Dominator's case 7
-/// its own (`0x006CCE52`, `EVA_PsychicDominatorReady`), and cases 5, 6 and 8
+/// local player's launch: the Lightning Storm's case 2 drops its own
+/// (`0x006CCDAB`, `EVA_LightningStormReady`), the Chrono Warp's case 4 the
+/// Chronosphere's (`0x006CCD2D`, `EVA_ChronosphereReady`), the Psychic
+/// Dominator's case 7 its own (`0x006CCE52`, `EVA_PsychicDominatorReady`),
+/// and cases 5, 6 and 8
 /// theirs through the shared tail `0x006CD51E`: the paradrops
 /// `EVA_ReinforcementsReady` (`0x006CD519`), the Spy Plane
 /// `EVA_SpyPlaneReady` (`0x006CD702`); the Force Shield's case 10 its own
@@ -1001,6 +974,7 @@ fn launch_drops_ready_line(
 ) -> Option<&'static str> {
     use crate::rules::superweapon_type::SuperWeaponKind as K;
     match kind {
+        K::LightningStorm => Some("EVA_LightningStormReady"),
         K::ChronoWarp => Some("EVA_ChronosphereReady"),
         K::PsychicDominator => Some("EVA_PsychicDominatorReady"),
         K::ParaDrop | K::AmerParaDrop => Some("EVA_ReinforcementsReady"),
@@ -1047,7 +1021,7 @@ pub(crate) struct SuperWeaponLaunchCue {
     /// `true` when the cue plays at the target coordinate. Every launch cue
     /// this table still carries is positional; the one non-positional cue in
     /// the system, `StormSound`, is not a launch cue at all — see
-    /// [`lightning_storm_begin_cue`].
+    /// [`SimSoundEvent::LightningStormBegan`].
     pub positional: bool,
     /// `evamd.ini` event name, if the case plays one. Every site passes type
     /// `-1`, so the entry's own `Type=`/`Priority=` route it.
@@ -1067,7 +1041,7 @@ pub(crate) struct SuperWeaponLaunchCue {
 /// |---|---|---|
 /// | `MultiMissile` | `[Rules+0x174]` `DigSound` at target (`0x006CDCAE`, and `0x006CDDE9` on the silo branch) | `EVA_NuclearMissileLaunched` (`0x006CDC98`, `0x006CDE01`) |
 /// | `IronCurtain` | — | `EVA_IronCurtainActivated` (`0x006CCF21`) |
-/// | `LightningStorm` | — (the `StormSound` cue is deferred, see [`lightning_storm_begin_cue`]) | `EVA_LightningStormCreated` (`0x006CCD81`) |
+/// | `LightningStorm` | — (the `StormSound` cue is deferred, see [`SimSoundEvent::LightningStormBegan`]) | `EVA_LightningStormCreated` (`0x006CCD81`) |
 /// | `ChronoSphere` | — | — |
 /// | `ChronoWarp` | — | `EVA_ChronosphereActivated` (`0x006CCD03`) |
 /// | `ParaDrop`, `AmerParaDrop`, `SpyPlane` | — | — |
@@ -1106,7 +1080,7 @@ pub(crate) fn superweapon_launch_cue(
         // `LightningStorm::Start @ 0x00539EB0`, whose `if (param_2 != 0)`
         // early return fires before the `StormSound` call at `0x0053A044` —
         // so the cue belongs to the deferment expiry, not to the launch.
-        // [`lightning_storm_begin_cue`] carries it.
+        // [`SimSoundEvent::LightningStormBegan`] carries it.
         K::LightningStorm => SuperWeaponLaunchCue {
             eva_event: Some("EVA_LightningStormCreated"),
             ..Default::default()
@@ -1148,32 +1122,19 @@ pub(crate) fn superweapon_launch_cue(
     }
 }
 
-/// The cue the storm plays when it *begins* — `[Rules+0x730]`, i.e.
-/// `[AudioVisual] StormSound=` (key `"StormSound"` at `0x0083A400`, bound at
-/// `0x0066AEAE`/`0x0066AEE6`), behind the `0x0053A014 MOV AL,[Rules+0x17B0]`
-/// gate. `Rules+0x17B0` is `[General] LightningPrintText=` and the
-/// `0x0053A01C JZ` skips the cue and the on-screen storm message together.
-///
-/// **Not a launch cue.** `SuperClass::Launch @ 0x006CC390` case 2 passes
-/// `[Rules+0x1794]` (`LightningDeferment`) as `LightningStorm::Start @
-/// 0x00539EB0`'s `param_2`, and `Start` opens `if (param_2 != 0) { arm the
-/// countdown; return; }` — returning before `0x0053A044`. `LightningStorm::
-/// Process @ 0x0053A6C0` decrements that countdown (`0x0053AAAD`) and at zero
-/// re-enters `Start` with `param_2` cleared (`0x0053AAC8 XOR EDX,EDX`), which
-/// is the entry that reaches the cue. Stock `rulesmd.ini:130` sets
-/// `LightningDeferment=250`, so on retail the cue always trails the launch
-/// EVA line by the full deferment.
-///
-/// Non-positional: `0x0053A044 CALL VocClass::PlayAtPos @ 0x00750920` with pan
-/// `0x2000` (`0x0053A03A`) and volume `1.0f` (`0x0053A03F`), so it is played
-/// centred rather than at the storm cell.
-pub(crate) fn lightning_storm_begin_cue(
-    general: &crate::rules::ruleset::GeneralRules,
-) -> Option<String> {
-    general
-        .lightning_print_text
-        .then(|| general.storm_sound.clone())
-        .flatten()
+/// The lines a frame's storm events post on every client, as CSF labels:
+/// `TXT_LIGHTNING_STORM` when a storm starts (`LightningStorm::Start @
+/// 0x0053A067`) and `TXT_LIGHTNING_STORM_APPROACHING` at the countdown's
+/// warnings (`LightningStorm::Process @ 0x0053AB31`).
+pub(super) fn lightning_storm_messages(events: &[SimSoundEvent]) -> Vec<&'static str> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            SimSoundEvent::LightningStormBegan => Some("TXT_LIGHTNING_STORM"),
+            SimSoundEvent::LightningStormApproaching => Some("TXT_LIGHTNING_STORM_APPROACHING"),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The sound source of a flat cell event. Native `VocClass::PlayAt`
@@ -1210,7 +1171,7 @@ mod tests {
         RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
             "[General]\nFixtureOnly=1\n[InfantryTypes]\n0=E1\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
              [E1]\nVoiceFeedback=Feedback\n\
-             [AudioVisual]\nBaseUnderAttackSound=Siren\nLightningSounds=StrikeA,StrikeB\n",
+             [AudioVisual]\nBaseUnderAttackSound=Siren\n",
         ))
         .unwrap()
     }
@@ -1222,12 +1183,6 @@ mod tests {
     }
 
     impl SoundEventRandom for ScriptedRandom {
-        fn pick_index(&mut self, count: usize) -> usize {
-            self.calls.push("index");
-            assert_eq!(count, 2);
-            1
-        }
-
         fn roll_percent(&mut self) -> i32 {
             self.calls.push("percent");
             self.rolls.pop_front().expect("scripted percentage draw")
@@ -1466,7 +1421,15 @@ mod tests {
             [
                 feedback(remote),
                 feedback(local),
-                SimSoundEvent::SuperWeaponStrike { rx: 8, ry: 9 },
+                SimSoundEvent::VocAt {
+                    sound_id: "StrikeB".into(),
+                    audible_to: None,
+                    rx: 8,
+                    ry: 9,
+                    sub_x: SimFixed::from_num(128),
+                    sub_y: SimFixed::from_num(128),
+                    world_z_leptons: 0,
+                },
                 feedback(local),
             ],
             &sim,
@@ -1476,7 +1439,7 @@ mod tests {
             &mut |_| panic!("no radar-gated event in this batch"),
             &mut output,
         );
-        assert_eq!(random.calls, ["percent", "percent", "index", "percent"]);
+        assert_eq!(random.calls, ["percent", "percent", "percent"]);
         assert!(random.rolls.is_empty());
         let events = output.drain();
         assert_eq!(
@@ -1506,7 +1469,6 @@ mod tests {
                     rx: 1,
                     ry: 2,
                 },
-                SimSoundEvent::SuperWeaponStrike { rx: 1, ry: 2 },
                 SimSoundEvent::WeaponFired {
                     report_sound_id,
                     rx: 1,
@@ -1793,8 +1755,8 @@ mod tests {
 
     /// The roll itself is `RandomRanged(0, 99)` (`0x007026AF PUSH 0x63 ;
     /// PUSH 0x0`), and `Random__RandomRanged @ 0x0065C7E0` only skips the draw
-    /// when its two endpoints are equal — so unlike `SfxPlayer::pick_index`
-    /// this one always advances the generator.
+    /// when its two endpoints are equal, so this one always advances the
+    /// generator.
     #[test]
     fn the_damage_voice_roll_covers_the_native_range_at_the_native_rate() {
         let mut rng = crate::audio::sfx::SfxRng::seeded(0x5EED);
@@ -1846,7 +1808,7 @@ mod tests {
 
         // Case 2: EVA only at launch. `Start` gets `LightningDeferment` as
         // `param_2` and returns before the cue, so `StormSound` is not a
-        // launch cue — `the_storm_cue_is_deferred_and_rides_lightning_print_text`
+        // launch cue — `the_storm_plays_its_cue_and_lines_where_the_sim_reports_them`
         // owns it.
         let storm = cue(K::LightningStorm, None);
         assert_eq!(
@@ -1915,39 +1877,66 @@ mod tests {
     /// `StormSound` belongs to the storm *beginning*, not to the launch.
     /// `SuperClass::Launch` case 2 hands `[Rules+0x1794]`
     /// (`LightningDeferment`, stock 250) to `LightningStorm::Start @
-    /// 0x00539EB0`, whose `if (param_2 != 0) { arm the countdown; return; }`
-    /// returns before the cue at `0x0053A044`;
-    /// `LightningStorm::Process @ 0x0053A6C0` re-enters with `param_2` cleared
-    /// (`0x0053AAC8 XOR EDX,EDX`) at countdown zero and that entry plays it.
-    ///
-    /// `0x0053A014 MOV AL,[Rules+0x17B0]` (`[General] LightningPrintText=`)
-    /// gates the cue and the on-screen storm message together. The EVA line is
-    /// outside that gate — `SuperClass::Launch` plays it at `0x006CCD81`,
-    /// after `Start` has returned, deferred or not.
+    /// 0x00539EB0`, whose deferred branch returns before the cue at
+    /// `0x0053A044`; the countdown's end re-enters it (`0x0053AACA`). The sim
+    /// reports that start and each countdown warning only under `[General]
+    /// LightningPrintText=` (`lightning_storm_tests`); the launch's EVA line
+    /// is outside that gate (`0x006CCD81`).
     #[test]
-    fn the_storm_cue_is_deferred_and_rides_lightning_print_text() {
+    fn the_storm_plays_its_cue_and_lines_where_the_sim_reports_them() {
         use crate::rules::superweapon_type::SuperWeaponKind as K;
-        let on = stock_audio_visual();
-        assert!(on.lightning_print_text, "the constructor default is true");
-
-        // The launch moment: EVA only, no cue.
-        let launch = superweapon_launch_cue(K::LightningStorm, &on, None);
-        assert_eq!(launch.sound_id, None);
-        assert_eq!(launch.eva_event, Some("EVA_LightningStormCreated"));
-
-        // The beginning: the cue, and nothing else.
+        let mut rules = dispatch_rules();
+        rules.general.storm_sound = Some("WeatherIntro".to_string());
+        rules.general.lightning_print_text = false;
         assert_eq!(
-            lightning_storm_begin_cue(&on).as_deref(),
-            Some("WeatherIntro")
+            superweapon_launch_cue(K::LightningStorm, &rules.general, None),
+            SuperWeaponLaunchCue {
+                eva_event: Some("EVA_LightningStormCreated"),
+                ..Default::default()
+            },
+            "the launch speaks with or without LightningPrintText"
         );
 
-        let mut off = stock_audio_visual();
-        off.lightning_print_text = false;
-        assert_eq!(lightning_storm_begin_cue(&off), None);
+        let sim = Simulation::new();
+        let events = [
+            SimSoundEvent::LightningStormBegan,
+            SimSoundEvent::LightningStormApproaching,
+        ];
         assert_eq!(
-            superweapon_launch_cue(K::LightningStorm, &off, None).eva_event,
-            Some("EVA_LightningStormCreated"),
-            "the EVA line is outside the LightningPrintText gate"
+            lightning_storm_messages(&events),
+            ["TXT_LIGHTNING_STORM", "TXT_LIGHTNING_STORM_APPROACHING"]
+        );
+        let mut output = SoundEventQueue::new();
+        for local in [Some("Local"), None] {
+            dispatch_sim_sound_events(
+                events.clone(),
+                &sim,
+                &rules,
+                local,
+                None,
+                &mut |_| panic!("the storm's lines are not radar events"),
+                &mut output,
+            );
+        }
+        let played = output.drain();
+        assert!(
+            matches!(
+                &played[..],
+                [
+                    GameSoundEvent::SuperWeaponActivated {
+                        sound_id,
+                        source: None,
+                        eva_event: None,
+                    },
+                    GameSoundEvent::Eva {
+                        event,
+                        type_override: None,
+                    },
+                    GameSoundEvent::SuperWeaponActivated { .. },
+                ] if sound_id == "WeatherIntro" && event == "EVA_LightningStormCreated"
+            ),
+            "the cue plays centred on every client, the EVA line with a local \
+             player: {played:?}"
         );
     }
 

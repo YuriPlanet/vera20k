@@ -43,10 +43,16 @@ pub struct PowerState {
     /// House ctor4F5C5F/4F5C66 initializes both dirty bytes to one.
     power_dirty: bool,
     radar_dirty: bool,
+    /// House+2B0/+2B8, the radar outage `CreateRadarOutage @ 0x0050BCD0`
+    /// starts (the Lightning Storm; the trigger action RadarBlackout
+    /// `0x006E3B56` is not ported). The constructor seeds it like the
+    /// blackout timer (`0x004F5843..0x004F584F`).
+    radar_outage_timer: crate::sim::timer::CdTimer,
     /// VERA-derived per-owner projection of508DF0's client-local radar
     /// result. Native stores its one local result at Tactical+14D8, not in
-    /// House. Inputs are owned buildings, cached power and Scenario FreeRadar;
-    /// the projection updates only at the reached House+5779 receiver.
+    /// House. Inputs are the radar outage, Scenario FreeRadar, cached power
+    /// and owned buildings; the projection updates only at the reached
+    /// House+5779 receiver.
     radar_available: bool,
 }
 
@@ -64,6 +70,7 @@ impl Default for PowerState {
             theoretical_total_power: 0,
             power_dirty: true,
             radar_dirty: true,
+            radar_outage_timer: crate::sim::timer::CdTimer::started(0, 0),
             radar_available: false,
         }
     }
@@ -88,12 +95,57 @@ impl PowerState {
         self.invalidate(false);
     }
 
+    /// `HouseClass::CreateRadarOutage @ 0x0050BCD0`: restart the outage
+    /// timer at `binary_frame` for `duration` frames, a shorter one too, and
+    /// recheck radar (House+5779).
+    pub(crate) fn start_radar_outage(&mut self, binary_frame: u32, duration: i32) {
+        self.radar_outage_timer.start(binary_frame as i32, duration);
+        self.radar_dirty = true;
+    }
+
+    /// House+5779 (RecheckRadar): the next House update reassesses radar.
+    /// `LightningStorm::Start` sets it for the player (`0x0053A002`).
+    pub(crate) fn recheck_radar(&mut self) {
+        self.radar_dirty = true;
+    }
+
+    /// A state its House update already assessed: nothing to recheck.
+    #[cfg(test)]
+    pub(crate) fn settled_for_test() -> Self {
+        Self {
+            power_dirty: false,
+            radar_dirty: false,
+            ..Self::default()
+        }
+    }
+
+    /// House+5779: the next House update reassesses radar.
+    #[cfg(test)]
+    pub(crate) fn radar_recheck_for_test(&self) -> bool {
+        self.radar_dirty
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_radar_outage_for_test(&mut self, timer: crate::sim::timer::CdTimer) {
+        self.radar_outage_timer = timer;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn radar_outage_for_test(&self) -> crate::sim::timer::CdTimer {
+        self.radar_outage_timer
+    }
+
     pub(crate) fn hash_assessment_state(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
         self.blackout_timer.hash(hasher);
         self.power_dirty.hash(hasher);
         self.radar_dirty.hash(hasher);
         self.radar_available.hash(hasher);
+        // A house no outage ever reached keeps its established stream.
+        if self.radar_outage_timer != crate::sim::timer::CdTimer::started(0, 0) {
+            b"radar-outage-v1".hash(hasher);
+            self.radar_outage_timer.hash(hasher);
+        }
     }
 
     /// House4FCE30 and508D99..DC9: produced>=drained or drained==0 gives1;
@@ -345,7 +397,14 @@ pub fn tick_power_states(
             .map(|entity| entity.stable_id())
             .collect();
         assess_house_radar_projection(
-            state, entities, &buildings, rules, owner_id, interner, false,
+            state,
+            entities,
+            &buildings,
+            rules,
+            owner_id,
+            interner,
+            false,
+            binary_frame,
         );
     }
 
@@ -353,9 +412,11 @@ pub fn tick_power_states(
 }
 
 /// Original House4F844B..4F84EA. A remaining value of exactly one resets
-/// the retained timer and invalidates power; zero does neither. A clean
-/// House keeps its previous totals even if an Engineer changed live health.
-/// The host runs Factory4CA6E0 only when this reports an assessment.
+/// the retained timer and invalidates power; zero does neither. The radar
+/// outage's timer then does the same and rechecks radar
+/// (`0x004F8490..0x004F84D2`). A clean House keeps its previous totals even
+/// if an Engineer changed live health. The host runs Factory4CA6E0 only when
+/// this reports an assessment.
 pub(crate) fn assess_house_power(
     state: &mut PowerState,
     entities: &EntityStore,
@@ -368,6 +429,10 @@ pub(crate) fn assess_house_power(
     if state.blackout_remaining(binary_frame) == 1 {
         state.blackout_timer.start(binary_frame as i32, 0);
         state.invalidate(false);
+    }
+    if state.radar_outage_timer.remaining(binary_frame as i32) == 1 {
+        state.radar_outage_timer.start(binary_frame as i32, 0);
+        state.radar_dirty = true;
     }
     if !state.power_dirty {
         return (false, None);
@@ -386,8 +451,8 @@ pub(crate) fn assess_house_power(
 
 /// House508DF0's pure availability scan. Rust exposes the same inputs for
 /// each viewer owner; native invokes it only for PlayerPtr and writes a
-/// client-global flag. The unrepresented Spy radar-outage timer remains a
-/// separate mechanism; the power-blackout timer must not substitute for it.
+/// client-global flag. The power-blackout timer is not the radar outage
+/// [`assess_house_radar_projection`] tests first.
 fn radar_provider_available(
     entities: &EntityStore,
     building_order: &[u64],
@@ -426,6 +491,10 @@ fn radar_provider_available(
     false
 }
 
+/// House508DF0: a running radar outage (`0x00508E07..0x00508E31`, any
+/// remaining time) denies radar before Scenario FreeRadar (`+0x34A4`), power
+/// and the providers are asked.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn assess_house_radar_projection(
     state: &mut PowerState,
     entities: &EntityStore,
@@ -434,11 +503,20 @@ pub(crate) fn assess_house_radar_projection(
     owner: InternedId,
     interner: &crate::sim::intern::StringInterner,
     free_radar: bool,
+    binary_frame: u32,
 ) {
     if state.radar_dirty {
         state.radar_dirty = false;
-        state.radar_available = free_radar
-            || radar_provider_available(entities, building_order, state, rules, owner, interner);
+        state.radar_available = state.radar_outage_timer.remaining(binary_frame as i32) == 0
+            && (free_radar
+                || radar_provider_available(
+                    entities,
+                    building_order,
+                    state,
+                    rules,
+                    owner,
+                    interner,
+                ));
     }
 }
 
@@ -559,6 +637,60 @@ mod tests {
             entities.get_mut(1).unwrap().draining_me = None;
             tick_power_states(&mut states, &mut entities, &rules, &interner, 0);
             assert!(!states[&owner].has_drained_power_source);
+        }
+    }
+
+    /// The radar outage (`House+0x2B0`) against
+    /// `tools/superweapon_oracle.json` `radar_outage` (66 timer and frame
+    /// pairs each): `HouseClass::Update`'s expiry (`0x004F8490..0x004F84D9`)
+    /// restarts a timer with exactly one frame left at zero length and
+    /// rechecks radar, and `0x00508DF0` denies radar while any time remains,
+    /// Scenario FreeRadar set.
+    #[test]
+    fn radar_outage_matches_native_rows() {
+        use crate::sim::timer::CdTimer;
+        let oracle: serde_json::Value =
+            serde_json::from_str(crate::test_fixture::text("tools/superweapon_oracle.json"))
+                .unwrap();
+        let int = |value: &serde_json::Value| i32::try_from(value.as_i64().unwrap()).unwrap();
+        let rules = rules_from_ini("[BuildingTypes]\n");
+        let mut interner = test_interner();
+        let owner = interner.intern("A");
+        let entities = EntityStore::default();
+        let expiry = oracle["radar_outage"]["expiry"].as_array().unwrap();
+        assert_eq!(expiry.len(), 66);
+        for row in expiry {
+            let mut state = PowerState {
+                power_dirty: false,
+                radar_dirty: false,
+                ..PowerState::default()
+            };
+            state.set_radar_outage_for_test(CdTimer::from_raw(int(&row[0]), int(&row[1])));
+            let frame = int(&row[2]) as u32;
+            let _ = assess_house_power(&mut state, &entities, &rules, owner, &interner, frame);
+            assert_eq!(
+                (state.radar_outage_timer, state.radar_dirty),
+                (CdTimer::from_raw(int(&row[3]), int(&row[4])), row[5] == 1),
+                "{row}"
+            );
+        }
+        let availability = oracle["radar_outage"]["availability"].as_array().unwrap();
+        assert_eq!(availability.len(), 66);
+        for row in availability {
+            let mut state = PowerState::default();
+            state.set_radar_outage_for_test(CdTimer::from_raw(int(&row[0]), int(&row[1])));
+            let frame = int(&row[2]) as u32;
+            assess_house_radar_projection(
+                &mut state,
+                &entities,
+                &[],
+                &rules,
+                owner,
+                &interner,
+                true,
+                frame,
+            );
+            assert_eq!(state.radar_available, row[3] == 1, "{row}");
         }
     }
 

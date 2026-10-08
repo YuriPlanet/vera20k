@@ -354,24 +354,6 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                     );
                 }
             }
-            GameSoundEvent::LightningStrike { sound_id, source } => {
-                // `CCINIClass::ReadSoundList @ 0x00525430` only stores tokens
-                // `VocClass::FindPtrByName` resolves, so a `LightningSounds=`
-                // name that is not a registered Voc never reaches the list and
-                // must not fall through to the raw audio-bag path here.
-                if registry.get(sound_id).is_none() {
-                    continue;
-                }
-                if let Some(gain) = gain_for(sound_id, *source) {
-                    sfx.play_registered_sound_spatial(
-                        sound_id,
-                        gain,
-                        registry,
-                        assets,
-                        audio_indices,
-                    );
-                }
-            }
             GameSoundEvent::SuperWeaponActivated {
                 sound_id,
                 source,

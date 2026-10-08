@@ -78,7 +78,7 @@ confirmed in Ghidra; commit, publish and merge validated chains.
     `building_anim_light`, `blit_pickers`, `blitters`, replayed in
     `app/presentation/curtain_tint_tests.rs`; production observations
     ([map_observation.md](../../tools/map_observation.md#computer-force-shield-observation)).
-12. The Force Shield's launch: Launch case 10 `0x6CD072` (`superweapon/force_shield.rs`):
+12. The Force Shield's launch: merged (YuriPlanet/vera20k#1121). Launch case 10 `0x6CD072` (`superweapon/force_shield.rs`):
     the BuildingClass::Array walk (IsAlliedWith `0x4F9A50` asked of each building's
     owner, a 3D Distance3D below the radius, the two skipped coordinates), the
     deck coordinate shared with cases 1, 3, 4 and 9 (`superweapon::deck_coords`), the
@@ -90,16 +90,33 @@ confirmed in Ghidra; commit, publish and merge validated chains.
     observation
     ([map_observation.md](../../tools/map_observation.md#computer-force-shield-observation)).
 
+13. The Lightning Storm, player and computer paths: Launch case 2 `0x6CCD3F`,
+    LightningStorm::Start `0x539EB0`, Process `0x53A6C0`, CreateCloudBolt `0x53A140`
+    and GroundStrike `0x53A300` (`superweapon/lightning_storm.rs`) replace VERA's storm
+    record with the native globals and cloud lists. The radar outage `House+0x2B0`
+    (`power_system.rs`): CreateRadarOutage `0x50BCD0`, its expiry
+    `0x4F8490..0x4F84D2` and the availability test `0x508DF0`, which now also grants
+    Scenario FreeRadar. `WeatherConClouds=`/`WeatherConBolts=` through the native list
+    reader (`0x66DD28`, `0x66DE2B`); the storm's lines and the player's tail
+    (`0x6CCD9A`) in the app. Oracle sections `storm_start`, `storm_cloud`,
+    `storm_pixel_heights`, `storm_strike`, `storm_process` and `radar_outage`, replayed
+    in `superweapon/lightning_storm_tests.rs` and `power_system.rs`; production
+    observations
+    ([map_observation.md](../../tools/map_observation.md#lightning-storm-observation)).
+
 `fire::launch` now dispatches every Launch arm; none refuses a click. `ai_fire.rs` RESIDUALS lists the AI-side gaps (preferred
 target writers, AI_FindTeamTarget `0x50D170`, building cloak stage).
 
 ## Next chains (one PR each)
 
+- Launch cases VERA ports without a native comparison: the Iron Curtain (1,
+  `iron_curtain.rs`), the paradrops (5 and 6, `paradrop.rs`), the Genetic Mutator (9,
+  `genetic_converter.rs`) and the Psychic Reveal (11, `psychic_reveal.rs`).
 - Script action 56 `0x6EFE60` for the campaign's Chronosphere teams (SOV02SMD.MAP),
   with `Find_Best_Target_Building 0x6EEBD0`, which actions 46 and 47 share.
 - The existing types' gaps: Deactivate's start = -1, the offline-provider hold
   `+0x660`, the paradrop plane's Retreat exit `0x415A50` (a residual in
-  `aircraft/paradrop_mission.rs`), the player tails of Launch cases 0, 1, 2, 9 and 11
+  `aircraft/paradrop_mission.rs`), the player tails of Launch cases 0, 1, 9 and 11
   (a residual in `app/match_runtime/super_selection.rs`), TechnoClass::Draw's curtain
   arm for voxel aircraft (a residual in `superweapon/invulnerability.rs`), and
   `IronCurtainInvokeAnim=`'s default: VERA's `IRONBLST`, the constructor's null type

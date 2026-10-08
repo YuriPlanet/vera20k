@@ -403,13 +403,12 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
     let mut compared = 0;
     for row in corpus["radar_controls"].as_array().unwrap() {
         let input = &row["input"];
-        // EMP, independent online/warp and a live Spy radar-outage owner are
-        // not represented. Native nonlocal output deliberately stays local.
+        // EMP and independent online/warp are not represented. Native
+        // nonlocal output deliberately stays local.
         if !flag(input, "local", true)
             || !flag(input, "online", true)
             || flag(input, "warped", false)
             || input["emp"].as_i64().unwrap_or(0) != 0
-            || input["name"] == "free_radar_with_active_outage"
         {
             continue;
         }
@@ -439,6 +438,15 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
         state.total_output = power.map_or(101, |v| int(&v[0]));
         state.total_drain = power.map_or(100, |v| int(&v[1]));
         state.is_low_power = state.total_output < state.total_drain;
+        // House+2B0's timer (start, an unused dword, duration) at the row's
+        // frame.
+        sim.session.binary_frame = int(&row["output"]["frame"]) as u32;
+        if let Some(outage) = input["outage"].as_array() {
+            state.set_radar_outage_for_test(crate::sim::timer::CdTimer::from_raw(
+                int(&outage[0]),
+                int(&outage[2]),
+            ));
+        }
         let order = sim.houses[&owner].base_projection.buildings();
         power_system::assess_house_radar_projection(
             &mut state,
@@ -448,6 +456,7 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
             owner,
             &sim.interner,
             sim.session.free_radar,
+            sim.session.binary_frame,
         );
         sim.power_states.insert(owner, state);
         assert_eq!(
@@ -463,7 +472,7 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
         assert_rng(&sim, &row["receipt"]["rng_after"], "radar receiver");
         compared += 1;
     }
-    assert_eq!(compared, 9);
+    assert_eq!(compared, 10);
 }
 
 #[test]

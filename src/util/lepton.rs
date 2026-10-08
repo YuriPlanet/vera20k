@@ -255,6 +255,26 @@ fn ground_height_with_level_height(
     Ok(base.wrapping_mul(256).wrapping_add(slope_numerator) / 256)
 }
 
+/// Significand of the pixel-height scale `[0xB0CDD8]`: the double its
+/// initializers `0x006D1830`, `0x006D18C0` and `0x006D1BF0` leave (bits
+/// `0x401BDFB59E463B4E`, about 6.968) is this times `2^-50`.
+const PIXEL_HEIGHT_SCALE_SIGNIFICAND: i128 = 0x1B_DFB5_9E46_3B4E;
+
+/// `0x006D2120`: a height in screen pixels as leptons,
+/// `ftol((pixels - 0.5) * [0xB0CDD8])`. Computed exactly as
+/// `(2 * pixels - 1) * significand * 2^-51` truncated toward zero, with
+/// `__ftol @ 0x007C5F00`'s 64-bit result cut to its low dword. Every half SHP
+/// height (`-16384..=16383`) equals native execution under the control words
+/// `0x0E7F`, `0x027F` and `0x037F`, and sample counts across the whole
+/// `i32` range match too (`tools/superweapon_oracle.json`
+/// `storm_pixel_heights`). Native callers: `LightningStorm::CreateCloudBolt`
+/// (`0x0053A176`) and the Walk and Mech Move_To bridge lifts (`0x0075AD52`,
+/// `0x005B0105`), which ask for 60 pixels.
+pub const fn native_pixel_height_leptons(pixels: i32) -> i32 {
+    let product = (2 * pixels as i128 - 1) * PIXEL_HEIGHT_SCALE_SIGNIFICAND;
+    (product / (1 << 51)) as i64 as i32
+}
+
 /// Get the lepton sub-cell offset for a given sub-cell index (0–4).
 ///
 /// Returns `(sub_x, sub_y)` in lepton units (0..256 range).

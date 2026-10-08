@@ -144,7 +144,7 @@ fn launch(
             super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry))
         }
         SuperWeaponKind::LightningStorm => {
-            super::lightning_storm::start(sim, rules, owner, rx, ry, sw_type_id)
+            super::lightning_storm::launch(sim, rules, owner, sw_type_id, (rx, ry))
         }
         SuperWeaponKind::IronCurtain => {
             super::iron_curtain::launch(sim, rules, owner, rx, ry, sw_type_id, overlay_registry)

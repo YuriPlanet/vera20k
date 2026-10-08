@@ -1321,18 +1321,6 @@ impl SfxPlayer {
             .map(|_| owner)
     }
 
-    /// Draw an index in `0..count` from the presentation RNG.
-    ///
-    /// The app layer's stand-in for a native `rand % count` list pick — the
-    /// `LightningSounds=` choice at `0x0053A48D DIV [Rules+0x744]` is the one
-    /// caller. `count == 0` yields 0 and the caller must not index with it.
-    pub fn pick_index(&mut self, count: usize) -> usize {
-        if count <= 1 {
-            return 0;
-        }
-        self.rng.ranged(0, count as i32 - 1) as usize
-    }
-
     /// Draw `RandomRanged(0, 99)` from the presentation RNG.
     ///
     /// The stand-in for gamemd's percentage gates on `g_MainRng @ 0x00886B88`.
@@ -1340,9 +1328,9 @@ impl SfxPlayer {
     /// `PUSH 0x63 ; PUSH 0x0 ; MOV ECX,0x886B88 ; CALL 0x0065C7E0`, then
     /// `CMP EAX,0x1E ; JGE` — so the cue speaks for a draw of 0..=29.
     ///
-    /// Unlike [`Self::pick_index`] this always draws, matching native: the
-    /// `RandomRanged` body at `0x0065C7E0` only skips the draw when its two
-    /// endpoints are equal, and `0` and `99` are not.
+    /// This always draws, matching native: the `RandomRanged` body at
+    /// `0x0065C7E0` only skips the draw when its two endpoints are equal, and
+    /// `0` and `99` are not.
     pub fn roll_percent(&mut self) -> i32 {
         self.rng.ranged(0, 99)
     }

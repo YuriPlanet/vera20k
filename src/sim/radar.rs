@@ -18,22 +18,18 @@
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
 
-/// Query map-owned FreeRadar or ordinary building availability for an owner.
+/// The owner's radar as its House last assessed it.
 ///
-/// A building provides radar if its ObjectType has `Radar=yes` and the house is
-/// not in low power. This is a house-level gate; stock Allied `GAAIRC` and
-/// `AMRADR` omit `Powered=yes`.
-/// Native House 00508DF0 checks Scenario+34A4 before power/providers; the app
-/// supplies its preferred local owner. Native's earlier, separate spy-radar
-/// blackout gate has no Rust state/writer yet and remains unsupported. The
-/// existing power-blackout timer is not that gate and must not replace it.
+/// Native House `0x00508DF0` denies radar while the House's radar outage runs,
+/// then grants it for Scenario+34A4 (map FreeRadar) before power and
+/// providers: a building provides radar if its ObjectType has `Radar=yes` and
+/// the house is not in low power. This is a house-level gate; stock Allied
+/// `GAAIRC` and `AMRADR` omit `Powered=yes`. The app supplies its preferred
+/// local owner.
 pub fn has_radar_for_owner(sim: &Simulation, _rules: &RuleSet, owner: &str) -> bool {
     let Some(owner_id) = sim.interner.get(owner) else {
         return false;
     };
-    if sim.session.free_radar {
-        return true;
-    }
     crate::sim::power_system::has_active_radar(&sim.power_states, owner_id)
 }
 
@@ -128,7 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn free_radar_matches_original_empty_provider_decisions_without_radar_blackout() {
+    fn free_radar_and_radar_outage_match_original_empty_provider_decisions() {
         let original: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/free_radar_oracle/fixtures/native-free-radar.json",
         ))
@@ -137,15 +133,7 @@ mod tests {
         let mut checked = 0;
         for case in original["availability_cases"].as_array().unwrap() {
             let timer = case["timer_start_duration_frame"].as_array().unwrap();
-            let timer: Vec<_> = timer.iter().map(|v| v.as_i64().unwrap()).collect();
-            // Native expired/stopped states only. Rust has no separate radar
-            // blackout owner; the other 30 original cases remain outside scope.
-            if !matches!(
-                timer.as_slice(),
-                [-1, 0, 100] | [100, 10, 110 | 111] | [100, 0, 100]
-            ) {
-                continue;
-            }
+            let timer: Vec<_> = timer.iter().map(|v| v.as_i64().unwrap() as i32).collect();
             let mut sim =
                 Simulation::from_descriptor(&crate::sim::scenario_session::ScenarioDescriptor {
                     free_radar: case["free_radar"].as_u64().unwrap() != 0,
@@ -159,6 +147,9 @@ mod tests {
             state.total_output = output;
             state.total_drain = drain;
             state.is_low_power = output < drain;
+            state.set_radar_outage_for_test(crate::sim::timer::CdTimer::from_raw(
+                timer[0], timer[1],
+            ));
             crate::sim::power_system::assess_house_radar_projection(
                 &mut state,
                 &sim.substrate.entities,
@@ -166,7 +157,8 @@ mod tests {
                 &rules,
                 owner,
                 &sim.interner,
-                false,
+                sim.session.free_radar,
+                timer[2] as u32,
             );
             sim.power_states.insert(owner, state);
             assert_eq!(
@@ -177,7 +169,7 @@ mod tests {
             assert!(!has_radar_for_owner(&sim, &rules, "UnknownOwner"));
             checked += 1;
         }
-        assert_eq!(checked, 40);
+        assert_eq!(checked, 70);
     }
 
     #[test]
@@ -195,12 +187,28 @@ mod tests {
         let owner = sim.interner.get("Americans").unwrap();
         assert!(sim.power_states[&owner].is_low_power);
         assert!(!has_radar_for_owner(&sim, &rules, "Americans"));
-        sim.session.free_radar = true;
+        // House508DF0 reads Scenario FreeRadar when the House next rechecks.
+        let recheck = |sim: &mut Simulation| {
+            let state = sim.power_states.get_mut(&owner).unwrap();
+            state.recheck_radar();
+            crate::sim::power_system::assess_house_radar_projection(
+                state,
+                &sim.substrate.entities,
+                &[1],
+                &rules,
+                owner,
+                &sim.interner,
+                true,
+                0,
+            );
+        };
+        recheck(&mut sim);
         assert!(has_radar_for_owner(&sim, &rules, "Americans"));
         sim.power_states
             .get_mut(&owner)
             .unwrap()
             .start_blackout(0, 100);
+        recheck(&mut sim);
         assert!(
             has_radar_for_owner(&sim, &rules, "Americans"),
             "power outage is not native radar outage"

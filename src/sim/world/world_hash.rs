@@ -1236,10 +1236,12 @@ impl Simulation {
                 }
             }
         }
-        // Hash lightning storm global state.
-        self.lightning_storm.is_some().hash(hasher);
-        if let Some(ref ls) = self.lightning_storm {
-            ls.hash(hasher);
+        // The Lightning Storm's globals; a match that never launched one hashes
+        // the established `false`.
+        let storm_touched = self.lightning_storm != Default::default();
+        storm_touched.hash(hasher);
+        if storm_touched {
+            self.lightning_storm.hash(hasher);
         }
         // The Psychic Dominator's globals; the tag keeps a match that never
         // launched one on its established stream.

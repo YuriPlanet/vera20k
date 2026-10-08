@@ -35,21 +35,21 @@ pub(crate) fn chrono_warp_selected(targeting: Option<&TargetingMode>, rules: &Ru
 }
 
 /// The selection writes of the local player's Supers: Launch case 3 selects
-/// the Chrono Warp (`0x006CC46E`), cases 4, 5, 6, 7, 8 and 10 clear the
-/// selection on their player's tail (`0x006CCD1C`, `0x006CD50F` for both
-/// paradrops, `0x006CCE41`, `0x006CD6F8`, `0x006CD2CB`), and the
-/// revoke/suspend pass clears it when the selected Super's hold changes or it
-/// is lost (`HouseClass @ 0x0050AF10`, `0x0050B181..0x0050B190`). Other
-/// houses' Supers leave it alone.
+/// the Chrono Warp (`0x006CC46E`), cases 2, 4, 5, 6, 7, 8 and 10 clear the
+/// selection on their player's tail (`0x006CCD9A`, `0x006CCD1C`,
+/// `0x006CD50F` for both paradrops, `0x006CCE41`, `0x006CD6F8`,
+/// `0x006CD2CB`), and the revoke/suspend pass clears it when the selected
+/// Super's hold changes or it is lost (`HouseClass @ 0x0050AF10`,
+/// `0x0050B181..0x0050B190`). Other houses' Supers leave it alone.
 ///
-/// RESIDUAL: the player's tails of cases 0, 1, 2, 9 and 11 clear the
-/// selection too (`0x006CDCC3` and `0x006CDE16`, `0x006CD04F`, `0x006CCD9A`,
-/// `0x006CDA53`, `0x006CD7D3`), each beside its Ready line's drop, which
+/// RESIDUAL: the player's tails of cases 0, 1, 9 and 11 clear the selection
+/// too (`0x006CDCC3` and `0x006CDE16`, `0x006CD04F`, `0x006CDA53`,
+/// `0x006CD7D3`), each beside its Ready line's drop, which
 /// `sound_dispatch::launch_drops_ready_line` lacks for them as well.
-/// Trigger: the local player's Nuke, Iron Curtain, Lightning Storm, Genetic
-/// Mutator or Psychic Reveal launching while a Super is selected (the click
-/// drops VERA's own selection, so a later selection before the delayed
-/// launch runs). Effect: that selection stays.
+/// Trigger: the local player's Nuke, Iron Curtain, Genetic Mutator or
+/// Psychic Reveal launching while a Super is selected (the click drops VERA's
+/// own selection, so a later selection before the delayed launch runs).
+/// Effect: that selection stays.
 pub(super) fn follow_selection_writes(
     targeting: &mut Option<TargetingMode>,
     events: &[SimSoundEvent],
@@ -86,7 +86,8 @@ pub(super) fn follow_selection_writes(
                     .map(|name| TargetingMode::SuperWeapon(name.to_string()));
             }
             Some(
-                SuperWeaponKind::ChronoWarp
+                SuperWeaponKind::LightningStorm
+                | SuperWeaponKind::ChronoWarp
                 | SuperWeaponKind::ParaDrop
                 | SuperWeaponKind::AmerParaDrop
                 | SuperWeaponKind::PsychicDominator

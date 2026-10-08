@@ -11,7 +11,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::sim::production::ProductionCategory;
 use crate::sim::superweapon::SuperWeaponInstance;
 use crate::sim::superweapon::cell_receiver_tests::{test_playfield_bounds, test_terrain_cell};
-use crate::sim::superweapon::lightning_storm::LightningStormState;
+use crate::sim::superweapon::lightning_storm::LightningStorm;
 use crate::util::lepton::lepton_to_cell_packed;
 use serde_json::{Value, json};
 
@@ -298,7 +298,7 @@ fn the_try_fire_arms_match_native() {
             .expect("the rally object stands");
         }
         if flag(&row["storm"]) {
-            sim.lightning_storm = Some(LightningStormState::raging_for_test(enemy, (3, 3)));
+            sim.lightning_storm = LightningStorm::raging_for_test(enemy, (3, 3));
         }
         let mut ids = Vec::new();
         for (index, kind) in kinds.iter().enumerate() {

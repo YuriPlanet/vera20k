@@ -868,6 +868,160 @@ after step 9438; idle again after step 9439. So `ForceShieldFading` plays in fra
 so the state hashes are now `12557075081865037104` at 9020 and `2418361531941558131` at
 9600. `XMP03T4.MAP` again completed 300 steps (`8142462839629644773`).
 
+## Lightning Storm observation
+
+[`map_observation.lightning-storm.example.json`](map_observation.lightning-storm.example.json)
+starts America/Battle against a Yuri computer opponent (Easy) with stock rules and
+assets on an [authored map](map_observation/examples/lightning_storm.map): the Psychic
+Dominator fixture with the observer's GAWEAT in place of its YAPPET at (46,42).
+`observe_super_weapons` adds the Super rows: LightningStormSpecial is granted on the
+first step (interned id 31, charge start 0, 9000 frames) and is ready from step 9001. An
+ordinary `LaunchSuperWeapon` at step 9010 aims it at the Neutral HTNK's cell (44,54).
+The loader looks a relative map name up in the retail root: run a profile copy whose
+`launch.selected_map_file` is the tracked map's absolute path.
+
+With release binary SHA-256
+`ace0d7f2bb531086b82792aea3ee659fd8e6717c184b3161352ba415dd015434` (32,042,016 bytes)
+and map SHA-256 `6d301f5350faa4100c136315c189bce5c72ed4f00508c378ae4be42a7ec3bea0`, the
+charge restarts at tick 9010. The first strike lands at step 9329: the Neutral HTNK
+drops from 400 to 150, the observer's MTNK beside it from 300 to 139, and the Neutral E1
+dies. Both tanks are gone at step 9334. Scattered strikes then wear down the Neutral
+HTNK at (40,54) (275 at step 9337, 88 at 9369), and it is gone at step 9460. A copy that
+ends at 9330 shows the Ion lighting, the clouds, a bolt and its explosion on the target
+and the storm's line (state hash `5188934786816000448`, BGRA SHA-256
+`2c56197586e59652d8747d2919b07edc9a32863442391bcebf8fee9199afdcd8`). The 9700-step run
+ends under the ordinary lighting, the struck ground cratered and the Neutral GAPOWR gone
+(state hash `692659393727655047`, BGRA SHA-256
+`4aef64141d85e1ea534ae1c2974f8f2b6f038f8c4f8803e3764e9093700d34e8`). The same binary
+loaded the unchanged retail `XMP03T4.MAP` (`multimd.mix`) and completed 300 steps (state
+hash `8142462839629644773`). These are Rust production observations: the chain's native
+comparisons are the `tools.superweapon_oracle` `storm_*` and `radar_outage` rows, and no
+whole-run timing or pixel equivalence with gamemd is claimed.
+
+## Computer Lightning Storm observation
+
+[`map_observation.ai-lightning-storm.example.json`](map_observation.ai-lightning-storm.example.json)
+starts Russia/Battle against an America computer opponent (`Computer1`, Easy) with stock
+rules and assets on an [authored map](map_observation/examples/ai_lightning_storm.map):
+the computer-nuke fixture with the computer's pre-placed GAWEAT and two GAPOWR in place
+of its NAMISL and NAPOWR, the observer's NACNST at (40,62), `FreeRadar=yes`, and no
+commands. `observe_super_weapons` adds the Super rows; NACNST is the only observed type.
+Run a profile copy whose `launch.selected_map_file` is the tracked map's absolute path.
+
+With the release binary above and map SHA-256
+`ce455951310a682a502868ad79ab04dc06d7ef4760b213abb0d757dd541a578b`, the computer's
+LightningStormSpecial is granted on the first step (charge start 0, 9000 frames) and is
+ready from step 9001. Its Strategy tick fires it at frame 9060 (the charge restarts
+there; its AmericanParaDropSpecial, granted at step 5357, fires in the same frame).
+Strikes wear the observer's yard down from 1000 health at step 9382 to 330 at step 9552.
+A copy that ends at 9400 shows the storm over the yard and the observer's radar closed
+by the storm's outage, though the map grants it free radar (state hash
+`11635672970713069298`, BGRA SHA-256
+`006c3fae3ef0bc754e0532432c3d93da71128616606b18f2c4b55c610320dddd`). The 9700-step run
+ends under the ordinary lighting with the radar back (state hash `6127425217724816917`,
+BGRA SHA-256 `b764e7437e7ccfa39b017c3942af26637092d82f18adbb7b52449599dcc4574f`). These
+are Rust production observations: the chain's native comparisons are the
+`tools.superweapon_oracle` `storm_*`, `radar_outage` and `ai_*` rows, and no whole-run
+timing or pixel equivalence with gamemd is claimed.
+
+## Computer V3 bombard observation
+
+[`map_observation.ai-v3-bombard.example.json`](map_observation.ai-v3-bombard.example.json)
+starts Russia/Battle against a Russia computer opponent (`Computer1`, Normal) with stock
+rules and assets on an [authored map](map_observation/examples/ai_v3_bombard.map) laid
+out as the Iron Curtain one, with these buildings and units:
+
+- the computer's NARADR at (55,62), NAPOWR at (66,56) and (66,52) and NAWEAP at (56,56);
+- two V3 at (50,58) and (51,58) and two HTK at (52,58) and (50,59), all recruitable
+  (`1,1`);
+- the observer's NACNST at (32,33), NAPOWR at (38,31) and NALASR at (34,38).
+
+There are no commands. The map's `[AITriggerTypes]` raises the retail Soviet Bombard
+Medium trigger (`0CA24D8C-G`, Normal only, the computer owning a NARADR) to the priority
+weight 5000 (`0x006F0C72`), so the first team pass with an enemy picks it. Its TeamType
+(`0ACDDB6C-G`), TaskForce (2 V3, 2 HTK) and script (`0607B8FC-G`) are retail. V3,
+V3ROCKET, NALASR and NACNST are the observed types. Run a profile copy whose
+`launch.selected_map_file` is the tracked map's absolute path.
+
+With release binary SHA-256
+`52e75b34f4a77077bb93dc50b74442e733075b7f3855f9a896e7f3092ccf5eb9`
+(31,981,648 bytes) and map SHA-256
+`0b6d68b6f0aecaf8eb19aefc211dcdc13e7c73a54a578edea2b962eac5bc8def`, the team pass at
+frame 5175 creates the Soviet Bombard team from the four pre-placed units. The run
+then goes:
+
+- **Gathering.** The script regroups the team at its base and gathers it toward the
+  enemy's (actions 54 and 53). The two V3 (actors 1 and 3) move out at step 5180 and
+  again at 5584, and are on Guard by 5805.
+- **The Tesla Coil.** At 5807 action 0 with quarry 7 (base defenses) orders both to
+  attack the observer's NALASR (actor 20). Their rockets launch at 5971 and 6001 and
+  strike the coil at 6242 (336 → 136) and 6259, which destroys it.
+- **The yard.** At 6262 the script's next attack (quarry 2, buildings) gives both V3
+  the observer's NACNST (actor 15). The rebuilt rockets (constructed at 6431 and 6461,
+  launched at 6451 and 6481) hit it at 6722 (884 → 648) and 6759 (642 → 411). The HTK
+  shell it in between.
+
+The 7000-step run ends with state hash `17689816281688038612` and BGRA SHA-256
+`43947b2003bf06a2ef9b6285942cfca8fb40d99f70770d50974935f408d911c1`. The camera on
+(34,36) shows the yard, the coil's crater and a third pair of rockets leaving.
+
+These are Rust production observations. The V3's native comparisons are
+`tools/rocket_oracle`'s (flight, spawn manager, kamikaze tracker); the team's are
+`tools/ai_team_oracle.py`'s. No whole-run timing or pixel equivalence with gamemd is
+claimed.
+
+## Computer Dreadnought bombard observation
+
+[`map_observation.ai-dred-bombard.example.json`](map_observation.ai-dred-bombard.example.json)
+starts Russia/Battle against a Russia computer opponent (`Computer1`, Normal) with stock
+rules and assets on an [authored map](map_observation/examples/ai_dred_bombard.map)
+laid out as the Iron Curtain one. A lake of 234 `water09` cells (TEMPERATE tile 322, a
+1x1 template) covers x 30..55, y 44..52. The map holds:
+
+- the computer's NATECH at (55,62), NAPOWR at (66,56) and (66,52), NAWEAP at (56,56) and
+  NAYARD at (52,48) in the lake;
+- its DRED at (48,46), HYD at (46,45) and (46,50) and SQD at (44,48), recruitable;
+- the observer's NACNST at (32,33) and NAYARD at (31,45), at the lake's west end.
+
+There are no commands. The map's `[AITriggerTypes]` raises the retail Soviet Navy
+Bombard trigger (`0C32D84C-G`, Normal and Hard, the computer owning a NATECH) to weight
+5000. Its TeamType (`0EC2038C-G`), TaskForce (DRED, 2 HYD, SQD) and script (`0A869C8C-G`:
+attack factories, 49, attack anything) are retail.
+
+Two native rules decide the layout:
+
+- **The computer needs a NAYARD.** AI trigger eligibility needs a factory of the house
+  for every TaskForce type (`0x00509610`).
+- **The observer's factory must be the NAYARD on the same lake.** A team's attack quarry
+  is its leader's `Greatest_Threat` flat walk (`Quarry_To_Threat @ 0x00645BB0` sets
+  neither bit 0 nor bit 1). That walk passes the leader's zone (`0x006F8E44..0x006F8EC4`,
+  `0x006F9D69`) to `Evaluate_Candidate`'s movement-zone gate
+  (`0x006F7E32..0x006F7E9C`), which admits only targets in the leader's Water zone. A
+  yard on land is out of reach.
+
+DRED, DMISL and NAYARD are the observed types. Run a profile copy whose
+`launch.selected_map_file` is the tracked map's absolute path.
+
+With the same binary and map SHA-256
+`7bc2b2e28bf541b993fdc7c7d2d55bdcfc9bbfd718f70d4659ee166e6b595811`, the team pass at
+frame 5175 creates the Navy Bombard team. The run then goes:
+
+- **The attack order.** At step 5181 the Dreadnought (actor 1) attacks the observer's
+  NAYARD (actor 21) from where it lies, 15 cells off.
+- **The volleys.** They launch at 5281/5301, 5481/5501, 5681/5701 and 5881/5901, each
+  pair 20 frames apart. The pool refills 160 frames after each volley's second launch,
+  80 for the KamikazeWait and 80 for `SpawnRegenRate=`; new DMISL appear at 5461, 5661,
+  5861 and 6061.
+- **The hits.** DMISL take the yard from 1464 to 1196 (step 5493), 931 (5511), 641
+  (5691), 376 (5710) and 74 (5891), and destroy it at 5909. The HYD shell it in between,
+  and their flak splash costs some descending missiles 25 health.
+- **The end.** The Dreadnought's target clears at 5909 and it returns to Guard at 5913.
+
+The 6500-step run ends with state hash `9448992596267329062` and BGRA SHA-256
+`0b42f21982939841debf3cb4837c69b668a383b18c36db0c385cb75520593721` (camera (33,47)).
+The native comparisons are as for the V3 observation, with
+`spawn_manager::oracle_tests` covering the volley; no whole-run equivalence is claimed.
+
 ## Siege Chopper deployment observation
 
 [`map_observation.siege-chopper.example.json`](map_observation.siege-chopper.example.json)
