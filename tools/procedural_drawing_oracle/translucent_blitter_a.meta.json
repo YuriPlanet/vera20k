@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -13,7 +13,7 @@
     "Original4BAA73..4BAB06 produces masks and48EB56..48EB73 writes Convert+180/+184. Blitter+4/+8/+C values follow48EBF0 RGB565 constructor bytes; full allocation is not executed.",
     "N1/N27/N53 palettes/LUTs use existing native palette owner. Synthetic RGB200,100,50 and carry-boundary RGB palettes, A0/1/2/63/127/255, indices1/240, brightness1000/1500, destination0/F940/FFFF and packed channel boundaries.",
     "SHP compressed zero run versus voxel raw zero source; old Z[65535,65535,0], candidate4096, zero signed shape. Depth-read and depth-write controls both execute; write controls do not establish Unit final-composite usage.",
-    "Bit8 offset0/plus-or-minus1/plus-or-minus8 controls isolate neighbor destination reads with a synthetic eight-word pitch; offsets are supplied, not claimed as executed cloak70BE50 outputs. Destination memory-trace offsets are relative to the passed destination pointer. Wholebody Unit73B140 caller reading separately establishes flags280x; full Unit temp-cache/row-walker production is not executed.",
+    "Bit8 offset0/plus-or-minus1/plus-or-minus8 controls isolate neighbor destination reads with a synthetic eight-word pitch; offsets are supplied, not claimed as executed cloak70BE50 outputs. Wholebody Unit73B140 caller reading separately establishes flags280x; full Unit temp-cache/row-walker production is not executed.",
     "Separate original4DA4E0->703860 transition controls use real Unit/Drive vtables, TypeInvisible0, state1, current-house-owned flag41A, force0/1, stages0/1/9/12/13/-1/-9 and signed progress; they execute x87 FIDIV/FMUL/ftol and Unit73B21F..73B259 selector, including the native invalid-stage results. State0/2 controls supply owned41A and a nonnull tactical screen; allied/sensor visibility branches are not executed.",
     "Separate70BE50 executes actual Unit secondary vtable7F5C54 getter410220 and ftol7C5F00 over supplied native_unique_id and raw f32+24C. The constructor/world producer lifecycle of the supplied fields is not executed.",
     "No native instruction is changed and no leaf call is substituted. Original pixel leaves contain no RNG, timer or detach calls. Palette/mask/selector ranges are separate executable comparisons.",
@@ -41,9 +41,9 @@
     "intensity": "0x00420196"
   },
   "source_normalized_lf_sha256": {
-    "oracle": "92f1af4bf804d17636b355b411aae544ad8ff9b21d71c54036f58639112bb415",
+    "oracle": "f78f5ffe58241cfeb9dd9ee799a871312311c38f29b8091b956ace1b8c22e3ac",
     "palette_owner": "12f63f378e77070f5278912d71eb9fcc09d247b4680c785e838ee4997ecd1a90",
     "native_owner": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb"
   },
-  "payload_sha256": "a1ea5ca49f238eb894f4f7e276dd1bfc31122226f856c1135ab2c0333da4c5e6"
+  "payload_sha256": "05d5f10c47957c2d6d375e0f29bb430deab81c809083e4b41637f25737e52094"
 }

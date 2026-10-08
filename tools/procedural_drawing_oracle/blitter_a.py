@@ -8,9 +8,10 @@ from functools import lru_cache
 from itertools import product
 from pathlib import Path
 import argparse
+import json
 import struct
 
-from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE, UC_MEM_WRITE
+from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EDX, UC_X86_REG_ESI,
                               UC_X86_REG_ESP, UC_X86_REG_EDI)
 
@@ -147,7 +148,7 @@ def translucent_masks(u, converter):
 
 
 def execute_translucent(route, selector_bits, writes_depth, profile, a, index,
-                        brightness, raw, rgb=tuple(RGB), displacement=0, trace=False,
+                        brightness, raw, rgb=tuple(RGB), displacement=0,
                         overlap=False, replays=1):
     if replays < 1:
         raise ValueError('A retained destination must receive at least one native leaf call')
@@ -183,22 +184,6 @@ def execute_translucent(route, selector_bits, writes_depth, profile, a, index,
     masks = translucent_masks(u, converter)
     mask = masks[selector_bits & 6]
     u.mem_write(obj, struct.pack('<3IH', selected['vtable'], colors, lut, mask))
-    accesses = []
-    regions = [('destination', dest - 16, 38), ('source', src, 4), ('depth', z, 6),
-               ('shape', shape, 3), ('a', alpha, 6), ('palette', colors, len(converted)),
-               ('lut', lut, len(lookup))]
-
-    def access(_u, operation, address, size, value, _data):
-        for name, start, length in regions:
-            if start <= address < start + length:
-                read = operation != UC_MEM_WRITE
-                actual = int.from_bytes(_u.mem_read(address, size), 'little') if read else value
-                accesses.append([name, 'read' if read else 'write',
-                                 address - (dest if name == 'destination' else start), size, actual])
-                break
-
-    if trace:
-        u.hook_add(UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE, access)
     args = ((dest, src, 3, 0, 4096, z, alpha, brightness, displacement, shape)
             if route == 'shp' else (dest, src, 3, 4096, z, alpha, brightness, displacement))
     # Separate consecutive parent draws retain the same destination and Z.
@@ -217,8 +202,6 @@ def execute_translucent(route, selector_bits, writes_depth, profile, a, index,
         result['replay_native_leaf'] = selected['leaf']
     if overlap:
         result['overlap_sources'] = source
-    if trace:
-        result['accesses'] = accesses
     return result
 
 
@@ -229,9 +212,7 @@ def generate_translucent():
     for row in product(TRANSLUCENT_ROUTES, (2, 4, 6, 10, 12), (False, True),
                        PROFILES, (0, 1, 2, 63, 127, 255), (1, 240), (1000, 1500),
                        (0, RAW, 65535)):
-        route, bits, write, profile, a, index, brightness, raw = row
-        cases.append(execute_translucent(*row, trace=(profile == 'light27' and a in (2, 127)
-            and index == 1 and brightness == 1000 and raw == RAW)))
+        cases.append(execute_translucent(*row))
     # Destination channel boundaries and native-produced source boundaries,
     # rather than a second implementation of packed blend arithmetic.
     boundaries = (0, 1, 0x1F, 0x20, 0x7E0, 0x800, 0xF800, 0xFFFF)
@@ -242,16 +223,16 @@ def generate_translucent():
     for route, bits, a, displacement in product(TRANSLUCENT_ROUTES, (10, 12), (2, 127),
                                               (-8, -1, 1, 8)):
         cases.append(execute_translucent(route, bits, False, 'light27', a, 1, 1000, RAW,
-                                        displacement=displacement, trace=True))
+                                        displacement=displacement))
     for route, bits, a in product(TRANSLUCENT_ROUTES, (10, 12), (2, 127)):
         cases.append(execute_translucent(route, bits, False, 'scheme53', a, 1, 1000, RAW,
-                                        displacement=-1, trace=True, overlap=True))
+                                        displacement=-1, overlap=True))
     replay_controls = [execute_translucent(route, bits, write, 'light27', a, 1,
-                                          1000, RAW, replays=3, trace=True)
+                                          1000, RAW, replays=3)
                        for route, bits, write, a in product(
                            TRANSLUCENT_ROUTES, (2, 4, 6), (False, True), (0, 2, 127))]
     replay_controls += [execute_translucent(route, bits, False, 'light27', a, 1,
-                                           1500, RAW, replays=3, trace=True)
+                                           1500, RAW, replays=3)
                         for route, bits, a in product(
                             TRANSLUCENT_ROUTES, (2, 4, 6), (0, 2, 127))]
     return dict(selectors=selectors, decoded_stencil=['source', 'hole', 'depth_reject'],
@@ -350,7 +331,7 @@ def translucent_metadata():
             'Original4BAA73..4BAB06 produces masks and48EB56..48EB73 writes Convert+180/+184. Blitter+4/+8/+C values follow48EBF0 RGB565 constructor bytes; full allocation is not executed.',
             'N1/N27/N53 palettes/LUTs use existing native palette owner. Synthetic RGB200,100,50 and carry-boundary RGB palettes, A0/1/2/63/127/255, indices1/240, brightness1000/1500, destination0/F940/FFFF and packed channel boundaries.',
             'SHP compressed zero run versus voxel raw zero source; old Z[65535,65535,0], candidate4096, zero signed shape. Depth-read and depth-write controls both execute; write controls do not establish Unit final-composite usage.',
-            'Bit8 offset0/plus-or-minus1/plus-or-minus8 controls isolate neighbor destination reads with a synthetic eight-word pitch; offsets are supplied, not claimed as executed cloak70BE50 outputs. Destination memory-trace offsets are relative to the passed destination pointer. Wholebody Unit73B140 caller reading separately establishes flags280x; full Unit temp-cache/row-walker production is not executed.',
+            'Bit8 offset0/plus-or-minus1/plus-or-minus8 controls isolate neighbor destination reads with a synthetic eight-word pitch; offsets are supplied, not claimed as executed cloak70BE50 outputs. Wholebody Unit73B140 caller reading separately establishes flags280x; full Unit temp-cache/row-walker production is not executed.',
             'Separate original4DA4E0->703860 transition controls use real Unit/Drive vtables, TypeInvisible0, state1, current-house-owned flag41A, force0/1, stages0/1/9/12/13/-1/-9 and signed progress; they execute x87 FIDIV/FMUL/ftol and Unit73B21F..73B259 selector, including the native invalid-stage results. State0/2 controls supply owned41A and a nonnull tactical screen; allied/sensor visibility branches are not executed.',
             'Separate70BE50 executes actual Unit secondary vtable7F5C54 getter410220 and ftol7C5F00 over supplied native_unique_id and raw f32+24C. The constructor/world producer lifecycle of the supplied fields is not executed.',
             'No native instruction is changed and no leaf call is substituted. Original pixel leaves contain no RNG, timer or detach calls. Palette/mask/selector ranges are separate executable comparisons.',
@@ -366,12 +347,30 @@ def translucent_metadata():
                           light_convert=0x556090, plain_convert=0x4BBB00, intensity=0x420196))
 
 
+def store_one_record_per_line(path):
+    """Keep the large translucent corpus reviewable; --check compares parsed JSON."""
+    fields = []
+    for key, value in json.loads(path.read_text(encoding='utf-8')).items():
+        if isinstance(value, list) and value and all(isinstance(row, dict) for row in value):
+            rows = ',\n'.join(f'    {json.dumps(row)}' for row in value)
+            fields.append(f'  {json.dumps(key)}: [\n{rows}\n  ]')
+        else:
+            fields.append(f'  {json.dumps(key)}: {json.dumps(value)}')
+    path.write_text('{\n' + ',\n'.join(fields) + '\n}\n', encoding='utf-8')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--translucent', action='store_true')
+    parser.add_argument('--write', action='store_true')
+    parser.add_argument('--output', type=Path)
     options, remaining = parser.parse_known_args()
-    native_oracle.finish_vectors(generate_translucent if options.translucent else generate,
-        Path(__file__).with_name('translucent_blitter_a.json') if options.translucent else Path(__file__).with_suffix('.json'),
-        provenance=translucent_metadata if options.translucent else metadata, argv=remaining,
+    target = options.output or (Path(__file__).with_name('translucent_blitter_a.json')
+                                if options.translucent else Path(__file__).with_suffix('.json'))
+    native_oracle.finish_vectors(generate_translucent if options.translucent else generate, target,
+        provenance=translucent_metadata if options.translucent else metadata,
+        argv=remaining + ['--write'] * options.write,
         source_paths={'oracle': Path(__file__), 'palette_owner': Path(palette.__file__),
                       'native_owner': Path(native_oracle.__file__)})
+    if options.translucent and options.write:
+        store_one_record_per_line(target)

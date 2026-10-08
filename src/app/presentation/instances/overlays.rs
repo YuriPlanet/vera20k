@@ -546,7 +546,7 @@ struct CellOverlayInputs<'a> {
 /// Cell_ContentRendering @ 0x006D6D10 -> DrawOverlay_Body @ 0x0047F6A0. Both the app and
 /// offscreen retail witness use this one identity/frame/geometry owner.
 /// Native 6D6D10 checks map bounds and art/clip rectangles, not exploration;
-/// 47FB90/47FDE0 and full draw controls: tools/spatial_oracle/bridge_shadow_render.shroud-admission.md.
+/// the 47FB90/47FDE0 rectangles and 47F6A0/47F510 draws never read Cell+12C/+130.
 /// The shared ABuffer supplies per-pixel shroud independently of cell admission.
 fn build_cell_overlay_instances(
     input: &CellOverlayInputs<'_>,
@@ -804,7 +804,6 @@ pub(crate) fn build_overlay_instances(
         let name = sim.interner.resolve(obj.type_ref);
         // Ordinary native Ground6D97D0 -> Terrain71CC50/71C1B0 admits live
         // static art independently of anchor exploration; ABuffer clips pixels.
-        // Full scan/geometry controls: tools/spatial_oracle/terrain_reveal.md.
 
         // Terrain Render71CD30 reads the retained Location through GetCoords
         // 5F65A0; DrawIt71C1B0 applies AdjustForZ to that retained height.

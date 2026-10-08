@@ -17,16 +17,6 @@ capture demonstrate building pixels crossing a frontier while its anchor is
 still unexplored, without changing sight or substituting a diagnostic reveal.
 Older receipts may omit the field; their absence supplies no visibility evidence.
 
-The [building reveal profile](map_observation.building-reveal.example.json)
-uses ordinary Move for starting MTNK1374 toward `(44,87)` on stock AnyTown.
-Neutral CANEWY20 building1349 has anchor `(46,87)`. These IDs were read from
-a zero-step production observation with the profile's unchanged map, roster,
-seed and rules. With shroud enabled and FogOfWar disabled, captures at54/75/91
-show building pixels while that anchor is still unrevealed; it opens at92.
-Change only `ticks` to reproduce each endpoint, using a fresh output directory.
-If the map, roster, rules or seed changes, inspect a zero-step observation before
-reusing literal handles. [Saved evidence and limits](procedural_drawing_oracle/building_reveal.md#rust-production-observation).
-
 Actor `cloak`, when present, reads the existing raw signed state/progress,
 live signed Rules `CloakingStages`, actual VXL/SHP route, and original type's
 `NoShadow` flag. `null` means no cloak runtime. Reading this projection sends

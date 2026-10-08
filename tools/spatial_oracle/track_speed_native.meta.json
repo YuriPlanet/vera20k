@@ -36,7 +36,7 @@
   },
   "source_normalized_lf_sha256": {
     "producer": "74cada010b3d108e18d07e749d0dfaa1162507362ee10c30c71d251135d7eeda",
-    "native_oracle": "141fc5f3981b40d41869643c0350e3988e40be2e470cba8a0b4a77bb7df39b27",
+    "native_oracle": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb",
     "track_fixture": "0466e99ae0d123b2a6b66e50bca36f82aade9dd29edbbfb967078eae3ea6ceae",
     "destination_fixture": "db7ac918c743ce625bfaaa1c7a56f41d2336def4b42193cb1332fe0eb0d0912d",
     "unit_source_fixture": "3384579566b40ebcc9d8d56d53a0736655eb3a15a6bf7f08730611b15852a009",

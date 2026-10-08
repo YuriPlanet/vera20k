@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -24,7 +24,7 @@
     "intensity": "0x00420196"
   },
   "source_normalized_lf_sha256": {
-    "oracle": "92f1af4bf804d17636b355b411aae544ad8ff9b21d71c54036f58639112bb415",
+    "oracle": "f78f5ffe58241cfeb9dd9ee799a871312311c38f29b8091b956ace1b8c22e3ac",
     "palette_owner": "12f63f378e77070f5278912d71eb9fcc09d247b4680c785e838ee4997ecd1a90",
     "native_owner": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb"
   },
