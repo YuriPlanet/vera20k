@@ -1,4 +1,7 @@
 // Native Convert palette/A precedes 004984D0/004986D0/004988C0.
+// Translucent tinted slots forward to plain copies (instruction reading;
+// BlitPolicy::ors_colour_word). Use the untinted conversion even when an
+// opaque source producer retained a colour word in its PaletteLight.
 struct PackedSource { @location(0) word: u32, @location(1) candidate: f32 };
 @fragment
 fn fs_packed(input: VertexOutput) -> PackedSource {

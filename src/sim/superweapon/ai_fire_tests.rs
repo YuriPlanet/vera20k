@@ -657,7 +657,7 @@ fn retail_walk_reads_each_object() {
         Some(crate::sim::world::display_layers::DisplayLayer::GROUND)
     );
     let own = spawn(&mut sim, "NAPOWR", "Americans", (20, 10), 0);
-    let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0, 9);
+    let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
     cloak.state = 2;
     sim.substrate.entities.get_mut(own).unwrap().cloak = Some(cloak);
     let built = spawn(&mut sim, "HTNK", "Russians", (33, 50), 0);

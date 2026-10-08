@@ -2,9 +2,11 @@
 
 This packet records bounded native execution and Rust production output. It does
 not certify whole-scene geometry, cloak lifecycle timing, or ordinary 20k-unit FPS.
-The [first-candidate receipt](receipt.json) pins the original candidate, native
-corpus and authored-map inputs. The [final receipt](after-critic.receipt.json)
-pins the corrected release, frozen compiled code, final checks and 14 strict
+The [current-main submission report](submission.md) and
+[receipt](submission.receipt.json) supersede the old-candidate readiness results
+below. The [first-candidate receipt](receipt.json) pins the original candidate,
+native corpus and authored-map inputs. The [corrected old-candidate receipt](after-critic.receipt.json)
+pins that historical release, frozen compiled code, checks and 14 strict
 production comparisons. Local repair is authorized; publication is not.
 
 The canonical query is `Techno703860`, reached by the constructor-installed retail

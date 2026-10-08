@@ -37,6 +37,8 @@ Multiplayer, campaigns and the original AI are still missing. Aircraft, mind con
 and several weapons and effects need more work. We haven't demonstrated 30-player,
 20,000-unit battles yet.
 
+Ordinary buildings, scenery and units now enter the draw path before their anchor cell is revealed, allowing the shroud to uncover their pixels gradually. Special draw paths still need parity work.
+
 ## Build and run
 
 You need Rust 1.88 or newer, a GPU with Vulkan, DirectX 12 or Metal, and the game installed.

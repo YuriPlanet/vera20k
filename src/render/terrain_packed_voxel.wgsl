@@ -1,4 +1,6 @@
 // Unit 0073B140 resolves the entire indexed cache once, after layer composition.
+// Translucent tinted slots forward to plain copies; keep the colour-word OR
+// with the ordinary resolver, as BlitPolicy::ors_colour_word requires (reading).
 struct PackedSource { @location(0) word: u32, @location(1) candidate: f32 };
 @fragment
 fn fs_packed(input: VertexOutput) -> PackedSource {

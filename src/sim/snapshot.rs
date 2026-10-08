@@ -850,7 +850,9 @@ use crate::sim::world::Simulation;
 // NUKE impact's anim (+0x154/+0x158). Prior records lack them.
 // 295 -> 296: a Super saves the Force Shield's fade countdown (+0x50) and its
 // coordinate (+0x54). Prior records lack them.
-const SNAPSHOT_VERSION: u32 = 296;
+// 296 -> 297: remove cached cloak Rules/query fields and visual phase; retain
+// Techno+24C raw f32 displacement bits. Prior positional layouts cannot resume.
+const SNAPSHOT_VERSION: u32 = 297;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3866,7 +3868,8 @@ mod tests {
         // 294 -> 295: the nuke flash and NukeAmbientChangeRate= in the
         // scenario's lighting; a bullet's wait on its NUKE anim.
         // 295 -> 296: the Force Shield's fade countdown and coordinate.
-        assert_eq!(super::SNAPSHOT_VERSION, 296);
+        // 296 -> 297: canonical cloak query and retained native displacement.
+        assert_eq!(super::SNAPSHOT_VERSION, 297);
     }
 
     #[test]

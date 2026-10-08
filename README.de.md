@@ -42,6 +42,8 @@ Mehrspielermodus, Kampagnen und die ursprüngliche KI fehlen noch. Flugzeuge,
 Gedankenkontrolle, Brücken und mehrere Waffen und Effekte brauchen noch Arbeit.
 Schlachten mit 30 Spielern und 20.000 Einheiten haben wir bisher nicht demonstriert.
 
+Gewöhnliche Gebäude, Landschaftsobjekte und Einheiten werden nun gezeichnet, bevor ihr Ankerfeld aufgedeckt ist. Der Kriegsnebel gibt ihre Pixel dadurch nach und nach frei. Spezielle Zeichenpfade müssen noch mit dem Original abgeglichen werden.
+
 ## Kompilieren und starten
 
 Du brauchst Rust 1.88 oder neuer, eine Grafikkarte mit Vulkan, DirectX 12 oder Metal und

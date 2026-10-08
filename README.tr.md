@@ -40,6 +40,8 @@ oynanabiliyor. Orijinal ve rastgele oluşturulan haritalar, menüler, üs kurma,
 ve çeşitli silahlar ile efektler üzerinde daha fazla çalışmamız gerekiyor. Henüz 30 oyunculu,
 20.000 birimli savaşlar göstermedik.
 
+Normal binalar, arazi nesneleri ve birimler artık dayanak hücreleri açığa çıkmadan çizim sürecine giriyor; böylece savaş sisi piksellerini aşamalı olarak açığa çıkarıyor. Özel çizim yollarının hâlâ özgün oyunla karşılaştırılması gerekiyor.
+
 ## Derleme ve çalıştırma
 
 Rust 1.88 veya üzeri, Vulkan, DirectX 12 ya da Metal destekleyen bir GPU ve kurulu oyun gerekiyor.

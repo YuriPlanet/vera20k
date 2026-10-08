@@ -87,9 +87,11 @@ impl GpuContext {
 
     /// Async initialization — called by new() via pollster::block_on().
     async fn new_async(window: Arc<Window>) -> Result<Self> {
-        // Create wgpu instance with primary backends (Vulkan on Windows/Linux, Metal on Mac).
+        // wgpu 27's standard override selects a backend for reproducible
+        // shroud GPU comparisons while retaining primary backends by default.
+        // https://docs.rs/wgpu-types/27.0.1/wgpu_types/struct.Backends.html#method.with_env
         let instance: wgpu::Instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
+            backends: wgpu::Backends::PRIMARY.with_env(),
             ..Default::default()
         });
 
@@ -110,7 +112,11 @@ impl GpuContext {
             .context("No suitable GPU adapter found — is a GPU available?")?;
 
         let adapter_info = adapter.get_info();
-        log::info!("Using GPU adapter: {}", adapter_info.name);
+        log::info!(
+            "Using GPU adapter: {} ({:?})",
+            adapter_info.name,
+            adapter_info.backend
+        );
 
         // Atlas sizing is bounded by whatever limits we *request*, not by the hardware.
         let adapter_limits = adapter.limits();
