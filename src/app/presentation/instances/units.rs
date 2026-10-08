@@ -1158,7 +1158,7 @@ fn native_shadow_caller_eligible(
 /// zero (706BDD), and TechnoType+D98 NoShadow must be false (706BF3).
 /// A real StartCloaking703799/+224=0 is still character0; presentation FX
 /// therefore cannot supply this decision. This owner serves cache and emit.
-/// Evidence: tools/procedural_drawing_oracle/validation/source-dependencies.
+/// Native caller references: tools/procedural_drawing_oracle/translucent_blitter_a.md.
 fn unit_shadow_admitted(
     entity: &crate::sim::game_entity::GameEntity,
     no_shadow: bool,

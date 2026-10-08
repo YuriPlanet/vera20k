@@ -177,8 +177,8 @@ pub(crate) fn visual_character(
     //without host floating-point state. A zero divisor produces masked
     //indefinite signed64, whose low32 bits are zero. Narrowing deliberately
     //wraps: large progress must not saturate at i32::MAX.
-    //53-bit native truncation proof and replay coverage: procedural_drawing_oracle/
-    //validation/native-controlflow/README.md (CW0E7F, numerator below2^39).
+    //53-bit native truncation argument and replay coverage:
+    //tools/procedural_drawing_oracle/translucent_blitter_a.md (CW0E7F).
     let scaled = if cloaking_stages == 0 {
         0
     } else {

@@ -117,6 +117,23 @@ scaled0 and character1. Negative stage-9/progress1 returns -28 and character1.
 These executed exceptional controls document the native result; whether a
 production reader admits those inputs remains a separate evidence question.
 
+The Rust finite arithmetic uses signed integer truncation. For positive i32
+progress `p` and nonzero signed i32 stages `s`, `256*p` is below `2^39`.
+Under the fixture's native `0E7F` control word (53-bit precision, truncate),
+division error after scaling is below `2^(-13)/abs(s)`, while a noninteger
+`256*p/s` is at least `1/abs(s)` from an integer. An integer result has an
+exactly representable intermediate `p/s`. Thus truncation cannot cross an
+integer boundary here; the signed64 result is narrowed to low32 with wrap.
+Stage zero follows the separately executed masked-invalid low32-zero result.
+This argument is bounded by that native precision/control policy.
+
+Shadow caller reading establishes `Unit73C5C4 -> Foot4DB0D0 -> Techno706BD0`:
+`706BDD` requires raw cloak state `+220 == 0`; `706BF3` requires
+TechnoType `+D98` NoShadow to be false. `StartCloaking703799` with progress
+`+224 == 0` can still return visual character zero, so presentation character
+alone cannot replace the raw-state shadow gate. These are instruction-level
+caller references, not an executed complete shadow lifecycle.
+
 `cloak_offsets` executes full `70BE50` with original secondary Unit vtable
 `7F5C54+10 ->410220`, which reads existing native identity at primary object
 `+10`, plus original `ftol7C5F00` over raw float `+24C`. The instructions add
@@ -155,11 +172,6 @@ This extension is native execution evidence for
 isolated producer/selector/leaf coverage. Production Rust tests and GPU
 comparisons must separately cite their actual results; this file is not a
 claim of whole-game cloak or rendered-frame parity.
-
-The preserved caller/producer packet
-records Building and constructor-installed locomotor virtual dispatch, checked
-static byte requests, Ghidra interpretation limits and the bounded signed
-truncation argument for the canonical Rust visual-character owner.
 
 ## Sequential parent replay controls
 

@@ -33,7 +33,7 @@ from unicorn.x86_const import (
 NATIVE_SHA256 = "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
 STEAM_NATIVE_SHA256 = "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
 # Steam's four file-backed sections and their layouts match the sealed original
-# loader witness. See native_inspect.steam.json and native_oracle.md; this does
+# loader witness. See native_oracle.md for comparison and reproduction; this does
 # not admit arbitrary builds or claim equivalence of the Windows loader/startup.
 SUPPORTED_NATIVE_SHA256 = (NATIVE_SHA256, STEAM_NATIVE_SHA256)
 IMAGE_BASE = 0x00400000
