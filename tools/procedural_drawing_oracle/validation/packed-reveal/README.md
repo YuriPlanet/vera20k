@@ -2,12 +2,17 @@
 
 This packet records bounded native execution and Rust production output. It does
 not certify whole-scene geometry, cloak lifecycle timing, or ordinary 20k-unit FPS.
-The [current-main submission report](submission.md) and
-[receipt](submission.receipt.json) supersede the old-candidate readiness results
-below. The [first-candidate receipt](receipt.json) pins the original candidate,
+The [publication report](publication.md) and
+[receipt](publication.receipt.json) record the candidate after main integration,
+including successful checks and the unresolved DX12 SUB upload failure.
+The [earlier local report](submission.md) and [receipt](submission.receipt.json)
+remain historical. Executed checks and production observations below describe
+earlier candidates; use the publication packet for the current results.
+The [first-candidate receipt](receipt.json) pins the original candidate,
 native corpus and authored-map inputs. The [corrected old-candidate receipt](after-critic.receipt.json)
 pins that historical release, frozen compiled code, checks and 14 strict
-production comparisons. Local repair is authorized; publication is not.
+production comparisons. The user authorized submission as a Draft PR;
+manual play and the contributor's AI explanation declaration remain pending.
 
 The canonical query is `Techno703860`, reached by the constructor-installed retail
 Foot locomotors and Building. Rules owns the live signed stage count; discovery

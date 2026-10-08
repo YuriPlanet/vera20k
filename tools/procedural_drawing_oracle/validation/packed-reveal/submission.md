@@ -1,8 +1,10 @@
-# Current-main local submission candidate
+# Historical local submission candidate
 
-This is local preparation for the first-reveal chain associated with issue #1077.
-No issue comment, push, fork, PR or merge has been published. The author still
-needs to confirm publication and the AI-assistance declaration.
+This report pins local candidate `760a6f75fe914b57d40fd964b1e56df3f041b22c`
+before publication authorization and the later main integration. See the
+[publication report](publication.md) for current results and submission scope.
+At the time of this historical preparation, no issue comment, push, fork, PR
+or merge had been published; publication and the AI declaration were pending.
 
 ## Scope and branch
 
