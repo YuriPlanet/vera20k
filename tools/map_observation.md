@@ -1676,17 +1676,3 @@ External `pr1018-diagnostics-release-continuity-20261003.json` records the
 identity and validations (SHA-256
 `d6413cf7fc50e5e763aeacec6f34ef53e9994ad1dd03a4050b8d88854af07cfd`).
 The previous bounded actor/GPU comparisons and native-parity limits remain.
-
-## Ordinary scenery first-reveal observation
-
-The [tree-25](map_observation.scenery-tree-25.example.json),
-[tree-27](map_observation.scenery-tree-27.example.json),
-[bridge-243](map_observation.scenery-bridge-243.example.json) and
-[bridge-244](map_observation.scenery-bridge-244.example.json),
-[rock-94](map_observation.scenery-rock-94.example.json) and
-[rock-95](map_observation.scenery-rock-95.example.json) profiles retain
-the ordinary tank routes on retail XShrapnel.MAP immediately before and after
-the selected anchor first becomes explored. The
-scenery evidence records
-actual roster discovery, before/after output and unchanged simulation. It
-separates native admission evidence from bounded Rust rendering observation.

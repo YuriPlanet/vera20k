@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -28,7 +28,7 @@
     "viewport_writer": "0x006D5F60"
   },
   "source_normalized_lf_sha256": {
-    "oracle": "63da6bb19af85e42aa938898ba4aff7ecf8ccf36a2ec61189d87ba8256966296",
+    "oracle": "1a75e281bea724882b24469320814bc5e60850360584a28d4439a4f0ad1194e2",
     "surface_fixture": "0168afa40ab7fa79a606116d117d24f634b00a37d3b38ec9121ec15f5636023d",
     "stock_owner": "62b855dba1836bf484bb6c112b9249003ff4427c3004a1ef3d95c3aac985ba9b",
     "vtable_owner": "4884d5f647da1e480a6f70aba1fea900491eda1a9875852e0fe53e731834c411",

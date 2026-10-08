@@ -19,7 +19,6 @@ from tools import native_oracle as native
 from tools.bridge_click_oracle import MATRIX_INITIALIZER
 from tools.procedural_drawing_oracle import rally
 from tools.sidebar_oracle import stock
-from tools.spatial_oracle import bridge_damage_admission as bridge_fixture
 from tools.spatial_oracle.crate_speed_effect import VTABLES
 from tools.spatial_oracle.bridge_damage_admission import call, words, MEM, TABLE, SP, MAP
 
@@ -374,63 +373,6 @@ def generate():
                 flag_controls=flag_controls,scenes=scenes)
 
 
-def generate_wave_admission():
-    """Original Wave DrawIt admission, stopping before its raster consumer.
-
-    The active YR Map5865E0 body is a constant false, not an explored-cell
-    query. Prepared endpoint cells are negative controls, not native reveal
-    traversal or a replacement Python visibility implementation.
-    """
-    rows = []
-    for scenario_fog_gate in (False, True):
-        for wave_type, stop in ((0, 0x75FA47), (3, 0x75FA5C)):
-            for source_flags, target_flags in ((0, 0), (0, 0x18),
-                                                (0x18, 0), (0x18, 0x18)):
-                u = bridge_fixture.base({})
-                obj = MEM + 0x19000
-                u.mem_write(0xA8B230, words(bridge_fixture.SCENARIO))
-                u.mem_write(bridge_fixture.SCENARIO,
-                            words(0x1000 if scenario_fog_gate else 0))
-                u.mem_write(obj, words(0x7F6BF4))
-                u.mem_write(obj + 0xB0, words(wave_type))
-                source = [10 * 256 + 128, 20 * 256 + 128, 0]
-                target = [9 * 256 + 128, 20 * 256 + 128, 0]
-                u.mem_write(obj + 0xB4, words(*source))
-                u.mem_write(obj + 0xC0, words(*target))
-                u.mem_write(bridge_fixture.CELL + 0x12C, words(source_flags))
-                u.mem_write(bridge_fixture.ANCHOR + 0x12C, words(target_flags))
-                state_before = bytes(u.mem_read(obj, 0x200))
-                rng_before = bytes(u.mem_read(bridge_fixture.SCENARIO + 0x218, 0x100))
-                u.mem_write(SP, words(native.RET_MAGIC, 0, 0))
-                u.reg_write(UC_X86_REG_ESP, SP)
-                u.reg_write(UC_X86_REG_ECX, obj)
-                visited = []
-                hook = u.hook_add(UC_HOOK_CODE,
-                    lambda _u, pc, _size, _data: visited.append(pc))
-                try:
-                    required = (0x75F9F0, 0x75FA29)
-                    if scenario_fog_gate:
-                        required += (0x5865E0, 0x75FA10)
-                    boundary = native.run_checked(u, 0x75F9F0, stop,
-                        count=120, required_addresses=required)
-                finally:
-                    u.hook_del(hook)
-                if bytes(u.mem_read(obj, 0x200)) != state_before:
-                    raise native.OracleError('Wave admission changed prepared object state')
-                if bytes(u.mem_read(bridge_fixture.SCENARIO + 0x218, 0x100)) != rng_before:
-                    raise native.OracleError('Wave admission changed prepared Scenario RNG')
-                rows.append(dict(input=dict(scenario_fog_gate=scenario_fog_gate,
-                    wave_type=wave_type, source=source, target=target,
-                    source_raw_flags=source_flags, target_raw_flags=target_flags),
-                    admitted=True, dispatch_boundary=f'{boundary:08X}',
-                    fog_leaf_entries=visited.count(0x5865E0),
-                    object_unchanged=True, scenario_rng_unchanged=True,
-                    visited=[f'{pc:08X}' for pc in visited]))
-    return dict(entry='0075F9F0', fog_leaf='005865E0',
-                fog_leaf_bytes=native.file_span(native.image_bytes(), 0x5865E0, 5)[1].hex(),
-                rows=rows)
-
-
 class EntityReveal(Shroud):
     """Original Unit/Infantry/Aircraft DrawIfVisible; real DrawIt stop boundary.
 
@@ -547,25 +489,6 @@ if __name__=='__main__':
                           'stock_owner':Path(stock.__file__),
                           'vtable_owner':Path('tools/spatial_oracle/crate_speed_effect.py'),
                           'projection_fixture':Path('tools/bridge_click_oracle.py')})
-        raise SystemExit(0)
-    if '--wave-admission' in sys.argv[1:]:
-        native.finish_vectors(generate_wave_admission,
-            Path(__file__).with_name('wave_admission.json'),
-            argv=[arg for arg in sys.argv[1:] if arg != '--wave-admission'],
-            provenance=lambda: native.provenance(
-                scope='Original YR Wave75F9F0 admission through pre-raster type0/3 dispatch calls, including original constant-false5865E0',
-                assumptions=[
-                    'Existing bridge_damage_admission.base owns verified PE and prepared map/stack setup. The object is a supplied Wave-shaped instance, not an executed constructor or live Display registration.',
-                    'Scenario bit0x1000, type0/3, endpoint coordinates and raw Cell+12C flags0/0x18 are explicit prepared inputs. These raw words are not assigned Rust visibility meanings; no reveal traversal or FogOfWar state producer executes.',
-                    'Original75F9F0 executes unchanged until75FA47/75FA5C before the raster call. When bit0x1000 is set, original5865E0 executes once and its falseAL bypasses the second endpoint query. Every fixture saves the original instruction path.',
-                    'Admission performs no RNG draw, timer write or detach call. Prepared Wave bytes and Scenario+218 RNG prefix remain unchanged; this is not the constructor/AI/lifetime or raster consumer chain.',
-                    'No whole-object camera/rectangle admission, Display traversal, distortion pixels, retail weapon binding or rendered Wave parity is claimed. Existing white-pixel rendering remains a separate framebuffer-distortion residual.',
-                ], substitutions=[],
-                entry_points={'draw_it':0x75F9F0,'fog_leaf':0x5865E0,
-                    'type0_raster_call_boundary':0x75FA47,
-                    'type3_raster_call_boundary':0x75FA5C}),
-            source_paths={'oracle':Path(__file__),
-                          'map_fixture':Path(bridge_fixture.__file__)})
         raise SystemExit(0)
     if '--building-reveal' in sys.argv[1:]:
         native.finish_vectors(generate_building_reveal,

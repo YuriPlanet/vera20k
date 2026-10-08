@@ -310,7 +310,7 @@
         "keys": {
           "Foundation": "3x2"
         },
-        "path": "ini\\artmd.ini",
+        "path": "ini/artmd.ini",
         "section": "GAPILE",
         "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
       },
@@ -322,7 +322,7 @@
           "Image": null,
           "UnitRepair": null
         },
-        "path": "ini\\rulesmd.ini",
+        "path": "ini/rulesmd.ini",
         "section": "GAPILE",
         "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
       }

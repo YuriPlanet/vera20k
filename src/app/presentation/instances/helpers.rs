@@ -75,7 +75,7 @@ pub(crate) fn observer_draw_context(
 /// Unit73B0B0 and Infantry/Aircraft5F4B10 likewise reach their original
 /// DrawIt entries without querying anchor shroud. Screen selection retains its
 /// exploration gate; lifecycle and DrawState still own transport/cloak admission.
-/// Steam controls: tools/procedural_drawing_oracle/{building_reveal,entity_reveal}.md.
+/// Native controls: tools/procedural_drawing_oracle/{building_reveal,entity_reveal}.md.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn tactical_entity_admission(
     purpose: TacticalEntityPurpose,

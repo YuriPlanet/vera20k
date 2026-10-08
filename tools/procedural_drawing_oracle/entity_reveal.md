@@ -4,8 +4,7 @@
 DrawIfVisible entries, preserving their actual vtables and `.text` bytes. It stops
 at their actual DrawIt entries; it does not replace those bodies with Python.
 `entity_reveal.json` and its provenance sidecar record the executed outputs and
-actual Steam gamemd SHA256
-`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`.
+the executable identity.
 
 ```sh
 python -B -m tools.procedural_drawing_oracle.shroud --entity-reveal --check
@@ -53,6 +52,5 @@ ordinary Rust DrawState currently supplies no invulnerability tint. This gate
 correction does not claim special-tint or whole rendered mobile parity.
 In particular Infantry5190D1 calls487950 and5190DA clears its special tint
 argument before continuing to draw; admission independence does not establish
-that the full DrawIt body has no fog-dependent pixel operations. The independent
-review also records an unconfirmed hidden-FX
-compatibility-composition risk outside these ordinary controls.
+that the full DrawIt body has no fog-dependent pixel operations. An unconfirmed hidden-FX
+compatibility-composition risk remains outside these ordinary controls.

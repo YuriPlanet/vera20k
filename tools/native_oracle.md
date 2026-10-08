@@ -44,12 +44,12 @@ retail `gamemd.exe`, locate its math tables by their contents and check every by
 
 ### Steam compatibility and evidence identity
 
-[`native_inspect.steam.json`](native_inspect.steam.json) records the Steam file's
-actual SHA and all four file-backed section hashes/layouts. Each matches the
-historical sections in the sealed
+The Steam file's four file-backed section hashes/layouts match the historical
+sections in the sealed
 [`loader_compatibility.json`](spatial_oracle/shrapnel_damage/loader_compatibility.json).
 This establishes identical section bytes and virtual addresses for these fixed-address
-fixtures. It does not compare PE headers/section-external bytes or establish Windows
+fixtures. The comparison results belong in the PR description, not a committed
+inspection receipt. It does not compare PE headers/section-external bytes or establish Windows
 startup, imports, DRM or complete game behavior. Reproduce the Steam section record
 with `python -m tools.native_inspect sections` after selecting the Steam EXE.
 
@@ -75,14 +75,18 @@ Generate and check Steam-specific evidence at a separate path, preserving the ol
 goldens (the parent directory is created by `--write`):
 
 ```powershell
-$env:VERA20K_GAMEMD_EXE = 'D:/steam/steamapps/common/Command & Conquer Red Alert II/gamemd.exe'
+$env:VERA20K_GAMEMD_EXE = 'C:/Games/RA2/gamemd.exe'
+python -m tools.native_inspect sections
 python -m tools.spatial_oracle.shroud_current_sight --write --output logs/steam/shroud.json
 python -m tools.spatial_oracle.shroud_current_sight --check --output logs/steam/shroud.json
 ```
 
-The saved [Steam shroud receipt](spatial_oracle/shroud_current_sight.steam-receipt.json)
-records 23 histories and 9 timer cases whose complete payload matches the existing
-historical vectors; it is a separate execution identity, not full-game parity.
+Compare the separate Steam payload with
+[`shroud_current_sight.json`](spatial_oracle/shroud_current_sight.json), preserving
+its Steam provenance sidecar. These 23 histories and 9 timer cases cover selected
+cell reveal/gap and timer transitions, not renderer pixels or full-game parity.
+Keep execution receipts and validation results outside the source tree and report
+them in the PR description.
 
 Both halves matter: the Python command checks current native output against the
 reference; the Rust test checks production conversion against that reference.

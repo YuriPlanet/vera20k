@@ -1,4 +1,4 @@
-﻿# Ordinary cell overlays at the shroud boundary
+# Ordinary cell overlays at the shroud boundary
 
 `bridge_shadow_render.py --shroud-admission` extends the existing bridge/native
 image/palette owner. It runs the **original complete** `47FB90` body rectangle,
@@ -11,9 +11,7 @@ python -m tools.spatial_oracle.bridge_shadow_render --shroud-admission --check
 ```
 
 Select `RA2_DIR` or `VERA20K_GAMEMD_EXE` as described in
-[the native runner](../native_oracle.md). The corpus was executed on official
-Steam `gamemd.exe`, SHA-256
-`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`.
+[the native runner](../native_oracle.md).
 The adjacent `.meta.json` records tool source identity, inputs, substitutions and
 coverage. The historical default bridge payload remains a separate corpus.
 
@@ -72,10 +70,3 @@ visibility rectangles and must not be cited as admission evidence.
 The selected chain reads no simulation RNG, timer or detach calls in the
 rectangle/draw bodies; the high bridge redraw cache is presentation state.
 No native shader/pixel parity is claimed for VERA from these CPU controls alone.
-
-## Rust integration
-
-The local scenery repair evidence links
-production before/after retail captures, regression checks and the saved
-identity receipt. Those observations are Rust integration evidence, not native
-whole-scene pixel parity.

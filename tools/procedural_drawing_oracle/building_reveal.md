@@ -2,15 +2,11 @@
 
 The separate `--building-reveal` mode extends the existing Shroud/Rally native
 fixture; ordinary `shroud.json` generation and its saved corpus are unchanged.
-`building_reveal.json` and its metadata were generated from official Steam
-`gamemd.exe`, SHA-256
-`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`.
+`building_reveal.json` and its metadata record the executed outputs and the
+executable identity.
 
-```powershell
-$env:VERA20K_GAMEMD_EXE='D:\steam\steamapps\common\Command & Conquer Red Alert II\gamemd.exe'
-$env:RA2_DIR='D:\steam\steamapps\common\Command & Conquer Red Alert II'
-python -X utf8 -B -m tools.procedural_drawing_oracle.shroud --building-reveal --check
-# --write regenerates both references; review changes before accepting them.
+```sh
+python -B -m tools.procedural_drawing_oracle.shroud --building-reveal --check
 ```
 
 ## Executed coverage
@@ -75,10 +71,8 @@ loader/placement, or final GPU/SHP pixel parity. No RNG/timer/detach operation
 is passed in the executed admission/tint slices; the excluded snapshot lifecycle
 is not covered by that statement.
 
-The initial tint attempt faulted because the fixture had not initialized
-`ABDE88`; the retained ignored scratch receipt records that investigation.
-The final harness executes the shared native Map startup sequence instead of
-substituting a host arithmetic result. `--write` followed by `--check` passed.
+The harness executes the shared native Map startup sequence to initialize
+`ABDE88` instead of substituting a host arithmetic result.
 
 ## Rust consumer and checks
 
@@ -95,14 +89,8 @@ its native top/center cells and object coordinates. It deliberately excludes
 prepared fog snapshots and geometry clipping. The separate
 `building_hidden_anchor_is_drawn_without_entering_screen_selection` regression
 failed before the fix and passes afterwards through retained Display membership
-and the screen-selection composer. The focused instance suite passed 89 tests,
-with 3 unrelated explicit GPU/retail tests ignored. These are Rust regressions
-and bounded admission comparisons, not final building-pixel parity.
-
-The original SHROUD corpus was also replayed on Steam: its payload remains
-byte-identical, SHA-256
-`39a019add707e6d11e972aee22fac8404e05c1a4a1123eecb561c4ea895c8f43`.
-Only its metadata now records this execution identity and updated oracle source.
+and the screen-selection composer. These are Rust regressions and bounded
+admission comparisons, not final building-pixel parity.
 
 ## Rust production observation
 
@@ -115,48 +103,13 @@ these handles before scheduling the command. Its physical art reader reports
 Foundation3x5 and `CTNEWY20.SHP` 260x228,8 frames; the ordinary theater loader
 and SHP builder consume the retail assets in the captures.
 
-On RTX3050 Laptop/Dx12, the saved 54-step image
-shows part of the roof, 75 and
-91 show more of the building while the
-read-only anchor visibility remains false. It first becomes true at92;
-the 92-step image retains the already
-drawn body rather than admitting its whole sprite for the first time.
-All seven capture bundles passed the existing map-observation validator,
-including final offline revalidation after derived previews were moved outside
-the bundles' strict inventory.
-The 200-step observer-off replay has identical1920000 BGRA bytes, initial/final
-simulation fingerprints and final state hash15818579214581792755.
-
-Release label `building-shroud-reveal-20261006-v1` pins binary SHA-256
-`9c2d1476b62cf1bf71eda3c8a3ec659165681e97478dcd96b1001907f6a59e46`.
-The receipt records its build-source
-identity, actual map/GPU identity, profiles, manifest/frame hashes and endpoints.
-Raw capture bundles remain at the receipt's local evidence paths. The checked
-source's Rust changes were already present in this executable; the profile,
-images and receipt were retained afterwards. No Rust change followed capture.
 To reproduce from the checkout's normal release build:
 
-```powershell
-$env:WGPU_BACKEND='dx12'
-Remove-Item Env:RA2_DIR -ErrorAction SilentlyContinue
-python -m tools.map_observation --profile "$PWD/tools/map_observation.building-reveal.example.json" --contract "$PWD/src/app/diagnostics/tactical_capture/contract.v2.json" --cwd "$PWD" --output "$PWD/logs/new-building-reveal"
+```sh
+env -u RA2_DIR python -m tools.map_observation --profile "$PWD/tools/map_observation.building-reveal.example.json" --contract "$PWD/src/app/diagnostics/tactical_capture/contract.v2.json" --cwd "$PWD" --output "$PWD/logs/new-building-reveal"
 ```
 
 This establishes production integration and a visible pre-anchor reveal on
 one retail building route. It does not compare a native whole-game frame,
 certify every foundation/height/observer, or cover enabled FogOfWar and colored
-effects. No rendering or simulation timer/RNG/state writer was added. The frame
-timer in the receipt includes observation and presentation pacing, not GPU time.
-
-Final strict-retail lib suite:9704 passed,239 ignored; Clippy lib passed with
-existing warnings. Python map/build-wrapper suite:141 tests,1 skipped. Field
-ratchet:2505/2505. The full lib run initially exposed an existing Windows/exFAT
-audio test fixture deleting a still-mapped MIX; it now releases its old manager
-before changing install state. Its focused test and the repeated full suite pass;
-production audio loading is unchanged. The admission regression's expected
-pre-fix failure and all actual logs remain in `logs/building-reveal-fix/logs/`.
-
-One fresh read-only critic independently
-replayed the native corpus, traced the changed consumers and checked the saved
-production evidence. It reported no confirmed implementation defects or blocking
-findings; the coverage limits above remain.
+effects. No rendering or simulation timer/RNG/state writer was added.

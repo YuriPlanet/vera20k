@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -29,5 +29,5 @@
   "source_normalized_lf_sha256": {
     "bridge_shadow_render.py": "853c0f2d9a3b96cfe3dad9fe3fe8ddc0f3f04922ea15ee0dd2eebdcbf5f42949"
   },
-  "payload_sha256": "566fe86d56f59382bcbab5c02dc3c6f080ea71b88c34c0609a901c5625d81203"
+  "payload_sha256": "b1d277319d41fc410b0cb82bfba1dd1864148f06e1447e0a66747b1d429f708e"
 }

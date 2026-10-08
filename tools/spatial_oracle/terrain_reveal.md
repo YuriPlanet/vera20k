@@ -6,11 +6,7 @@ Ground display scan `6D97D0`, Terrain Render `71CC50`, native frame rectangle
 The existing Terrain renderer oracle owns this extension; its historical
 `terrain_render.json` payload is unchanged.
 
-The executed image is the official Steam `gamemd.exe`, SHA-256
-`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`.
-
-```powershell
-$env:RA2_DIR = 'D:/steam/steamapps/common/Command & Conquer Red Alert II'
+```sh
 python -B -m tools.spatial_oracle.terrain_render --shroud-admission --check
 ```
 
@@ -75,10 +71,3 @@ They do not certify native ABuffer/ZBuffer pixels, complete scene parity,
 arbitrary slopes or bridges, full FogOfWar/gap behavior, animation/death
 lifecycle, or native scenario loading. Rust production integration and GPU
 capture validation are recorded by the repair owner.
-
-## Rust integration
-
-The local scenery repair evidence links
-production before/after retail captures, regression checks and the saved
-identity receipt. Those observations are Rust integration evidence, not native
-whole-scene pixel parity.
