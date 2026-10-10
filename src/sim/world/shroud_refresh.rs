@@ -7,6 +7,19 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::{pathfinding::PathGrid, vision};
 
 impl Simulation {
+    /// `MapClass::Reveal @ 0x00577D90` for one house: every allocated cell
+    /// becomes explored, once (`House+0x240`). Natively only `PlayerPtr`'s
+    /// shroud changes; VERA keeps one plane per house, so the lobby's no-shroud
+    /// option and the Reveal crate both ask for their house here.
+    pub(crate) fn reveal_whole_map_for_owner(&mut self, owner: crate::sim::intern::InternedId) {
+        if let Some(terrain) = self.resolved_terrain.as_ref() {
+            let cells: Vec<(u16, u16)> = terrain.iter().map(|cell| (cell.rx, cell.ry)).collect();
+            self.fog.reveal_cells_for_owner(owner, cells);
+        } else {
+            self.fog.reveal_all_for_owner(owner);
+        }
+    }
+
     /// The settings every reveal reads (`TechnoClass::UpdateReveal @
     /// 0x0070AF50` and its callers, the Psychic Reveal): with a live map the
     /// stored playfield byte gates a Techno's, the map's `Size=` diamond

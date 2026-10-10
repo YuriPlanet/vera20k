@@ -41,7 +41,9 @@
 //!   answered as the invalid-tube arm: VERA's tube entry is bound to the Drive
 //!   route adapter. Trigger: a Hover route through a map `[Tubes]` tube.
 //!   Frequency: no retail YR map is known to author one.
-//! - Crates (0x00481A00 at 0x005153E9) answer as a cell without a crate, as in Drive.
+//! - Crates (0x00481A00 at 0x005153E9) run through `Simulation::pickup_crate_at`,
+//!   as in Drive; a host called without the OverlayType table answers as a
+//!   cell without a crate.
 
 use super::HoverRuntime;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
@@ -214,6 +216,20 @@ impl Simulation {
             hover.zero_speeds();
         }
         self.hover_set_speed(id, false);
+    }
+
+    /// `0x005152D7..0x0051531E` and its twin `0x0051541F..0x0051546D`: the
+    /// Foot's path head (+0x5E0 = -1), the dummy head, `SetDestination(NULL,
+    /// 1)`, the four zeroed speeds and `SetSpeedFraction(0.0)`.
+    fn hover_drop_track(&mut self, id: u64, rules: &RuleSet) {
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.navigation.path_replay.clear_live_head();
+            if let Some(hover) = runtime_mut(entity) {
+                hover.head = None;
+            }
+        }
+        self.set_unit_null_destination(id, Some(rules), None);
+        self.hover_halt(id);
     }
 
     /// `if (head) { Unit vt+0xF4(head); head = null; }`.
@@ -964,15 +980,9 @@ impl Simulation {
             return Ok(0);
         };
         if direction == crate::util::direction::TUBE_STEP_DIRECTION {
-            //5152D1..51532E: the invalid-tube arm (module residual).
-            if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.navigation.path_replay.clear_live_head();
-                if let Some(hover) = runtime_mut(entity) {
-                    hover.head = None;
-                }
-            }
-            self.set_unit_null_destination(id, Some(rules), None);
-            self.hover_halt(id);
+            //5152D1..51532E: the invalid-tube arm (module residual): the
+            //drop, then one more null destination.
+            self.hover_drop_track(id, rules);
             self.set_unit_null_destination(id, Some(rules), None);
             return Ok(7);
         }
@@ -1007,8 +1017,25 @@ impl Simulation {
         if let Some(hover) = self.hover_mut(id) {
             hover.head = Some(head);
         }
-        //5153D8..5154A2: no crate (module residual); a dead, limbo or
-        //falling Foot returns.
+        //5153D8..5153EE: the crate question on the candidate cell.
+        if !self.pickup_crate_at(id, cell, Some(rules), registry) {
+            //5153F6..515478: a false answer (a placed free vehicle): an owner
+            //in limbo rejoins the ordinary checks; a dead or falling one
+            //returns; a live one drops its path head, head and speeds and
+            //returns.
+            let in_limbo = self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.lifecycle.in_limbo);
+            if !in_limbo {
+                if self.track_survives(id) {
+                    self.hover_drop_track(id, rules);
+                }
+                return Ok(7);
+            }
+        }
+        //51547B..5154A2: a dead, limbo or falling Foot returns.
         if !self.track_survives(id) {
             return Ok(7);
         }

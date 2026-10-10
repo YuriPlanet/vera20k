@@ -1,8 +1,8 @@
 //! Speed powerup's recipient effect, Cell482F4A..483098.
 //!
-//! Reads ObjectSubstrate's persistent Ground display vector. The caller supplies
-//! the crate center after selection/removal/replacement. Movement pickup and
-//! complete display lifecycle integration remain open.
+//! Reads ObjectSubstrate's persistent Ground display vector. [`super::pickup`]
+//! supplies the crate center after selection, removal and replacement, and
+//! plays the arm's EVA line and sound.
 
 use crate::map::entities::EntityCategory;
 use crate::sim::components::DriveCoord;

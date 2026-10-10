@@ -903,7 +903,9 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
             x: 3 * 256,
             y: 4 * 256,
             z: -347
-        }
+        },
+        None,
+        None,
     ));
     if sim.path_grid.is_none() {
         sim.path_grid = Some(std::sync::Arc::new(grid.clone()));

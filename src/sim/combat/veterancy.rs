@@ -117,9 +117,35 @@ pub fn set_elite(entity: &mut GameEntity) {
 }
 
 /// `VeterancyStruct::SetVeteran(1) @ 0x00750090`: store 1.0f.
-#[cfg(test)]
 pub fn set_veteran(entity: &mut GameEntity) {
     entity.veterancy_raw = NativeF32Bits::from_bits(VETERAN_THRESHOLD_BITS);
+}
+
+/// `VeterancyStruct::SetRookie @ 0x00750080`: store 0.0f (its byte argument
+/// is unused, `0x00750080..0x00750088`).
+pub fn set_rookie(entity: &mut GameEntity) {
+    entity.veterancy_raw = NativeF32Bits::POSITIVE_ZERO;
+}
+
+/// `VeterancyStruct::IsVeteran @ 0x0074FF90` (`1.0 <= v < 2.0`), `IsRookie @
+/// 0x0074FFC0` (`0.0 <= v < 1.0`) and the negative test at `0x0074FFF0`
+/// (`v < 0.0`) on the raw single; `IsElite @ 0x00750010` is `2.0 <= v`.
+pub fn raw_is_veteran(raw: NativeF32Bits) -> bool {
+    let value = f32::from_bits(raw.bits());
+    (1.0..2.0).contains(&value)
+}
+
+pub fn raw_is_rookie(raw: NativeF32Bits) -> bool {
+    let value = f32::from_bits(raw.bits());
+    (0.0..1.0).contains(&value)
+}
+
+pub fn raw_is_negative(raw: NativeF32Bits) -> bool {
+    f32::from_bits(raw.bits()) < 0.0
+}
+
+pub fn raw_is_elite(raw: NativeF32Bits) -> bool {
+    f32::from_bits(raw.bits()) >= 2.0
 }
 
 /// `TechnoClass::HasWeaponAbility @ 0x0070D0D0`, literally.

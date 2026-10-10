@@ -9,10 +9,10 @@
 //! Native composed controls and coverage: tools/spatial_oracle/jumpjet_states.md.
 //! Other large mechanisms remain bounded: Magnetron arms, target-facing hold,
 //! radio/tag arrival side effects and Infantry touchdown's full class chain.
-//! Native Unit touchdown calls Cell PickupCrate481A00 at54C9F6 after phase0.
-//! Shared movement crate selection/effect/RNG dispatch remains unfinished;
-//! landing on a crate can change its outcome and subsequent Scenario RNG.
-//! The no-crate native controls do not establish that separate mechanism.
+//! Native Unit touchdown calls Cell PickupCrate481A00 at54C9F6 after phase0;
+//! the touchdown asks `Simulation::pickup_crate_at` after the tracker removal
+//! (54C9DC) as native does. The no-crate native controls do not establish
+//! that separate mechanism.
 
 use super::Simulation;
 use crate::map::cell_index::NativeCellIdentity;
@@ -398,6 +398,11 @@ impl JumpjetFlightHost for CruiseHost<'_> {
             self.release_air_slot_at(here);
         }
         self.sim.aircraft_tracker_remove(id);
+        // 0x0054C9F6: CellClass::PickupCrate on the Foot's cell (vt+0x1BC)
+        // after the tracker removal (0x0054C9DC); its answer is not read.
+        let rules = self.rules;
+        let registry = self.registry;
+        let _ = self.sim.pickup_crate_at(id, here, rules, registry);
     }
     fn finish_touchdown(&mut self) {
         let id = self.stable_id;

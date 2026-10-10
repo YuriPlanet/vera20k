@@ -15,18 +15,22 @@
 //!
 //! This module owns startup placement and its persistent slot/timer result.
 //! The [`runtime`] submodule owns the live slot clear, the identity-specific
-//! overlay removal, and the per-tick `CrateRegen` scan. [`pickup`] owns outcome
-//! selection; pickup effects and their movement integration remain unfinished.
+//! overlay removal, and the per-tick `CrateRegen` scan. [`pickup`] owns
+//! `CellClass::PickupCrate @ 0x00481A00`, the pickup the movement hosts call
+//! when a Foot commits to a crate cell; [`effects`] and [`speed`] own its
+//! effect arms.
 //!
 //! ## Dependency rules
 //! Part of `sim/` — depends on `rules/`, `map/` grid types and other `sim/`
 //! modules only. Never on render/, ui/, audio/, net/.
 
+mod effects;
 mod pickup;
 mod runtime;
 mod speed;
 mod state;
 
+pub(crate) use pickup::pickup_crate;
 pub(crate) use runtime::tick_crate_regeneration;
 pub use state::{CrateAuthority, CrateSlot};
 

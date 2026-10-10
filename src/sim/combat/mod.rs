@@ -1341,8 +1341,9 @@ pub(crate) fn install_entity_attack_target_for_test(
 /// category multiplier for the attacker's type, the attacker's
 /// `ArmorMultiplier`, the attacker's FIREPOWER and the target's STRONGER ranks.
 ///
-/// RESIDUAL: `House+0x188` and `Techno+0x160` are 1.0, as in FireAt's damage
-/// build (`world_receiver::fireat_damage`).
+/// RESIDUAL: `House+0x188` is 1.0, as in FireAt's damage build
+/// (`world_receiver::fireat_damage`); `Techno+0x160` is the attacker's live
+/// `firepower_multiplier`.
 pub(crate) fn estimated_damage_on(
     sim: &crate::sim::world::Simulation,
     rules: &RuleSet,
@@ -1385,7 +1386,7 @@ pub(crate) fn estimated_damage_on(
         zeroed: weapon.is_sonic || weapon.use_fire_particles,
         stages: damage::attacker::FireDamageStages {
             house_firepower: NativeF64Bits::ONE,
-            unit_firepower: NativeF64Bits::ONE,
+            unit_firepower: attacker.firepower_multiplier,
             rank_firepower,
             occupied: None,
             bunkered: None,

@@ -11,8 +11,11 @@ use crate::util::native_x87::NativeF64Bits;
 /// in its native read order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrateRules {
-    /// `FreeMCV` -> `Rules+0x40`. Gates the pickup pre-empt that forces a Unit
-    /// crate for a player with credits but no buildings.
+    /// `FreeMCV` -> `Rules+0x40`. `CellClass::PickupCrate @ 0x00481A00` does
+    /// not read it: its MCV pre-empt (`0x00481BB8..0x00481BFF`) gates on the
+    /// lobby Bases byte (`0x00A8B258`), no tracked buildings, more than 1500
+    /// available credits and no tracked `BaseUnit=` vehicle. No other reader
+    /// of `+0x40` is established here.
     pub free_mcv: bool,
     /// `WoodCrateImg` -> `Rules+0xF8`.
     pub wood_crate_img: Option<String>,

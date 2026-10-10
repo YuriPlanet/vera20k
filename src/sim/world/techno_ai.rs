@@ -6094,7 +6094,7 @@ mod tests {
             ));
             let head = DriveCoord::cell(8, 7, 731);
             if forced {
-                assert!(sim.force_track(ORDINARY_DRIVE_HOST_ID, 0x47, head));
+                assert!(sim.force_track(ORDINARY_DRIVE_HOST_ID, 0x47, head, None, None));
             } else {
                 let loco = sim
                     .substrate

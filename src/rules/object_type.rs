@@ -750,6 +750,12 @@ pub struct ObjectType {
     /// Whether this unit is a resource harvester (Harvester=yes in rules.ini).
     /// Data-driven replacement for hardcoded type ID string checks.
     pub harvester: bool,
+    /// `CrateGoodie=` (`UnitTypeClass+0xE0D`): a vehicle the Unit crate may
+    /// draw at random. `UnitTypeClass::ReadFromINI` reads it with `ReadBool`
+    /// defaulting to the live byte (`0x0074764C..0x00747665`); the constructor
+    /// clears it (`0x007470D0`). `CellClass::PickupCrate @ 0x00481A00` rejects
+    /// every drawn type without it (`0x004821BD`).
+    pub crate_goodie: bool,
     /// `Spawned=` (`TechnoTypeClass+0xD54`): this type is a carrier/launcher
     /// child (Hornet, V3/Dreadnought missile). `TechnoTypeClass::ReadINI`
     /// reads key `"Spawned"` (`0x008437D8`) at `0x00714E7D..0x00714E91`.
@@ -2323,6 +2329,7 @@ impl ObjectType {
             insignificant: section.read_bool("Insignificant", false),
             to_protect: section.read_bool("ToProtect", false),
             harvester: section.read_bool("Harvester", false),
+            crate_goodie: section.read_bool("CrateGoodie", false),
             spawned: section.read_bool("Spawned", false),
             refinery: section.read_bool("Refinery", false),
             weeder: section.read_bool("Weeder", false),

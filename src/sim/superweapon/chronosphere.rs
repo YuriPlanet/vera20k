@@ -34,13 +34,6 @@
 //! eater's ExitUnit and the placement anim's release.
 //!
 //! RESIDUALS:
-//! - A warped Unit's `Force_Track(-1, destination)`, Drive's or Ship's,
-//!   picks up a crate on the destination cell at the launch
-//!   (`CellClass::PickupCrate @ 0x00481A00` from `0x004B0D1B`/`0x006A03EB`,
-//!   with its draws); the shared track host's crate receiver is unfinished
-//!   (`crates::pickup`). Trigger: a crate on a warped vehicle's destination
-//!   cell. Effect: the crate stays until something enters the cell, without
-//!   the launch's crate draws.
 //! - An off-map cell of either block reads the shared dummy cell's
 //!   coordinates natively; VERA reads the requested cell's.
 //! - The warp latch (`TechnoClass+0x27C`) has two more writers,
@@ -399,7 +392,7 @@ fn arm_chrono_warp(
     let mut destination = DriveCoord { x, y, z };
     if category == EntityCategory::Unit {
         sim.locomotor_mark_all_occupation_bits_up(id);
-        let _ = sim.force_track(id, -1, destination);
+        let _ = sim.force_track(id, -1, destination, Some(rules), overlay_registry);
         sim.object_raw_receiver_at(id, destination, false);
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.foot_occupation_enabled = true;

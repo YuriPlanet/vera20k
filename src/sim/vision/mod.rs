@@ -982,8 +982,8 @@ impl FogState {
     }
 
     /// Clear all explored/revealed state for the given owner.
-    /// Used by spy infiltration to reset an enemy's map knowledge.
-    #[cfg(test)]
+    /// `MapClass::Reset_Shroud @ 0x00577AB0` for one house; spy infiltration
+    /// and the Darkness crate reset an owner's map knowledge with it.
     pub fn reset_explored_for_owner(&mut self, owner: InternedId) {
         let cells = self.rectangular_cells();
         self.transition_whole_map_for_owner(owner, cells, true, false);

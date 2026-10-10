@@ -1442,6 +1442,12 @@ impl Simulation {
                 entity.elite_flash_frames.hash(hasher);
             }
             entity.armor_multiplier.bits().hash(hasher);
+            // Folded only once a Firepower crate changed it, so the legacy
+            // hash stream of every untouched object is preserved.
+            if entity.firepower_multiplier != crate::util::native_x87::NativeF64Bits::ONE {
+                b"firepower-mult-v1".hash(hasher);
+                entity.firepower_multiplier.bits().hash(hasher);
+            }
             entity.berserk.hash(hasher);
             entity.was_attacked_by_enemy.hash(hasher);
             if entity.category == crate::map::entities::EntityCategory::Structure {

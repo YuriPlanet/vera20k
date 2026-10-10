@@ -433,14 +433,10 @@ pub struct FootSpeedState {
     applied_fraction: SimFixed,
     /// Foot+580, initialized to exactly 1.0 at4D3292/4D329B. Retain the
     /// native bits: pickup refuses even the immediate neighbors of 1.0.
-    /// Every speed query reads it (GetCurrentSpeed multiplies it in).
-    /// RESIDUAL: its only native writer is the Speed crate
-    /// (`accept_speed_crate`), and crate pickup (Cell481A00 selection, removal,
-    /// effect dispatch) has no production caller yet, so it stays exactly 1.0.
-    /// Trigger: a Foot entering a crate cell. Effect: no crate is consumed and
-    /// no crate effect applies. Frequency: crate maps/options. Risk: saved and
-    /// hashed (v181) state that cannot differ from the constructor value until
-    /// the pickup receiver lands.
+    /// Every speed query reads it (GetCurrentSpeed multiplies it in). Its only
+    /// native writer is the Speed crate (`accept_speed_crate`), reached from
+    /// `CellClass::PickupCrate` (`crates::pickup`) when a Foot commits to a
+    /// crate cell; saved and hashed (v181).
     crate_multiplier: crate::util::native_x87::NativeF64Bits,
 }
 

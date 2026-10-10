@@ -457,9 +457,16 @@ impl Simulation {
             )?;
             process.per_cell_ran = true;
             // 0x00719725 Stop_Moving: the tick retired the request.
-            // 0x0071972E CellClass::PickupCrate (`0x00481A00`): the crate
-            // receiver every mover still lacks (`movement::track_fresh`
-            // residuals).
+            // 0x0071972E CellClass::PickupCrate (`0x00481A00`) on the
+            // destination cell for the linked Foot; its answer is not read.
+            let cell = sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .map(|entity| (entity.position.rx as i16, entity.position.ry as i16));
+            if let Some(cell) = cell {
+                let _ = sim.pickup_crate_at(stable_id, cell, rules, overlay_registry);
+            }
             // 0x0071973C: vt+0x480(NULL, 1). A Teleporter still in radio
             // contact gets a Drive here, which the FootClass::AI tail ends
             // again.

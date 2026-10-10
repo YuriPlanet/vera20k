@@ -26,11 +26,10 @@
 //!   Trigger: an EMP'd or dying Unit. Effect: it could start a track native
 //!   refuses. Frequency: no stock EMP source is proven reachable. Risk: this
 //!   gate is a consumer of the EMP system when it lands.
-//! - Crates (`CellClass::PickupCrate 0x481A00` at `0x4B4062` and
-//!   `0x4B46E6`): answered as a cell without a crate (the native early exit
-//!   `0x481A39` returns true). Trigger: a head committed onto a crate cell.
-//!   Effect: no crate is picked up by a Drive/Ship head. Frequency: crate
-//!   games. Risk: crate effects (a separate mechanism) never apply.
+//! - Crates (`CellClass::PickupCrate 0x481A00` at `0x4B405D` and
+//!   `0x4B46E6`) run through [`Simulation::pickup_crate_at`]; a host called
+//!   without the OverlayType table answers as a cell without a crate (the
+//!   native early exit `0x481A39`). Production always binds it.
 //! - Terrain blockers in the code-4/5 arm (`Find_Blocking_Object 0x47C5A0`
 //!   returning a TerrainClass): VERA targets only objects and cells, so no
 //!   Override is issued for a tree. Unreachable today: VERA's A* never routes
@@ -698,22 +697,49 @@ impl Simulation {
             //4B45F6..4B4609: shift one word, then the finalize tail.
             return self.track_fresh_finalize(call, Some(candidate), 1, turn_index);
         }
-        //4B404B..4B4092: the crate question on the first cell (see residual).
+        //4B404B..4B4062: the crate question on the first cell.
+        let picked =
+            self.pickup_crate_at(id, coord_cell(candidate), Some(call.rules), call.registry);
+        //4B4066..4B4089: a false answer (a placed free vehicle): an owner in
+        //limbo rejoins the ordinary path, a dead one ends the Process, and a
+        //live one skips the second query and takes code 7 at 4B4179.
+        let mut forced_code = None;
+        if !picked {
+            let (in_limbo, alive) = self
+                .substrate
+                .entities
+                .get(id)
+                .map_or((false, false), |actor| {
+                    (actor.lifecycle.in_limbo, actor.lifecycle.object_alive)
+                });
+            if !in_limbo {
+                if !alive {
+                    return Ok(false);
+                }
+                forced_code = Some(7);
+            }
+        }
+        //4B4092..4B409D: the owner's life check.
         if !self.track_owner_alive(id) {
             return Ok(false);
         }
         //4B40A3..4B4126: the second candidate, without the Mark bracket.
         let second_candidate = super::track_head::offset_head(candidate, second as u8);
         let second_cell = coord_cell(second_candidate);
-        let code = self.track_can_enter(call, second_cell, second as u8, height2)?;
-        let overlay = self.track_overlay(second_cell);
-        let code = coerce_entry_code(
-            code,
-            object.is_train,
-            object.crusher,
-            overlay.map_or(-1, i32::from),
-        )
-        .ok_or("Unit+1AC answered outside 0..7")?;
+        let code = match forced_code {
+            Some(code) => code,
+            None => {
+                let code = self.track_can_enter(call, second_cell, second as u8, height2)?;
+                let overlay = self.track_overlay(second_cell);
+                coerce_entry_code(
+                    code,
+                    object.is_train,
+                    object.crusher,
+                    overlay.map_or(-1, i32::from),
+                )
+                .ok_or("Unit+1AC answered outside 0..7")?
+            }
+        };
         //4B4179..4B4184: the second query's life check.
         let alive = self.track_owner_alive(id);
         let dispatch = dispatch_entry(FreshStage::Second, code, call.args.allow_retry, alive)
@@ -851,13 +877,20 @@ impl Simulation {
             super::track_head::accept_fresh_progress(loco, turn_index);
             loco.store_track_head(call.family, Some(candidate));
         }
-        //4B46DF..4B46FA: the crate question (see residual), then limbo.
-        if !actor.lifecycle.in_limbo {
+        //4B46DF..4B46FA: the crate question on the head, then limbo.
+        let picked = self.pickup_crate_at(id, reference, Some(call.rules), call.registry);
+        let actor = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .ok_or("retired Drive/Ship finalize owner")?;
+        if picked && !actor.lifecycle.in_limbo {
             //4B46FC..4B4705: Apply_Track_Occupation_Mode(head, 1).
             self.track_apply_occupation(id, call.family, true);
             return Ok(false);
         }
-        //4B4716..4B473C: a live owner drops the head again.
+        //4B4716..4B473C: a false answer or a limbo owner: a live owner drops
+        //the head again.
         if actor.lifecycle.object_alive {
             clear_track_head(actor);
         }

@@ -142,7 +142,7 @@ impl Default for BaseDefenseResponseState {
     }
 }
 
-fn default_armor_multiplier() -> NativeF64Bits {
+fn default_techno_multiplier() -> NativeF64Bits {
     NativeF64Bits::ONE
 }
 
@@ -477,10 +477,16 @@ pub struct GameEntity {
     /// turned elite does not flash.
     #[serde(default)]
     pub elite_flash_frames: u16,
-    /// Mutable Techno instance armor multiplier. Native construction seeds
-    /// this double to 1.0; armor powerups are its active non-neutral writer.
-    #[serde(default = "default_armor_multiplier")]
+    /// Mutable Techno instance armor multiplier (`Techno+0x158`). Native
+    /// construction seeds this double to 1.0; the Armor crate
+    /// (`crates::effects`) is its only writer, exactly once per object.
+    #[serde(default = "default_techno_multiplier")]
     pub armor_multiplier: NativeF64Bits,
+    /// `Techno+0x160`, the firepower multiplier `FireAt`'s damage build folds
+    /// in (`0x006FE33D..0x006FE34D`). Seeded to 1.0; the Firepower crate is
+    /// its only writer, exactly once per object.
+    #[serde(default = "default_techno_multiplier")]
+    pub firepower_multiplier: NativeF64Bits,
     /// House credited with destroying this object, captured at the instant its
     /// health reached zero. gamemd's kill-record step receives the actual killer
     /// at the moment of destruction; infantry linger in the logic vector through
@@ -1632,6 +1638,7 @@ impl GameEntity {
             veterancy_rank_cache: veterancy_rank_cache_default(),
             elite_flash_frames: 0,
             armor_multiplier: NativeF64Bits::ONE,
+            firepower_multiplier: NativeF64Bits::ONE,
             vision_range,
             sight_is_zero: false,
             sight_refresh_timers: crate::sim::vision::SightRefreshTimers::at_construction(

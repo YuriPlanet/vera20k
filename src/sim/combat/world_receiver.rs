@@ -3053,11 +3053,11 @@ fn fireat_launch_aim(
 /// decide the FIREPOWER stage; for a garrison shot that is the building,
 /// exactly as native's `this` is.
 ///
-/// RESIDUAL: the firepower fold's `House+0x188` and `Techno+0x160` are 1.0.
-/// The house value is `[Easy]/[Normal]/[Difficult] FirePower=` times the
-/// country's `Firepower=`, both 1.0 by default (`0x0066D28E`, `0x00511980`)
-/// and set by no retail layer; the per-object value is raised only by the
-/// Firepower crate, which VERA does not have.
+/// RESIDUAL: the firepower fold's `House+0x188` is 1.0. The house value is
+/// `[Easy]/[Normal]/[Difficult] FirePower=` times the country's `Firepower=`,
+/// both 1.0 by default (`0x0066D28E`, `0x00511980`) and set by no retail
+/// layer. `Techno+0x160` is the firer's live `firepower_multiplier`, raised
+/// by the Firepower crate (`crates::effects`).
 ///
 /// A passenger of an `OpenTopped=` transport (retail: `[BFRT]`) fires with
 /// `+0x82` set (`PerCellProcess 0x0051A45E`/`0x0073A75D` ->
@@ -3076,7 +3076,7 @@ fn fireat_damage(
     let multipliers = &rules.garrison_rules;
     let stages = damage::attacker::FireDamageStages {
         house_firepower: NativeF64Bits::ONE,
-        unit_firepower: NativeF64Bits::ONE,
+        unit_firepower: firer.map_or(NativeF64Bits::ONE, |firer| firer.firepower_multiplier),
         rank_firepower: self::veterancy::has_weapon_ability(
             self::veterancy::rank_from_u16(snap.veterancy),
             obj,

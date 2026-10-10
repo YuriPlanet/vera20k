@@ -55,9 +55,15 @@
 //! a short game keeps a house alive while `+0x2F0 > 0` or its tracked
 //! `BaseUnit=` types sum above zero; a normal game while `+0x2F0` plus the
 //! on-map unit, infantry and aircraft totals and the on-map count of
-//! `[AI] BuildRefinery=`'s third type is not zero. The other counters those
-//! functions write (`+0x2E8`, `+0x2EC`, `+0x2F4`, `+0x2F8`, the owned-type
-//! sets) have no reader in this mechanism and are not kept.
+//! `[AI] BuildRefinery=`'s third type is not zero. `+0x2E8` (the vehicles,
+//! plus the buildings tracked with them, `0x004FF72E`/`0x004FF78B`) and
+//! `+0x2F4` (the infantry, `0x004FF81A..0x004FF83B`) are read by the crate
+//! pickup's Unit and Squad eligibility (`0x00481C27`, `0x00481C3B`). Native
+//! counts an infantry once through the `+0x438` latch, which Remove_Tracking
+//! (`0x004FF636..0x004FF64D`) tests and clears, and skips one whose `+0x439`
+//! byte is set; VERA pairs the add and remove per object and does not model
+//! `+0x439` (identity unestablished). `+0x2EC`, `+0x2F8` and the owned-type
+//! sets have no reader here and are not kept.
 //!
 //! Factory counters (`+0x5378` aircraft, `+0x537C` infantry, `+0x5380`
 //! vehicle, `+0x5384` building, `+0x5388` naval): a building whose type has
@@ -278,6 +284,13 @@ impl ForceValues {
 pub struct HouseTracking {
     /// `HouseClass+0x2F0`.
     buildings: i32,
+    /// `HouseClass+0x2E8`: the tracked vehicles and the buildings tracked
+    /// with them. Derived from the hashed object set; not folded separately.
+    #[serde(default)]
+    vehicles: i32,
+    /// `HouseClass+0x2F4`: the tracked infantry.
+    #[serde(default)]
+    infantry: i32,
     /// `HouseClass+0x5514`, the tracked count of each UnitType.
     unit_types: BTreeMap<InternedId, i32>,
     /// `HouseClass+0x5500`, the tracked count of each BuildingType.
@@ -334,8 +347,15 @@ impl HouseTracking {
         if facts.insignificant || entity.dont_score {
             return;
         }
-        if entity.category == EntityCategory::Structure && !facts.unit_like_building {
-            self.buildings = self.buildings.wrapping_add(delta);
+        match entity.category {
+            EntityCategory::Structure if !facts.unit_like_building => {
+                self.buildings = self.buildings.wrapping_add(delta);
+            }
+            EntityCategory::Structure | EntityCategory::Unit => {
+                self.vehicles = self.vehicles.wrapping_add(delta);
+            }
+            EntityCategory::Infantry => self.infantry = self.infantry.wrapping_add(delta),
+            EntityCategory::Aircraft => {}
         }
         let counts = match entity.category {
             EntityCategory::Unit => &mut self.unit_types,
@@ -479,6 +499,16 @@ impl HouseTracking {
         self.active_infantry().hash(hasher);
         self.active_aircraft().hash(hasher);
         self.active_building_types.hash(hasher);
+    }
+
+    /// `HouseClass+0x2E8`.
+    pub(crate) const fn vehicles(&self) -> i32 {
+        self.vehicles
+    }
+
+    /// `HouseClass+0x2F4`.
+    pub(crate) const fn infantry(&self) -> i32 {
+        self.infantry
     }
 
     /// `HouseClass+0x158`.

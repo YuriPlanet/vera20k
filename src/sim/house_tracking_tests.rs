@@ -415,3 +415,30 @@ fn force_values_follow_the_objects_on_the_map() {
     assert_eq!(force_values_of(&sim, americans), (0, 0, 0));
     assert_eq!(force_values_of(&sim, russians), (0, 0, 0));
 }
+
+/// `Add_Tracking`'s `+0x2E8` and `+0x2F4` (`0x004FF72E`, `0x004FF7F3`): the
+/// vehicles, with a 1x1 undeployer counted among them (`0x004FF78B`), and the
+/// infantry; `Remove_Tracking` takes each back.
+#[test]
+fn vehicle_and_infantry_totals_follow_tracking() {
+    let (mut sim, rules, house) = one_house();
+    let ids: Vec<u64> = ["TANK", "GI", "BLDG", "B1X1", "PLANE"]
+        .iter()
+        .enumerate()
+        .map(|(n, kind)| {
+            sim.spawn_object_at_height(kind, "Americans", 10 + 4 * n as u16, 10, 0, 0, &rules)
+                .unwrap_or_else(|| panic!("{kind} spawns"))
+        })
+        .collect();
+    let tracking = &sim.houses[&house].tracking;
+    assert_eq!(tracking.vehicles(), 2, "the tank and the 1x1 undeployer");
+    assert_eq!(tracking.infantry(), 1);
+    assert_eq!(tracking.buildings(), 1);
+    // Remove_Tracking runs from the destructor at the pending-delete drain.
+    for id in ids {
+        sim.uninit_with_rules(id, &rules);
+    }
+    sim.flush_pending_delete();
+    let tracking = &sim.houses[&house].tracking;
+    assert_eq!((tracking.vehicles(), tracking.infantry()), (0, 0));
+}

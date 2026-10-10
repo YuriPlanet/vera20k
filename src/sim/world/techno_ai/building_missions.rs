@@ -438,7 +438,7 @@ fn mission_factory_unload(
                         loco.kind == crate::rules::locomotor_type::LocomotorKind::Drive
                     });
                 if drive {
-                    sim.force_track(product, 0x42, track);
+                    sim.force_track(product, 0x42, track, Some(rules), ctx.overlay_registry);
                 } else {
                     //44DF1C's normal non-Drive cell setter is represented.
                     //Teleport (and the dormant TS Tunnel) take 44DFAD's

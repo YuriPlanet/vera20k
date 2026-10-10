@@ -30,8 +30,28 @@ pub(crate) fn first_owner_compatible_harvester(
     rules: &RuleSet,
     country_bit: u32,
 ) -> Option<&ObjectType> {
-    rules.harvester_unit_types.iter().find_map(|type_id| {
-        let candidate = rules.object_in_category(ObjectCategory::Vehicle, type_id)?;
+    first_owner_compatible(
+        rules,
+        &rules.harvester_unit_types,
+        ObjectCategory::Vehicle,
+        country_bit,
+    )
+}
+
+/// `HouseClass::FirstOwnableFromArray @ 0x00505310`: the first type of one
+/// `RulesClass` type vector whose `Owner=` (`OwnerFlags`, `TechnoType+0x6CC`,
+/// `0x00505330..0x0050534E`) holds the house's country bit
+/// (`1 << HouseTypeClass::FindIndexByName`, `0x00505316`). The crate pickup
+/// asks it for `BaseUnit=` (`Rules+0xB20`) and `HarvesterUnit=`
+/// (`Rules+0xB3C`); null when no entry is ownable.
+pub(crate) fn first_owner_compatible<'a>(
+    rules: &'a RuleSet,
+    type_ids: &[String],
+    category: ObjectCategory,
+    country_bit: u32,
+) -> Option<&'a ObjectType> {
+    type_ids.iter().find_map(|type_id| {
+        let candidate = rules.object_in_category(category, type_id)?;
         owner_allows(candidate, country_bit, rules).then_some(candidate)
     })
 }

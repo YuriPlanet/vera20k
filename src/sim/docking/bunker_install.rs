@@ -140,7 +140,7 @@ fn step_install(
         }
         BunkerState::TurnToBuilding => {
             if !is_turning(sim, unit_id) {
-                if start_install_force_track(sim, rules, building_id, unit_id) {
+                if start_install_force_track(sim, rules, registry, building_id, unit_id) {
                     set_state(sim, building_id, BunkerState::TrackStep, Some(unit_id));
                 } else {
                     // Already on the install cell: skip the slide, turn South.
@@ -324,7 +324,8 @@ fn octant_install_track(facing: u8) -> u8 {
 /// already on the anchor cell (no slide needed).
 fn start_install_force_track(
     sim: &mut Simulation,
-    _rules: &RuleSet,
+    rules: &RuleSet,
+    registry: Option<&OverlayTypeRegistry>,
     building_id: u64,
     unit_id: u64,
 ) -> bool {
@@ -364,6 +365,8 @@ fn start_install_force_track(
             y: i32::from(by) * 256 + building_sub_y,
             z: building_z,
         },
+        Some(rules),
+        registry,
     );
     // Building4591AF calls Force_Track, then4591BE explicitly sets Foot's
     // applied fraction. The generic locomotor admission does not own speed.
@@ -472,7 +475,7 @@ mod tests {
         }
         assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
 
-        assert!(start_install_force_track(&mut sim, &rules, 2, 1));
+        assert!(start_install_force_track(&mut sim, &rules, None, 2, 1));
         let unit = sim.substrate.entities.get(1).unwrap();
         let exact_head = crate::sim::components::DriveCoord {
             x: 10 * 256 + 96,

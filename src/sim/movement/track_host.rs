@@ -96,8 +96,43 @@ impl Simulation {
     /// empty body (`0x0055AC10`). Selector/cursor publication precedes the
     /// null-coordinate return. Head, destination, residual and owner speed
     /// have independent lifetimes.
-    pub(crate) fn force_track(&mut self, id: u64, selector: i32, supplied: DriveCoord) -> bool {
-        self.force_track_observed(id, selector, supplied, &mut |_, _, _| true)
+    pub(crate) fn force_track(
+        &mut self,
+        id: u64,
+        selector: i32,
+        supplied: DriveCoord,
+        rules: Option<&RuleSet>,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> bool {
+        self.force_track_observed(id, selector, supplied, &mut |sim, id, coord| {
+            sim.pickup_crate_at(id, super::foot_path::coord_cell(coord), rules, registry)
+        })
+    }
+
+    /// `CellClass::PickupCrate @ 0x00481A00` for the Foot `id` committing to
+    /// `cell`, as every movement host calls it; its AL. Without rules or the
+    /// OverlayType table the cell answers as one without a crate, native's
+    /// `0x00481A39` return: a Rust availability gate with no native
+    /// counterpart. The frame's movement hosts bind both. RESIDUAL: two
+    /// `Force_Track` callers hold no table and skip the pickup at `0x4B0D1B`:
+    /// the parasite's grapple onto its victim's cell (`parasite_attach`) and
+    /// the bunker's sell/destroy release onto the bunker's exit cell
+    /// (`bunker_link::release_sell_destroy`). Trigger: a crate on exactly that
+    /// cell. Effect: the crate waits for the next mover. Frequency: rare (a
+    /// crate under a grappled victim or beside a dying bunker).
+    pub(crate) fn pickup_crate_at(
+        &mut self,
+        id: u64,
+        cell: (i16, i16),
+        rules: Option<&RuleSet>,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> bool {
+        match (rules, registry) {
+            (Some(rules), Some(registry)) => {
+                crate::sim::crates::pickup_crate(self, rules, registry, cell, id)
+            }
+            _ => true,
+        }
     }
 
     fn force_track_observed(
@@ -129,8 +164,8 @@ impl Simulation {
         loco.store_track_head(family, Some(supplied));
         loco.store_track_valid(family, true);
         //4B0D14/4B0D1B (Ship 6A03E4/6A03EB): address the supplied cell, then
-        // synchronous crate pickup. The shared track host's crate receiver is still incomplete;
-        // the observer preserves its callback/reload boundary for witnesses.
+        // the synchronous crate pickup; a false answer (4B0D22) drops the head
+        // like a limbo owner. Witness tests supply the answer through the observer.
         let received = receive(self, id, supplied);
         let survives = self
             .substrate
@@ -940,8 +975,26 @@ impl Simulation {
         // after the transient PerCell corridor.
         set_track_valid(entity, family, true);
         set_head(entity, family, Some(candidate));
-        // Crate pickup is an explicit receiver gap. A surviving pickup
-        // precedes Apply1, then the saved owner fraction and live queue shift.
+        // Drive4B1DBE / Ship6A1401: the crate question on the new head. A
+        // true answer outside limbo (4B1DC3..4B1DD2) applies Apply1, the saved
+        // owner fraction and the live queue shift; otherwise a live owner
+        // drops the head to the dummy and clears +63 (4B1E1F..4B1E4D).
+        let picked = self.pickup_crate_at(
+            id,
+            super::foot_path::coord_cell(candidate),
+            Some(rules),
+            registry,
+        );
+        let Some(entity) = self.substrate.entities.get_mut(id) else {
+            return Ok(true);
+        };
+        if !(picked && !entity.lifecycle.in_limbo) {
+            if entity.lifecycle.object_alive {
+                set_head(entity, family, None);
+                set_track_valid(entity, family, false);
+            }
+            return Ok(true);
+        }
         self.track_apply_occupation(id, family, true);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.foot_speed.set_speed_fraction(saved_speed);

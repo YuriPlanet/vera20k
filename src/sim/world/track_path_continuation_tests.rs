@@ -374,7 +374,7 @@ fn post_warp_rows_refuse_the_own_cell_search() {
         // The oracle fixture's Foot+668 prestate, which only a setter rewrites.
         e.navigation.path_runtime.blocked_timer = crate::sim::timer::CdTimer::started(40, 6);
         let own = crate::sim::movement::ground_pose::position_world_coord(&e.position);
-        assert!(sim.force_track(id, -1, own));
+        assert!(sim.force_track(id, -1, own, None, None));
         sim.session.binary_frame = 101;
         let rng = sim.rng_state();
         let grid = sim.path_grid.clone();
@@ -968,7 +968,7 @@ fn forced_track_end_requests_its_own_cell_in_the_same_process() {
         y: 11 * 256,
         z: 0,
     };
-    assert!(sim.force_track(id, 0x47, head));
+    assert!(sim.force_track(id, 0x47, head, None, None));
     for frame in 101..300 {
         visit(&mut sim, &rules, &registry, id, frame);
         let e = sim.substrate.entities.get(id).unwrap();

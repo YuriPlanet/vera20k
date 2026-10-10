@@ -1424,12 +1424,7 @@ pub(crate) fn apply_launch_shroud_option(sim: &mut Simulation, local_owner: Opti
     if !sim.houses.get(&owner).is_some_and(|house| house.is_human) {
         return;
     }
-    if let Some(terrain) = sim.resolved_terrain.as_ref() {
-        sim.fog
-            .reveal_cells_for_owner(owner, terrain.iter().map(|cell| (cell.rx, cell.ry)));
-    } else {
-        sim.fog.reveal_all_for_owner(owner);
-    }
+    sim.reveal_whole_map_for_owner(owner);
 }
 
 fn assign_launch_base_centers(

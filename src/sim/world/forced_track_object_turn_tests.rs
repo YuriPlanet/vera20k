@@ -58,7 +58,7 @@ fn fixture(selector: i32) -> Simulation {
         sim.reveal(1),
         super::super::RevealOutcome::Revealed { .. }
     ));
-    assert!(sim.force_track(1, selector, head));
+    assert!(sim.force_track(1, selector, head, None, None));
     sim.substrate
         .entities
         .get_mut(1)

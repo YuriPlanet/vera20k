@@ -752,11 +752,24 @@ pub(super) fn prepare_step_head(
     )
 }
 
+/// The chooser's answer up to its crate question (`0x0075C56C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StepHead {
+    /// A Walk head is stored (`+0x28`) and awaits the crate question and
+    /// [`commit_walk_head`].
+    Pending,
+    /// The chooser already answered: a non-Walk head, a retained head, or a
+    /// failed subcell selection that restored the Foot's own raw occupation.
+    Done(bool),
+}
+
 /// Walk75BC1A consumes the prospective coordinate already selected from the
 /// retained Foot path word. Its caller owns admission; this is the same
-/// priority/subcell/raw-occupation owner.
+/// priority/subcell/raw-occupation owner, up to the stored head: the crate
+/// question (`CellClass::PickupCrate @ 0x00481A00` at `0x0075C56C`) and the
+/// Mark tail follow in the caller and [`commit_walk_head`].
 #[allow(clippy::too_many_arguments)]
-pub(super) fn prepare_step_head_at(
+pub(super) fn select_step_head_at(
     entities: &mut crate::sim::entity_store::EntityStore,
     id: u64,
     occupancy: &crate::sim::occupancy::OccupancyGrid,
@@ -767,18 +780,18 @@ pub(super) fn prepare_step_head_at(
     interner: &crate::sim::intern::StringInterner,
     rng: &mut crate::sim::rng::SimRng,
     input: DriveCoord,
-) -> bool {
+) -> StepHead {
     use super::locomotor::MovementLayer;
     use crate::map::entities::EntityCategory;
     use crate::rules::locomotor_type::LocomotorKind;
     let Some(entity) = entities.get(id) else {
-        return false;
+        return StepHead::Done(false);
     };
     let Some(loco) = entity.locomotor.as_ref() else {
-        return true;
+        return StepHead::Done(true);
     };
     if loco.kind != LocomotorKind::Walk || loco.step_head().is_some() {
-        return true;
+        return StepHead::Done(true);
     }
     let is_walk = loco.kind == LocomotorKind::Walk;
     let owner = entity.owner();
@@ -879,7 +892,7 @@ pub(super) fn prepare_step_head_at(
             raw, raw_key, layer, input, priority, gate_open, rng,
         ) else {
             raw_at(raw, owner, current, true, terrain, grid);
-            return false;
+            return StepHead::Done(false);
         };
         let ground =
             super::ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
@@ -904,11 +917,65 @@ pub(super) fn prepare_step_head_at(
         }
     };
     let Some(loco) = entities.get_mut(id).and_then(|e| e.locomotor.as_mut()) else {
-        return false;
+        return StepHead::Done(false);
     };
     loco.set_step_head(Some(head));
     if is_walk {
-        raw_at(raw, owner, head, true, terrain, grid);
+        StepHead::Pending
+    } else {
+        StepHead::Done(true)
     }
-    true
+}
+
+/// `0x0075C5C5..0x0075C638`: the chooser's tail after the crate question. A
+/// retained head is Marked (`vt+0xF0`, raw PUT) and the chooser answers 1; a
+/// head reset to the dummy coordinate Marks the Foot's own XYZ instead and
+/// answers 0, which the caller treats as a failed subcell selection.
+pub(super) fn commit_walk_head(
+    entities: &crate::sim::entity_store::EntityStore,
+    id: u64,
+    raw: &mut RawCellOccupationGrid,
+    terrain: Option<&ResolvedTerrainGrid>,
+    grid: Option<&PathGrid>,
+) -> bool {
+    let Some(entity) = entities.get(id) else {
+        return false;
+    };
+    let owner = entity.owner();
+    match entity.locomotor.as_ref().and_then(|loco| loco.step_head()) {
+        Some(head) => {
+            raw_at(raw, owner, head, true, terrain, grid);
+            true
+        }
+        None => {
+            let current = super::ground_pose::position_world_coord(&entity.position);
+            raw_at(raw, owner, current, true, terrain, grid);
+            false
+        }
+    }
+}
+
+/// [`select_step_head_at`] then [`commit_walk_head`] with no crate on the
+/// head: the test adapters' complete chooser. Production asks the crate
+/// question between the two (`walk_admission`).
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(super) fn prepare_step_head_at(
+    entities: &mut crate::sim::entity_store::EntityStore,
+    id: u64,
+    occupancy: &crate::sim::occupancy::OccupancyGrid,
+    raw: &mut RawCellOccupationGrid,
+    terrain: Option<&ResolvedTerrainGrid>,
+    grid: Option<&PathGrid>,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    interner: &crate::sim::intern::StringInterner,
+    rng: &mut crate::sim::rng::SimRng,
+    input: DriveCoord,
+) -> bool {
+    match select_step_head_at(
+        entities, id, occupancy, raw, terrain, grid, rules, interner, rng, input,
+    ) {
+        StepHead::Pending => commit_walk_head(entities, id, raw, terrain, grid),
+        StepHead::Done(answer) => answer,
+    }
 }

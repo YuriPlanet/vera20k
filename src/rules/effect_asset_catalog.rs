@@ -324,6 +324,16 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     if let Some(name) = rules.general.ore_twinkle.as_deref() {
         insert(name);
     }
+    // `[Powerups]` token 2: the pickup anim `CellClass::PickupCrate @
+    // 0x00481A00` constructs 200 leptons above the crate (`0x00483384`,
+    // `sim::crates::pickup`). No warhead list names MONEY, HEALALL, ARMOR,
+    // FIREPOWR, SPEED, VETERAN or REVEAL. A row's absent default (`NONE`)
+    // and a mod's unregistered name resolve to native's `-1`: no root.
+    for name in rules.powerups.anims.iter().flatten() {
+        if rules.anim_type_names.contains(name) {
+            insert(name);
+        }
+    }
     // The cliff-collapse debris types are literals in the producer
     // (`sim::world`); stock binds them only through warhead `AnimList=`.
     for name in CLIFF_COLLAPSE_ANIMS {
@@ -619,6 +629,26 @@ mod anim_class_root_tests {
                 "{name} missing: {roots:?}"
             );
         }
+    }
+
+    /// `[Powerups]` anims reach the binder; a `<none>` token and an absent
+    /// row (the default `0,NONE`) contribute no root.
+    #[test]
+    fn roots_cover_powerup_pickup_anims() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Animations]\n0=MONEY\n1=SPEED\n\
+             [Powerups]\nMoney=20,MONEY,yes,2000\nUnit=20,<none>,no\nSpeed=10,SPEED,yes,1.2\n\
+             Armor=10,UNREGISTERED,yes,1.5\n",
+        ))
+        .expect("rules");
+        let roots = anim_class_roots(&rules);
+        assert!(roots.iter().any(|root| root == "MONEY"), "{roots:?}");
+        assert!(roots.iter().any(|root| root == "SPEED"), "{roots:?}");
+        assert!(
+            roots
+                .iter()
+                .all(|root| root != "NONE" && root != "<NONE>" && root != "UNREGISTERED")
+        );
     }
 
     /// `RulesClass+0x298` defaults to a null type: without `IonBlast=` the

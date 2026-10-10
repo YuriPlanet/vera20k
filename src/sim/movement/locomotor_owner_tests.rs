@@ -185,7 +185,7 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
             .unwrap()
             .store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(9, 8, 731)));
         if forced {
-            assert!(sim.force_track(1, 0x47, DriveCoord::cell(9, 8, 731)));
+            assert!(sim.force_track(1, 0x47, DriveCoord::cell(9, 8, 731), None, None));
         }
 
         assert!(destination(&mut sim, &rules, true));
@@ -259,7 +259,7 @@ fn reusing_active_drive_keeps_complete_instance_including_forced_track() {
     let (mut sim, _) = fixture();
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     activate_drive(entity);
-    assert!(sim.force_track(1, 0x47, DriveCoord::cell(9, 8, 731)));
+    assert!(sim.force_track(1, 0x47, DriveCoord::cell(9, 8, 731), None, None));
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     let before = owned_state(entity);
 

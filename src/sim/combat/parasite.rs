@@ -249,7 +249,7 @@ impl Simulation {
         let victim_coord = ground_pose::position_world_coord(
             &self.substrate.entities.get(victim).unwrap().position,
         );
-        self.force_track(owner, -1, victim_coord);
+        self.force_track(owner, -1, victim_coord, Some(rules), None);
         self.substrate
             .entities
             .get_mut(victim)

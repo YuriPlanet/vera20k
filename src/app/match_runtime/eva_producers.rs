@@ -77,7 +77,10 @@
 //!   `[0xA8E7AC]==0`) (no robot control centre).
 //! - Crate handlers `0x00482EBB/0x004830AA/0x0048328A` (`EVA_UnitArmor|Speed|
 //!   FirePowerUpgraded`, spoken when a local-player unit's multiplier was
-//!   exactly `1.0`, `0x00482E61..0x00482E8D`) (no stat-upgrade crates).
+//!   exactly `1.0`, `0x00482E61..0x00482E8D`): the sim's crate pickup
+//!   (`crates::pickup`) emits them as `HouseEva` for each changed house and
+//!   this side applies the local test. Retail `evamd.ini` defines none of the
+//!   three sections, so they resolve to silence, as natively.
 //! - `TemporalClass::InitiateWarp 0x0071B05F` (`EVA_OreMinerUnderAttack`
 //!   after `CreateRadarEvent(4)`) (no temporal erase).
 //!

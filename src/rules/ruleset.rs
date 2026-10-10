@@ -705,6 +705,25 @@ pub struct GeneralRules {
     /// (constructor -1); the slave release plays it at the first freed slave
     /// (`0x006B0C2C..0x006B0C60`). Absent or empty is silence.
     pub slaves_free_sound: Option<String>,
+    /// The seven `[AudioVisual]` crate pickup sounds `RulesClass::ReadAudioVisual
+    /// @ 0x006691E0` resolves to Voc indexes at `RulesClass+0x1E4..+0x1FC`
+    /// (`0x00669746..0x00669903`, each `ReadString` then `VocClass::FindIndex`,
+    /// keeping the previous index on a miss). `CellClass::PickupCrate @
+    /// 0x00481A00` plays one at the crate, for the local player's house
+    /// except Reveal, which plays for everyone (`0x0048202D`):
+    /// `CrateMoneySound=` (`+0x1E4`, `0x00482553`), `CrateRevealSound=`
+    /// (`+0x1E8`, `0x0048202F`), `CrateFireSound=` (`+0x1EC`, `0x004832E4`),
+    /// `CrateArmourSound=` (`+0x1F0`, `0x00482F22`), `CrateSpeedSound=`
+    /// (`+0x1F4`, `0x00483111`), `CrateUnitSound=` (`+0x1F8`, `0x0048243E`)
+    /// and `CratePromoteSound=` (`+0x1FC`, `0x00482B7B`). The name is retained
+    /// at the data boundary; absent or empty is silence.
+    pub crate_money_sound: Option<String>,
+    pub crate_reveal_sound: Option<String>,
+    pub crate_fire_sound: Option<String>,
+    pub crate_armour_sound: Option<String>,
+    pub crate_speed_sound: Option<String>,
+    pub crate_unit_sound: Option<String>,
+    pub crate_promote_sound: Option<String>,
     /// `[AudioVisual] EliteFlashTimer=` — `RulesClass+0xBE8`. Seeded into
     /// `TechnoClass+0xF0` on an elite promotion (`0x006FA0D6..0x006FA0DC`),
     /// whatever house owns the object. Constructor default UNCHECKED.
@@ -1906,6 +1925,13 @@ impl Default for GeneralRules {
             upgrade_veteran_sound: None,
             upgrade_elite_sound: None,
             slaves_free_sound: None,
+            crate_money_sound: None,
+            crate_reveal_sound: None,
+            crate_fire_sound: None,
+            crate_armour_sound: None,
+            crate_speed_sound: None,
+            crate_unit_sound: None,
+            crate_promote_sound: None,
             elite_flash_timer: 0,
             idle_action_frequency: f64::from_bits(0x3fb5_3f7c_ed91_6873),
             force_shield_color: 0,
@@ -2795,6 +2821,27 @@ impl GeneralRules {
                 .map(str::to_owned),
             slaves_free_sound: audio_visual
                 .read_name("SlavesFreeSound", 0x80)
+                .map(str::to_owned),
+            crate_money_sound: audio_visual
+                .read_name("CrateMoneySound", 0x80)
+                .map(str::to_owned),
+            crate_reveal_sound: audio_visual
+                .read_name("CrateRevealSound", 0x80)
+                .map(str::to_owned),
+            crate_fire_sound: audio_visual
+                .read_name("CrateFireSound", 0x80)
+                .map(str::to_owned),
+            crate_armour_sound: audio_visual
+                .read_name("CrateArmourSound", 0x80)
+                .map(str::to_owned),
+            crate_speed_sound: audio_visual
+                .read_name("CrateSpeedSound", 0x80)
+                .map(str::to_owned),
+            crate_unit_sound: audio_visual
+                .read_name("CrateUnitSound", 0x80)
+                .map(str::to_owned),
+            crate_promote_sound: audio_visual
+                .read_name("CratePromoteSound", 0x80)
                 .map(str::to_owned),
             elite_flash_timer: audio_visual.read_int("EliteFlashTimer", defaults.elite_flash_timer),
             idle_action_frequency: audio_visual

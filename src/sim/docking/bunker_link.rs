@@ -154,7 +154,7 @@ pub fn release_normal(sim: &mut Simulation, building_id: u64, rules: &RuleSet) {
     }
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "unit-link");
-    power_and_force_release(sim, building_id, unit_id);
+    power_and_force_release(sim, building_id, unit_id, Some(rules));
     let cell = bunker_exit_cell(sim, building_id);
     if let Some(cell) = cell {
         let terrain = sim.resolved_terrain.as_ref();
@@ -204,7 +204,7 @@ pub fn release_sell_destroy(sim: &mut Simulation, building_id: u64) {
     if !is_release_unit(sim, unit_id) {
         return;
     }
-    power_and_force_release(sim, building_id, unit_id);
+    power_and_force_release(sim, building_id, unit_id, None);
     if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
         u.bunker_link = BunkerLink::None;
     }
@@ -227,7 +227,16 @@ fn is_release_unit(sim: &Simulation, unit_id: u64) -> bool {
         .is_some_and(|unit| unit.category == EntityCategory::Unit)
 }
 
-fn power_and_force_release(sim: &mut Simulation, building_id: u64, unit_id: u64) {
+/// `rules` feeds the forced head's crate pickup (`Force_Track` 0x4B0D1B);
+/// the sell/destroy release has no rules at hand, so a crate on that head
+/// stays until something else enters the cell (a bunker's exit cell, which
+/// the crate placer never chooses while the bunker stands).
+fn power_and_force_release(
+    sim: &mut Simulation,
+    building_id: u64,
+    unit_id: u64,
+    rules: Option<&RuleSet>,
+) {
     let Some(unit) = sim.substrate.entities.get_mut(unit_id) else {
         return;
     };
@@ -247,7 +256,7 @@ fn power_and_force_release(sim: &mut Simulation, building_id: u64, unit_id: u64)
     head.y = head.y.wrapping_add(128);
     // No entity borrow spans Force's synchronous world receiver. Its bool
     // describes retained-track admission, not whether the caller continues.
-    let _ = sim.force_track(unit_id, 0x47, head);
+    let _ = sim.force_track(unit_id, 0x47, head, rules, None);
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "force");
     //45944A/45976F write this even after Force's null/limbo early return.
