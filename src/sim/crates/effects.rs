@@ -235,8 +235,10 @@ pub(super) enum UnitCrateOutcome {
 /// `CrateGoodie=` type passes: with Bases on, a `BaseUnit=` type is accepted
 /// for a human house or a pre-empted pickup; with Bases off, never.
 ///
-/// gamemd loops forever when no vehicle type is `CrateGoodie=`; this returns
-/// `None` without a draw instead (a rules-data-only divergence).
+/// gamemd's retry at `0x00482166..0x004821E9` never terminates when no type
+/// passes all of those gates. This returns `None` without a draw instead
+/// (a rules-data-only divergence), including when every goodie is a forbidden
+/// base unit. When a candidate exists, retain the original full-array draws.
 pub(super) fn choose_unit_crate_type<'r>(
     sim: &mut Simulation,
     rules: &'r RuleSet,
@@ -294,12 +296,20 @@ pub(super) fn choose_unit_crate_type<'r>(
     let human = house.is_controlled_by_human(sim.session.game_mode_nonzero);
     let bases = sim.session.game_options.bases;
     let ids = rules.type_array_ids(ObjectCategory::Vehicle);
-    let any_goodie = ids.iter().any(|id| {
+    let eligible = |candidate: &crate::rules::object_type::ObjectType| {
+        let is_base_unit = rules
+            .general
+            .base_unit_types
+            .iter()
+            .any(|base| base.eq_ignore_ascii_case(&candidate.id));
+        candidate.crate_goodie && (!is_base_unit || (bases && (human || preempted)))
+    };
+    let any_eligible = ids.iter().any(|id| {
         rules
             .object_in_category(ObjectCategory::Vehicle, id)
-            .is_some_and(|object| object.crate_goodie)
+            .is_some_and(eligible)
     });
-    if ids.is_empty() || !any_goodie {
+    if !any_eligible {
         return None;
     }
     let count = i32::try_from(ids.len()).unwrap_or(i32::MAX);
@@ -314,20 +324,7 @@ pub(super) fn choose_unit_crate_type<'r>(
         else {
             continue;
         };
-        let is_base_unit = rules
-            .general
-            .base_unit_types
-            .iter()
-            .any(|base| base.eq_ignore_ascii_case(&candidate.id));
-        if !candidate.crate_goodie {
-            continue;
-        }
-        let accepted = if bases {
-            !is_base_unit || human || preempted
-        } else {
-            !is_base_unit
-        };
-        if accepted {
+        if eligible(candidate) {
             return Some(candidate);
         }
     }

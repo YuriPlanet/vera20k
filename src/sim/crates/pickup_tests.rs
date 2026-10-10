@@ -790,3 +790,80 @@ fn a_walking_soldier_picks_up_the_crate_on_his_path() {
     );
     assert!(sim.houses[&owner].economy.credits() > credits);
 }
+
+/// A nonempty CrateGoodie pool can still have no acceptable candidate: an
+/// MCV is forbidden with Bases off, and for a non-preempted AI with Bases on.
+#[test]
+fn random_unit_crate_with_only_forbidden_mcvs_returns_without_rng() {
+    for (bases, human) in [(false, true), (true, false)] {
+        let (mut sim, _, _, owner, _) = arena();
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nBaseUnit=AMCV\n[VehicleTypes]\n0=AMCV\n\
+             [AMCV]\nStrength=1000\nCrateGoodie=yes\n",
+        ))
+        .unwrap();
+        sim.session.game_options.bases = bases;
+        sim.houses.get_mut(&owner).unwrap().is_human = human;
+        let before = sim.scenario_rng.native_state_hex();
+        assert!(
+            effects::choose_unit_crate_type(&mut sim, &rules, owner, false).is_none(),
+            "no vehicle is eligible with bases={bases}, human={human}"
+        );
+        assert_eq!(sim.scenario_rng.native_state_hex(), before);
+    }
+}
+
+/// The guard must not reject an MCV that the existing human/Bases rule admits.
+#[test]
+fn random_unit_crate_still_allows_a_human_mcv_with_bases() {
+    let (mut sim, _, _, owner, _) = arena();
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nBaseUnit=AMCV\n[VehicleTypes]\n0=AMCV\n\
+         [AMCV]\nStrength=1000\nCrateGoodie=yes\n",
+    ))
+    .unwrap();
+    sim.session.game_options.bases = true;
+    sim.houses.get_mut(&owner).unwrap().is_human = true;
+    assert_eq!(
+        effects::choose_unit_crate_type(&mut sim, &rules, owner, false)
+            .map(|object| object.id.as_str()),
+        Some("AMCV")
+    );
+}
+
+/// A rejected MCV draw must still be spent when another type is eligible.
+/// Filtering the draw pool would change both the result and the RNG stream.
+#[test]
+fn random_unit_crate_keeps_rejected_draws_before_an_eligible_vehicle() {
+    let (mut sim, _, _, owner, _) = arena();
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nBaseUnit=AMCV\n[VehicleTypes]\n0=AMCV\n1=TNK\n\
+         [AMCV]\nStrength=1000\nCrateGoodie=yes\n\
+         [TNK]\nStrength=300\nCrateGoodie=yes\n",
+    ))
+    .unwrap();
+    sim.session.game_options.bases = false;
+    // Select a deterministic starting state whose first two draws are 0, 1.
+    let expected = (0..100)
+        .find_map(|_| {
+            let mut probe = sim.scenario_rng.clone();
+            if probe.next_range_i32_inclusive(0, 1) == 0
+                && probe.next_range_i32_inclusive(0, 1) == 1
+            {
+                Some(probe)
+            } else {
+                sim.scenario_rng.next_range_i32_inclusive(0, 1);
+                None
+            }
+        })
+        .expect("a deterministic rejected-MCV then accepted-tank draw pair");
+    assert_eq!(
+        effects::choose_unit_crate_type(&mut sim, &rules, owner, false)
+            .map(|object| object.id.as_str()),
+        Some("TNK")
+    );
+    assert_eq!(
+        sim.scenario_rng.native_state_hex(),
+        expected.native_state_hex()
+    );
+}
