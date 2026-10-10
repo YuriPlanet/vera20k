@@ -222,8 +222,8 @@ class Paid(mission_owner.Mission):
   def fv_lexical(raw,wanted):return lexical0(raw,(set(wanted)-{'MTNK'})|({'FV'}if'MTNK'in wanted else set()))
   mission_owner.base.lexical=fv_lexical
   invoke=self.m.invoke
-  def observed_invoke(fn,this,args=()):
-   result=invoke(fn,this,args)
+  def observed_invoke(fn,this,args=(),**kwargs):
+   result=invoke(fn,this,args,**kwargs)
    if fn in(0x7353C0,0x737BA0):
     row=self.lifecycle[-1];assert int(row['pc'],16)==fn
     row.update(returned_eax=result,after=self.lifecycle_state())

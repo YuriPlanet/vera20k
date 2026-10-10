@@ -914,7 +914,13 @@ use crate::sim::world::Simulation;
 // four retained sidebar entry lists and scroll rows. Re-sorting after load
 // loses insertion history when live comparison inputs changed; prior records
 // lack that order and viewport state.
-const SNAPSHOT_VERSION: u32 = 317;
+// 317 -> 318: Foot MoveSound keeps its native signed dword countdown in
+// one private owner, replacing the lossy byte. Old bincode records cannot resume.
+// 318 -> 319: Guard commands retain a Cell/object/null post and no longer
+// serialize the competing OrderIntent::Guard anchor. Old commands cannot resume.
+// 319 -> 320: Mirage disguise owns the constructor-anchored timer and drops
+// the invented +1E4 packed-cell word. Prior bincode records cannot resume.
+const SNAPSHOT_VERSION: u32 = 320;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1166,10 +1172,6 @@ pub enum SnapshotRestoreError {
         saved_total: u32,
         computed_total: u64,
     },
-    #[error(
-        "entity {object_id} has active MoveSound state but no restorable configured sound identity"
-    )]
-    ActiveMoveSoundUnresolvable { object_id: u64 },
     #[error("snapshot restore requires the {component}")]
     MissingMapAuthorityComponent { component: &'static str },
     #[error(
@@ -2334,7 +2336,7 @@ impl Simulation {
         // and bite timers: a bite is due at once and suppression is dropped.
         let frame = self.session.binary_frame;
         for id in self.substrate.entities.keys_sorted() {
-            self.restore_sinking_sound_state_after_load(id);
+            self.restore_move_sound_state_after_load(id);
             if let Some(parasite) = self
                 .substrate
                 .entities
@@ -2357,50 +2359,6 @@ impl Simulation {
             &self.substrate.entities,
             &self.substrate.occupancy,
         );
-        Ok(())
-    }
-
-    /// Recreate app-owned loop handles for serialized active MoveSound state.
-    ///
-    /// The configured identity is re-emitted as a transient sound event while
-    /// the authoritative active/countdown bytes remain untouched. The local
-    /// audio owner performs any process-global selection after its acceptance
-    /// gates; snapshot restoration never advances an RNG itself.
-    pub(crate) fn restore_move_sound_handles_after_load(
-        &mut self,
-        rules: &crate::rules::ruleset::RuleSet,
-    ) -> Result<(), SnapshotRestoreError> {
-        let object_ids = self.substrate.entities.keys_sorted();
-        for object_id in object_ids {
-            let Some(entity) = self.substrate.entities.get(object_id) else {
-                continue;
-            };
-            if !entity.move_sound_active {
-                continue;
-            }
-
-            let type_ref = entity.type_ref();
-            let world = Self::movement_sound_world(entity);
-            let Some(configured_sound) = self
-                .object_type(type_ref, rules)
-                .and_then(|object| object.move_sound.as_deref())
-                .map(str::trim)
-                .filter(|sound| !sound.is_empty() && !sound.eq_ignore_ascii_case("none"))
-                .map(str::to_owned)
-            else {
-                return Err(SnapshotRestoreError::ActiveMoveSoundUnresolvable { object_id });
-            };
-            let Some(sound_id) = self.interner.get(&configured_sound) else {
-                return Err(SnapshotRestoreError::ActiveMoveSoundUnresolvable { object_id });
-            };
-
-            self.sound_events
-                .push(crate::sim::world::SimSoundEvent::AnimationStarted {
-                    anim_id: object_id,
-                    sound_id,
-                    world,
-                });
-        }
         Ok(())
     }
 
@@ -4011,7 +3969,9 @@ mod tests {
         // 314 -> 315: no ready-building list beside the factories.
         // 315 -> 316: the native airfield loop replaces the legacy dock FSM.
         // 316 -> 317: the local owner's retained sidebar insertion history.
-        assert_eq!(super::SNAPSHOT_VERSION, 317);
+        // 318 -> 319: Guard carries its native post, with one mission owner.
+        // 319 -> 320: Mirage retains only its established timer words.
+        assert_eq!(super::SNAPSHOT_VERSION, 320);
     }
 
     #[test]
@@ -7787,11 +7747,10 @@ mod tests {
     }
 
     #[test]
-    fn restore_recreates_active_move_sound_without_rng_or_countdown_mutation() {
+    fn restore_clears_move_sound_without_playback_or_rng_draw() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::ruleset::RuleSet;
         use crate::sim::game_entity::GameEntity;
-        use crate::sim::world::SimSoundEvent;
 
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[InfantryTypes]\n\
@@ -7805,40 +7764,28 @@ mod tests {
         sim.session.map_name = "MOVESOUND.MAP".to_string();
         let owner = sim.interner.intern("AMERICANS");
         let type_ref = sim.interner.intern("TEST");
-        let sound_id = sim.interner.intern("VMove");
+        sim.interner.intern("VMove");
         let entity_id = sim.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "TEST", "AMERICANS", 7, 9);
         entity.owner = owner;
         entity.type_ref = type_ref;
-        entity.move_sound_active = true;
-        entity.move_sound_countdown = 2;
+        entity.move_sound = crate::sim::world::MoveSoundState::from_raw_for_test(true, 2);
         sim.substrate.entities.insert(entity);
 
         let bytes = GameSnapshot::save_validated(&sim, 17, 18, "Move sound fixture", 19);
         let mut restored = GameSnapshot::load_validated(&bytes, 17, 18, "MOVESOUND.MAP")
             .expect("strict snapshot")
             .sim;
+        let rng_before = restored.rng_state();
         restored
             .restore_after_snapshot_load()
             .expect("valid restored object graph");
         restored.resolve_type_handles(&rules);
-        let rng_before = restored.rng_state();
-        restored
-            .restore_move_sound_handles_after_load(&rules)
-            .expect("active move sound resolves");
-
         assert_eq!(restored.rng_state(), rng_before);
         let entity = restored.substrate.entities.get(entity_id).expect("entity");
-        assert!(entity.move_sound_active);
-        assert_eq!(entity.move_sound_countdown, 2);
-        assert!(matches!(
-            restored.sound_events.as_slice(),
-            [SimSoundEvent::AnimationStarted {
-                anim_id,
-                sound_id: restored_sound,
-                ..
-            }] if *anim_id == entity_id && *restored_sound == sound_id
-        ));
+        assert!(!entity.move_sound.is_active());
+        assert_eq!(entity.move_sound.countdown(), 0);
+        assert!(restored.sound_events.is_empty());
     }
 
     #[test]

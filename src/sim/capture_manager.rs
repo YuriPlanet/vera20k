@@ -640,6 +640,21 @@ impl Simulation {
         }
     }
 
+    /// Unit UpdateDisguise's attached-ring tail746A9C..746B19. Read the
+    /// capture owner's existing +2C8 link and the shared House50B6F0 predicate;
+    /// neither allocation nor controller/owner identity changes here.
+    pub(crate) fn update_disguise_ring_visibility(&mut self, id: u64) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(ring) = entity.mind_control.ring_anim else {
+            return;
+        };
+        let hidden = entity.disguise.as_ref().is_some_and(|d| d.is_disguised())
+            && !self.house_is_human_player(entity.owner());
+        self.set_anim_hidden(ring, hidden);
+    }
+
     /// `CaptureManagerClass::FreeUnit @ 0x00471FF0`: every node of `victim`,
     /// newest first. Returns false for a missing controller or manager.
     pub(crate) fn free_unit(

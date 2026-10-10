@@ -313,6 +313,15 @@ pub(crate) trait JumpjetFlightHost {
     /// ([`JumpjetRuntime::stop_moving`](super::JumpjetRuntime::stop_moving))
     /// synchronously, retaining all instance writes made by the callback.
     fn stop_moving(&mut self, runtime: &mut JumpjetRuntime) -> i32;
+    /// State 1's factory-contact callback (`0x0054BC59..0x0054BCB3`): while
+    /// the owner's `Contacts[0]` is a Building whose type is `WeaponsFactory=`,
+    /// `GDIBarracks=`, `NODBarracks=` or `YuriBarracks=`, the owner receives
+    /// `INotifyProc::Notify(0x117B, 0)` (Infantry `0x00522A60`, Unit
+    /// `0x00746100`: [`Simulation::jumpjet_lift_off_notify`]). The callback
+    /// may re-target the owner; the caller re-reads the destination after it.
+    ///
+    /// [`Simulation::jumpjet_lift_off_notify`]: crate::sim::world::Simulation::jumpjet_lift_off_notify
+    fn factory_contact_notify(&mut self, runtime: &mut JumpjetRuntime);
     /// `CellClass+0x140 & 0x100`: the cell carries a high bridge.
     fn cell_high_bridge_at(&self, cell: (i16, i16)) -> bool;
     /// Locomotor `+0x90`, the latch State 4 sets once it has admitted a
@@ -925,7 +934,12 @@ pub(crate) fn state1_ascend(
                 .flight
                 .facing
                 .set(desired_facing(destination, location), frame);
-            let dest_cell = host.cell_of([destination[0], destination[1]]);
+            // A factory contact hears the lift-off; the barracks releases
+            // its tether and the owner may take its rally or scatter again.
+            host.factory_contact_notify(runtime);
+            // 0x0054BCB5 re-reads +0x40/+0x44 after that callback.
+            let destination = [runtime.destination.x, runtime.destination.y];
+            let dest_cell = host.cell_of(destination);
             if here == dest_cell && !host.balloon_hover() {
                 // Already over the destination: hold this height and translate.
                 runtime.flight.target_height = host.height_above_ground();
@@ -1374,6 +1388,7 @@ mod tests {
             self.events.push("stop_moving");
             STATE_ASCEND
         }
+        fn factory_contact_notify(&mut self, _runtime: &mut JumpjetRuntime) {}
         fn cell_high_bridge_at(&self, cell: (i16, i16)) -> bool {
             self.bridges.contains(&cell)
         }
@@ -1840,6 +1855,7 @@ mod tests {
             self.stop_requested = true;
             STATE_DESCEND
         }
+        fn factory_contact_notify(&mut self, _runtime: &mut JumpjetRuntime) {}
         fn cell_high_bridge_at(&self, _cell: (i16, i16)) -> bool {
             false
         }

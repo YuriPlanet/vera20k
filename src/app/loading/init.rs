@@ -3199,6 +3199,7 @@ pub(crate) fn load_map_from_initial(
         &rules_ini,
         &rules.crate_rules,
         rules.art(),
+        &rules.general.default_mirage_disguises,
         overlay_iso_palette.as_ref(),
         unit_palette.as_ref(),
         overlay_tiberium_palette.as_ref(),

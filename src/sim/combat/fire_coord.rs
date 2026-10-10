@@ -17,7 +17,6 @@ use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::combat_targeting::AttackerSnapshot;
-use crate::sim::combat::combat_weapon::WeaponSlot;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::world::Simulation;
@@ -170,17 +169,15 @@ pub(crate) fn turret_pivot_coordinate(
 ///   `TacticalClass::IsometricPixelToWorld @ 0x006D2070` of `MuzzleFlashN` for
 ///   the firing port (`this+0x69C`); Z is the building's.
 /// - A `PrimaryFirePixelOffset` (`+0xE44`): the same pixel conversion added to
-///   the building coordinate.
+///   the building coordinate, or base GetFLH when PrimaryFireDualOffset.
 /// - Otherwise the base `GetFLH`.
 ///
-/// RESIDUAL: three type bytes steer arms that are not modelled: `+0x16C6`
-/// (`GetTurretDrawPosition`), `+0x16C5` (`TurretAnimIsVoxel=`, whose arm adds
-/// `TurretAnimX=`/`TurretAnimY=` at `+0x11E0` to the base FLH) and `+0x1764`
-/// (pixel offset added to the base FLH instead of to the building
-/// coordinate). The keys of `+0x16C6` and `+0x1764` are UNCHECKED. The
-/// secondary slot's pixel offset and the `PrimaryFireDualOffset` mirror are
-/// VERA's reading of the art keys, carried over from the presentation code
-/// this replaces; the native body read here uses `+0xE44` alone.
+/// RESIDUAL: two type bytes steer separate turret arms: `+0x16C6`
+/// (`GetTurretDrawPosition`) and `+0x16C5` (`TurretAnimIsVoxel=`, which adds
+/// `TurretAnimX/Y` to the base FLH). Neither is set on retail GAPRIS.
+/// `+0x1764` is now native-established PrimaryFireDualOffset; all callers
+/// share the corrected primary-pixel/selected-FLH path. Executed stock and
+/// asymmetric slot/burst controls: building_prism.json::laser_flh.
 /// - Trigger: a building weapon with one of those art flags.
 /// - Effect: the shot and its flash start a few pixels off.
 /// - Frequency: stock turreted defences (voxel turret buildings).
@@ -219,32 +216,10 @@ pub(crate) fn fire_coordinate(
     } else {
         base_coords
     };
-    let slot = if weapon_index == 1 {
-        WeaponSlot::Secondary
-    } else {
-        WeaponSlot::Primary
-    };
     let base = fire_coordinate_base(world, rules, snap, obj);
     let (source_x, source_y, source_z) = (base.x, base.y, base.z);
     let aim_facing16 = base.fire_facing;
     let art = base.art;
-
-    if snap.category == EntityCategory::Structure
-        && let Some((px, py)) =
-            art.and_then(|art| building_pixel_offset(art, snap, slot, burst_index))
-    {
-        let (dx, dy) = PixelConversionBounds::isometric_pixel_to_leptons(px, py);
-        return FireCoordinate {
-            coord: ProjectileCoord::new(
-                source_x.wrapping_add(dx),
-                source_y.wrapping_add(dy),
-                source_z,
-            ),
-            source_z,
-            aim_facing16,
-            offset_y: dy,
-        };
-    }
 
     let flh_delta = art
         .and_then(|art| {
@@ -262,6 +237,33 @@ pub(crate) fn fire_coordinate(
             flh_world_delta(art, flh, base.facings, burst_index)
         })
         .unwrap_or((0, 0, 0));
+    if snap.category == EntityCategory::Structure
+        && let Some((px, py)) = art.and_then(|art| building_pixel_offset(art, snap))
+    {
+        let (dx, dy) = PixelConversionBounds::isometric_pixel_to_leptons(px, py);
+        // Building4538ED..45395A: PrimaryFireDualOffset+1764 adds the
+        // unmirrored PRIMARY pixel offset to base TechnoGetFLH for the
+        // requested weapon. Only FLH lateral is mirrored by burst parity.
+        // An occupied MuzzleFlash port takes the earlier return instead.
+        let flh = if snap.garrison_fire_index.is_none()
+            && art.is_some_and(|art| art.primary_fire_dual_offset)
+        {
+            flh_delta
+        } else {
+            (0, 0, 0)
+        };
+        return FireCoordinate {
+            coord: ProjectileCoord::new(
+                source_x.wrapping_add(flh.0).wrapping_add(dx),
+                source_y.wrapping_add(flh.1).wrapping_add(dy),
+                source_z.wrapping_add(flh.2),
+            ),
+            source_z,
+            aim_facing16,
+            offset_y: flh.1.wrapping_add(dy),
+        };
+    }
+
     FireCoordinate {
         coord: ProjectileCoord::new(
             source_x + flh_delta.0,
@@ -547,15 +549,8 @@ fn open_topped_port_coordinate(
 }
 
 /// The art pixel offset a building's shot leaves from, if it has one.
-fn building_pixel_offset(
-    art: &ArtEntry,
-    snap: &FireSource,
-    slot: WeaponSlot,
-    burst_index: u8,
-) -> Option<(i32, i32)> {
+fn building_pixel_offset(art: &ArtEntry, snap: &FireSource) -> Option<(i32, i32)> {
     if let Some(fire_index) = snap.garrison_fire_index {
-        // A port the art does not author reads as (0, 0), the zeroed slot
-        // native's fixed `MuzzleFlashN` array holds.
         return Some(
             art.muzzle_flash_positions
                 .get(usize::from(fire_index))
@@ -563,14 +558,9 @@ fn building_pixel_offset(
                 .unwrap_or((0, 0)),
         );
     }
-    let (mut px, py) = match slot {
-        WeaponSlot::Primary => primary_fire_pixel_offset(Some(art)),
-        WeaponSlot::Secondary => art.secondary_fire_pixel_offset,
-    }?;
-    if matches!(slot, WeaponSlot::Primary) && art.primary_fire_dual_offset && burst_index % 2 == 1 {
-        px = -px;
-    }
-    Some((px, py))
+    // Original4538D1 tests only +E44 even for weapon1; the prior secondary
+    // offset and pixel-X mirror here had no native counterpart.
+    primary_fire_pixel_offset(Some(art))
 }
 
 /// The muzzle animation type a shot constructs.
@@ -897,21 +887,6 @@ mod tests {
         bunker.garrison_fire_index = Some(7);
         let none = fire_coordinate(&world, &rules, &bunker, obj, 0, 0, Flh::default());
         assert_eq!(none.coord, ProjectileCoord::new(X - 128, Y - 128, Z));
-    }
-
-    #[test]
-    fn a_building_pixel_offset_mirrors_on_odd_bursts() {
-        let (rules, world) = (rules(), Simulation::new());
-        let obj = rules.object("TOWER").unwrap();
-        let tower = source(EntityCategory::Structure);
-        let even = fire_coordinate(&world, &rules, &tower, obj, 0, 0, Flh::default());
-        let odd = fire_coordinate(&world, &rules, &tower, obj, 0, 1, Flh::default());
-        assert_eq!(even.coord, ProjectileCoord::new(X - 128 + 256, Y - 128, Z));
-        assert_eq!(odd.coord, ProjectileCoord::new(X - 128, Y - 128 + 256, Z));
-        // No secondary offset authored: the base FLH, from the same building
-        // coordinate the pixel arms use.
-        let secondary = fire_coordinate(&world, &rules, &tower, obj, 1, 0, Flh::default());
-        assert_eq!(secondary.coord, ProjectileCoord::new(X - 128, Y - 128, Z));
     }
 
     #[test]

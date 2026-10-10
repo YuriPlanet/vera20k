@@ -389,11 +389,10 @@ impl crate::sim::world::Simulation {
                 .flatten()
                 .and_then(|weapon| weapon.report_item(report.item as usize))
         {
-            let sound_id = self.interner.intern(sound);
             self.sound_events
                 .push(crate::sim::world::SimSoundEvent::GattlingLoop {
                     owner,
-                    sound_id,
+                    sound_id: sound.to_owned(),
                     world,
                 });
         }

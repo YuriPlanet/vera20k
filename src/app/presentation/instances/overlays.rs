@@ -254,8 +254,10 @@ pub(crate) fn build_anim_class_instances(
         }
         if !crate::sim::anim_class::anim_draw_detail_visible(
             crate::sim::anim_class::AnimDrawDetailInput {
-                // No authoritative draw-rate degradation producer exists yet.
-                frame_rate_below_minimum: false,
+                frame_rate_below_minimum: {
+                    let mut detail = state.match_state.match_presentation.detail.borrow_mut();
+                    detail.frame_rate() < detail.minimum_frame_rate()
+                },
                 type_detail_level: config.map_or(0, |value| value.detail_level),
                 game_detail_level: state
                     .match_state

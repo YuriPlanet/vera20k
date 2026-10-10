@@ -50,7 +50,6 @@ pub(crate) fn default_yr_skirmish_tps() -> u32 {
 pub(crate) enum OrderMode {
     Move,
     AttackMove,
-    Guard,
 }
 
 /// Local edge state for the retail TypeSelect command.
@@ -248,7 +247,6 @@ pub(crate) enum ScrollDir {
 pub(crate) enum CursorFeedbackKind {
     Move,
     AttackMove,
-    Guard,
     FriendlyUnit,
     FriendlyStructure,
     EnemyUnit,

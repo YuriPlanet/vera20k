@@ -82,15 +82,9 @@
 //!   EBolt::Init `0x004C2A60`, audio; an instruction scan), so the charge's
 //!   loop draw keeps its native place in that stream. Later owner: FireAt
 //!   moving into each object's Logic visit.
-//! - The Prism beams are not drawn. A support beam (`0x0044ABD0`: a
-//!   LaserDrawClass from the supporter's weapon-0 FLH to the stored point in
-//!   the House's `LaserColor`, width 3, `PrismSupportDuration=` frames) and
-//!   FireAt's main beam of an `IsLaser=` weapon (`0x006FF4CC..0x006FF544`,
-//!   width 5 on a supported shot) have no presentation owner: VERA has no
-//!   LaserDrawClass. Trigger: every Prism tower and Prism tank shot. Effect:
-//!   the beams are invisible; damage, timing and anims are unaffected (no
-//!   RNG, no sim state). Later owner: laser drawing, its own presentation
-//!   chain.
+//! The house-color Prism support/main lasers now emit ordered copied births
+//! through `combat::laser` and share the app LaserDraw/DSurface owner. The
+//! remaining non-house randomized spread path belongs to DrawBeam550260.
 //! - UnitReload/Bunker Guard contact admission remains with those separate
 //!   families (449817..499B5). UnitRepair's raw-distance/NEED_MOVE/Repair
 //!   queue is ported here; DOCK_NOW independently supplies its ready latch.
@@ -879,7 +873,7 @@ fn fire_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, target: TargetKind, 
     else {
         return;
     };
-    if is_prism_type(rules, obj) {
+    if rules.is_prism_type(obj) {
         prism_arm(sim, id, rules, obj);
         return;
     }
@@ -909,15 +903,6 @@ fn fire_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, target: TargetKind, 
                 .insert(id, BuildingShot::Mission { weapon, target });
         }
     }
-}
-
-/// `Type == Rules+0x498` (`[General] PrismType=`, `0x0044B2F8`).
-fn is_prism_type(rules: &RuleSet, obj: &crate::rules::object_type::ObjectType) -> bool {
-    rules
-        .general
-        .prism_type
-        .as_deref()
-        .is_some_and(|prism_type| obj.id.eq_ignore_ascii_case(prism_type))
 }
 
 /// Arms a delayed fire (`+0x714` = `delay`, `+0x704` and `+0x708..+0x710`
@@ -1096,8 +1081,8 @@ fn prism_supporter(
 ///   that target is asked of the combat phase ([`BuildingShot::Delayed`]),
 ///   whose bullet takes the support bonus ([`Simulation::take_support_bonus`]).
 ///   Otherwise the shot is dropped and `+0x664` kept.
-/// - A support beam (mode 2, `0x0044ABD0`): the beam (not drawn, module
-///   doc), `+0x664 = 0` (`0x0044ACCA`) and the downtime: the rearm timer
+/// - A support beam (mode 2, `0x0044ABD0`): construct the beam, then
+///   `+0x664 = 0` (`0x0044ACCA`) and the downtime: the rearm timer
 ///   becomes {Frame, `PrismSupportDelay=`} (`0x0044ACD0..0x0044ACDC`). No
 ///   check, damage or Scenario draw.
 pub(super) fn process_delayed_fire(
@@ -1140,7 +1125,13 @@ pub(super) fn process_delayed_fire(
                     .insert(id, BuildingShot::Delayed { slot, target });
             }
         }
-        DelayedFire::SupportBeam { .. } => {
+        DelayedFire::SupportBeam { to } => {
+            crate::sim::combat::laser::support(sim, rules, id, to);
+            let entity = sim
+                .substrate
+                .entities
+                .get_mut(id)
+                .expect("live support source");
             entity.prism_support_count = 0;
             entity
                 .rearm_timer

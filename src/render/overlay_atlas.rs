@@ -427,6 +427,7 @@ pub fn build_overlay_atlas(
     batch: &BatchRenderer,
     overlays: &[OverlayEntry],
     terrain_objects: &[TerrainObject],
+    extra_terrain_types: &[String],
     asset_manager: &AssetManager,
     theater_palette: &Palette,
     unit_palette: &Palette,
@@ -446,6 +447,7 @@ pub fn build_overlay_atlas(
         batch,
         overlays,
         terrain_objects,
+        extra_terrain_types,
         asset_manager,
         theater_palette,
         unit_palette,
@@ -469,6 +471,7 @@ pub(crate) fn build_overlay_atlas_on_device(
     batch: &BatchRenderer,
     overlays: &[OverlayEntry],
     terrain_objects: &[TerrainObject],
+    extra_terrain_types: &[String],
     asset_manager: &AssetManager,
     theater_palette: &Palette,
     unit_palette: &Palette,
@@ -577,10 +580,16 @@ pub(crate) fn build_overlay_atlas_on_device(
     let mut terrain_anim_frames: HashMap<String, u8> = HashMap::new();
     let mut native_terrain_candidates = HashSet::new();
     let mut native_terrain = HashSet::new();
-    for obj in terrain_objects {
-        if terrain_anim_frames.contains_key(&obj.name)
+    // Mirage defaults are registered TerrainTypes even when no map Terrain
+    // object uses them. Type/image loading must precede the first disguise.
+    for name in terrain_objects
+        .iter()
+        .map(|object| object.name.as_str())
+        .chain(extra_terrain_types.iter().map(String::as_str))
+    {
+        if terrain_anim_frames.contains_key(name)
             || needed.contains(&OverlaySpriteKey {
-                name: obj.name.clone(),
+                name: name.to_owned(),
                 frame: 0,
             })
         {
@@ -589,32 +598,32 @@ pub(crate) fn build_overlay_atlas_on_device(
         }
         let frame_count = probe_terrain_shp_frame_count(
             asset_manager,
-            &obj.name,
+            name,
             theater_ext,
             theater_name,
             rules_ini,
             art_registry,
         );
-        let ordinary_static = rules_ini.section(&obj.name).is_none_or(|s| {
+        let ordinary_static = rules_ini.section(name).is_none_or(|s| {
             !s.read_bool("IsAnimated", false) && !s.read_bool("SpawnsTiberium", false)
-        }) && overlay_registry.flags_by_name(&obj.name).is_none();
-        let animated_spawner = rules_ini.section(&obj.name).is_some_and(|section| {
+        }) && overlay_registry.flags_by_name(name).is_none();
+        let animated_spawner = rules_ini.section(name).is_some_and(|section| {
             section.read_bool("IsAnimated", false) && section.read_bool("SpawnsTiberium", false)
         });
         if (frame_count == 1 && ordinary_static) || animated_spawner {
-            native_terrain_candidates.insert(obj.name.clone());
+            native_terrain_candidates.insert(name.to_owned());
         }
         if frame_count > 1 {
-            terrain_anim_frames.insert(obj.name.clone(), frame_count);
+            terrain_anim_frames.insert(name.to_owned(), frame_count);
             for frame in 0..frame_count {
                 needed.insert(OverlaySpriteKey {
-                    name: obj.name.clone(),
+                    name: name.to_owned(),
                     frame,
                 });
             }
         } else {
             needed.insert(OverlaySpriteKey {
-                name: obj.name.clone(),
+                name: name.to_owned(),
                 frame: 0,
             });
         }
@@ -1210,6 +1219,10 @@ fn render_smudge_sprite(
 #[cfg(test)]
 #[path = "overlay_atlas_tibtre_tests.rs"]
 mod tibtre_tests;
+
+#[cfg(test)]
+#[path = "overlay_atlas_mirage_tests.rs"]
+mod mirage_tests;
 
 #[cfg(test)]
 #[path = "overlay_atlas_radar_tests.rs"]

@@ -787,7 +787,7 @@ fn pick_building_for_owner(
     None
 }
 
-fn schedule_command_in_sim(
+pub(super) fn schedule_command_in_sim(
     sim: &mut crate::sim::world::Simulation,
     owner: &str,
     payload: Command,
@@ -824,7 +824,7 @@ fn schedule_command_in_sim(
         }
         payload => CommandEnvelope::new(owner_id, execute_tick, payload),
     };
-    let envelope = roundtrip_ordinary_local_move(sim, envelope)?;
+    let envelope = roundtrip_ordinary_local_megamission(sim, envelope)?;
     sim.queue_command(envelope);
     Some(execute_tick)
 }
@@ -888,13 +888,14 @@ pub(crate) fn ordinary_cell_move_goal(
     })
 }
 
-/// Make the verified ordinary local Move bytes authoritative at issue time.
+/// Make ordinary local Move and AreaGuard bytes authoritative at issue time.
 ///
 /// Active YR routes a cell click through `ClickedAction` (`0x004D7D50`) to
-/// `EventClass__BuildMegaMissionEnvelope` (`0x004C6860`). Only queue-false Move
-/// is in that verified codec contract: queued/planning and every other semantic
-/// command pass through unchanged until their own native record is established.
-pub(crate) fn roundtrip_ordinary_local_move(
+/// `EventClass__BuildMegaMissionEnvelope` (`0x004C6860`). Guard key730D60
+/// reaches the same producer through QueueMegaMission6FFBE0. Queue-false Move
+/// and AreaGuard share this codec; queued/planning and other semantic commands
+/// pass through until their native record is established.
+pub(crate) fn roundtrip_ordinary_local_megamission(
     sim: &crate::sim::world::Simulation,
     envelope: CommandEnvelope,
 ) -> Option<CommandEnvelope> {
@@ -904,14 +905,8 @@ pub(crate) fn roundtrip_ordinary_local_move(
         payload,
     } = envelope;
     match payload {
-        Command::Move {
-            entity_id,
-            target_rx,
-            target_ry,
-            queue: false,
-        } => {
-            let record =
-                sim.encode_megamission_move_record(owner, entity_id, target_rx, target_ry)?;
+        Command::Move { queue: false, .. } | Command::Guard { .. } => {
+            let record = sim.encode_megamission_record(owner, &payload)?;
             SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)
         }
         payload => Some(CommandEnvelope::new(owner, execute_tick, payload)),

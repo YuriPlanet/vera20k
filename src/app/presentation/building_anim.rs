@@ -110,7 +110,7 @@ pub(crate) fn local_eva_side(state: &AppState) -> crate::rules::sound_ini::EvaSi
 /// Drain pending sound events from the queue and play them through the SFX player.
 ///
 /// Voice events (VoiceSelect, VoiceMove, VoiceAttack, VoiceCapture, ...) are
-/// latched per speaking object and drained at the end of the pass — see
+/// latched per speaking object and visited at reached Techno AI heads — see
 /// [`crate::audio::voice_queue`] — so a repeated click drops the second line
 /// instead of restarting the first mid-word. All other sounds go to the SFX
 /// pool.
@@ -127,6 +127,16 @@ pub(crate) fn local_eva_side(state: &AppState) -> crate::rules::sound_ini::EvaSi
 /// the positions already use — see that method for why the world frame is the
 /// side that is scaled.
 pub(crate) fn drain_sound_events(state: &mut AppState) {
+    drain_sound_events_inner(state, true);
+}
+
+/// Admit pending input effects before the frame's derived voice-interest
+/// view. This does not redrive positional owners or service EVA a second time.
+pub(crate) fn drain_pending_sound_events(state: &mut AppState) {
+    drain_sound_events_inner(state, false);
+}
+
+fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     use crate::audio::events::{GameSoundEvent, SoundSource};
     use crate::audio::sfx::{SpatialGain, SpatialListener, SpatialSource, spatial_gain};
 
@@ -165,7 +175,9 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
     let registry = catalog.sounds();
     let audio_indices = catalog.index();
     let eva_registry = catalog.eva();
-    sfx.advance_voice_queue(registry, assets, audio_indices);
+    if redrive_owners {
+        sfx.advance_voice_queue(registry, assets, audio_indices);
+    }
 
     // `CellClass+0x12C & 0x18 == 0`: neither explored nor visible. The shroud
     // renderer (`render::shroud_buffer`) blacks out the same cells — never
@@ -200,11 +212,12 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
 
     for event in &events {
         match event {
+            GameSoundEvent::UnitVoiceVisit { owner } => sfx.visit_unit_voice(*owner, registry),
+            GameSoundEvent::UnitVoiceDestroyed { owner } => sfx.destroy_unit_voice(*owner),
             // Unit acknowledgement lines — always full volume (non-positional).
             // `TechnoClass::Queue_Voice @ 0x00708D90` only latches the line on
-            // the speaking object; `drain_unit_voices` below is the
-            // `TechnoClass::AI_Update @ 0x006F9EBB` drain that decides whether
-            // it plays, is dropped as a repeat, or waits for the live line.
+            // the speaking object. Only an actual reached Techno6F9EBB
+            // effect above visits that latch, in the simulation's live order.
             GameSoundEvent::UnitSelected { speaker_id, .. }
             | GameSoundEvent::UnitMoveOrder { speaker_id, .. }
             | GameSoundEvent::UnitAttackOrder { speaker_id, .. } => {
@@ -233,13 +246,13 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
             }
             // UI events — always full volume (non-positional).
             GameSoundEvent::UiSound { .. } => {
-                sfx.play_sound(event.sound_id(), registry, assets, audio_indices);
+                sfx.play_sound(event.sound_id(), registry);
             }
             // `CreditsClass::Draw @ 0x004A2519`: `PUSH 0x3f000000` — the
             // credit tick is the one UI cue native plays at half volume,
             // centred (`EDX = 0x2000`).
             GameSoundEvent::CreditTick { .. } => {
-                sfx.play_sound_with_volume(event.sound_id(), 0.5, registry, assets, audio_indices);
+                sfx.play_sound_with_volume(event.sound_id(), 0.5, registry);
             }
             GameSoundEvent::AnimationStarted {
                 anim_id,
@@ -247,19 +260,15 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                 source,
             } => match gain_for(sound_id, *source) {
                 Some(gain) => {
-                    sfx.play_animation_sound_spatial(
-                        *anim_id,
-                        sound_id,
-                        gain,
-                        registry,
-                        assets,
-                        audio_indices,
-                    );
+                    sfx.play_animation_sound_spatial(*anim_id, sound_id, gain, registry);
                 }
                 None => sfx.bind_inaudible_animation_sound(*anim_id, sound_id, registry),
             },
             GameSoundEvent::AnimationReleased { anim_id } => {
                 sfx.release_animation_sound(*anim_id);
+            }
+            GameSoundEvent::AnimationDetached { anim_id } => {
+                sfx.detach_animation_sound(*anim_id);
             }
             GameSoundEvent::AnimationStopped {
                 anim_id,
@@ -270,7 +279,7 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                 if let Some(stop_sound_id) = stop_sound_id.as_deref().filter(|id| !id.is_empty())
                     && let Some(gain) = gain_for(stop_sound_id, *source)
                 {
-                    sfx.play_sound_spatial(stop_sound_id, gain, registry, assets, audio_indices);
+                    sfx.play_sound_spatial(stop_sound_id, gain, registry);
                 }
             }
             GameSoundEvent::CloakSound { sound_id, source }
@@ -284,13 +293,7 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                     continue;
                 }
                 if let Some(gain) = gain_for(sound_id, *source) {
-                    sfx.play_registered_sound_spatial(
-                        sound_id,
-                        gain,
-                        registry,
-                        assets,
-                        audio_indices,
-                    );
+                    sfx.play_registered_sound_spatial(sound_id, gain, registry);
                 }
             }
             GameSoundEvent::BaseUnderAttackSfx { sound_id } => {
@@ -302,13 +305,7 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                 if registry.get(sound_id).is_none() {
                     continue;
                 }
-                sfx.play_registered_sound_spatial(
-                    sound_id,
-                    SpatialGain::CENTRED_FULL,
-                    registry,
-                    assets,
-                    audio_indices,
-                );
+                sfx.play_registered_sound_spatial(sound_id, SpatialGain::CENTRED_FULL, registry);
             }
             GameSoundEvent::BuildingDamagedSfx { sound_id, source } => {
                 // `RulesClass::ReadAudioVisual @ 0x006691E0` keeps only the
@@ -319,39 +316,7 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                     continue;
                 }
                 if let Some(gain) = gain_for(sound_id, *source) {
-                    sfx.play_registered_sound_spatial(
-                        sound_id,
-                        gain,
-                        registry,
-                        assets,
-                        audio_indices,
-                    );
-                }
-            }
-            GameSoundEvent::VoiceFeedback { sound_id, source } => {
-                // `CCINIClass::ReadSoundList @ 0x00525430` only stores tokens
-                // `VocClass::FindPtrByName` resolves, so a `VoiceFeedback=`
-                // name that is not a registered Voc never enters the vector at
-                // `TechnoTypeClass+0x4D8` and must not reach the raw audio-bag
-                // fallback here.
-                //
-                // Played as a positional one-shot, not through the
-                // `VoiceQueue`: native's arm calls `VocClass::PlayAt @
-                // 0x007509E0` (`0x00702709`) directly, with no
-                // `TechnoClass::Queue_Voice @ 0x00708D90` latch and no
-                // `+0x4DC` handle, so it neither cuts nor is cut by a
-                // selection or order line.
-                if registry.get(sound_id).is_none() {
-                    continue;
-                }
-                if let Some(gain) = gain_for(sound_id, *source) {
-                    sfx.play_registered_sound_spatial(
-                        sound_id,
-                        gain,
-                        registry,
-                        assets,
-                        audio_indices,
-                    );
+                    sfx.play_registered_sound_spatial(sound_id, gain, registry);
                 }
             }
             GameSoundEvent::SuperWeaponActivated {
@@ -370,13 +335,7 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                         // `PlayAt @ 0x007509E0` at the target coordinate.
                         Some(source) => {
                             if let Some(gain) = gain_for(sound_id, Some(*source)) {
-                                let _ = sfx.play_registered_sound_spatial(
-                                    sound_id,
-                                    gain,
-                                    registry,
-                                    assets,
-                                    audio_indices,
-                                );
+                                let _ = sfx.play_registered_sound_spatial(sound_id, gain, registry);
                             }
                         }
                         // `StormSound` only: `LightningStorm::Start` calls
@@ -387,8 +346,6 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                                 sound_id,
                                 SpatialGain::CENTRED_FULL,
                                 registry,
-                                assets,
-                                audio_indices,
                             );
                         }
                     }
@@ -415,7 +372,7 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                 if !sound_id.is_empty()
                     && let Some(gain) = gain_for(sound_id, *source)
                 {
-                    sfx.play_sound_spatial(sound_id, gain, registry, assets, audio_indices);
+                    sfx.play_sound_spatial(sound_id, gain, registry);
                 }
                 if let Some(eva_event) = eva_event.as_deref().filter(|s| !s.is_empty()) {
                     let _ = sfx.play_eva(
@@ -433,7 +390,7 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
             // Range/Type/MinVolume against the tactical view.
             _ => {
                 if let Some(gain) = gain_for(event.sound_id(), event.source()) {
-                    sfx.play_sound_spatial(event.sound_id(), gain, registry, assets, audio_indices);
+                    sfx.play_sound_spatial(event.sound_id(), gain, registry);
                 }
             }
         }
@@ -467,16 +424,13 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
             );
             if let Some(gain) = spatial_gain(facts, screen_x, screen_y, &listener, shrouded(rx, ry))
             {
-                sfx.play_animation_sound_spatial(
-                    owner,
-                    sound_id,
-                    gain,
-                    registry,
-                    assets,
-                    audio_indices,
-                );
+                sfx.play_animation_sound_spatial(owner, sound_id, gain, registry);
             }
         }
+    }
+
+    if !redrive_owners {
+        return;
     }
 
     // `AnimClass::UpdateLoopingSound @ 0x00750D40` from the owner's side.
@@ -508,14 +462,8 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
         let facts = registry_facts_for_owner(registry, sfx, owner);
         let gain = facts
             .and_then(|facts| spatial_gain(facts, screen_x, screen_y, &listener, shrouded(rx, ry)));
-        sfx.update_looping_sound(owner, gain, registry, assets, audio_indices);
+        sfx.update_looping_sound(owner, gain, registry);
     }
-
-    // `TechnoClass::AI_Update @ 0x006F9EBB` drains the per-object voice latch
-    // immediately after its `AnimClass::UpdateLoopingSound` call at
-    // `0x006F9EA8`, so the drain runs last here too. This is where a repeated
-    // click is dropped instead of restarting the line mid-word.
-    sfx.drain_unit_voices(registry, assets, audio_indices);
 }
 
 /// The `Range`/`Type`/`MinVolume` a live loop handle's entry carries, for the

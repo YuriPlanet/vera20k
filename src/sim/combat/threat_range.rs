@@ -101,7 +101,6 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use crate::rules::object_type::ObjectType;
-use crate::sim::components::OrderIntent;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::MissionType;
 use crate::util::fixed_math::SimFixed;
@@ -268,17 +267,11 @@ pub(crate) enum ScanRange {
 /// entity's mission field would make the mask a property of the mission, which
 /// it is not.
 ///
-/// Area Guard has two representations here and both mean the same retail
-/// mission: the committed mission substrate value, and the `OrderIntent::Guard`
-/// anchor a player "guard this spot" order installs. `OrderIntent` still owns
-/// the anchor coordinates because the mission substrate has no goal field yet,
-/// so an entity on a player guard order carries the intent and *not* the
-/// mission id — reading only the substrate would miss every player-issued
-/// guard.
+/// Player-issued and map-created Area Guard share the committed mission and
+/// its ArchiveTarget post. A queued order changes this choice only when the
+/// mission owner promotes it.
 pub(crate) fn scan_mission_for(entity: &GameEntity) -> ScanMission {
-    let committed_area_guard = entity.mission.current().known() == Some(MissionType::AreaGuard);
-    let ordered_area_guard = matches!(entity.order_intent, Some(OrderIntent::Guard { .. }));
-    if committed_area_guard || ordered_area_guard {
+    if entity.mission.current().known() == Some(MissionType::AreaGuard) {
         ScanMission::AreaGuard
     } else {
         ScanMission::Guard

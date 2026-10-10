@@ -137,3 +137,116 @@ fn building_aim_directions_match_the_original() {
         assert_eq!(direction, word("direction_to"), "{name} vt+0x4E8");
     }
 }
+
+fn prism_native() -> Value {
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_prism.json",
+    ))
+    .unwrap()
+}
+
+fn native_coord(value: &Value) -> ProjectileCoord {
+    ProjectileCoord::new(
+        value[0].as_i64().unwrap() as i32,
+        value[1].as_i64().unwrap() as i32,
+        value[2].as_i64().unwrap() as i32,
+    )
+}
+
+#[test]
+fn building_primary_pixel_and_selected_flh_match_original_slot_and_burst_controls() {
+    let native = prism_native();
+    let rows = native["laser_flh"].as_array().unwrap();
+    assert_eq!(rows.len(), 16);
+    for row in rows {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=BLD\n[BLD]\nStrength=500\nTurret=no\n\
+             Primary=GUN\nSecondary=SUPPORT\n[GUN]\nDamage=1\n[SUPPORT]\nDamage=1\n",
+        ))
+        .unwrap();
+        let triplet = |key: &str, fallback: [i32; 3]| -> [i32; 3] {
+            input[key].as_array().map_or(fallback, |v| {
+                std::array::from_fn(|axis| v[axis].as_i64().unwrap() as i32)
+            })
+        };
+        let [forward, lateral, height] = triplet("primary_flh", [0, 0, 378]);
+        let [sf, sl, sh] = triplet("secondary_flh", [0; 3]);
+        let (px, py) = input["pixel_offset"].as_array().map_or((0, -4), |v| {
+            (v[0].as_i64().unwrap(), v[1].as_i64().unwrap())
+        });
+        let dual = input["primary_dual"].as_bool().unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(&format!(
+            "[BLD]\nFoundation=1x1\nPrimaryFirePixelOffset={px},{py}\n\
+             PrimaryFireDualOffset={dual}\nPrimaryFireFLH={forward},{lateral},{height}\n\
+             SecondaryFireFLH={sf},{sl},{sh}\n",
+        ))));
+        let mut sim = Simulation::new();
+        place(
+            &mut sim,
+            1,
+            "BLD",
+            EntityCategory::Structure,
+            &serde_json::json!([3200, 3200, 0]),
+        );
+        let building = sim.substrate.entities.get_mut(1).unwrap();
+        building.body_facing = FacingClass::new(0x2000, 0);
+        let source = FireSource::of_entity(building);
+        let [forward, lateral, height] = triplet("base", [0; 3]);
+        let actual = fire_coordinate(
+            &sim,
+            &rules,
+            &source,
+            rules.object("BLD").unwrap(),
+            input["slot"].as_i64().unwrap() as i32,
+            input["burst"].as_u64().unwrap() as u8,
+            Flh {
+                forward,
+                lateral,
+                height,
+            },
+        );
+        assert_eq!(actual.coord, native_coord(&row["source"]), "{name}");
+    }
+}
+
+#[test]
+fn retail_prism_main_and_support_muzzles_match_original_creation_inputs() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let native = prism_native();
+    let rows = native["laser_birth"].as_array().unwrap();
+    for name in ["production_main", "production_support"] {
+        let row = rows
+            .iter()
+            .find(|row| row["input"]["name"] == name)
+            .unwrap();
+        let mut sim = Simulation::new();
+        place(
+            &mut sim,
+            1,
+            "ATESLA",
+            EntityCategory::Structure,
+            &row["input"]["location"],
+        );
+        let source = FireSource::of_entity(sim.substrate.entities.get(1).unwrap());
+        // The support constructor uses its tower's primary FLH as well.
+        let actual = fire_coordinate(
+            &sim,
+            &retail.rules,
+            &source,
+            retail.rules.object("ATESLA").unwrap(),
+            0,
+            0,
+            Flh::default(),
+        );
+        assert_eq!(
+            actual.coord,
+            native_coord(&row["laser"]["source"]),
+            "{name}"
+        );
+    }
+}

@@ -244,9 +244,8 @@ impl App {
     }
 
     fn play_campaign_voice(state: &mut AppState, side: CampaignSide) {
-        let (Some(sfx), Some(assets), Some(catalog)) = (
+        let (Some(sfx), Some(catalog)) = (
             &mut state.audio.sfx_player,
-            state.process_assets.manager(),
             state.process_assets.audio_catalog(),
         ) else {
             return;
@@ -256,8 +255,6 @@ impl App {
             side.voice(),
             crate::audio::sfx::SpatialGain::CENTRED_FULL,
             catalog.sounds(),
-            assets,
-            catalog.index(),
         );
     }
 

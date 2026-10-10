@@ -89,21 +89,12 @@ impl AudioVolumeOperations for AppState {
         let Some(sound) = sound else {
             return;
         };
-        let Some(assets) = self.process_assets.manager() else {
-            return;
-        };
         let Some(sfx) = self.audio.sfx_player.as_mut() else {
             return;
         };
         let Some(catalog) = self.process_assets.audio_catalog() else {
             return;
         };
-        sfx.play_sound_with_volume(
-            &sound,
-            local_multiplier,
-            catalog.sounds(),
-            assets,
-            catalog.index(),
-        );
+        sfx.play_sound_with_volume(&sound, local_multiplier, catalog.sounds());
     }
 }

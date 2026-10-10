@@ -20,6 +20,7 @@ use crate::app::input::entity_pick::{
 };
 use crate::app::types::{HoverTargetKind, OrderMode};
 use crate::map::entities::EntityCategory;
+use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
 
@@ -239,7 +240,6 @@ fn voice_id_for_key<'a>(
             .or(obj.voice_enter.as_ref())
             .or(obj.voice_move.as_ref()),
         "VoiceEnter" => obj.voice_enter.as_ref().or(obj.voice_move.as_ref()),
-        "VoiceSpecialAttack" => obj.voice_special_attack.as_ref(),
         _ => None,
     }
 }
@@ -250,6 +250,20 @@ fn voice_id_for_key<'a>(
 /// entity; retail speaks the object that resolved the order, so order resolution
 /// needs to name the speaker explicitly.
 fn emit_entity_order_voice(state: &mut AppState, speaker_id: u64, voice_field: &str) {
+    if voice_field == "VoiceSpecialAttack" {
+        if let Some(runtime) = state.match_state.sim_runtime.as_mut()
+            && let Some(event) =
+                crate::app::match_runtime::sound_dispatch::default_order_voice_event(
+                    &mut runtime.simulation,
+                    &runtime.resources.rules,
+                    speaker_id,
+                    state.match_state.input.selection_voice_enabled,
+                )
+        {
+            state.match_state.match_audio.sound_events.push(event);
+        }
+        return;
+    }
     let Some(sim) = state
         .match_state
         .sim_runtime
@@ -310,7 +324,7 @@ fn finish_order(
         queued
             .into_iter()
             .filter_map(|envelope| {
-                crate::app::input::commands::roundtrip_ordinary_local_move(sim, envelope)
+                crate::app::input::commands::roundtrip_ordinary_local_megamission(sim, envelope)
             })
             .collect::<Vec<_>>()
     } else {
@@ -490,7 +504,7 @@ fn nearest_reachable_goal(
 /// while a member whose type refuses attack-move still commits the plain attack.
 pub(crate) fn object_click_payload(
     order_mode: OrderMode,
-    force_fire: bool,
+    modifier: OrderModifier,
     can_attack_move: bool,
     attacker_id: u64,
     target_id: u64,
@@ -498,10 +512,16 @@ pub(crate) fn object_click_payload(
     target_ry: u16,
     queue: bool,
 ) -> Command {
-    if force_fire {
+    if modifier == OrderModifier::ForceFire {
         return Command::ForceAttack {
             attacker_id,
             target_id,
+        };
+    }
+    if modifier == OrderModifier::GuardArea {
+        return Command::Guard {
+            entity_id: attacker_id,
+            target: Some(TargetKind::Entity(target_id)),
         };
     }
     match order_mode {
@@ -510,10 +530,6 @@ pub(crate) fn object_click_payload(
             target_rx,
             target_ry,
             queue,
-        },
-        OrderMode::Guard => Command::Guard {
-            entity_id: attacker_id,
-            target_id: Some(target_id),
         },
         _ => Command::Attack {
             attacker_id,
@@ -634,10 +650,15 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         // Move under Alt and under the cancelled chord but is replaced by force
         // fire and guard area.
         let cell_context_enabled: bool = !force_fire && modifier != OrderModifier::GuardArea;
+        // RESIDUAL (#605): this legacy Ctrl+Alt classifier does not execute
+        // Techno object700191..700217 or Cell700830..70089A's complete gates
+        // and waypoint alternatives. Occasional chorded clicks may therefore
+        // request Guard where native chooses another action. The shared Guard
+        // post below preserves the accepted target, but cannot correct that
+        // earlier choice; full click/cursor classification has its own owner.
         // A held chord overrides the sticky sidebar order mode for this click.
         let order_mode = match modifier {
             OrderModifier::AttackMove => OrderMode::AttackMove,
-            OrderModifier::GuardArea => OrderMode::Guard,
             _ => order_mode,
         };
 
@@ -1214,7 +1235,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                         nearest_reachable_goal(sim.path_grid(), (goal_rx, goal_ry));
                     object_click_payload(
                         order_mode,
-                        force_fire,
+                        modifier,
                         entity_can_attack_move(sim, Some(&resources.rules), stable_id),
                         stable_id,
                         target_id,
@@ -1274,6 +1295,16 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                             queue: goal.queue,
                         }
                     }
+                } else if modifier == OrderModifier::GuardArea {
+                    // An accepted Guard cell action carries the clicked Cell
+                    // in MegaMission's target slot. Classification remains the
+                    // existing Ctrl+Alt path; the native What_Action gates and
+                    // waypoint/patrol alternatives belong to that separate
+                    // input mechanism, not to the Guard key's 730D60 loop.
+                    Command::Guard {
+                        entity_id: stable_id,
+                        target: Some(TargetKind::Cell(target_rx, target_ry)),
+                    }
                 } else {
                     match order_mode {
                         OrderMode::Move | OrderMode::AttackMove => {
@@ -1310,21 +1341,6 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                                 }
                             }
                         }
-                        // DRIFT, recorded not fixed: gamemd's Ctrl+Alt area-guard
-                        // carries the CLICKED cell (0x00700830 -> mission 0x1A /
-                        // 0x33), while `Command::Guard` has no cell field, so the
-                        // sim anchors the guard at the actor's own position.
-                        // Trigger: Ctrl+Alt-clicking a cell away from the unit.
-                        // Player effect: the unit guards where it stands instead
-                        // of where the player pointed, so the order looks like it
-                        // did nothing. Frequency: occasional — a real habit for
-                        // holding ground, but not a reflex. Downstream risk:
-                        // closing it widens a sim command's payload, so it lands
-                        // with the Guard mission's own row (95), not here.
-                        OrderMode::Guard => Command::Guard {
-                            entity_id: stable_id,
-                            target_id: None,
-                        },
                     }
                 };
                 if let Command::Attack {
@@ -1884,7 +1900,7 @@ mod tests {
         assert_eq!(
             order_voice_key(&Command::Guard {
                 entity_id: 1,
-                target_id: None,
+                target: None,
             }),
             Some("VoiceSpecialAttack")
         );
@@ -2196,7 +2212,16 @@ mod tests {
     #[test]
     fn chorded_click_on_an_enemy_object_attack_moves() {
         assert_eq!(
-            object_click_payload(OrderMode::AttackMove, false, true, 1, 2, 9, 11, false),
+            object_click_payload(
+                OrderMode::AttackMove,
+                OrderModifier::Normal,
+                true,
+                1,
+                2,
+                9,
+                11,
+                false
+            ),
             Command::AttackMove {
                 entity_id: 1,
                 target_rx: 9,
@@ -2205,7 +2230,16 @@ mod tests {
             }
         );
         assert_eq!(
-            object_click_payload(OrderMode::AttackMove, false, false, 1, 2, 9, 11, false),
+            object_click_payload(
+                OrderMode::AttackMove,
+                OrderModifier::Normal,
+                false,
+                1,
+                2,
+                9,
+                11,
+                false
+            ),
             Command::Attack {
                 attacker_id: 1,
                 target_id: 2,
@@ -2213,24 +2247,51 @@ mod tests {
         );
         // Plain click, force fire and guard area are untouched by the promotion.
         assert_eq!(
-            object_click_payload(OrderMode::Move, false, true, 1, 2, 9, 11, false),
+            object_click_payload(
+                OrderMode::Move,
+                OrderModifier::Normal,
+                true,
+                1,
+                2,
+                9,
+                11,
+                false
+            ),
             Command::Attack {
                 attacker_id: 1,
                 target_id: 2,
             }
         );
         assert_eq!(
-            object_click_payload(OrderMode::AttackMove, true, true, 1, 2, 9, 11, false),
+            object_click_payload(
+                OrderMode::AttackMove,
+                OrderModifier::ForceFire,
+                true,
+                1,
+                2,
+                9,
+                11,
+                false
+            ),
             Command::ForceAttack {
                 attacker_id: 1,
                 target_id: 2,
             }
         );
         assert_eq!(
-            object_click_payload(OrderMode::Guard, false, true, 1, 2, 9, 11, false),
+            object_click_payload(
+                OrderMode::Move,
+                OrderModifier::GuardArea,
+                true,
+                1,
+                2,
+                9,
+                11,
+                false
+            ),
             Command::Guard {
                 entity_id: 1,
-                target_id: Some(2),
+                target: Some(TargetKind::Entity(2)),
             }
         );
     }

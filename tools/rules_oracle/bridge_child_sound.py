@@ -21,6 +21,20 @@ def sections(raw):
    k,v=map(str.strip,line.split('=',1))
    if k and v:cur[k]=v
  return out
+
+def playing_handle(m, entry, *, handle=None, serial=41, event=None):
+ """Supply this fixture's tagged playing-event boundary in an existing VM.
+
+ No device channel or sample buffer is attached. Original Release/Stop bodies
+ own every later mutation; callers may attach the handle to their real object.
+ """
+ if event is None:event=m.alloc(0x300)
+ if handle is None:handle=m.alloc(16)
+ m.u.mem_write(event+0x24,dwords(entry));m.u.mem_write(event+0x138,dwords(serial))
+ m.u.mem_write(event+0x1c,dwords(3));m.u.mem_write(event+0x18,dwords(8))
+ m.u.mem_write(handle,dwords(event,serial,entry,0x87e294))
+ return event,handle
+
 class Sound(Reader):
  def __init__(self):
   self.samples=[];self.calls=[]
@@ -58,7 +72,7 @@ class Sound(Reader):
   keys={'control':0x10,'type_flags':0x14,'volume_fixed16_raw':0x1c,'priority':0x40,'limit':0x48,'loop_count':0x4c,'range':0x50,'delay_min':0x58,'delay_max':0x5c,'fshift_min':0x60,'fshift_max':0x64,'vshift':0x68,'sample_count':0x134}
   return ptr,dict(name=name,registry_index=index,admitted=ok,volume_linear=self.read32(ptr+0x1c)>>16,samples=self.samples.copy(),**{k:struct.unpack('<i',self.u.mem_read(ptr+v,4))[0] for k,v in keys.items()})
  def release(self,entry,fn):
-  e=self.alloc(0x300);h=self.alloc(16);self.u.mem_write(e+0x24,dwords(entry));self.u.mem_write(e+0x138,dwords(41));self.u.mem_write(e+0x1c,dwords(3));self.u.mem_write(e+0x18,dwords(8));self.u.mem_write(h,dwords(e,41,entry,0x87e294))
+  e,h=playing_handle(self,entry)
   before=bytes(self.u.mem_read(e,0x300));self.calls=[];self.invoke(fn,h)
   after=bytes(self.u.mem_read(e,0x300))
   return dict(function=hex(fn),event_unchanged=before==after,event_state=self.read32(e+0x1c),event_flags=self.read32(e+0x18),event_serial=self.read32(e+0x138),handle_event_is_present=bool(self.read32(h)),handle_sound_is_present=bool(self.read32(h+8)),calls=self.calls.copy())

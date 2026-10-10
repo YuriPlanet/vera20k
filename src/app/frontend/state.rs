@@ -21,7 +21,8 @@ pub(crate) struct FrontendState {
     pub(crate) choose_map_last_mode_row: Option<usize>,
     /// Process-lifetime offline shell snapshot, Scenario cursor, and
     /// Cooperative progress authority.
-    pub(crate) offline_skirmish_runtime: crate::app::frontend::skirmish_session::OfflineSkirmishRuntime,
+    pub(crate) offline_skirmish_runtime:
+        crate::app::frontend::skirmish_session::OfflineSkirmishRuntime,
     /// Last owner-draw Skirmish button state observed by the native render path.
     /// Used for the retail GenericClick paint-transition sound.
     pub(crate) skirmish_shell_last_painted_pressed_button:
@@ -49,11 +50,13 @@ pub(crate) struct FrontendState {
     /// Active shell first-paint controls-reveal slide (presentation only). gamemd
     /// plays this on the first paint of every shell dialog (menu / single-player /
     /// skirmish); the wave swaps each owner-draw button's SDBTNANM frame index.
-    pub(crate) shell_first_paint_slide: Option<crate::app::frontend::shell_transition::ShellFrameWave>,
+    pub(crate) shell_first_paint_slide:
+        Option<crate::app::frontend::shell_transition::ShellFrameWave>,
     /// Which shell dialog the first-paint slide last fired for. Drives per-frame
     /// edge detection so the slide (re)starts on entry into each shell and is
     /// cancelled on leaving all of them.
-    pub(crate) shell_slide_active_shell: Option<crate::app::frontend::shell_transition::ShellSlideKind>,
+    pub(crate) shell_slide_active_shell:
+        Option<crate::app::frontend::shell_transition::ShellSlideKind>,
     /// Monotonic identity for each newly armed exact Main Menu `0xE2` instance.
     pub(crate) shell_slide_generation: u64,
     /// Static `0x71C` of the showing main-menu family dialog (`0xE2`, `0x100`,
@@ -129,10 +132,10 @@ pub(crate) struct FrontendState {
     /// MPModes rows used by the native Choose Map modal.
     pub(crate) skirmish_modes: Vec<crate::skirmish_modes::SkirmishGameMode>,
     pub(crate) loading_session: Option<crate::app::loading::pump::LoadingSession>,
-    /// Process-owned front-end Main stream. RMG Randomize/derived-option work
-    /// and the first preview selector reach share this cursor; the setup-entry
-    /// seed comes from shell Scenario instead. Accepted matches reseed their
-    /// own Main stream rather than inheriting either shell cursor.
+    /// Process Main before the first scenario. `process_main_draws` switches
+    /// audio, Theme and RMG to the installed simulation's continuation even
+    /// while that world is retained behind the shell. Fresh scenarios install
+    /// their loading-advanced Main; the setup seed comes from shell Scenario.
     pub(crate) frontend_main_rng: crate::sim::rng::SimRng,
     /// UI-thread CRT state shared by storage dialogs, preserved across routes.
     /// Native tactical sparkle/network consumption is still an integration gap;

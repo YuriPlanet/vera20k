@@ -185,33 +185,57 @@ pub fn resolve_shp_frame<'a>(
     facing: u8,
     frame_index: i32,
 ) -> i32 {
-    let (start, count, stride, slot) = match def.into() {
-        ShpFrameDefinition::Infantry(record) => (
+    match def.into() {
+        ShpFrameDefinition::Infantry(record) => resolve_shp_frame_parts(
             record.start_frame,
             record.frames_per_facing,
             record.facings,
             i32::from(infantry_facing_slot(facing)),
+            frame_index,
         ),
         ShpFrameDefinition::Generic(def) => {
-            let slot = match def.facing_slots {
-                FacingSlots::InfantryTable => infantry_facing_slot(facing),
-                FacingSlots::VehicleOctant if def.facings == VEHICLE_FACING_SLOTS => {
-                    vehicle_facing_slot(facing)
-                }
-                FacingSlots::VehicleOctant => 0,
-            };
-            (
-                i32::from(def.start_frame),
-                i32::from(def.frame_count),
-                if def.facings <= 1 {
-                    0
-                } else {
-                    i32::from(def.facing_multiplier)
-                },
-                i32::from(slot),
-            )
+            resolve_generic_shp_frame(def, facing, frame_index, false)
+        }
+    }
+}
+
+fn resolve_generic_shp_frame(
+    def: &SequenceDef,
+    facing: u8,
+    frame_index: i32,
+    suppress_facing: bool,
+) -> i32 {
+    let slot = if suppress_facing {
+        0
+    } else {
+        match def.facing_slots {
+            FacingSlots::InfantryTable => infantry_facing_slot(facing),
+            FacingSlots::VehicleOctant if def.facings == VEHICLE_FACING_SLOTS => {
+                vehicle_facing_slot(facing)
+            }
+            FacingSlots::VehicleOctant => 0,
         }
     };
+    resolve_shp_frame_parts(
+        i32::from(def.start_frame),
+        i32::from(def.frame_count),
+        if def.facings <= 1 {
+            0
+        } else {
+            i32::from(def.facing_multiplier)
+        },
+        i32::from(slot),
+        frame_index,
+    )
+}
+
+fn resolve_shp_frame_parts(
+    start: i32,
+    count: i32,
+    stride: i32,
+    slot: i32,
+    frame_index: i32,
+) -> i32 {
     let within = frame_index % count.max(1);
     let direction = if stride > 0 {
         slot.wrapping_mul(stride)
@@ -275,6 +299,7 @@ pub fn resolve_shp_vehicle_body_frame(
     facing: u8,
     body_frame_counter: u32,
     locomotor_is_moving: bool,
+    disguised: bool,
 ) -> Option<u16> {
     let cadence = set.shp_vehicle_cadence()?;
     let sequence = if locomotor_is_moving || cadence.idle_rate != 0 {
@@ -288,7 +313,16 @@ pub fn resolve_shp_vehicle_body_frame(
     } else {
         0
     };
-    u16::try_from(resolve_shp_frame(def, facing, i32::from(frame_index))).ok()
+    // Unit73C654..73C681 only computes the facing bucket when the actual
+    // type has eight facings AND the object is not disguised. Slot zero is
+    // not equivalent to raw facing zero in the vehicle direction table.
+    u16::try_from(resolve_generic_shp_frame(
+        def,
+        facing,
+        i32::from(frame_index),
+        disguised,
+    ))
+    .ok()
 }
 
 /// Advance a single animation by one reached native gameplay frame.
@@ -442,7 +476,6 @@ fn tick_animations_impl(
         // body counter at draw time. Do not advance a second relative clock or
         // reset cadence when the generic visual sequence changes.
         if entity.category == crate::map::entities::EntityCategory::Unit
-            && !entity.is_voxel
             && set.shp_vehicle_cadence().is_some()
             && matches!(anim.sequence, SequenceKind::Stand | SequenceKind::Walk)
         {

@@ -320,6 +320,80 @@ fn test_extract_shp_from_mix_chain() {
     eprintln!("SKIPPED: No SHP files found in MIX chain");
 }
 
+/// The two PIPS.SHP frames the self-heal status pip draws: `ebx` `0x0D` at
+/// `0x0070A573` (the organic arm) and `0x14` at `0x0070A5DF` (the units arm).
+///
+/// `DrawPipScalePips` reads the shape the YR layer mounts for non-buildings, so
+/// this resolves `pips.shp` through `ra2md.mix` — the 16x16, 21-frame copy, not
+/// the 19-frame `ra2.mix` one — and pins both frames' geometry and ink: `0x0D`
+/// is the 8x8 red cross (near-black outline, `rgb(63,0,0)` fill) and `0x14` the
+/// 15x15 white wrench (`rgb(63,63,63)` over greys).
+#[test]
+fn test_self_heal_pip_frames_match_retail_pips_shp() {
+    let dir: PathBuf = require_ra2_dir!();
+    let path: PathBuf = dir.join("ra2md.mix");
+    skip_if_missing!(path.to_str().unwrap());
+    let outer: MixArchive = MixArchive::load(&path).expect("ra2md.mix should parse");
+
+    // Which nested archive holds it differs between installs; scan them all.
+    let shp: ShpFile = outer
+        .entries()
+        .iter()
+        .filter_map(|entry| outer.nested_archive_by_id(entry.id).ok().flatten())
+        .find_map(|inner| {
+            let bytes: &[u8] = inner.get_by_name("pips.shp")?;
+            ShpFile::from_bytes(bytes).ok()
+        })
+        .expect("ra2md.mix nested chain should hold pips.shp");
+
+    assert_eq!((shp.width, shp.height), (16, 16), "the YR pips.shp canvas");
+    assert!(
+        shp.frames.len() >= 21,
+        "the YR copy carries frames 0x0D and 0x14; got {}",
+        shp.frames.len()
+    );
+
+    let cross = &shp.frames[0x0D];
+    assert_eq!(
+        (
+            cross.frame_x,
+            cross.frame_y,
+            cross.frame_width,
+            cross.frame_height
+        ),
+        (4, 4, 8, 8),
+        "the organic arm's red cross frame"
+    );
+    let wrench = &shp.frames[0x14];
+    assert_eq!(
+        (
+            wrench.frame_x,
+            wrench.frame_y,
+            wrench.frame_width,
+            wrench.frame_height
+        ),
+        (0, 0, 15, 15),
+        "the units arm's white wrench frame"
+    );
+
+    let ink = |frame: &crate::assets::shp_file::ShpFrame| {
+        let mut used: Vec<u8> = frame.pixels.iter().copied().filter(|p| *p != 0).collect();
+        used.sort_unstable();
+        used.dedup();
+        used
+    };
+    assert_eq!(
+        ink(cross),
+        vec![13, 141, 143, 218, 230],
+        "greys plus the red ramp: 230 is rgb(63,0,0)"
+    );
+    assert_eq!(
+        ink(wrench),
+        vec![15, 160, 164],
+        "15 is rgb(63,63,63) white over the two greys"
+    );
+}
+
 #[test]
 fn test_dump_pip_shp_frame_info() {
     let dir: PathBuf = require_ra2_dir!();

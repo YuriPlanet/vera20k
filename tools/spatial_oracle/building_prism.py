@@ -166,6 +166,8 @@ null), modifier, max, delay, duration, height} afterwards.
 Usage: python -m tools.spatial_oracle.building_prism [--check|--write]
 """
 from pathlib import Path
+import hashlib
+import sys
 import struct
 
 from unicorn import UC_HOOK_CODE
@@ -173,6 +175,7 @@ from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, U
                                UC_X86_REG_EDI, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESI,
                                UC_X86_REG_ESP, UC_X86_REG_FPCW)
 from tools.native_oracle import RET_MAGIC, finish_vectors, provenance, run_checked
+from tools.spatial_oracle.engineer_bridge_cursor_caller import TEXT_BEGIN, TEXT_SIZE
 from tools.spatial_oracle import building_body_rules as body_rules
 from tools.spatial_oracle import building_construction as bc
 from tools.spatial_oracle import building_guard_attack as bga
@@ -181,6 +184,8 @@ from tools.spatial_oracle.map_queries import dwords
 from tools.spatial_oracle.refinery_dock import ACTOR, HOUSE, RULES
 from tools.spatial_oracle.unit_source_scatter import SCENARIO
 from tools.spatial_oracle.unit_scatter_state import SP
+from tools.procedural_drawing_oracle import rally
+from tools.input_oracle.fast_scroll import return_from_sink
 
 MISSION_ATTACK, MISSION_GUARD, PROCESS_DELAYED_FIRE, SUPPORT_BEAM = 0x44ACF0, 0x4496B0, 0x4503F0, 0x44ABD0
 GET_FIRE_ERROR, TECHNO_GET_FIRE_ERROR, FIRE_AT, SELECT_WEAPON = 0x447F10, 0x6FC0B0, 0x6FDD50, 0x6F3330
@@ -429,7 +434,8 @@ class Scene:
             self.ret(0, self.powered.get(this, True))
 
         self.at(SELECT_WEAPON, select_weapon)
-        self.at(GET_FLH, get_flh)
+        if not case.get('native_flh', False):
+            self.at(GET_FLH, get_flh)
         self.at(PLAY_ANIM, play_anim)
         for site in DESTROY_ANIM_CALLS:
             self.at(site, destroy_anim)
@@ -461,7 +467,7 @@ class Scene:
                 self.last_bullet = bullet or None
                 self.ret(8, bullet)
             self.at(FIRE_AT, fire_at)
-        if mode in ('beam', 'cadence'):
+        if mode in ('beam', 'cadence', 'laser'):
             fails = case.get('new_fails', False)
 
             def operator_new():
@@ -470,7 +476,7 @@ class Scene:
                 if not fails:
                     self.heap += (size + 15) & ~15
                     assert self.heap <= HEAP_END
-                if mode == 'beam':
+                if mode in ('beam', 'laser'):
                     self.event('new', size, None if fails else answer - HEAP)
                 self.ret(0, answer)
 
@@ -478,7 +484,7 @@ class Scene:
                 sp = u.reg_read(UC_X86_REG_ESP)
                 raw = bytes(u.mem_read(sp + 4, 0x40))
                 words = struct.unpack('<6ii4x', raw[:0x20])
-                if mode == 'beam':
+                if mode in ('beam', 'laser'):
                     self.event('laser', dict(
                         src=list(words[0:3]), dst=list(words[3:6]), z_adjust=words[6], flag=raw[0x1C],
                         inner=list(raw[0x20:0x23]), outer=list(raw[0x24:0x27]), spread=list(raw[0x28:0x2B]),
@@ -1007,14 +1013,611 @@ def reader_cases():
     ]
 
 
+# -- F: laser creation, Logic lifetime and software drawing ----------------------
+LASER_UPDATE, LASER_DRAW_ALL, LASER_DESTROY_ALL = 0x550150, 0x550240, 0x550000
+LASER_DRAW, LASER_SPECIAL = 0x550260, 0x5509F0
+LASER_ADDITIVE, LASER_PACKED = 0x4BDF00, 0x4BFD30
+LASER_VECTOR_INIT, ATEXIT, OPERATOR_DELETE = 0x54FDC0, 0x7C978A, 0x7C8B3D
+LASER_FIRE_ARM, LASER_FIRE_END = 0x6FF4CC, 0x6FF656
+LASER_TACTICAL = COORD + 0x1000
+
+
+def laser_state(u, address):
+    raw = bytes(u.mem_read(address, 0x5C))
+    i32 = lambda offset: struct.unpack_from('<i', raw, offset)[0]
+    return dict(age=i32(0), changed=raw[4], timer_start=i32(8), timer_duration=i32(0x10),
+                rate=i32(0x14), step=i32(0x18), width=i32(0x1C), house_color=raw[0x20],
+                supported=raw[0x21], source=list(struct.unpack_from('<3i', raw, 0x24)),
+                target=list(struct.unpack_from('<3i', raw, 0x30)), z_adjust=i32(0x3C),
+                flag=raw[0x40], inner=list(raw[0x41:0x44]), outer=list(raw[0x44:0x47]),
+                spread=list(raw[0x47:0x4A]), duration=i32(0x4C), blinks=raw[0x50],
+                blink_state=raw[0x51], fades=raw[0x52],
+                fade_start_bits=struct.unpack_from('<I', raw, 0x54)[0],
+                fade_end_bits=struct.unpack_from('<I', raw, 0x58)[0])
+
+
+class LaserScene(Scene):
+    """Reuse Scene; added birth rows execute its formerly substituted GetFLH."""
+    def __init__(self, case):
+        super().__init__(dict(case, hooks='laser', native_flh=True))
+        u = self.u
+        if 'birth_frame' in case:
+            self.frame0 = case['birth_frame']
+            u.mem_write(FRAME, dwords(self.frame0))
+        self.freed, self.rng_entries, self.getters = [], [], []
+        self.text_sha256 = hashlib.sha256(u.mem_read(TEXT_BEGIN, TEXT_SIZE)).hexdigest()
+        assert self.text_sha256 == '4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc'
+        self.at(ATEXIT, lambda: self.ret(0))
+        self.at(OPERATOR_DELETE, self.deleted)
+        self.invoke(LASER_VECTOR_INIT, 0)
+        u.mem_write(LASERS + 4, dwords(LASER_ITEMS, 16))
+        u.mem_write(LASERS + 0xD, b'\0')
+        # Native Tactical constructor's matrix initializer; no supplied inverse.
+        u.mem_write(0x887324, dwords(LASER_TACTICAL))
+        u.reg_write(UC_X86_REG_ESI, LASER_TACTICAL)
+        u.reg_write(UC_X86_REG_EBX, 0)
+        run_checked(u, 0x6D1DC5, 0x6D1E1E, count=30)
+        u.mem_write(0xB0CD48, struct.pack('<Q', 0x3FC25E5374344960))
+        u.mem_write(0xB0CE30, dwords(160, 120))
+        # Selected stock ATESLA/GAPRIS values; native readers live separately.
+        u.mem_write(self.kind + 0xE44, dwords(*case.get('pixel_offset', [0, -4])))
+        u.mem_write(self.kind + 0xEF0, dwords(0))  # 1x1
+        u.mem_write(self.kind + 0x1764, bytes([case.get('primary_dual', True)]))
+        u.mem_write(self.kind + 0x89C, dwords(*case.get('primary_flh', [0, 0, 378])))
+        u.mem_write(self.kind + 0x8B8, dwords(*case.get('secondary_flh', [0, 0, 0])))
+        u.mem_write(self.kind + 0x720, dwords(0))
+        u.mem_write(self.kind + 0x16C5, b'\0\0')
+        weapons = [(SHOT_WEAPON, case)]
+        if 'current_weapon' in case:
+            # Building FireAt6FF4EA re-reads GetCurrentWeapon after the shot's
+            # IsLaser gate. Its current primary can differ from the selected
+            # secondary in EBX; original70E1A0/Building GetWeapon execute.
+            weapons.append((SUPPORT_WEAPON, case['current_weapon']))
+            u.mem_write(self.kind + 0x898, dwords(SUPPORT_WEAPON))
+            u.mem_write(self.kind + 0x8B4, dwords(SHOT_WEAPON))
+        for weapon, fields in weapons:
+            u.mem_write(weapon + 0x149, bytes([fields.get('is_laser', True)]))
+            u.mem_write(weapon + 0x14C, bytes([fields.get('big_laser', False),
+                        fields.get('house_color', True), fields.get('duration_byte', 15) & 255]))
+            u.mem_write(weapon + 0x120, bytes(fields.get('inner', [100, 120, 140])))
+            u.mem_write(weapon + 0x123, bytes(fields.get('outer', [10, 20, 30])))
+            u.mem_write(weapon + 0x126, bytes(fields.get('spread', [0, 0, 0])))
+        u.mem_write(HOUSE + 0x56FC, bytes(case.get('rgb', LASER_COLOR)))
+        u.mem_write(0xB0EA90, dwords(0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF))
+        first = self.address[self.first]
+        if case.get('non_prism'):
+            u.mem_write(first + 0x520, dwords(OTHER_TYPE))
+            u.mem_write(OTHER_TYPE + 0xE44, dwords(*case.get('pixel_offset', [0, -4])))
+            u.mem_write(OTHER_TYPE + 0x1764, b'\0')
+        if case.get('unit_boundary'):
+            # Caller identity/width control, not a locomotion/Unit GetFLH port.
+            # Native Unit vtable selects its ordinary Techno GetFLH; only that
+            # already-owned coordinate boundary is supplied for this control.
+            u.mem_write(first, dwords(0x7F5C70))
+            def unit_flh():
+                output = self.arg(1)
+                u.mem_write(output, dwords(*case['unit_boundary']))
+                self.events.append(['supplied_unit_flh', case['unit_boundary']])
+                self.ret(20, output)
+            self.at(0x6F3AD0, unit_flh)
+        u.mem_write(first + 0x9C, dwords(*case.get('location', [3200, 3200, 0])))
+        target = case.get('target_building')
+        if target:
+            u.mem_write(ACTOR, bytes(u.mem_read(first, BUILDING_SIZE)))
+            u.mem_write(ACTOR + 0x14, dwords(self.read32(ACTOR + 0x14) | 2))
+            u.mem_write(ACTOR + 0x520, dwords(OTHER_TYPE))
+            u.mem_write(OTHER_TYPE + 0xEF0, dwords(target.get('foundation_index', 3)))
+            u.mem_write(OTHER_TYPE + 0xEBC, dwords(*target.get('target_offset', [0, 0, 0])))
+            u.mem_write(ACTOR + 0x9C, dwords(*target['location']))
+        elif 'target_location' in case:
+            u.mem_write(ACTOR + 0x9C, dwords(*case['target_location']))
+        # Observe raw and ranged RNG entries regardless of stream; neither is
+        # substituted. The complete stream bytes are also compared below.
+        for pc in (0x65C780, 0x65C7E0):
+            self.at(pc, lambda pc=pc: self.rng_entries.append(hex(pc)))
+        for pc in (0x453840, 0x6F3AD0, 0x445E50, 0x459EF0, 0x4500A0, 0x447AC0, 0x41BDD0, 0x410540, 0x6D2070):
+            self.at(pc, lambda pc=pc: self.getters.append(hex(pc)))
+
+    def deleted(self):
+        self.freed.append(self.arg(1) - HEAP)
+        self.ret(0)
+
+    def rng(self):
+        assert hashlib.sha256(self.u.mem_read(TEXT_BEGIN, TEXT_SIZE)).hexdigest() == self.text_sha256
+        return {name: bytes(self.u.mem_read(pointer, 0x3F4)).hex()
+                for name, pointer in (('main', 0x886B88), ('scenario', SCENARIO + 0x218),
+                                      ('mapgen', 0xABE890))}
+
+    def registered(self):
+        return [self.read32(LASER_ITEMS + 4 * i) for i in range(self.read32(LASERS + 0x10))]
+
+    def create(self, kind='main'):
+        u, actor = self.u, self.address[self.first]
+        if kind == 'support':
+            master = self.address.get('receiver')
+            if master:
+                self.invoke(GET_FLH, master, COORD, 0, 0, 0, 0)
+                payload = list(struct.unpack('<3i', u.mem_read(COORD, 12)))
+            else:
+                payload = self.case.get('payload', [3600, 2700, 0])
+            u.mem_write(actor + 0x704, dwords(2, *payload, 1))
+            self.invoke(PROCESS_DELAYED_FIRE, actor)
+        else:
+            u.mem_write(COORD, dwords(0, 0, 0, self.case.get('selected_slot', 0)))
+            for reg, value in ((UC_X86_REG_ESP, SP), (UC_X86_REG_EBP, COORD),
+                               (UC_X86_REG_ESI, actor), (UC_X86_REG_EBX, SHOT_WEAPON),
+                               (UC_X86_REG_EDI, ACTOR)):
+                u.reg_write(reg, value)
+            end = LASER_FIRE_END if self.case.get('is_laser', True) else 0x6FF57D
+            run_checked(u, LASER_FIRE_ARM, end, count=200000)
+            assert u.reg_read(UC_X86_REG_ESP) == SP
+        return self.registered()[-1] if self.registered() else None
+
+
+def laser_birth(case):
+    s = LaserScene(case)
+    before = s.rng()
+    pointer = s.create(case.get('kind', 'main'))
+    assert before == s.rng() and not s.rng_entries
+    return dict(input=case, calls=s.events, getter_entries=s.getters,
+                laser=laser_state(s.u, pointer) if pointer else None,
+                registered=len(s.registered()), actor_after=s.state(s.first),
+                rng_before=before, rng_after=s.rng(), rng_entries=s.rng_entries)
+
+
+def laser_birth_cases():
+    rows = [dict(name='main_' + str(count), master=dict(count=count))
+            for count in (-1, 0, 1, 8)]
+    rows += [dict(name='main_duration_' + str(n), duration_byte=n) for n in (0, 1, 10, 127, 128, 255)]
+    rows += [dict(name='main_gate_disabled', is_laser=False),
+             dict(name='main_new_fails', new_fails=True),
+             dict(name='main_raised', location=[3200, 3200, 416], target_location=[3600, 2700, 208]),
+             dict(name='support', kind='support'),
+             dict(name='support_duration_30', kind='support', rules=dict(duration=30)),
+             dict(name='support_new_fails', kind='support', new_fails=True),
+             dict(name='production_main', location=[9856, 12416, 0], master=dict(count=1),
+                  target_building=dict(location=[11648, 12416, 0], foundation_index=3)),
+             dict(name='production_support', kind='support', location=[9856, 14208, 0],
+                  towers=[dict(name='receiver', offset=[6656, 9216, 0])])]
+    rows += [dict(name=f'{caller}_house{int(house)}_big{int(big)}',
+                  house_color=house, big_laser=big,
+                  **({'unit_boundary': [3011, 3123, 80]} if caller == 'unit'
+                     else {'non_prism': True}))
+             for caller in ('unit', 'other_building')
+             for house in (False, True) for big in (False, True)]
+    rows += [dict(name='building_secondary_uses_current_primary_explicit', selected_slot=1,
+                  current_weapon=dict(is_laser=False, duration_byte=31, house_color=False,
+                                      inner=[7, 19, 31], spread=[5, 9, 11])),
+             dict(name='building_secondary_uses_current_primary_house', selected_slot=1,
+                  duration_byte=31, house_color=False, current_weapon=dict(duration_byte=15)),
+             dict(name='building_secondary_gate_uses_selected_weapon', selected_slot=1,
+                  is_laser=False, current_weapon=dict(is_laser=True))]
+    return rows
+
+
+def laser_lifetime(case):
+    s = LaserScene(case)
+    pointer = s.create(case.get('kind', 'main'))
+    assert pointer is not None
+    before = s.rng()
+    states = [dict(frame=s.frame0, phase='birth', registered=len(s.registered()),
+                   laser=laser_state(s.u, pointer))]
+    for frame in case['visits']:
+        s.u.mem_write(FRAME, dwords(frame))
+        s.invoke(LASER_UPDATE, 0)
+        states.append(dict(frame=frame, phase='logic', registered=len(s.registered()),
+                           laser=laser_state(s.u, pointer) if pointer in s.registered() else None))
+    assert before == s.rng() and not s.rng_entries
+    return dict(input=case, states=states, freed=s.freed, rng_unchanged=True, rng_entries=s.rng_entries)
+
+
+def laser_lifetime_cases():
+    return [dict(name='main_15', visits=list(range(200, 217))),
+            dict(name='support_15', kind='support', visits=list(range(200, 217))),
+            dict(name='repeated_and_skipped_frame', duration_byte=3,
+                 visits=[200, 200, 201, 201, 208, 208, 220, 221]),
+            dict(name='zero_duration', duration_byte=0, visits=[200]),
+            dict(name='negative_byte_duration', duration_byte=255, visits=[200]),
+            dict(name='signed_frame_wrap', birth_frame=0x7FFFFFFE, duration_byte=3,
+                 visits=[0x7FFFFFFE, 0x7FFFFFFF, -0x80000000, -0x7FFFFFFF])]
+
+
+def laser_flh(case):
+    s = LaserScene(case)
+    actor, u = s.address[s.first], s.u
+    u.mem_write(actor + 0x3B8, dwords(case.get('burst', 0)))
+    s.invoke(0x4C91E0, actor + 0x388, 0)
+    u.mem_write(COORD + 64, dwords(case.get('heading', 0x2000)))
+    s.invoke(0x4C9300, actor + 0x388, COORD + 64)
+    before = s.rng()
+    s.invoke(GET_FLH, actor, COORD, case.get('slot', 0), *case.get('base', [0, 0, 0]))
+    assert before == s.rng() and not s.rng_entries
+    return dict(input=case, source=list(struct.unpack('<3i', u.mem_read(COORD, 12))),
+                getter_entries=s.getters, rng_unchanged=True)
+
+
+def laser_flh_cases():
+    return [dict(name=f'{flh}_dual{int(dual)}_slot{slot}_burst{burst}', primary_dual=dual,
+                 slot=slot, burst=burst,
+                 **(dict(primary_flh=[80, 40, 120], secondary_flh=[30, 25, 90],
+                         pixel_offset=[6, -4], base=[7, 11, 13]) if flh == 'control' else {}))
+            for flh in ('stock', 'control') for dual in (False, True)
+            for slot in (0, 1) for burst in (0, 1)]
+
+
+class LaserPixels:
+    """Original laser draw on the existing rally surface/A/projection owner."""
+    def __init__(self, case):
+        self.case = case
+        self.surface = rally.Rally(case, size=case.get('size', rally.SIZE))
+        self.u = u = self.surface.u
+        self.calls, self.rng_entries, self.draw_order, self.fade = [], [], [], []
+        u.mem_map(PRISM, PRISM_SIZE)
+        self.pointer = HEAP
+        # Only these DSurface draw entries replace BSurface's no-op slots;
+        # the original BSurface lock/stride/unlock methods still execute.
+        u.mem_write(rally.VTABLE + 0x34, dwords(LASER_PACKED))
+        u.mem_write(rally.VTABLE + 0x40, dwords(LASER_ADDITIVE))
+        self.z_surface, self.z_object, self.z_pixels = (rally.MEM + n for n in (0x60000, 0x60080, 0x70000))
+        w, h = self.surface.size
+        self.pixel_bytes = w * h * 2
+        u.mem_write(self.z_surface, dwords(0x7E2070, w, h, 0, 2, self.z_pixels, self.pixel_bytes, 0))
+        u.mem_write(self.z_object, dwords(0, 0, w, h, 0, self.z_surface, self.z_pixels,
+                                          self.z_pixels + self.pixel_bytes, self.pixel_bytes, 32768, w))
+        u.mem_write(0x887644, dwords(self.z_object))
+        z = case.get('z', 65535)
+        values = ([z] * (w * h) if isinstance(z, int)
+                  else [z[(x // 11 + y // 7) % len(z)] for y in range(h) for x in range(w)])
+        self.before_z = struct.pack('<' + 'H' * len(values), *values)
+        u.mem_write(self.z_pixels, self.before_z)
+        background = case.get('background', rally.BACKGROUND)
+        self.before = struct.pack('<H', background) * (w * h)
+        u.mem_write(rally.PIXELS, self.before)
+        self.guard = bytes([0xA5]) * 32
+        u.mem_write(rally.PIXELS - 32, self.guard)
+        u.mem_write(rally.PIXELS + self.pixel_bytes, self.guard)
+        u.mem_write(0xA8EB78, dwords(case.get('detail', 2)))
+        u.mem_write(0xABCD44, dwords(case.get('fps', 60)))
+        u.mem_write(0xABCD50, bytes([case.get('reduced', False)]))
+        u.mem_write(0x8A0DF0, b'\0')
+        u.mem_write(FRAME, dwords(200))
+        u.mem_write(LASERS, dwords(0x7ECEDC, LASER_ITEMS, 16, 1, 0, 10))
+        u.hook_add(UC_HOOK_CODE, self.observe)
+        # Original constructor with supplied drawing controls. Stock crop
+        # arguments are also asserted against original laser_birth below.
+        rgb = case.get('rgb', LASER_COLOR)
+        packed_rgb = rgb[0] | rgb[1] << 8 | rgb[2] << 16
+        self.call(LASER_CTOR, self.pointer,
+                  *case.get('source', [3038, 3038, 0]), *case.get('target', [3600, 2700, 0]),
+                  case.get('z_adjust', -4), 1, packed_rgb, 0, 0, case.get('duration', 15),
+                  0, case.get('fades', 1), 0x3F800000, 0)
+        u.mem_write(self.pointer, dwords(case.get('age', 0)))
+        u.mem_write(self.pointer + 0x1C, dwords(case.get('width', 3)))
+        u.mem_write(self.pointer + 0x20, bytes([1, case.get('supported', False)]))
+        self.pointers = [self.pointer]
+        if case.get('second_laser'):
+            second = self.pointer + 96
+            self.call(LASER_CTOR, second, *case.get('target', [3600, 2700, 0]),
+                      *case.get('source', [3038, 3038, 0]), -2, 1, 0x6496C8, 0, 0, 15,
+                      0, 1, 0x3F800000, 0)
+            u.mem_write(second + 0x20, b'\1')
+            self.pointers.append(second)
+        self.text_sha256 = hashlib.sha256(u.mem_read(TEXT_BEGIN, TEXT_SIZE)).hexdigest()
+        assert self.text_sha256 == '4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc'
+
+    def call(self, entry, this=0, *args):
+        self.u.mem_write(SP, dwords(RET_MAGIC, *args))
+        self.u.reg_write(UC_X86_REG_ESP, SP)
+        self.u.reg_write(UC_X86_REG_ECX, this)
+        run_checked(self.u, entry, RET_MAGIC, count=3000000)
+
+    def observe(self, u, pc, _size, _data):
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if pc == ATEXIT:
+            u.reg_write(UC_X86_REG_EIP, struct.unpack('<I', u.mem_read(sp, 4))[0])
+            u.reg_write(UC_X86_REG_ESP, sp + 4)
+            return
+        if pc == LASER_DRAW:
+            self.draw_order.append(u.reg_read(UC_X86_REG_ECX) - HEAP)
+        if pc == 0x550C2C:
+            self.fade.append(dict(octant=struct.unpack('<I', u.mem_read(sp + 0x28, 4))[0],
+                                  intensity_bits=struct.unpack('<I', u.mem_read(sp + 0x44, 4))[0],
+                                  toward_white=signed(u.reg_read(UC_X86_REG_EAX))))
+        if pc in (LASER_PACKED, LASER_ADDITIVE):
+            args = struct.unpack('<7I', u.mem_read(sp + 4, 28))
+            row = dict(entry=hex(pc), clip=list(struct.unpack('<4i', u.mem_read(args[0], 16))),
+                       from_point=list(struct.unpack('<2i', u.mem_read(args[1], 8))),
+                       to_point=list(struct.unpack('<2i', u.mem_read(args[2], 8))))
+            if pc == LASER_ADDITIVE:
+                row.update(rgb=list(u.mem_read(args[3], 3)), intensity_bits=args[4],
+                           z_start=signed(args[5]), z_end=signed(args[6]))
+            else:
+                row.update(color=args[3], z_start=signed(args[4]), z_end=signed(args[5]), write_z=args[6])
+            self.calls.append(row)
+        if pc in (0x65C780, 0x65C7E0):
+            self.rng_entries.append(hex(pc))
+
+    def draw(self):
+        before_laser = [bytes(self.u.mem_read(pointer, 0x5C)) for pointer in self.pointers]
+        rng_before = {name: bytes(self.u.mem_read(pointer, 0x3F4))
+                      for name, pointer in (('main', 0x886B88), ('mapgen', 0xABE890))}
+        self.call(LASER_DRAW_ALL)
+        raw = bytes(self.u.mem_read(rally.PIXELS, self.pixel_bytes))
+        assert self.before_z == bytes(self.u.mem_read(self.z_pixels, self.pixel_bytes))
+        assert self.guard == bytes(self.u.mem_read(rally.PIXELS - 32, 32))
+        assert self.guard == bytes(self.u.mem_read(rally.PIXELS + self.pixel_bytes, 32))
+        assert before_laser == [bytes(self.u.mem_read(pointer, 0x5C)) for pointer in self.pointers]
+        assert hashlib.sha256(self.u.mem_read(TEXT_BEGIN, TEXT_SIZE)).hexdigest() == self.text_sha256
+        assert not self.rng_entries
+        assert all(blob == bytes(self.u.mem_read(pointer, 0x3F4))
+                   for name, pointer in (('main', 0x886B88), ('mapgen', 0xABE890))
+                   for blob in (rng_before[name],))
+        w, _ = self.surface.size
+        return dict(input=self.case, laser=laser_state(self.u, self.pointer), fade=self.fade,
+                    segments=self.calls, draw_order=self.draw_order, rng_entries=self.rng_entries,
+                    reduced_effects_after=self.u.mem_read(0xABCD50, 1)[0],
+                    pixels=[[i % w, i // w, value[0]] for i, value in enumerate(struct.iter_unpack('<H', raw))
+                            if raw[i * 2:i * 2 + 2] != self.before[i * 2:i * 2 + 2]],
+                    pixel_sha256=hashlib.sha256(raw).hexdigest(), z_unchanged=True,
+                    laser_unchanged=True, guard_unchanged=True)
+
+
+def laser_draw_cases():
+    base = dict(camera=[-20, 300])
+    rows = []
+    for detail in (0, 2):
+        for supported in (False, True):
+            for age in (0, 1, 7, 13, 14):
+                rows.append(dict(base, name=f'detail{detail}_support{int(supported)}_age{age}',
+                                 detail=detail, supported=supported, width=5 if supported else 3, age=age))
+        for dx, dy in ((512, 0), (512, 512), (0, 512), (-512, 512),
+                       (-512, 0), (-512, -512), (0, -512), (512, -512)):
+            rows.append(dict(base, name=f'octant_{detail}_{dx}_{dy}', detail=detail,
+                             source=[3200, 3200, 0], target=[3200 + dx, 3200 + dy, 0], camera=[-80, 315]))
+        for suffix, extra in (
+                ('alpha_mixed', dict(alpha='mixed')), ('alpha_black', dict(alpha='black')),
+                ('z_mixed', dict(z=[0, 32700, 65535])),
+                ('raised', dict(source=[3038, 3038, 208], target=[3600, 2700, 416])),
+                ('clip_left', dict(camera=[20, 300])), ('clip_right', dict(camera=[-100, 300])),
+                ('clip_origin', dict(clip=[10, 12, 110, 85])),
+                ('same_point', dict(target=[3038, 3038, 0])),
+                ('saturation', dict(background=0xE73C, rgb=[240, 120, 200], supported=True, width=5)),
+                ('zero_duration', dict(duration=0)), ('dark', dict(rgb=[1, 2, 3])),
+                ('late', dict(age=15)), ('width_zero', dict(width=0))):
+            rows.append(dict(base, name=f'detail{detail}_{suffix}', detail=detail, **extra))
+    rows.extend([dict(base, name='fps_low', fps=0), dict(base, name='fps_recover', fps=60, reduced=True),
+                 dict(base, name='reverse_draw_order', second_laser=True)])
+    # Birth geometry is independently established by the stock GetFLH and
+    # target-coordinate readers above. Viewport is a supplied160x120 crop.
+    for detail in (0, 2):
+        rows.extend([
+            dict(name=f'stock_main_crop_detail{detail}', detail=detail,
+                 source=[9694, 12254, 378], target=[11776, 12544, 0], z_adjust=-58,
+                 width=5, supported=True, camera=[-330, 1220]),
+            dict(name=f'stock_support_crop_detail{detail}', detail=detail,
+                 source=[9694, 14046, 378], target=[9694, 12254, 378], z_adjust=0,
+                 camera=[-550, 1220])])
+    return rows
+
+
+def laser_reset():
+    s = LaserScene(dict(name='scene_reset'))
+    pointers = [s.create(), s.create('support'), s.create()]
+    before = [laser_state(s.u, p) for p in pointers]
+    # Actual scene-clear caller; other scene classes and IStream transport are
+    # outside this bounded boundary. Load67E739 reaches Clear_Scene6851F0,
+    # whose685297 call reaches this534949 call (original instruction trace).
+    s.u.reg_write(UC_X86_REG_ESP, SP)
+    run_checked(s.u, 0x534949, 0x53494E, count=200000)
+    return dict(lasers_before=before, registered_after=len(s.registered()), freed=s.freed)
+
+
+def laser_type_inputs(name):
+    """Original whole constructor and focused original field readers.
+
+    The existing HutTypeReader owns allocation and INI caches. Physical retail
+    strings are lexical inputs, not parsed scalar goldens. The Rules TargetCoord
+    reader is deliberately distinct from ART's image-section pixel offsets.
+    Layered Scenario loading and unrelated type fields do not execute here.
+    """
+    m = rally.HutTypeReader()
+    typ, u = m.construct(name), m.u
+    def fields():
+        return dict(image=m.string(typ + 0x1F8),
+                    foundation=m.read32(typ + 0xEF0),
+                    primary_pixel=list(struct.unpack('<2i', u.mem_read(typ + 0xE44, 8))),
+                    secondary_pixel=list(struct.unpack('<2i', u.mem_read(typ + 0xE4C, 8))),
+                    target_offset=list(struct.unpack('<3i', u.mem_read(typ + 0xEBC, 12))),
+                    primary_flh=list(struct.unpack('<3i', u.mem_read(typ + 0x89C, 12))),
+                    turret_offset=struct.unpack('<i', u.mem_read(typ + 0x720, 4))[0],
+                    primary_dual=u.mem_read(typ + 0x1764, 1)[0],
+                    turret_voxel=u.mem_read(typ + 0x16C5, 1)[0],
+                    barrel_voxel=u.mem_read(typ + 0x16C6, 1)[0],
+                    can_be_occupied=u.mem_read(typ + 0x157B, 1)[0])
+    constructor = fields()
+    seams = sorted({row['pc'] for row in m.trace if row['kind'] == 'fixture_seam'})
+    physical, slices, reads = {}, [], []
+    def observe(_u, pc, _size, _data):
+        if pc not in (0x528A10, 0x529CA0, 0x529880, 0x474DA0, 0x5295F0):
+            return
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if pc in (0x529CA0, 0x529880):
+            section, key, default = [m.read32(sp + n) for n in (8, 12, 16)]
+            default = list(struct.unpack('<3i' if pc == 0x529CA0 else '<2i',
+                                         u.mem_read(default, 12 if pc == 0x529CA0 else 8)))
+        else:
+            section, key, default = [m.read32(sp + n) for n in (4, 8, 12)]
+            if pc == 0x528A10:
+                default = m.string(default)
+            elif pc == 0x5295F0:
+                default &= 255
+        reads.append(dict(phase=m.phase, reader=hex(pc), section=m.string(section),
+                          key=m.string(key), default=default))
+    u.hook_add(UC_HOOK_CODE, observe)
+    for layer, filename, keys, spans in (
+            ('rules', 'rulesmd.ini', ('Image', 'TargetCoordOffset', 'TurretAnimIsVoxel', 'BarrelAnimIsVoxel'),
+             [('image', 0x5F92F9, 0x5F9340, -4),
+              ('target_offset', 0x460F50, 0x460F9C, 0),
+              ('voxel_flags', 0x464638, 0x46466C, 0)]),
+            ('art', 'artmd.ini', ('Foundation', 'PrimaryFirePixelOffset', 'SecondaryFirePixelOffset',
+                                  'PrimaryFireDualOffset', 'PrimaryFireFLH', 'TurretOffset'),
+             [('foundation', 0x461225, 0x46125D, 0),
+              ('turret_offset', 0x715876, 0x71589A, 0),
+              ('primary_flh', 0x715D94, 0x715DCF, 0),
+              ('pixel_offsets', 0x4612EE, 0x461365, 0)])):
+        path = Path('ini') / filename
+        raw = path.read_bytes()
+        section_name = name if layer == 'rules' else fields()['image']
+        section = rally.sections(raw)[section_name]
+        values = {key: section.get(key) for key in keys}
+        physical[layer] = dict(path=str(path), bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest(),
+                               section=section_name, keys=values)
+        m.make_ini({section_name: {k: v for k, v in values.items() if v is not None}})
+        for label, begin, end, delta in spans:
+            m.phase = label
+            mark, before = len(reads), fields()
+            u.mem_write(rally.READER_SP, dwords(RET_MAGIC))
+            u.mem_write(rally.READER_SP + 0x1B4, dwords(rally.READER_INI))
+            for register, value in ((UC_X86_REG_ESP, rally.READER_SP), (UC_X86_REG_EBP, typ),
+                                    (UC_X86_REG_EBX, typ if label == 'image' else typ + 0x24),
+                                    (UC_X86_REG_ESI, typ + 0x1F8 if label == 'turret_offset' else rally.READER_INI),
+                                    (UC_X86_REG_EDI, typ + 0x1F8)):
+                u.reg_write(register, value)
+            # First TargetCoord instruction also stores preceding Artillary AL.
+            u.reg_write(UC_X86_REG_EAX, u.mem_read(typ + 0x16CA, 1)[0])
+            m.trace = []
+            run_checked(u, begin, end, count=200000)
+            assert u.reg_read(UC_X86_REG_ESP) == rally.READER_SP + delta
+            assert not any(row['kind'] == 'fixture_seam' for row in m.trace)
+            m.unchanged()
+            slices.append(dict(name=label, begin=hex(begin), end_exclusive=hex(end),
+                               before=before, reads=reads[mark:], after=fields(), stack_delta=delta))
+    return dict(type_id=name, physical_files=physical, constructor=constructor,
+                constructor_fixture_seams=seams, reader_slices=slices, result=fields(),
+                text_unchanged=True, text_sha256=m.original)
+
+
+def laser_fps(case):
+    """Original Throttle tail plus GetMinFrameRate, explicit OS clock only.
+
+    Reuse Scene's VM and fast_scroll's return transport. The timeGetTime import
+    is supplied; original6C8C40 performs SHR4. Each row adds a supplied number
+    of Logic visits (original55AFB0..55AFD9 increment); the remaining Logic body
+    and Main_Tick admission are outside this timing boundary.
+    """
+    s = LaserScene(dict(name=case['name']))
+    u = s.u
+    clock_address = COORD + 0x800
+    u.mem_write(0x7E1530, dwords(clock_address))
+    current_ms, reads = 0, []
+    def clock():
+        reads.append(current_ms)
+        return_from_sink(u, 0, current_ms)
+    s.at(clock_address, clock)
+    u.mem_write(0xABCD40, dwords(case.get('count', 0), case.get('fps', 0), case.get('total', 0), case.get('buckets', 0)))
+    u.mem_write(0xABCD50, bytes([case.get('reduced', False)]))
+    u.mem_write(0xABCD88, dwords(*case.get('timer', [0, 0, 0])))
+    u.mem_write(0xABCD94, bytes([case.get('initialized', False)]))
+    u.mem_write(0x829FF4, dwords(case.get('minimum', 15), case.get('buffer', 5)))
+    history = []
+    for step in case['steps']:
+        current_ms = step['milliseconds'] & 0xFFFFFFFF
+        for _ in range(step.get('logic_visits', 0)):
+            u.reg_write(UC_X86_REG_ESP, SP)
+            run_checked(u, 0x55AFB0, 0x55AFD9, count=30)
+        # Interior frame: POP EDI, then ESI/EBP/EBX, ADD ESP18 and RET.
+        u.mem_write(SP, bytes(40) + dwords(RET_MAGIC))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_EBP, 0)
+        u.reg_write(UC_X86_REG_EBX, 0xFFFFFFFF)
+        mark = len(reads)
+        run_checked(u, 0x55E33B, RET_MAGIC, count=3000)
+        assert u.reg_read(UC_X86_REG_ESP) == SP + 44
+        if 'configure' in step:
+            s.invoke(0x55AF40, step['configure'][0])
+            s.invoke(0x55AF50, step['configure'][1])
+        threshold = s.invoke(0x55AF60, 0)
+        history.append(dict(input=step, clock_reads=reads[mark:], threshold=threshold,
+                            count=s.read32(0xABCD40), fps=s.read32(0xABCD44),
+                            total=s.read32(0xABCD48), buckets=s.read32(0xABCD4C),
+                            timer=[s.read32(0xABCD88), s.read32(0xABCD90)],
+                            initialized=u.mem_read(0xABCD94, 1)[0],
+                            reduced=u.mem_read(0xABCD50, 1)[0],
+                            minimum=s.read32(0x829FF4), buffer=s.read32(0x829FF8)))
+    return dict(input=case, history=history)
+
+
+def laser_fps_cases():
+    return [dict(name='first_due_skipped', steps=[
+                dict(milliseconds=0), dict(milliseconds=15, logic_visits=1),
+                dict(milliseconds=959, logic_visits=58), dict(milliseconds=960, logic_visits=1),
+                dict(milliseconds=8000, logic_visits=17), dict(milliseconds=8000)]),
+            dict(name='millisecond_wrap', initialized=True, timer=[0x0FFFFFF0, 0, 60], fps=44,
+                 steps=[dict(milliseconds=0xFFFFFFFF, logic_visits=5), dict(milliseconds=0, logic_visits=6),
+                        dict(milliseconds=960, logic_visits=7)]),
+            dict(name='counter_overflow', total=0x7FFFFFF0, buckets=8,
+                 steps=[dict(milliseconds=0, logic_visits=32)]),
+            dict(name='minimum_hysteresis', steps=[dict(milliseconds=i * 960, logic_visits=fps)
+                 for i, fps in enumerate([15, 14, 15, 19, 20, 19, 15, 14])]),
+            dict(name='unsigned_thresholds', minimum=0xFFFFFFF0, buffer=32,
+                 steps=[dict(milliseconds=i * 960, logic_visits=fps)
+                        for i, fps in enumerate([0, 15, 16, 32])]),
+            dict(name='counter_wrap', count=0xFFFFFFFF,
+                 steps=[dict(milliseconds=0, logic_visits=1)]),
+            dict(name='configure_preserves_latch', steps=[
+                dict(milliseconds=0, logic_visits=14),
+                dict(milliseconds=0, configure=[10, 5]),
+                dict(milliseconds=0, configure=[15, 5])])]
+
+
+def laser_detail_selection():
+    rows = []
+    for values in ([15, 20, 5], [-1, -2, -3]):
+        s = LaserScene(dict(name='detail_selection'))
+        u = s.u
+        u.mem_write(RULES, dwords(*values))
+        u.mem_write(0xABCD40, dwords(3, 44, 80, 2))
+        u.mem_write(0xABCD50, b'\1')
+        before = bytes(u.mem_read(0xABCD40, 17))
+        history = []
+        for name, begin, end in (
+                ('fill_in_data', 0x6850F5, 0x685110),
+                ('radar_movie_started', 0x657974, RET_MAGIC),
+                ('radar_movie_finished', 0x657C69, 0x657C76),
+                ('radar_initialize', 0x655C33, 0x655C40)):
+            u.mem_write(SP, dwords(0, RET_MAGIC))  # movie tail POP ESI then RET
+            u.reg_write(UC_X86_REG_ESP, SP)
+            run_checked(u, begin, end, count=60)
+            assert before == bytes(u.mem_read(0xABCD40, 17))
+            history.append(dict(caller=name, minimum=s.read32(0x829FF4), buffer=s.read32(0x829FF8)))
+        rows.append(dict(rules_normal_movie_buffer=values, history=history, fps_and_latch_unchanged=True))
+    return rows
+
+
 def generate():
+    births = [laser_birth(case) for case in laser_birth_cases()]
+    draw_cases = laser_draw_cases()
+    for kind in ('main', 'support'):
+        birth = next(row['laser'] for row in births if row['input']['name'] == 'production_' + kind)
+        for row in draw_cases:
+            if row['name'].startswith('stock_' + kind + '_crop_'):
+                for field in ('source', 'target', 'z_adjust'):
+                    assert row[field] == birth[field], (row['name'], field)
     return {'source': 'unicorn/gamemd.exe',
             'recruit': [recruit(case) for case in recruit_cases()],
             'bonus': [bonus(case) for case in bonus_cases()],
             'damage': [damage(case) for case in damage_cases()],
             'beam': [beam(case) for case in beam_cases()],
             'cadence': [cadence(case) for case in cadence_cases()],
-            'reader': [reader(case) for case in reader_cases()]}
+            'reader': [reader(case) for case in reader_cases()],
+            'laser_birth': births,
+            'laser_lifetime': [laser_lifetime(case) for case in laser_lifetime_cases()],
+            'laser_draw': [LaserPixels(case).draw() for case in draw_cases],
+            'laser_reset': laser_reset(),
+            'laser_type_inputs': [laser_type_inputs(name) for name in ('ATESLA', 'GAPOWR')],
+            'laser_flh': [laser_flh(case) for case in laser_flh_cases()],
+            'laser_fps': [laser_fps(case) for case in laser_fps_cases()],
+            'laser_detail_selection': laser_detail_selection()}
 
 
 def main(argv=None):
@@ -1026,7 +1629,13 @@ def main(argv=None):
                   'beam 0x44ABD0 with the LaserDrawClass constructor 0x54FE60), DetonateAtCoord\'s '
                   'multiplier block 0x469A56..0x469A83, their per-frame cadence through MissionClass::AI '
                   '0x5B3060 between BuildingClass::Update\'s ready checks, and RulesClass::ReadGeneral\'s '
-                  '[General] gate and Prism keys 0x671130..0x6711FE',
+                  '[General] gate and Prism keys 0x671130..0x6711FE. Laser extension: IsLaser FireAt '
+                  'arm6FF4CC and SpawnLaser6FD210, original building GetFLH/target getters, static vector '
+                  'initialization, Logic550150 lifetime, DrawAll550240->Draw550260->house-color5509F0, '
+                  'software additive4BDF00/4BE9D0 and packed4BFD30 pixels, scene-clear caller534949. '
+                  'Original BuildingType constructor and selected stock Rules/ART readers establish '
+                  'ATESLA/GAPRIS and GAPOWR coordinates. Logic-count writer55AFB0, wall-clock throttle '
+                  'tail55E33B, detail hysteresis55AF60 and normal/radar-movie threshold assignment slices.',
             entry_points={'mission_attack': MISSION_ATTACK, 'process_delayed_fire': PROCESS_DELAYED_FIRE,
                           'support_beam': SUPPORT_BEAM, 'laser_draw_ctor': LASER_CTOR,
                           'damage_block': DAMAGE_BLOCK[0], 'mission_ai': bc.MISSION_AI,
@@ -1038,7 +1647,18 @@ def main(argv=None):
                           'update_ready_commence': bc.READY_COMMENCE[0],
                           'rules_ctor_prism_defaults': CTOR_DEFAULTS[0], 'read_general_gate': GENERAL_GATE[0],
                           'read_general_prism': PRISM_BLOCK[0], 'find_or_allocate': 0x4653C0,
-                          'ini_crc': 0x4A1DE0, 'crt_float_init': 0x7C8F5E},
+                          'ini_crc': 0x4A1DE0, 'crt_float_init': 0x7C8F5E,
+                          'fireat_laser_arm': LASER_FIRE_ARM, 'spawn_laser': 0x6FD210,
+                          'laser_vector_initializer': LASER_VECTOR_INIT, 'laser_update': LASER_UPDATE,
+                          'laser_draw_all': LASER_DRAW_ALL, 'laser_draw': LASER_DRAW,
+                          'laser_special': LASER_SPECIAL, 'surface_additive': LASER_ADDITIVE,
+                          'surface_add_rgb565': 0x4BE9D0, 'surface_packed': LASER_PACKED,
+                          'laser_destroy_all': LASER_DESTROY_ALL, 'scene_clear_call': 0x534949,
+                          'building_get_flh': GET_FLH, 'techno_get_flh': 0x6F3AD0,
+                          'building_target_coord': 0x4500A0, 'building_get_coords': 0x447AC0,
+                          'logic_count_writer': 0x55AFB0, 'throttle_fps_tail': 0x55E33B,
+                          'frame_clock': 0x6C8C40, 'detail_hysteresis': 0x55AF60,
+                          'detail_normal_startup': 0x6850F5, 'radar_movie_minimum': 0x657974},
             assumptions=['the building_construction fixture building (slave_manager fixture, BuildingClass '
                          'vtable 0x7E3EBC) is the master; further towers are 0x720-byte copies of it with the '
                          'row fields written; the owner house building vector HOUSE+0x68 is supplied in row '
@@ -1060,9 +1680,42 @@ def main(argv=None):
                          'DetonateAtCoord has them',
                          'reader rows: the building_body_rules INI fixture after the CRT float initializer; '
                          'each pass supplies a CCINIClass holding only [General] (or no section) with the pass '
-                         'keys, indexed by the native CRC; BuildingTypes = GAPOWR, ATESLA'],
+                         'keys, indexed by the native CRC; BuildingTypes = GAPOWR, ATESLA',
+                         'laser_birth and laser_flh execute original Building GetFLH; selected stock '
+                         'type fields are independently executed by laser_type_inputs through whole '
+                         'BuildingType constructor and focused original readers. Physical strings come '
+                         'from existing lexical extractor; whole layered Scenario/physical file loading '
+                         'and unrelated type readers are outside this native prerequisite boundary.',
+                         'laser_birth executes only FireAt6FF4CC..6FF656 after the earlier FireAt '
+                         'admission/weapon selection and projectile work. Source and target object '
+                         'lifecycle/locations, selected/current weapon, HouseRGB and supplied timer frame are '
+                         'boundary inputs. Production-named rows establish selected coordinates, not '
+                         'whole object or scene parity. Building secondary controls execute the '
+                         'original GetCurrentWeapon70E1A0/Building GetWeapon re-read while keeping '
+                         'the IsLaser gate and FLH slot from the selected weapon. Ordinary support '
+                         'uses actual4503F0/44ABD0.',
+                         'laser_draw composes existing rally original projection/surface/A-buffer '
+                         'fixture. Prepared RGB565 destination, Z/A planes, detail/FPS globals, '
+                         'viewport/camera and original-constructor arguments are explicit input bounds. '
+                         'Pixels, original fade arithmetic and surface calls execute; this is no full '
+                         'scene/render-order parity claim. Direct3D and non-house-color generic drawing '
+                         'are excluded; non-house birth and IsBigLaser are caller controls only.',
+                         'DrawAll uses reverse vector order; Logic550150 runs before active-object '
+                         'visits by original55B5C3/55B5FF caller reading. Lifetime corpus executes '
+                         'same/repeated/skipped frame histories, not whole Logic. Scene-clear corpus '
+                         'executes actual534949->550000; load67E739->6851F0->685297->534450 is static '
+                         'caller evidence, not a whole save/load transport replay.',
+                         'laser_fps executes Logic entry counter increments and original Throttle tail '
+                         'with row-supplied calls/times, not Main_Tick scheduling. Counter globals and '
+                         'latch start at loader-zero BSS unless case overrides. Min/buffer values are '
+                         'supplied controls; native AudioVisual reader/default evidence is separately '
+                         'owned by rules_oracle/weapon_laser. Radar-movie rows execute only threshold '
+                         'assignment slices, not playback. Millisecond wrap is deliberately retained.',
+                         'New laser rows assert unchanged original complete.text SHA256 and unchanged '
+                         'RNG bytes/entries at applicable boundaries; no simulation RNG is substituted.'],
             substitutions=['SelectWeapon 0x6F3330 answered 0; GetFLH 0x453840 answered with per-building '
-                           'sentinel coordinates; PlayAnim 0x451890 observed and answered; DestroyNthAnim '
+                           'sentinel coordinates in legacy recruit/bonus/beam/cadence only; new laser '
+                           'Building rows execute GetFLH. PlayAnim 0x451890 observed and answered; DestroyNthAnim '
                            '0x451E40 answered by the refinery_dock observer (no-op on empty anim slots) and '
                            'observed at 0x44B532/0x44B5CD; Is_Operational 0x4555D0 answered from the row',
                            'recruit rows: BuildingClass::GetFireError 0x447F10 answered 0',
@@ -1078,7 +1731,18 @@ def main(argv=None):
                            '+0x2F4 = ROF) and a bullet buffer; TechnoClass::SetTarget 0x6FCDB0 answered with its '
                            '+0x2B4 write; FacingClass::Set_Desired 0x4C9220, the direction 0x43ED40, '
                            'StartUncloaking 0x7036C0 and ClearBibArea 0x449540 answered; IsCloseEnough 0x6F7780 '
-                           'true, IsHumanPlayer 0x50B730 and the EMP test 0x70EFD0 false']),
+                           'true, IsHumanPlayer 0x50B730 and the EMP test 0x70EFD0 false',
+                           'new laser rows: operator new/delete and atexit are observed transport '
+                           'boundaries; original ctor/vector/lifetime/removal execute. Unit caller '
+                           'controls use original Unit vtable but explicitly supply Techno GetFLH '
+                           'output, excluding held locomotion/pose. BSurface backing/lock/stride/unlock '
+                           'remain original; only draw vtable slots select original DSurface methods.',
+                           'laser_fps timeGetTime import returns supplied u32 milliseconds; original '
+                           '6C8C40 SHR4 executes; shared fast_scroll return transport is reused.']),
+        source_paths={name: Path(module.__file__) for name, module in sorted(sys.modules.items())
+                      if (name == '__main__' or name.startswith('tools.'))
+                      and getattr(module, '__file__', None)
+                      and str(module.__file__).endswith('.py')},
         argv=argv)
 
 

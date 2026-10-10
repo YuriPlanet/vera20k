@@ -1049,20 +1049,12 @@ impl App {
         }
         let now_ms =
             crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
-        // Show_Credits' Call_Back pumps Theme AI (starting the queued CREDITS
-        // song) without the menu loop's Play_Song(INTRO).
+        // The common service pumps Theme for Credits and WOL too, without
+        // these routes running the menu loop's Play_Song(INTRO).
         if state.frontend.credits_roll.is_some() {
-            if let Some(assets) = state.process_assets.manager() {
-                state.audio.update_theme(assets, now_ms);
-            }
             return;
         }
-        // WOL_Main's loop pumps Theme AI without the menu's Play_Song(INTRO):
-        // the shuffled lobby music plays until WOL returns.
         if state.frontend.shell_route.wol_welcome() {
-            if let Some(assets) = state.process_assets.manager() {
-                state.audio.update_theme(assets, now_ms);
-            }
             return;
         }
         if let Some(assets) = state.process_assets.manager() {
@@ -1074,14 +1066,13 @@ impl App {
         let Some(sound_id) = sound_id else {
             return;
         };
-        let (Some(sfx), Some(assets), Some(catalog)) = (
+        let (Some(sfx), Some(catalog)) = (
             &mut state.audio.sfx_player,
-            state.process_assets.manager(),
             state.process_assets.audio_catalog(),
         ) else {
             return;
         };
-        sfx.play_sound(sound_id, catalog.sounds(), assets, catalog.index());
+        sfx.play_sound(sound_id, catalog.sounds());
     }
 
     pub(super) fn handle_single_player_shell_action(

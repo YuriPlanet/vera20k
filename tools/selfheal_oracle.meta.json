@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "HouseClass::HasInfSelfHeal / HasUnitSelfHeal and GetInfSelfHealStep / GetUnitSelfHealStep: the count predicate and the count x amount step of the Tech Hospital and Tech Machine Shop self-heal.",
+  "assumptions": [
+    "The fixture house carries only House+0x164 and +0x168.",
+    "The fixture Rules block is reached through 0x008871E0 and carries only the two amount fields plus a sentinel."
+  ],
+  "substitutions": [
+    "The other counter and the other Rules amount field hold sentinels, so a row that read the wrong one differs.",
+    "TechnoClass::AI_Update's two arms and the three BuildingClass lifecycle sites are read from instructions, not executed here."
+  ],
+  "entry_points": {
+    "predicate_infantry": "0x0050D9C0",
+    "predicate_units": "0x0050D9D0",
+    "step_infantry": "0x0050D9E0",
+    "step_units": "0x0050D9F0"
+  },
+  "payload_sha256": "212c1e94b50faa1a61a055c54e8fca5dd7438716e3cdca3413c5d581bf77a896"
+}

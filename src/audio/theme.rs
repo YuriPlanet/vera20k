@@ -17,7 +17,6 @@ use crate::assets::asset_manager::AssetManager;
 use crate::assets::aud_file;
 use crate::audio::sfx::decode_wav;
 use crate::rules::ini_parser::{IniFile, IniSection};
-use crate::sim::rng::SimRng;
 
 /// Theme fade length. Native is rate-based, not duration-based: the stream's
 /// own `VolumeInterp` (`stream+0x14 -> +0x10`) is initialised by
@@ -161,7 +160,9 @@ pub(crate) struct ThemeAllowContext {
 }
 
 /// Process-lifetime logical Theme owner.
-#[derive(Debug)]
+/// Constructor720960 defaults: ThemeSlots keeps its -1 sentinels; repeat,
+/// fading and shuffle start false.
+#[derive(Debug, Default)]
 pub(crate) struct ThemeRuntime {
     catalog_loaded: bool,
     entries: Vec<ThemeEntry>,
@@ -176,31 +177,6 @@ pub(crate) struct ThemeRuntime {
     /// Whether Start_Scenario owns the pending slot (scenario reset cancel).
     scenario_owns_pending: bool,
     allow_context: ThemeAllowContext,
-    /// RESIDUAL: the existing presentation shuffle stream remains separate
-    /// from Simulation's Main owner. Native ThemeNext720AB5 draws Main886B88,
-    /// seeded from g_RngSeed by Init_Random_Number_System52FC20. VERA reseeds
-    /// this older stream at Start_Scenario; complete audio-pump and session
-    /// continuation is a separate mechanism. N/M selection's native Main
-    /// comparisons do not establish the full Theme/SFX sequence.
-    shuffle_rng: SimRng,
-}
-
-impl Default for ThemeRuntime {
-    fn default() -> Self {
-        // ctor 0x00720960: slots -1, repeat 0, fading 0, shuffle 0.
-        Self {
-            catalog_loaded: false,
-            entries: Vec::new(),
-            slots: ThemeSlots::default(),
-            global_repeat: false,
-            fading: false,
-            fade_started_at_ms: None,
-            shuffle: false,
-            scenario_owns_pending: false,
-            allow_context: ThemeAllowContext::default(),
-            shuffle_rng: SimRng::new(0),
-        }
-    }
 }
 
 impl ThemeRuntime {
@@ -263,15 +239,13 @@ impl ThemeRuntime {
         self.shuffle = shuffle;
     }
 
-    /// Start_Scenario-time context: reseed the presentation shuffle stream
-    /// from the match seed and pin the local player's side for `Is_Allowed`.
+    /// Start_Scenario-time context: pin the local player's side for
+    /// `Is_Allowed`. Main RNG lifetime belongs to the caller, not Theme.
     pub(crate) fn begin_scenario(
         &mut self,
-        match_seed: u32,
         context: ThemeAllowContext,
         resolve_side: impl Fn(&str) -> Option<i32>,
     ) {
-        self.shuffle_rng = SimRng::new(u64::from(match_seed));
         self.allow_context = context;
         for entry in &mut self.entries {
             entry.side = match entry.side_name.as_deref() {
@@ -333,8 +307,10 @@ impl ThemeRuntime {
         true
     }
 
-    /// `ThemeClass__Next_Song @ 0x00720A80`.
-    fn next_song(&mut self, prev: i32) -> i32 {
+    /// `ThemeClass__Next_Song @ 0x00720A80`: `0x00720AB5` draws inclusive
+    /// `[0, count - 1]` from Main `0x00886B88`. Borrow the caller's draw so
+    /// Sound, Vox and Theme (`AudioSystem::Pump 0x00406F70`) share one cursor.
+    fn next_song(&self, prev: i32, draw_main: &mut impl FnMut(i32, i32) -> i32) -> i32 {
         let count = self.entries.len() as i32;
         if prev >= 0 && (self.entry_repeats(prev) || self.global_repeat) {
             return prev;
@@ -343,7 +319,7 @@ impl ThemeRuntime {
             let mut tries = 0u32;
             let mut draw;
             loop {
-                draw = self.shuffle_rng.next_range_i32_inclusive(0, count - 1);
+                draw = draw_main(0, count - 1);
                 tries += 1;
                 if tries >= SHUFFLE_TRIES {
                     break;
@@ -647,10 +623,11 @@ impl ThemeRuntime {
         gates: ThemeGates,
         physical: MusicOutputState,
         wall_ms: u64,
+        draw_main: &mut impl FnMut(i32, i32) -> i32,
     ) -> ThemeAction {
         self.initialize_catalog(assets);
         let mut prepare = |stem: &str| prepare_track(stem, assets);
-        self.ai(gates, physical, wall_ms, &mut prepare)
+        self.ai(gates, physical, wall_ms, &mut prepare, draw_main)
     }
 
     /// `ThemeClass__AI @ 0x007209D0`.
@@ -664,6 +641,7 @@ impl ThemeRuntime {
         physical: MusicOutputState,
         wall_ms: u64,
         prepare: &mut impl FnMut(&str) -> Option<PreparedTrack>,
+        draw_main: &mut impl FnMut(i32, i32) -> i32,
     ) -> ThemeAction {
         if !self.admitted(gates) || !physical.stream_exists() {
             return ThemeAction::default();
@@ -690,7 +668,7 @@ impl ThemeRuntime {
         }
         self.scenario_owns_pending = false;
         let index = if pending == THEME_AUTO {
-            self.next_song(self.slots.retained)
+            self.next_song(self.slots.retained, draw_main)
         } else {
             pending
         };
@@ -885,6 +863,7 @@ pub(crate) fn catalog_from_ini(ini: &IniFile) -> Vec<ThemeEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sim::rng::SimRng;
 
     const STOCK_SHAPED: &str = "[Themes]\n1=INTRO\n2=;Grinder\n14=SCORE\n15=LOADING\n\
         16=CREDITS\n17=RA2Options\n19=\n21=BrainFreeze\n22=Drok\n23=Deceiver\n24=PhatAttack\n\
@@ -920,6 +899,10 @@ mod tests {
         })
     }
 
+    fn no_draw(_low: i32, _high: i32) -> i32 {
+        panic!("this Theme path must not draw Main")
+    }
+
     #[test]
     fn entering_wol_cuts_intro_and_shuffles_until_leaving() {
         let mut theme = stock_runtime();
@@ -937,7 +920,14 @@ mod tests {
         );
         assert_eq!(theme.slots().pending, THEME_AUTO);
         // Theme AI starts a shuffled normal track, never INTRO.
-        let started = theme.ai(gates(true), MusicOutputState::Idle, 200, &mut ok);
+        let mut main = SimRng::new(0);
+        let started = theme.ai(
+            gates(true),
+            MusicOutputState::Idle,
+            200,
+            &mut ok,
+            &mut |low, high| main.next_range_i32_inclusive(low, high),
+        );
         let stem = started
             .start
             .map(|track| track.stem)
@@ -1080,7 +1070,6 @@ mod tests {
         assert!(theme.is_allowed(5));
         // Side= resolved against the local player's side.
         theme.begin_scenario(
-            7,
             ThemeAllowContext {
                 local_side: Some(0),
                 campaign_scenario: None,
@@ -1090,7 +1079,6 @@ mod tests {
         assert!(!theme.is_allowed(7));
         assert!(theme.is_allowed(8), "Scenario= ignored outside campaign");
         theme.begin_scenario(
-            7,
             ThemeAllowContext {
                 local_side: Some(1),
                 campaign_scenario: Some(2),
@@ -1100,7 +1088,6 @@ mod tests {
         assert!(theme.is_allowed(7));
         assert!(!theme.is_allowed(8), "campaign scenario 2 < Scenario=3");
         theme.begin_scenario(
-            7,
             ThemeAllowContext {
                 local_side: Some(1),
                 campaign_scenario: None,
@@ -1108,7 +1095,7 @@ mod tests {
             |_| None,
         );
         assert!(!theme.is_allowed(7), "unknown Side= never matches");
-        theme.begin_scenario(7, ThemeAllowContext::default(), |_| None);
+        theme.begin_scenario(ThemeAllowContext::default(), |_| None);
         assert!(
             theme.is_allowed(7),
             "no player (shell) skips the Side= gate"
@@ -1119,55 +1106,233 @@ mod tests {
     fn cyclic_next_song_starts_after_prev_and_honors_repeat() {
         let mut theme = stock_runtime();
         assert_eq!(
-            theme.next_song(-1),
+            theme.next_song(-1, &mut no_draw),
             5,
             "first allowed after -1 is BrainFreeze"
         );
-        assert_eq!(theme.next_song(5), 6);
-        assert_eq!(theme.next_song(8), 5, "wraps past the shell-only entries");
-        assert_eq!(theme.next_song(0), 0, "INTRO repeats");
+        assert_eq!(theme.next_song(5, &mut no_draw), 6);
+        assert_eq!(
+            theme.next_song(8, &mut no_draw),
+            5,
+            "wraps past the shell-only entries"
+        );
+        assert_eq!(theme.next_song(0, &mut no_draw), 0, "INTRO repeats");
         theme.set_score_options(true, false);
-        assert_eq!(theme.next_song(5), 5, "global repeat returns prev");
-        let mut empty = ThemeRuntime::with_entries(Vec::new());
-        assert_eq!(empty.next_song(-1), 0);
+        assert_eq!(
+            theme.next_song(5, &mut no_draw),
+            5,
+            "global repeat returns prev"
+        );
+        let empty = ThemeRuntime::with_entries(Vec::new());
+        assert_eq!(empty.next_song(-1, &mut no_draw), 0);
     }
 
+    /// Borrow one already advanced Main cursor, including native ranged
+    /// rejection and both lag-index wraps. These goldens execute RandomRanged
+    /// 65C7E0 and raw 65C780; they establish RNG continuation, not the complete
+    /// Theme Next_Song chooser. All supplied catalog entries are allowed.
     #[test]
-    fn shuffle_rejects_prev_and_disallowed_with_a_fixed_presentation_rng() {
-        let mut theme = stock_runtime();
-        theme.set_score_options(false, true);
-        theme.begin_scenario(0x1234, ThemeAllowContext::default(), |_| None);
-        let mut expected = SimRng::new(0x1234);
-        let count = theme.entries().len() as i32;
-        let mut prev = -1;
-        for _ in 0..16 {
-            let mut want;
-            loop {
-                want = expected.next_range_i32_inclusive(0, count - 1);
-                if want != prev && (5..=8).contains(&want) {
-                    break;
-                }
-            }
-            let got = theme.next_song(prev);
-            assert_eq!(got, want);
-            assert_ne!(got, prev);
-            prev = got;
+    fn theme_shuffle_continues_the_callers_native_main_cursor() {
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/rmg_oracle/vectors/rng.json",
+        ))
+        .unwrap();
+        let cases = fixture["ranged_cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 7);
+        for case in cases {
+            let name = case["id"].as_str().unwrap();
+            let step = &case["steps"][0];
+            assert_eq!(step["kind"], "ranged", "{name}");
+            let low = step["low"].as_i64().unwrap() as i32;
+            let high = step["high"].as_i64().unwrap() as i32;
+            assert_eq!(low, 0, "{name}");
+            let entries = (0..=high)
+                .map(|index| ThemeEntry {
+                    key: format!("Fixture{index}"),
+                    sound: String::new(),
+                    name_key: String::new(),
+                    duration_seconds: 0,
+                    scenario: 0,
+                    normal: true,
+                    repeat: false,
+                    side_name: None,
+                    side: -1,
+                    available: true,
+                })
+                .collect();
+            let mut theme = ThemeRuntime::with_entries(entries);
+            theme.set_score_options(false, true);
+            let before = case["initial_state_hex"].as_str().unwrap();
+            assert_eq!(before, step["before_state_hex"].as_str().unwrap(), "{name}");
+            let mut main = SimRng::from_native_state_hex_for_test(before);
+            theme.begin_scenario(ThemeAllowContext::default(), |_| None);
+            let mut ranges = Vec::new();
+            let (song, raw) = crate::sim::rng::trace_draws(|| {
+                theme.next_song(THEME_NONE, &mut |draw_low, draw_high| {
+                    ranges.push((draw_low, draw_high));
+                    main.next_range_i32_inclusive(draw_low, draw_high)
+                })
+            });
+            assert_eq!(ranges, [(low, high)], "{name}");
+            assert_eq!(song, step["result"].as_i64().unwrap() as i32, "{name}");
+            let raw_words: Vec<_> = raw.iter().map(|draw| draw["value"].clone()).collect();
+            assert_eq!(raw_words, *step["raw_draws"].as_array().unwrap(), "{name}");
+            assert_eq!(
+                main.native_state_hex(),
+                step["after_state_hex"].as_str().unwrap(),
+                "{name} after Theme"
+            );
+
+            // Re-entering scenario context cannot seed or replace the
+            // caller's process stream. The next independent raw consumer
+            // must observe the original continuation of Theme's draw.
+            theme.begin_scenario(
+                ThemeAllowContext {
+                    local_side: Some(1),
+                    campaign_scenario: Some(3),
+                },
+                |_| None,
+            );
+            let continuation = &case["steps"][1];
+            assert_eq!(continuation["kind"], "raw", "{name}");
+            assert_eq!(
+                main.native_state_hex(),
+                continuation["before_state_hex"].as_str().unwrap(),
+                "{name} context change"
+            );
+            assert_eq!(
+                main.next_u32(),
+                continuation["result"].as_u64().unwrap() as u32,
+                "{name} caller continuation"
+            );
+            assert_eq!(
+                main.native_state_hex(),
+                continuation["after_state_hex"].as_str().unwrap(),
+                "{name} after caller continuation"
+            );
         }
-        // No allowed entry at all: 1000 rejections then index 0.
-        let mut none = ThemeRuntime::with_entries(vec![ThemeEntry {
-            key: "X".into(),
-            sound: "X".into(),
-            name_key: String::new(),
-            duration_seconds: 0,
-            scenario: 0,
-            normal: false,
-            repeat: false,
-            side_name: None,
-            side: -1,
-            available: true,
-        }]);
-        none.set_score_options(false, true);
-        assert_eq!(none.next_song(-1), 0);
+    }
+
+    /// Original Theme ctor720960, complete NextSong720A80 and IsAllowed721140,
+    /// with explicitly authored catalog flags. Native raw65C780 and ranged65C7E0
+    /// run on one Main object; this compares every range boundary and the next
+    /// independent raw consumer, including the 1000-attempt fallback.
+    #[test]
+    fn next_song_matches_original_catalog_gates_and_shared_main_continuation() {
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/input_oracle/unit_voice_playback.json",
+        ))
+        .unwrap();
+        let rows = fixture["theme_cases"].as_array().unwrap();
+        assert_eq!(rows.len(), 9);
+        for row in rows {
+            let name = row["name"].as_str().unwrap();
+            let input = &row["input"];
+            let state = |reference: &serde_json::Value| {
+                row["complete_rng_states"][reference.as_str().unwrap()]["bytes"]
+                    .as_str()
+                    .unwrap()
+            };
+            let entries = input["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| ThemeEntry {
+                    key: format!("Native{index}"),
+                    sound: String::new(),
+                    name_key: String::new(),
+                    duration_seconds: 0,
+                    scenario: entry["scenario"].as_i64().unwrap() as i32,
+                    normal: entry["normal"].as_bool().unwrap(),
+                    repeat: entry["repeat"].as_bool().unwrap(),
+                    side_name: None,
+                    side: entry["side"].as_i64().unwrap() as i32,
+                    available: entry["available"].as_bool().unwrap(),
+                })
+                .collect();
+            let mut theme = ThemeRuntime::with_entries(entries);
+            theme.set_score_options(
+                input["repeat"].as_bool().unwrap(),
+                input["shuffle"].as_bool().unwrap(),
+            );
+            // The native fixture supplies already-resolved Side indices.
+            theme.allow_context = ThemeAllowContext {
+                local_side: Some(input["current_side"].as_i64().unwrap() as i32),
+                campaign_scenario: (input["game_mode"] == 0)
+                    .then(|| input["scenario_number"].as_i64().unwrap() as i32),
+            };
+            let mut main = SimRng::from_native_state_hex_for_test(state(&row["main_before"]));
+            let native_ranges = row["ranged_draws"].as_array().unwrap();
+            let mut range_index = 0;
+            let (returned, raw) = crate::sim::rng::trace_draws(|| {
+                theme.next_song(
+                    input["previous"].as_i64().unwrap() as i32,
+                    &mut |low, high| {
+                        let expected = native_ranges.get(range_index).unwrap_or_else(|| {
+                            panic!("{name}: unexpected range call {range_index}")
+                        });
+                        assert_eq!(
+                            serde_json::json!([low, high]),
+                            expected["args"],
+                            "{name} range {range_index}"
+                        );
+                        assert_eq!(
+                            main.native_state_hex(),
+                            expected["state_before"].as_str().unwrap(),
+                            "{name} before range {range_index}"
+                        );
+                        let result = main.next_range_i32_inclusive(low, high);
+                        assert_eq!(
+                            result,
+                            expected["result"].as_i64().unwrap() as i32,
+                            "{name} range {range_index}"
+                        );
+                        assert_eq!(
+                            main.native_state_hex(),
+                            expected["state_after"].as_str().unwrap(),
+                            "{name} after range {range_index}"
+                        );
+                        range_index += 1;
+                        result
+                    },
+                )
+            });
+            assert_eq!(returned, row["returned"].as_i64().unwrap() as i32, "{name}");
+            assert_eq!(range_index, native_ranges.len(), "{name} ranged count");
+            assert_eq!(
+                raw.iter().map(|draw| &draw["value"]).collect::<Vec<_>>(),
+                row["raw_draws"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|draw| &draw["raw"])
+                    .collect::<Vec<_>>(),
+                "{name} raw rejection/continuation words"
+            );
+            assert_eq!(
+                main.native_state_hex(),
+                state(&row["main_after"]),
+                "{name} final Theme Main"
+            );
+
+            theme.begin_scenario(ThemeAllowContext::default(), |_| None);
+            assert_eq!(
+                main.native_state_hex(),
+                state(&row["main_after"]),
+                "{name} context cannot reseed caller"
+            );
+            assert_eq!(
+                main.next_u32(),
+                row["continuation"]["returned"].as_u64().unwrap() as u32,
+                "{name} next Main consumer"
+            );
+            assert_eq!(
+                main.native_state_hex(),
+                state(&row["continuation"]["main_after"]),
+                "{name} continuation state"
+            );
+        }
     }
 
     #[test]
@@ -1220,12 +1385,24 @@ mod tests {
         assert_eq!(theme.slots().pending, THEME_AUTO);
 
         // AI during the fade reports the ramp and waits.
-        let action = theme.ai(gates(true), MusicOutputState::Playing, 700, &mut ok);
+        let action = theme.ai(
+            gates(true),
+            MusicOutputState::Playing,
+            700,
+            &mut ok,
+            &mut no_draw,
+        );
         assert_eq!(action.theme_scale, Some(0.5));
         assert!(action.start.is_none());
 
         // Fade reached target: stop the stream, Next_Song(-1) = BrainFreeze.
-        let action = theme.ai(gates(true), MusicOutputState::Playing, 1_200, &mut ok);
+        let action = theme.ai(
+            gates(true),
+            MusicOutputState::Playing,
+            1_200,
+            &mut ok,
+            &mut no_draw,
+        );
         assert!(action.stop_output);
         assert_eq!(
             action.start.as_ref().map(|p| p.stem.as_str()),
@@ -1242,7 +1419,13 @@ mod tests {
         assert!(!theme.fading);
 
         // Natural end -> next cyclic track (Drok entry, index 6, not INTRO).
-        let action = theme.ai(gates(true), MusicOutputState::Finished, 5_000, &mut ok);
+        let action = theme.ai(
+            gates(true),
+            MusicOutputState::Finished,
+            5_000,
+            &mut ok,
+            &mut no_draw,
+        );
         assert_eq!(action.start.as_ref().map(|p| p.stem.as_str()), Some("Drok"));
         assert_eq!(
             theme.slots(),
@@ -1263,7 +1446,13 @@ mod tests {
         assert!(!action.stop_output);
         assert!(theme.fading);
         assert_eq!(theme.slots().pending, 7);
-        let action = theme.ai(gates(true), MusicOutputState::Playing, 1_100, &mut ok);
+        let action = theme.ai(
+            gates(true),
+            MusicOutputState::Playing,
+            1_100,
+            &mut ok,
+            &mut no_draw,
+        );
         assert!(action.stop_output);
         assert_eq!(
             theme.slots(),
@@ -1293,7 +1482,13 @@ mod tests {
         let before = theme.slots();
         theme.main_tick(false, gates(true), MusicOutputState::Playing, 20);
         assert_eq!(theme.slots(), before);
-        let action = theme.ai(gates(true), MusicOutputState::Playing, 1_100, &mut ok);
+        let action = theme.ai(
+            gates(true),
+            MusicOutputState::Playing,
+            1_100,
+            &mut ok,
+            &mut no_draw,
+        );
         assert!(action.stop_output && action.start.is_none());
         assert_eq!(theme.slots().pending, THEME_HOLD, "-3 is never consumed");
     }
@@ -1379,7 +1574,13 @@ mod tests {
             retained: 5,
             pending: THEME_NONE,
         };
-        theme.ai(gates(true), MusicOutputState::Finished, 1, &mut ok);
+        theme.ai(
+            gates(true),
+            MusicOutputState::Finished,
+            1,
+            &mut ok,
+            &mut no_draw,
+        );
         assert_eq!(
             theme.slots(),
             ThemeSlots {
@@ -1389,10 +1590,22 @@ mod tests {
             }
         );
         theme.slots.pending = THEME_HOLD;
-        theme.ai(gates(true), MusicOutputState::Finished, 2, &mut ok);
+        theme.ai(
+            gates(true),
+            MusicOutputState::Finished,
+            2,
+            &mut ok,
+            &mut no_draw,
+        );
         assert_eq!(theme.slots().pending, THEME_HOLD);
         theme.slots.pending = THEME_AUTO;
-        theme.ai(gates(true), MusicOutputState::Unavailable, 3, &mut ok);
+        theme.ai(
+            gates(true),
+            MusicOutputState::Unavailable,
+            3,
+            &mut ok,
+            &mut no_draw,
+        );
         assert_eq!(
             theme.slots(),
             ThemeSlots {
@@ -1403,7 +1616,13 @@ mod tests {
         );
 
         let mut missing = |_stem: &str| None;
-        theme.ai(gates(true), MusicOutputState::Finished, 4, &mut missing);
+        theme.ai(
+            gates(true),
+            MusicOutputState::Finished,
+            4,
+            &mut missing,
+            &mut no_draw,
+        );
         assert_eq!(
             theme.slots(),
             ThemeSlots {
@@ -1496,10 +1715,22 @@ mod tests {
                 pending: 6
             }
         );
-        let during = theme.ai(gates(true), MusicOutputState::Playing, 600, &mut prepare);
+        let during = theme.ai(
+            gates(true),
+            MusicOutputState::Playing,
+            600,
+            &mut prepare,
+            &mut no_draw,
+        );
         assert_eq!(during.theme_scale, Some(0.5));
         assert!(during.start.is_none());
-        let finished = theme.ai(gates(true), MusicOutputState::Playing, 1100, &mut prepare);
+        let finished = theme.ai(
+            gates(true),
+            MusicOutputState::Playing,
+            1100,
+            &mut prepare,
+            &mut no_draw,
+        );
         assert!(finished.stop_output);
         assert_eq!(
             finished.start.as_ref().map(|track| track.stem.as_str()),
@@ -1511,7 +1742,13 @@ mod tests {
         assert!(!stopped.stop_output && stopped.start.is_none());
         assert_eq!(theme.current_song(), THEME_HOLD);
         theme.main_tick(false, gates(true), MusicOutputState::Playing, 1300);
-        let finished = theme.ai(gates(true), MusicOutputState::Playing, 2200, &mut prepare);
+        let finished = theme.ai(
+            gates(true),
+            MusicOutputState::Playing,
+            2200,
+            &mut prepare,
+            &mut no_draw,
+        );
         assert!(finished.stop_output && finished.start.is_none());
         assert_eq!(
             theme.slots.pending, THEME_HOLD,

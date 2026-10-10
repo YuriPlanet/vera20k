@@ -34,6 +34,7 @@ fn body_draw_against_seed(
         Some(rules),
         EntityDrawBand::Ground,
         sim.session.binary_frame,
+        crate::render::draw_state::ObserverDrawContext::default(),
     ) else {
         return Ok(None);
     };
@@ -129,8 +130,15 @@ Turret=yes
     let entity = sim.entities().get(plain).unwrap();
     let frame = sim.session.binary_frame;
     let ground = EntityDrawBand::Ground;
-    let (_, body) = unit_body_draw(entity, &sim.interner, Some(&rules), ground, frame)
-        .expect("the miner is not in a deploy transition");
+    let (_, body) = unit_body_draw(
+        entity,
+        &sim.interner,
+        Some(&rules),
+        ground,
+        frame,
+        crate::render::draw_state::ObserverDrawContext::default(),
+    )
+    .expect("the miner is not in a deploy transition");
     let hull = entity.body_facing_current(frame);
     assert!(matches!(body, BodyDraw::Turret { turret, .. } if turret == hull));
 }
@@ -309,7 +317,17 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
             .acquire(0, Some(disguise), None);
     }
     let model = |sim: &Simulation, id| {
-        drawn_model_id(sim.entities().get(id).unwrap(), &sim.interner, Some(&rules)).into_owned()
+        drawn_model_id(
+            sim.entities().get(id).unwrap(),
+            &sim.interner,
+            Some(&rules),
+            0,
+            crate::render::draw_state::ObserverDrawContext {
+                disguise_cell_present: true,
+                ..Default::default()
+            },
+        )
+        .into_owned()
     };
     latch_unloading_image(&mut sim, hinted, "MINERHINT");
     assert_eq!(model(&sim, hinted), "MINERHINT");
@@ -454,6 +472,157 @@ fn retail_voxel_bodies_draw_the_sprites_their_model_is_seeded_with() {
             "{type_id} has TurretCount= without Turret="
         );
     }
+}
+
+#[test]
+fn retail_mirage_unit_route_matches_original_observer_dispatch() {
+    let Some(retail) = retail_battle_rules() else {
+        return;
+    };
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/mirage_disguise.json",
+    ))
+    .unwrap();
+    let actual_name = corpus["drawing"][0]["actual_type"]["name"]
+        .as_str()
+        .unwrap();
+    let disguise_name = corpus["initialization"]["tree_images"][0]["name"]
+        .as_str()
+        .unwrap();
+    let rules = &retail.rules;
+    let mut sim = Simulation::new();
+    let id = sim
+        .spawn_object_limbo_at_height(actual_name, "Americans", 10, 10, 0, 0, rules)
+        .unwrap();
+    let disguise_type = sim.interner.intern(disguise_name);
+    let mut compared = 0;
+    for row in corpus["observer"].as_array().unwrap() {
+        let input = &row["input"];
+        let frame = input["frame"].as_i64().unwrap() as u32;
+        let blink = crate::sim::timer::CdTimer::from_raw(
+            input["blink_start"].as_i64().unwrap() as i32,
+            input["blink_duration"].as_i64().unwrap() as i32,
+        );
+        if !blink.expired(frame as i32) {
+            // The separate blink producer is not retained in GameEntity yet.
+            // DrawState's original-byte test covers that supplied input leaf.
+            continue;
+        }
+        let actor = sim.entities_mut().get_mut(id).unwrap();
+        let disguise = actor.disguise.as_mut().unwrap();
+        if input["raw_disguised"].as_bool().unwrap() {
+            disguise.acquire(
+                input["creation"].as_i64().unwrap() as u32,
+                Some(disguise_type),
+                None,
+            );
+        } else {
+            disguise.clear_unit();
+        }
+        let observer = crate::render::draw_state::ObserverDrawContext {
+            owner_is_current_player: input["owner"].as_bool().unwrap(),
+            disguise_cell_present: input["cell_present"].as_bool().unwrap(),
+            detects_disguise: input["sensor_count"].as_i64().unwrap() > 0,
+            ..Default::default()
+        };
+        let actor = sim.entities().get(id).unwrap();
+        let model = drawn_model_id(actor, &sim.interner, Some(rules), frame, observer);
+        let pointer = |field: &str| {
+            u64::from_str_radix(row[field].as_str().unwrap().strip_prefix("0x").unwrap(), 16)
+                .unwrap()
+        };
+        let native_selected = row["outputs"]["draw_route_type"].as_u64().unwrap();
+        let expected = if native_selected == pointer("actual_type") {
+            actual_name
+        } else {
+            assert_eq!(native_selected, pointer("disguise_type"));
+            disguise_name
+        };
+        assert_eq!(model, expected, "{}", row["name"]);
+        let voxel =
+            super::super::helpers::drawn_type_uses_voxel(actor, &model, &sim.interner, Some(rules));
+        assert_eq!(
+            u64::from(voxel),
+            row["outputs"]["draw_route_voxel"].as_u64().unwrap(),
+            "{}",
+            row["name"]
+        );
+        assert_eq!(
+            unit_body_draw(
+                actor,
+                &sim.interner,
+                Some(rules),
+                EntityDrawBand::Ground,
+                frame,
+                observer
+            )
+            .is_some(),
+            voxel,
+            "voxel builder emits only its selected encoding"
+        );
+        compared += 1;
+    }
+    assert!(
+        compared >= 30,
+        "only the explicit active-blink producer is excluded"
+    );
+}
+
+#[test]
+fn retail_mirage_body_frame_matches_original_unit_shp() {
+    let Some(retail) = retail_battle_rules() else {
+        return;
+    };
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/mirage_disguise.json",
+    ))
+    .unwrap();
+    let rules = &retail.rules;
+    let mut compared = 0;
+    for row in corpus["drawing"].as_array().unwrap() {
+        let body = row["draws"]
+            .as_array()
+            .unwrap()
+            .first()
+            .expect("the selected original UnitSHP call reaches its body blit");
+        let name = row["actual_type"]["name"].as_str().unwrap();
+        let actual = rules.object(name).unwrap();
+        let art = rules
+            .art()
+            .resolve_metadata_entry(name, &actual.image)
+            .unwrap();
+        assert!(art.voxel, "the ordinary image enters the voxel builder");
+        // Unit73C5F0 reads the actual UnitType layout and Foot+538 even
+        // though GetImage4DED70 selects the physical TerrainType SHP.
+        let set = rules.animation_sequence(name).unwrap();
+        assert_eq!(
+            i64::from(
+                set.get(&crate::sim::animation::SequenceKind::Stand)
+                    .unwrap()
+                    .facings
+            ),
+            row["actual_type"]["facings"].as_i64().unwrap(),
+            "{name}: retained original UnitType ART reader feeds the final layout"
+        );
+        let input = &row["input"];
+        let body_frame = crate::sim::animation::resolve_shp_vehicle_body_frame(
+            set,
+            (input["facing_u16"].as_u64().unwrap() >> 8) as u8,
+            input["body_counter"].as_u64().unwrap() as u32,
+            input["is_moving"].as_bool().unwrap(),
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            u64::from(body_frame),
+            body["frame"].as_u64().unwrap(),
+            "{}",
+            row["name"]
+        );
+        assert_eq!(row["rng_before"], row["rng_after"], "{}", row["name"]);
+        compared += 1;
+    }
+    assert_eq!(compared, 6, "all admitted stock Unit SHP rows");
 }
 
 /// The selected gun's HVA count belongs to its index, rather than the base

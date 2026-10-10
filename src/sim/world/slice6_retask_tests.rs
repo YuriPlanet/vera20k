@@ -310,7 +310,14 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // Snapshot307: the session's LocalSize copy leaves the hash. A control binary
 // (main with a hash that skips only that tuple) gives this value in the same
 // test, with every tripwire above green. Control removed.
-const SLICE6_BASELINE_HASH: u64 = 0xDCFC_6D0F_1E2C_4BDA;
+// Snapshot318 hashes MoveSound's signed i32 countdown instead of u8. The
+// fixture's vectors are empty, but qualifying Foot visits retain countdown3
+// while inactive (4DAA87; foot_move_sound.json empty_qualifies). No sound is
+// selected and no Main draw is paid. This remains a Rust regression pin.
+// Snapshot320 retains native Techno constructor disguise identity/timer state
+// for every actor, replacing the absent component. These fixtures acquire no
+// disguise; their gameplay and absolute RNG pins remain the independent gates.
+const SLICE6_BASELINE_HASH: u64 = 0x8C85_319B_7E81_7B48;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -612,9 +619,9 @@ fn slice6_move_command_retasks_via_mission_substrate_and_clears_state() {
     {
         let e = sim.substrate.entities.get_mut(1).expect("unit");
         e.attack_target = Some(AttackTarget::new(2));
-        e.order_intent = Some(OrderIntent::Guard {
-            anchor_rx: 3,
-            anchor_ry: 3,
+        e.order_intent = Some(OrderIntent::AttackMove {
+            goal_rx: 3,
+            goal_ry: 3,
         });
     }
 

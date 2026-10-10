@@ -58,6 +58,12 @@ mod lifecycle;
 mod load_object_lifecycle;
 mod logic_vector;
 mod move_cell_input;
+mod move_sound;
+pub(crate) use move_sound::MoveSoundState;
+#[cfg(test)]
+mod move_sound_tests;
+#[cfg(test)]
+mod main_sound_identity_tests;
 #[cfg(test)]
 mod native_cell_input_test_fixture;
 mod navigation;
@@ -82,9 +88,9 @@ pub(crate) use techno_ai::foot_unlimbo_idle_mode;
 pub(crate) use techno_ai::passive_target_acquire;
 pub(crate) use techno_ai::queue_and_commence;
 mod command_schedule;
+mod selection_voice;
 pub(crate) mod techno_ai_cloak;
 pub(crate) mod unit_post;
-mod selection_voice;
 mod world_commands;
 mod world_hash;
 mod world_orders;
@@ -320,23 +326,16 @@ pub(crate) enum HouseAiActivationOrderTestEvent {
     DefeatProcessed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MovementSoundProbe {
-    rx: u16,
-    ry: u16,
-    z: u8,
-    sub_x_bits: i32,
-    sub_y_bits: i32,
-    /// The body's FacingClass state: a turn issued during Process changes it;
-    /// a turn already running is `Is_Moving_Now`'s.
-    facing: crate::sim::movement::FacingClass,
-    track_point: Option<u16>,
-}
-
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
 #[derive(Debug, Clone)]
 pub enum SimSoundEvent {
+    /// A pending acknowledgement owner's live AI reached Techno6F9EBB.
+    /// The app owns the latch/handle; this fact preserves the actual visit.
+    UnitVoiceVisit { owner: u64 },
+    /// Techno destructor6F4607 destroys its voice handle before its owned
+    /// Anims. The app discards both pending and playing voice identities.
+    UnitVoiceDestroyed { owner: u64 },
     /// Voc7509E0 on the object's handle (Building+6A0 for Construction).
     /// The existing app/audio handle owner performs looping updates and release.
     ObjectSoundStarted {
@@ -344,10 +343,12 @@ pub enum SimSoundEvent {
         sound_id: InternedId,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
-    /// Constructor-time animation start/report sound, keyed to object identity.
+    /// Start/report sound on an object or animation handle. Keep the canonical
+    /// sound name outside the gameplay interner: a Main-selected cue must not
+    /// allocate an ID that changes later gameplay hashes or saved identities.
     AnimationStarted {
         anim_id: crate::sim::anim_class::AnimId,
-        sound_id: InternedId,
+        sound_id: String,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// Hard-stop the owner's handle, then optionally play StopSound. Anim
@@ -363,7 +364,7 @@ pub enum SimSoundEvent {
     /// gattling_sound_owner(techno)`.
     GattlingLoop {
         owner: u64,
-        sound_id: InternedId,
+        sound_id: String,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// A stage-up's hard stop of that loop (`VocHandle::StopAndClear @
@@ -377,6 +378,9 @@ pub enum SimSoundEvent {
     /// plays out; an uncounted loop stops repeating. Anim UnInit4255D5 and
     /// scalar destructor4228E0 share this operation with Foot4D3677.
     ObjectSoundReleased { owner: u64 },
+    /// FootLimbo4DB353 ->405FD0: stop repetition for any valid event, even
+    /// a counted loop, and detach the handle. The current audio plays out.
+    ObjectSoundDetached { owner: u64 },
     /// Native Fly AuxSound1/AuxSound2 at the phase callback world coordinate.
     AircraftPhase {
         sound_id: InternedId,
@@ -384,7 +388,7 @@ pub enum SimSoundEvent {
     },
     /// An entity was destroyed — play its DieSound=.
     EntityDied {
-        die_sound_id: InternedId,
+        die_sound_id: String,
         rx: u16,
         ry: u16,
     },
@@ -731,50 +735,6 @@ pub enum SimSoundEvent {
     /// `Strength * Rules+0x1708` (ConditionRed) to below it. Ordinary hits
     /// that cross nothing return 1 and are silent.
     BuildingDamagedSfx { rx: u16, ry: u16 },
-    /// A techno of any category crossed the half-strength threshold and its
-    /// type authors a non-empty `VoiceFeedback=` — the damage voice line.
-    ///
-    /// gamemd: `TechnoClass::ReceiveDamage @ 0x00701900`. The damage result
-    /// selects an arm through `0x00702049 JMP [EDI*4 + 0x00702D24]`
-    /// (`{0x007027F7, 0x00702713, 0x00702695, 0x007027F7, 0x00702050}`, with
-    /// `EDI` forced to 4 when `[ESI+0x6C]` Health is zero at `0x00702035`).
-    /// Index 2 — result 2, the `Strength >> 1` crossing — is `0x00702695`:
-    ///
-    /// - `0x007026A1 MOV EAX,[EDI+0x4E8]` / `0x007026A9 JLE` — an empty
-    ///   `VoiceFeedback=` list returns without drawing anything.
-    /// - `0x007026B3 MOV ECX,0x886B88` / `CALL 0x0065C7E0` with `(0, 0x63)` —
-    ///   `RandomRanged(0, 99)`; `0x007026BD CMP EAX,0x1E ; JGE` drops the cue,
-    ///   so it speaks 30 times in 100. **The draw is spent before the owner
-    ///   gate**, so this event is emitted for every qualifying crossing on any
-    ///   house and the roll happens app-side.
-    /// - `0x007026C6 MOV ECX,[ESI+0x21C]` / `CALL HouseClass::IsHumanPlayer @
-    ///   0x0050B6F0` — in a skirmish or multiplayer game (`g_GameMode != 0`)
-    ///   that is `house == g_PlayerPtr`, i.e. the local player only.
-    /// - `0x007026DE CALL 0x0065C780` then `0x007026E7 DIV [EDI+0x4E8]` picks
-    ///   `items[rand % count]` from `[EDI+0x4DC]`, and `0x00702709 CALL
-    ///   VocClass::PlayAt @ 0x007509E0` plays it at the object's own coords
-    ///   (`0x00702702 CALL [EDX+0x48]`).
-    ///
-    /// `TechnoTypeClass+0x4D8` is the `VoiceFeedback=` vector (items `+0x4DC`,
-    /// count `+0x4E8`): `0x00712D9C LEA EDI,[EBP+0x4D8]` in
-    /// `TechnoTypeClass::ReadINI` pushes the key string at `0x0084424C`
-    /// (`"VoiceFeedback"`) into `CCINIClass::ReadSoundList @ 0x00525430` at
-    /// `0x00712DCB`.
-    ///
-    /// Both draws are on `g_MainRng @ 0x00886B88`, which
-    /// `Init_Random_Number_System @ 0x0052FC20` seeds from `g_RngSeed`
-    /// alongside the scenario stream but which per-frame draw paths
-    /// (`EBolt::DrawRecursiveBolt`, `LaserDrawClass::Draw`,
-    /// `RadBeam::DrawAndTickAll`) also consume, so it is not lockstep state.
-    /// They therefore belong to the presentation RNG here, not to `sim/`.
-    VoiceFeedback {
-        /// Owning house — `[ESI+0x21C]`, resolved against the local player.
-        owner: InternedId,
-        /// The techno's type, for the `VoiceFeedback=` list lookup.
-        type_ref: InternedId,
-        rx: u16,
-        ry: u16,
-    },
     /// Tank-bunker walls-up cue — emitted on install. App resolves to
     /// [AudioVisual] BunkerWallsUpSound (retail "TankBunkerUp").
     BunkerWallsUp { rx: u16, ry: u16 },
@@ -1071,6 +1031,12 @@ pub struct Simulation {
     /// The app drains these without feeding them back into simulation.
     #[serde(skip)]
     pub(crate) lifecycle_outputs: Vec<LifecycleOutput>,
+    /// Derived presentation interest for the next admitted frame. The app
+    /// copies only pending voice owners; this is never a second voice latch.
+    /// `advance_app_frame` clears it on success and error, and restore starts
+    /// empty. Neither snapshots nor world hashes include this transient set.
+    #[serde(skip)]
+    unit_voice_visit_interest: std::collections::BTreeSet<u64>,
     /// Conversion receipts drained into the same tick's navigation/app outputs.
     /// Derived frame output, not gameplay state; saves occur at frame boundaries.
     #[serde(skip)]
@@ -1903,7 +1869,6 @@ impl Simulation {
                 {
                     crate::sim::docking::bunker_link::release_sell_destroy(self, stable_id);
                 }
-                self.release_move_sound(stable_id);
                 self.uninit_with_context(stable_id, uninit_context);
             }
         }
@@ -3136,6 +3101,7 @@ impl Simulation {
             house_alliances: HouseAllianceMap::default(),
             substrate: ObjectSubstrate::new(),
             lifecycle_outputs: Vec::new(),
+            unit_voice_visit_interest: Default::default(),
             mission_spawned_entities: false,
             frame_overlay_updates: Vec::new(),
             frame_overlay_removals: Vec::new(),
@@ -3245,6 +3211,12 @@ impl Simulation {
     // (`terrain_load_draws`), selection_voice, Gattling Report, death sounds
     // and MoveSound. Local selection calls the domain operation; it must not
     // create a seeded copy that loses loading or live-consumer continuation.
+
+    /// Process Main886B88, shared by native command voices, Voc and Theme.
+    /// Draws remain outside Scenario/hash/save state; no copied audio cursor.
+    pub(crate) fn presentation_main_draws(&mut self) -> crate::sim::rng::MainRngDraws<'_> {
+        crate::sim::rng::MainRngDraws::borrow(&mut self.main_rng)
+    }
 
     /// Test/replay helper for the per-game Scenario/Main pair only.
     ///
@@ -3418,31 +3390,6 @@ impl Simulation {
         self.interner.intern(s)
     }
 
-    fn movement_sound_probe(&self, stable_id: u64) -> Option<MovementSoundProbe> {
-        let entity = self.substrate.entities.get(stable_id)?;
-        Some(MovementSoundProbe {
-            rx: entity.position.rx,
-            ry: entity.position.ry,
-            z: entity.position.z,
-            sub_x_bits: entity.position.sub_x.to_bits(),
-            sub_y_bits: entity.position.sub_y.to_bits(),
-            facing: entity.body_facing,
-            track_point: entity
-                .locomotor
-                .as_ref()
-                .and_then(|loco| {
-                    loco.track_progress(crate::sim::movement::track_process::TrackFamily::Drive)
-                        .or_else(|| {
-                            loco.track_progress(
-                                crate::sim::movement::track_process::TrackFamily::Ship,
-                            )
-                        })
-                })
-                .filter(|track| track.turn_index >= 0)
-                .and_then(|track| u16::try_from(track.cursor).ok()),
-        })
-    }
-
     /// Current world coordinate of whatever object holds one app-side loop
     /// handle, whether that is an anim or a `MoveSound`-carrying entity.
     ///
@@ -3488,119 +3435,6 @@ impl Simulation {
             x,
             y,
             z: crate::sim::movement::ground_pose::object_world_z_leptons(entity, None),
-        }
-    }
-
-    /// Release an active FootClass MoveSound while the object is still
-    /// represented, preserving the native stop-before-UnInit ordering.
-    pub(crate) fn release_move_sound(&mut self, stable_id: u64) {
-        let Some(entity) = self.substrate.entities.get(stable_id) else {
-            return;
-        };
-        if !entity.move_sound_active {
-            return;
-        }
-        let world = Self::movement_sound_world(entity);
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.move_sound_active = false;
-            entity.move_sound_countdown = 0;
-        }
-        self.sound_events.push(SimSoundEvent::AnimationStopped {
-            anim_id: stable_id,
-            stop_sound_id: None,
-            world,
-        });
-    }
-
-    /// FootClass's post-locomotor MoveSound tail. A fresh moving-now virtual
-    /// answer or locomotor state change keeps the handle alive and reloads the
-    /// three-visit grace counter. The process-local audio owner selects the
-    /// sample only after its device and spatial-acceptance gates.
-    ///
-    /// RESIDUAL: native's "state change" is the body frame counter
-    /// (Foot+0x538) advancing within this AI pass (saved `0x004DA80C`,
-    /// compared `0x004DAA01`). `0x004DA9FB` bumps it every `IdleRate=` frames
-    /// while not moving now, and every frame while a `DeployToLand=` type is
-    /// above ground, unless warping (+0x270/+0x271) or +0x6AD is set. VERA
-    /// compares position, facing, path index and track point instead.
-    /// - Trigger: a hovering `DeployToLand=` Siege Chopper; an idle
-    ///   `IdleRate=` type; a position or facing change while not moving now.
-    /// - Effect: the MoveSound starts or lapses on other frames than native;
-    ///   a hovering Siege Chopper's loop lapses after three visits. A start
-    ///   draws Main RNG (`0x004DAACB`).
-    /// - Frequency: Siege Choppers holding in the air; others rare.
-    /// - Risk: audio, and the Main RNG draw order.
-    fn tick_move_sound_after_process(
-        &mut self,
-        stable_id: u64,
-        before: Option<MovementSoundProbe>,
-        rules: Option<&RuleSet>,
-    ) {
-        let Some(entity) = self.substrate.entities.get(stable_id) else {
-            return;
-        };
-        if entity.category == EntityCategory::Structure || entity.locomotor.is_none() {
-            return;
-        }
-        let after = self.movement_sound_probe(stable_id);
-        let movement_changed = before.is_some() && before != after;
-        let moving_now = crate::sim::movement::motion_query::is_moving_now(
-            entity,
-            rules.map(|rules| {
-                crate::sim::movement::SpeedRules::new(
-                    rules,
-                    &self.interner,
-                    &self.type_handles,
-                    &self.houses,
-                )
-            }),
-            self.session.binary_frame,
-        );
-        // `0x004DAA38`/`0x004DAA3E`: falling (`+0x8D`) or crashing (`+0x425`).
-        // A Jumpjet's ordinary descent is neither: it keeps its move sound.
-        let falling_or_crashing =
-            entity.is_falling_down() || entity.crashing || entity.parachute_state.is_some();
-        let active = entity.move_sound_active;
-        let countdown = entity.move_sound_countdown;
-        let type_ref = entity.type_ref();
-        let world = Self::movement_sound_world(entity);
-        let qualifies = (movement_changed || moving_now) && !falling_or_crashing;
-
-        if qualifies {
-            let mut started = false;
-            if !active {
-                let configured = rules
-                    .and_then(|rules| self.object_type(type_ref, rules))
-                    .and_then(|object| object.move_sound.as_deref())
-                    .map(str::trim)
-                    .filter(|sound| !sound.is_empty() && !sound.eq_ignore_ascii_case("none"))
-                    .map(str::to_owned);
-                if let Some(configured) = configured {
-                    // gamemd `FootClass__AI @ 0x004DA530`: the active MoveSound
-                    // tail loads `g_MainRng` at 0x004DAAC0, calls `Random__Next`
-                    // at 0x004DAACB, then indexes the vector at 0x004DAAD3.
-                    let _sound_index_draw = self.main_rng.next_u32();
-                    let sound_id = self.interner.intern(&configured);
-                    self.sound_events.push(SimSoundEvent::AnimationStarted {
-                        anim_id: stable_id,
-                        sound_id,
-                        world,
-                    });
-                    started = true;
-                }
-            }
-            if active || started {
-                if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                    entity.move_sound_active = true;
-                    entity.move_sound_countdown = 3;
-                }
-            }
-        } else if active {
-            if countdown == 0 || falling_or_crashing {
-                self.release_move_sound(stable_id);
-            } else if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                entity.move_sound_countdown = countdown - 1;
-            }
         }
     }
 
@@ -4104,12 +3938,8 @@ impl Simulation {
             &self.effective_shared_cell_dummy(),
             spawn.origin,
         );
-        self.projectiles.spawn_at(
-            stable_id,
-            self.session.binary_frame,
-            spawn,
-            location,
-        );
+        self.projectiles
+            .spawn_at(stable_id, self.session.binary_frame, spawn, location);
         let registered = self.register_projectile(stable_id, spawn.flat);
         debug_assert!(registered);
         if let Some(style) = spawn.line_trail {
@@ -4556,6 +4386,90 @@ impl Simulation {
         }
     }
 
+    /// `BuildingClass::OnConstructionComplete`'s self-heal grant
+    /// (`0x00446382..0x004463B4`): a structure joins its owner's house with the
+    /// type's `InfantryGainSelfHeal` (`+0x1564` → house `+0x164`) and
+    /// `UnitsGainSelfHeal` (`+0x1568` → house `+0x168`). Each arm skips its add
+    /// when the type's count is zero; both use a plain wrapping `add`.
+    pub(crate) fn grant_house_self_heal(&mut self, stable_id: u64, rules: &RuleSet) {
+        let Some((owner, infantry, units)) = self.structure_self_heal_gain(stable_id, rules) else {
+            return;
+        };
+        if infantry == 0 && units == 0 {
+            return;
+        }
+        if let Some(house) = self.houses.get_mut(&owner) {
+            house.grant_self_heal(infantry, units);
+        }
+    }
+
+    /// `BuildingClass::Limbo`'s self-heal share (`0x004459AE..0x004459CA`, the
+    /// unit arm at `0x004459E0`): subtract the type's counts from the owner's
+    /// house, then raise a negative count to zero.
+    pub(crate) fn remove_house_self_heal(&mut self, stable_id: u64, rules: &RuleSet) {
+        let Some((owner, infantry, units)) = self.structure_self_heal_gain(stable_id, rules) else {
+            return;
+        };
+        if let Some(house) = self.houses.get_mut(&owner) {
+            house.revoke_self_heal(infantry, units);
+        }
+    }
+
+    /// `BuildingClass::ChangeOwner`'s self-heal share
+    /// (`0x00448AC8..0x00448B04` for infantry, `0x00448B0A..0x00448B46` for
+    /// units): **the old owner loses the type's counts**, and a negative result
+    /// is raised to zero. Both arms first test the type's count and the
+    /// building's own `+0x6E4` "actually placed on the map" byte.
+    ///
+    /// There is no new-owner add in that block. `ChangeOwner` gives the counts to
+    /// the new house through the virtual `Grand_Opening(1)` it calls at
+    /// `0x00448CEF`, whose entry (`0x00445F80`, `mov al,[ebp+0x6E4]`) reaches the
+    /// add at `0x00446382..0x004463B4` for the current owner — so this function
+    /// must not credit anyone, and its caller must run it with the *passed* old
+    /// owner: `TechnoClass::ChangeOwner` has already written the new owner by
+    /// then, which is why an earlier version that read the entity's current
+    /// owner back never took the counters off the house that lost the building.
+    pub(crate) fn remove_old_owner_self_heal(
+        &mut self,
+        stable_id: u64,
+        old_owner: InternedId,
+        rules: &RuleSet,
+    ) {
+        let Some((_, infantry, units)) = self.structure_self_heal_gain(stable_id, rules) else {
+            return;
+        };
+        let placed = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.building_actually_placed);
+        if !placed || (infantry == 0 && units == 0) {
+            return;
+        }
+        if let Some(house) = self.houses.get_mut(&old_owner) {
+            house.revoke_self_heal(infantry, units);
+        }
+    }
+
+    /// Owner, `InfantryGainSelfHeal` and `UnitsGainSelfHeal` of a structure,
+    /// or `None` for a missing entity or a non-structure.
+    fn structure_self_heal_gain(
+        &self,
+        stable_id: u64,
+        rules: &RuleSet,
+    ) -> Option<(InternedId, i32, i32)> {
+        let entity = self.substrate.entities.get(stable_id)?;
+        if entity.category != EntityCategory::Structure {
+            return None;
+        }
+        let object = self.object_type(entity.type_ref(), rules)?;
+        Some((
+            entity.owner(),
+            object.infantry_gain_self_heal,
+            object.units_gain_self_heal,
+        ))
+    }
+
     /// `HouseClass::Added_To_Game @ 0x00502A80` (`adding`) or
     /// `Removed_From_Game @ 0x005025F0` for an object on its owner's house,
     /// priced with that house's current `Cost_Of` factors.
@@ -4966,6 +4880,17 @@ impl Simulation {
                     house.tracking.add_airport_docks(delta);
                 }
             }
+        }
+        // A hospital's or machine shop's self-heal counts leave the old house
+        // here (`0x00448AC8..0x00448B04`, `0x00448B0A..0x00448B46`, each arm
+        // gated on the type's count and the building's own `+0x6E4` byte). The
+        // new house gains them from the `Grand_Opening(1)` below — the one
+        // `ChangeOwner` calls at `0x00448CEF` — not from this block, so the
+        // counters move exactly once.
+        if category == EntityCategory::Structure
+            && let Some(rules) = rules
+        {
+            self.remove_old_owner_self_heal(stable_id, old_owner, rules);
         }
         // Techno701735..701751 writes the owner then recomputes only +41A.
         // A former current-house object's +41B history survives the transfer.
@@ -6292,8 +6217,25 @@ impl Simulation {
             tick_ms,
             lane,
             trigger_inputs,
-        )?;
-        Ok(self.collect_frame_output(frame))
+        );
+        // A failed frame must not carry a previous caller's derived interest
+        // into a later headless, replay or ordinary presentation frame.
+        self.unit_voice_visit_interest.clear();
+        Ok(self.collect_frame_output(frame?))
+    }
+
+    /// Install the sole audio owner's read-only pending-interest projection
+    /// immediately before an admitted frame. No voice names/state live here.
+    pub(crate) fn prepare_unit_voice_visits(&mut self, owners: std::collections::BTreeSet<u64>) {
+        self.unit_voice_visit_interest = owners;
+    }
+
+    /// Emit only interested reached heads, in the existing ordered channel.
+    fn record_unit_voice_visit(&mut self, owner: u64) {
+        if self.unit_voice_visit_interest.contains(&owner) {
+            self.sound_events
+                .push(SimSoundEvent::UnitVoiceVisit { owner });
+        }
     }
 
     fn collect_frame_output(&mut self, frame: MasterFrameOutput) -> SimFrameOutput {
@@ -6383,6 +6325,8 @@ impl Simulation {
         // MainTick55DBC8 precedes Logic55DC9E (including trigger polling).
         self.sort_display_ground(rules);
 
+        self.lifecycle_outputs.push(LifecycleOutput::LogicVisit);
+
         // YR LogicClass::Update establishes trigger state before visiting the
         // live LogicVector, so object work in this frame observes its actions.
         #[cfg(test)]
@@ -6419,6 +6363,9 @@ impl Simulation {
             // Process` runs whatever the superweapons option (0x0055B5C8): a
             // map's NUKE weapon starts the nuke flash without a Super.
             self.kamikaze_update(rules);
+            self.lifecycle_outputs.push(LifecycleOutput::LaserUpdate {
+                frame: self.session.binary_frame as i32,
+            });
             bridge_state_changed |= crate::sim::superweapon::tick_active_superweapon_effects(
                 self,
                 rules,
@@ -6810,6 +6757,8 @@ mod production_shadow_tests;
 
 #[cfg(test)]
 pub(crate) mod factory_infantry_output_tests;
+#[cfg(test)]
+mod factory_jumpjet_output_tests;
 
 #[cfg(test)]
 #[path = "radar_dirty_ack_tests.rs"]

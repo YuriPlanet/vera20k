@@ -366,12 +366,6 @@ impl Simulation {
                     {
                         resumes.push((id, goal_rx, goal_ry));
                     }
-                    OrderIntent::Guard {
-                        anchor_rx,
-                        anchor_ry,
-                    } if (entity.position.rx, entity.position.ry) != (anchor_rx, anchor_ry) => {
-                        resumes.push((id, anchor_rx, anchor_ry));
-                    }
                     _ => {}
                 }
             }
@@ -1225,9 +1219,10 @@ impl Simulation {
             }
             // `FootClass::Mission_Guard @ 0x004D5070` has no approach call
             // (vt+0x53C): an object committed to Guard fires at what it holds
-            // from where it stands, whoever assigned it. A player "guard this
-            // spot" order is VERA's Area Guard stand-in (`OrderIntent::Guard`)
-            // and still approaches.
+            // from where it stands, whoever assigned it. The represented
+            // Area Guard approaches use their mission owner above; ordinary
+            // object pursuit remains a held movement residual. AttackMove
+            // retains its separate order-intent adapter until that migration.
             if entity.mission.current().known() == Some(crate::sim::mission::MissionType::Guard)
                 && entity.order_intent.is_none()
             {

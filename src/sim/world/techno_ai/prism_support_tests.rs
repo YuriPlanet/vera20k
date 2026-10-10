@@ -1014,6 +1014,7 @@ fn prism_general_reader_matches_the_original() {
         modifier: native["modifier"].as_i64().unwrap() as i32,
         max: native["max"].as_i64().unwrap() as i32,
         delay: native["delay"].as_i64().unwrap() as i32,
+        duration: native["duration"].as_i64().unwrap() as i32,
     };
     for row in reader {
         let input = &row["input"];

@@ -24,6 +24,50 @@ pub(crate) fn house_color_rgb(
     crate::render::native_surface_format::RGB565.unpack_rgb8(word)
 }
 
+/// Player/AI House +56FC..56FE, produced by ComputeRemap50BA00 after
+/// InitColor50B840 in Create_Houses687F10. Campaign500ECC..501086 produces
+/// the same bytes. This is separate from palette remapping and radar RGB.
+/// Native execution covers all 65,536 resolved RGB565 inputs and all 21
+/// physical Colors entries: tools/procedural_drawing_oracle/house_color.
+pub(crate) fn house_laser_rgb(
+    ramps: &crate::rules::house_colors::HouseColorRamps,
+    index: crate::rules::house_colors::HouseColorIndex,
+) -> [u8; 3] {
+    normalized_house_laser_rgb(house_color_rgb(ramps, index))
+}
+
+fn normalized_house_laser_rgb(rgb: [u8; 3]) -> [u8; 3] {
+    use crate::util::native_x87::{NativeF64Bits, X87Chop53, sqrt_approx_f32};
+
+    // Presentation-only binary64 arithmetic; the shared native Sqrt_Approx
+    // owner supplies its chopped f32 input and mantissa table. Ordinary f64
+    // operations match the resulting bytes for the complete RGB565 domain,
+    // without introducing another x87 arithmetic implementation.
+    let normalize = |[r, g, b]: [f64; 3]| {
+        let squared = b * b + g * g + r * r;
+        let squared = X87Chop53::load_f64(NativeF64Bits::from_bits(squared.to_bits()))
+            .expect("house color squares are finite");
+        let root = f64::from(f32::from_bits(
+            sqrt_approx_f32(squared)
+                .expect("house color magnitude is finite")
+                .bits(),
+        ));
+        if root == 0.0 {
+            ([255.0; 3], false)
+        } else {
+            (
+                [r, g, b].map(|channel| (channel * 240.0 / root).min(255.0)),
+                true,
+            )
+        }
+    };
+    let (mut channels, nonzero) = normalize(rgb.map(f64::from));
+    if nonzero {
+        channels = channels.map(|channel| if channel < 96.0 { 0.0 } else { channel });
+    }
+    normalize(channels).0.map(|channel| channel as u8)
+}
+
 /// RGB scale uses bits 0..17; red's high byte stores N, green bit 30 the
 /// plain-Convert flag and bit 31 the ColorScheme mask. Bits 18.. of each
 /// channel word carry that channel's part of the colour word
@@ -282,10 +326,21 @@ mod tests {
                 .collect();
             assert_eq!(serde_json::json!(ramp), row["ramp_rgb"], "{}", scheme.name);
             let rgb = serde_json::json!(house_color_rgb(&rules.house_color_ramps, index));
+            let laser_rgb = serde_json::json!(house_laser_rgb(&rules.house_color_ramps, index));
             for mode in ["scalar", "cmov", "mmx"] {
                 assert_eq!(rgb, row["modes"][mode]["rgb"], "{} {mode}", scheme.name);
                 assert_eq!(
                     rgb, row["modes"][mode]["campaign_rgb"],
+                    "{} {mode}",
+                    scheme.name
+                );
+                assert_eq!(
+                    laser_rgb, row["modes"][mode]["laser_rgb"],
+                    "{} {mode}",
+                    scheme.name
+                );
+                assert_eq!(
+                    laser_rgb, row["modes"][mode]["campaign_laser_rgb"],
                     "{} {mode}",
                     scheme.name
                 );
@@ -300,6 +355,34 @@ mod tests {
         // the RGB of the stock LightGrey table checked above.
         assert_eq!(native["negative_scheme"]["normal"]["scheme_index"], 5);
         assert_eq!(native["negative_scheme"]["campaign"]["scheme_index"], 5);
+    }
+
+    #[test]
+    fn house_laser_normalization_matches_every_original_rgb565_input() {
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/house_color.json",
+        ))
+        .unwrap();
+        let domain = &native["laser_rgb565_domain"];
+        assert_eq!(domain["count"], 65536);
+        assert_eq!(domain["bytes_per_result"], 3);
+        let hex = domain["rgb_hex"].as_str().unwrap();
+        assert_eq!(hex.len(), 65536 * 6);
+        for (word, bytes) in hex.as_bytes().chunks_exact(6).enumerate() {
+            let expected: [u8; 3] = std::array::from_fn(|channel| {
+                u8::from_str_radix(
+                    std::str::from_utf8(&bytes[channel * 2..channel * 2 + 2]).unwrap(),
+                    16,
+                )
+                .unwrap()
+            });
+            let rgb = crate::render::native_surface_format::RGB565.unpack_rgb8(word as u16);
+            assert_eq!(
+                normalized_house_laser_rgb(rgb),
+                expected,
+                "RGB565 {word:04X}"
+            );
+        }
     }
 
     #[test]

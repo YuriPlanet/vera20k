@@ -176,12 +176,12 @@ fn sounds(sim: &Simulation, id: u64) -> Vec<Sound> {
     let owner = gattling_sound_owner(id);
     sim.sound_events
         .iter()
-        .filter_map(|event| match *event {
+        .filter_map(|event| match event {
             SimSoundEvent::GattlingLoop {
                 owner: o, sound_id, ..
-            } if o == owner => Some(Sound::Loop(sim.interner.resolve(sound_id).to_string())),
-            SimSoundEvent::GattlingLoopStop { owner: o } if o == owner => Some(Sound::Stop),
-            SimSoundEvent::GattlingLoopRelease { owner: o } if o == owner => Some(Sound::Release),
+            } if *o == owner => Some(Sound::Loop(sound_id.clone())),
+            SimSoundEvent::GattlingLoopStop { owner: o } if *o == owner => Some(Sound::Stop),
+            SimSoundEvent::GattlingLoopRelease { owner: o } if *o == owner => Some(Sound::Release),
             _ => None,
         })
         .collect()
@@ -760,19 +760,16 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
             entity.gattling.value(),
         )
     };
-    let loops = |scenario: &crate::headless_scenario::HeadlessScenario,
-                 output: &crate::sim::world::SimFrameOutput| {
+    let loops = |output: &crate::sim::world::SimFrameOutput| {
         output
             .sound_events
             .iter()
-            .filter_map(|event| match *event {
+            .filter_map(|event| match event {
                 SimSoundEvent::GattlingLoop {
                     owner: o, sound_id, ..
-                } if o == owner => Some(Sound::Loop(
-                    scenario.sim().interner.resolve(sound_id).to_string(),
-                )),
-                SimSoundEvent::GattlingLoopStop { owner: o } if o == owner => Some(Sound::Stop),
-                SimSoundEvent::GattlingLoopRelease { owner: o } if o == owner => {
+                } if *o == owner => Some(Sound::Loop(sound_id.clone())),
+                SimSoundEvent::GattlingLoopStop { owner: o } if *o == owner => Some(Sound::Stop),
+                SimSoundEvent::GattlingLoopRelease { owner: o } if *o == owner => {
                     Some(Sound::Release)
                 }
                 _ => None,
@@ -824,7 +821,7 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
             );
             shots[stage_before as usize] += 1;
         }
-        sounds.extend(loops(&scenario, &output));
+        sounds.extend(loops(&output));
     }
     println!("YAGGUN: stage-ups at {stage_ups:?}, shots per stage {shots:?}");
     assert_eq!(stage_ups.len(), 2, "two stage-ups");
@@ -855,11 +852,11 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
             },
         )],
     );
-    let mut sounds = loops(&scenario, &order);
+    let mut sounds = loops(&order);
     let dropped = (0..600_u32)
         .find(|_| {
             let output = retail_frame(&mut scenario, Vec::new());
-            sounds.extend(loops(&scenario, &output));
+            sounds.extend(loops(&output));
             !state(&scenario).1
         })
         .expect("the cannon drops the MCV");
@@ -869,7 +866,7 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
     );
     let wound_down = (0..60_u32).find(|_| {
         let output = retail_frame(&mut scenario, Vec::new());
-        sounds.extend(loops(&scenario, &output));
+        sounds.extend(loops(&output));
         let (mission, _, stage, value) = state(&scenario);
         mission == Some(MissionType::Guard) && (stage, value) == (0, 0)
     });

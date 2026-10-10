@@ -106,6 +106,10 @@ pub struct SelectionOverlay {
     bomb_clock: Option<CenteredShapeStrip>,
     /// WRENCH.SHP, the repairing building's wrench.
     repair_wrench: Option<CenteredShapeStrip>,
+    /// PIPS.SHP, the self-heal status pip the health strip carries: frame
+    /// `0x0D` for the organic arm (the red cross) and frame `0x14` for the
+    /// units arm (the white wrench).
+    self_heal_pip: Option<CenteredShapeStrip>,
 }
 
 /// Every frame of one SHP packed side by side at its stored size, each with
@@ -311,6 +315,15 @@ impl SelectionOverlay {
         let repair_wrench = assets.and_then(|assets| {
             load_centered_shape_strip(gpu, batch, assets, "wrench.shp", "mousepal.pal")
         });
+        // PIPS.SHP — the same file the health strip's pips come from, in the
+        // unit pips' palette. Its tail (`0x0070A614..0x0070A6BB`) draws the
+        // self-heal status pip (index 0x0D organic / 0x14 units) centered on
+        // the draw point, so the strip's own frame origins carry the offset.
+        let self_heal_pip = assets.and_then(|assets| {
+            load_centered_shape_strip(gpu, batch, assets, "pips.shp", "palette.pal").or_else(|| {
+                load_centered_shape_strip(gpu, batch, assets, "pips.shp", "unittem.pal")
+            })
+        });
 
         Self {
             drag_texture,
@@ -346,6 +359,7 @@ impl SelectionOverlay {
             tiberium_pip_canvas_adj: (tib_adj_x, tib_adj_y),
             bomb_clock,
             repair_wrench,
+            self_heal_pip,
         }
     }
 
@@ -357,6 +371,12 @@ impl SelectionOverlay {
     /// The repair wrench art (WRENCH.SHP), when the assets have it.
     pub fn repair_wrench(&self) -> Option<&CenteredShapeStrip> {
         self.repair_wrench.as_ref()
+    }
+
+    /// The self-heal status pip art (PIPS.SHP frames 0x0D / 0x14), when the
+    /// assets have it.
+    pub fn self_heal_pip(&self) -> Option<&CenteredShapeStrip> {
+        self.self_heal_pip.as_ref()
     }
 
     /// Build sprite instances for the selection drag rectangle outline.

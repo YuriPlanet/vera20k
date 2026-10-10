@@ -34,6 +34,7 @@ pub mod frame_readback;
 pub(crate) mod foot_depth;
 pub mod gpu;
 pub(crate) mod line_trail;
+pub(crate) mod laser;
 pub(crate) mod ion_blast_ripple;
 pub(crate) mod surface_line;
 pub mod loading_screen_chrome;

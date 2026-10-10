@@ -483,10 +483,10 @@ fn the_invoke_anim_plays_its_report() {
     let (rules, mut sim, owner) = world_with(rules(""), 64, &[]);
     let sw_type = charge_super(&mut sim, owner, IRON_CURTAIN);
     assert!(launch(&mut sim, &rules, owner, 10, 10, sw_type, None));
-    let report = sim.interner.intern("IronCurtainBlast");
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::AnimationStarted { sound_id, .. } if *sound_id == report
+        SimSoundEvent::AnimationStarted { sound_id, .. }
+            if sound_id.eq_ignore_ascii_case("IronCurtainBlast")
     )));
 }
 

@@ -59,9 +59,9 @@ class Head(Native):
  def alloc(self,n):
   if self.long_heap is None:return super().alloc(n)
   p=self.long_heap;self.long_heap+=(max(n,1)+15)&~15;assert self.long_heap<0x49000000;return p
- def invoke(self,fn,this,args=()):
+ def invoke(self,fn,this,args=(),*,timeout_us=60000000,context=None):
   u=self.u;u.mem_write(SP,dwords(RET_MAGIC,*args));u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_ECX,this)
-  run_checked(u,fn,RET_MAGIC,count=10000000,timeout_us=60000000);return u.reg_read(UC_X86_REG_EAX)
+  run_checked(u,fn,RET_MAGIC,count=10000000,timeout_us=timeout_us,context=context);return u.reg_read(UC_X86_REG_EAX)
  def hook(self,u,pc,n,d):
   if pc==0x7C978A:
    self.path_events.append(dict(kind='CRT_atexit_registration',function=hex(self.read32(u.reg_read(UC_X86_REG_ESP)+4))))

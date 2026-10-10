@@ -416,7 +416,7 @@ fn original_unit_fire_update_rows() {
             .iter()
             .filter_map(|event| match event {
                 crate::sim::world::SimSoundEvent::GattlingLoop { sound_id, .. } => {
-                    Some(sim.interner.resolve(*sound_id).to_string())
+                    Some(sound_id.clone())
                 }
                 _ => None,
             })
@@ -618,7 +618,7 @@ fn a_gattling_tank_spins_up_while_it_fights() {
         for sound in sounds {
             match sound {
                 crate::sim::world::SimSoundEvent::GattlingLoop { sound_id, .. } => {
-                    loops.push(spin.sim.interner.resolve(sound_id).to_string());
+                    loops.push(sound_id);
                 }
                 crate::sim::world::SimSoundEvent::GattlingLoopStop { .. } => {
                     loops.push("stop".to_string());

@@ -82,6 +82,7 @@ fn tick(sim: &mut Simulation, rules: &RuleSet, frame: u32) -> movement::Movement
 #[test]
 fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel() {
     let rules = rules(1);
+    assert!(rules.object("MTNK").unwrap().move_sound.is_empty());
     for selector in 0x43..=0x47 {
         let mut sim = fixture(selector);
         crate::sim::arena_fixture::supply_native_map(&mut sim);
@@ -93,7 +94,7 @@ fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel(
         )
         .len() as i32;
         let mut observed = [false; 3];
-        let mut restored_probes = Vec::new();
+        let mut restored_probes: Vec<(usize, Simulation)> = Vec::new();
         let initial_rng = sim.scenario_rng.logical_state();
         for frame in 0..180 {
             let track = sim
@@ -121,9 +122,32 @@ fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel(
             // raw marks, at each of the three persisted execution boundaries.
             if !observed[stage] {
                 observed[stage] = true;
+                let sound = sim.substrate.entities.get(1).unwrap().move_sound;
+                assert!(!sound.is_active());
+                assert_eq!(sound.countdown(), if stage == 0 { 0 } else { 3 });
                 let bytes = GameSnapshot::save(&sim, 0, 0, "forced-track", 0);
                 let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
                 restored.restore_after_snapshot_load().unwrap();
+                let loaded_sound = restored.substrate.entities.get(1).unwrap().move_sound;
+                assert!(!loaded_sound.is_active());
+                assert_eq!(loaded_sound.countdown(), 0);
+                // FootLoad4DB60D..4DB624 clears +540 even for an inactive
+                // empty-list Foot. Apply only that documented load transition
+                // to the control and earlier probes at each new save boundary.
+                // Their track, occupation, mission and facing state stay live.
+                sim.restore_move_sound_state_after_load(1);
+                for (_, probe) in &mut restored_probes {
+                    assert!(
+                        !probe
+                            .substrate
+                            .entities
+                            .get(1)
+                            .unwrap()
+                            .move_sound
+                            .is_active()
+                    );
+                    probe.restore_move_sound_state_after_load(1);
+                }
                 restored.rebuild_caches_after_load(
                     sim.resolved_terrain.as_ref().unwrap().clone(),
                     sim.terrain_speed_config.clone(),
@@ -139,9 +163,9 @@ fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel(
             }
             let before_cursor = track.cursor;
             let stats = tick(&mut sim, &rules, frame);
-            // Compare each restored branch with the original live world on
-            // every subsequent visit through retirement. Reloading both sides
-            // would hide state that serialization accidentally dropped.
+            // Compare every complete state after the explicit sound-reset
+            // boundary, through retirement. The control's non-audio authority
+            // is never reloaded, so dropped persisted movement state still fails.
             for (saved_stage, restored) in &mut restored_probes {
                 tick(restored, &rules, frame);
                 assert_eq!(

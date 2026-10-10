@@ -208,8 +208,15 @@ fn infantry_terminal_fatal_frame_exit_preserves_delivered_cleanup_through_load()
         1,
         "ordinary consequence delivered before exit"
     );
-    assert_eq!(output.sound_events.iter().filter(|event| matches!(event,
-        SimSoundEvent::AnimationStarted { sound_id, .. } if saved.interner.resolve(*sound_id) == "DEATHREPORT")).count(), 1);
+    assert_eq!(
+        output
+            .sound_events
+            .iter()
+            .filter(|event| matches!(event,
+        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id == "DEATHREPORT"))
+            .count(),
+        1
+    );
     saved.scenario_rng = crate::sim::rng::SimRng::new(0);
     let bytes = snapshot_bytes(&saved, &rules);
     let mut restored = PreparedLoad::prepare_candidate(
@@ -245,7 +252,7 @@ fn infantry_terminal_fatal_frame_exit_preserves_delivered_cleanup_through_load()
     assert!(!restored.substrate.pending_delete.contains(&victim));
     assert_eq!(death_ids(&restored), effects);
     assert!(!next.sound_events.iter().any(|event| matches!(event,
-        SimSoundEvent::AnimationStarted { sound_id, .. } if restored.interner.resolve(*sound_id) == "DEATHREPORT")));
+        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id == "DEATHREPORT")));
 }
 
 #[test]

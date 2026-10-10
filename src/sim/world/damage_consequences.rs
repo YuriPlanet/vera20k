@@ -145,7 +145,6 @@ impl DamageConsequences {
             {
                 crate::sim::docking::bunker_link::release_sell_destroy(world, dead_id);
             }
-            world.release_move_sound(dead_id);
             world.uninit_with_rules(dead_id, rules);
         }
 

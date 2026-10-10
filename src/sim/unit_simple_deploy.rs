@@ -208,7 +208,7 @@ impl Simulation {
                 .entities
                 .get_mut(id)
                 .and_then(|e| e.disguise.as_mut())
-            && disguise.disguised
+            && disguise.is_disguised()
         {
             disguise.clear_unit();
         }
@@ -239,8 +239,8 @@ impl Simulation {
         let remap_house = entity
             .disguise
             .as_ref()
-            .filter(|state| state.disguised)
-            .and_then(|state| state.disguised_as_house)
+            .filter(|state| state.is_disguised())
+            .and_then(|state| state.house())
             .unwrap_or(entity.owner());
         let (rx, ry, sx, sy, z) = (
             position.rx,

@@ -132,6 +132,83 @@ pub(crate) fn unit_status_visibility(selected: bool, hovered: bool) -> (bool, bo
     (selected, selected || hovered)
 }
 
+/// The gate both non-building status passes share: the health strip's own
+/// visibility rule followed by the fog test every status overlay uses.
+fn unit_status_drawable(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    hovered_unit_id: Option<u64>,
+    local_owner_id: Option<crate::sim::intern::InternedId>,
+    ignore_visibility: bool,
+) -> bool {
+    let (_, draw_pips) =
+        unit_status_visibility(entity.selected, hovered_unit_id == Some(entity.stable_id()));
+    draw_pips
+        && status_entity_visible_plain(
+            local_owner_id,
+            &sim.fog,
+            &entity.position,
+            entity.owner(),
+            ignore_visibility,
+        )
+}
+
+/// Which PIPS.SHP frame a self-healing non-building's health strip carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SelfHealPip {
+    /// Frame `0x0D`, the red cross: an Infantry, or a Unit whose type is
+    /// `Organic`.
+    Organic,
+    /// Frame `0x14`, the white wrench: a Unit whose type is not `Organic`.
+    Units,
+}
+
+impl SelfHealPip {
+    /// The PIPS.SHP frame index this arm draws (`ebx` at `0x0070A573` /
+    /// `0x0070A5DF`).
+    pub(crate) const fn frame(self) -> usize {
+        match self {
+            Self::Organic => 0x0D,
+            Self::Units => 0x14,
+        }
+    }
+
+    /// The draw-point offset from the object's screen position plus bracket
+    /// delta — the `[esp+0x50]` / `[esp+0x68]` base the health strip uses,
+    /// which `(+0x26, -0x20)` and `(+0x13, -0x23)` are added to at
+    /// `0x0070A5F1` and `0x0070A60A`.
+    pub(crate) const fn offset(self) -> (f32, f32) {
+        match self {
+            Self::Organic => (0x13 as f32, -0x23 as f32),
+            Self::Units => (0x26 as f32, -0x20 as f32),
+        }
+    }
+}
+
+/// The self-heal status pip an object draws, or `None`.
+///
+/// Native `DrawPipScalePips` (`0x0070A50C..0x0070A6BB`): an Infantry
+/// (`WhatAmI()==0xF`) takes the organic arm directly, and a Unit
+/// (`WhatAmI()==1`) whose type byte `+0xD97` (`Organic`) is set falls through
+/// into the same arm; a Unit whose type is not organic takes the units arm;
+/// every other class passes both tests and draws nothing. Each arm first
+/// requires its owner house's counter — `HasInfSelfHeal @ 0x0050D9C0` on
+/// `House+0x164`, `HasUnitSelfHeal @ 0x0050D9D0` on `House+0x168`.
+pub(crate) fn self_heal_pip(
+    category: EntityCategory,
+    organic: bool,
+    self_heal_infantry: i32,
+    self_heal_units: i32,
+) -> Option<SelfHealPip> {
+    let (arm, count) = match category {
+        EntityCategory::Infantry => (SelfHealPip::Organic, self_heal_infantry),
+        EntityCategory::Unit if organic => (SelfHealPip::Organic, self_heal_infantry),
+        EntityCategory::Unit => (SelfHealPip::Units, self_heal_units),
+        EntityCategory::Structure | EntityCategory::Aircraft => return None,
+    };
+    (count > 0).then_some(arm)
+}
+
 // DEFERRED members of this row's overlay set, recorded with what a follow-up
 // needs. None of them requires new texture infrastructure — pips.shp and
 // pips2.shp are both already loaded, and `DrawPipScalePips` swaps the shape
@@ -149,15 +226,15 @@ pub(crate) fn unit_status_visibility(selected: bool, hovered: bool) -> (bool, bo
 //   transport. Player effect: no passenger or ammo readout at all. Frequency:
 //   common — transports are ordinary play. Downstream risk: none.
 //
-// * **Control-group number, spawn pips, self-heal indicator**, all in the tail
-//   of `DrawPipScalePips`: the group index from `param_1[0x85]` drawn as text at
+// * **Control-group number and spawn pips**, both in the tail of
+//   `DrawPipScalePips`: the group index from `param_1[0x85]` drawn as text at
 //   `param_2 + (-4, -0x27)` for units and `(-4, -0x24)` for infantry; spawn pips
-//   from `TypeClass+0xD5C` via `SpawnManagerClass__CountDockedSpawns`; and the
-//   self-heal frame 0xD (infantry) / 0x14 (units) at `(+0x26, -0x20)` /
-//   `(+0x13, -0x23)`, blinking. Trigger: for the group number, every recall of a
-//   control group. Player effect: a selected group shows no number, so the
-//   player cannot tell which group is up. Frequency: common. Downstream risk:
-//   none. The other two are rarer (Kirov/carrier spawns; self-healing units).
+//   from `TypeClass+0xD5C` via `SpawnManagerClass__CountDockedSpawns`. Trigger:
+//   for the group number, every recall of a control group. Player effect: a
+//   selected group shows no number, so the player cannot tell which group is up.
+//   Frequency: common. Downstream risk: none. The spawn pips are rarer
+//   (Kirov/carrier spawns). The tail's third member, the self-heal status pip,
+//   is ported by `build_self_heal_pip_instances` below.
 //
 /// Building health: discrete pips from pips.shp along the isometric NW foundation edge.
 ///
@@ -885,18 +962,7 @@ pub(crate) fn build_unit_status_fill_instances(
             continue;
         }
         let health = &e.health;
-        let (_, draw_pips) =
-            unit_status_visibility(e.selected, hovered_unit_id == Some(e.stable_id()));
-        if !draw_pips {
-            continue;
-        }
-        if !status_entity_visible_plain(
-            local_owner_id,
-            &sim.fog,
-            &e.position,
-            e.owner(),
-            ignore_visibility,
-        ) {
+        if !unit_status_drawable(sim, e, hovered_unit_id, local_owner_id, ignore_visibility) {
             continue;
         }
         // Already the drawn position, height lift included, so the bar tracks
@@ -1002,6 +1068,93 @@ pub(crate) fn build_unit_status_fill_instances(
                     ..Default::default()
                 });
             }
+        }
+    }
+    instances
+}
+
+/// The self-heal status pip a non-building's health strip carries.
+///
+/// Native tail of `DrawPipScalePips` (`0x0070A614..0x0070A6BB`), which the
+/// object-render loop reaches straight after the strip: PIPS.SHP frame `0x0D`
+/// (the red cross) or `0x14` (the white wrench), centered (flags `0x600`) on
+/// the same draw point the strip uses plus [`SelfHealPip::offset`]. The gate is
+/// [`self_heal_pip`]'s, so the pip appears exactly when the strip does.
+///
+/// Residual: for an object whose `Health` (`+0x6C`) is below its type's
+/// `Strength` (`Type+0xA0`) and whose frame lands in the first six of the
+/// heal period, native re-issues the draw with bit 0 set (flags `0x601`,
+/// `0x0070A628..0x0070A667`). That variant's draw effect is not established,
+/// so every pip here uses `0x600`, which is also what the native draws at full
+/// health and outside the window.
+pub(crate) fn build_self_heal_pip_instances(
+    state: &AppState,
+    sw: f32,
+    sh: f32,
+) -> Vec<SpriteInstance> {
+    let (Some(sim), Some(overlay)) = (
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        &state.match_state.match_presentation.selection_overlay,
+    ) else {
+        return Vec::new();
+    };
+    let Some(pip_art) = overlay.self_heal_pip() else {
+        return Vec::new();
+    };
+    let local_owner = preferred_local_owner_name(state);
+    let local_owner_id = local_owner
+        .as_deref()
+        .and_then(|name| sim.interner.get(name));
+    let ignore_visibility = state.match_state.sandbox_full_visibility;
+    let hovered_unit_id = unit_health_hover_target(state, local_owner.as_deref());
+    let mut instances = Vec::new();
+    for e in sim.entities().values() {
+        if e.category == EntityCategory::Structure || e.sinking.is_active() {
+            continue;
+        }
+        if e.passenger_role.is_inside_transport() {
+            continue;
+        }
+        if !unit_status_drawable(sim, e, hovered_unit_id, local_owner_id, ignore_visibility) {
+            continue;
+        }
+        let Some(obj) = state
+            .rules()
+            .and_then(|rules| rules.object(sim.interner.resolve(e.type_ref())))
+        else {
+            continue;
+        };
+        let (infantry, units) = sim.houses.get(&e.owner()).map_or((0, 0), |house| {
+            (house.self_heal_infantry(), house.self_heal_units())
+        });
+        let Some(arm) = self_heal_pip(e.category, obj.organic, infantry, units) else {
+            continue;
+        };
+        let (sx, sy) = crate::app::presentation::instances::interpolated_screen_position_entity(e);
+        let (off_x, off_y) = arm.offset();
+        let point: (f32, f32) = (
+            sx + off_x,
+            sy + obj.pixel_selection_bracket_delta as f32 + off_y,
+        );
+        let Some(instance) = pip_art.instance(arm.frame(), point, 0.0004) else {
+            continue;
+        };
+        if in_view(
+            instance.position[0],
+            instance.position[1],
+            instance.size[0],
+            instance.size[1],
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+            sw,
+            sh,
+            48.0,
+        ) {
+            instances.push(instance);
         }
     }
     instances
@@ -1495,5 +1648,48 @@ mod tests {
     #[test]
     fn unselected_unhovered_unit_draws_nothing_regardless_of_damage() {
         assert_eq!(unit_status_visibility(false, false), (false, false));
+    }
+
+    /// The arm table `DrawPipScalePips` walks at `0x0070A50C..0x0070A5E4`:
+    /// `WhatAmI()==0xF` (Infantry) enters the organic arm directly, a `Unit`
+    /// enters it too while `Type+0xD97` (`Organic`) is set and the units arm
+    /// when that byte is clear, and every other class fails both tests.
+    #[test]
+    fn the_self_heal_pip_arm_table_matches_the_original() {
+        use EntityCategory::{Aircraft, Infantry, Structure, Unit};
+        assert_eq!(
+            self_heal_pip(Infantry, true, 1, 1),
+            Some(SelfHealPip::Organic)
+        );
+        // The organic byte decides the arm for a Unit, not the class alone.
+        assert_eq!(self_heal_pip(Unit, true, 1, 1), Some(SelfHealPip::Organic));
+        assert_eq!(self_heal_pip(Unit, false, 1, 1), Some(SelfHealPip::Units));
+        // `WhatAmI()==2` (Aircraft) and `==6` (Building) never reach a draw.
+        assert_eq!(self_heal_pip(Aircraft, false, 1, 1), None);
+        assert_eq!(self_heal_pip(Structure, false, 1, 1), None);
+        // Each arm needs its own house counter above zero
+        // (`HasInfSelfHeal @ 0x0050D9C0`, `HasUnitSelfHeal @ 0x0050D9D0`),
+        // and the executed predicate is false for a negative count.
+        assert_eq!(self_heal_pip(Infantry, true, 0, 1), None);
+        assert_eq!(self_heal_pip(Infantry, true, -1, 1), None);
+        assert_eq!(self_heal_pip(Unit, true, 0, 1), None);
+        assert_eq!(self_heal_pip(Unit, false, 1, 0), None);
+        assert_eq!(self_heal_pip(Unit, false, 1, -1), None);
+        // The other arm's counter never substitutes for the object's own.
+        assert_eq!(self_heal_pip(Unit, false, 1, 0), None);
+        assert_eq!(self_heal_pip(Unit, false, 0, 1), Some(SelfHealPip::Units));
+    }
+
+    /// The frame and draw-point offset each arm carries: `ebx` `0x0D` at
+    /// `0x0070A573` with `edi`/`esi` `(+0x13, -0x23)` at `0x0070A60A`, and
+    /// `0x14` at `0x0070A5DF` with `(+0x26, -0x20)` at `0x0070A5F1`. `edi`
+    /// reaches the x argument (`0x0070A63C`, `0x0070A67D`) and `esi` the y one
+    /// (`0x0070A649`, `0x0070A68A`).
+    #[test]
+    fn the_self_heal_pip_frames_and_offsets_match_the_original() {
+        assert_eq!(SelfHealPip::Organic.frame(), 0x0D);
+        assert_eq!(SelfHealPip::Units.frame(), 0x14);
+        assert_eq!(SelfHealPip::Organic.offset(), (19.0, -35.0));
+        assert_eq!(SelfHealPip::Units.offset(), (38.0, -32.0));
     }
 }

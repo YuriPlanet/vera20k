@@ -15,6 +15,32 @@ use crate::util::lepton::{
 };
 
 impl Simulation {
+    /// Object+1C4, Object5F6A10: query virtual+4C with a null requester,
+    /// truncate its XY to signed cell words, then perform one Map5657A0
+    /// lookup. A Foot therefore uses its tube exit or paid head through
+    /// Foot4DBDF0; this is distinct from physical Object+1BC below.
+    /// Executed G730D60 callers: tools/input_oracle/area_guard.json.
+    pub(crate) fn object_navigation_cell(
+        &self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Result<(i16, i16), String> {
+        let coordinate = super::navcom::nav_target_coordinate(
+            crate::sim::components::NavTargetRef::Entity { id },
+            None,
+            &self.substrate.entities,
+            self.resolved_terrain.as_ref(),
+            Some((rules, &self.interner)),
+        )?;
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("Object navigation-cell query requires the native map")?;
+        let cells = NativeCellQuery::canonical(terrain);
+        let cell = cells.lookup(((coordinate.x / 256) as i16, (coordinate.y / 256) as i16));
+        Ok(cells.coord(cell))
+    }
+
     /// ObjectClass::SetZ5F6060 writes only Object+A4. A marked owner runs
     /// virtual Mark(REMOVE), stores Z at5F607A, then Mark(PUT). The unmarked
     /// leaf5F6092 stores Z directly; it does not move OpenTopped riders.

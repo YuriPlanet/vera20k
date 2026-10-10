@@ -1,0 +1,1132 @@
+{
+  "predicate": [
+    {
+      "address": 5298624,
+      "arm": "infantry",
+      "count": 0,
+      "house_offset": 356,
+      "mask": 0,
+      "other_counter_read": false,
+      "result": 0
+    },
+    {
+      "address": 5298624,
+      "arm": "infantry",
+      "count": 1,
+      "house_offset": 356,
+      "mask": 1,
+      "other_counter_read": false,
+      "result": 1
+    },
+    {
+      "address": 5298624,
+      "arm": "infantry",
+      "count": 2,
+      "house_offset": 356,
+      "mask": 2,
+      "other_counter_read": false,
+      "result": 1
+    },
+    {
+      "address": 5298624,
+      "arm": "infantry",
+      "count": 100,
+      "house_offset": 356,
+      "mask": 100,
+      "other_counter_read": false,
+      "result": 1
+    },
+    {
+      "address": 5298624,
+      "arm": "infantry",
+      "count": 2147483647,
+      "house_offset": 356,
+      "mask": 2147483647,
+      "other_counter_read": false,
+      "result": 1
+    },
+    {
+      "address": 5298624,
+      "arm": "infantry",
+      "count": -2147483648,
+      "house_offset": 356,
+      "mask": 2147483648,
+      "other_counter_read": false,
+      "result": 0
+    },
+    {
+      "address": 5298624,
+      "arm": "infantry",
+      "count": -1,
+      "house_offset": 356,
+      "mask": 4294967295,
+      "other_counter_read": false,
+      "result": 0
+    },
+    {
+      "address": 5298640,
+      "arm": "units",
+      "count": 0,
+      "house_offset": 360,
+      "mask": 0,
+      "other_counter_read": false,
+      "result": 0
+    },
+    {
+      "address": 5298640,
+      "arm": "units",
+      "count": 1,
+      "house_offset": 360,
+      "mask": 1,
+      "other_counter_read": false,
+      "result": 1
+    },
+    {
+      "address": 5298640,
+      "arm": "units",
+      "count": 2,
+      "house_offset": 360,
+      "mask": 2,
+      "other_counter_read": false,
+      "result": 1
+    },
+    {
+      "address": 5298640,
+      "arm": "units",
+      "count": 100,
+      "house_offset": 360,
+      "mask": 100,
+      "other_counter_read": false,
+      "result": 1
+    },
+    {
+      "address": 5298640,
+      "arm": "units",
+      "count": 2147483647,
+      "house_offset": 360,
+      "mask": 2147483647,
+      "other_counter_read": false,
+      "result": 1
+    },
+    {
+      "address": 5298640,
+      "arm": "units",
+      "count": -2147483648,
+      "house_offset": 360,
+      "mask": 2147483648,
+      "other_counter_read": false,
+      "result": 0
+    },
+    {
+      "address": 5298640,
+      "arm": "units",
+      "count": -1,
+      "house_offset": 360,
+      "mask": 4294967295,
+      "other_counter_read": false,
+      "result": 0
+    }
+  ],
+  "step": [
+    {
+      "address": 5298656,
+      "amount": 0,
+      "arm": "infantry",
+      "count": 0,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 0
+    },
+    {
+      "address": 5298656,
+      "amount": 0,
+      "arm": "infantry",
+      "count": 5,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 0
+    },
+    {
+      "address": 5298656,
+      "amount": 1,
+      "arm": "infantry",
+      "count": 1,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1
+    },
+    {
+      "address": 5298656,
+      "amount": 5,
+      "arm": "infantry",
+      "count": 2,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 10
+    },
+    {
+      "address": 5298656,
+      "amount": 20,
+      "arm": "infantry",
+      "count": 3,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 60
+    },
+    {
+      "address": 5298656,
+      "amount": 255,
+      "arm": "infantry",
+      "count": 4,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1020
+    },
+    {
+      "address": 5298656,
+      "amount": 65535,
+      "arm": "infantry",
+      "count": 65535,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": -131071
+    },
+    {
+      "address": 5298656,
+      "amount": 32767,
+      "arm": "infantry",
+      "count": 65536,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 2147418112
+    },
+    {
+      "address": 5298656,
+      "amount": 2147483647,
+      "arm": "infantry",
+      "count": 2,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": -2
+    },
+    {
+      "address": 5298656,
+      "amount": -1,
+      "arm": "infantry",
+      "count": 1,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": -1
+    },
+    {
+      "address": 5298656,
+      "amount": 65139,
+      "arm": "infantry",
+      "count": 23866,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1554607374
+    },
+    {
+      "address": 5298656,
+      "amount": 17747,
+      "arm": "infantry",
+      "count": 9684,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 171861948
+    },
+    {
+      "address": 5298656,
+      "amount": 45685,
+      "arm": "infantry",
+      "count": 41518,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1896749830
+    },
+    {
+      "address": 5298656,
+      "amount": 33502,
+      "arm": "infantry",
+      "count": 44836,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1502095672
+    },
+    {
+      "address": 5298656,
+      "amount": 43074,
+      "arm": "infantry",
+      "count": 26912,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1159207488
+    },
+    {
+      "address": 5298656,
+      "amount": 2490,
+      "arm": "infantry",
+      "count": 18142,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 45173580
+    },
+    {
+      "address": 5298656,
+      "amount": 56495,
+      "arm": "infantry",
+      "count": 50491,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": -1442478251
+    },
+    {
+      "address": 5298656,
+      "amount": 15036,
+      "arm": "infantry",
+      "count": 38343,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 576525348
+    },
+    {
+      "address": 5298656,
+      "amount": 52010,
+      "arm": "infantry",
+      "count": 2410,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 125344100
+    },
+    {
+      "address": 5298656,
+      "amount": 12656,
+      "arm": "infantry",
+      "count": 19617,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 248272752
+    },
+    {
+      "address": 5298656,
+      "amount": 21595,
+      "arm": "infantry",
+      "count": 44173,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 953915935
+    },
+    {
+      "address": 5298656,
+      "amount": 30475,
+      "arm": "infantry",
+      "count": 21104,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 643144400
+    },
+    {
+      "address": 5298656,
+      "amount": 30616,
+      "arm": "infantry",
+      "count": 5259,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 161009544
+    },
+    {
+      "address": 5298656,
+      "amount": 31738,
+      "arm": "infantry",
+      "count": 13231,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 419925478
+    },
+    {
+      "address": 5298656,
+      "amount": 61670,
+      "arm": "infantry",
+      "count": 8761,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 540290870
+    },
+    {
+      "address": 5298656,
+      "amount": 999,
+      "arm": "infantry",
+      "count": 64293,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 64228707
+    },
+    {
+      "address": 5298656,
+      "amount": 36559,
+      "arm": "infantry",
+      "count": 37156,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1358386204
+    },
+    {
+      "address": 5298656,
+      "amount": 32186,
+      "arm": "infantry",
+      "count": 36451,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1173211886
+    },
+    {
+      "address": 5298656,
+      "amount": 30929,
+      "arm": "infantry",
+      "count": 9655,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 298619495
+    },
+    {
+      "address": 5298656,
+      "amount": 35608,
+      "arm": "infantry",
+      "count": 49450,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1760815600
+    },
+    {
+      "address": 5298656,
+      "amount": 20352,
+      "arm": "infantry",
+      "count": 38937,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 792445824
+    },
+    {
+      "address": 5298656,
+      "amount": 40947,
+      "arm": "infantry",
+      "count": 15488,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 634187136
+    },
+    {
+      "address": 5298656,
+      "amount": 61686,
+      "arm": "infantry",
+      "count": 56595,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": -803848126
+    },
+    {
+      "address": 5298656,
+      "amount": 18255,
+      "arm": "infantry",
+      "count": 57853,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1056106515
+    },
+    {
+      "address": 5298656,
+      "amount": 23015,
+      "arm": "infantry",
+      "count": 49699,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1143822485
+    },
+    {
+      "address": 5298656,
+      "amount": 42225,
+      "arm": "infantry",
+      "count": 40779,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1721893275
+    },
+    {
+      "address": 5298656,
+      "amount": 23035,
+      "arm": "infantry",
+      "count": 8468,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 195060380
+    },
+    {
+      "address": 5298656,
+      "amount": 16999,
+      "arm": "infantry",
+      "count": 14459,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 245788541
+    },
+    {
+      "address": 5298656,
+      "amount": 50301,
+      "arm": "infantry",
+      "count": 15601,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 784745901
+    },
+    {
+      "address": 5298656,
+      "amount": 61899,
+      "arm": "infantry",
+      "count": 22685,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1404178815
+    },
+    {
+      "address": 5298656,
+      "amount": 27301,
+      "arm": "infantry",
+      "count": 53265,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1454187765
+    },
+    {
+      "address": 5298656,
+      "amount": 54194,
+      "arm": "infantry",
+      "count": 46828,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": -1757170664
+    },
+    {
+      "address": 5298656,
+      "amount": 63660,
+      "arm": "infantry",
+      "count": 49124,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": -1167733456
+    },
+    {
+      "address": 5298656,
+      "amount": 43544,
+      "arm": "infantry",
+      "count": 32872,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 1431378368
+    },
+    {
+      "address": 5298656,
+      "amount": 717,
+      "arm": "infantry",
+      "count": 13814,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 9904638
+    },
+    {
+      "address": 5298656,
+      "amount": 56536,
+      "arm": "infantry",
+      "count": 61931,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": -793636280
+    },
+    {
+      "address": 5298656,
+      "amount": 44849,
+      "arm": "infantry",
+      "count": 47129,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 2113688521
+    },
+    {
+      "address": 5298656,
+      "amount": 16448,
+      "arm": "infantry",
+      "count": 48757,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 801955136
+    },
+    {
+      "address": 5298656,
+      "amount": 57622,
+      "arm": "infantry",
+      "count": 43002,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": -1817106052
+    },
+    {
+      "address": 5298656,
+      "amount": 26767,
+      "arm": "infantry",
+      "count": 23282,
+      "house_offset": 356,
+      "rules_amount_field": "Rules+0x34",
+      "rules_amount_offset": 52,
+      "step": 623189294
+    },
+    {
+      "address": 5298672,
+      "amount": 0,
+      "arm": "units",
+      "count": 0,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 0
+    },
+    {
+      "address": 5298672,
+      "amount": 0,
+      "arm": "units",
+      "count": 5,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 0
+    },
+    {
+      "address": 5298672,
+      "amount": 1,
+      "arm": "units",
+      "count": 1,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1
+    },
+    {
+      "address": 5298672,
+      "amount": 5,
+      "arm": "units",
+      "count": 2,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 10
+    },
+    {
+      "address": 5298672,
+      "amount": 20,
+      "arm": "units",
+      "count": 3,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 60
+    },
+    {
+      "address": 5298672,
+      "amount": 255,
+      "arm": "units",
+      "count": 4,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1020
+    },
+    {
+      "address": 5298672,
+      "amount": 65535,
+      "arm": "units",
+      "count": 65535,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": -131071
+    },
+    {
+      "address": 5298672,
+      "amount": 32767,
+      "arm": "units",
+      "count": 65536,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 2147418112
+    },
+    {
+      "address": 5298672,
+      "amount": 2147483647,
+      "arm": "units",
+      "count": 2,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": -2
+    },
+    {
+      "address": 5298672,
+      "amount": -1,
+      "arm": "units",
+      "count": 1,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": -1
+    },
+    {
+      "address": 5298672,
+      "amount": 65139,
+      "arm": "units",
+      "count": 23866,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1554607374
+    },
+    {
+      "address": 5298672,
+      "amount": 17747,
+      "arm": "units",
+      "count": 9684,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 171861948
+    },
+    {
+      "address": 5298672,
+      "amount": 45685,
+      "arm": "units",
+      "count": 41518,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1896749830
+    },
+    {
+      "address": 5298672,
+      "amount": 33502,
+      "arm": "units",
+      "count": 44836,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1502095672
+    },
+    {
+      "address": 5298672,
+      "amount": 43074,
+      "arm": "units",
+      "count": 26912,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1159207488
+    },
+    {
+      "address": 5298672,
+      "amount": 2490,
+      "arm": "units",
+      "count": 18142,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 45173580
+    },
+    {
+      "address": 5298672,
+      "amount": 56495,
+      "arm": "units",
+      "count": 50491,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": -1442478251
+    },
+    {
+      "address": 5298672,
+      "amount": 15036,
+      "arm": "units",
+      "count": 38343,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 576525348
+    },
+    {
+      "address": 5298672,
+      "amount": 52010,
+      "arm": "units",
+      "count": 2410,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 125344100
+    },
+    {
+      "address": 5298672,
+      "amount": 12656,
+      "arm": "units",
+      "count": 19617,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 248272752
+    },
+    {
+      "address": 5298672,
+      "amount": 21595,
+      "arm": "units",
+      "count": 44173,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 953915935
+    },
+    {
+      "address": 5298672,
+      "amount": 30475,
+      "arm": "units",
+      "count": 21104,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 643144400
+    },
+    {
+      "address": 5298672,
+      "amount": 30616,
+      "arm": "units",
+      "count": 5259,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 161009544
+    },
+    {
+      "address": 5298672,
+      "amount": 31738,
+      "arm": "units",
+      "count": 13231,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 419925478
+    },
+    {
+      "address": 5298672,
+      "amount": 61670,
+      "arm": "units",
+      "count": 8761,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 540290870
+    },
+    {
+      "address": 5298672,
+      "amount": 999,
+      "arm": "units",
+      "count": 64293,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 64228707
+    },
+    {
+      "address": 5298672,
+      "amount": 36559,
+      "arm": "units",
+      "count": 37156,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1358386204
+    },
+    {
+      "address": 5298672,
+      "amount": 32186,
+      "arm": "units",
+      "count": 36451,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1173211886
+    },
+    {
+      "address": 5298672,
+      "amount": 30929,
+      "arm": "units",
+      "count": 9655,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 298619495
+    },
+    {
+      "address": 5298672,
+      "amount": 35608,
+      "arm": "units",
+      "count": 49450,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1760815600
+    },
+    {
+      "address": 5298672,
+      "amount": 20352,
+      "arm": "units",
+      "count": 38937,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 792445824
+    },
+    {
+      "address": 5298672,
+      "amount": 40947,
+      "arm": "units",
+      "count": 15488,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 634187136
+    },
+    {
+      "address": 5298672,
+      "amount": 61686,
+      "arm": "units",
+      "count": 56595,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": -803848126
+    },
+    {
+      "address": 5298672,
+      "amount": 18255,
+      "arm": "units",
+      "count": 57853,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1056106515
+    },
+    {
+      "address": 5298672,
+      "amount": 23015,
+      "arm": "units",
+      "count": 49699,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1143822485
+    },
+    {
+      "address": 5298672,
+      "amount": 42225,
+      "arm": "units",
+      "count": 40779,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1721893275
+    },
+    {
+      "address": 5298672,
+      "amount": 23035,
+      "arm": "units",
+      "count": 8468,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 195060380
+    },
+    {
+      "address": 5298672,
+      "amount": 16999,
+      "arm": "units",
+      "count": 14459,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 245788541
+    },
+    {
+      "address": 5298672,
+      "amount": 50301,
+      "arm": "units",
+      "count": 15601,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 784745901
+    },
+    {
+      "address": 5298672,
+      "amount": 61899,
+      "arm": "units",
+      "count": 22685,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1404178815
+    },
+    {
+      "address": 5298672,
+      "amount": 27301,
+      "arm": "units",
+      "count": 53265,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1454187765
+    },
+    {
+      "address": 5298672,
+      "amount": 54194,
+      "arm": "units",
+      "count": 46828,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": -1757170664
+    },
+    {
+      "address": 5298672,
+      "amount": 63660,
+      "arm": "units",
+      "count": 49124,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": -1167733456
+    },
+    {
+      "address": 5298672,
+      "amount": 43544,
+      "arm": "units",
+      "count": 32872,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 1431378368
+    },
+    {
+      "address": 5298672,
+      "amount": 717,
+      "arm": "units",
+      "count": 13814,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 9904638
+    },
+    {
+      "address": 5298672,
+      "amount": 56536,
+      "arm": "units",
+      "count": 61931,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": -793636280
+    },
+    {
+      "address": 5298672,
+      "amount": 44849,
+      "arm": "units",
+      "count": 47129,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 2113688521
+    },
+    {
+      "address": 5298672,
+      "amount": 16448,
+      "arm": "units",
+      "count": 48757,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 801955136
+    },
+    {
+      "address": 5298672,
+      "amount": 57622,
+      "arm": "units",
+      "count": 43002,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": -1817106052
+    },
+    {
+      "address": 5298672,
+      "amount": 26767,
+      "arm": "units",
+      "count": 23282,
+      "house_offset": 360,
+      "rules_amount_field": "Rules+0x3C",
+      "rules_amount_offset": 60,
+      "step": 623189294
+    }
+  ]
+}

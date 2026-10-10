@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import shutil
+import struct
 import unittest
 from unittest.mock import patch
 
@@ -49,6 +50,7 @@ class MapObservationTests(unittest.TestCase):
                            for name, identity in [('GACNST', 40), ('GAPOWR', 41), ('GAPILE', 42)]]
         self.terrain_frames = {}
         self.effect_frames = {}
+        self.laser_frames = {}
         self.input_frames = {}
         self.gesture_receipts = []
         self.keyboard_bindings = []
@@ -130,6 +132,8 @@ class MapObservationTests(unittest.TestCase):
                 if 'observe_anim_types' in self.profile:
                     effects['animations'] = []
                 frames[-1]['effects'] = deepcopy(self.effect_frames.get(step, effects))
+            if self.profile.get('observe_lasers', False):
+                frames[-1]['lasers'] = deepcopy(self.laser_frames.get(step, self.laser_snapshot()))
         manifest['observations'] = {
             'policy': observation.OBSERVATION_POLICY, 'owners': self.profile.get('observe_owners', []),
             'rule_types': deepcopy(self.rule_types),
@@ -397,6 +401,84 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(transcript['commands'][0]['payload'], {'Stop': {'entity_id': 7}})
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
+    def command_bar_profile(self):
+        self.gesture_profile()
+        request, receipt = self.profile['gestures'][0], self.gesture_receipts[0]
+        request['gesture'] = {'kind': 'command_bar', 'command': 'Guard'}
+        receipt['gesture'] = deepcopy(request['gesture'])
+        # Synthetic geometry deliberately below the tactical viewport. The
+        # production child resolves the actual retained layout/gadget instead.
+        receipt['command_bar'] = {'command': 'Guard', 'slot': 4, 'gadget_id': 220,
+                                  'rect': [1.0, 6.0, 2.0, 1.0], 'resolved_position': [2, 6]}
+        receipt['queued_commands'][0]['payload'] = {'Guard': {'entity_id': 7, 'target': {'Cell': [10, 20]}}}
+        self.profile_path.write_text(json.dumps(self.profile))
+
+    def test_command_bar_gesture_retains_control_and_mouse_receipt_with_one_bounded_sample(self):
+        self.command_bar_profile()
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        transcript = report['capture']['observations']['gesture_input']
+        self.assertEqual(transcript['policy'], observation.COMMAND_BAR_GESTURE_POLICY)
+        self.assertEqual(transcript['receipts'], self.gesture_receipts)
+        self.assertNotIn('keyboard_bindings', transcript)
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        count = observation._gesture_observations(transcript, self.profile)
+        with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', count):
+            self.assertEqual(observation._gesture_observations(transcript, self.profile), count)
+        with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', count - 1):
+            with self.assertRaises(ValidationError):
+                observation._gesture_observations(transcript, self.profile)
+        historical, profile = deepcopy(transcript), deepcopy(self.profile)
+        historical['policy'] = observation.GESTURE_POLICY
+        historical['receipts'][0].pop('command_bar')
+        profile['gestures'][0]['gesture'] = {'kind': 'click', 'position': [2, 2]}
+        historical['receipts'][0]['gesture'] = deepcopy(profile['gestures'][0]['gesture'])
+        self.assertEqual(observation._gesture_observations(historical, profile), count - 1)
+
+    def test_command_bar_receipt_requires_requested_identity_control_geometry_and_presence(self):
+        self.command_bar_profile()
+        changes = [lambda row: row.pop('command_bar'),
+                   lambda row: row.update(sidebar={}),
+                   lambda row: row['command_bar'].update(command='Stop'),
+                   lambda row: row['command_bar'].update(slot=-1),
+                   lambda row: row['command_bar'].update(slot=True),
+                   lambda row: row['command_bar'].update(slot=8),
+                   lambda row: row['command_bar'].update(gadget_id=0),
+                   lambda row: row['command_bar'].update(gadget_id=65536),
+                   lambda row: row['command_bar'].update(rect=[1, 6, 0, 1]),
+                   lambda row: row['command_bar'].update(rect=[1, 6, True, 1]),
+                   lambda row: row['command_bar'].update(rect=[1, 6, 2]),
+                   lambda row: row['command_bar'].update(rect=[1.6e308, 6, 1.6e308, 1]),
+                   lambda row: row['command_bar'].update(resolved_position=[3, 6]),
+                   lambda row: row['command_bar'].update(extra=True)]
+        for index, change in enumerate(changes):
+            with self.subTest(case=index):
+                self.output = self.root / f'bad-command-bar-{index}'
+                self.change = lambda manifest, f=change: f(manifest['observations']['gesture_input']['receipts'][0])
+                report = self.run_capture()
+                self.assertEqual(report['status'], 'INVALID', report)
+        self.gesture_profile()
+        self.output = self.root / 'unexpected-command-bar'
+        self.change = lambda manifest: manifest['observations']['gesture_input']['receipts'][0].update(command_bar={})
+        self.assertEqual(self.run_capture()['status'], 'INVALID')
+
+    def test_command_bar_profile_rejects_nonliteral_fields_and_unbounded_names(self):
+        self.command_bar_profile()
+        modern = deepcopy(self.profile)
+        for gesture in ({'kind': 'command_bar'}, {'kind': 'command_bar', 'command': ''},
+                        {'kind': 'command_bar', 'command': 'x' * 129},
+                        {'kind': 'command_bar', 'command': None},
+                        {'kind': 'command_bar', 'command': 'Güard'},
+                        {'kind': 'command_bar', 'command': 'Guard', 'modifiers': ['Ctrl']},
+                        {'kind': 'command_bar', 'command': 'Guard', 'position': [2, 6]}):
+            with self.subTest(gesture=gesture), patch.object(observation, 'run_child') as child:
+                candidate = deepcopy(modern)
+                candidate['gestures'][0]['gesture'] = gesture
+                self.profile_path.write_text(json.dumps(candidate))
+                with self.assertRaises(ValidationError):
+                    self.run_capture()
+                child.assert_not_called()
+
     @staticmethod
     def local_input_observation():
         return {'camera_top_left': [100.0, -50.0], 'camera_zoom': 1.0,
@@ -447,7 +529,215 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(transcript['frames'][0]['input']['local_input'], self.local_input_observation())
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
-    def test_key_profile_rejects_command_names_modifiers_nonliteral_keys_and_unknown_fields(self):
+    def audio_profile(self):
+        # Synthetic protocol bytes, not an audio/native parity golden.
+        self.profile.update(schema_version=observation.PROFILE_V2, observe_audio={
+            'sound_ids': ['SquidMove'], 'max_events': 2, 'max_samples_per_event': 128,
+            'completion_tail_ms': 1000})
+        self.profile_path.write_text(json.dumps(self.profile))
+        payload = struct.pack('<ffff', 0.0, 0.25, -0.5, -0.0)
+        actions = [{'kind': kind, 'service_ms': index * 34,
+                    'context': {'completed_steps': 1, 'simulation_tick': 1, 'binary_frame': 1}}
+                   for index, kind in enumerate(('submitted', 'started', 'release', 'completed'))]
+        self.audio_receipt = {'policy': observation.AUDIO_POLICY, 'point': 'post_player_pre_device_mixer',
+            'completion_tail_ms': 100, 'tail_draw_count': 4, 'settled': True, 'truncated': False,
+            'voice_actions': [],
+            'outputs': [{'submission': 0, 'event': 1, 'owner': 7, 'owner_role': 'positional', 'sound_id': 'SQUIDMOVE', 'resolved_samples': ['vsqumova'],
+                'source_sample_count': 4, 'source_ended': True, 'actions': actions,
+                'pcm': {'encoding': 'f32le', 'sample_count': 4, 'finite_count': 4, 'nonzero_count': 2,
+                    'formats': [{'first_sample': 0, 'channels': 2, 'sample_rate': 22050}],
+                    'sha256': sha256_bytes(payload), 'hex': payload.hex(), 'truncated': False}}]}
+        def add_audio(manifest):
+            manifest['observations']['audio'] = deepcopy(self.audio_receipt)
+            for frame in manifest['observations']['frames']:
+                frame['audio_state'] = {'main_rng_cursor': [0, 103], 'scenario_rng_cursor': [0, 103], 'actors': []}
+        self.change = add_audio
+        return payload
+
+    def test_audio_retained_pcm_is_revalidated_and_exported_without_asset_decode(self):
+        payload = self.audio_profile()
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        exported = self.root / 'audio-export'
+        report = observation.export_audio(self.output, exported)
+        self.assertEqual(report['status'], 'EXPORTED')
+        self.assertEqual(len(report['files']), 1)
+        wav = (exported / report['files'][0]['file_name']).read_bytes()
+        self.assertEqual(wav[:4], b'RIFF')
+        self.assertEqual(wav[8:12], b'WAVE')
+        self.assertEqual(struct.unpack_from('<H', wav, 20)[0], 3)
+        self.assertEqual(wav[wav.index(b'data') + 8:], payload)
+        self.assertEqual(report['files'][0]['pcm_sha256'], sha256_bytes(payload))
+        with self.assertRaises(ValidationError):
+            observation.export_audio(self.output, self.output / 'export')
+        with self.assertRaises(FileExistsError):
+            observation.export_audio(self.output, exported)
+
+    def test_audio_rejects_forged_counts_hashes_lifecycle_and_exhausted_bounds(self):
+        self.audio_profile()
+        mutations = [lambda r: r.update(settled=False), lambda r: r.update(truncated=True),
+                     lambda r: r['outputs'][0].update(source_ended=False),
+                     lambda r: r['outputs'][0].update(sound_id='Other'),
+                     lambda r: r['outputs'][0]['pcm'].update(nonzero_count=3),
+                     lambda r: r['outputs'][0]['pcm'].update(finite_count=3),
+                     lambda r: r['outputs'][0]['pcm'].update(sha256='0' * 64),
+                     lambda r: r['outputs'][0]['pcm'].update(sample_count=129),
+                     lambda r: r['outputs'][0]['pcm'].update(hex='00'),
+                     lambda r: r['outputs'][0]['pcm'].update(truncated=True),
+                     lambda r: r['outputs'][0]['pcm']['formats'][0].update(first_sample=1),
+                     lambda r: r['outputs'][0]['actions'].insert(2, deepcopy(r['outputs'][0]['actions'][-1])),
+                     lambda r: r['outputs'].append(deepcopy(r['outputs'][0]))]
+        for index, mutate in enumerate(mutations):
+            candidate = deepcopy(self.audio_receipt)
+            mutate(candidate)
+            with self.subTest(index=index), self.assertRaises(ValidationError):
+                observation._audio_observation(candidate, self.profile)
+
+    def test_audio_v2_retains_typed_voice_owners_and_bounded_reached_heads(self):
+        self.audio_profile()
+        receipt = deepcopy(self.audio_receipt)
+        receipt['policy'] = 'map-device-pulled-player-pcm-v2'
+        receipt['outputs'][0]['owner_role'] = 'unit_voice'
+        receipt['voice_actions'] = [{
+            'owner': 7,
+            'action': {'kind': 'reached_head', 'service_ms': 34,
+                       'context': {'completed_steps': 1, 'simulation_tick': 1, 'binary_frame': 1}},
+            'before': {'pending': 'SQUIDMOVE', 'playing': None},
+            'after': {'pending': None, 'playing': 'SQUIDMOVE'},
+            'live_event_before': None, 'submitted_event': 1}]
+        observation._audio_observation(receipt, self.profile)
+        mutations = [
+            lambda r: r['outputs'][0].update(owner_role='unknown'),
+            lambda r: r['outputs'][0].update(owner=None),
+            lambda r: r['voice_actions'][0].update(owner=0),
+            lambda r: r['voice_actions'][0]['action'].update(kind='invented_visit'),
+            lambda r: r['voice_actions'][0]['action']['context'].update(completed_steps=10000),
+            lambda r: r['voice_actions'][0]['after'].update(pending='x' * 129),
+            lambda r: r['voice_actions'][0].update(submitted_event=1 << 32),
+            lambda r: r.update(voice_actions=r['voice_actions'] * 129),
+            lambda r: r.pop('voice_actions'),
+        ]
+        for index, mutate in enumerate(mutations):
+            candidate = deepcopy(receipt)
+            mutate(candidate)
+            with self.subTest(index=index), self.assertRaises(ValidationError):
+                observation._audio_observation(candidate, self.profile)
+
+    def test_audio_v1_receipts_remain_readable_without_voice_extension(self):
+        self.audio_profile()
+        legacy = deepcopy(self.audio_receipt)
+        legacy['policy'] = 'map-device-pulled-player-pcm-v1'
+        legacy.pop('voice_actions', None)
+        legacy['outputs'][0].pop('owner_role', None)
+        observation._audio_observation(legacy, self.profile)
+
+    def test_audio_profile_budget_presence_and_modifier_keys_are_explicit(self):
+        self.audio_profile()
+        config = deepcopy(self.profile['observe_audio'])
+        for field, value in [('max_events', 17), ('max_events', True), ('max_samples_per_event', 262145),
+                             ('completion_tail_ms', 10001), ('sound_ids', []), ('sound_ids', ['x', 'X'])]:
+            profile = deepcopy(self.profile)
+            profile['observe_audio'][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValidationError):
+                observation._profile_extensions(profile)
+        for value in (None, False, []):
+            with self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile, observe_audio=value))
+        self.keyboard_profile()
+        self.profile['observe_audio'] = config
+        gesture = self.profile['gestures'][0]['gesture']
+        gesture.update(key='M', modifiers=['Ctrl', 'Shift'])
+        observation._profile_extensions(self.profile)
+        gesture['key'] = 'N'
+        with self.assertRaises(ValidationError):
+            observation._profile_extensions(self.profile)
+        self.profile['allow_load_segments'] = True
+        observation._profile_extensions(self.profile)
+        for names in (['Ctrl', 'Ctrl'], ['Control'], None, 'Ctrl'):
+            gesture['modifiers'] = names
+            with self.assertRaises(ValidationError):
+                observation._profile_extensions(self.profile)
+
+    def load_profile(self):
+        self.keyboard_profile()
+        self.profile['allow_load_segments'] = True
+        self.profile['gestures'] = [
+            {'issue_after_step': 1, 'gesture': {'kind': 'key', 'key': 'M', 'modifiers': ['Ctrl', 'Shift']}},
+            {'issue_after_step': 2, 'gesture': {'kind': 'key', 'key': 'N', 'modifiers': ['Ctrl', 'Shift']}}]
+        self.gesture_receipts = self.gesture_receipts[:2]
+        for index, (request, receipt) in enumerate(zip(self.profile['gestures'], self.gesture_receipts)):
+            receipt.update(ordinal=index, issue_after_step=request['issue_after_step'],
+                           issued_simulation_tick=request['issue_after_step'], issued_binary_frame=request['issue_after_step'],
+                           gesture=deepcopy(request['gesture']), queued_commands=[])
+            receipt['keyboard'].update(encoded_key=ord(request['gesture']['key']), binding_command=None)
+        self.profile_path.write_text(json.dumps(self.profile))
+        segment = {'after_step': 2, 'gesture_ordinal': 1,
+                   'before': {'simulation_tick': 2, 'binary_frame': 2, 'total_simulation_ms': 44},
+                   'after': {'simulation_tick': 1, 'binary_frame': 1, 'total_simulation_ms': 22}}
+        def restore_clock(manifest):
+            manifest['observations']['load_segments'] = {'policy': observation.LOAD_SEGMENT_POLICY, 'transitions': [deepcopy(segment)]}
+            manifest['observations']['frames'][3].update(simulation_tick=2, binary_frame=2, total_simulation_ms=44)
+            manifest['final'].update(simulation_tick=2, binary_frame=2, total_simulation_ms=44)
+            manifest['last_exact_step'].update(tick_before=1, tick_after=2, binary_frame_before=1, binary_frame_after=2)
+            for index, row in enumerate(manifest['render']['presentation_clock']['draws']):
+                tick = (1, 2, 2)[index]
+                row.update(simulation_tick=tick, radar_ms=tick * 22, tooltip_ms=tick * 22, message_ms=tick * 22)
+        self.change = restore_clock
+
+    def test_quickload_segments_preserve_capture_steps_and_restored_frame_clocks(self):
+        self.load_profile()
+        result = self.run_capture()
+        self.assertEqual(result['status'], 'VALID', result['errors'])
+        self.assertEqual(result['capture']['final']['simulation_tick'], 2)
+        self.assertEqual(result['capture']['observations']['frames'][-1]['completed_steps'], 3)
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+
+    def test_audio_frame_and_immediate_restore_cursors_share_the_sample_budget(self):
+        self.audio_profile()
+        add_audio = self.change
+        self.load_profile()
+        restore_clock = self.change
+        self.keyboard_bindings = []
+        for receipt in self.gesture_receipts:
+            for key in ('before', 'after'):
+                receipt[key]['selected_ids'] = []
+                receipt[key]['local_input']['selection_voice_requests'] = []
+        for frame in self.input_frames.values():
+            frame['selected_ids'] = []
+            frame['local_input']['selection_voice_requests'] = []
+
+        def add_restore_sound(manifest):
+            add_audio(manifest)
+            restore_clock(manifest)
+            manifest['observations']['load_segments']['transitions'][0]['restored_audio_state'] = deepcopy(
+                manifest['observations']['frames'][1]['audio_state'])
+        self.change = add_restore_sound
+        # Four frame rows and one immediate restored row each retain two
+        # cursors. There are no selected/observed actors or voice requests.
+        for budget, expected in [(9, 'INVALID'), (10, 'VALID')]:
+            self.output = self.root / f'audio-budget-{budget}'
+            with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', budget):
+                report = self.run_capture()
+            self.assertEqual(report['status'], expected, report['errors'])
+            if expected == 'INVALID':
+                self.assertIn('sample budget', report['errors'][0])
+
+    def test_quickload_rejects_missing_rewind_or_forged_draw_and_receipt_clock(self):
+        self.load_profile()
+        valid_change = self.change
+        mutations = [lambda m: m['observations']['load_segments']['transitions'][0]['after'].update(simulation_tick=2),
+                     lambda m: m['observations']['load_segments']['transitions'][0].update(gesture_ordinal=0),
+                     lambda m: m['last_exact_step'].update(tick_before=2),
+                     lambda m: m['observations']['frames'][3].update(simulation_tick=3),
+                     lambda m: m['render']['presentation_clock']['draws'][2].update(radar_ms=66)]
+        for index, mutate in enumerate(mutations):
+            self.output = self.root / f'bad-load-{index}'
+            self.change = lambda manifest, mutate=mutate: (valid_change(manifest), mutate(manifest))
+            result = self.run_capture()
+            self.assertEqual(result['status'], 'INVALID', (index, result))
+
+    def test_key_profile_rejects_command_names_bad_modifiers_nonliteral_keys_and_unknown_fields(self):
         self.keyboard_profile()
         valid = deepcopy(self.profile)
         for key in ('a', 'Z', '0', '9', 'Escape'):
@@ -457,7 +747,7 @@ class MapObservationTests(unittest.TestCase):
         invalid = [{'kind': 'key', 'key': key}
                    for key in (None, True, 78, '', 'NN', 'NextObject', 'Ctrl+N', 'é', ' ')]
         invalid += [{'kind': 'key'}, {'kind': 'key', 'key': 'N', 'repeat': True},
-                    {'kind': 'key', 'key': 'N', 'modifiers': []}]
+                    {'kind': 'key', 'key': 'N', 'modifiers': ['not-a-modifier']}]
         for index, gesture in enumerate(invalid):
             with self.subTest(case=index), patch.object(observation, 'run_child') as child:
                 candidate = deepcopy(valid)
@@ -932,6 +1222,35 @@ class MapObservationTests(unittest.TestCase):
                 actor['foot']['pending_entry_500'] = value
                 observation._actor(actor, 'actor')
 
+    def test_retask_projection_round_trips_tagged_references_and_historical_omission(self):
+        self.scripted_profile()
+        for step, actors in self.actor_frames.items():
+            if step:
+                actors[0]['retask'] = {
+                    'suspended_target': {'Cell': [10, 20]} if step == 1 else None,
+                    'suspended_nav': {'Object': {'id': 9}} if step == 1 else None,
+                }
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        rows = report['capture']['observations']['frames']
+        self.assertNotIn('retask', rows[0]['actors'][0])
+        for row in rows[1:]:
+            self.assertEqual(row['actors'][0]['retask'], self.actor_frames[row['completed_steps']][0]['retask'])
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        actor = self.actor()
+        actor['retask'] = {'suspended_target': {'Entity': 9}, 'suspended_nav': {'Cell': {'rx': 10, 'ry': 20}}}
+        observation._actor(actor, 'actor')
+
+    def test_retask_projection_rejects_partial_or_malformed_suspended_references(self):
+        for retask in (None, {}, {'suspended_target': None}, {'suspended_nav': None},
+                       {'suspended_target': None, 'suspended_nav': None, 'extra': 1},
+                       {'suspended_target': {'Entity': 0}, 'suspended_nav': None},
+                       {'suspended_target': {'Cell': {'rx': 1, 'ry': 2}}, 'suspended_nav': None},
+                       {'suspended_target': None, 'suspended_nav': {'Cell': [1, 2]}},
+                       {'suspended_target': None, 'suspended_nav': {'Object': {'id': True}}}):
+            with self.subTest(retask=retask), self.assertRaises(ValidationError):
+                observation._actor(dict(self.actor(), retask=retask), 'actor')
+
     def test_cloak_projection_preserves_signed_native_inputs_and_nullable_runtime(self):
         observation._cloak(None, 'cloak')
         row = dict(state_i32=1, progress_i32=0, cloaking_stages_i32=9,
@@ -1000,6 +1319,119 @@ class MapObservationTests(unittest.TestCase):
         for value in (None, 0, 1, 'true', [], {}):
             with self.subTest(value=value), self.assertRaises(ValidationError):
                 observation._profile_extensions(dict(self.profile, observe_action_line_inputs=value))
+
+    def test_disguise_inputs_require_opt_in_and_preserve_signed_timer_and_null_house(self):
+        self.scripted_profile()
+        self.profile['observe_disguise_inputs'] = True
+        self.profile_path.write_text(json.dumps(self.profile))
+        # Synthetic protocol rows, not native gameplay expected values.
+        self.actor_frames = {step: [self.actor(category='Unit')] for step in range(4)}
+        for actors in self.actor_frames.values():
+            actors[0]['disguise_inputs'] = {
+                'active': True, 'creation_frame': 123, 'type_id': 'TREE01', 'house': None,
+                'reveal_start': -1, 'reveal_duration': -3,
+                'draw': {'type_id': 'TREE01', 'voxel': False, 'shp_frame': 0,
+                         'terrain_pair_available': True, 'draw_state_visible': True,
+                         'native_selector_bits': 4}}
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        actor = next(iter(self.actor_frames.values()))[0]
+        with self.assertRaises(ValidationError):
+            observation._actor(actor, 'actor')
+        observation._actor(actor, 'actor', disguise_inputs=True)
+        actor['disguise_inputs']['reveal_duration'] = 1 << 31
+        with self.assertRaises(ValidationError):
+            observation._actor(actor, 'actor', disguise_inputs=True)
+
+    def test_disguise_inputs_profile_rejects_legacy_presence_and_wrong_types(self):
+        self.scripted_profile()
+        for enabled in (False, True):
+            observation._profile_extensions(dict(self.profile, observe_disguise_inputs=enabled))
+            with self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile,
+                    schema_version=observation.PROFILE_V1, observe_disguise_inputs=enabled))
+        for value in (None, 0, 1, 'true', [], {}):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile, observe_disguise_inputs=value))
+
+    @staticmethod
+    def laser_snapshot():
+        # Protocol fixture only: native lifetime/FPS results live in building_prism.json.
+        return {'detail': {'frame_rate': 44, 'minimum': 15, 'buffer': 5, 'reduced': False,
+                           'logic_visits': 0, 'sample_start': 60, 'sample_duration': 60,
+                           'initialized': True}, 'live': []}
+
+    @staticmethod
+    def laser_beam():
+        return {'birth_frame': 37, 'from': [9694, 12254, 378], 'to': [11776, 12544, 0],
+                'z_adjust': -58, 'width': 5, 'supported': True, 'house_color': True,
+                'rgb': [0, 0, 255], 'duration': 15, 'age': 1,
+                'timer_start': 38, 'timer_duration': 1}
+
+    def test_lasers_round_trip_live_beams_detail_and_prism_with_explicit_opt_in(self):
+        self.scripted_profile()
+        self.profile['observe_lasers'] = True
+        self.profile_path.write_text(json.dumps(self.profile))
+        self.actor_frames = {step: [self.actor(category='Structure')] for step in range(4)}
+        for step, actors in self.actor_frames.items():
+            actors[0]['prism'] = {
+                'support_count': -1,
+                'pending': None if step == 0 else {
+                    'mode': 1 if step == 1 else 2,
+                    'payload': {'weapon': 'Primary'} if step == 1 else {'to': [-1, 2, 378]},
+                    'remaining': -3},
+                'rearm': {'start': -1, 'duration': 45, 'remaining': 45}}
+        self.laser_frames[2] = self.laser_snapshot()
+        self.laser_frames[2]['live'] = [self.laser_beam()]
+        self.laser_frames[2]['detail']['minimum'] = (1 << 32) - 1
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        frames = report['capture']['observations']['frames']
+        self.assertEqual(frames[2]['lasers'], self.laser_frames[2])
+        self.assertEqual(frames[2]['actors'][0]['prism'], self.actor_frames[2][0]['prism'])
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        with self.assertRaises(ValidationError):
+            observation._actor(self.actor_frames[2][0], 'actor')
+        self.assertEqual(observation._lasers(self.laser_frames[2], 'lasers'), 2)
+
+    def test_lasers_profile_rejects_legacy_presence_and_wrong_types(self):
+        self.scripted_profile()
+        for enabled in (False, True):
+            observation._profile_extensions(dict(self.profile, observe_lasers=enabled))
+            with self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile,
+                    schema_version=observation.PROFILE_V1, observe_lasers=enabled))
+        for value in (None, 0, 1, 'true', [], {}):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile, observe_lasers=value))
+        actor = dict(self.actor(), prism=None)
+        observation._actor(actor, 'actor', lasers=True)
+        actor['prism'] = {}
+        with self.assertRaises(ValidationError):
+            observation._actor(actor, 'actor', lasers=True)
+
+    def test_lasers_reject_malformed_owner_values_and_charge_the_sample_budget(self):
+        for key, value in (('minimum', -1), ('frame_rate', 1 << 32), ('reduced', 1),
+                           ('sample_start', 1 << 31)):
+            row = self.laser_snapshot()
+            row['detail'][key] = value
+            with self.subTest(key=key), self.assertRaises(ValidationError):
+                observation._lasers(row, 'lasers')
+        for key, value in (('from', [1, 2]), ('duration', True), ('rgb', [1, 2, 256]),
+                           ('supported', 1), ('age', 1 << 31)):
+            row = self.laser_snapshot()
+            row['live'] = [dict(self.laser_beam(), **{key: value})]
+            with self.subTest(key=key), self.assertRaises(ValidationError):
+                observation._lasers(row, 'lasers')
+        self.profile.update(schema_version=observation.PROFILE_V2, observe_lasers=True, ticks=0)
+        self.profile_path.write_text(json.dumps(self.profile))
+        self.laser_frames[0] = self.laser_snapshot()
+        self.laser_frames[0]['live'] = [self.laser_beam(), self.laser_beam()]
+        with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', 2):
+            report = self.run_capture()
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertTrue(any('sample budget' in error for error in report['errors']), report['errors'])
 
     def test_action_line_inputs_require_exact_presence_and_keep_structure_null(self):
         actor = self.actor()

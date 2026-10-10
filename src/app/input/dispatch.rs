@@ -35,6 +35,10 @@ use crate::sim::command::Command;
 use crate::sim::selection::SelectAction;
 use crate::ui::sidebar::{SidebarAction, SidebarTab};
 
+#[cfg(test)]
+#[path = "area_guard_tests.rs"]
+mod area_guard_tests;
+
 /// Click radius for single-click selection (pixels in world space).
 pub(crate) const CLICK_SELECT_RADIUS: f32 = 30.0;
 
@@ -764,7 +768,7 @@ mod drag_tests {
 #[cfg(test)]
 mod item83_click_route_tests {
     use super::{ClickActionRoute, route_click_action_before_type_select};
-    use crate::app::input::context_order::object_click_payload;
+    use crate::app::input::context_order::{OrderModifier, object_click_payload};
     use crate::app::input::entity_pick::compute_type_select_click_mutation;
     use crate::app::types::OrderMode;
     use crate::map::entities::EntityCategory;
@@ -784,7 +788,7 @@ mod item83_click_route_tests {
             |_, _| {
                 Some(object_click_payload(
                     OrderMode::Move,
-                    false,
+                    OrderModifier::Normal,
                     false,
                     1,
                     9,
@@ -1482,10 +1486,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         }
         HotkeyCommand::StopObject => queue_stop_for_selected(state),
         HotkeyCommand::DeployObject => queue_deploy_undeploy_for_selected(state),
-        HotkeyCommand::GuardObject => {
-            state.match_state.input.queued_order_mode = OrderMode::Guard;
-            log::info!("Order mode armed: Guard");
-        }
+        HotkeyCommand::GuardObject => queue_guard_for_selected(state),
         HotkeyCommand::StructureTab => {
             apply_sidebar_action(state, SidebarAction::SelectTab(SidebarTab::Building))
         }
@@ -2440,6 +2441,84 @@ fn queue_stop_for_selected(state: &mut AppState) {
     for entity_id in selected_ids {
         schedule_command(state, &owner, Command::Stop { entity_id });
     }
+}
+
+/// GuardObject536D00 and command-bar slot6 both execute730D60 immediately.
+/// The input ledger already contains pending selection order; never sort it
+/// or require that the selected bits have reached the simulation yet.
+fn queue_guard_for_selected(state: &mut AppState) {
+    let selected = selected_stable_ids_in_order(
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    );
+    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+        return;
+    };
+    for event in queue_area_guard_orders(
+        &mut runtime.simulation,
+        &runtime.resources.rules,
+        &selected,
+        state.match_state.input.selection_voice_enabled,
+    ) {
+        state.match_state.match_audio.sound_events.push(event);
+    }
+}
+
+/// The ordinary Guard selection loop730D79..730E8A. Simulation owns each
+/// actor's eligibility/current Cell and the shared MegaMission codec. This
+/// caller preserves list order, leaves the voice latch enabled for every
+/// actor, and emits GuardSound even if a nonempty selection was all skipped.
+/// Planning-mode637AA0/63A0D0 remains its separate unimplemented input route.
+fn queue_area_guard_orders(
+    sim: &mut crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected: &[u64],
+    voices_enabled: bool,
+) -> Vec<crate::audio::events::GameSoundEvent> {
+    use crate::audio::events::GameSoundEvent;
+
+    let mut sounds = Vec::new();
+    if selected.is_empty() {
+        return sounds;
+    }
+    let Some(owner) = sim.session.current_house else {
+        return sounds;
+    };
+    let owner = sim.interner.resolve(owner).to_owned();
+    for &entity_id in selected {
+        let Some(payload) = sim.area_guard_key_command(entity_id, rules) else {
+            continue;
+        };
+        // 6FFCBD..6FFDA5 precedes the event constructor/post. Native normal
+        // 6FFBE0 still returns true after a full OutList rejects insertion.
+        if let Some(event) = crate::app::match_runtime::sound_dispatch::default_order_voice_event(
+            sim,
+            rules,
+            entity_id,
+            voices_enabled,
+        ) {
+            sounds.push(event);
+        }
+        if crate::app::input::commands::schedule_command_in_sim(sim, &owner, payload).is_none() {
+            // A missing Rust registration or unrepresentable record fails
+            // closed. This invariant boundary is not native issuer false;
+            // Planning Mode is the separate native false-return route.
+            return sounds;
+        }
+    }
+    if let Some(sound_id) = &rules.general.guard_sound {
+        // 730E73..730E8A: PlayAtPos750920, centre2000, volume1, no handle.
+        sounds.push(GameSoundEvent::UiSound {
+            sound_id: sound_id.clone(),
+        });
+    }
+    sounds
 }
 
 /// Deploy or undeploy selected entities. KeyD toggles:

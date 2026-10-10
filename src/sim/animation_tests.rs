@@ -632,7 +632,7 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dlph, 0, 7, false),
+        resolve_shp_vehicle_body_frame(&dlph, 0, 7, false, false),
         Some(7),
         "idle Dolphin uses walk/swim slot 1 and counter 7 % 6"
     );
@@ -646,19 +646,19 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&sqd, 0, 3, false),
+        resolve_shp_vehicle_body_frame(&sqd, 0, 3, false, false),
         Some(23),
         "idle Squid uses walk/swim slot 1 and counter 3"
     );
 
     let dron = gsi_13_06_shp_set(6, 48, ShpVehicleCadence::native_defaults());
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 99, false),
+        resolve_shp_vehicle_body_frame(&dron, 0, 99, false, false),
         Some(49),
         "idle Terror Drone with IdleRate=0 uses standing slot 1"
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 7, true),
+        resolve_shp_vehicle_body_frame(&dron, 0, 7, true, false),
         Some(7),
         "moving Terror Drone uses counter 7 % 6"
     );
@@ -1273,7 +1273,7 @@ fn test_sequence_is_prone_helper() {
 }
 
 fn animation_catalog_rules(ready_start: u16) -> RuleSet {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+    let rules_ini = IniFile::from_str(
         "[InfantryTypes]\n0=E1\n\
          [VehicleTypes]\n0=DRON\n\
          [AircraftTypes]\n\
@@ -1281,13 +1281,14 @@ fn animation_catalog_rules(ready_start: u16) -> RuleSet {
          [E1]\nImage=GI\nStrength=100\n\
          [DRON]\nStrength=100\nWalkRate=3\nIdleRate=2\n\
          [GAPOWR]\nStrength=100\n",
-    ))
-    .expect("animation catalog rules");
+    );
     let art_ini = IniFile::from_str(&format!(
         "[GI]\nSequence=GISequence\n\
          [GISequence]\nReady={ready_start},1,8\nWalk=8,6,8\nDie1=56,2,1\n\
          [DRON]\nVoxel=no\nWalkFrames=6\nFiringFrames=4\n",
     ));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini)
+        .expect("animation catalog rules with fixed ART supplied to UnitType reads");
     rules.install_art_data(ArtRegistry::from_ini(&art_ini));
     rules.bind_animation_sequences(&parse_infantry_sequence_registry(&art_ini));
     rules
@@ -1345,6 +1346,63 @@ fn animation_catalog_covers_unspawned_registered_shp_types() {
             .is_some(),
         "registered buildings receive their authoritative default set before any spawn",
     );
+}
+
+#[test]
+fn mirage_voxel_unit_shp_layout_does_not_create_a_second_stand_walk_clock() {
+    let rules_ini = IniFile::from_str(
+        "[VehicleTypes]\n0=ACTOR\n[ACTOR]\nImage=IMAGE\nStrength=100\nWalkRate=3\nIdleRate=4\n",
+    );
+    let art = IniFile::from_str("[IMAGE]\nVoxel=yes\nFacings=8\nWalkFrames=6\nStandingFrames=1\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    rules.bind_animation_sequences(&parse_infantry_sequence_registry(&art));
+    assert!(
+        rules.animation_sequence("ACTOR").is_some(),
+        "a Unit keeps its actual immutable SHP layout even when its normal body is voxel"
+    );
+    let mut sim = crate::sim::world::Simulation::new();
+    let id = sim
+        .spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
+        .unwrap();
+    for (sequence, moving) in [(SequenceKind::Stand, false), (SequenceKind::Walk, true)] {
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        assert!(actor.is_voxel);
+        actor.body_frame_counter = 17;
+        actor.animation = Some(Animation {
+            sequence,
+            frame_index: 3,
+            elapsed_frames: 2,
+            finished: false,
+        });
+        actor.movement_target = moving.then(make_movement_target);
+        for now in [0, 4, 100] {
+            assert!(
+                tick_animations(
+                    &mut sim.substrate.entities,
+                    rules.animation_sequences(),
+                    &sim.session.game_options,
+                    &sim.interner,
+                    now,
+                )
+                .is_empty()
+            );
+            let actor = sim.substrate.entities.get(id).unwrap();
+            let animation = actor.animation.as_ref().unwrap();
+            assert_eq!(
+                (
+                    animation.sequence,
+                    animation.frame_index,
+                    animation.elapsed_frames
+                ),
+                (sequence, 3, 2)
+            );
+            assert_eq!(
+                actor.body_frame_counter, 17,
+                "only the reached Foot AI owns this counter"
+            );
+        }
+    }
 }
 
 #[test]

@@ -67,7 +67,7 @@ fn production_line_trail_matches_original_full_line_pixels() {
                     strength: call["intensity"].as_i64().unwrap() as i32,
                 })
                 .collect::<Vec<_>>();
-            let viewport = LineTrailViewport {
+            let viewport = SurfaceLineViewport {
                 // Only the global coordinate convention differs: +15 on all
                 // VERA world layers is absorbed by the same camera translation.
                 camera: [
@@ -78,12 +78,24 @@ fn production_line_trail_matches_original_full_line_pixels() {
                 z_origin_y: input["z_origin_y"].as_i64().unwrap() as i32,
                 zoom: 1.,
             };
-            terrain.prepare_line_trails(&gpu.device, &gpu.queue, &segments, viewport, |_| {
-                input["alpha"].as_u64().unwrap() as u16
-            });
+            terrain.prepare_surface_lines(
+                &gpu.device,
+                &gpu.queue,
+                std::iter::empty(),
+                &segments,
+                viewport,
+                || true,
+                |[x, y]| {
+                    if input["alpha"] == "mixed" {
+                        [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize]
+                    } else {
+                        input["alpha"].as_u64().unwrap() as u16
+                    }
+                },
+            );
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
-            terrain.draw_line_trails(&mut encoder, &cv);
+            terrain.draw_surface_lines(&mut encoder, &cv);
             let reads = [
                 gpu.read(&mut encoder, &color),
                 gpu.read(&mut encoder, &depth),
@@ -131,8 +143,8 @@ fn overlapping_segments(row: &Value) -> Vec<LineTrailSegment> {
         .collect()
 }
 
-fn ordered_viewport(row: &Value) -> LineTrailViewport {
-    LineTrailViewport {
+fn ordered_viewport(row: &Value) -> SurfaceLineViewport {
+    SurfaceLineViewport {
         camera: [
             row["camera"][0].as_i64().unwrap() as i32,
             row["camera"][1].as_i64().unwrap() as i32 + 15,
@@ -169,13 +181,15 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                     continue;
                 }
                 terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-                terrain.line_trails.test_operation_limit = forced_chunk;
+                terrain.surface_lines.test_operation_limit = forced_chunk;
                 let segments = overlapping_segments(row);
-                terrain.prepare_line_trails(
+                terrain.prepare_surface_lines(
                     &gpu.device,
                     &gpu.queue,
+                    std::iter::empty(),
                     &segments,
                     ordered_viewport(row),
+                    || true,
                     |_| row["input"]["alpha"].as_u64().unwrap() as u16,
                 );
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
@@ -186,7 +200,7 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                     65535,
                     wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                 );
-                terrain.draw_line_trails(&mut encoder, &cv);
+                terrain.draw_surface_lines(&mut encoder, &cv);
                 let reads = [
                     gpu.read(&mut encoder, &color),
                     gpu.read(&mut encoder, &depth),
@@ -247,11 +261,13 @@ fn line_trail_native_fixture_submission_timings() {
             for repetition in 0..22 {
                 let begin = Instant::now();
                 terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-                terrain.prepare_line_trails(
+                terrain.prepare_surface_lines(
                     &gpu.device,
                     &gpu.queue,
+                    std::iter::empty(),
                     &segments,
                     ordered_viewport(row),
+                    || true,
                     |_| row["input"]["alpha"].as_u64().unwrap() as u16,
                 );
                 let prepared = begin.elapsed().as_secs_f64() * 1000.;
@@ -263,7 +279,7 @@ fn line_trail_native_fixture_submission_timings() {
                     65535,
                     wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                 );
-                terrain.draw_line_trails(&mut encoder, &cv);
+                terrain.draw_surface_lines(&mut encoder, &cv);
                 gpu.queue.submit([encoder.finish()]);
                 gpu.device
                     .poll(wgpu::PollType::wait_indefinitely())

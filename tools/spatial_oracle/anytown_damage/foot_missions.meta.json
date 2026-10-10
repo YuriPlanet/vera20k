@@ -1050,7 +1050,7 @@
     "tools/rmg_oracle/harness.py": "7bb907427ae09d76fceb9ad10b785c352f87c9fa47fb492e246d3a629b348014",
     "tools/rules_oracle/bridge_anim_inputs.py": "fc0d267d9c8453ba3090bfacd056af5207f47cb1170651cce5b0c41c80e90a2e",
     "tools/rules_oracle/bridge_anim_lists.py": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
-    "tools/rules_oracle/bridge_child_sound.py": "ea32c11dbb9f1ee1aeb3cdc1069605658ca100d864e90dacb3cd5bfe8f01c350",
+    "tools/rules_oracle/bridge_child_sound.py": "411fae85e38850208ce1c9dc8a5b411459fd0c043f2a20a6090bee0cbf92e7da",
     "tools/rules_oracle/theater_general_reader.py": "a466f2d5d94e5f4d8908bed0a97c69cf2aeb2d9356694d0af107491349e7afbd",
     "tools/spatial_oracle/__init__.py": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
     "tools/spatial_oracle/anytown_damage/__init__.py": "5cca8aa87d9e3c1c8ff349b7a2c105a2bdfbce58bb13acae9fbda5645ef8c66a",

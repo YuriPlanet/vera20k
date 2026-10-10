@@ -40,7 +40,10 @@ use crate::sim::world::display_layers::DisplayLayer;
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::MaskedX87Chop53;
 
-pub(super) fn oracle() -> &'static Value {
+#[path = "area_guard_oracle_tests.rs"]
+mod area_guard_oracle_tests;
+
+pub(in crate::sim::world::techno_ai) fn oracle() -> &'static Value {
     static CORPUS: OnceLock<Value> = OnceLock::new();
     CORPUS.get_or_init(|| {
         let value: Value = serde_json::from_str(crate::test_fixture::text(
@@ -55,11 +58,11 @@ pub(super) fn oracle() -> &'static Value {
     })
 }
 
-pub(super) fn signed(value: &Value) -> i32 {
+pub(in crate::sim::world::techno_ai) fn signed(value: &Value) -> i32 {
     value.as_i64().unwrap() as i32
 }
 
-pub(super) fn xyz(value: &Value) -> [i32; 3] {
+pub(in crate::sim::world::techno_ai) fn xyz(value: &Value) -> [i32; 3] {
     std::array::from_fn(|index| signed(&value[index]))
 }
 
@@ -93,7 +96,7 @@ fn sections_ini(sections: &Value) -> IniFile {
 /// layered/type/ART readers. Later passes project the original saved selected
 /// mode/map keys; their native readers retain E1/MTNK/weapon values. This does
 /// not stand in for archive-backed map or whole ScenarioLoad validation.
-pub(super) fn retail_rules() -> Option<RuleSet> {
+pub(in crate::sim::world::techno_ai) fn retail_rules() -> Option<RuleSet> {
     rules_with_native_reader_context(false, "handler_rules_after_physical")
 }
 
@@ -217,6 +220,7 @@ fn rules_with_native_reader_context(unread_weapons: bool, context: &str) -> Opti
     assert_weapon_reader_projection(
         &rules,
         &native["weapon_reader_receipts"][if unread_weapons { "before" } else { "after" }],
+        "E1",
     );
     Some(rules)
 }
@@ -224,11 +228,11 @@ fn rules_with_native_reader_context(unread_weapons: bool, context: &str) -> Opti
 /// Named type identity and gameplay fields only: native allocation pointers,
 /// image storage/padding and reader-callback ABI are retained in the evidence,
 /// not inferred from Rust allocation. Null children remain null references.
-fn assert_weapon_reader_projection(rules: &RuleSet, expected: &Value) {
+fn assert_weapon_reader_projection(rules: &RuleSet, expected: &Value, family: &str) {
     use crate::sim::combat::combat_weapon::{weapon_for_index, weapon_range};
     use crate::sim::combat::threat_range::threat_range_leptons;
 
-    let object = rules.object("E1").unwrap();
+    let object = rules.object(family).unwrap();
     assert_eq!(expected["range_entry"], "0x7012c0");
     assert_eq!(expected["get_weapon_entry"], "0x70e140");
     assert_eq!(expected["rng_unchanged"], true);
@@ -323,7 +327,7 @@ fn assert_weapon_reader_projection(rules: &RuleSet, expected: &Value) {
         .as_array()
         .unwrap()
         .iter()
-        .find(|row| row["input"]["family"] == "E1")
+        .find(|row| row["input"]["family"] == family)
         .unwrap();
     let mut fixture = SuppliedFootFixture::new(row, rules);
     for control in expected["range_controls"].as_array().unwrap() {
@@ -391,9 +395,9 @@ pub(super) fn assert_rng(sim: &Simulation, expected: &Value, name: &str) {
 /// than pointer magnitude. Native Logic and Display keep independent orders.
 /// The literal Foot rows call only the existing entity mask/latch owner: no
 /// test port of Foot's scanner or alternate class dispatch is introduced.
-pub(super) struct SuppliedFootFixture {
-    pub(super) sim: Simulation,
-    pub(super) actor: u64,
+pub(in crate::sim::world::techno_ai) struct SuppliedFootFixture {
+    pub(in crate::sim::world::techno_ai) sim: Simulation,
+    pub(in crate::sim::world::techno_ai) actor: u64,
     pointers: BTreeMap<String, u64>,
     cells: BTreeMap<String, (u16, u16)>,
 }
@@ -443,7 +447,7 @@ impl SuppliedFootFixture {
         self.pointers = mapped;
     }
 
-    pub(super) fn id(&self, pointer: &Value) -> Option<u64> {
+    pub(in crate::sim::world::techno_ai) fn id(&self, pointer: &Value) -> Option<u64> {
         let pointer = pointer.as_str().unwrap();
         if pointer == "0x0" {
             None
@@ -465,7 +469,7 @@ impl SuppliedFootFixture {
         self.target(pointer).map(NavTargetRef::from)
     }
 
-    pub(super) fn new(row: &Value, rules: &RuleSet) -> Self {
+    pub(in crate::sim::world::techno_ai) fn new(row: &Value, rules: &RuleSet) -> Self {
         let native = oracle();
         let input = &row["input"];
         let setup = &native["setup"];
@@ -549,6 +553,10 @@ impl SuppliedFootFixture {
         for pointer in lists["techno"]["actors"].as_array().unwrap() {
             let pointer_text = pointer.as_str().unwrap();
             let id = pointers[pointer_text];
+            // Constructor ordinals use the shared Rust namespace/cursor as
+            // well as its entity store, so this supplied world can be saved.
+            // Native Abstract IDs are transported separately by consumers.
+            assert_eq!(sim.allocate_stable_id(), id);
             let extra = registration["placements"]
                 .as_array()
                 .unwrap()
@@ -1172,7 +1180,9 @@ fn original_rules_key_controls_match_sequential_production_reads() {
 /// prefixes. These are native getter receipts, not values calculated by Rust.
 /// Other terrain and whole-map path/zone initialization remain outside this
 /// fixture; full home queries use the retail map fixture in a separate test.
-pub(super) fn install_recorded_cell_coordinates(fixture: &mut SuppliedFootFixture) {
+pub(in crate::sim::world::techno_ai) fn install_recorded_cell_coordinates(
+    fixture: &mut SuppliedFootFixture,
+) {
     let stride = oracle()["world"]["zone_storage"]["stride"]
         .as_u64()
         .unwrap() as u16;
@@ -1360,7 +1370,10 @@ fn install_recorded_anytown_query_state(
     }
 }
 
-fn assert_foot_projection(fixture: &SuppliedFootFixture, row: &Value) {
+pub(in crate::sim::world::techno_ai) fn assert_foot_projection(
+    fixture: &SuppliedFootFixture,
+    row: &Value,
+) {
     let name = row["input"]["name"].as_str().unwrap();
     let expected = &row["after"];
     let actor = fixture.sim.substrate.entities.get(fixture.actor).unwrap();

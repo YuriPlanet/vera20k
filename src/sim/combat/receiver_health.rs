@@ -21,7 +21,6 @@ pub(super) struct ReceiverHealthCommit {
     pub(super) latch_hostile_hit: bool,
     pub(super) uncloak_after_damage: bool,
     pub(super) building_damage_cue: Option<(u16, u16)>,
-    pub(super) voice_feedback_cue: Option<(InternedId, InternedId, u16, u16)>,
     pub(super) threat_feedback: Option<(InternedId, InternedId, i32, i32, i32)>,
 }
 
@@ -35,6 +34,7 @@ pub(super) fn commit_receiver_health(
     attacker_owner: Option<InternedId>,
     live_source_owner: Option<InternedId>,
     receiver_outcome: Option<ResolvedReceiveDamage>,
+    binary_frame: u32,
 ) -> Option<ReceiverHealthCommit> {
     let target_id = event.target_id;
     let mut building_entry_frame = None;
@@ -54,9 +54,6 @@ pub(super) fn commit_receiver_health(
     // `BuildingClass::ReceiveDamage`'s damage-state dispatch result: the
     // building coordinate to sound the global struck cue at, or `None`.
     let mut building_damage_cue: Option<(u16, u16)> = None;
-    // `TechnoClass::ReceiveDamage`'s result-2 damage-voice arm: the owner,
-    // type and coordinate to sound the `VoiceFeedback=` line at, or `None`.
-    let mut voice_feedback_cue: Option<(InternedId, InternedId, u16, u16)> = None;
     let mut threat_feedback: Option<(InternedId, InternedId, i32, i32, i32)> = None;
     if let Some(target) = entities.get_mut(target_id) {
         let receive_outcome = receiver_outcome?.outcome;
@@ -107,6 +104,31 @@ pub(super) fn commit_receiver_health(
             },
         );
         let receive_state = Some(state);
+        // Object owns CanC4 rewriting and the overkill cap. Every subsequent
+        // Techno reader consumes this same final packet, never the authored hit.
+        let final_packet = if receive_outcome.apply_object_damage {
+            packet
+        } else {
+            receive_outcome.post_object_damage.unwrap_or(packet)
+        };
+        //701FCB..70202E precedes the exact-zero override below. Native0/4
+        //skip; admitted result1/2/3/5 resets the reveal block even if the
+        //actor is already revealed. No RNG is drawn by this consequence.
+        if reached_survivor_postlude
+            && !matches!(
+                state,
+                damage::DamageState::Unaffected | damage::DamageState::Dead
+            )
+            && target_type.can_disguise
+            && !target_type.perma_disguise
+        {
+            target
+                .disguise
+                .get_or_insert_with(|| {
+                    crate::sim::cloak_disguise::DisguiseRuntime::new(binary_frame)
+                })
+                .receive_damage_reveal(binary_frame, final_packet, target.category);
+        }
         // Techno70202E tests exact0 after Object returns. Negative healed HP
         // remains on its ordinary tail; ObjectAlive/result5 is a different gate.
         entered_techno_death =
@@ -125,13 +147,6 @@ pub(super) fn commit_receiver_health(
                 )
             });
         if reached_survivor_postlude && let Some(source_owner) = live_source_owner {
-            // An Object early gate leaves the prepared packet intact. Otherwise
-            // commit owns CanC4 rewriting and the positive overkill cap.
-            let final_packet = if !receive_outcome.apply_object_damage {
-                receive_outcome.post_object_damage.unwrap_or(packet)
-            } else {
-                packet
-            };
             threat_feedback = Some((
                 target.owner(),
                 source_owner,
@@ -202,47 +217,6 @@ pub(super) fn commit_receiver_health(
         {
             building_damage_cue = Some((target.position.rx, target.position.ry));
         }
-
-        // gamemd-derived: `TechnoClass::ReceiveDamage @ 0x00701900`, the
-        // damage-voice arm. `0x00702049 JMP [EDI*4 + 0x00702D24]` selects
-        // on the damage result (`EDI` forced to 4 at `0x00702035` when
-        // `[ESI+0x6C]` Health is zero); index 2 — result 2, the
-        // `Strength >> 1` crossing, i.e. `DamageState::Yellow` — is
-        // `0x00702695`, which reads the type's `VoiceFeedback=` count at
-        // `+0x4E8` and returns without drawing when it is empty
-        // (`0x007026A9 JLE`).
-        //
-        // This is TechnoClass, not BuildingClass: every category reaches
-        // it, and result 3 (`Red`) does not — index 3 is `0x007027F7`, the
-        // shared tail. Native runs it *inside* `TechnoClass::ReceiveDamage`,
-        // so it precedes the BuildingClass cue latched above; the push
-        // below preserves that order.
-        //
-        // Only the "would native draw?" test lives here. The 30% roll
-        // (`0x007026B3` `RandomRanged(0, 99)` vs `0x007026BD CMP EAX,0x1E`),
-        // the `HouseClass::IsHumanPlayer @ 0x0050B6F0` gate at `0x007026C6`
-        // and the `rand % count` pick at `0x007026DE`/`0x007026E7` are all
-        // app-side: both draws are on `g_MainRng @ 0x00886B88`, which
-        // per-frame draw paths also consume, so they are not lockstep state
-        // and must not touch a `sim/` stream. Native spends the roll before
-        // the owner gate, so the event is emitted for every house.
-        if receive_state == Some(damage::DamageState::Yellow)
-            && rules
-                .object(interner.resolve(target.type_ref()))
-                .is_some_and(|object| {
-                    object
-                        .voice_feedback
-                        .as_deref()
-                        .is_some_and(|voice| !voice.is_empty())
-                })
-        {
-            voice_feedback_cue = Some((
-                target.owner(),
-                target.type_ref(),
-                target.position.rx,
-                target.position.ry,
-            ));
-        }
     }
 
     Some(ReceiverHealthCommit {
@@ -260,7 +234,6 @@ pub(super) fn commit_receiver_health(
         latch_hostile_hit,
         uncloak_after_damage,
         building_damage_cue,
-        voice_feedback_cue,
         threat_feedback,
     })
 }

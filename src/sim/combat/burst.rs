@@ -87,7 +87,7 @@ mod tests {
                 },
                 _ => Command::Guard {
                     entity_id: id,
-                    target_id: None,
+                    target: None,
                 },
             };
             assert!(sim.apply_command("Americans", &command, Some(&rules)));

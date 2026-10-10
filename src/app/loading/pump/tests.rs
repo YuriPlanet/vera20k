@@ -143,7 +143,7 @@ fn receipt_for(
 fn test_audio() -> crate::app::audio_runtime::AppAudioRuntime {
     crate::app::audio_runtime::AppAudioRuntime {
         theme: crate::audio::theme::ThemeRuntime::default(),
-        last_theme_poll_ms: None,
+        service_clock: crate::audio::arbiter::AudioServiceClock::default(),
         music_player: None,
         sfx_player: None,
         launcher_audio_available: true,
@@ -213,8 +213,13 @@ fn begin_loading_plays_loading_theme_and_polls_theme_through_the_lease() {
     );
     let assets = audio_service_asset_manager(&process_assets, Some(session))
         .expect("leased manager serves the Theme poll");
-    audio.update_theme(assets, 600);
-    assert_eq!(audio.last_theme_poll_ms, Some(600));
+    let mut frontend = crate::sim::rng::SimRng::new(1);
+    let mut main = crate::app::state::process_main_draws(None, &mut frontend);
+    audio.service_audio(600, false, Some(assets), None, &mut main);
+    assert!(
+        !audio.service_clock.admit(600),
+        "the shared audio pass was admitted through the lease"
+    );
 }
 
 #[test]

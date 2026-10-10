@@ -8,6 +8,8 @@ pub(crate) mod fire_effects;
 pub(crate) mod instances;
 pub(crate) mod ion_blasts;
 pub(crate) mod line_trails;
+pub(crate) mod lasers;
+pub(crate) mod detail;
 pub(crate) mod overlay_index;
 pub(crate) mod render;
 pub(crate) mod selection_brackets;

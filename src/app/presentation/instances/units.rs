@@ -295,7 +295,7 @@ pub(crate) fn build_unit_instances(
         let Some(entity) = sim.entities().get(stable_id) else {
             continue;
         };
-        if !entity.is_voxel {
+        if entity.category != EntityCategory::Unit && !entity.is_voxel {
             continue;
         }
         let Some(band) = entity_draw_band(sim.display_layers(), stable_id) else {
@@ -304,12 +304,20 @@ pub(crate) fn build_unit_instances(
         // Common visibility, passenger, limbo, and DrawState admission is shared below.
         let pos = &entity.position;
         let owner_str = sim.interner.resolve(entity.owner());
+        let mut observer = super::helpers::observer_draw_context(
+            sim,
+            entity,
+            local_owner.as_deref(),
+            local_owner_id,
+            state.rules(),
+        );
         let Some((type_name, body)) = unit_body_draw(
             entity,
             &sim.interner,
             state.rules(),
             band,
             sim.session.binary_frame,
+            observer,
         ) else {
             continue;
         };
@@ -318,11 +326,12 @@ pub(crate) fn build_unit_instances(
             .and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())))
             .is_some_and(|object| object.no_shadow);
         let type_str = type_name.as_ref();
+        observer.drawn_voxel = Some(true);
         let remap_owner = entity
             .disguise
             .as_ref()
-            .filter(|state| state.disguised)
-            .and_then(|state| state.disguised_as_house)
+            .filter(|_| DrawState::draws_disguise(entity, sim.session.binary_frame, observer))
+            .and_then(|state| state.house())
             .map(|id| sim.interner.resolve(id))
             .unwrap_or(owner_str);
         let hc: HouseColorIndex = state
@@ -342,13 +351,7 @@ pub(crate) fn build_unit_instances(
             ignore_visibility,
             sim.session.binary_frame,
             house_color_to_remap_row(hc),
-            super::helpers::observer_draw_context(
-                sim,
-                entity,
-                local_owner.as_deref(),
-                local_owner_id,
-                state.rules(),
-            ),
+            observer,
         ) else {
             continue;
         };
@@ -710,10 +713,12 @@ fn unit_animation_frames(
 /// Otherwise disguise precedes `NoSpawnAlt`, selected from the current
 /// docked slot count at draw time. The serialized override remains solely
 /// the miner dock sub-FSM's UnloadingClass (HORV/CMON) hint.
-fn drawn_model_id<'a>(
+pub(crate) fn drawn_model_id<'a>(
     entity: &'a crate::sim::game_entity::GameEntity,
     interner: &'a crate::sim::intern::StringInterner,
     rules: Option<&'a crate::rules::ruleset::RuleSet>,
+    binary_frame: u32,
+    observer: crate::render::draw_state::ObserverDrawContext,
 ) -> Cow<'a, str> {
     let base_type = interner.resolve(entity.type_ref());
     let object = rules.and_then(|rules| rules.object(base_type));
@@ -727,8 +732,8 @@ fn drawn_model_id<'a>(
     if let Some(disguise_type) = entity
         .disguise
         .as_ref()
-        .filter(|state| state.disguised)
-        .and_then(|disguise| disguise.disguise_type)
+        .filter(|_| DrawState::draws_disguise(entity, binary_frame, observer))
+        .and_then(|disguise| disguise.type_id())
     {
         Cow::Borrowed(interner.resolve(disguise_type))
     } else if let Some(no_spawn_alt_type) =
@@ -756,11 +761,15 @@ fn unit_body_draw<'a>(
     rules: Option<&'a crate::rules::ruleset::RuleSet>,
     band: EntityDrawBand,
     binary_frame: u32,
+    observer: crate::render::draw_state::ObserverDrawContext,
 ) -> Option<(Cow<'a, str>, BodyDraw)> {
     if entity.category == EntityCategory::Unit && entity.unit_deploying() {
         return None;
     }
-    let model = drawn_model_id(entity, interner, rules);
+    let model = drawn_model_id(entity, interner, rules, binary_frame, observer);
+    if !super::helpers::drawn_type_uses_voxel(entity, &model, interner, rules) {
+        return None;
+    }
     let tilt_crash_jumpjet = rules
         .and_then(|rules| rules.object(&model))
         .is_some_and(|object| object.tilt_crash_jumpjet);

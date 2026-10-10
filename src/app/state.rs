@@ -198,3 +198,55 @@ impl AppState {
             .and_then(|rt| rt.resources.terrain_template.as_ref())
     }
 }
+
+/// Main886B88 follows the currently installed scenario even while its world
+/// is retained behind the shell. Before the first scenario it lives with the
+/// frontend. A synchronous fresh load installs its already-advanced Main
+/// from ScenarioBootstrapRng; in-scenario Load preserves the live cursor.
+/// There is never a separately seeded audio/Theme cursor.
+pub(crate) fn process_main_draws<'a>(
+    runtime: Option<&'a mut crate::sim::runtime::SimRuntime>,
+    frontend: &'a mut crate::sim::rng::SimRng,
+) -> crate::sim::rng::MainRngDraws<'a> {
+    match runtime {
+        Some(runtime) => runtime.simulation.presentation_main_draws(),
+        None => crate::sim::rng::MainRngDraws::borrow(frontend),
+    }
+}
+
+#[cfg(test)]
+mod main_draw_tests {
+    use super::process_main_draws;
+    use crate::sim::{rng::SimRng, runtime::SimRuntime, world::Simulation};
+
+    #[test]
+    fn process_main_draws_uses_frontend_only_before_a_world_is_installed() {
+        let mut frontend = SimRng::new(31);
+        let mut reference = SimRng::new(31);
+        {
+            let mut main = process_main_draws(None, &mut frontend);
+            assert_eq!(main.next_u32(), reference.next_u32());
+            assert_eq!(
+                main.ranged(0, 99),
+                reference.next_range_i32_inclusive(0, 99)
+            );
+        }
+        assert_eq!(frontend.logical_state(), reference.logical_state());
+
+        let mut runtime = SimRuntime::from_simulation(Simulation::with_seed(42));
+        let frontend_before = frontend.logical_state();
+        let world_before = runtime.simulation.rng_state();
+        let mut world_reference = SimRng::new(42);
+        // The installed world remains authoritative when retained behind the
+        // shell. There is deliberately no screen/active-frame switch here.
+        for _ in 0..2 {
+            let mut main = process_main_draws(Some(&mut runtime), &mut frontend);
+            assert_eq!(main.next_u32(), world_reference.next_u32());
+        }
+        let world_after = runtime.simulation.rng_state();
+        assert_eq!(world_after.main, world_reference.logical_state());
+        assert_eq!(world_after.scenario, world_before.scenario);
+        assert_eq!(world_after.mapgen, world_before.mapgen);
+        assert_eq!(frontend.logical_state(), frontend_before);
+    }
+}

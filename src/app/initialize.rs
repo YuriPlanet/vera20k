@@ -461,7 +461,7 @@ impl App {
         );
         let mut startup_audio_runtime = crate::app::audio_runtime::AppAudioRuntime {
             theme: crate::audio::theme::ThemeRuntime::default(),
-            last_theme_poll_ms: None,
+            service_clock: crate::audio::arbiter::AudioServiceClock::default(),
             music_player,
             sfx_player,
             launcher_audio_available,
@@ -550,6 +550,8 @@ impl App {
                     show_hotkey_help: false,
                     combat_lights: Default::default(),
                     line_trails: Default::default(),
+                    lasers: Default::default(),
+                    detail: Default::default(),
                     hidden_super_anims: Default::default(),
                     super_timer_blinks: Default::default(),
                     minimap: None,

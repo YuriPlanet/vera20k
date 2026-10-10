@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Weapon laser and Rules detail constructors, complete readers, retained defaults, signed controls and selected physical layered keys",
+  "assumptions": [
+    "Original Weapon FindOrAllocate772FA0 and whole771C70 construct each probe; whole772080 owns section admission, all selected numeric/boolean/RGB reads and stores. Duration is observed as signed byte+14E, matching MOVSX at the active6FD21D consumer. No Python formula supplies expected fields.",
+    "Twenty-four fresh-duration controls cover absent/empty, signed boundaries, overflow, decimal/hex and malformed prefix behavior. Eight calls retain one original object, covering missing section/key, invalid boolean defaults, exact-case keys and complete RGB triples with byte narrowing. Partial malformed RGB triples are outside this corpus; native can copy uninitialized stack bytes there.",
+    "Physical RULESMD, optional loose LANGRULE, Battle1 MPBattleMD and XMP03T4 bytes use the selected installed original archives. Existing stock MIX/lexical helpers prepare only the seven laser keys in supplied INI caches; archive loading, full type discovery and unrelated weapon fields are excluded. The production asset reader separately confirms these winning layers.",
+    "Existing fresh_reset executes whole Rules665650, yielding detail thresholds15/20/5 at+0/+4/+8. Whole AudioVisual6691E0 executes15 scalar controls. One history executes a cold AudioVisual read, seven whole Process668BF0 calls, original Type reset6686C0 through its first complete Process (stop668A2C), then another Process. Original readers retain signed dwords without clamps; only the later reset archive/file reload tail is excluded.",
+    "Detail physical layers supply only the three exact-case AudioVisual threshold keys to whole Process. Supplied minimal registries and cached INI objects bound this to reader/lifetime evidence, not the complete startup or Scenario. Detail clock cadence, hysteresis and laser admission execute in building_prism instead.",
+    "The fixture uses the existing BulletReader allocation/CRT/TLS/cache boundaries and 53-bit chop control word. No executable instruction is patched; no laser lifetime, RNG, GPU pixel or whole-Scenario result is claimed."
+  ],
+  "substitutions": [
+    "Inherited BulletReader supplies source caches, allocator/delete/CRT/TLS and unused archive boundaries. Unrelated sound, Anim and projectile references are absent in the selected-key cache."
+  ],
+  "entry_points": {
+    "weapon_ctor": "0x00771C70",
+    "weapon_reader": "0x00772080",
+    "read_int": "0x005276D0",
+    "read_bool": "0x005295F0",
+    "read_rgb": "0x00474B50",
+    "duration_consumer": "0x006FD21D",
+    "rules_ctor": "0x00665650",
+    "audio_visual": "0x006691E0",
+    "rules_process": "0x00668BF0",
+    "type_reset": "0x006686C0",
+    "reset_stop": "0x00668A2C"
+  },
+  "source_normalized_lf_sha256": {
+    "tools.native_oracle": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb",
+    "tools.projectile_oracle.bridge_render_inputs": "2f05d2e7e917aef585553502830947ea8ca121eab2d886d2c9ba4df7c935727d",
+    "tools.projectile_oracle.bridge_render_inputs_selection": "ce4fbeeeb4b77d97841fcca8dd3e18f842bbe02ec9731e209a16b808246f7ad4",
+    "tools.projectile_oracle.flat_art": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
+    "tools.rules_oracle.bridge_anim_inputs": "fc0d267d9c8453ba3090bfacd056af5207f47cb1170651cce5b0c41c80e90a2e",
+    "tools.rules_oracle.bridge_anim_lists": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
+    "tools.rules_oracle.guided_controls": "e6c18371c97f4b91628615c688eb9d7f91c75f007dbadcd1c9ad3b3580b2d408",
+    "tools.rules_oracle.select_anim_inputs": "84237f5a91782400eb3595ad84cb08c16dc7fb8009664cc0b7c8513482e534f6",
+    "tools.rules_oracle.select_anim_reset": "7a93338e51af405999d0278620ab40b93a6fd3a6d7639c3374f5afee6b523e04",
+    "tools.rules_oracle.weapon_speed": "68e80adb7dd0eb4dc8a1b2662211b984002e874cd2787d48e54f824bb3905d4b",
+    "tools.rules_oracle.weapon_speed_order": "fb710f7df24bd030b711a747d129ea699fc2ca2c19164ef72ac904b55d96a8bf",
+    "tools.sidebar_oracle.stock": "62b855dba1836bf484bb6c112b9249003ff4427c3004a1ef3d95c3aac985ba9b",
+    "tools.spatial_oracle": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
+    "tools.spatial_oracle.building_body_rules": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
+    "tools.spatial_oracle.map_queries": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
+    "producer": "009b9f3329b1f47cfec6085b122390d29ac866991f7710b38a89144c3f5a7794"
+  },
+  "payload_sha256": "a2e46ba867295ad1bb16423aab632a26e6981f0dd369a924fc922ff845d00141"
+}

@@ -230,6 +230,84 @@ fn fate_draw(replay: &mut SimRng) {
     let _roll = replay.next_range_i32_inclusive(1, 100);
 }
 
+/// Original Unit746A9C tail with an attached Anim buffer. The oracle does
+/// not construct/capture that buffer; VERA uses the existing ring allocator
+/// here to check the tail against a real retained Anim and its owning link.
+#[test]
+fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/mirage_disguise.json",
+    ))
+    .unwrap();
+    let rules = rules();
+    let rows = native["ring"].as_array().unwrap();
+    for row in rows {
+        let input = &row["input"];
+        let context = row["name"].as_str().unwrap();
+        let mut sim = sim(7);
+        let target = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+        sim.attach_control_ring(target, "MINDANIM", &rules);
+        let owner = sim.interner.get("Americans").unwrap();
+        let viewer = if input["viewer"] == input["owner"] {
+            owner
+        } else {
+            sim.interner.get("Russians").unwrap()
+        };
+        sim.session.current_house = Some(viewer);
+        sim.session.game_mode_nonzero = input["mode"] != 0;
+        let house = sim.houses.get_mut(&owner).unwrap();
+        house.is_human = input["human"] == 1;
+        house.player_control = input["player"] == 1;
+        if input["owner_allied_with_viewer"] == true {
+            sim.house_alliances
+                .entry("Americans".into())
+                .or_default()
+                .insert(sim.interner.resolve(viewer).to_owned());
+        }
+        let tree = sim.interner.intern("TREE01");
+        let entity = sim.substrate.entities.get_mut(target).unwrap();
+        let disguise = entity.disguise.as_mut().unwrap();
+        if input["raw_disguised"] == 1 {
+            disguise.acquire(1, Some(tree), None);
+        } else {
+            disguise.clear_unit();
+        }
+        let link = entity.mind_control;
+        let ring = link.ring_anim.expect("existing owner attached the ring");
+        let runtime = sim.anim(ring).unwrap().runtime.clone();
+        let coord = sim.anim_absolute_coord(ring);
+        let rng = sim.rng_state();
+        // Both input values ensure this is a write, not an accidentally
+        // correct constructor default. Native used a nonzero poison byte.
+        for initial_hidden in [false, true] {
+            sim.set_anim_hidden(ring, initial_hidden);
+            sim.update_disguise_ring_visibility(target);
+            assert_eq!(
+                u8::from(sim.anim(ring).unwrap().draw_runtime.hidden),
+                row["hidden_after"].as_u64().unwrap() as u8,
+                "{context}"
+            );
+            assert_eq!(
+                sim.anim(ring).unwrap().runtime,
+                runtime,
+                "{context}: no second animation clock"
+            );
+            assert_eq!(
+                sim.anim_absolute_coord(ring),
+                coord,
+                "{context}: no relocation"
+            );
+            assert_eq!(
+                sim.substrate.entities.get(target).unwrap().mind_control,
+                link,
+                "{context}: existing ring ownership"
+            );
+            assert_eq!(sim.rng_state(), rng, "{context}: no RNG draws");
+        }
+    }
+    assert_eq!(rows.len(), 7);
+}
+
 /// Weapon 0 decides the manager: Yuri's single link, the Mastermind's
 /// infinite one, the Psychic Tower's three.
 #[test]
@@ -1330,9 +1408,9 @@ fn capture_and_release_drop_the_previous_order() {
             .is_none()
     );
 
-    sim.substrate.entities.get_mut(gi).unwrap().order_intent = Some(OrderIntent::Guard {
-        anchor_rx: 11,
-        anchor_ry: 10,
+    sim.substrate.entities.get_mut(gi).unwrap().order_intent = Some(OrderIntent::AttackMove {
+        goal_rx: 11,
+        goal_ry: 10,
     });
     assert!(sim.free_unit(yuri, gi, &rules, None));
     assert_eq!(owner(&sim, gi), "Americans");

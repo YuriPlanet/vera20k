@@ -545,45 +545,67 @@ pub(crate) mod transitions;
 #[cfg(test)]
 use transitions::{StartCloakingResult, StartUncloakingResult};
 
-/// The re-disguise block, `TechnoClass+0x1E0`/`+0x1E8`, whose middle dword
-/// (`+0x1E4`) holds a packed cell. `UnitClass::UpdateDisguise` reads it
-/// (`0x00746A13`) and re-disguises only once it has expired.
-///
-/// RESIDUAL: its writers are not ported: `ReceiveDamage` (`0x0070201A`: the
-/// current frame and twice the damage, after dropping the disguise) and
-/// `UpdateDisguise` (`0x00746AE7`: the current frame and `Rules+0x1014`, with
-/// a neighbouring cell). Trigger: a disguised Mirage Tank that is damaged or
-/// finds an enemy beside it, in most Allied games. Effect: it disguises again
-/// on its next idle update rather than after the block, and that update's
-/// disguise draw (`RandomRanged`) lands on the Scenario stream where native
-/// draws nothing. The constructor starts the timer at
-/// the construction frame with no time left (`0x006F2CBE..0x006F2CCA`); VERA
-/// starts it at frame 0, which reads the same.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DisguiseRevealTuple {
-    pub timer: CdTimer,
-    pub neighbor_cell_packed: i32,
+/// Retained Techno disguise identity and re-disguise timer. Original
+/// `6F2CBE..6F2CCA` starts +1E0/+1E8 at construction with duration zero.
+/// The intervening +1E4 word is uninitialized by that constructor and copied
+/// from different stack slots by the two reveal writers. It has no established
+/// behavioral meaning in this chain and is not deterministic cell state.
+/// Native controls: `tools/spatial_oracle/mirage_disguise.{py,json,md}`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DisguiseRuntime {
+    disguised: bool,
+    disguise_creation_frame: u32,
+    disguise_type: Option<InternedId>,
+    disguised_as_house: Option<InternedId>,
+    reveal_timer: CdTimer,
 }
 
-impl Default for DisguiseRevealTuple {
+impl Default for DisguiseRuntime {
     fn default() -> Self {
-        Self {
-            timer: CdTimer::started(0, 0),
-            neighbor_cell_packed: 0,
-        }
+        Self::new(0)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub struct DisguiseRuntime {
-    pub disguised: bool,
-    pub disguise_creation_frame: u32,
-    pub disguise_type: Option<InternedId>,
-    pub disguised_as_house: Option<InternedId>,
-    pub reveal: DisguiseRevealTuple,
-}
-
 impl DisguiseRuntime {
+    pub const fn new(construction_frame: u32) -> Self {
+        Self {
+            disguised: false,
+            disguise_creation_frame: 0,
+            disguise_type: None,
+            disguised_as_house: None,
+            reveal_timer: CdTimer::started(construction_frame as i32, 0),
+        }
+    }
+
+    pub const fn is_disguised(&self) -> bool {
+        self.disguised
+    }
+
+    pub const fn creation_frame(&self) -> u32 {
+        self.disguise_creation_frame
+    }
+
+    pub const fn type_id(&self) -> Option<InternedId> {
+        self.disguise_type
+    }
+
+    pub const fn house(&self) -> Option<InternedId> {
+        self.disguised_as_house
+    }
+
+    pub const fn reveal_timer(&self) -> CdTimer {
+        self.reveal_timer
+    }
+
+    pub(crate) fn hash_state(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.disguised.hash(hasher);
+        self.disguise_creation_frame.hash(hasher);
+        self.disguise_type.hash(hasher);
+        self.disguised_as_house.hash(hasher);
+        self.reveal_timer.hash(hasher);
+    }
+
     /// `InfantryClass::DisguiseAs` / `UnitClass::DisguiseAs`.
     pub fn acquire(
         &mut self,
@@ -604,15 +626,194 @@ impl DisguiseRuntime {
         self.disguised_as_house = None;
     }
 
+    /// The two native writers keep signed dword durations: UpdateDisguise
+    /// `746AE7` uses Rules+1014, ReceiveDamage `70201A` uses `damage << 1`.
+    pub(crate) fn block_reacquisition(&mut self, current_frame: u32, duration: i32) {
+        self.reveal_timer.start(current_frame as i32, duration);
+    }
+
+    /// Techno701FCB..70202E after an admitted nonfatal Object result.
+    /// The caller owns CanDisguise/!PermaDisguise admission. Unit746720
+    /// clears identity as well as the raw flag; Infantry5227E5 and the
+    /// base41C030 arm retain identity. The final damage operand is doubled
+    /// as a wrapping signed dword even when this actor was already revealed.
+    pub(crate) fn receive_damage_reveal(
+        &mut self,
+        current_frame: u32,
+        modified_damage: i32,
+        category: crate::map::entities::EntityCategory,
+    ) {
+        if self.disguised {
+            if category == crate::map::entities::EntityCategory::Unit {
+                self.clear_unit();
+            } else {
+                self.disguised = false;
+            }
+        }
+        self.block_reacquisition(current_frame, modified_damage.wrapping_shl(1));
+    }
+
     /// Whether the re-disguise block is still running.
     pub fn reveal_blocks(&self, current_frame: u32) -> bool {
-        !self.reveal.timer.expired(current_frame as i32)
+        !self.reveal_timer.expired(current_frame as i32)
+    }
+}
+
+impl crate::sim::world::Simulation {
+    /// UnitAI736479..73649C, immediately after FootAI, admits the one
+    /// UpdateDisguise7468C0 owner. Original executable comparisons live in
+    /// `tools/spatial_oracle/mirage_disguise`; this is not a Techno pre-step.
+    pub(crate) fn update_unit_disguise(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Result<(), String> {
+        use crate::map::cell_index::NativeCellIdentity;
+        use crate::map::entities::EntityCategory;
+        use crate::map::resolved_terrain::NativeCellQuery;
+        use crate::sim::movement::locomotor::MovementLayer;
+
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Ok(());
+        };
+        let Some(object_type) = rules.object(self.interner.resolve(entity.type_ref())) else {
+            return Ok(());
+        };
+        if entity.category != EntityCategory::Unit
+            || !object_type.can_disguise
+            || object_type.perma_disguise
+        {
+            return Ok(());
+        }
+        let frame = self.session.binary_frame;
+        // Both original calls ask ILoco+10, not the queued Move/NavCom. The
+        // predicate has no intervening simulation writer on this route.
+        let moving = crate::sim::movement::motion_query::is_moving(entity)
+            .ok_or_else(|| format!("UpdateDisguise7468C0: Unit {id} has no locomotor"))?;
+        let acquire = !entity.disguise.as_ref().is_some_and(|d| d.is_disguised())
+            && !moving
+            && object_type.disguise_when_still
+            && entity.radio_contacts.slot(0).is_none();
+        if moving {
+            if let Some(disguise) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|e| e.disguise.as_mut())
+            {
+                disguise.clear_unit();
+            }
+        } else {
+            //74696F scans on seven of eight frames, including while already
+            //revealed.47EC40 returns only the first Infantry on each selected
+            //list; an allied first Infantry hides any hostile later member.
+            //Ordinary live Logic runs with game-active A8E9A0=1. Modal/native
+            //shutdown calls with that global cleared are outside this visit.
+            let mut adjacent_enemy = false;
+            if (frame as i32) % 8 != 0 {
+                let terrain = self.resolved_terrain.as_ref().ok_or_else(|| {
+                    format!("UpdateDisguise7468C0: Unit {id} has no resolved map")
+                })?;
+                let position =
+                    crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+                //41BEA0 writes two narrowed signed cell words.5F6960 resolves
+                //the current Cell independently from raw Object X/Y.
+                let origin = ((position.x / 256) as i16, (position.y / 256) as i16);
+                let query = NativeCellQuery::canonical(terrain);
+                let current = query.lookup_world(position.x, position.y);
+                let layer = if terrain.native_cell_is_concrete_bridge(current) {
+                    MovementLayer::Bridge
+                } else {
+                    MovementLayer::Ground
+                };
+                for (dx, dy) in crate::util::direction_tables::CELL_DELTAS {
+                    let cell = query.lookup((
+                        origin.0.wrapping_add(dx as i16),
+                        origin.1.wrapping_add(dy as i16),
+                    ));
+                    //The shared fallback Cell has no registered object list.
+                    if matches!(cell, NativeCellIdentity::Dummy) {
+                        continue;
+                    }
+                    let (x, y) = query.coord(cell);
+                    if let Some(neighbor) = self
+                        .substrate
+                        .occupancy
+                        .first_category_on_layer(
+                            x as u16,
+                            y as u16,
+                            layer,
+                            EntityCategory::Infantry,
+                            &self.substrate.entities,
+                        )
+                        .and_then(|other| self.substrate.entities.get(other))
+                        && !crate::sim::combat::combat_weapon::is_ally_by_object(
+                            Some(&self.house_alliances),
+                            &self.interner,
+                            entity.owner(),
+                            neighbor.owner(),
+                        )
+                    {
+                        adjacent_enemy = true;
+                        break;
+                    }
+                }
+            }
+            if adjacent_enemy {
+                let state = self
+                    .substrate
+                    .entities
+                    .get_mut(id)
+                    .expect("live disguise owner")
+                    .disguise
+                    .get_or_insert_with(|| DisguiseRuntime::new(frame));
+                state.block_reacquisition(frame, rules.general.infantry_blink_disguise_time);
+                state.clear_unit();
+            } else if acquire
+                && !entity
+                    .disguise
+                    .as_ref()
+                    .is_some_and(|d| d.reveal_blocks(frame))
+            {
+                //Native has no empty-vector guard and reaches an invalid slot.
+                //Stop this unsupported input explicitly; do not invent a tree
+                //or silently spend a different Scenario draw. Retail has4.
+                let last = rules
+                    .general
+                    .default_mirage_disguises
+                    .len()
+                    .checked_sub(1)
+                    .ok_or_else(|| {
+                        "UpdateDisguise7468C0: DefaultMirageDisguises is empty".to_owned()
+                    })?;
+                let picked = self.scenario_rng.next_range_i32_inclusive(0, last as i32) as usize;
+                let disguise_type = self
+                    .interner
+                    .intern(&rules.general.default_mirage_disguises[picked]);
+                self.substrate
+                    .entities
+                    .get_mut(id)
+                    .expect("live disguise owner")
+                    .disguise
+                    .get_or_insert_with(|| DisguiseRuntime::new(frame))
+                    .acquire(frame, Some(disguise_type), None);
+            }
+        }
+        //Clear/acquire invoke native radar dirtiness70CCF0. RadarTracker owns
+        //its derived winner/color refresh and reads this state on every update;
+        //no second retained dirty flag belongs in simulation.
+        self.update_disguise_ring_visibility(id);
+        Ok(())
     }
 }
 
 #[cfg(test)]
 #[path = "cloak_sound_tests.rs"]
 mod sound_tests;
+
+#[cfg(test)]
+#[path = "mirage_disguise_tests.rs"]
+pub(in crate::sim) mod mirage_tests;
 
 #[cfg(test)]
 mod tests {
@@ -768,13 +969,10 @@ mod tests {
     }
 
     #[test]
-    fn reveal_tuple_blocks_until_expiry() {
+    fn reveal_timer_blocks_until_expiry() {
         let mut state = DisguiseRuntime::default();
         assert!(!state.reveal_blocks(0));
-        state.reveal = DisguiseRevealTuple {
-            timer: CdTimer::started(100, 10),
-            neighbor_cell_packed: 4660,
-        };
+        state.block_reacquisition(100, 10);
         assert!(state.reveal_blocks(109));
         assert!(!state.reveal_blocks(110));
     }

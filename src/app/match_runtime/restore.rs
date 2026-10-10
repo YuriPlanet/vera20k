@@ -17,6 +17,15 @@ pub(crate) fn commit_prepared_load(
         native_tiberium_stats.spread_entries,
     );
 
+    // Ordinary native Load67F76C->751710->751765->406E80 clears outgoing
+    // SoundEvents; UI69BB82->7535D0 resets EVA. TechnoLoad70C231..70C240
+    // reconstructs each voice handle/latch. Do this only after preparation
+    // succeeded; the new FootLoad state starts silent until its next AI visit.
+    // Saved static Voc/EVA queues have separate, currently unported restoration.
+    if let Some(sfx) = state.audio.sfx_player.as_mut() {
+        sfx.stop_all();
+    }
+    state.match_state.match_audio.reset_for_new_match();
     crate::app::reset_scenario_exit_runtime(state);
     crate::app::input::dispatch::selection_navigation::reset_for_world_replacement(
         &mut state.match_state.input,
@@ -59,6 +68,15 @@ pub(crate) fn commit_prepared_load(
         .clear();
     crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
     state.match_state.match_presentation.combat_lights.clear();
+    state.match_state.match_presentation.lasers.clear_on_load();
+    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        state
+            .match_state
+            .match_presentation
+            .detail
+            .borrow_mut()
+            .configure_normal(&runtime.resources.rules.general.detail);
+    }
     state
         .match_state
         .match_presentation

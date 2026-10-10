@@ -271,7 +271,10 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
         let hull = sim.substrate.entities.get_mut(id).unwrap();
         hull.sinking.active = input["sinking"].as_u64().unwrap() != 0;
         hull.sinking.sound_edge_seen = input["seen"].as_u64().unwrap() != 0;
-        hull.move_sound_active = input["move_sound"].as_u64().unwrap_or(0) != 0;
+        hull.move_sound = crate::sim::world::MoveSoundState::from_raw_for_test(
+            input["move_sound"].as_u64().unwrap_or(0) != 0,
+            0,
+        );
         sim.main_rng = SimRng::new(1);
         sim.scenario_rng = SimRng::new(1);
         sim.mapgen_rng = SimRng::new(1);
@@ -287,7 +290,7 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
                     world,
                 } => {
                     assert_eq!(*anim_id, id);
-                    assert_eq!(sim.interner.resolve(*sound_id), sound_name);
+                    assert_eq!(sound_id, sound_name);
                     serde_json::json!(["sound_boundary", "Foot+544", [world.x, world.y, world.z]])
                 }
                 SimSoundEvent::VocAt {
@@ -360,9 +363,10 @@ fn load_preserves_sinking_edge_and_resets_shared_foot_sound_bytes() {
         sim.session.map_name = "SINK.MAP".to_owned();
         let hull = sim.substrate.entities.get_mut(id).unwrap();
         hull.sinking.sound_edge_seen = seen;
-        hull.move_sound_active = input["saved_move_sound"].as_i64().unwrap() != 0;
-        hull.move_sound_countdown =
-            u8::try_from(input["saved_move_countdown"].as_i64().unwrap()).unwrap();
+        hull.move_sound = crate::sim::world::MoveSoundState::from_raw_for_test(
+            input["saved_move_sound"].as_i64().unwrap() != 0,
+            i32::try_from(input["saved_move_countdown"].as_i64().unwrap()).unwrap(),
+        );
         let bytes = GameSnapshot::save_validated(&sim, 17, 18, "sound edge", 0);
         let mut loaded = GameSnapshot::load_validated(&bytes, 17, 18, "SINK.MAP")
             .unwrap()
@@ -373,15 +377,15 @@ fn load_preserves_sinking_edge_and_resets_shared_foot_sound_bytes() {
         let hull = loaded.substrate.entities.get(id).unwrap();
         assert_eq!(hull.sinking.is_active(), row["after_noinit"][0] == 1);
         assert_eq!(hull.sinking.sound_edge_seen, row["after_noinit"][1] == 1);
-        assert_eq!(hull.move_sound_active, row["after_tail"]["move_sound"] == 1);
         assert_eq!(
-            i64::from(hull.move_sound_countdown),
+            hull.move_sound.is_active(),
+            row["after_tail"]["move_sound"] == 1
+        );
+        assert_eq!(
+            i64::from(hull.move_sound.countdown()),
             row["after_tail"]["move_countdown"].as_i64().unwrap()
         );
         let rng = loaded.rng_state();
-        loaded
-            .restore_move_sound_handles_after_load(&rules)
-            .unwrap();
         assert!(loaded.sound_events.is_empty());
         loaded.sinking_edge_sounds(id, &rules);
         assert_eq!(

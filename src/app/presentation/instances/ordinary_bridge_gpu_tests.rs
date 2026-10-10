@@ -208,6 +208,7 @@ impl Probe {
             &batch,
             &entries,
             &[],
+            &[],
             &assets,
             &theater.iso_palette,
             &theater.unit_palette,

@@ -2228,17 +2228,6 @@ impl ScenarioFillRng<'_> {
     }
 }
 
-/// Main-stream access granted only to one-time TMP variant-table generation.
-pub(crate) struct VariantMainRng<'a> {
-    rng: &'a mut SimRng,
-}
-
-impl VariantMainRng<'_> {
-    pub(crate) fn next_u32(&mut self) -> u32 {
-        self.rng.next_u32()
-    }
-}
-
 impl ScenarioBootstrapRng {
     pub(crate) fn new(seed: u32) -> Self {
         let seed = u64::from(seed);
@@ -2352,14 +2341,14 @@ fn replay_generated_construction_trace_with_rng(
 impl Simulation {
     /// Borrow the two load-time streams from the already-staged gameplay owner.
     /// No second bootstrap owner can exist after `into_simulation` consumes it.
-    pub(crate) fn terrain_load_draws(&mut self) -> (ScenarioFillRng<'_>, VariantMainRng<'_>) {
+    pub(crate) fn terrain_load_draws(
+        &mut self,
+    ) -> (ScenarioFillRng<'_>, crate::sim::rng::MainRngDraws<'_>) {
         (
             ScenarioFillRng {
                 rng: &mut self.scenario_rng,
             },
-            VariantMainRng {
-                rng: &mut self.main_rng,
-            },
+            crate::sim::rng::MainRngDraws::borrow(&mut self.main_rng),
         )
     }
 

@@ -1,8 +1,8 @@
 # House presentation color evidence
 
 `house_color.py/json/meta.json` execute the pinned retail executable for all 21
-physical `RULESMD.INI [Colors]` entries. `--write` and an independent `--check`
-passed. The sidecar records binary, emulator, source and payload identities.
+physical `RULESMD.INI [Colors]` entries. The sidecar records binary, emulator,
+source and payload identities.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python -m tools.procedural_drawing_oracle.house_color --check
@@ -19,8 +19,8 @@ scheme+330 through converter+30C's lookup table+174, and stores unpacked RGB at
 House+56F9..56FB. ColorScheme constructor slice68C769..68C7DC sets lookup index16.
 In RGB565 the unpack clears the channel low bits; it does not replicate them.
 Campaign reader500B40 repeats the conversion at500DF7..500ECC after `Color=`.
-The fixture executes whole50B840 and that campaign block, and preserves adjacent
-bytes including the distinct House+56FC laser RGB.
+The body-only fixture path executes whole50B840 and that campaign block, and
+preserves adjacent bytes including the distinct House+56FC laser RGB.
 
 The table is not a direct RGB565 pack of the generated ramp. InitColorSchemes
 66D3A0 constructs N1 then N53 variants per physical entry (calls66D444/66D45B).
@@ -53,6 +53,36 @@ rebuild/effect state, renderer or GPU equivalence. Six distinct lookup-index
 controls and negative-index fallback distinguish the lookup from an accidental
 matching packed word. This is not an exhaustive arbitrary-HSV proof.
 
+## Distinct laser color
+
+`Create_Houses687F10` calls `InitColor50B840`, then `ComputeRemap50BA00`, for
+player/AI houses. Whole50BA00 reads the body RGB at+56F9, normalizes it to
+length240, caps channels at255, zeros channels below96, then normalizes again
+to length240 and chops each channel to a byte at+56FC..+56FE. The first zero
+length becomes255/255/255; the second normalization therefore makes a black
+body color's laser138/138/138. It uses the original table square root.
+
+Campaign500B40 follows body conversion with the same first normalization and
+cutoff inline, then calls50B920 for the second normalization and50E430 to
+store the laser RGB. The corpus executes500DF7..501086, stopping before Allies.
+Its21 physical color rows include both body and laser results on scalar, CMOV
+and MMX palette conversion paths. A separate compact triplet array records
+whole50BA00's output for all65,536 loss-only RGB565 unpacks in ascending packed
+word order. These are executed native results, not generated RGB formulas.
+
+`render/palette_light.rs::house_laser_rgb` composes the existing House body
+conversion with this distinct presentation normalization. It uses ordinary
+f64 arithmetic and the existing chopped-f32/table-root boundary; the complete
+RGB565 input comparison bounds this numeric policy. Neither House body color
+nor a duplicate simulation cache owns the laser color.
+
+The native House constructor initializes+56FC..+56FE to zero at4F5C48/4E/54.
+Neutral and Special creation call InitColor without ComputeRemap, so their
+laser bytes remain zero. Callers must retain that house classification instead
+of treating every scheme or an ownerless object as a normalized player color.
+The normal/campaign rows cover initialized player/AI color, not arbitrary later
+scenario color writes or complete House lifecycle behavior.
+
 ## Affected consumers and separate paths
 
 Rally6DA9D0 reads House+56F9. Radar655C50's ordinary tracked-object path loads
@@ -62,8 +92,8 @@ passes the packed result to the radar surface at656053..65608C. Active callers
 are RefreshRadar657CE0 at657D77 and Update656EC0 at6574C3/657520. This is original
 body/caller evidence; the whole radar path was not executed by this fixture.
 `render/minimap_helpers.rs::owner_dot_color` now calls the same House presentation
-owner as rally. Focused Rust comparisons passed all21 stock colors and the
-radar-dot lookup; whole native radar execution remains outside this fixture.
+owner as rally. Rust comparisons cover all21 stock colors and the radar-dot
+lookup; whole native radar execution remains outside this fixture.
 
 The other production raw-ramp[0] reader is `app/input/messages.rs`. It is a
 separate mismatch: TypeSelect732950 supplies its local House's scheme index to

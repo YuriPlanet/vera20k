@@ -7,14 +7,15 @@
     1,
     33621247
   ],
-  "scope": "21 physical RULESMD Colors entries parsed by original474C70; original ramp68C3B0, N53 LightConvert556090 in scalar/CMOV/MMX modes, whole House50B840 and campaign color block500DF7..500ECC",
+  "scope": "21 physical RULESMD Colors entries parsed by original474C70; original ramp68C3B0, N53 LightConvert556090 in scalar/CMOV/MMX modes, whole House50B840/50BA00, campaign block500DF7..501086 and all65536 RGB565 normalizer inputs",
   "assumptions": [
     "ini/rulesmd.ini physical bytes and lexical strings are recorded with SHA256. Existing lexical.sections only extracts strings; supplied native CRC/section caches replace INI/archive IO. Original ReadString64, sprintf and sscanf own parsing. Mode/map/LANGRULE overrides are not loaded in this base-reader corpus.",
     "Original ColorScheme68C769..68C7DC constructor slice writes lookup index16. Original ramp68C3B0..68C4AD includes palette copy, native trig table sampling, ftol and HSV conversion, stopping before allocation of LightConvert. Base palette outside indices16..31 is supplied A5 and asserted unchanged.",
     "Existing tools.palette_oracle.oracle owns full original556090 table construction, scalar/CMOV/MMX dispatch and plain4BBB00 comparison. N53 and RGB1000/1000/1000 are supplied constructor inputs from68C710; active RGB565 shifts/losses and FPCW0E7F are supplied. ColorScheme mask16 is1, so its result is identical to the fixture all-one mask.",
     "Convert48E740 stores +174 at ((N-1)>>1)*512 bytes after +170, so House receives the actual native row26 bytes. Converter allocation, row-pointer construction and active effects/rebuild state are instruction evidence, not executed in this fixture.",
-    "Whole House50B840 receives supplied registry/ColorScheme/converter fields. Campaign starts500DF7 after ReadColorString with supplied index in EAX and House in EBX; stops500ECC immediately after RGB stores, before separate laser-color normalization. Whole campaign INI reader and name lookup are excluded.",
-    "All21 colors compare normal/campaign and all three CPU paths. Six distinct +330 lookup controls plus negative-scheme fallback are saved; adjacent bytes and separate House+56FC laser RGB remain unchanged. No full renderer/GPU or exhaustive arbitrary-HSV equivalence claim."
+    "Whole House50B840 receives supplied registry/ColorScheme/converter fields. Campaign starts500DF7 after ReadColorString with supplied index in EAX and House in EBX, continues through the original normalization50B920 and setter50E430, and stops501086 before Allies. Whole campaign INI reader and name lookup are excluded.",
+    "All21 colors compare normal/campaign body and laser RGB in all three CPU paths. The normal route calls whole50BA00 after50B840, matching player/AI Create_Houses687F10 call order. Neutral/Special Create_Houses skip50BA00; their zero-initialized laser color is not projected by these player/AI rows.",
+    "Whole50BA00 additionally executes all65536 loss-only RGB565 unpacks and saves each RGB triplet in ascending-word order. Adjacent bytes remain unchanged. Six distinct +330 lookup controls and negative-scheme fallback preserve the earlier body-only behavior. No full renderer/GPU or exhaustive arbitrary-HSV equivalence claim."
   ],
   "substitutions": [],
   "entry_points": {
@@ -26,13 +27,16 @@
     "plain_table": "0x004BBB00",
     "house_init_color": "0x0050B840",
     "campaign_color_begin": "0x00500DF7",
-    "campaign_color_end": "0x00500ECC"
+    "house_compute_remap": "0x0050BA00",
+    "campaign_color_end": "0x00501086",
+    "campaign_normalize": "0x0050B920",
+    "campaign_color_store": "0x0050E430"
   },
   "source_normalized_lf_sha256": {
-    "caller": "7c1a1bcb56f471a16fe87bb67778d373836bb8c210c63119caadfc35eb3b9cb3",
+    "caller": "791b7ddc19a6edc9635fa77a1e971e5afeac6c55b3a4af87a71248f3a5cf8184",
     "palette_owner": "12f63f378e77070f5278912d71eb9fcc09d247b4680c785e838ee4997ecd1a90",
     "ini_fixture": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-    "lexical_fixture": "ea32c11dbb9f1ee1aeb3cdc1069605658ca100d864e90dacb3cd5bfe8f01c350"
+    "lexical_fixture": "411fae85e38850208ce1c9dc8a5b411459fd0c043f2a20a6090bee0cbf92e7da"
   },
-  "payload_sha256": "ea23de56b22aa899c3db7d6b9b127aefaa6429a7b1bbb1c08ca25598dfd6b202"
+  "payload_sha256": "1a6132cebbda7a21c6217a12c1688f5b1f1dc0f0d0246c085287140ea5e5c72b"
 }

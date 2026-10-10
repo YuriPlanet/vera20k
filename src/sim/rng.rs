@@ -74,6 +74,24 @@ pub struct SimRng {
     state: Vec<u32>,
 }
 
+/// Borrowed process Main draws. This capability cannot clone, seed, replace
+/// or retain the cursor; its owner keeps the complete RNG state.
+pub(crate) struct MainRngDraws<'a> {
+    rng: &'a mut SimRng,
+}
+
+impl<'a> MainRngDraws<'a> {
+    pub(crate) fn borrow(rng: &'a mut SimRng) -> Self {
+        Self { rng }
+    }
+    pub(crate) fn next_u32(&mut self) -> u32 {
+        self.rng.next_u32()
+    }
+    pub(crate) fn ranged(&mut self, low: i32, high: i32) -> i32 {
+        self.rng.next_range_i32_inclusive(low, high)
+    }
+}
+
 /// Allocation-free logical view of the native-significant RNG fields.
 ///
 /// Native padding is deliberately absent: Rust has no verified storage or

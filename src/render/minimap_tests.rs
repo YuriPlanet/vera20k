@@ -888,7 +888,14 @@ fn radar_building_tracker_pixels_use_owner_color_not_khaki() {
     let interner = crate::sim::intern::test_interner();
     let mut colors = HouseColorMap::new();
     colors.insert("Americans".to_string(), HouseColorIndex(1));
-    let color = radar_entity_owner_color(&entity, Some(&interner), &colors, &test_ramps());
+    let color = radar_entity_owner_color(
+        &entity,
+        Some(&interner),
+        &colors,
+        &test_ramps(),
+        None,
+        false,
+    );
     assert_eq!(color, owner_dot_color("Americans", &colors, &test_ramps()));
     assert_ne!(color, [200, 200, 160, 255]);
 }
@@ -899,8 +906,7 @@ fn radar_tracker_color_uses_active_disguise_house_without_changing_priority_owne
         crate::sim::game_entity::GameEntity::test_default(1, "MGTK", "Americans", 0, 0);
     let soviet = test_intern("Soviet");
     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::default();
-    disguise.disguised = true;
-    disguise.disguised_as_house = Some(soviet);
+    disguise.acquire(0, None, Some(soviet));
     entity.disguise = Some(disguise);
     let interner = crate::sim::intern::test_interner();
     let mut colors = HouseColorMap::new();
@@ -908,8 +914,115 @@ fn radar_tracker_color_uses_active_disguise_house_without_changing_priority_owne
     colors.insert("Soviet".to_string(), HouseColorIndex(2));
     let ramps = test_ramps();
     assert_eq!(
-        radar_entity_owner_color(&entity, Some(&interner), &colors, &ramps),
+        radar_entity_owner_color(&entity, Some(&interner), &colors, &ramps, None, false),
         owner_dot_color("Soviet", &colors, &ramps)
     );
     assert_eq!(entity.owner, test_intern("Americans"));
+}
+
+#[test]
+fn radar_disguise_house_preserves_owner_alliance_and_spy_null_fallback() {
+    let mut entity =
+        crate::sim::game_entity::GameEntity::test_default(1, "MGTK", "Americans", 0, 0);
+    let observer = test_intern("Soviet");
+    // Snapshot the fixture interner after every identity the draw can resolve.
+    let interner = crate::sim::intern::test_interner();
+    let colors = HouseColorMap::from([
+        ("Americans".to_owned(), HouseColorIndex(1)),
+        ("Soviet".to_owned(), HouseColorIndex(2)),
+    ]);
+    let ramps = test_ramps();
+    entity.disguise.as_mut().unwrap().acquire(0, None, None);
+    assert_eq!(
+        radar_entity_owner_color(
+            &entity,
+            Some(&interner),
+            &colors,
+            &ramps,
+            Some(observer),
+            true
+        ),
+        owner_dot_color("Americans", &colors, &ramps),
+        "owner considers viewer allied: actual house, independent of shimmer/sensors",
+    );
+    entity.category = crate::map::entities::EntityCategory::Infantry;
+    assert_eq!(
+        radar_entity_owner_color(
+            &entity,
+            Some(&interner),
+            &colors,
+            &ramps,
+            Some(observer),
+            false
+        ),
+        owner_dot_color("Soviet", &colors, &ramps),
+        "Infantry5226C0 NULL disguise house falls back to CurrentHouse",
+    );
+}
+
+#[test]
+fn mirage_radar_house_and_null_pixel_match_original_executable() {
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/mirage_disguise.json",
+    ))
+    .unwrap();
+    let null_row = corpus["radar"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "enemy_null_house")
+        .unwrap();
+    let pixel = null_row["pixel"].as_u64().unwrap() as u16;
+    let rgb = crate::render::native_surface_format::RGB565.unpack_rgb8(pixel);
+    let null_color = crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
+        .quantize_rgba8([rgb[0], rgb[1], rgb[2], 255]);
+    assert_eq!(null_row["rng_before"], null_row["rng_after"]);
+    let mut entity =
+        crate::sim::game_entity::GameEntity::test_default(1, "MGTK", "Americans", 0, 0);
+    let interner = crate::sim::intern::test_interner();
+    let observer = test_intern("Soviet");
+    let colors = HouseColorMap::from([("Americans".to_owned(), HouseColorIndex(1))]);
+    let ramps = test_ramps();
+    for row in corpus["observer"].as_array().unwrap() {
+        let input = &row["input"];
+        let disguised = input["raw_disguised"].as_bool().unwrap();
+        let disguise = entity.disguise.as_mut().unwrap();
+        if disguised {
+            disguise.acquire(0, None, None);
+        } else {
+            disguise.clear_unit();
+        }
+        let native_owner = u64::from_str_radix(
+            row["actual_house"]
+                .as_str()
+                .unwrap()
+                .strip_prefix("0x")
+                .unwrap(),
+            16,
+        )
+        .unwrap();
+        let getter_owner = row["outputs"]["house_arg0"].as_u64().unwrap();
+        assert!(
+            getter_owner == 0 || getter_owner == native_owner,
+            "declared NULL Mirage house"
+        );
+        let expected = if !disguised || getter_owner == native_owner {
+            owner_dot_color("Americans", &colors, &ramps)
+        } else {
+            null_color
+        };
+        assert_eq!(
+            radar_entity_owner_color(
+                &entity,
+                Some(&interner),
+                &colors,
+                &ramps,
+                Some(observer),
+                input["owner_allied"].as_bool().unwrap(),
+            ),
+            expected,
+            "{}: native +D0(0) identity; existing packed presentation transport",
+            row["name"]
+        );
+    }
 }

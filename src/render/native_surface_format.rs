@@ -39,6 +39,13 @@ pub const RGB555: DirectDrawPixelFormat = DirectDrawPixelFormat {
 };
 
 impl DirectDrawPixelFormat {
+    /// Pack native component losses/shifts without display expansion.
+    pub(crate) fn pack_rgb8(self, rgb: [u8; 3]) -> u16 {
+        ((u16::from(rgb[0]) >> self.red_loss) << self.red_shift)
+            | ((u16::from(rgb[1]) >> self.green_loss) << self.green_shift)
+            | ((u16::from(rgb[2]) >> self.blue_loss) << self.blue_shift)
+    }
+
     /// Native packed-word extraction (House50B840 and WriteSurfaceAsPCX7B05C0).
     /// Channel losses are zero-filled; display expansion is a later operation.
     pub(crate) fn unpack_rgb8(self, word: u16) -> [u8; 3] {
@@ -78,9 +85,9 @@ impl NativeSurfacePresentationProfile {
     /// Retail provenance: packed flag-image transparency — `OwnerDraw_Static_006153E0` @ `0x006153E0`.
     pub(crate) fn apply_packed_color_key_rgba8(self, rgba: &mut [u8], transparent_rgb: [u8; 3]) {
         assert_eq!(rgba.len() % 4, 0, "RGBA8 input must contain whole pixels");
-        let transparent_word = self.pack_rgb8(transparent_rgb);
+        let transparent_word = self.format.pack_rgb8(transparent_rgb);
         for pixel in rgba.chunks_exact_mut(4) {
-            if self.pack_rgb8([pixel[0], pixel[1], pixel[2]]) == transparent_word {
+            if self.format.pack_rgb8([pixel[0], pixel[1], pixel[2]]) == transparent_word {
                 pixel[3] = 0;
             }
         }
@@ -116,12 +123,6 @@ impl NativeSurfacePresentationProfile {
             2 => self.six_bit[usize::from(channel >> 2)],
             _ => panic!("presentation profile supports only five- and six-bit channels"),
         }
-    }
-
-    fn pack_rgb8(self, rgb: [u8; 3]) -> u16 {
-        ((u16::from(rgb[0]) >> self.format.red_loss) << self.format.red_shift)
-            | ((u16::from(rgb[1]) >> self.format.green_loss) << self.format.green_shift)
-            | ((u16::from(rgb[2]) >> self.format.blue_loss) << self.format.blue_shift)
     }
 }
 

@@ -490,16 +490,13 @@ impl Simulation {
             }
             InfantryTerminal::RetireNextVisit => {}
         }
-        {
-            self.release_move_sound(id);
-            if let Some(rules) = rules {
-                self.uninit_with_context(
-                    id,
-                    super::UninitContext::new(Some(rules), ctx.overlay_registry),
-                );
-            } else {
-                self.uninit(id);
-            }
+        if let Some(rules) = rules {
+            self.uninit_with_context(
+                id,
+                super::UninitContext::new(Some(rules), ctx.overlay_registry),
+            );
+        } else {
+            self.uninit(id);
         }
         outcome
     }

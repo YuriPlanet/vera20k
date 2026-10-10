@@ -258,11 +258,9 @@ fn actual_type_wins_display_art_except_the_harvester_unloading_body() {
     let unloading = runtime.simulation.interner.intern("UNLOAD");
     set_live_level(&mut runtime, (3, 3), 4);
     tank.display_type_override = Some(display);
-    tank.disguise = Some(DisguiseRuntime {
-        disguised: true,
-        disguise_type: Some(unloading),
-        ..Default::default()
-    });
+    let mut disguise = DisguiseRuntime::default();
+    disguise.acquire(0, Some(unloading), None);
+    tank.disguise = Some(disguise);
     assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), 19);
     assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, false), 19);
     assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &tank), 17.0);

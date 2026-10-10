@@ -74,6 +74,9 @@ pub(crate) struct MatchPresentationState {
     pub(crate) local_player_handle: Option<String>,
     pub(crate) lighting: super::lighting::MatchLighting,
     pub(crate) line_trails: super::line_trails::LineTrails,
+    pub(crate) lasers: super::lasers::Lasers,
+    /// Native process-lived FPS counter and detail hysteresis, never sim state.
+    pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
     /// The client's AnimClass `+0x19D` for Supers' ChronoPlacement anims
     /// (`match_runtime::super_selection`): hidden anims, by id.
     pub(crate) hidden_super_anims: std::collections::BTreeSet<crate::sim::anim_class::AnimId>,

@@ -1379,3 +1379,94 @@ fn production_tree_piece_workload_timing() {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     }
 }
+
+pub(crate) fn seed_depth(
+    gpu: &Gpu,
+    encoder: &mut wgpu::CommandEncoder,
+    depth: &wgpu::TextureView,
+    words: &[u16],
+) {
+    seed_depth_grid(gpu, encoder, depth, words, words.len() as u32);
+}
+
+/// Prepare arbitrary native destination Z words, without passing through any
+/// renderer admission logic under test. This shader only writes fixture data.
+pub(crate) fn seed_depth_grid(
+    gpu: &Gpu,
+    encoder: &mut wgpu::CommandEncoder,
+    depth: &wgpu::TextureView,
+    words: &[u16],
+    width: u32,
+) {
+    let values = words
+        .iter()
+        .map(|&word| crate::render::native_z::stored_depth(word))
+        .collect::<Vec<_>>();
+    let buffer = gpu
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Original destination Z words"),
+            contents: bytemuck::cast_slice(&values),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+    let shader = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Original destination depth fixture upload"),
+        source: wgpu::ShaderSource::Wgsl(format!(
+            "@group(0) @binding(0) var<storage,read> words:array<f32>; @vertex fn vs(@builtin(vertex_index) i:u32)->@builtin(position) vec4f {{ let p=array<vec2f,3>(vec2f(-1.,-1.),vec2f(3.,-1.),vec2f(-1.,3.)); return vec4f(p[i],0.,1.); }} @fragment fn fs(@builtin(position) p:vec4f)->@builtin(frag_depth) f32 {{ return words[(u32(p.y)*{width}u+u32(p.x))%arrayLength(&words)]; }}"
+        ).into()),
+    });
+    let pipeline = gpu
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Original destination depth fixture upload"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                targets: &[],
+                compilation_options: Default::default(),
+            }),
+            primitive: Default::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            multiview: None,
+            cache: None,
+        });
+    let binding = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: buffer.as_entire_binding(),
+        }],
+    });
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Original destination depth fixture upload"),
+        color_attachments: &[],
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view: depth,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(1.0),
+                store: wgpu::StoreOp::Store,
+            }),
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+    pass.set_pipeline(&pipeline);
+    pass.set_bind_group(0, &binding, &[]);
+    pass.draw(0..3, 0..1);
+}

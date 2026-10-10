@@ -85,17 +85,15 @@ pub(crate) fn build_shp_instances(
     ground_objects: &mut Vec<PlannedObjectInstance>,
     ground_order: &NativeDisplayOrder,
 ) {
-    let (sim, atlas) = match (
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        &state.match_state.match_presentation.sprite_atlas,
-    ) {
-        (Some(s), Some(a)) => (s, a),
-        _ => return,
+    let Some(sim) = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|rt| &rt.simulation)
+    else {
+        return;
     };
+    let atlas = state.match_state.match_presentation.sprite_atlas.as_ref();
     let z = state.match_state.input.zoom_level;
     let (cam_x, cam_y, sw, sh) = (
         state.match_state.input.camera_x,
@@ -136,21 +134,49 @@ pub(crate) fn build_shp_instances(
         let Some(entity) = sim.entities().get(stable_id) else {
             continue;
         };
-        if entity.is_voxel {
-            continue;
-        }
         let Some(_band) = entity_draw_band(sim.display_layers(), stable_id) else {
             continue;
         };
         // Common visibility, passenger, limbo, and DrawState admission is shared below.
         let owner_str = sim.interner.resolve(entity.owner());
-        let active_disguise = entity.disguise.as_ref().filter(|state| state.disguised);
-        let type_str = active_disguise
-            .and_then(|state| state.disguise_type)
-            .map(|id| sim.interner.resolve(id))
-            .unwrap_or_else(|| sim.interner.resolve(entity.type_ref()));
+        let mut observer = super::helpers::observer_draw_context(
+            sim,
+            entity,
+            local_owner.as_deref(),
+            local_owner_id,
+            state.rules(),
+        );
+        let active_disguise = entity.disguise.as_ref().filter(|disguise| {
+            disguise.is_disguised()
+                && (entity.category != EntityCategory::Unit
+                    || DrawState::draws_disguise(entity, sim.session.binary_frame, observer))
+        });
+        let type_name = if entity.category == EntityCategory::Unit {
+            if entity.unit_deploying() {
+                continue;
+            }
+            super::units::drawn_model_id(
+                entity,
+                &sim.interner,
+                state.rules(),
+                sim.session.binary_frame,
+                observer,
+            )
+        } else {
+            std::borrow::Cow::Borrowed(
+                active_disguise
+                    .and_then(|state| state.type_id())
+                    .map(|id| sim.interner.resolve(id))
+                    .unwrap_or_else(|| sim.interner.resolve(entity.type_ref())),
+            )
+        };
+        let type_str = type_name.as_ref();
+        if super::helpers::drawn_type_uses_voxel(entity, type_str, &sim.interner, state.rules()) {
+            continue;
+        }
+        observer.drawn_voxel = Some(false);
         let remap_owner = active_disguise
-            .and_then(|state| state.disguised_as_house)
+            .and_then(|state| state.house())
             .map(|id| sim.interner.resolve(id))
             .unwrap_or(owner_str);
         // Wall buildings render as overlays (auto-tiled connectivity frames).
@@ -184,13 +210,7 @@ pub(crate) fn build_shp_instances(
             ignore_visibility,
             sim.session.binary_frame,
             super::units::house_color_to_remap_row(hc),
-            super::helpers::observer_draw_context(
-                sim,
-                entity,
-                local_owner.as_deref(),
-                local_owner_id,
-                state.rules(),
-            ),
+            observer,
         ) else {
             continue;
         };
@@ -216,6 +236,35 @@ pub(crate) fn build_shp_instances(
             continue;
         }
         let draw_state = draw_decision.state;
+        if entity.category == EntityCategory::Unit
+            && state.rules().is_some_and(|rules| {
+                rules
+                    .terrain_object_type_case_insensitive(type_str)
+                    .is_some()
+            })
+        {
+            if let Some(frame) = resolve_object_shp_frame(
+                state,
+                sim.interner.resolve(entity.type_ref()),
+                entity,
+                sim.session.binary_frame,
+                cells.as_ref(),
+            ) {
+                emit_unit_terrain_body(
+                    state,
+                    entity,
+                    type_str,
+                    frame,
+                    [sx, sy],
+                    draw_state,
+                    cells.as_ref(),
+                    ground_order,
+                    ground_objects,
+                );
+            }
+            continue;
+        }
+        let Some(atlas) = atlas else { continue };
         // Determine if this building is in its make/build-up or build-down animation.
         // Only BState 0 draws the construction animation: a human player's
         // placement shows its idle body for one frame before its mission
@@ -315,7 +364,7 @@ pub(crate) fn build_shp_instances(
                     (frame, None)
                 }
                 _ => {
-                    let Some(frame) = resolve_infantry_shp_frame(
+                    let Some(frame) = resolve_object_shp_frame(
                         state,
                         type_str,
                         entity,
@@ -1116,7 +1165,127 @@ fn anim_colour_word(
         })
 }
 
-fn resolve_infantry_shp_frame(
+/// Unit73C5F0 remains the body owner when its image is a TerrainType. Only
+/// the source texture and Cell Convert differ: no Terrain object, placement,
+/// sorting key, or Terrain71C1B0 draw constants are introduced.
+#[allow(clippy::too_many_arguments)]
+fn emit_unit_terrain_body(
+    state: &AppState,
+    entity: &crate::sim::game_entity::GameEntity,
+    type_id: &str,
+    frame: u16,
+    point: [f32; 2],
+    draw_state: DrawState,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    order: &NativeDisplayOrder,
+    output: &mut Vec<PlannedObjectInstance>,
+) {
+    use crate::render::terrain_draw::TerrainPiece;
+    let Some(atlas) = state.match_state.match_presentation.overlay_atlas.as_ref() else {
+        return;
+    };
+    let Ok(frame) = u8::try_from(frame) else {
+        return;
+    };
+    let Some((body, shadow)) = atlas.native_terrain_pair(type_id, frame) else {
+        return;
+    };
+    let Some(parent) = order.object_draw(entity.stable_id(), SpriteEncoding::Plain) else {
+        return;
+    };
+    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        return;
+    };
+    let sim = &runtime.simulation;
+    let grid = state.match_state.match_presentation.lighting.grid();
+    let Some(cells) = cells else { return };
+    let mut physical = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+    physical.z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, None);
+    let cell = cells.coord(crate::sim::movement::ground_pose::query_object_cell(
+        cells, physical,
+    ));
+    let cell = (cell.0 as u16, cell.1 as u16);
+    // Techno7060CC..70610A uses Cell+34 and the common/ground light+10C.
+    let palette_light = crate::render::palette_light::PaletteLight::cell(grid, cell, false);
+    let tint = grid.terrain_object_tint_for_type(cell, false);
+    let (tint, palette_light) =
+        crate::app::presentation::lighting::curtain_light(entity, tint, palette_light, sim);
+    let depth = compute_sprite_depth(
+        state,
+        ground_sort_row(entity, point[1] + body.offset_y + body.pixel_size[1]),
+        entity.position.z,
+    );
+    let bridge_fudge = super::foot_depth::shp_unit_bridge_fudge(state, entity);
+    let body_z =
+        super::foot_depth::shp_z_adjust(state, entity) - if bridge_fudge { 16.0 } else { 0.0 };
+    let world_z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, None);
+    let shadow_z = crate::util::native_x87::adjust_for_z_standard(world_z)
+        .wrapping_neg()
+        .wrapping_sub(4) as f32;
+    // Techno70600C..70603F suppresses the SHP stencil above ground. Borrow
+    // the shared Object5F5F40/Map578080 owners with an isolated render query.
+    let grounded = crate::sim::movement::ground_pose::query_ground_height(cells, physical)
+        .is_ok_and(|ground| {
+            crate::sim::movement::ground_pose::height_at_z(world_z, ground, entity.on_bridge) == 0
+        });
+    let mut pieces = Vec::with_capacity(2);
+    for (piece, sprite, z_adjust, gradient, material) in [
+        (
+            TerrainPiece::Body,
+            body,
+            body_z,
+            if bridge_fudge {
+                ZGradient::Flat
+            } else {
+                ZGradient::Vertical
+            },
+            draw_state,
+        ),
+        // Techno706469..7064CF clears translucency on the second-half stencil.
+        (
+            TerrainPiece::Shadow,
+            shadow,
+            shadow_z,
+            ZGradient::Flat,
+            DrawState::default(),
+        ),
+    ] {
+        if piece == TerrainPiece::Shadow
+            && (!grounded
+                || state
+                    .rules()
+                    .and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())))
+                    .is_some_and(|object| object.no_shadow))
+        {
+            continue;
+        }
+        pieces.push(ObjectPieceInstance {
+            target: ObjectTexture::TerrainShp(piece),
+            render_z: parent.policy.render_z,
+            instance: SpriteInstance {
+                position: [point[0] + sprite.offset_x, point[1] + sprite.offset_y],
+                size: sprite.pixel_size,
+                uv_origin: sprite.uv_origin,
+                uv_size: sprite.uv_size,
+                depth,
+                tint,
+                palette_light: if piece == TerrainPiece::Shadow {
+                    palette_light.with_brightness(1000)
+                } else {
+                    palette_light
+                },
+                alpha: 1.0,
+                draw_state: material,
+                z_adjust,
+                z_gradient: pack_z_gradient(gradient, false),
+                ..Default::default()
+            },
+        });
+    }
+    output.push(PlannedObjectInstance::object(parent, pieces));
+}
+
+pub(crate) fn resolve_object_shp_frame(
     state: &AppState,
     type_id: &str,
     entity: &crate::sim::game_entity::GameEntity,
@@ -1127,11 +1296,21 @@ fn resolve_infantry_shp_frame(
     // Pass raw facing (not canonical) to resolve_shp_frame so the
     // facing-to-index division works correctly for any facing count
     // (6, 8, 10, etc.). The absolute frame index encodes the direction.
+    let type_id = if entity.category == EntityCategory::Unit {
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map_or(type_id, |runtime| {
+                runtime.simulation.interner.resolve(entity.type_ref())
+            })
+    } else {
+        type_id
+    };
     let sequence_set = state
         .rules()
         .and_then(|rules| rules.animation_sequence(type_id));
     if entity.category == EntityCategory::Unit
-        && !entity.is_voxel
         && entity.animation.as_ref().is_none_or(|anim_state| {
             matches!(
                 anim_state.sequence,
@@ -1139,15 +1318,21 @@ fn resolve_infantry_shp_frame(
             )
         })
         && let Some(set) = sequence_set
-        && let Some(frame) = animation::resolve_shp_vehicle_body_frame(
+    {
+        // A retained signed/wide native layout can be outside the atlas frame
+        // representation. Do not replace that failure with an infantry-facing
+        // fallback, which would draw an unrelated valid frame.
+        return animation::resolve_shp_vehicle_body_frame(
             set,
             facing,
             entity.body_frame_counter,
             // The draw asks the locomotor's Is_Moving (vt+0x10 at `0x0073C696`).
             crate::sim::movement::motion_query::is_moving(entity) == Some(true),
-        )
-    {
-        return Some(frame);
+            entity
+                .disguise
+                .as_ref()
+                .is_some_and(|disguise| disguise.is_disguised()),
+        );
     }
     if let (Some((doing, stage)), Some(set)) = (entity.infantry_sprite_pose(), sequence_set) {
         // Original518D93..518DC8: Doing-1 draws Tread16 only when the

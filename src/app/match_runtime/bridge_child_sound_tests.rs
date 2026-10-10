@@ -1,7 +1,9 @@
 //! Selected bridge landing child Report reader and destruction composition.
 
 use super::*;
-use crate::audio::arbiter::{ArbiterAction, EntryFacts, PlayRequest, SoundArbiter};
+use crate::audio::arbiter::{
+    ArbiterAction, EntryFacts, HandleOwner, PlayRequest, SoundArbiter, TestPlayback,
+};
 use crate::rules::{
     art_data::ArtRegistry, retail_ini_fixture::retail_ini, sound_ini::SoundRegistry,
 };
@@ -123,7 +125,7 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
         assert!(!sim.anim(id).unwrap().in_logic_vector, "{name}");
         let events = std::mem::take(&mut sim.sound_events);
         let mut output = SoundEventQueue::default();
-        dispatch_sim_sound_events(events, &sim, &rules, None, None, &mut |_| true, &mut output);
+        dispatch_sim_sound_events(events, &sim, &rules, None, &mut |_| true, &mut output);
         let events = output.drain();
         assert!(
             matches!(events.as_slice(), [
@@ -149,27 +151,35 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
                     facts: EntryFacts::from(entry),
                     volume_linear: entry.volume_linear,
                     pan: 0x2000,
-                    predelay_ms: 0,
                 },
                 0,
             )
             .unwrap();
-        arbiter.set_loop_handle(id, Some(playing), &sound_name.to_ascii_uppercase());
-        assert!(arbiter.update_tick(100).iter().any(|action| matches!(
+        arbiter.set_loop_handle(
+            HandleOwner::Positional(id),
+            Some(playing),
+            &sound_name.to_ascii_uppercase(),
+        );
+        assert!(arbiter.update_tick(100, &mut TestPlayback::default()).iter().any(|action| matches!(
             action, ArbiterAction::Start { event, sustaining: false, .. } if *event == playing
         )));
         let GameSoundEvent::AnimationReleased { anim_id } = events[1] else {
             unreachable!("ordered app event checked above")
         };
-        arbiter.release_owner(anim_id);
+        arbiter.release_owner(HandleOwner::Positional(anim_id));
         assert!(arbiter.loop_handle_owners().is_empty());
-        assert!(arbiter.update_tick(200).iter().all(|action| !matches!(
-            action, ArbiterAction::Stop { event } if *event == playing
-        )));
+        assert!(
+            arbiter
+                .update_tick(200, &mut TestPlayback::default())
+                .iter()
+                .all(|action| !matches!(
+                    action, ArbiterAction::Stop { event } if *event == playing
+                ))
+        );
         assert_eq!(arbiter.live_event_count(), 1);
         assert_eq!(arbiter.busy_channel_count(), 1);
         arbiter.notify_playout_ended(playing);
-        arbiter.update_tick(240);
+        arbiter.update_tick(240, &mut TestPlayback::default());
         assert_eq!(arbiter.live_event_count(), 0);
         assert_eq!(arbiter.busy_channel_count(), 0);
     }

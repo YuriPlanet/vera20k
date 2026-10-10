@@ -533,7 +533,6 @@ impl Simulation {
                 self.session.binary_frame,
             );
             if finished {
-                self.release_move_sound(id);
                 self.uninit_with_context(
                     id,
                     super::UninitContext::new(Some(rules), ctx.overlay_registry),
@@ -960,6 +959,126 @@ fn refresh_mover_speed_after_promotion(sim: &mut Simulation, id: u64, rules: &Ru
     }
 }
 
+/// The house self-heal pulse of `TechnoClass::AI_Update`, read from the
+/// disassembly. It is a second, independent heal beside [`self_heal_step`]'s
+/// per-object `+1`, and it has **two arms** in one `AI_Update` body:
+///
+/// ```text
+/// // units: 0x6FA7D2..0x6FA857
+/// if (Type->Organic(+0xD97) != 0) goto infantry arm;
+/// if (bl != 0) return;
+/// if (Frame % Rules->SelfHealUnitFrames(+0x38)) return;
+/// if (!House->HasUnitSelfHeal()) return;          // 0x0050D9D0: +0x168 > 0
+/// step = House->GetUnitSelfHealStep();            // 0x0050D9F0: (+0x3C) * +0x168
+/// Health += min(step, Strength - Health);         // then the smoke tail
+///
+/// // infantry: 0x6FA8C8..0x6FA93E
+/// if (Type->Organic(+0xD97) == 0) return;
+/// if (bl != 0) return;
+/// if (Frame % Rules->SelfHealInfantryFrames(+0x30)) return;
+/// if (!House->HasInfantrySelfHeal()) return;      // 0x0050D9C0: +0x164 > 0
+/// step = House->GetInfSelfHealStep();             // 0x0050D9E0: (+0x34) * +0x164
+/// Health += min(step, Strength - Health);
+/// ```
+///
+/// `+0xD97` is `Organic=`, which the InfantryType constructor stores
+/// (`0x00523911`) and the other classes leave clear, so the first arm serves
+/// vehicles and aircraft off the house unit count `UnitsGainSelfHeal` feeds,
+/// and the second serves infantry off the house infantry count
+/// `InfantryGainSelfHeal` feeds. Both run after the per-object pulse and before
+/// the cloak tick (`vt+0x410` at `0x006FA946`), so a same-frame heal is visible
+/// to the cloak's health branch.
+///
+/// The unit arm's tail after the add (`0x6FA85A..0x6FA89D`) retires the damage
+/// smoke when the object holds one; [`Simulation::retire_damage_smoke_after_self_heal`]
+/// is that owner, which [`self_heal_step`] already drives.
+fn house_self_heal_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    house_heal_arm(sim, id, rules, false);
+    house_heal_arm(sim, id, rules, true);
+}
+
+/// One arm of [`house_self_heal_step`]. `infantry` selects the hospital arm:
+/// its own class admission, frame key, house counter, amount key and predicate.
+///
+/// Admission, straight from `TechnoClass::AI_Update` (`0x006F9E50`):
+///
+/// ```text
+/// 6FA7B9  cmp eax,1 ; jne 6FA8A2     ; the units arm is Unit-only
+/// 6FA7D2  test cl,cl ; jne 6FA8A2    ; and skips an organic type (+0xD97)
+/// 6FA7DA  test bl,bl ; jne 6FA8A2    ; and an at/over-strength or zero-Health object
+/// 6FA8A9  cmp eax,0Fh ; je 6FA8D2    ; Infantry takes the hospital arm directly ...
+/// 6FA8B5  cmp eax,1 ; jne 6FA941     ; ... which otherwise needs a Unit ...
+/// 6FA8CE  test cl,cl ; je 6FA941     ; ... whose type is organic
+/// 6FA8D2  test bl,bl ; jne 6FA941    ; the same guard as the units arm
+/// ```
+///
+/// Only Infantry and Unit reach either arm — a Structure or an Aircraft
+/// house-heals nothing, whatever its type's `Organic` says — and an
+/// `Organic=no` Infantry still takes the hospital arm, because the Infantry
+/// test at `0x6FA8A9` precedes the `Organic` read at `0x6FA8CE`.
+///
+/// `bl` is built at `0x006FA79A..0x006FA7B0` (`ebp` is zeroed at `0x006F9E58`):
+/// it is set when `Health >= Type+0xA0` (`0x006FA7A2`, `jl` past the set) or when
+/// `Health == 0` (`0x006FA7AC`), and either arm leaves before its heal block.
+fn house_heal_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, infantry: bool) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+        return;
+    };
+    let unit = entity.category == EntityCategory::Unit;
+    let admitted = if infantry {
+        entity.category == EntityCategory::Infantry || (unit && object.organic)
+    } else {
+        unit && !object.organic
+    };
+    if !admitted {
+        return;
+    }
+    let strength = object.strength;
+    let health = entity.health.current;
+    if health >= strength || health == 0 {
+        return;
+    }
+    let interval = if infantry {
+        rules.general.self_heal_infantry_frames
+    } else {
+        rules.general.self_heal_unit_frames
+    };
+    if interval == 0 || (sim.session.binary_frame as i32) % interval != 0 {
+        return;
+    }
+    let owner = entity.owner();
+    let count = sim.houses.get(&owner).map_or(0, |house| {
+        if infantry {
+            house.self_heal_infantry()
+        } else {
+            house.self_heal_units()
+        }
+    });
+    if count <= 0 {
+        return;
+    }
+    let amount = if infantry {
+        rules.general.self_heal_infantry_amount
+    } else {
+        rules.general.self_heal_unit_amount
+    };
+    let step = amount.wrapping_mul(count);
+    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+        return;
+    };
+    let missing = strength.wrapping_sub(entity.health.current);
+    let heal = if step < missing { step } else { missing };
+    entity.health.current = entity.health.current.wrapping_add(heal);
+    // Only the unit arm carries the damage-smoke tail before the cloak tick;
+    // the infantry arm rejoins the common flow at 0x006FA941.
+    if !infantry {
+        sim.retire_damage_smoke_after_self_heal(id, rules);
+    }
+}
+
 /// The self-heal pulse of `TechnoClass::AI_Update @ 0x006FA743..0x006FA757`:
 /// when the eligibility virtual (`vtable+0x294` → `FUN_0070BE80`) holds,
 /// `Health += 1` — a raw `INC` on `+0x6C`, no amount key.
@@ -1120,6 +1239,10 @@ fn techno_common_steps(
     overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> bool {
     iron_tint_step(sim, id);
+    // Techno6F9EBB follows the tint head and precedes veterancy/drain work.
+    // A queued voice probes its handle only when this actor really reaches
+    // this slot; recording final Logic membership would lose early exits.
+    sim.record_unit_voice_visit(id);
     veterancy_promotion_step(sim, id, rules);
     crate::sim::credit_income::drain_common_step(sim, id, rules);
     allied_target_drop_step(sim, id, rules);
@@ -1133,6 +1256,10 @@ fn techno_common_steps(
         return false;
     }
     self_heal_step(sim, id, rules);
+    // Techno6FA8D2..6FA93E: the house self-heal pulse follows the per-object
+    // one and precedes the door advance and the cloak tick (0x006FA946), so a
+    // same-frame house heal is visible to the cloak's health branch.
+    house_self_heal_step(sim, id, rules);
     //Techno6FA5BE..6FA5D6, before Mission AI: every Techno finishes its own
     //due Door transition here. Gate/Factory mission work observes this change
     //inside the same LogicVector visit; no global phase advances Door clocks.
@@ -1416,6 +1543,10 @@ pub(super) fn dying_infantry_techno_ai(
     rules: &RuleSet,
     ctx: ObjectAiCtx<'_>,
 ) {
+    // Infantry51BC9F -> Foot4DA539 still reaches Techno6F9EBB for ordinary
+    // Die1/Die2, before Foot's later alive test. This existing death-body
+    // owner must not add a health-zero voice filter.
+    sim.record_unit_voice_visit(id);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity
             .estimated_health
@@ -1501,51 +1632,6 @@ fn techno_common_pre(
         return;
     }
     super::techno_ai_cloak::tick_stock_cloak_producer(sim, id, rules, overlay_registry);
-    let Some(entity) = sim.substrate.entities.get(id) else {
-        return;
-    };
-    let Some(object_type) = rules.object(sim.interner.resolve(entity.type_ref())) else {
-        return;
-    };
-    if !object_type.disguise_when_still || entity.locomotor.is_none() {
-        return;
-    }
-    // `UnitClass::UpdateDisguise @ 0x007468C0` asks the locomotor's Is_Moving
-    // (ILocomotion+0x10 at `0x007468F4` and `0x0074693D`), not whether an
-    // order is pending. A locomotor without its runtime reads as still.
-    let is_moving = crate::sim::movement::motion_query::is_moving(entity) == Some(true);
-    if is_moving {
-        if let Some(disguise) = sim
-            .substrate
-            .entities
-            .get_mut(id)
-            .and_then(|e| e.disguise.as_mut())
-        {
-            disguise.clear_unit();
-        }
-        return;
-    }
-    let blocked_by_contact = !entity.radio_contacts.is_empty();
-    let reveal_blocking = entity
-        .disguise
-        .as_ref()
-        .is_some_and(|state| state.reveal_blocks(sim.session.binary_frame));
-    if blocked_by_contact || reveal_blocking || rules.general.default_mirage_disguises.is_empty() {
-        return;
-    }
-
-    // `UnitClass::UpdateDisguise @ 0x007468c0`: one RandomRanged draw on every
-    // eligible unblocked update; selection is independent of the 7/8 scan cadence.
-    let last = rules.general.default_mirage_disguises.len() as u32 - 1;
-    let index = sim.scenario_rng.next_range_u32_inclusive(0, last) as usize;
-    let disguise_type = sim
-        .interner
-        .intern(&rules.general.default_mirage_disguises[index]);
-    let owner = sim.substrate.entities.get(id).map(|e| e.owner());
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        let state = entity.disguise.get_or_insert_with(Default::default);
-        state.acquire(sim.session.binary_frame, Some(disguise_type), owner);
-    }
 }
 
 /// `damage_particle_live_until` sentinel for a spawned spark system whose
@@ -1844,6 +1930,119 @@ mod tests {
         entity.owner = sim.interner.intern("Americans");
         entity.type_ref = sim.interner.intern("TEST");
         sim.substrate.entities.insert(entity);
+    }
+
+    fn unit_voice_fixture() -> (Simulation, RuleSet) {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=TEST\n[TEST]\nStrength=100\n",
+        ))
+        .expect("supplied unarmed Infantry type");
+        let mut sim = Simulation::new();
+        for id in [3, 5, 7, 9] {
+            let mut entity = GameEntity::test_default_of_category(
+                id,
+                "TEST",
+                "Americans",
+                5,
+                5,
+                EntityCategory::Infantry,
+            );
+            // Supply placed, ordinary AI boundaries; id7 remains off Logic.
+            entity.lifecycle.in_limbo = false;
+            register_entity(&mut sim, entity);
+        }
+        sim.set_logic_order_for_test(vec![9, 5, 3]);
+        (sim, rules)
+    }
+
+    fn unit_voice_facts(sim: &Simulation) -> Vec<(u64, bool)> {
+        sim.sound_events
+            .iter()
+            .filter_map(|event| match event {
+                super::super::SimSoundEvent::UnitVoiceVisit { owner } => Some((*owner, false)),
+                super::super::SimSoundEvent::UnitVoiceDestroyed { owner } => Some((*owner, true)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn unit_voice_interest_follows_reached_logic_heads_without_sorted_or_unvisited_owners() {
+        let (mut sim, rules) = unit_voice_fixture();
+        sim.prepare_unit_voice_visits([3, 7, 9, 404].into());
+        // Taking the interest projection without an AI pass (including a
+        // paused app pass) cannot create a visit or consume any voice latch.
+        assert!(unit_voice_facts(&sim).is_empty());
+        sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
+        assert_eq!(unit_voice_facts(&sim), vec![(9, false), (3, false)]);
+
+        // No pending owners means no per-actor output for the whole live walk.
+        sim.sound_events.clear();
+        sim.prepare_unit_voice_visits(Default::default());
+        sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
+        assert!(unit_voice_facts(&sim).is_empty());
+    }
+
+    #[test]
+    fn unit_voice_dying_infantry_still_reaches_its_techno_head() {
+        let (mut sim, rules) = unit_voice_fixture();
+        sim.prepare_unit_voice_visits([9].into());
+        sim.substrate.entities.get_mut(9).unwrap().health.current = 0;
+        sim.begin_infantry_death_sequence(
+            9,
+            super::super::infantry_terminal::InfantryDeathSequence::Die1,
+            &rules,
+        );
+        sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
+        assert_eq!(unit_voice_facts(&sim), vec![(9, false)]);
+    }
+
+    #[test]
+    fn unit_voice_disposal_stays_ordered_after_visits_and_before_a_removed_owners_slot() {
+        let (mut sim, rules) = unit_voice_fixture();
+        sim.prepare_unit_voice_visits([3, 9].into());
+        // Ordinary UnInit removes id3 before its slot; the common physical
+        // destructor must still clear a pending, never-visited voice owner.
+        sim.uninit_with_rules(3, &rules);
+        sim.process_pending_delete_with(Some(&rules), None);
+        sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
+        sim.uninit_with_rules(9, &rules);
+        sim.process_pending_delete_with(Some(&rules), None);
+        assert_eq!(
+            unit_voice_facts(&sim),
+            vec![(3, true), (9, false), (9, true)]
+        );
+
+        // Repeating the drain cannot publish a second destructor marker.
+        sim.process_pending_delete_with(Some(&rules), None);
+        assert_eq!(
+            unit_voice_facts(&sim),
+            vec![(3, true), (9, false), (9, true)]
+        );
+    }
+
+    #[test]
+    fn unit_voice_interest_is_not_snapshot_or_hash_state_and_expires_after_a_frame() {
+        let mut sim = Simulation::new();
+        let baseline = GameSnapshot::save(&sim, 0, 0, "voice_interest", 0);
+        let hash = sim.state_hash();
+        sim.prepare_unit_voice_visits([3, 9].into());
+        assert_eq!(sim.state_hash(), hash);
+        assert_eq!(
+            GameSnapshot::save(&sim, 0, 0, "voice_interest", 0),
+            baseline
+        );
+        let mut restored = GameSnapshot::load(&baseline).expect("snapshot").sim;
+        restored.record_unit_voice_visit(3);
+        assert!(unit_voice_facts(&restored).is_empty());
+
+        sim.advance_app_frame(&[], None, None, 67, super::super::TickLane::Ordinary, None)
+            .expect("empty authoritative frame");
+        sim.record_unit_voice_visit(3);
+        assert!(
+            unit_voice_facts(&sim).is_empty(),
+            "no stale interest after a frame"
+        );
     }
 
     fn mission_test_fixture(mission: &MissionCom) -> MissionTestFixture {
@@ -7322,6 +7521,14 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
 #[cfg(test)]
 #[path = "techno_ai_veterancy_tests.rs"]
 mod veterancy_tests;
+
+#[cfg(test)]
+#[path = "techno_ai_selfheal_tests.rs"]
+mod selfheal_tests;
+
+#[cfg(test)]
+#[path = "techno_ai_selfheal_oracle_tests.rs"]
+mod selfheal_oracle_tests;
 
 #[path = "bounce_terrain.rs"]
 mod bounce_terrain;

@@ -1,7 +1,8 @@
 //! The successful normal Techno Select's voice tail, sharing the existing
 //! process Main RNG with terrain variants and the other sound producers.
 //!
-//! Native: TechnoSelect6FBFA0, VoiceSelect708EB0, QueueVoice708D90;
+//! Native: TechnoSelect6FBFA0, VoiceSelect708EB0, QueueMegaMission6FFBE0's
+//! default VoiceSpecialAttack6FFD42, and shared QueueVoice708D90;
 //! executed comparisons: tools/input_oracle/selection_navigation.json.
 //! Main886B88 is excluded from lockstep hashes and snapshot bytes. Fresh
 //! loading advances it before gameplay; in-scenario restore retains its live
@@ -9,9 +10,9 @@
 //!
 //! RESIDUAL: enslaved and offline Robot receivers choose type+430/+44C in
 //! VoiceSelect708EB0. Their lifecycle and separate voice lists remain outside
-//! this normal type+414 path. The older SFX/Theme presentation streams also
-//! remain separate from Main; full audio pump/device/queue continuation is a
-//! larger existing mechanism, so these comparisons do not claim its sequence.
+//! this normal type+414 path. The process audio service borrows this same Main
+//! continuation through Simulation's RNG capability; these selection controls
+//! alone do not establish its device/queue behavior.
 
 use super::Simulation;
 use crate::rules::ruleset::RuleSet;
@@ -42,15 +43,36 @@ impl Simulation {
             return None;
         }
         let object = rules.object(self.interner.resolve(entity.type_ref()))?;
-        self.normal_selection_voice(&object.voice_select, voices_enabled, human_player)
+        self.voice_request_from_list(&object.voice_select, voices_enabled, human_player)
     }
 
-    /// Reached normal VoiceSelect708EB0 consumes one raw Random65C780 draw
-    /// for every nonempty list, including a singleton, then unsigned modulo.
+    /// QueueMegaMission6FFCBD..6FFDA5's default voice arm, used by AreaGuard
+    /// and Sabotage. The enable latch gates the list before any Main draw;
+    /// QueueVoice's human-house gate follows the draw. Caller loops decide
+    /// whether to suppress later actors (click dispatch does, Guard key does
+    /// not). This request never changes the deterministic Scenario stream.
+    pub(crate) fn default_order_voice_request<'a>(
+        &mut self,
+        rules: &'a RuleSet,
+        entity_id: u64,
+        voices_enabled: bool,
+    ) -> Option<&'a str> {
+        if !voices_enabled {
+            return None;
+        }
+        let entity = self.entities().get(entity_id)?;
+        let human_player = self.house_is_human_player(entity.owner());
+        let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+        self.voice_request_from_list(&object.voice_special_attack, voices_enabled, human_player)
+    }
+
+    /// Reached VoiceSelect708EB0 and default command6FFD42 consume one raw
+    /// Random65C780 draw for every nonempty list, including a singleton,
+    /// then unsigned modulo.
     /// QueueVoice708D90 applies enable/House50B6F0/-1 rejection after the draw.
     /// Native ReadSoundList binding skips unresolved names, so its selected-ID
     /// -1 rejection is represented only by deliberately unbound test inputs.
-    fn normal_selection_voice<'a>(
+    fn voice_request_from_list<'a>(
         &mut self,
         voices: &'a [String],
         voices_enabled: bool,

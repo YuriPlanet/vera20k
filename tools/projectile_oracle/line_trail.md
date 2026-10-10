@@ -57,8 +57,13 @@ body clips XY via7BC2B0 and adjusts clipped endpoint Z using4C1B50
 (Sqrt_Approx4CAC40 then ftol). Its dominant axis may be depth: the steep control
 makes53 stores at49 pixels. Pixel order and repeated blending are observable.
 It narrows candidate Z to u16 before strict comparison with stored Z, reads
-u16 ABuffer, blends packed RGB565, and never writes depth. The42 individual pixel controls
+u16 ABuffer, blends packed RGB565, and never writes depth. The46 individual pixel controls
 cover geometry, clipping/origins, backgrounds, depth, A values and fade visits.
+Four mixed-A controls exercise X-, Y- and Z-dominant walks and a reversed,
+clipped line. LineTrail4BEAC0 and packed laser4BFD30 sample A at each raster
+pixel; additive laser4BDF00 retains the clipped start X and advances A only
+with Y. The shared geometry retains that starting coordinate for its additive
+consumer. Original laser pixels live in `spatial_oracle/building_prism.json`.
 The RGB565 surface, scene Z/A contents and camera are supplied boundaries;
 no full-scene lighting/visibility production or GPU parity is claimed here.
 
@@ -68,13 +73,15 @@ stream contains the old pointer token, but ObjectLoad5F5EED clears+A8 and never
 queues that field for swizzle. No ring is restored by this object path. The
 IStream transport is supplied; the whole game loader and post-load scene are
 not executed. The separate joined impact witness
-[`ifv_trail_impact`](ifv_trail_impact.md) reaches556B30 only from
-physical Bullet destruction at ObjectDtor5F3D56; UnInit/conceal keeps it attached.
+[`ifv_trail_impact`](ifv_trail_impact.md) reaches556B30 during admitted Bullet
+UnInit/Conceal through DetachAll5F528E. The later destructor sees the cleared
+owner slot. VERA's later deletion-time detach remains tracked in
+[#1257](https://github.com/YuriPlanet/vera20k/issues/1257).
 
 ## Coverage and implementation boundaries
 
 The corpus contains6 producer/ring/retirement sequences,14 reader controls,
-8 Options controls,42 complete pixel controls,2 save/load controls,4 RenderFrame
+8 Options controls,46 complete pixel controls,2 save/load controls,4 RenderFrame
 and4 Tactical pass controls, a reverse-registry case and retained-config/zeroXYZ
 case. Five additional complete native registry draws place1/8/128/512 trails
 on the same30pixels, with alternating copied colors; one uses A64. These

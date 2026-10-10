@@ -613,20 +613,18 @@ impl Default for MovementTarget {
 
 /// Persistent high-level order state that survives transient combat/movement components.
 ///
-/// This keeps intent like attack-move or guard alive while systems temporarily
+/// This keeps attack-move intent alive while systems temporarily
 /// add/remove `MovementTarget` and `AttackTarget`.
 ///
 /// Slice 6: the "is this unit busy?" signalling role moved to the `mission`
 /// substrate (`mission::verb::get_current_mission`/`is_busy`). What remains here
-/// is the data `MissionType` cannot encode — the AttackMove goal / Guard anchor
-/// coords. Retiring this enum entirely waits
+/// is the AttackMove goal. Area Guard uses its native mission and
+/// ArchiveTarget instead. Retiring this enum entirely waits
 /// on a goal field landing on the mission/nav substrate (a later slice).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OrderIntent {
     /// Move toward a destination but auto-acquire enemies along the way.
     AttackMove { goal_rx: u16, goal_ry: u16 },
-    /// Hold position and auto-acquire nearby enemies.
-    Guard { anchor_rx: u16, anchor_ry: u16 },
 }
 
 /// Which part of a multi-part voxel model an entity/atlas entry represents.

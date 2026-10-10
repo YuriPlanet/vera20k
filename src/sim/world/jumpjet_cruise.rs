@@ -350,6 +350,34 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         });
         runtime.phase()
     }
+    fn factory_contact_notify(&mut self, runtime: &mut JumpjetRuntime) {
+        //54BC59 reads Contacts[0];54BC6D..54BCA1 wants a Building of one of
+        // the four factory classes before the owner's Notify at54BCB3.
+        let Some(rules) = self.rules else {
+            return;
+        };
+        let factory_contact = self
+            .owner()
+            .radio_contacts
+            .slot(0)
+            .and_then(|contact| self.sim.substrate.entities.get(contact))
+            .filter(|contact| contact.category == EntityCategory::Structure)
+            .and_then(|contact| rules.object(self.sim.interner.resolve(contact.type_ref())))
+            .is_some_and(|contact| {
+                contact.weapons_factory
+                    || contact.gdi_barracks()
+                    || contact.nod_barracks()
+                    || contact.yuri_barracks()
+            });
+        if !factory_contact {
+            return;
+        }
+        let id = self.stable_id;
+        let registry = self.registry;
+        runtime.with_owner_call(self.sim, id, |sim| {
+            sim.jumpjet_lift_off_notify(id, rules, registry);
+        });
+    }
     fn cell_high_bridge_at(&self, cell: (i16, i16)) -> bool {
         self.terrain().is_some_and(|terrain| {
             terrain.native_cell_flags(terrain.native_cell_identity(cell)) & 0x100 != 0
@@ -452,6 +480,77 @@ fn jumpjet_locomotor(entity: &crate::sim::game_entity::GameEntity) -> bool {
 }
 
 impl Simulation {
+    /// `INotifyProc::Notify(0x117B)` of a `BalloonHover=` or `JumpJet=` owner
+    /// (Infantry `0x00522A60..0x00522AF4`, Unit `0x00746100..0x00746194`),
+    /// which Jumpjet State 1 raises while the owner climbs in contact with its
+    /// factory ([`JumpjetFlightHost::factory_contact_notify`]). In radio
+    /// contact (`0x0065AE30`: any live slot) the owner sends literal 8 through
+    /// `Contacts[0]`, so a barracks answers 25 and 3 and the tether ends. Then
+    /// an ArchiveTarget that is not already the NavCom becomes the destination
+    /// through the class setter (`vt+0x480(archive, 1)`); otherwise
+    /// `0x004DF0D0` clears the NavCom pair and the owner scatters from a null
+    /// coordinate with `(1, 0)`. Without a contact nothing runs.
+    ///
+    /// RESIDUAL: an object ArchiveTarget takes its cell here, not the object's
+    /// `+0x4C` coordinate the Foot setter reads. Dormant: a factory's rally
+    /// (`SetRally`) is always a cell.
+    pub(crate) fn jumpjet_lift_off_notify(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        use crate::sim::combat::TargetKind;
+        let Some(owner) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = rules.object(self.interner.resolve(owner.type_ref())) else {
+            return;
+        };
+        if !(object.balloon_hover || object.jumpjet) || owner.radio_contacts.is_empty() {
+            return;
+        }
+        crate::sim::radio::transmit_to_contact(
+            self,
+            id,
+            crate::sim::radio::RadioMessage::RequestClearance,
+            Some(rules),
+        );
+        let Some(owner) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let archive = owner.archive_target();
+        let nav_com = owner.navigation.nav_com.map(TargetKind::from);
+        if let Some(archive) = archive.filter(|archive| Some(*archive) != nav_com) {
+            let cell = match archive {
+                TargetKind::Cell(rx, ry) => Some((rx, ry)),
+                TargetKind::Entity(target) => self
+                    .substrate
+                    .entities
+                    .get(target)
+                    .map(|target| (target.position.rx, target.position.ry)),
+            };
+            let Some(cell) = cell else {
+                return;
+            };
+            // Native does not read the setter's answer.
+            let speed = self.jumpjet_order_speed(id, Some(rules));
+            self.jumpjet_cell_destination(id, cell, speed, Some(rules));
+            return;
+        }
+        if let Some(owner) = self.substrate.entities.get_mut(id) {
+            crate::sim::movement::foot_stop_moving(owner);
+        }
+        if let Err(cause) = self.scatter_null(
+            id,
+            crate::sim::movement::ScatterFlags::new(true, false),
+            rules,
+            registry,
+        ) {
+            log::debug!("Jumpjet {id} lift-off scatter: {cause}");
+        }
+    }
+
     /// Process54AEC0 through the one private instance and live owner callbacks.
     pub(crate) fn tick_jumpjet_cruise_one(
         &mut self,

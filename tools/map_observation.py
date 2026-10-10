@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import math
+import struct
 from pathlib import Path
 import sys
 from typing import Any, Mapping
@@ -52,7 +53,11 @@ OBSERVATION_POLICY = 'map-ordinary-command-observation-v4'
 GESTURE_POLICY = 'map-tactical-left-gesture-v1'
 SIDEBAR_GESTURE_POLICY = 'map-local-left-gesture-v2'
 KEYBOARD_GESTURE_POLICY = 'map-local-gesture-v3'
+COMMAND_BAR_GESTURE_POLICY = 'map-local-gesture-v4'
 SIDEBAR_POLICY = 'map-retained-sidebar-observation-v1'
+AUDIO_POLICY = 'map-device-pulled-player-pcm-v2'
+PRIOR_AUDIO_POLICY = 'map-device-pulled-player-pcm-v1'
+LOAD_SEGMENT_POLICY = 'map-literal-quickload-clock-segments-v1'
 SIDEBAR_TABS = ('building', 'defense', 'infantry', 'vehicle')
 DOCKING_OBSERVATION_POLICY = 'map-ordinary-command-observation-v3'
 BUILDING_OBSERVATION_POLICY = 'map-ordinary-command-observation-v2'
@@ -68,6 +73,8 @@ ORDER_VARIANTS = frozenset(('Select', 'Move', 'Stop', 'Attack', 'ForceAttack', '
 PRODUCTION_VARIANTS = frozenset(('QueueProduction', 'PlaceReadyBuilding'))
 EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe_types',
                               'observe_projectiles', 'observe_anim_types', 'observe_action_line_inputs',
+                              'observe_disguise_inputs', 'observe_lasers',
+                              'observe_audio', 'allow_load_segments',
                               'camera_cell', 'cursor_position', 'terrain_cells',
                               'observe_super_weapons', 'observe_sidebar_steps'))
 ASCII_UPPER = str.maketrans('abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')
@@ -185,7 +192,7 @@ def _unit_atlas(value: Any) -> dict[str, Any]:
     return dict(atlas)
 
 
-def _presentation_clock(value: Any, ticks: int) -> dict[str, Any]:
+def _presentation_clock(value: Any, ticks: int, segments=None) -> dict[str, Any]:
     """Validate the versioned diagnostic transcript, not native wall cadence."""
     label = 'render.presentation_clock'
     clock = require_object(value, label)
@@ -200,12 +207,16 @@ def _presentation_clock(value: Any, ticks: int) -> dict[str, Any]:
     for index, value in enumerate(draws):
         row_label = f'{label}.draws[{index}]'
         row = require_object(value, row_label)
-        require_exact_keys(row, ('completed_steps', 'radar_ms', 'tooltip_ms', 'message_ms'),
+        require_exact_keys(row, ('completed_steps', 'radar_ms', 'tooltip_ms', 'message_ms',
+                                *(('simulation_tick',) if segments is not None else ())),
                            row_label)
         step = index + 1 if ticks else 0
         require_value(row.get('completed_steps'), step, f'{row_label}.completed_steps')
+        tick, _ = _segment_clock(step, segments or [])
+        if segments is not None:
+            require_value(row['simulation_tick'], tick, f'{row_label}.simulation_tick')
         for key in ('radar_ms', 'tooltip_ms', 'message_ms'):
-            require_value(row.get(key), step * 22, f'{row_label}.{key}')
+            require_value(row.get(key), tick * 22, f'{row_label}.{key}')
     return dict(clock)
 
 
@@ -249,10 +260,22 @@ def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
         if start == end:
             raise ValidationError(f'{label} drag endpoints must differ')
     elif gesture.get('kind') == 'key':
-        require_exact_keys(gesture, ('kind', 'key'), label)
+        require_exact_keys(gesture, ('kind', 'key', *(('modifiers',) if 'modifiers' in gesture else ())), label)
         key = require_string(gesture['key'], f'{label}.key')
         if key != 'Escape' and not (len(key) == 1 and key.isascii() and key.isalnum()):
             raise ValidationError(f'{label}.key must be one ASCII letter/digit or Escape')
+        if 'modifiers' in gesture:
+            modifiers = require_array(gesture['modifiers'], f'{label}.modifiers')
+            if (len(modifiers) > 4 or any(type(value) is not str or value not in ('Ctrl', 'Shift', 'Alt', 'Super')
+                                          for value in modifiers) or len(set(modifiers)) != len(modifiers)):
+                raise ValidationError(f'{label}.modifiers must be unique literal Ctrl/Shift/Alt/Super keys')
+    elif gesture.get('kind') == 'command_bar':
+        require_exact_keys(gesture, ('kind', 'command'), label)
+        command = require_string(gesture['command'], f'{label}.command')
+        if not command.isascii() or not 1 <= len(command) <= 128:
+            raise ValidationError(f'{label}.command must be a bounded nonempty ASCII identity')
+        # Rust resolves the name from the existing command-bar registry. The
+        # wrapper neither maintains another registry nor maps names to actions.
     elif gesture.get('kind') == 'sidebar':
         require_exact_keys(gesture, ('kind', 'target'), label)
         target = require_object(gesture['target'], f'{label}.target')
@@ -270,7 +293,7 @@ def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
         else:
             raise ValidationError(f'{label}.target.kind must be tab, cameo, scroll_up, scroll_down, repair or sell')
     else:
-        raise ValidationError(f'{label}.kind must be click, drag, sidebar or key')
+        raise ValidationError(f'{label}.kind must be click, drag, sidebar, command_bar or key')
 
 
 def _observes_local_input(profile: Mapping[str, Any]) -> bool:
@@ -278,6 +301,8 @@ def _observes_local_input(profile: Mapping[str, Any]) -> bool:
 
 
 def _gesture_policy(profile: Mapping[str, Any]) -> str:
+    if any(row['gesture']['kind'] == 'command_bar' for row in profile.get('gestures', [])):
+        return COMMAND_BAR_GESTURE_POLICY
     if _observes_local_input(profile):
         return KEYBOARD_GESTURE_POLICY
     return (SIDEBAR_GESTURE_POLICY if any(row['gesture']['kind'] == 'sidebar'
@@ -295,6 +320,18 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
     if not required <= profile.keys() or profile.keys() - allowed:
         raise ValidationError('profile fields differ from its declared schema_version')
     ticks = _bounded_int(profile.get('ticks'), 'profile.ticks', 0, 100_000)
+    if 'observe_audio' in profile:
+        audio = require_object(profile['observe_audio'], 'profile.observe_audio')
+        require_exact_keys(audio, ('sound_ids', 'max_events', 'max_samples_per_event', 'completion_tail_ms'),
+                           'profile.observe_audio')
+        ids = require_array(audio['sound_ids'], 'profile.observe_audio.sound_ids')
+        if (not 1 <= len(ids) <= 16 or any(type(value) is not str or not value.isascii() or not 1 <= len(value) <= 128
+                                           for value in ids) or len({value.upper() for value in ids}) != len(ids)):
+            raise ValidationError('profile.observe_audio.sound_ids must contain 1..16 unique bounded ASCII IDs')
+        for key, maximum in (('max_events', 16), ('max_samples_per_event', 262144), ('completion_tail_ms', 10000)):
+            _bounded_int(audio[key], f'profile.observe_audio.{key}', 1, maximum)
+    if 'allow_load_segments' in profile and type(profile['allow_load_segments']) is not bool:
+        raise ValidationError('profile.allow_load_segments must be a boolean')
     commands = require_array(profile.get('commands', []), 'profile.commands')
     if len(commands) > 1024:
         raise ValidationError('profile.commands exceeds 1024 rows')
@@ -337,6 +374,8 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
                 raise ValidationError(f'{label}.issue_after_step must be ordered before the final step')
             previous = step
             _gesture(row['gesture'], f'{label}.gesture', extent)
+            if _is_quickload(row['gesture']) and not profile.get('allow_load_segments', False):
+                raise ValidationError('literal quickload requires allow_load_segments')
     if 'observe_sidebar_steps' in profile:
         steps = require_array(profile['observe_sidebar_steps'], 'profile.observe_sidebar_steps')
         if len(steps) > 1024:
@@ -382,6 +421,10 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
         _coordinate(profile['camera_cell'], 'profile.camera_cell')
     if 'observe_action_line_inputs' in profile and type(profile['observe_action_line_inputs']) is not bool:
         raise ValidationError('profile.observe_action_line_inputs must be a boolean')
+    if 'observe_disguise_inputs' in profile and type(profile['observe_disguise_inputs']) is not bool:
+        raise ValidationError('profile.observe_disguise_inputs must be a boolean')
+    if 'observe_lasers' in profile and type(profile['observe_lasers']) is not bool:
+        raise ValidationError('profile.observe_lasers must be a boolean')
     if 'observe_super_weapons' in profile and type(profile['observe_super_weapons']) is not bool:
         raise ValidationError('profile.observe_super_weapons must be a boolean')
     if 'cursor_position' in profile:
@@ -746,9 +789,100 @@ def _cloak(value: Any, label: str) -> None:
             raise ValidationError(f'{label}.{key} must be a boolean')
 
 
+def _disguise_inputs(value: Any, category: str, label: str) -> None:
+    if value is None:
+        return
+    row = require_object(value, label)
+    require_exact_keys(row, ('active', 'creation_frame', 'type_id', 'house',
+                             'reveal_start', 'reveal_duration', 'draw'), label)
+    if type(row['active']) is not bool:
+        raise ValidationError(f'{label}.active must be a boolean')
+    _bounded_int(row['creation_frame'], f'{label}.creation_frame', 0, (1 << 32) - 1)
+    for key in ('reveal_start', 'reveal_duration'):
+        _bounded_int(row[key], f'{label}.{key}', -(1 << 31), (1 << 31) - 1)
+    for key in ('type_id', 'house'):
+        if row[key] is not None and not require_string(row[key], f'{label}.{key}'):
+            raise ValidationError(f'{label}.{key} must be nonempty or null')
+    if category != 'Unit':
+        require_value(row['draw'], None, f'{label}.draw')
+        return
+    draw = require_object(row['draw'], f'{label}.draw')
+    require_exact_keys(draw, ('type_id', 'voxel', 'shp_frame', 'terrain_pair_available',
+                             'draw_state_visible', 'native_selector_bits'), f'{label}.draw')
+    if not require_string(draw['type_id'], f'{label}.draw.type_id'):
+        raise ValidationError(f'{label}.draw.type_id must be nonempty')
+    for key in ('voxel', 'terrain_pair_available', 'draw_state_visible'):
+        if type(draw[key]) is not bool:
+            raise ValidationError(f'{label}.draw.{key} must be a boolean')
+    if draw['shp_frame'] is not None:
+        _bounded_int(draw['shp_frame'], f'{label}.draw.shp_frame', 0, 65535)
+    _bounded_int(draw['native_selector_bits'], f'{label}.draw.native_selector_bits', 0, 14)
+
+
+def _prism(value: Any, category: str, label: str) -> None:
+    if category != 'Structure':
+        require_value(value, None, label)
+        return
+    row = require_object(value, label)
+    require_exact_keys(row, ('support_count', 'pending', 'rearm'), label)
+    _bounded_int(row['support_count'], f'{label}.support_count', -(1 << 31), (1 << 31) - 1)
+    rearm = require_object(row['rearm'], f'{label}.rearm')
+    require_exact_keys(rearm, ('start', 'duration', 'remaining'), f'{label}.rearm')
+    for key in rearm:
+        _bounded_int(rearm[key], f'{label}.rearm.{key}', -(1 << 31), (1 << 31) - 1)
+    if row['pending'] is not None:
+        pending = require_object(row['pending'], f'{label}.pending')
+        require_exact_keys(pending, ('mode', 'payload', 'remaining'), f'{label}.pending')
+        mode = _bounded_int(pending['mode'], f'{label}.pending.mode', 1, 2)
+        _bounded_int(pending['remaining'], f'{label}.pending.remaining', -(1 << 31), (1 << 31) - 1)
+        payload = require_object(pending['payload'], f'{label}.pending.payload')
+        require_exact_keys(payload, ('weapon',) if mode == 1 else ('to',), f'{label}.pending.payload')
+        if mode == 1:
+            if payload['weapon'] not in ('Primary', 'Secondary'):
+                raise ValidationError(f'{label}.pending.payload.weapon is unknown')
+        else:
+            _coordinate(payload['to'], f'{label}.pending.payload.to', leptons=True)
+
+
+def _lasers(value: Any, label: str) -> int:
+    snapshot = require_object(value, label)
+    require_exact_keys(snapshot, ('detail', 'live'), label)
+    detail = require_object(snapshot['detail'], f'{label}.detail')
+    require_exact_keys(detail, ('frame_rate', 'minimum', 'buffer', 'reduced', 'logic_visits',
+                                'sample_start', 'sample_duration', 'initialized'), f'{label}.detail')
+    for key in ('frame_rate', 'minimum', 'buffer', 'logic_visits'):
+        _bounded_int(detail[key], f'{label}.detail.{key}', 0, (1 << 32) - 1)
+    for key in ('sample_start', 'sample_duration'):
+        _bounded_int(detail[key], f'{label}.detail.{key}', -(1 << 31), (1 << 31) - 1)
+    for key in ('reduced', 'initialized'):
+        if type(detail[key]) is not bool:
+            raise ValidationError(f'{label}.detail.{key} must be a boolean')
+    live = require_array(snapshot['live'], f'{label}.live')
+    for index, value in enumerate(live):
+        beam_label = f'{label}.live[{index}]'
+        beam = require_object(value, beam_label)
+        require_exact_keys(beam, ('birth_frame', 'from', 'to', 'z_adjust', 'width', 'supported',
+                                 'house_color', 'rgb', 'duration', 'age', 'timer_start',
+                                 'timer_duration'), beam_label)
+        for key in ('birth_frame', 'z_adjust', 'width', 'duration', 'age', 'timer_start', 'timer_duration'):
+            _bounded_int(beam[key], f'{beam_label}.{key}', -(1 << 31), (1 << 31) - 1)
+        for key in ('from', 'to'):
+            _coordinate(beam[key], f'{beam_label}.{key}', leptons=True)
+        for key in ('supported', 'house_color'):
+            if type(beam[key]) is not bool:
+                raise ValidationError(f'{beam_label}.{key} must be a boolean')
+        rgb = require_array(beam['rgb'], f'{beam_label}.rgb')
+        if len(rgb) != 3:
+            raise ValidationError(f'{beam_label}.rgb must contain three channels')
+        for channel, value in enumerate(rgb):
+            _bounded_int(value, f'{beam_label}.rgb[{channel}]', 0, 255)
+    return 1 + len(live)
+
+
 def _actor(value: Any, label: str, *, building_state: bool = True,
            docking_state: bool = True, walk_state: bool = True,
-           action_line_inputs: bool = False) -> tuple[int, str]:
+           action_line_inputs: bool = False, disguise_inputs: bool = False,
+           lasers: bool = False) -> tuple[int, str]:
     actor = require_object(value, label)
     require_exact_keys(actor, ('stable_id', 'owner', 'type_id', 'category', 'cell',
                               'physical_leptons', 'on_bridge', 'health', 'active',
@@ -757,7 +891,10 @@ def _actor(value: Any, label: str, *, building_state: bool = True,
                               *(('unit',) if 'unit' in actor else ()),
                               *(('jumpjet',) if 'jumpjet' in actor else ()),
                               *(('cloak',) if 'cloak' in actor else ()),
+                              *(('retask',) if 'retask' in actor else ()),
                               *(('action_line_inputs',) if action_line_inputs else ()),
+                              *(('disguise_inputs',) if disguise_inputs else ()),
+                              *(('prism',) if lasers else ()),
                               *(('miner', 'radio') if docking_state else ())), label)
     identity = _bounded_int(actor['stable_id'], f'{label}.stable_id', 1, (1 << 64) - 1)
     owner = require_string(actor['owner'], f'{label}.owner')
@@ -768,6 +905,10 @@ def _actor(value: Any, label: str, *, building_state: bool = True,
         raise ValidationError(f'{label}.category is unknown')
     if action_line_inputs:
         _action_line_inputs(actor['action_line_inputs'], category, f'{label}.action_line_inputs')
+    if disguise_inputs:
+        _disguise_inputs(actor['disguise_inputs'], category, f'{label}.disguise_inputs')
+    if lasers:
+        _prism(actor['prism'], category, f'{label}.prism')
     if docking_state:
         _docking_state(actor, label)
     if building_state:
@@ -805,6 +946,13 @@ def _actor(value: Any, label: str, *, building_state: bool = True,
         _bounded_int(timer[key], f'{label}.mission.dispatch_timer.{key}', -(1 << 31), (1 << 31) - 1)
     for key in ('target', 'archive', 'nav'):
         _target_reference(actor[key], f'{label}.{key}', navigation=key == 'nav')
+    if 'retask' in actor:
+        # Historical receipts omit this projection. Absence is not a claim
+        # that either existing suspended-reference owner was empty.
+        retask = require_object(actor['retask'], f'{label}.retask')
+        require_exact_keys(retask, ('suspended_target', 'suspended_nav'), f'{label}.retask')
+        _target_reference(retask['suspended_target'], f'{label}.retask.suspended_target')
+        _target_reference(retask['suspended_nav'], f'{label}.retask.suspended_nav', navigation=True)
     foot = actor['foot']
     if category == 'Structure':
         require_value(foot, None, f'{label}.foot')
@@ -1118,7 +1266,213 @@ def _sidebar_frames(value: Any, profile: Mapping[str, Any]) -> int:
     return count
 
 
-def _gesture_observations(value: Any, profile: Mapping[str, Any]) -> int:
+def _command_bar_gesture(value: Any, command: str, label: str, extent: tuple[int, int]) -> int:
+    receipt = require_object(value, label)
+    require_exact_keys(receipt, ('command', 'slot', 'gadget_id', 'rect', 'resolved_position'), label)
+    require_value(receipt['command'], command, f'{label}.command')
+    _bounded_int(receipt['slot'], f'{label}.slot', 0, extent[0] - 1)
+    _bounded_int(receipt['gadget_id'], f'{label}.gadget_id', 1, (1 << 16) - 1)
+    rect = require_array(receipt['rect'], f'{label}.rect')
+    if (len(rect) != 4 or any(type(part) not in (int, float) or not math.isfinite(part) for part in rect)
+            or rect[2] <= 0 or rect[3] <= 0):
+        raise ValidationError(f'{label}.rect must have a finite positive hit area')
+    center = [rect[0] + rect[2] / 2, rect[1] + rect[3] / 2]
+    if not all(math.isfinite(value) for value in center):
+        raise ValidationError(f'{label}.rect has a nonfinite center')
+    expected = [math.floor(value) for value in center]
+    _screen_point(receipt['resolved_position'], f'{label}.resolved_position', extent)
+    _require_equal(receipt['resolved_position'], expected, f'{label}.resolved_position')
+    return 1
+
+
+def _is_quickload(gesture: Mapping[str, Any]) -> bool:
+    return (gesture.get('kind') == 'key' and gesture.get('key', '').upper() == 'N'
+            and set(gesture.get('modifiers', [])) == {'Ctrl', 'Shift'})
+
+
+def _segment_clock(step: int, segments: list, *, after_inputs=False, gesture_ordinal=None) -> tuple[int, int]:
+    for segment in reversed(segments):
+        if (segment['after_step'] < step or (segment['after_step'] == step and after_inputs
+                and (gesture_ordinal is None or segment['gesture_ordinal'] < gesture_ordinal))):
+            delta = step - segment['after_step']
+            return (segment['after']['simulation_tick'] + delta,
+                    (segment['after']['binary_frame'] + delta) & 0xffffffff)
+    return step, step
+
+
+def _sound_state(value: Any, label: str) -> int:
+    state = require_object(value, label)
+    require_exact_keys(state, ('main_rng_cursor', 'scenario_rng_cursor', 'actors'), label)
+    for key in ('main_rng_cursor', 'scenario_rng_cursor'):
+        cursor = require_array(state[key], f'{label}.{key}')
+        if len(cursor) != 2:
+            raise ValidationError(f'{label}.{key} must contain two indices')
+        for index in cursor:
+            _bounded_int(index, f'{label}.{key}', 0, 249)
+    actors = require_array(state['actors'], f'{label}.actors')
+    previous = 0
+    for actor in actors:
+        row = require_object(actor, f'{label}.actors[]')
+        require_exact_keys(row, ('stable_id', 'body_counter', 'active', 'countdown'), f'{label}.actors[]')
+        previous = _bounded_int(row['stable_id'], f'{label}.stable_id', previous + 1, (1 << 64) - 1)
+        _bounded_int(row['body_counter'], f'{label}.body_counter', -(1 << 31), (1 << 32) - 1)
+        _bounded_int(row['countdown'], f'{label}.countdown', -(1 << 31), (1 << 31) - 1)
+        if type(row['active']) is not bool:
+            raise ValidationError(f'{label}.active must be a boolean')
+    return len(actors) + 2
+
+
+def _load_segments(value: Any, profile: Mapping[str, Any]) -> list:
+    if not profile.get('allow_load_segments', False):
+        if value is not None:
+            raise ValidationError('load segment receipt was not requested')
+        return []
+    label = 'observations.load_segments'
+    receipt = require_object(value, label)
+    require_exact_keys(receipt, ('policy', 'transitions'), label)
+    require_value(receipt['policy'], LOAD_SEGMENT_POLICY, f'{label}.policy')
+    transitions = require_array(receipt['transitions'], f'{label}.transitions')
+    requests = [(index, row) for index, row in enumerate(profile.get('gestures', [])) if _is_quickload(row['gesture'])]
+    if len(transitions) != len(requests) or len(transitions) > 16:
+        raise ValidationError('load transitions must match the requested quickload gestures (maximum 16)')
+    previous = []
+    for index, (value, (ordinal, request)) in enumerate(zip(transitions, requests)):
+        row_label = f'{label}.transitions[{index}]'
+        row = require_object(value, row_label)
+        require_exact_keys(row, ('after_step', 'gesture_ordinal', 'before', 'after',
+                                 *(('restored_audio_state',) if 'observe_audio' in profile else ())), row_label)
+        require_value(row['after_step'], request['issue_after_step'], f'{row_label}.after_step')
+        require_value(row['gesture_ordinal'], ordinal, f'{row_label}.gesture_ordinal')
+        for key in ('before', 'after'):
+            clock = require_object(row[key], f'{row_label}.{key}')
+            require_exact_keys(clock, ('simulation_tick', 'binary_frame', 'total_simulation_ms'), f'{row_label}.{key}')
+            for field in clock:
+                _bounded_int(clock[field], f'{row_label}.{key}.{field}', 0, (1 << (32 if field == 'binary_frame' else 64)) - 1)
+        expected = _segment_clock(row['after_step'], previous, after_inputs=True)
+        for field, number in zip(('simulation_tick', 'binary_frame'), expected):
+            require_value(row['before'][field], number, f'{row_label}.before.{field}')
+        if any(row['after'][key] >= row['before'][key] for key in row['before']):
+            raise ValidationError(f'{row_label} must retain an actual restored earlier clock')
+        if 'observe_audio' in profile:
+            _sound_state(row['restored_audio_state'], f'{row_label}.restored_audio_state')
+        previous.append(row)
+    return list(transitions)
+
+
+def _audio_action(value: Any, label: str, profile: Mapping[str, Any], kinds: tuple[str, ...], earliest_ms: int) -> int:
+    action = require_object(value, label)
+    require_exact_keys(action, ('kind', 'service_ms', 'context'), label)
+    if action['kind'] not in kinds:
+        raise ValidationError('unknown audio action')
+    milliseconds = _bounded_int(action['service_ms'], f'{label}.service_ms', earliest_ms, (1 << 64) - 1)
+    context = require_object(action['context'], f'{label}.context')
+    require_exact_keys(context, ('completed_steps', 'simulation_tick', 'binary_frame'), f'{label}.context')
+    for key in context:
+        _bounded_int(context[key], f'{label}.context.{key}', 0, profile['ticks'])
+    return milliseconds
+
+
+def _audio_observation(value: Any, profile: Mapping[str, Any]) -> None:
+    label = 'observations.audio'
+    audio = require_object(value, label)
+    if audio.get('policy') not in (AUDIO_POLICY, PRIOR_AUDIO_POLICY):
+        raise ValidationError('unknown audio observation policy')
+    voices = audio['policy'] == AUDIO_POLICY
+    require_exact_keys(audio, ('policy', 'point', 'completion_tail_ms', 'tail_draw_count',
+                               'settled', 'truncated', 'outputs', *(('voice_actions',) if voices else ())), label)
+    for key, expected in (('point', 'post_player_pre_device_mixer'),
+                          ('settled', True), ('truncated', False)):
+        require_value(audio[key], expected, f'{label}.{key}')
+    _bounded_int(audio['completion_tail_ms'], f'{label}.completion_tail_ms', 0, profile['timeout_seconds'] * 1000)
+    _bounded_int(audio['tail_draw_count'], f'{label}.tail_draw_count', 0, (1 << 32) - 1)
+    config = profile['observe_audio']
+    outputs = require_array(audio['outputs'], f'{label}.outputs')
+    if len(outputs) > config['max_events']:
+        raise ValidationError('audio event count exceeds requested bound')
+    for index, value in enumerate(outputs):
+        row_label = f'{label}.outputs[{index}]'
+        row = require_object(value, row_label)
+        require_exact_keys(row, ('submission', 'event', 'owner', 'sound_id', 'resolved_samples', 'source_sample_count', 'source_ended', 'actions', 'pcm', *(('owner_role',) if voices else ())), row_label)
+        require_value(row['submission'], index, f'{row_label}.submission')
+        require_value(row['source_ended'], True, f'{row_label}.source_ended')
+        _bounded_int(row['event'], f'{row_label}.event', 0, (1 << 32) - 1)
+        if row['owner'] is not None:
+            _bounded_int(row['owner'], f'{row_label}.owner', 1, (1 << 64) - 1)
+        if voices and (row['owner_role'] not in (None, 'positional', 'unit_voice')
+                       or (row['owner_role'] is None) != (row['owner'] is None)):
+            raise ValidationError('audio owner role differs from its typed owner')
+        if require_string(row['sound_id'], f'{row_label}.sound_id').upper() not in {name.upper() for name in config['sound_ids']}:
+            raise ValidationError('audio output is outside requested sound filter')
+        names = require_array(row['resolved_samples'], f'{row_label}.resolved_samples')
+        if len(names) > 128 or any(type(name) is not str or not name or len(name) > 128 for name in names):
+            raise ValidationError('audio sample identities exceed bounds')
+        _bounded_int(row['source_sample_count'], f'{row_label}.source_sample_count', 0, (1 << 64) - 1)
+        actions = require_array(row['actions'], f'{row_label}.actions')
+        if (not 2 <= len(actions) <= 64
+                or require_object(actions[0], 'first audio action').get('kind') != 'submitted'
+                or require_object(actions[-1], 'last audio action').get('kind') not in ('stopped', 'completed')):
+            raise ValidationError('audio output requires bounded submission and terminal actions')
+        previous_ms = 0
+        for ordinal, action in enumerate(actions):
+            previous_ms = _audio_action(action, f'{row_label}.actions[]', profile,
+                ('submitted', 'started', 'release', 'detach', 'stopped', 'completed'), previous_ms)
+            if ordinal < len(actions) - 1 and action['kind'] in ('stopped', 'completed'):
+                raise ValidationError('audio output continued after terminal action')
+        pcm = require_object(row['pcm'], f'{row_label}.pcm')
+        require_exact_keys(pcm, ('encoding', 'sample_count', 'finite_count', 'nonzero_count', 'formats', 'sha256', 'hex', 'truncated'), f'{row_label}.pcm')
+        require_value(pcm['encoding'], 'f32le', f'{row_label}.pcm.encoding')
+        require_value(pcm['truncated'], False, f'{row_label}.pcm.truncated')
+        count = _bounded_int(pcm['sample_count'], f'{row_label}.pcm.sample_count', 0, config['max_samples_per_event'])
+        hex_value = require_string(pcm['hex'], f'{row_label}.pcm.hex')
+        if len(hex_value) != count * 8 or any(char not in '0123456789abcdef' for char in hex_value):
+            raise ValidationError('PCM hex length/encoding differs from its bounded sample count')
+        payload = bytes.fromhex(hex_value)
+        require_value(pcm['sha256'], sha256_bytes(payload), f'{row_label}.pcm.sha256')
+        samples = [sample[0] for sample in struct.iter_unpack('<f', payload)]
+        require_value(pcm['finite_count'], sum(math.isfinite(sample) for sample in samples), f'{row_label}.pcm.finite_count')
+        require_value(pcm['nonzero_count'], sum(sample != 0 for sample in samples), f'{row_label}.pcm.nonzero_count')
+        formats = require_array(pcm['formats'], f'{row_label}.pcm.formats')
+        if len(formats) > 64 or bool(formats) != bool(count):
+            raise ValidationError('PCM format spans do not cover the retained samples')
+        previous_start = -1
+        for format_index, span in enumerate(formats):
+            require_exact_keys(require_object(span, 'PCM format'), ('first_sample', 'channels', 'sample_rate'), 'PCM format')
+            previous_start = _bounded_int(span['first_sample'], 'PCM first_sample', previous_start + 1, count - 1)
+            if format_index == 0:
+                require_value(span['first_sample'], 0, 'PCM first format')
+            _bounded_int(span['channels'], 'PCM channels', 1, 65535)
+            _bounded_int(span['sample_rate'], 'PCM sample_rate', 1, (1 << 32) - 1)
+    if voices:
+        actions = require_array(audio['voice_actions'], f'{label}.voice_actions')
+        if len(actions) > config['max_events'] * 64:
+            raise ValidationError('voice action count exceeds requested bound')
+        previous_ms = 0
+        for ordinal, value in enumerate(actions):
+            row_label = f'{label}.voice_actions[{ordinal}]'
+            row = require_object(value, row_label)
+            require_exact_keys(row, ('owner', 'action', 'before', 'after', 'live_event_before', 'submitted_event'), row_label)
+            _bounded_int(row['owner'], f'{row_label}.owner', 1, (1 << 64) - 1)
+            previous_ms = _audio_action(row['action'], f'{row_label}.action', profile,
+                ('queued', 'reached_head', 'destroyed'), previous_ms)
+            for key in ('live_event_before', 'submitted_event'):
+                if row[key] is not None:
+                    _bounded_int(row[key], f'{row_label}.{key}', 0, (1 << 32) - 1)
+                    require_value(row['action']['kind'], 'reached_head', f'{row_label}.action.kind')
+            names = []
+            for phase in ('before', 'after'):
+                state = require_object(row[phase], f'{row_label}.{phase}')
+                require_exact_keys(state, ('pending', 'playing'), f'{row_label}.{phase}')
+                for key, name in state.items():
+                    if name is not None:
+                        require_string(name, f'{row_label}.{phase}.{key}')
+                        if not name or len(name) > 128 or not name.isascii():
+                            raise ValidationError('voice latch identity exceeds bounds')
+                        names.append(name.upper())
+            if not set(names).intersection(name.upper() for name in config['sound_ids']):
+                raise ValidationError('voice action is outside requested sound filter')
+
+
+def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -> int:
     label = 'observations.gesture_input'
     observation = require_object(value, label)
     local_input = _observes_local_input(profile)
@@ -1155,15 +1509,17 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any]) -> int:
         row = require_object(value, row_label)
         sidebar = request['gesture']['kind'] == 'sidebar'
         keyboard = request['gesture']['kind'] == 'key'
+        command_bar = request['gesture']['kind'] == 'command_bar'
         require_exact_keys(row, ('ordinal', 'issue_after_step', 'issued_simulation_tick',
                                  'issued_binary_frame', 'gesture', 'before', 'after',
                                  'left_press_captured', 'band_box_before_release',
                                  'neutral_input_restored', 'queued_commands',
                                  *(('sidebar',) if sidebar else ()),
+                                 *(('command_bar',) if command_bar else ()),
                                  *(('keyboard',) if keyboard else ())), row_label)
+        tick, frame = _segment_clock(request['issue_after_step'], segments, after_inputs=True, gesture_ordinal=index)
         for key, expected in (('ordinal', index), ('issue_after_step', request['issue_after_step']),
-                              ('issued_simulation_tick', request['issue_after_step']),
-                              ('issued_binary_frame', request['issue_after_step'])):
+                              ('issued_simulation_tick', tick), ('issued_binary_frame', frame)):
             require_value(row[key], expected, f'{row_label}.{key}')
         _require_equal(row['gesture'], request['gesture'], f'{row_label}.gesture')
         _gesture(row['gesture'], f'{row_label}.gesture', extent)
@@ -1175,6 +1531,9 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any]) -> int:
         if sidebar:
             sample_count += _sidebar_gesture(row['sidebar'], request['gesture']['target'],
                 f'{row_label}.sidebar', (profile['width'], profile['height']))
+        if command_bar:
+            sample_count += _command_bar_gesture(row['command_bar'], request['gesture']['command'],
+                f'{row_label}.command_bar', (profile['width'], profile['height']))
         if keyboard:
             key_label = f'{row_label}.keyboard'
             receipt = require_object(row['keyboard'], key_label)
@@ -1196,7 +1555,7 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any]) -> int:
             require_exact_keys(command, ('owner', 'execute_tick', 'payload'), command_label)
             if not require_string(command['owner'], f'{command_label}.owner'):
                 raise ValidationError(f'{command_label}.owner is empty')
-            require_value(command['execute_tick'], request['issue_after_step'], f'{command_label}.execute_tick')
+            require_value(command['execute_tick'], tick, f'{command_label}.execute_tick')
             # These are observations of actual Command values, not profile
             # orders. Preserve their serde payload without translating input
             # actions or maintaining a second gameplay-command whitelist.
@@ -1294,10 +1653,15 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
     if (gesture_input or sidebar) and not walk_state:
         raise ValidationError('gesture/sidebar observations require the current observation policy')
     require_exact_keys(observations, ('policy', 'owners', 'commands', 'frames',
+                                     *(('audio',) if 'observe_audio' in profile else ()),
+                                     *(('load_segments',) if profile.get('allow_load_segments', False) else ()),
                                      *(('gesture_input',) if gesture_input else ()),
                                      *(('sidebar',) if sidebar else ()),
                                      *(('type_filter',) if 'observe_types' in profile else ()),
                                      *(('rule_types',) if building_state else ())), label)
+    segments = _load_segments(observations.get('load_segments'), profile)
+    if 'observe_audio' in profile:
+        _audio_observation(observations['audio'], profile)
     policy = (OBSERVATION_POLICY if walk_state else DOCKING_OBSERVATION_POLICY if docking_state else
               BUILDING_OBSERVATION_POLICY if building_state else TRAJECTORY_OBSERVATION_POLICY)
     require_value(observations['policy'], policy, f'{label}.policy')
@@ -1322,9 +1686,10 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
         row = require_object(value, row_label)
         require_exact_keys(row, ('ordinal', 'issue_after_step', 'issued_simulation_tick',
                                  'envelope_execute_tick', 'owner', 'payload'), row_label)
+        tick, _ = _segment_clock(request['issue_after_step'], segments)
         for key, expected in (('ordinal', index), ('issue_after_step', request['issue_after_step']),
-                              ('issued_simulation_tick', request['issue_after_step']),
-                              ('envelope_execute_tick', request['issue_after_step']), ('owner', request['owner'])):
+                              ('issued_simulation_tick', tick),
+                              ('envelope_execute_tick', tick), ('owner', request['owner'])):
             require_value(row[key], expected, f'{row_label}.{key}')
         _require_equal(row['payload'], request['payload'], f'{row_label}.payload')
     frames = require_array(observations['frames'], f'{label}.frames')
@@ -1332,7 +1697,10 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
     if len(frames) != ticks + 1:
         raise ValidationError(f'observations.frames must contain exactly {ticks + 1} rows including L0')
     seen = set()
-    sample_count = _gesture_observations(observations['gesture_input'], profile) if gesture_input else 0
+    sample_count = _gesture_observations(observations['gesture_input'], profile, segments) if gesture_input else 0
+    if 'observe_audio' in profile:
+        sample_count += sum(_sound_state(row['restored_audio_state'], 'restored_audio_state')
+                            for row in segments)
     if sidebar:
         sample_count += _sidebar_frames(observations['sidebar'], profile)
     previous_ms = -1
@@ -1344,10 +1712,16 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
                                  'total_simulation_ms', 'actors', 'missing_actor_ids', 'terrain',
                                  *(('input',) if gesture_input else ()),
                                  *(('effects',) if effects else ()),
+                                 *(('lasers',) if profile.get('observe_lasers', False) else ()),
+                                 *(('audio_state',) if 'observe_audio' in profile else ()),
                                  *(('houses',) if docking_state else ())), row_label)
-        for key in ('completed_steps', 'simulation_tick', 'binary_frame'):
-            require_value(row[key], step, f'{row_label}.{key}')
+        tick, binary_frame = _segment_clock(step, segments)
+        for key, expected in (('completed_steps', step), ('simulation_tick', tick), ('binary_frame', binary_frame)):
+            require_value(row[key], expected, f'{row_label}.{key}')
         milliseconds = _integer(row, 'total_simulation_ms')
+        for segment in segments:
+            if segment['after_step'] == step - 1:
+                previous_ms = segment['after']['total_simulation_ms']
         if milliseconds <= previous_ms:
             raise ValidationError(f'{row_label}.total_simulation_ms did not increase')
         if step == 0:
@@ -1360,7 +1734,9 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
             actor_label = f'{row_label}.actors[{index}]'
             identity, owner = _actor(value, actor_label, building_state=building_state,
                                      docking_state=docking_state, walk_state=walk_state,
-                                     action_line_inputs=profile.get('observe_action_line_inputs', False))
+                                     action_line_inputs=profile.get('observe_action_line_inputs', False),
+                                     disguise_inputs=profile.get('observe_disguise_inputs', False),
+                                     lasers=profile.get('observe_lasers', False))
             if identity <= previous_id:
                 raise ValidationError(f'{actor_label}.stable_id is repeated or out of order')
             if identity not in seen and owner not in owners:
@@ -1385,9 +1761,15 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
         sample_count += len(actors) + len(missing) + len(terrain)
         if effects:
             sample_count += _effects(row['effects'], profile, f'{row_label}.effects')
+        if profile.get('observe_lasers', False):
+            sample_count += _lasers(row['lasers'], f'{row_label}.lasers')
         if gesture_input:
             sample_count += _input_observation(row['input'], f'{row_label}.input',
                                                 local_input=_observes_local_input(profile))
+        if 'observe_audio' in profile:
+            sample_count += _sound_state(row['audio_state'], f'{row_label}.audio_state')
+            if any(actor['stable_id'] not in present for actor in row['audio_state']['actors']):
+                raise ValidationError('sound-state actor is absent from the observed actor frame')
         if docking_state:
             sample_count += _houses(row['houses'], owners, f'{row_label}.houses',
                                     profile.get('observe_super_weapons', False))
@@ -1397,6 +1779,10 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
         if sample_count > MAX_OBSERVATION_SAMPLES:
             raise ValidationError('observations exceeds its retained sample budget')
     require_value(previous_ms, final['total_simulation_ms'], 'observations final total_simulation_ms')
+    for index, segment in enumerate(segments):
+        prior = (segments[index - 1]['after'] if index and segments[index - 1]['after_step'] == segment['after_step']
+                 else frames[segment['after_step']])
+        require_value(segment['before']['total_simulation_ms'], prior['total_simulation_ms'], 'load segment before time')
     return dict(observations)
 
 
@@ -1439,6 +1825,7 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
         _identity(inputs.get(name), identities[name], f'inputs.{name}')
 
     ticks = _integer(profile, 'ticks')
+    segments = _load_segments(require_object(manifest.get('observations', {}), 'observations').get('load_segments'), profile)
     require_value(manifest.get('exact_step_count'), ticks, 'exact_step_count')
     initial = require_object(manifest.get('initial'), 'initial')
     final = require_object(manifest.get('final'), 'final')
@@ -1447,8 +1834,8 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
         _integer(final, name)
     for state in (initial, final):
         _integer(state, 'deterministic_state_hash')
-    for name in ('simulation_tick', 'binary_frame'):
-        require_value(final.get(name), ticks, f'final.{name}')
+    for name, expected in zip(('simulation_tick', 'binary_frame'), _segment_clock(ticks, segments)):
+        require_value(final.get(name), expected, f'final.{name}')
     if ticks == 0:
         _require_equal(dict(final), dict(initial), 'zero-step final state')
         for name in ('first_exact_step', 'last_exact_step'):
@@ -1458,9 +1845,9 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
             raise ValidationError('simulation time did not advance')
         for name, before in (('first_exact_step', 0), ('last_exact_step', ticks - 1)):
             receipt = require_object(manifest.get(name), name)
-            for key in ('tick', 'binary_frame'):
-                require_value(receipt.get(f'{key}_before'), before, f'{name}.{key}_before')
-                require_value(receipt.get(f'{key}_after'), before + 1, f'{name}.{key}_after')
+            for key, expected in zip(('tick', 'binary_frame'), _segment_clock(before, segments, after_inputs=True)):
+                require_value(receipt.get(f'{key}_before'), expected, f'{name}.{key}_before')
+                require_value(receipt.get(f'{key}_after'), expected + 1, f'{name}.{key}_after')
 
     startup = require_object(manifest.get('startup'), 'startup')
     for key, expected in (('seed', profile.get('seed')), ('seed_source', 'Controlled'),
@@ -1522,7 +1909,8 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
             raise ValidationError('legacy child v2 cannot declare presentation_clock or neutral_input')
         clock = {'policy': 'legacy-wall-clock'}
     else:
-        clock = _presentation_clock(render.get('presentation_clock'), ticks)
+        clock = _presentation_clock(render.get('presentation_clock'), ticks,
+                                    segments if profile.get('allow_load_segments', False) else None)
         neutral = require_object(render.get('neutral_input'), 'render.neutral_input')
         require_exact_keys(neutral, ('static_default_cursor', 'camera_input_idle'),
                            'render.neutral_input')
@@ -1816,9 +2204,57 @@ def _check_output_outside_runs(output: Path, directories: list[Path]) -> None:
             raise ValidationError('validation output must be outside observation directories')
 
 
+def export_audio(directory: Path, output: Path) -> dict[str, Any]:
+    """Export checked device-pulled f32 PCM, without another asset decode/mix.
+
+    Each observed Source format span becomes a float WAV. Any final incomplete
+    channel frame stays in the original receipt and is counted in this export.
+    """
+    _check_output_outside_runs(output, [directory])
+    checked = _load_run(directory, False, False)
+    audio = checked.capture.evidence.get('observations', {}).get('audio')
+    if audio is None:
+        raise ValidationError('run did not request PCM observation')
+    files = []
+    payloads = []
+    for event in audio['outputs']:
+        pcm = event['pcm']
+        raw = bytes.fromhex(pcm['hex'])
+        for index, span in enumerate(pcm['formats']):
+            end = (pcm['formats'][index + 1]['first_sample'] if index + 1 < len(pcm['formats'])
+                   else pcm['sample_count'])
+            count = end - span['first_sample']
+            channels, rate = span['channels'], span['sample_rate']
+            usable = count - count % channels
+            data = raw[span['first_sample'] * 4:(span['first_sample'] + usable) * 4]
+            if channels * 4 > 65535 or rate * channels * 4 > 0xffffffff:
+                raise ValidationError('recorded PCM format exceeds WAVE field bounds')
+            # RIFF WAVE_FORMAT_IEEE_FLOAT preserves every retained f32 bit.
+            fmt = struct.pack('<HHIIHH', 3, channels, rate, rate * channels * 4, channels * 4, 32)
+            chunks = b'fmt ' + struct.pack('<I', len(fmt)) + fmt
+            chunks += b'fact' + struct.pack('<II', 4, usable // channels)
+            chunks += b'data' + struct.pack('<I', len(data)) + data
+            wav = b'RIFF' + struct.pack('<I', 4 + len(chunks)) + b'WAVE' + chunks
+            name = f'submission-{event["submission"]}-event-{event["event"]}-span-{index}.wav'
+            payloads.append((name, wav))
+            files.append({'file_name': name, 'submission': event['submission'], 'event': event['event'], 'sound_id': event['sound_id'],
+                          'resolved_samples': event['resolved_samples'], 'channels': channels, 'sample_rate': rate,
+                          'sample_count': usable, 'unframed_tail_samples': count - usable,
+                          'pcm_sha256': sha256_bytes(data), 'sha256': sha256_bytes(wav)})
+    checked.check_unchanged()
+    create_directory_exclusive(output, 'audio export')
+    for name, wav in payloads:
+        write_bytes_exclusive(output / name, wav)
+    report = {'schema_version': 'vera20k.map-audio-export.v1', 'status': 'EXPORTED',
+              'source_manifest': checked.capture.manifest.public_identity(), 'point': audio['point'],
+              'files': files, 'native_comparator': 'NONE', 'parity_certification': 'NONE'}
+    write_json_exclusive(output / 'audio.json', report)
+    return report
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
-    operation = arguments.pop(0) if arguments and arguments[0] in ('validate', 'compare') else 'capture'
+    operation = arguments.pop(0) if arguments and arguments[0] in ('validate', 'compare', 'export-audio') else 'capture'
     parser = argparse.ArgumentParser(description=__doc__,
                                      epilog='Offline commands: validate --run DIR; '
                                             'compare --before DIR --after DIR (both need --output JSON).')
@@ -1834,7 +2270,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument('--allow-legacy-inputs', action='store_true')
         parser.add_argument('--allow-legacy-clock', action='store_true',
                             help='Allow offline wall-clock v2 children; not comparable with diagnostic-clock children')
-        if operation == 'validate':
+        if operation in ('validate', 'export-audio'):
             parser.add_argument('--run', type=Path, required=True)
         else:
             parser.add_argument('--before', type=Path, required=True)
@@ -1848,8 +2284,12 @@ def main(argv: list[str] | None = None) -> int:
             result_path = args.output / 'run.json'
             status = 0 if report['status'] == 'VALID' else 1
         else:
-            directories = [args.run] if operation == 'validate' else [args.before, args.after]
+            directories = [args.run] if operation in ('validate', 'export-audio') else [args.before, args.after]
             _check_output_outside_runs(args.output, directories)
+            if operation == 'export-audio':
+                report = export_audio(args.run, args.output)
+                print(f'EXPORTED: {args.output}')
+                return 0
             if operation == 'validate':
                 report = validate_run(args.run, allow_legacy_inputs=args.allow_legacy_inputs,
                                       allow_legacy_clock=args.allow_legacy_clock)

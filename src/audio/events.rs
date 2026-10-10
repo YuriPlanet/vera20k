@@ -1,8 +1,7 @@
 //! Game sound events — the bridge between sim and audio.
 //!
-//! The simulation produces GameSoundEvents when things happen (weapon fired,
-//! unit selected, entity destroyed). The app layer collects these events each
-//! tick and feeds them to the SfxPlayer for playback.
+//! The app adapts ordered simulation facts and input requests into these
+//! events, then feeds them to SfxPlayer for playback.
 //!
 //! Events carry the sound ID (from rules.ini / sound.ini) rather than a
 //! filename — the SfxPlayer resolves IDs to files via SoundRegistry.
@@ -14,8 +13,7 @@
 //!
 //! ## Dependency rules
 //! - Part of audio/ — but contains no rodio code, only data types.
-//! - sim/ may reference this module to push events (acceptable because
-//!   it's pure data with zero audio-library dependencies).
+//! - sim/ has its own neutral event transport and never imports audio/.
 
 /// Where a positional sound plays: the world-pixel point the presentation
 /// frame draws it at, and the cell it occupies.
@@ -86,6 +84,9 @@ pub enum GameSoundEvent {
     /// `SoundEvent::Release @ 0x00406060` on one owner's handle: its loop
     /// stops repeating and plays out; one-shots continue unchanged.
     AnimationReleased { anim_id: u64 },
+    /// FootLimbo405FD0 stops repetition even for counted loops, then detaches
+    /// the owner's handle while the current audio finishes.
+    AnimationDetached { anim_id: u64 },
     /// A weapon fired — play the weapon's Report= sound.
     WeaponFired {
         /// sound.ini ID from the weapon's Report= field.
@@ -123,6 +124,14 @@ pub enum GameSoundEvent {
         /// sound.ini ID from the unit's VoiceAttack= field.
         sound_id: String,
     },
+
+    /// The live Logic cursor reached Techno6F9EBB for an interested owner.
+    /// This visit drains only that owner's pending acknowledgement.
+    UnitVoiceVisit { owner: u64 },
+
+    /// Techno destructor6F4607 destroys its distinct voice handle. Keep this
+    /// ordered with visits; final-world membership cannot recover the order.
+    UnitVoiceDestroyed { owner: u64 },
 
     /// An entity was destroyed — play DieSound.
     EntityDestroyed {
@@ -294,22 +303,6 @@ pub enum GameSoundEvent {
         source: Option<SoundSource>,
     },
 
-    /// A techno crossed the half-strength threshold and speaks its
-    /// `VoiceFeedback=` line.
-    ///
-    /// `TechnoClass::ReceiveDamage @ 0x00701900`, arm `0x00702695` (index 2 of
-    /// the switch table at `0x00702D24`, i.e. damage result 2). The 30% roll,
-    /// the `HouseClass::IsHumanPlayer @ 0x0050B6F0` gate and the
-    /// `rand % count` pick are resolved before this event is built; it plays
-    /// positionally through `VocClass::PlayAt @ 0x007509E0` at the object's
-    /// own coordinate.
-    VoiceFeedback {
-        /// sound.ini ID for the chosen `VoiceFeedback=` entry.
-        sound_id: String,
-        /// Screen position for spatial audio.
-        source: Option<SoundSource>,
-    },
-
     /// A superweapon fired: its `[AudioVisual]` cue and/or its EVA warning.
     ///
     /// `SuperClass::Launch @ 0x006CC390` decides both per `Type=` case; see
@@ -385,10 +378,12 @@ impl GameSoundEvent {
             | Self::ChuteSound { sound_id, .. }
             | Self::BridgeRepaired { sound_id, .. }
             | Self::BuildingDamagedSfx { sound_id, .. }
-            | Self::VoiceFeedback { sound_id, .. }
             | Self::SuperWeaponActivated { sound_id, .. } => sound_id,
             Self::AnimationStopped { stop_sound_id, .. } => stop_sound_id.as_deref().unwrap_or(""),
-            Self::AnimationReleased { .. } => "",
+            Self::AnimationReleased { .. }
+            | Self::AnimationDetached { .. }
+            | Self::UnitVoiceVisit { .. }
+            | Self::UnitVoiceDestroyed { .. } => "",
             // The event name, not a sample: the sample is a per-side column
             // the `VoxClass` consumer resolves.
             Self::Eva { event, .. } | Self::EvaRemove { event } => event,
@@ -418,7 +413,6 @@ impl GameSoundEvent {
             | Self::ChuteSound { source, .. }
             | Self::BridgeRepaired { source, .. }
             | Self::BuildingDamagedSfx { source, .. }
-            | Self::VoiceFeedback { source, .. }
             | Self::SuperWeaponActivated { source, .. } => *source,
             _ => None,
         }
@@ -446,16 +440,18 @@ impl GameSoundEvent {
 /// nothing (`ObjectClass::Select @ 0x005F4520` returns false), and the
 /// one-voice-per-batch latch matches `g_SelectionVoice_Enable @ 0x00822CF2`.
 ///
-/// **The repeat guard is landed.** It is not a timer: each techno owns a
+/// **The repeat guard follows reached object visits.** It is not a timer: each techno owns a
 /// pending-voice index (`+0x4F0`, sentinel -1), a live handle (`+0x4DC`) and
 /// the playing index (`+0x4F4`); `TechnoClass::Queue_Voice @ 0x00708D90` only
 /// latches and `TechnoClass::AI_Update @ 0x006F9EBB` drains — handle free
 /// plays, handle live with the SAME index drops, handle live with a different
 /// index holds and retries next pass. Voices are non-positional (volume 1.0f,
-/// pan 0x2000, `0x006F9EE0`/`0x006F9EE5`). The layering worry turned out not to
-/// bind: VERA emits acknowledgement lines from the **app** input layer, never
-/// from `sim/`, so the whole guard lives in [`crate::audio::voice_queue`] as a
-/// device-free decision module and `sim/` never learns about audio.
+/// pan 0x2000, `0x006F9EE0`/`0x006F9EE5`). App input owns the requests and
+/// [`crate::audio::voice_queue`] owns their pending/playing identities.
+/// Sparse reached-Techno and destructor facts arrive through the existing
+/// ordered simulation sound channel; the shared arbiter owns the distinct
+/// voice handles, including queued events without device output. A global
+/// presentation update cannot substitute for a reached Techno voice slot.
 ///
 /// **Still absent on the voice side.** `VoiceDeploy=`/`VoiceUndeploy=`
 /// (deploy/unload orders) and `VoiceFalling=` are not parsed,
@@ -477,8 +473,8 @@ impl GameSoundEvent {
 /// `ImpactWaterSound=` with their `[AudioVisual]` fallbacks
 /// (`sim::world::crash`).
 ///
-/// `VoiceFeedback=` (133 stock authors) is **no longer among them** — see
-/// [`Self::VoiceFeedback`].
+/// `VoiceFeedback=` uses the ordinary [`GameSoundEvent::VocAt`] consumer.
+/// ReceiveDamage702695 resolves its list and both Main draws before enqueueing.
 ///
 /// **Partly closed.** `MoveSound=` now has both halves: the sim's
 /// post-locomotor tail (`Simulation::tick_move_sound_after_process`) emits
@@ -518,9 +514,9 @@ impl GameSoundEvent {
 /// `DamageSound=` of their own (30 `BuildingMetalDamaged`, 4 `Dummy`), so the
 /// global covers nearly every structure.
 ///
-/// `[AudioVisual]`'s companion damage voice is landed as well — see
-/// [`GameSoundEvent::VoiceFeedback`] for `TechnoClass::ReceiveDamage @
-/// 0x00701900`'s result-2 arm at `0x00702695`.
+/// TechnoType VoiceFeedback uses the same registered positional Voc path.
+/// ReceiveDamage702695 owns its result-2 admission and ordered Main draws;
+/// it never enters the per-Techno acknowledgement latch.
 ///
 /// **Still absent on the damage side: the per-type `DamageSound=` cue.**
 /// `TechnoTypeClass+0x538` is parsed but only *read as a gate*. Native plays

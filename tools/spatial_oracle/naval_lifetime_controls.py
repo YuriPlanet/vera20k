@@ -3,7 +3,7 @@
 Full scenario/COM stream loading is excluded. Saved-object bytes and original
 FootLoad sound-reset tail are composed as explicit interior boundaries.
 """
-from naval_lifetime_audio import *
+from tools.spatial_oracle.naval_lifetime_audio import *
 
 def selection_case(sinking):
  m=Native(next(c for c in inputs() if c['name']=='west_water_head_road_dz0'));u=m.u
@@ -22,12 +22,14 @@ def repeat_fatal():
  result=m.invoke(0x737C90,m.actor,(p,0,m.warhead,0,1,1,0))
  return dict(input=dict(initial_health=1,initial_sinking=1,c4_damage=1,distance=0,attacker=None,ignore_defenses=True,arg6=True,house=None),result=result,health=m.read32(m.actor+0x6C),alive=u.mem_read(m.actor+0x90,1)[0],sinking=u.mem_read(m.actor+0x3CD,1)[0],losses=m.read32(m.house+0x5434),calls=m.calls,writes=m.writes,rng_before=before,rng_after={k:bytes(u.mem_read(p,0x3F4)).hex() for k,p in m.rngs.items()})
 
-def load_case(seen):
- m=Audio();u=m.u;m.phase='setup'
- u.mem_write(m.actor+0x3CD,bytes([1,seen]));u.mem_write(m.actor+0x53C,b'\1');u.mem_write(m.actor+0x540,dwords(3));u.mem_write(m.actor+0x544,b'\xA5'*16)
- u.mem_write(m.actor+0x3CA,struct.pack('<h',1234))
- size=m.invoke(m.read32(m.read32(m.actor)+0x30),m.actor);assert size==0x8E8
- raw=bytes(u.mem_read(m.actor,0x800))+bytes(size-0x800)
+def raw_load_sound_reset(m,raw):
+ """Existing Unit raw-load/Foot audio-reset boundary shared by sound controls.
+
+ Raw bytes and IStream IO are declared inputs. Native410380, FootLoad's reset
+ tail, the no-init Foot ctor and Unit vtable reconstruction perform all writes.
+ This deliberately excludes dynamic-vector, COM and pointer-swizzle loading.
+ """
+ u=m.u
  m.actor=m.alloc(0x1000);u.mem_write(m.actor,raw)
  payload=dwords(0x12345678)+raw;pos=0;reads=[]
  stream,table,read_entry=m.alloc(16),m.alloc(64),m.alloc(16);u.mem_write(stream,dwords(table));u.mem_write(table+0xC,dwords(read_entry))
@@ -50,10 +52,19 @@ def load_case(seen):
  m.invoke(0x4D3540,m.actor,(0,))
  m.block(0x744521,0x74453B,{UC_X86_REG_ESI:m.actor,UC_X86_REG_EBX:m.actor+4})
  after_noinit=list(bytes(u.mem_read(m.actor+0x3CD,2)))
+ return dict(reads=reads,after_raw=after_raw,after_tail=after_tail,after_noinit=after_noinit)
+
+def load_case(seen):
+ m=Audio();u=m.u;m.phase='setup'
+ u.mem_write(m.actor+0x3CD,bytes([1,seen]));u.mem_write(m.actor+0x53C,b'\1');u.mem_write(m.actor+0x540,dwords(3));u.mem_write(m.actor+0x544,b'\xA5'*16)
+ u.mem_write(m.actor+0x3CA,struct.pack('<h',1234))
+ size=m.invoke(m.read32(m.read32(m.actor)+0x30),m.actor);assert size==0x8E8
+ raw=bytes(u.mem_read(m.actor,0x800))+bytes(size-0x800)
+ loaded=raw_load_sound_reset(m,raw)
  m.phase='measure';m.audio_events=[];m.writes=[];m.calls=[]
  before={k:bytes(u.mem_read(p,0x3F4)).hex() for k,p in m.rngs.items()}
  m.block(0x4DABC7,0x4DACDD,{UC_X86_REG_ESI:m.actor,UC_X86_REG_EBX:0,UC_X86_REG_EDI:0xFFFFFFFF})
- return dict(input=dict(saved_sinking=1,saved_seen=seen,saved_sound_handle='a5'*16,saved_move_sound=1,saved_move_countdown=3),reads=reads,after_raw=after_raw,after_tail=after_tail,after_noinit=after_noinit,waterline_after_noinit=struct.unpack('<h',u.mem_read(m.actor+0x3CA,2))[0],after_edge_seen=u.mem_read(m.actor+0x3CE,1)[0],events=m.audio_events,rng_before=before,rng_after={k:bytes(u.mem_read(p,0x3F4)).hex() for k,p in m.rngs.items()})
+ return dict(input=dict(saved_sinking=1,saved_seen=seen,saved_sound_handle='a5'*16,saved_move_sound=1,saved_move_countdown=3),**loaded,waterline_after_noinit=struct.unpack('<h',u.mem_read(m.actor+0x3CA,2))[0],after_edge_seen=u.mem_read(m.actor+0x3CE,1)[0],events=m.audio_events,rng_before=before,rng_after={k:bytes(u.mem_read(p,0x3F4)).hex() for k,p in m.rngs.items()})
 
 def generate():return dict(schema=1,selection=[selection_case(False),selection_case(True)],repeat_fatal=repeat_fatal(),load=[load_case(0),load_case(1)])
 def metadata():return provenance(scope=__doc__,assumptions=['Original selection gates and ObjectSelect execute on an empty capacity16 selection vector, supplied local human owner/discovery and native type Selectable constructor default. Selection voice wrapper6FBFA0, screen picking and later movement command handling excluded.', 'Repeated C4 uses actual original Unit receiver after initial actual sinking. It is direct receiver evidence, not proof that a particular area effect will still acquire an unmarked hull.', 'Original Unit GetSize returns0x8E8; imported object gets a separate0x1000 buffer, first0x800 bytes from the bounded source actor and zero extension. Original AbstractLoad410380 copies these supplied Unit-size object bytes through a supplied exact IStreamRead callback. Original FootLoad audio-reset tail4DB60D..4DB624 then no-initFoot ctor4D3540 and original Unit vtable reconstruction744521..74453B execute. Intervening vectors, COM and pointer-swizzling load bodies excluded. Fields3CD/3CE survive these measured boundaries; already-seen1 produces no replay from actual sound edge.'],substitutions=['Inherited native setup and audio sound callback boundary from naval_lifetime_audio.', 'IStreamRead supplies retained raw object bytes; original native loader controls read lengths and writes.'],entry_points={'selection':0x5F4520,'repeat_damage':0x737C90,'raw_load':0x410380,'foot_load_sound_reset':0x4DB60D,'foot_noinit':0x4D3540,'unit_noinit_vtables':0x744521})

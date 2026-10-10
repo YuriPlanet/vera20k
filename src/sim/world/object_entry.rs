@@ -73,7 +73,11 @@ fn infantry_disguised_to(
     entity: &GameEntity,
     observer: InternedId,
 ) -> Result<bool, String> {
-    let Some(disguise) = entity.disguise.as_ref().filter(|state| state.disguised) else {
+    let Some(disguise) = entity
+        .disguise
+        .as_ref()
+        .filter(|state| state.is_disguised())
+    else {
         return Ok(false);
     };
     let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
@@ -93,9 +97,9 @@ fn infantry_disguised_to(
         false,
         detected,
         disguise
-            .disguised_as_house
+            .house()
             .is_some_and(|fake| friendly(live, observer, fake)),
-        disguise.disguised_as_house.is_some(),
+        disguise.house().is_some(),
     ))
 }
 fn row_nonzero(live: &EntryReadContext<'_>, cell: Cell, speed: SpeedType) -> Result<bool, String> {

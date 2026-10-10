@@ -106,9 +106,6 @@ fn restore_saved_scenario(
         .restore_map_authority_after_snapshot_load(&resources.rules, &resources.overlay_registry)
         .expect("saved map and bridge authority restore");
     restored.resolve_type_handles(&resources.rules);
-    restored
-        .restore_move_sound_handles_after_load(&resources.rules)
-        .expect("saved movement sound handles restore");
     restored.rebuild_lighting_sources_after_load(&resources.rules);
     restored
 }

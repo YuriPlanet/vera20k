@@ -1,7 +1,7 @@
 //! Original MTNK input/Event/class comparisons at the app/simulation boundary.
 //! Simulation fixture setup and native comparisons stay with their owners.
 
-use super::{ordinary_cell_move_goal, roundtrip_ordinary_local_move};
+use super::{ordinary_cell_move_goal, roundtrip_ordinary_local_megamission};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
@@ -28,7 +28,7 @@ fn produce_move(
             queue: resolved.queue,
         },
     );
-    let decoded = roundtrip_ordinary_local_move(sim, issued.clone()).unwrap();
+    let decoded = roundtrip_ordinary_local_megamission(sim, issued.clone()).unwrap();
     assert_eq!(decoded, issued, "ordinary native record codec");
     decoded
 }

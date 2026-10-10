@@ -144,10 +144,8 @@ fn no_map_removes_nothing() {
     );
 }
 
-/// A removed plane's sounds go as at a crash impact (`fly_crash_impact`):
-/// the destructor releases the object's own handle (`FootClass::~FootClass`,
-/// `0x004D3677`) and its MoveSound stops before UnInit. Native calls UnInit
-/// straight from the block (`0x00414F93`, `0x00414FD1`).
+/// Removal enters shared FootLimbo405FD0; deferred destruction releases the
+/// handle at 0x4D3677. The MoveSound latch is not rewritten by either operation.
 #[test]
 fn removal_releases_the_planes_sounds() {
     let rules = rules();
@@ -156,21 +154,50 @@ fn removal_releases_the_planes_sounds() {
         .find(|row| flag(row, "removed") && row["team"].is_null())
         .unwrap();
     let mut sim = world(&row);
-    sim.substrate.entities.get_mut(1).unwrap().move_sound_active = true;
+    let position = sim.substrate.entities.get(1).unwrap().position;
+    // The predicate fixtures start in constructor Limbo. This cleanup
+    // control enters AI as an already-revealed Foot, so its first Limbo
+    // actually reaches the shared 405FD0 detach boundary.
+    assert!(matches!(
+        sim.reveal(1),
+        crate::sim::world::RevealOutcome::Revealed { .. }
+    ));
+    let plane = sim.substrate.entities.get_mut(1).unwrap();
+    // Reveal recomputes +3D5 from this already-outside location. Reapply
+    // the original row's AI-entry pose and retained visited-playfield byte;
+    // the excluded flight that reached this boundary is not being replayed.
+    plane.position = position;
+    plane.in_playfield = flag(&row, "in_playfield");
+    plane.move_sound = crate::sim::world::MoveSoundState::from_raw_for_test(true, 3);
+    assert!(sim.aircraft_may_leave_map(1));
     assert!(sim.remove_aircraft_off_map(1, &rules, None));
     assert!(
         sim.sound_events
             .iter()
-            .any(|event| matches!(event, SimSoundEvent::ObjectSoundReleased { owner: 1 })),
-        "{:?}",
-        sim.sound_events
+            .any(|event| { matches!(event, SimSoundEvent::ObjectSoundDetached { owner: 1 }) })
     );
+    assert!(
+        !sim.sound_events
+            .iter()
+            .any(|event| { matches!(event, SimSoundEvent::AnimationStopped { anim_id: 1, .. }) })
+    );
+    assert!(
+        !sim.sound_events
+            .iter()
+            .any(|event| { matches!(event, SimSoundEvent::ObjectSoundReleased { owner: 1 }) })
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .move_sound
+            .is_active()
+    );
+    sim.process_pending_delete();
     assert!(
         sim.sound_events
             .iter()
-            .any(|event| matches!(event, SimSoundEvent::AnimationStopped { anim_id: 1, .. })),
-        "{:?}",
-        sim.sound_events
+            .any(|event| { matches!(event, SimSoundEvent::ObjectSoundReleased { owner: 1 }) })
     );
-    assert!(!sim.substrate.entities.get(1).unwrap().move_sound_active);
 }

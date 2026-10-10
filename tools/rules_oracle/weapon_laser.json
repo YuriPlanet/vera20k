@@ -1,0 +1,3518 @@
+{
+  "controls": {
+    "constructor": {
+      "duration": 10,
+      "inner": [
+        0,
+        0,
+        0
+      ],
+      "is_big_laser": false,
+      "is_house_color": false,
+      "is_laser": false,
+      "outer": [
+        0,
+        0,
+        0
+      ],
+      "spread": [
+        0,
+        0,
+        0
+      ]
+    },
+    "duration_controls": [
+      {
+        "admitted": true,
+        "raw": null,
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1"
+          }
+        },
+        "state": {
+          "duration": 10,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": ""
+          }
+        },
+        "state": {
+          "duration": 0,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "-2147483648",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "-2147483648"
+          }
+        },
+        "state": {
+          "duration": 0,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "-257",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "-257"
+          }
+        },
+        "state": {
+          "duration": -1,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "-129",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "-129"
+          }
+        },
+        "state": {
+          "duration": 127,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "-128",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "-128"
+          }
+        },
+        "state": {
+          "duration": -128,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "-1",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "-1"
+          }
+        },
+        "state": {
+          "duration": -1,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "0",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "0"
+          }
+        },
+        "state": {
+          "duration": 0,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "1",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "1"
+          }
+        },
+        "state": {
+          "duration": 1,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "10",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "10"
+          }
+        },
+        "state": {
+          "duration": 10,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "15",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "15"
+          }
+        },
+        "state": {
+          "duration": 15,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "127",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "127"
+          }
+        },
+        "state": {
+          "duration": 127,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "128",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "128"
+          }
+        },
+        "state": {
+          "duration": -128,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "255",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "255"
+          }
+        },
+        "state": {
+          "duration": -1,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "256",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "256"
+          }
+        },
+        "state": {
+          "duration": 0,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "257",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "257"
+          }
+        },
+        "state": {
+          "duration": 1,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "2147483647",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "2147483647"
+          }
+        },
+        "state": {
+          "duration": -1,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "2147483648",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "2147483648"
+          }
+        },
+        "state": {
+          "duration": 0,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "4294967295",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "4294967295"
+          }
+        },
+        "state": {
+          "duration": -1,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "4294967296",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "4294967296"
+          }
+        },
+        "state": {
+          "duration": 0,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "15junk",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "15junk"
+          }
+        },
+        "state": {
+          "duration": 15,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "junk",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "junk"
+          }
+        },
+        "state": {
+          "duration": 0,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "$FF",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "$FF"
+          }
+        },
+        "state": {
+          "duration": -1,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "raw": "80h",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "1",
+            "LaserDuration": "80h"
+          }
+        },
+        "state": {
+          "duration": -128,
+          "inner": [
+            0,
+            0,
+            0
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    ],
+    "retained_history": [
+      {
+        "admitted": true,
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "IsBigLaser": "yes",
+            "IsHouseColor": "yes",
+            "IsLaser": "yes",
+            "LaserDuration": "255",
+            "LaserInnerColor": "12,34,56",
+            "LaserOuterColor": "-1,256,300",
+            "LaserOuterSpread": "9,8,7"
+          }
+        },
+        "state": {
+          "duration": -1,
+          "inner": [
+            12,
+            34,
+            56
+          ],
+          "is_big_laser": true,
+          "is_house_color": true,
+          "is_laser": true,
+          "outer": [
+            255,
+            0,
+            44
+          ],
+          "spread": [
+            9,
+            8,
+            7
+          ]
+        }
+      },
+      {
+        "admitted": false,
+        "reads": [],
+        "sections": {},
+        "state": {
+          "duration": -1,
+          "inner": [
+            12,
+            34,
+            56
+          ],
+          "is_big_laser": true,
+          "is_house_color": true,
+          "is_laser": true,
+          "outer": [
+            255,
+            0,
+            44
+          ],
+          "spread": [
+            9,
+            8,
+            7
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "AmbientDamage": "2"
+          }
+        },
+        "state": {
+          "duration": -1,
+          "inner": [
+            12,
+            34,
+            56
+          ],
+          "is_big_laser": true,
+          "is_house_color": true,
+          "is_laser": true,
+          "outer": [
+            255,
+            0,
+            44
+          ],
+          "spread": [
+            9,
+            8,
+            7
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "IsBigLaser": "",
+            "IsHouseColor": "on",
+            "IsLaser": "junk"
+          }
+        },
+        "state": {
+          "duration": -1,
+          "inner": [
+            12,
+            34,
+            56
+          ],
+          "is_big_laser": true,
+          "is_house_color": true,
+          "is_laser": true,
+          "outer": [
+            255,
+            0,
+            44
+          ],
+          "spread": [
+            9,
+            8,
+            7
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "LaserDuration": "257",
+            "LaserInnerColor": "1,2,3junk"
+          }
+        },
+        "state": {
+          "duration": 1,
+          "inner": [
+            1,
+            2,
+            3
+          ],
+          "is_big_laser": true,
+          "is_house_color": true,
+          "is_laser": true,
+          "outer": [
+            255,
+            0,
+            44
+          ],
+          "spread": [
+            9,
+            8,
+            7
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "IsBigLaser": "0",
+            "IsHouseColor": "no",
+            "LaserDuration": ""
+          }
+        },
+        "state": {
+          "duration": 0,
+          "inner": [
+            1,
+            2,
+            3
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": true,
+          "outer": [
+            255,
+            0,
+            44
+          ],
+          "spread": [
+            9,
+            8,
+            7
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "islaser": "no",
+            "laserduration": "99",
+            "laserinnercolor": "99,99,99"
+          }
+        },
+        "state": {
+          "duration": 0,
+          "inner": [
+            1,
+            2,
+            3
+          ],
+          "is_big_laser": false,
+          "is_house_color": false,
+          "is_laser": true,
+          "outer": [
+            255,
+            0,
+            44
+          ],
+          "spread": [
+            9,
+            8,
+            7
+          ]
+        }
+      },
+      {
+        "admitted": true,
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "IsLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsHouseColor",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserInnerColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterColor",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserOuterSpread",
+            "reader": "0x528a10",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "LaserDuration",
+            "reader": "0x5276d0",
+            "section": "LaserProbe"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "IsBigLaser",
+            "reader": "0x5295f0",
+            "section": "LaserProbe"
+          }
+        ],
+        "sections": {
+          "LaserProbe": {
+            "IsBigLaser": "true",
+            "IsLaser": "false",
+            "LaserDuration": "-128",
+            "LaserOuterColor": "0,0,0"
+          }
+        },
+        "state": {
+          "duration": -128,
+          "inner": [
+            1,
+            2,
+            3
+          ],
+          "is_big_laser": true,
+          "is_house_color": false,
+          "is_laser": false,
+          "outer": [
+            0,
+            0,
+            0
+          ],
+          "spread": [
+            9,
+            8,
+            7
+          ]
+        }
+      }
+    ]
+  },
+  "detail": {
+    "constructor": {
+      "buffer_zone_width": 5,
+      "min_frame_rate_movie": 20,
+      "min_frame_rate_normal": 15
+    },
+    "retained_history": [
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "7",
+            "DetailMinFrameRateMovie": "29",
+            "DetailMinFrameRateNormal": "31"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 7,
+          "min_frame_rate_movie": 29,
+          "min_frame_rate_normal": 31
+        }
+      },
+      {
+        "admitted": null,
+        "kind": "process",
+        "reads": [],
+        "sections": {},
+        "state": {
+          "buffer_zone_width": 7,
+          "min_frame_rate_movie": 29,
+          "min_frame_rate_normal": 31
+        }
+      },
+      {
+        "admitted": null,
+        "kind": "process",
+        "reads": [],
+        "sections": {
+          "General": {
+            "DetailBufferZoneWidth": "99",
+            "DetailMinFrameRateMovie": "99",
+            "DetailMinFrameRateNormal": "99"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 7,
+          "min_frame_rate_movie": 29,
+          "min_frame_rate_normal": 31
+        }
+      },
+      {
+        "admitted": null,
+        "kind": "process",
+        "reads": [],
+        "sections": {
+          "audiovisual": {
+            "DetailBufferZoneWidth": "99",
+            "DetailMinFrameRateMovie": "99",
+            "DetailMinFrameRateNormal": "99"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 7,
+          "min_frame_rate_movie": 29,
+          "min_frame_rate_normal": 31
+        }
+      },
+      {
+        "admitted": null,
+        "kind": "process",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "Gravity": "6"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 7,
+          "min_frame_rate_movie": 29,
+          "min_frame_rate_normal": 31
+        }
+      },
+      {
+        "admitted": null,
+        "kind": "process",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "detailbufferzonewidth": "99",
+            "detailminframeratenormal": "99"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 7,
+          "min_frame_rate_movie": 29,
+          "min_frame_rate_normal": 31
+        }
+      },
+      {
+        "admitted": null,
+        "kind": "process",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "-2147483648",
+            "DetailMinFrameRateNormal": "-7"
+          }
+        },
+        "state": {
+          "buffer_zone_width": -2147483648,
+          "min_frame_rate_movie": 29,
+          "min_frame_rate_normal": -7
+        }
+      },
+      {
+        "admitted": null,
+        "kind": "process",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailMinFrameRateMovie": "123"
+          }
+        },
+        "state": {
+          "buffer_zone_width": -2147483648,
+          "min_frame_rate_movie": 123,
+          "min_frame_rate_normal": -7
+        }
+      },
+      {
+        "kind": "type_reset_and_process",
+        "original_reset": {
+          "after_raw": {
+            "anim_count": 0,
+            "lightning": 0,
+            "nullify": 0,
+            "splash": [],
+            "splash_count": 0,
+            "splash_storage": 0,
+            "warhead_count": 0,
+            "weather": 0
+          },
+          "before_raw": {
+            "anim_count": 0,
+            "lightning": 0,
+            "nullify": 0,
+            "splash": [],
+            "splash_count": 0,
+            "splash_storage": 0,
+            "warhead_count": 0,
+            "weather": 0
+          },
+          "cached_reread": {},
+          "events": [
+            {
+              "at": "006686c0",
+              "event": "original_phase"
+            },
+            {
+              "at": "006688c7",
+              "event": "original_phase"
+            },
+            {
+              "at": "006688eb",
+              "event": "original_phase"
+            },
+            {
+              "at": "007c8b3d",
+              "event": "delete_type",
+              "family": "Weapon",
+              "name": "OrderProbe",
+              "pointer": 604083264
+            },
+            {
+              "at": "0066890f",
+              "event": "original_phase"
+            },
+            {
+              "at": "006689e7",
+              "event": "original_phase"
+            },
+            {
+              "at": "00668bf0",
+              "event": "original_phase"
+            },
+            {
+              "at": "00668ef0",
+              "event": "original_phase"
+            },
+            {
+              "at": "00668ef5",
+              "event": "original_phase"
+            },
+            {
+              "at": "00668f56",
+              "event": "original_phase"
+            },
+            {
+              "at": "00668f5b",
+              "event": "original_phase"
+            }
+          ],
+          "stop_before": "00668a2c"
+        },
+        "reads": [],
+        "sections": {},
+        "state": {
+          "buffer_zone_width": -2147483648,
+          "min_frame_rate_movie": 123,
+          "min_frame_rate_normal": -7
+        }
+      },
+      {
+        "admitted": null,
+        "kind": "process",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "9"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 9,
+          "min_frame_rate_movie": 123,
+          "min_frame_rate_normal": -7
+        }
+      }
+    ],
+    "scalar_controls": [
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": null,
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 5,
+          "min_frame_rate_movie": 20,
+          "min_frame_rate_normal": 15
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "",
+            "DetailMinFrameRateMovie": "",
+            "DetailMinFrameRateNormal": "",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 0,
+          "min_frame_rate_movie": 0,
+          "min_frame_rate_normal": 0
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "-2147483648",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "-2147483648",
+            "DetailMinFrameRateMovie": "-2147483648",
+            "DetailMinFrameRateNormal": "-2147483648",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": -2147483648,
+          "min_frame_rate_movie": -2147483648,
+          "min_frame_rate_normal": -2147483648
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "-1",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "-1",
+            "DetailMinFrameRateMovie": "-1",
+            "DetailMinFrameRateNormal": "-1",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": -1,
+          "min_frame_rate_movie": -1,
+          "min_frame_rate_normal": -1
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "0",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "0",
+            "DetailMinFrameRateMovie": "0",
+            "DetailMinFrameRateNormal": "0",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 0,
+          "min_frame_rate_movie": 0,
+          "min_frame_rate_normal": 0
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "1",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "1",
+            "DetailMinFrameRateMovie": "1",
+            "DetailMinFrameRateNormal": "1",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 1,
+          "min_frame_rate_movie": 1,
+          "min_frame_rate_normal": 1
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "15",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "15",
+            "DetailMinFrameRateMovie": "15",
+            "DetailMinFrameRateNormal": "15",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 15,
+          "min_frame_rate_movie": 15,
+          "min_frame_rate_normal": 15
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "2147483647",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "2147483647",
+            "DetailMinFrameRateMovie": "2147483647",
+            "DetailMinFrameRateNormal": "2147483647",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 2147483647,
+          "min_frame_rate_movie": 2147483647,
+          "min_frame_rate_normal": 2147483647
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "2147483648",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "2147483648",
+            "DetailMinFrameRateMovie": "2147483648",
+            "DetailMinFrameRateNormal": "2147483648",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": -2147483648,
+          "min_frame_rate_movie": -2147483648,
+          "min_frame_rate_normal": -2147483648
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "4294967295",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "4294967295",
+            "DetailMinFrameRateMovie": "4294967295",
+            "DetailMinFrameRateNormal": "4294967295",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": -1,
+          "min_frame_rate_movie": -1,
+          "min_frame_rate_normal": -1
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "4294967296",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "4294967296",
+            "DetailMinFrameRateMovie": "4294967296",
+            "DetailMinFrameRateNormal": "4294967296",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 0,
+          "min_frame_rate_movie": 0,
+          "min_frame_rate_normal": 0
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "15junk",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "15junk",
+            "DetailMinFrameRateMovie": "15junk",
+            "DetailMinFrameRateNormal": "15junk",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 15,
+          "min_frame_rate_movie": 15,
+          "min_frame_rate_normal": 15
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "junk",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "junk",
+            "DetailMinFrameRateMovie": "junk",
+            "DetailMinFrameRateNormal": "junk",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 0,
+          "min_frame_rate_movie": 0,
+          "min_frame_rate_normal": 0
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "$FF",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "$FF",
+            "DetailMinFrameRateMovie": "$FF",
+            "DetailMinFrameRateNormal": "$FF",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 255,
+          "min_frame_rate_movie": 255,
+          "min_frame_rate_normal": 255
+        }
+      },
+      {
+        "admitted": true,
+        "kind": "audio_visual",
+        "raw": "80h",
+        "reads": [
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateNormal",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailMinFrameRateMovie",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          },
+          {
+            "ini": "0x20006000",
+            "key": "DetailBufferZoneWidth",
+            "reader": "0x5276d0",
+            "section": "AudioVisual"
+          }
+        ],
+        "sections": {
+          "AudioVisual": {
+            "DetailBufferZoneWidth": "80h",
+            "DetailMinFrameRateMovie": "80h",
+            "DetailMinFrameRateNormal": "80h",
+            "Gravity": "3"
+          }
+        },
+        "state": {
+          "buffer_zone_width": 128,
+          "min_frame_rate_movie": 128,
+          "min_frame_rate_normal": 128
+        }
+      }
+    ]
+  },
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "physical_detail": [
+    {
+      "admitted": null,
+      "archive": "expandmd01.mix",
+      "bytes": 743215,
+      "file": "RULESMD.INI",
+      "kind": "process",
+      "reads": [
+        {
+          "ini": "0x20006000",
+          "key": "DetailMinFrameRateNormal",
+          "reader": "0x5276d0",
+          "section": "AudioVisual"
+        },
+        {
+          "ini": "0x20006000",
+          "key": "DetailMinFrameRateMovie",
+          "reader": "0x5276d0",
+          "section": "AudioVisual"
+        },
+        {
+          "ini": "0x20006000",
+          "key": "DetailBufferZoneWidth",
+          "reader": "0x5276d0",
+          "section": "AudioVisual"
+        }
+      ],
+      "sections": {
+        "AudioVisual": {
+          "DetailBufferZoneWidth": "5",
+          "DetailMinFrameRateMovie": "20",
+          "DetailMinFrameRateNormal": "15"
+        }
+      },
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+      "state": {
+        "buffer_zone_width": 5,
+        "min_frame_rate_movie": 20,
+        "min_frame_rate_normal": 15
+      }
+    },
+    {
+      "absent": true,
+      "file": "LANGRULE.INI"
+    },
+    {
+      "admitted": null,
+      "archive": "ra2md.mix/localmd.mix",
+      "bytes": 295,
+      "file": "MPBattleMD.ini",
+      "kind": "process",
+      "reads": [],
+      "sections": {},
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+      "state": {
+        "buffer_zone_width": 5,
+        "min_frame_rate_movie": 20,
+        "min_frame_rate_normal": 15
+      }
+    },
+    {
+      "admitted": null,
+      "archive": "multimd.mix",
+      "bytes": 156269,
+      "file": "XMP03T4.MAP",
+      "kind": "process",
+      "reads": [],
+      "sections": {},
+      "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e",
+      "state": {
+        "buffer_zone_width": 5,
+        "min_frame_rate_movie": 20,
+        "min_frame_rate_normal": 15
+      }
+    }
+  ],
+  "physical_prism": [
+    {
+      "admitted": true,
+      "archive": "expandmd01.mix",
+      "bytes": 743215,
+      "file": "RULESMD.INI",
+      "reads": [
+        {
+          "ini": "0x20006000",
+          "key": "IsLaser",
+          "reader": "0x5295f0",
+          "section": "PrismShot"
+        },
+        {
+          "ini": "0x20006000",
+          "key": "IsHouseColor",
+          "reader": "0x5295f0",
+          "section": "PrismShot"
+        },
+        {
+          "ini": "0x20006000",
+          "key": "LaserInnerColor",
+          "reader": "0x528a10",
+          "section": "PrismShot"
+        },
+        {
+          "ini": "0x20006000",
+          "key": "LaserOuterColor",
+          "reader": "0x528a10",
+          "section": "PrismShot"
+        },
+        {
+          "ini": "0x20006000",
+          "key": "LaserOuterSpread",
+          "reader": "0x528a10",
+          "section": "PrismShot"
+        },
+        {
+          "ini": "0x20006000",
+          "key": "LaserDuration",
+          "reader": "0x5276d0",
+          "section": "PrismShot"
+        },
+        {
+          "ini": "0x20006000",
+          "key": "IsBigLaser",
+          "reader": "0x5295f0",
+          "section": "PrismShot"
+        }
+      ],
+      "sections": {
+        "PrismShot": {
+          "IsHouseColor": "true",
+          "IsLaser": "true",
+          "LaserDuration": "15",
+          "LaserOuterSpread": "0,0,0"
+        }
+      },
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+      "state": {
+        "duration": 15,
+        "inner": [
+          0,
+          0,
+          0
+        ],
+        "is_big_laser": false,
+        "is_house_color": true,
+        "is_laser": true,
+        "outer": [
+          0,
+          0,
+          0
+        ],
+        "spread": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "absent": true,
+      "file": "LANGRULE.INI"
+    },
+    {
+      "admitted": false,
+      "archive": "ra2md.mix/localmd.mix",
+      "bytes": 295,
+      "file": "MPBattleMD.ini",
+      "reads": [],
+      "sections": {},
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+      "state": {
+        "duration": 15,
+        "inner": [
+          0,
+          0,
+          0
+        ],
+        "is_big_laser": false,
+        "is_house_color": true,
+        "is_laser": true,
+        "outer": [
+          0,
+          0,
+          0
+        ],
+        "spread": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "admitted": false,
+      "archive": "multimd.mix",
+      "bytes": 156269,
+      "file": "XMP03T4.MAP",
+      "reads": [],
+      "sections": {},
+      "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e",
+      "state": {
+        "duration": 15,
+        "inner": [
+          0,
+          0,
+          0
+        ],
+        "is_big_laser": false,
+        "is_house_color": true,
+        "is_laser": true,
+        "outer": [
+          0,
+          0,
+          0
+        ],
+        "spread": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ]
+}

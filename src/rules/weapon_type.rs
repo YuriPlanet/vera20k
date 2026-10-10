@@ -89,7 +89,8 @@ pub struct WeaponType {
     pub minimum_range_leptons: i32,
     /// Blink time for disguise fake when firing while disguised (+0x13c).
     pub disguise_fake_blink_time: i32,
-    /// Duration of laser beam visual effect in frames (+0x14e).
+    /// Signed byte duration of the laser effect, sign-extended for its timer
+    /// consumer (+0x14E; constructor10, ReadInt7727DE, MOVSX6FD21D).
     pub laser_duration: i32,
     /// Radiation level emitted on impact (+0x158).
     pub rad_level: i32,
@@ -249,7 +250,10 @@ impl WeaponType {
             // +0xB8 is zeroed alongside +0xB4 at 0x00771CBF.
             minimum_range_leptons: section.read_range("MinimumRange", 0),
             disguise_fake_blink_time: section.read_int("DisguiseFakeBlinkTime", 0),
-            laser_duration: section.read_int("LaserDuration", 0),
+            // ReadINI stores only AL; SpawnLaser6FD21D sign-extends the
+            // retained byte. ReadInt uses its default only for absent keys,
+            // so narrowing after the projected pass history is equivalent.
+            laser_duration: i32::from(section.read_int("LaserDuration", 10) as i8),
             rad_level: section.read_int("RadLevel", 0),
 
             // String/reference fields
@@ -361,6 +365,187 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::util::fixed_math::SIM_ZERO;
 
+    fn laser_corpus() -> serde_json::Value {
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/rules_oracle/weapon_laser.json",
+        ))
+        .unwrap()
+    }
+
+    fn laser_state(weapon: &WeaponType) -> serde_json::Value {
+        serde_json::json!({
+            "is_laser": weapon.is_laser,
+            "is_house_color": weapon.is_house_color,
+            "is_big_laser": weapon.is_big_laser,
+            "duration": weapon.laser_duration,
+            "inner": weapon.laser_inner_color,
+            "outer": weapon.laser_outer_color,
+            "spread": weapon.laser_outer_spread,
+        })
+    }
+
+    fn cached_laser_sections(sections: &serde_json::Value) -> IniFile {
+        let mut ini = IniFile::empty();
+        for (name, keys) in sections.as_object().unwrap() {
+            let mut section = IniSection::new(name.clone());
+            for (key, value) in keys.as_object().unwrap() {
+                section.set(key, value.as_str().unwrap());
+            }
+            ini.replace_first_section(section);
+        }
+        ini
+    }
+
+    #[test]
+    fn laser_constructor_and_signed_duration_match_original_reader() {
+        let native = laser_corpus();
+        let controls = &native["controls"];
+        let defaults = WeaponType::from_ini_section("LaserProbe", IniSection::empty());
+        assert_eq!(laser_state(&defaults), controls["constructor"]);
+        let rows = controls["duration_controls"].as_array().unwrap();
+        assert_eq!(rows.len(), 24);
+        for row in rows {
+            let ini = cached_laser_sections(&row["sections"]);
+            let weapon =
+                WeaponType::from_ini_section("LaserProbe", ini.section("LaserProbe").unwrap());
+            assert_eq!(laser_state(&weapon), row["state"], "{}", row["raw"]);
+        }
+    }
+
+    #[test]
+    fn laser_fields_retain_native_defaults_through_production_rules_passes() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let native = laser_corpus();
+        let rows = native["controls"]["retained_history"].as_array().unwrap();
+        assert_eq!(rows.len(), 8);
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[BuildingTypes]\n0=Tower\n[Tower]\nPrimary=LaserProbe\n",
+        ));
+        for (index, row) in rows.iter().enumerate() {
+            // Preserve the native cache's explicit empty values; the physical
+            // INI loader omits them, so this is a reader-component control.
+            layers.push(
+                RulesLayerKind::Scenario,
+                cached_laser_sections(&row["sections"]),
+            );
+            let rules = RuleSet::from_rules_layers(&layers).unwrap();
+            assert_eq!(
+                laser_state(rules.weapon("LaserProbe").unwrap()),
+                row["state"],
+                "pass {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn retail_prism_laser_fields_match_original_layered_readers() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let native = laser_corpus();
+        let rows = native["physical_prism"].as_array().unwrap();
+        let mut layers = RulesLayerStack::new(ini);
+        for row in rows {
+            if row["absent"] == true {
+                continue;
+            }
+            if row["file"] != "RULESMD.INI" {
+                layers.push(
+                    RulesLayerKind::Scenario,
+                    cached_laser_sections(&row["sections"]),
+                );
+            }
+            let rules = RuleSet::from_rules_layers(&layers).unwrap();
+            assert_eq!(
+                laser_state(rules.weapon("PrismShot").unwrap()),
+                row["state"],
+                "{}",
+                row["file"]
+            );
+        }
+        assert_eq!(
+            RuleSet::from_rules_layers(&layers)
+                .unwrap()
+                .general
+                .prism_support
+                .duration,
+            15
+        );
+    }
+
+    #[test]
+    fn retail_prism_laser_and_detail_use_complete_production_source_chain() {
+        let Some(retail) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        else {
+            return;
+        };
+        let native = laser_corpus();
+        assert_eq!(
+            laser_state(retail.rules.weapon("PrismShot").unwrap()),
+            native["physical_prism"].as_array().unwrap().last().unwrap()["state"]
+        );
+        let detail = retail.rules.general.detail;
+        assert_eq!(
+            serde_json::json!({
+                "min_frame_rate_normal": detail.min_frame_rate_normal,
+                "min_frame_rate_movie": detail.min_frame_rate_movie,
+                "buffer_zone_width": detail.buffer_zone_width,
+            }),
+            native["physical_detail"]
+                .as_array()
+                .unwrap()
+                .last()
+                .unwrap()["state"]
+        );
+        assert_eq!(retail.rules.general.prism_support.duration, 15);
+    }
+
+    #[test]
+    fn retained_laser_fields_participate_in_configuration_identity() {
+        use crate::rules::native_processing::RulesLayerStack;
+        use crate::rules::ruleset::RuleSet;
+
+        let common = RulesLayerStack::new(IniFile::from_str(
+            "[LaserProbe]\nIsLaser=junk\nIsHouseColor=junk\nIsBigLaser=junk\n",
+        ));
+        let mut identities = Vec::new();
+        for initial in ["yes", "no"] {
+            let first = RulesLayerStack::new(IniFile::from_str(&format!(
+                "[BuildingTypes]\n0=Tower\n[Tower]\nPrimary=LaserProbe\n\
+                 [LaserProbe]\nIsLaser={initial}\nIsHouseColor={initial}\nIsBigLaser={initial}\n",
+            )))
+            .process()
+            .unwrap();
+            let (_, trace) = first.into_ini_and_native_type_construction_trace();
+            let processed = common
+                .process_with_fixed_art_and_registry_state(
+                    &IniFile::empty(),
+                    trace.into_registry_state_discarding_events(),
+                )
+                .unwrap();
+            let rules = RuleSet::from_processed_rules(&processed).unwrap();
+            assert_eq!(
+                rules.weapon("LaserProbe").unwrap().is_laser,
+                initial == "yes"
+            );
+            identities.push((rules.source_ini_hash(), rules.simulation_config_hash()));
+        }
+        assert_eq!(
+            identities[0].0, identities[1].0,
+            "same current rules source"
+        );
+        assert_ne!(
+            identities[0].1, identities[1].1,
+            "different retained laser admission"
+        );
+    }
+
     #[test]
     fn test_parse_weapon() {
         let ini: IniFile = IniFile::from_str(
@@ -394,7 +579,7 @@ mod tests {
         // New fields should all default correctly
         assert_eq!(weapon.ambient_damage, 0);
         assert_eq!(weapon.minimum_range, SIM_ZERO);
-        assert_eq!(weapon.laser_duration, 0);
+        assert_eq!(weapon.laser_duration, 10);
         assert_eq!(weapon.rad_level, 0);
         assert!(!weapon.is_sonic);
         assert!(!weapon.is_laser);

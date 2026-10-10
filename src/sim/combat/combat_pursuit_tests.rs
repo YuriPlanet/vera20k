@@ -1085,7 +1085,7 @@ fn area_guard_nulls_the_walk_destination() {
         &rules,
         Command::Guard {
             entity_id: actor,
-            target_id: None,
+            target: None,
         },
     );
     let loco = sim

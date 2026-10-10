@@ -578,8 +578,19 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
         "order keeps the paid-step heading"
     );
     assert_eq!(entity.foot_speed.applied_fraction(), SimFixed::ONE);
+    assert!(rules.object("E1").unwrap().move_sound.is_empty());
+    assert!(!entity.move_sound.is_active());
+    assert_eq!(entity.move_sound.countdown(), 3);
     let mut resumed = restore_production_pair(&sim, &rules);
     sim.scenario_rng = SimRng::new(0); // Native Scenario load reseeds this stream.
+    let loaded_sound = resumed.substrate.entities.get(firer).unwrap().move_sound;
+    assert!(!loaded_sound.is_active());
+    assert_eq!(loaded_sound.countdown(), 0);
+    // Foot4DAA87 refreshes +540 even with an empty MoveSound vector;
+    // FootLoad4DB60D..4DB624 clears that inactive countdown. Match only this
+    // native load transition in the live control, preserving the paid Walk,
+    // crate multiplier, facing and firing state for full-hash continuation.
+    sim.restore_move_sound_state_after_load(firer);
     assert_eq!(sim.state_hash(), resumed.state_hash());
     let mut refused_frames = 0;
     for _ in 0..100 {

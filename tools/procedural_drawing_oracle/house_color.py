@@ -1,4 +1,4 @@
-"""Original House56F9 color from physical RULESMD lexical inputs.
+"""Original House56F9 and laser56FC color from physical RULESMD lexical inputs.
 
 ReadColor, ramp generation, lighting tables and House color extraction execute
 original code. The existing palette oracle owns conversion; this fixture only
@@ -70,7 +70,7 @@ def constructor_index():
     return struct.unpack('<I', u.mem_read(scheme + 0x330, 4))[0]
 
 
-def house_color(table, index=16, campaign=False, scheme_index=1):
+def house_color(table, index=16, campaign=False, scheme_index=1, laser=False):
     u = palette.machine()
     registry, scheme, convert = [palette.HEAP + x for x in (0x1000, 0x2000, 0x3000)]
     house, lookup = palette.HEAP + 0x10000, palette.HEAP + 0x30000
@@ -97,8 +97,42 @@ def house_color(table, index=16, campaign=False, scheme_index=1):
         palette.call(u, 0x50B840, (), house)
     after = bytes(u.mem_read(house + 0x56F8, 8))
     assert before[0] == after[0] and before[4:] == after[4:]
-    return dict(rgb=list(after[1:4]),
-                scheme_index=struct.unpack('<i',u.mem_read(house+0x16054,4))[0])
+    result = dict(rgb=list(after[1:4]),
+                  scheme_index=struct.unpack('<i',u.mem_read(house+0x16054,4))[0])
+    if laser:
+        if campaign:
+            # Continue the same reader stack/register state through the real
+            # normalization helper and RGB setter, before the Allies reader.
+            native.run_checked(u, 0x500ECC, 0x501086, count=2000,
+                               required_addresses=[0x4CAC40, 0x50B920, 0x50E430])
+        else:
+            palette.call(u, 0x50BA00, (), house)
+        result['laser_rgb'] = list(u.mem_read(house + 0x56FC, 3))
+        assert bytes(u.mem_read(house + 0x56F8, 4)) == after[:4]
+        assert u.mem_read(house + 0x56FF, 1) == after[7:]
+    return result
+
+
+def laser_rgb565_domain():
+    """Whole original ComputeRemap for every possible RGB565 House color.
+
+    Supplied bytes are the loss-only unpack domain, not a reconstructed
+    normalization formula. A single isolated machine is reused; each whole
+    function returns normally and every adjacent byte is checked unchanged.
+    """
+    u = palette.machine()
+    house = palette.HEAP
+    output = bytearray()
+    for word in range(65536):
+        rgb = bytes(((word >> 11) << 3, ((word >> 5) & 63) << 2, (word & 31) << 3))
+        u.mem_write(house + 0x56F8, b'\xA5' + rgb + b'\xCC\xCC\xCC\x5A')
+        palette.call(u, 0x50BA00, (), house)
+        after = bytes(u.mem_read(house + 0x56F8, 8))
+        assert after[:4] == b'\xA5' + rgb and after[7:] == b'\x5A'
+        output.extend(after[4:7])
+    return dict(input_order='ascending RGB565 word; loss-only unpack R5/G6/B5',
+                count=65536, bytes_per_result=3, rgb_hex=output.hex(),
+                sha256=hashlib.sha256(output).hexdigest())
 
 
 def generate():
@@ -113,12 +147,14 @@ def generate():
         for mode in ('scalar', 'cmov', 'mmx'):
             table = palette.palette_table(53, (1000,1000,1000), ramp, mode)
             middle = table[26*512:27*512]
-            regular = house_color(middle, default_index)
-            campaign = house_color(middle, default_index, campaign=True)
+            regular = house_color(middle, default_index, laser=True)
+            campaign = house_color(middle, default_index, campaign=True, laser=True)
             assert regular == campaign
             outputs[mode] = dict(packed=struct.unpack_from('<H',middle,32)[0],
                                  rgb=regular['rgb'], scheme_index=regular['scheme_index'],
+                                 laser_rgb=regular['laser_rgb'],
                                  campaign_rgb=campaign['rgb'],
+                                 campaign_laser_rgb=campaign['laser_rgb'],
                                  campaign_scheme_index=campaign['scheme_index'])
         direct_table = palette.plain_palette_table(1, ramp)
         rows.append(dict(name=name, lexical=lexical, hsv=list(hsv),
@@ -140,27 +176,30 @@ def generate():
     return dict(native_sha256=native.NATIVE_SHA256, rulesmd_sha256=hashlib.sha256(raw).hexdigest(),
                 constructor_palette_index=default_index, colors=rows, index_controls=controls,
                 negative_scheme=fallback,
-                scope='Native ReadColor, ramp, N53 middle-row colors and House/campaign RGB extraction')
+                laser_rgb565_domain=laser_rgb565_domain(),
+                scope='Native ReadColor, ramp, N53 middle-row colors, House/campaign RGB extraction and laser normalization')
 
 
 
 if __name__ == '__main__':
     native.finish_vectors(generate, Path(__file__).with_suffix('.json'),
         provenance=lambda: native.provenance(
-            scope='21 physical RULESMD Colors entries parsed by original474C70; original ramp68C3B0, N53 LightConvert556090 in scalar/CMOV/MMX modes, whole House50B840 and campaign color block500DF7..500ECC',
+            scope='21 physical RULESMD Colors entries parsed by original474C70; original ramp68C3B0, N53 LightConvert556090 in scalar/CMOV/MMX modes, whole House50B840/50BA00, campaign block500DF7..501086 and all65536 RGB565 normalizer inputs',
             assumptions=[
                 'ini/rulesmd.ini physical bytes and lexical strings are recorded with SHA256. Existing lexical.sections only extracts strings; supplied native CRC/section caches replace INI/archive IO. Original ReadString64, sprintf and sscanf own parsing. Mode/map/LANGRULE overrides are not loaded in this base-reader corpus.',
                 'Original ColorScheme68C769..68C7DC constructor slice writes lookup index16. Original ramp68C3B0..68C4AD includes palette copy, native trig table sampling, ftol and HSV conversion, stopping before allocation of LightConvert. Base palette outside indices16..31 is supplied A5 and asserted unchanged.',
                 'Existing tools.palette_oracle.oracle owns full original556090 table construction, scalar/CMOV/MMX dispatch and plain4BBB00 comparison. N53 and RGB1000/1000/1000 are supplied constructor inputs from68C710; active RGB565 shifts/losses and FPCW0E7F are supplied. ColorScheme mask16 is1, so its result is identical to the fixture all-one mask.',
                 'Convert48E740 stores +174 at ((N-1)>>1)*512 bytes after +170, so House receives the actual native row26 bytes. Converter allocation, row-pointer construction and active effects/rebuild state are instruction evidence, not executed in this fixture.',
-                'Whole House50B840 receives supplied registry/ColorScheme/converter fields. Campaign starts500DF7 after ReadColorString with supplied index in EAX and House in EBX; stops500ECC immediately after RGB stores, before separate laser-color normalization. Whole campaign INI reader and name lookup are excluded.',
-                'All21 colors compare normal/campaign and all three CPU paths. Six distinct +330 lookup controls plus negative-scheme fallback are saved; adjacent bytes and separate House+56FC laser RGB remain unchanged. No full renderer/GPU or exhaustive arbitrary-HSV equivalence claim.',
+                'Whole House50B840 receives supplied registry/ColorScheme/converter fields. Campaign starts500DF7 after ReadColorString with supplied index in EAX and House in EBX, continues through the original normalization50B920 and setter50E430, and stops501086 before Allies. Whole campaign INI reader and name lookup are excluded.',
+                'All21 colors compare normal/campaign body and laser RGB in all three CPU paths. The normal route calls whole50BA00 after50B840, matching player/AI Create_Houses687F10 call order. Neutral/Special Create_Houses skip50BA00; their zero-initialized laser color is not projected by these player/AI rows.',
+                'Whole50BA00 additionally executes all65536 loss-only RGB565 unpacks and saves each RGB triplet in ascending-word order. Adjacent bytes remain unchanged. Six distinct +330 lookup controls and negative-scheme fallback preserve the earlier body-only behavior. No full renderer/GPU or exhaustive arbitrary-HSV equivalence claim.',
             ],
             substitutions=[],
             entry_points={'read_color':0x474C70,'ramp':0x68C3B0,
                           'constructor_index_begin':0x68C769,'constructor_index_end':0x68C7DC,
                           'light_table':0x556090,'plain_table':0x4BBB00,
                           'house_init_color':0x50B840,'campaign_color_begin':0x500DF7,
-                          'campaign_color_end':0x500ECC}),
+                          'house_compute_remap':0x50BA00,'campaign_color_end':0x501086,
+                          'campaign_normalize':0x50B920,'campaign_color_store':0x50E430}),
         source_paths={'caller':Path(__file__), 'palette_owner':Path(palette.__file__),
                       'ini_fixture':Path(ini.__file__), 'lexical_fixture':Path(lexical.__file__)})

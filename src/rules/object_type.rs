@@ -545,8 +545,10 @@ pub struct ObjectType {
     /// the `-1` gate. Trigger / player effect / frequency are recorded in full
     /// on `crate::audio::events::SoundEventQueue`.
     pub damage_sound: Option<String>,
-    /// Sound ID played while this entity moves (looping engine/footstep).
-    pub move_sound: Option<String>,
+    /// Ordered MoveSound vector, TechnoType+4F4. Constructor710E7B..710EAC
+    /// creates an empty list; ReadINI713459..7134D9 uses ReadSoundList525430.
+    /// The fixed SOUNDMD binder resolves each token, retaining duplicates.
+    pub move_sound: Vec<String>,
     /// `CrashingSound=` — `TechnoTypeClass+0x544`, read at `0x00712F80`.
     /// `FootClass::AI` plays it on the object's MoveSound controller
     /// (`+0x544`) when the crash latch rises (`0x004DAD5E..0x004DADA7`).
@@ -578,16 +580,17 @@ pub struct ObjectType {
     /// (`"VoiceFeedback"`) into `CCINIClass::ReadSoundList @ 0x00525430`
     /// (`0x00712DCB`), so the vector is at `+0x4D8` with items `+0x4DC` and
     /// count `+0x4E8` — the exact fields
-    /// `TechnoClass::ReceiveDamage @ 0x00702695` reads. Consumed through
-    /// `SimSoundEvent::VoiceFeedback`.
-    ///
-    /// RESIDUAL: native holds a comma list, VERA one id. All 133 stock authors
-    /// are single-entry (0 contain a comma), so the `rand % count` pick at
-    /// `0x007026E7` is 0 either way; a modded list would diverge. Same
-    /// divergence as the `VoiceMove=` one on `voice_id_for_key`.
-    pub voice_feedback: Option<String>,
-    /// Sound ID played when this unit performs a special attack.
-    pub voice_special_attack: Option<String>,
+    /// `TechnoClass::ReceiveDamage @ 0x00702695` reads. The fixed SOUNDMD
+    /// binder retains resolved order and duplicates. The constructor starts
+    /// empty; accepted damage consumes a percent draw followed by one raw
+    /// Main draw even for a singleton, then emits a positional Voc request.
+    pub voice_feedback: Vec<String>,
+    /// Ordered default command-voice list at TechnoType+4A0. Constructor
+    /// 710E13..710E49 creates an empty vector; ReadINI712CC5..712D2A uses
+    /// ReadSoundList525430. QueueMegaMission6FFD42 draws once for a nonempty
+    /// list, then resolves the unsigned remainder through the fixed SOUNDMD
+    /// catalog's retained ordered names.
+    pub voice_special_attack: Vec<String>,
     /// Sound ID played when this entity is crushed by a vehicle (squish).
     pub crush_sound: Option<String>,
     /// Sound ID played when this unit deploys (e.g. GI sandbag-up).
@@ -1552,6 +1555,16 @@ pub struct ObjectType {
     /// Triggers `TogglePower` cursor when hovering this building in power-toggle mode.
     pub toggle_power: bool,
 
+    /// `InfantryGainSelfHeal=` (`BuildingTypeClass+0x1564`, read by the
+    /// BuildingType reader). `BuildingClass::OnConstructionComplete` adds it to
+    /// the house's infantry count (`+0x164`, `0x00446392..0x00446398`), Limbo
+    /// and ChangeOwner take it back. Non-zero on the retail Tech Hospital.
+    pub infantry_gain_self_heal: i32,
+    /// `UnitsGainSelfHeal=` (`BuildingTypeClass+0x1568`). The same three sites
+    /// move it through the house's unit count (`+0x168`). Non-zero on the
+    /// retail Tech Machine Shop.
+    pub units_gain_self_heal: i32,
+
     /// Whether this building is affected by low-power situations.
     /// Parsed from `Powered=yes`; native constructor45E04B defaults false.
     /// When true and the owner is in low power, the building deactivates:
@@ -1565,6 +1578,9 @@ pub struct ObjectType {
     /// Parsed from `CanDisguise=yes` in rules.ini. Enables `Disguise` cursor
     /// when the selected Spy hovers over an eligible enemy infantry target.
     pub can_disguise: bool,
+    /// TechnoType+0xD30, constructor710AF0 false. UnitAI736486 and
+    /// TechnoReceiveDamage701FE6 exclude permanent disguises.
+    pub perma_disguise: bool,
     /// `DisguiseWhenStill=` — UnitClass idle Mirage disguise lifecycle gate.
     pub disguise_when_still: bool,
 
@@ -2018,8 +2034,9 @@ impl ObjectType {
                 .is_present(key)
                 .then(|| section.read_double(key, 0.0))
         };
-        // Voice and move-sound keys are sound lists (`ReadSoundList @
-        // 0x00525430`); VERA keeps the list's first sound.
+        // These remaining legacy voice keys are sound lists (ReadSoundList
+        // 525430), but currently retain only the first sound. VoiceSelect,
+        // VoiceSpecialAttack and MoveSound use the complete list below.
         let first_sound = |key: &str| {
             section
                 .read_sound_list(key)
@@ -2252,7 +2269,10 @@ impl ObjectType {
                 .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
                 .unwrap_or_default(),
             damage_sound: section.read_name("DamageSound", 0x80).map(str::to_owned),
-            move_sound: first_sound("MoveSound"),
+            move_sound: section
+                .read_sound_list("MoveSound")
+                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+                .unwrap_or_default(),
             crashing_sound: section.read_name("CrashingSound", 0x80).map(str::to_owned),
             voice_crashing: section.read_name("VoiceCrashing", 0x80).map(str::to_owned),
             // Native constructors store -1; the process owner later binds
@@ -2265,8 +2285,18 @@ impl ObjectType {
             impact_land_sound: section
                 .read_name("ImpactLandSound", 0x80)
                 .map(str::to_owned),
-            voice_feedback: first_sound("VoiceFeedback"),
-            voice_special_attack: first_sound("VoiceSpecialAttack"),
+            voice_feedback: section
+                .read_sound_list("VoiceFeedback")
+                .unwrap_or_default()
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            voice_special_attack: section
+                .read_sound_list("VoiceSpecialAttack")
+                .unwrap_or_default()
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
             crush_sound: section.read_name("CrushSound", 0x80).map(str::to_owned),
             deploy_sound: section.read_name("DeploySound", 0x80).map(str::to_owned),
             buildup_sound: None,
@@ -2678,9 +2708,17 @@ impl ObjectType {
             number_of_docks: section.read_int("NumberOfDocks", 1),
             // TogglePower defaults to true for buildings, false for units.
             toggle_power: section.read_bool("TogglePower", category == ObjectCategory::Building),
+            // BuildingType+0x1564/+0x1568. The native constructor does not write
+            // them, so an absent key keeps the reader's argument (zero).
+            infantry_gain_self_heal: section.read_int("InfantryGainSelfHeal", 0),
+            units_gain_self_heal: section.read_int("UnitsGainSelfHeal", 0),
             powered: section.read_bool("Powered", false),
             powered_special: section.read_bool("PoweredSpecial", false),
+            // Original714404..71446C reads this block in this order,
+            // retaining each current value across reached rules passes.
             can_disguise: section.read_bool("CanDisguise", false),
+            perma_disguise: section.read_bool("PermaDisguise", false),
+            detect_disguise: section.read_bool("DetectDisguise", false),
             disguise_when_still: section.read_bool("DisguiseWhenStill", false),
             wall: section.read_bool("Wall", false),
             to_overlay: None,
@@ -2770,7 +2808,6 @@ impl ObjectType {
             sensor_array: section.read_bool("SensorArray", false),
             sensors: section.read_bool("Sensors", false),
             sensors_sight: section.read_int("SensorsSight", 0).clamp(0, u8::MAX as i32) as u8,
-            detect_disguise: section.read_bool("DetectDisguise", false),
             detect_disguise_range: section
                 .read_int("DetectDisguiseRange", 0)
                 .clamp(0, u8::MAX as i32) as u8,

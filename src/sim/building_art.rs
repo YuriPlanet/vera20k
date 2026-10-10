@@ -107,6 +107,11 @@ impl Simulation {
             .passenger_role
             .cargo()
             .is_some_and(|cargo| !cargo.passengers.is_empty());
+        // 0x00446382..0x004463B4: the built type's InfantryGainSelfHeal and
+        // UnitsGainSelfHeal join the owner's house on every reached opening
+        // (a capture counts), with the +0x6E4 test done by the entry guard
+        // above rather than per arm.
+        self.grant_house_self_heal(id, rules);
         crate::sim::credit_income::produce_cash_on_grand_opening(self, id, rules);
         if first_opening && !refinery {
             for slot in [18, 3, 4, 5, 6] {

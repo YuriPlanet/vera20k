@@ -177,9 +177,15 @@ mod tests {
             .find(|case| case["initial_alive"] == false && case["die_sound_count"] == 1)
             .unwrap();
         assert_eq!(repeat["endpoint"], "007509E0");
-        let sounds = sim.sound_events.iter().filter(|event| matches!(event,
-            SimSoundEvent::EntityDied { die_sound_id, .. } if sim.interner.resolve(*die_sound_id) == "GIDie"
-        )).count();
+        let sounds = sim
+            .sound_events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+                    SimSoundEvent::EntityDied { die_sound_id, .. } if die_sound_id == "GIDie"
+                )
+            })
+            .count();
         assert_eq!(
             sounds,
             1 + repeat["rng_draws"].as_u64().unwrap() as usize,

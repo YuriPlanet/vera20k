@@ -104,20 +104,31 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
         current.state_hash(),
     );
     let mut failing = make_sim();
-    let id = failing.allocate_stable_id();
-    let mut entity =
-        crate::sim::game_entity::GameEntity::test_default(id, "MISSING", "AMERICANS", 5, 16);
-    entity.type_ref = failing.interner.intern("MISSING");
-    entity.owner = failing.interner.intern("AMERICANS");
-    entity.move_sound_active = true;
-    failing.substrate.entities.insert(entity);
+    // A malformed presentation owner fails after map/hierarchy preparation.
+    // FootLoad now correctly resets transient audio state, so it cannot be
+    // used as a fabricated late sound-identity failure.
+    let missing_owner = failing.interner.intern("MISSING");
+    let sidebar = crate::sim::snapshot::SavedSidebarOrder::new(
+        missing_owner,
+        std::array::from_fn(|_| Vec::new()),
+        [0; 4],
+    );
+    let failing_bytes = GameSnapshot::save_validated_with_presentation(
+        &failing,
+        LOAD_FIXTURE_MAP_HASH,
+        rules.simulation_config_hash(),
+        "late restore failure",
+        0,
+        &[],
+        Some(&sidebar),
+    );
     // The independent fixture shares the immutable template's dummy; restore
     // the live witness after fixture setup, before testing the transaction.
     live.set_level_slope(-7, 11);
     live.stamp_coord(123, 456);
     live.write_overlay_identity_state(29, 33);
     let failure = PreparedLoad::prepare_candidate(
-        &snapshot_bytes(&failing, &rules),
+        &failing_bytes,
         Some(&current),
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&rules),
@@ -125,12 +136,7 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
         Some(&registry),
     );
     assert!(
-        matches!(
-            failure,
-            Err(PreparedLoadError::Restore(
-                crate::sim::snapshot::SnapshotRestoreError::ActiveMoveSoundUnresolvable { .. }
-            ))
-        ),
+        matches!(failure, Err(PreparedLoadError::SidebarOrder(_))),
         "must fail after map/hierarchy preparation"
     );
     assert_eq!(

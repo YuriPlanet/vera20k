@@ -20,7 +20,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::mission::{MissionId, MissionType};
-use crate::sim::world::{SimSoundEvent, Simulation, UninitContext};
+use crate::sim::world::{Simulation, UninitContext};
 
 impl Simulation {
     /// The removal block, after the class AI's sinking and trailer steps.
@@ -66,12 +66,6 @@ impl Simulation {
         if (passes_playfield && self.map_cell_in_bounds(cell)) || !self.aircraft_may_leave_map(id) {
             return false;
         }
-        // The plane's sounds go as at a crash impact (`fly_crash_impact`):
-        // `FootClass::~FootClass` releases its own handle (`0x004D3677`), so
-        // a falling wreck's crash sound plays out, and its MoveSound stops.
-        self.sound_events
-            .push(SimSoundEvent::ObjectSoundReleased { owner: id });
-        self.release_move_sound(id);
         self.uninit_with_context(id, UninitContext::new(Some(rules), registry));
         true
     }

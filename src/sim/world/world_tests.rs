@@ -739,10 +739,9 @@ fn terminal_master_frame_visits_class_sequence_before_exit_without_frame_commit(
 #[test]
 fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() {
     let mut sim = Simulation::new();
-    let sound_id = sim.interner.intern("WaterfallLoop");
     sim.sound_events.push(SimSoundEvent::AnimationStarted {
         anim_id: 9,
-        sound_id,
+        sound_id: "WaterfallLoop".to_owned(),
         world: crate::sim::anim_class::AnimWorldCoord {
             x: 128,
             y: 128,
@@ -973,12 +972,65 @@ fn a_flying_aircraft_starts_its_move_sound_on_its_speed() {
             .current_speed = speed;
         entity.locomotor = Some(locomotor);
         sim.substrate.entities.insert(entity);
-        let unchanged = sim.movement_sound_probe(1);
+        let unchanged = sim.substrate.entities.get(1).unwrap().body_frame_counter;
         sim.tick_move_sound_after_process(1, unchanged, Some(&rules));
-        sim.substrate.entities.get(1).unwrap().move_sound_active
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .move_sound
+            .is_active()
     };
     assert!(run(SIM_HALF), "a flying aircraft starts its MoveSound");
     assert!(!run(SIM_ZERO), "a still one does not");
+}
+
+/// Original SQD Foot4DA806..4DAB3C: idle frame4 advances +538 and starts
+/// SquidMove even though Ship IsMovingNow69F330 returns false.
+#[test]
+fn idle_squid_body_counter_starts_move_sound() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let object = rules.object("SQD").expect("retail SQD");
+    let mut sim = Simulation::with_seed(0x1020_3040);
+    let mut entity = GameEntity::test_default(1, "SQD", "Americans", 4, 4);
+    entity.type_ref = sim.interner.intern("SQD");
+    entity.lifecycle.in_limbo = false;
+    entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Ship));
+    sim.substrate.entities.insert(entity);
+    let before = sim.substrate.entities.get(1).unwrap().body_frame_counter;
+    crate::sim::animation::tick_unit_body_frame_counter(
+        sim.substrate.entities.get_mut(1).unwrap(),
+        None,
+        crate::sim::animation::ShpVehicleCadence {
+            walk_rate: object.walk_rate,
+            idle_rate: object.idle_rate,
+        },
+        object.hover_attack,
+        object.deploy_to_land,
+        4,
+    );
+    assert_eq!(sim.substrate.entities.get(1).unwrap().body_frame_counter, 1);
+    sim.tick_move_sound_after_process(1, before, Some(&rules));
+    assert!(
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .move_sound
+            .is_active()
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .move_sound
+            .countdown(),
+        3
+    );
 }
 
 fn move_sound_test_rules(configured: bool) -> RuleSet {
@@ -1007,10 +1059,10 @@ fn move_sound_test_sim() -> Simulation {
 }
 
 fn trigger_move_sound_tail(sim: &mut Simulation, rules: &RuleSet) {
-    let mut before = sim.movement_sound_probe(1).expect("test Foot exists");
-    before.facing =
-        crate::sim::movement::FacingClass::new(before.facing.destination().wrapping_add(0x100), 0);
-    sim.tick_move_sound_after_process(1, Some(before), Some(rules));
+    let entity = sim.substrate.entities.get_mut(1).expect("test Foot exists");
+    let before = entity.body_frame_counter;
+    entity.body_frame_counter = before.wrapping_add(1);
+    sim.tick_move_sound_after_process(1, before, Some(rules));
 }
 
 #[test]
@@ -1021,16 +1073,28 @@ fn move_sound_start_consumes_exactly_one_main_draw() {
     let mapgen_before = sim.mapgen_rng.state();
     let mut expected_main = sim.main_rng.clone();
 
-    // The current RuleSet resolves one MoveSound string. Retail still calls
-    // Random::Next before modulo-by-one, so a fresh start consumes one raw draw.
+    // Retail calls Random::Next even before modulo-by-one. Full native
+    // vector, timer and paid-visit controls live in foot_move_sound.json.
     expected_main.next_u32();
     trigger_move_sound_tail(&mut sim, &configured_rules);
     assert_eq!(sim.main_rng.state(), expected_main.state());
     assert_eq!(sim.scenario_rng.state(), scenario_before);
     assert_eq!(sim.mapgen_rng.state(), mapgen_before);
-    assert!(sim.substrate.entities.get(1).unwrap().move_sound_active);
+    assert!(
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .move_sound
+            .is_active()
+    );
     assert_eq!(
-        sim.substrate.entities.get(1).unwrap().move_sound_countdown,
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .move_sound
+            .countdown(),
         3
     );
     assert!(matches!(
@@ -1044,7 +1108,15 @@ fn move_sound_start_consumes_exactly_one_main_draw() {
     assert_eq!(sim.main_rng.state(), expected_main.state());
 
     // A fresh start after stop chooses again and therefore draws once again.
-    sim.release_move_sound(1);
+    let entity = sim.substrate.entities.get_mut(1).unwrap();
+    entity.set_falling_down_for_test(true);
+    let before = entity.body_frame_counter;
+    sim.tick_move_sound_after_process(1, before, Some(&configured_rules));
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_falling_down_for_test(false);
     expected_main.next_u32();
     trigger_move_sound_tail(&mut sim, &configured_rules);
     assert_eq!(sim.main_rng.state(), expected_main.state());
@@ -1061,7 +1133,15 @@ fn move_sound_start_consumes_exactly_one_main_draw() {
     assert_eq!(silent.scenario_rng.state(), silent_scenario);
     assert_eq!(silent.main_rng.state(), silent_main);
     assert_eq!(silent.mapgen_rng.state(), silent_mapgen);
-    assert!(!silent.substrate.entities.get(1).unwrap().move_sound_active);
+    assert!(
+        !silent
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .move_sound
+            .is_active()
+    );
 }
 
 pub(crate) fn gsi_04_07_wall_sell_rules(
@@ -7574,9 +7654,10 @@ fn test_lethal_hit_stuns_the_dying_infantry() {
 }
 
 #[test]
-fn test_guard_returns_to_anchor_when_displaced() {
+fn test_area_guard_keeps_its_post_when_displaced_inside_the_native_leash() {
     let rules = combat_test_rules();
     let mut sim: Simulation = Simulation::new();
+    let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     sim.spawn_from_map(
         &[MapEntity {
             owner: "Americans".to_string(),
@@ -7596,7 +7677,7 @@ fn test_guard_returns_to_anchor_when_displaced() {
             structure_ai_sellable: false,
             structure_ai_repairable: false,
         }],
-        None,
+        Some(&rules),
     );
     let guard_cmd = cmd_envelope(
         &sim,
@@ -7604,10 +7685,9 @@ fn test_guard_returns_to_anchor_when_displaced() {
         1,
         Command::Guard {
             entity_id: 1,
-            target_id: None,
+            target: Some(crate::sim::combat::TargetKind::Cell(2, 2)),
         },
     );
-    let grid = PathGrid::new(32, 32);
     let _ = sim.advance_tick(&[guard_cmd], Some(&rules), Some(&grid), None, 100);
 
     sim.remove_entity_occupancy(1);
@@ -7616,6 +7696,7 @@ fn test_guard_returns_to_anchor_when_displaced() {
         e.position.ry = 2;
         e.movement_target = None;
         e.attack_target = None;
+        e.navigation.nav_com = None;
     }
     sim.add_entity_occupancy(1);
 
@@ -7625,11 +7706,15 @@ fn test_guard_returns_to_anchor_when_displaced() {
         .entities
         .get(1)
         .expect("entity 1 should exist");
-    let _movement = ge
-        .movement_target
-        .as_ref()
-        .expect("guard should re-path back to its anchor");
-    assert_eq!(crate::sim::movement::movement_goal_cell(ge), Some((2, 2)));
+    assert!(ge.order_intent.is_none());
+    assert_eq!(
+        ge.archive_target(),
+        Some(crate::sim::combat::TargetKind::Cell(2, 2))
+    );
+    assert!(
+        ge.navigation.nav_com.is_none(),
+        "a displacement within the leash does not force a return"
+    );
 }
 
 #[test]

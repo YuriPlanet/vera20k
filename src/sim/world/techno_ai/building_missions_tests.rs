@@ -1175,6 +1175,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
                 modifier: 150,
                 max: 8,
                 delay: 45,
+                duration: 15,
             }
         );
         let americans = sim.interner.get("Americans").expect("interned");

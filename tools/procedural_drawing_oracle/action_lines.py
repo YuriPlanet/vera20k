@@ -1286,7 +1286,7 @@ def attack_production_reference(palette_row):
         production_camera=[-2100, 1426], production_zoom=1, world_y_bias=15,
         production_extent=[800, 600], tactical_extent=[632, 568], crop_extent=[192, 160],
         crop_origin=[176, 336], map_reference='production_reference.map',
-        prerequisite_packet=dict(path=str(prerequisite_path), sha256=sha(prerequisite_path.read_bytes()),
+        prerequisite_packet=dict(path=prerequisite_path.relative_to(Path(__file__).resolve().parents[2]).as_posix(), sha256=sha(prerequisite_path.read_bytes()),
             fields='type_inputs, type_readers.turret_offset, type_readers.warhead_ap, aim_cases'),
         no_rocking_origin=dict(startup_matrix_owner='tools/native_slope.py:slope_matrices',
             prior_packet=dict(path=str(previous_path), sha256=sha(previous_raw)),

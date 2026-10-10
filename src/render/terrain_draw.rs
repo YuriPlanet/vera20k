@@ -19,12 +19,12 @@ use super::tactical_draw_plan::RenderZPolicy;
 mod batching;
 #[path = "terrain_ion_blast.rs"]
 mod ion_blasts;
-#[path = "terrain_line_trail.rs"]
-mod line_trails;
 #[path = "terrain_packed.rs"]
 mod packed;
 #[path = "terrain_submission.rs"]
 mod submission;
+#[path = "terrain_surface_lines.rs"]
+mod surface_lines;
 pub(crate) use batching::TerrainBatchStats;
 use batching::{TerrainBatches, TerrainCommand};
 pub(crate) use ion_blasts::IonBlastDraw;
@@ -83,7 +83,7 @@ pub(crate) struct TerrainDrawRenderer {
     batches: TerrainBatches,
     read_only_commands: Vec<TerrainCommand>,
     submission: PassSubmission,
-    line_trails: line_trails::LineTrailGpu,
+    surface_lines: surface_lines::SurfaceLineGpu,
     ion_blasts: ion_blasts::IonBlastGpu,
     packed: packed::PackedSpriteGpu,
 }
@@ -340,7 +340,7 @@ impl TerrainDrawRenderer {
             reference_body_pipeline: pipeline("fs_body", false),
             #[cfg(test)]
             reference_shadow_pipeline: pipeline("fs_shadow", false),
-            line_trails: line_trails::LineTrailGpu::new(device, format, &snapshot_layout),
+            surface_lines: surface_lines::SurfaceLineGpu::new(device, format, &snapshot_layout),
             ion_blasts: ion_blasts::IonBlastGpu::new(device, format, &snapshot_layout),
             packed: packed::PackedSpriteGpu::new(device, queue, format, batch),
             source_layout,

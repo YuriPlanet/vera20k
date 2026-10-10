@@ -233,15 +233,21 @@ pub(crate) fn render_game(
     });
     let shroud = presentation.shroud_buffer.as_ref();
     let sandbox = state.match_state.sandbox_full_visibility;
-    state.renderer.terrain_draw_renderer.prepare_line_trails(
+    state.renderer.terrain_draw_renderer.prepare_surface_lines(
         &state.renderer.gpu.device,
         &state.renderer.gpu.queue,
+        presentation.lasers.draws(),
         segments,
-        crate::render::line_trail::LineTrailViewport {
+        crate::render::surface_line::SurfaceLineViewport {
             camera: camera.map(|v| v.floor() as i32),
             clip: [tactical_x, tactical_y, tactical_w, tactical_h].map(|v| (v as f32 / z) as i32),
             z_origin_y: native_z_origin_y as i32,
             zoom: z,
+        },
+        || {
+            let mut detail = presentation.detail.borrow_mut();
+            let enough_fps = detail.frame_rate() >= detail.minimum_frame_rate();
+            enough_fps && presentation.in_game_options.detail_level != 0
         },
         |point| {
             if sandbox {
@@ -396,6 +402,7 @@ fn upload_to_gpu(
         "status_unit_fill",
         &ui.unit_status_fill,
     );
+    pool.upload(&state.renderer.gpu, "self_heal_pips", &ui.self_heal_pip);
     pool.upload(&state.renderer.gpu, "cargo_pips", &ui.cargo_pip);
     pool.upload(&state.renderer.gpu, "software_cursor", &ui.software_cursor);
     pool.upload(&state.renderer.gpu, "placement_valid", &ui.placement_valid);

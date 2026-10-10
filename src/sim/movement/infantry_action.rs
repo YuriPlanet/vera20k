@@ -502,11 +502,7 @@ impl Simulation {
                     false
                 }
                 0x14 | 0x15 | DO_AIR_DEATH_FINISH => {
-                    // UnInit (vtable `+0xF8`); the Foot destructor lets its sounds
-                    // play out.
-                    self.sound_events
-                        .push(crate::sim::world::SimSoundEvent::ObjectSoundReleased { owner: id });
-                    self.release_move_sound(id);
+                    // UnInit owns Limbo and eventual Foot sound release.
                     self.uninit_with_rules(id, rules);
                     true
                 }
@@ -538,7 +534,6 @@ impl Simulation {
                 }
                 11..=15 => {
                     self.leave_dead_body(id, rules);
-                    self.release_move_sound(id);
                     self.uninit_with_rules(id, rules);
                     true
                 }

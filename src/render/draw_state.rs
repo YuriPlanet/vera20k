@@ -19,6 +19,14 @@ pub struct ObserverDrawContext {
     pub cloaking_stages: i32,
     pub invisible: bool,
     pub is_campaign: bool,
+    /// Original House50B6F0, distinct from either alliance direction.
+    pub owner_is_current_player: bool,
+    /// Object+1BC returned a Cell for the disguise observer query.
+    pub disguise_cell_present: bool,
+    /// Original Cell4870F0 for this viewer at that Cell.
+    pub detects_disguise: bool,
+    /// The selected body type's encoding; screen-pick callers leave it unset.
+    pub drawn_voxel: Option<bool>,
 }
 
 impl Default for ObserverDrawContext {
@@ -31,6 +39,10 @@ impl Default for ObserverDrawContext {
             cloaking_stages: crate::rules::ruleset::GeneralRules::default().cloaking_stages,
             invisible: false,
             is_campaign: false,
+            owner_is_current_player: false,
+            disguise_cell_present: false,
+            detects_disguise: false,
+            drawn_voxel: None,
         }
     }
 }
@@ -64,9 +76,44 @@ pub struct CloakDrawInput {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DisguiseDrawInput {
     pub active: bool,
-    pub observer_is_allied: bool,
+    pub owner_is_current_player: bool,
+    pub cell_present: bool,
+    pub detected: bool,
+    /// Techno+1EC/+1F4, not the re-disguise timer at+1E0/+1E8.
+    pub blink_active: bool,
     /// Native timestamp field used by `GetDisguiseFlags`.
     pub start_frame: u32,
+}
+
+impl DisguiseDrawInput {
+    /// Techno70EE30: shared Unit/Infantry real-type observer decision.
+    /// The signed remainder is significant across the native DWORD boundary.
+    pub(crate) fn shows_real_type(self, current_frame: u32) -> bool {
+        if self.blink_active && !self.owner_is_current_player {
+            return true;
+        }
+        if self.owner_is_current_player && self.active {
+            return !(72..120).contains(&self.phase(current_frame));
+        }
+        !self.active || !self.cell_present || self.detected
+    }
+
+    fn phase(self, current_frame: u32) -> i32 {
+        current_frame
+            .wrapping_sub(self.start_frame)
+            .wrapping_add(64) as i32
+            % 256
+    }
+
+    /// Techno70ED80's added flags. Its caller separately admits only the
+    /// current player's active disguise at7062F5..70631D.
+    fn selector_bits(self, current_frame: u32) -> u8 {
+        if self.blink_active && !self.owner_is_current_player {
+            0
+        } else {
+            selector_bits_for_percent(disguise_phase_percent(self.phase(current_frame)))
+        }
+    }
 }
 
 /// Producer-owned inputs to the common YR object draw resolver.
@@ -154,14 +201,8 @@ impl DrawState {
         };
         let disguise_selector = input
             .disguise
-            .filter(|disguise| disguise.active && disguise.observer_is_allied)
-            .map(|disguise| {
-                let phase = current_frame
-                    .wrapping_sub(disguise.start_frame)
-                    .wrapping_add(64)
-                    % 256;
-                selector_bits_for_percent(disguise_phase_percent(phase))
-            })
+            .filter(|disguise| disguise.active && disguise.owner_is_current_player)
+            .map(|disguise| disguise.selector_bits(current_frame))
             .unwrap_or(0);
 
         if disguise_selector != 0 {
@@ -202,29 +243,52 @@ impl DrawState {
                 false,
             ),
         );
+        let voxel = observer.drawn_voxel.unwrap_or(entity.is_voxel);
         Self::resolve(
             DrawStateInput {
                 cloak: Some(CloakDrawInput {
                     character,
                     progress: entity.cloak.as_ref().map_or(0, |cloak| cloak.depth as i32),
-                    native_offset_words: if character == 4 && entity.is_voxel {
+                    native_offset_words: if character == 4 && voxel {
                         entity.native_cloak_offset_words()
                     } else {
                         0
                     },
-                    voxel: entity.is_voxel,
+                    voxel,
                 }),
-                disguise: entity.disguise.as_ref().map(|disguise| DisguiseDrawInput {
-                    active: disguise.disguised,
-                    observer_is_allied: observer.owner_is_allied,
-                    start_frame: disguise.disguise_creation_frame,
-                }),
+                disguise: Self::disguise_input(entity, observer),
                 warp_out,
                 warp_in,
             },
             current_frame,
             remap_row,
         )
+    }
+
+    pub(crate) fn disguise_input(
+        entity: &GameEntity,
+        observer: ObserverDrawContext,
+    ) -> Option<DisguiseDrawInput> {
+        entity.disguise.as_ref().map(|disguise| DisguiseDrawInput {
+            active: disguise.is_disguised(),
+            owner_is_current_player: observer.owner_is_current_player,
+            cell_present: observer.disguise_cell_present,
+            detected: observer.detects_disguise,
+            // The separate Techno blink producer is not retained yet. The
+            // stationary stock Mirage path starts with an inactive timer;
+            // do not alias its gameplay re-disguise timer to this input.
+            blink_active: false,
+            start_frame: disguise.creation_frame(),
+        })
+    }
+
+    pub(crate) fn draws_disguise(
+        entity: &GameEntity,
+        current_frame: u32,
+        observer: ObserverDrawContext,
+    ) -> bool {
+        Self::disguise_input(entity, observer)
+            .is_some_and(|input| !input.shows_real_type(current_frame))
     }
 }
 
@@ -233,7 +297,7 @@ const TRANSLUCENCY_50: u8 = 0b100;
 const TRANSLUCENCY_75: u8 = TRANSLUCENCY_25 | TRANSLUCENCY_50;
 
 /// `GetDisguiseFlags @ 0x0070ed80`'s 256-frame shimmer leaf.
-pub fn disguise_phase_percent(phase: u32) -> u8 {
+pub fn disguise_phase_percent(phase: i32) -> u8 {
     match phase % 256 {
         64..=67 | 76..=79 | 112..=115 | 124..=127 => 25,
         68..=75 | 116..=123 => 50,
@@ -405,7 +469,10 @@ mod tests {
                 }),
                 disguise: Some(DisguiseDrawInput {
                     active: true,
-                    observer_is_allied: true,
+                    owner_is_current_player: true,
+                    cell_present: true,
+                    detected: false,
+                    blink_active: false,
                     start_frame: 0,
                 }),
                 warp_out: true,
@@ -447,5 +514,66 @@ mod tests {
         assert!(shader.contains("select(1.0, -1.0, instance.fx_params.w < 0.0)"));
         assert!(shader.contains("input.canvas_top - (input.z_adjust + input.z_sign * z_byte)"));
         assert!(!shader.contains("0.0002"));
+    }
+
+    #[test]
+    fn mirage_observer_and_shimmer_match_original_executable() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/mirage_disguise.json",
+        ))
+        .unwrap();
+        let rows = corpus["observer"].as_array().unwrap();
+        assert!(rows.len() >= 31);
+        for row in rows {
+            let input = &row["input"];
+            let frame = input["frame"].as_i64().unwrap() as u32;
+            let timer = crate::sim::timer::CdTimer::from_raw(
+                input["blink_start"].as_i64().unwrap() as i32,
+                input["blink_duration"].as_i64().unwrap() as i32,
+            );
+            let disguise = DisguiseDrawInput {
+                active: input["raw_disguised"].as_bool().unwrap(),
+                owner_is_current_player: input["owner"].as_bool().unwrap(),
+                cell_present: input["cell_present"].as_bool().unwrap(),
+                detected: input["sensor_count"].as_i64().unwrap() > 0,
+                blink_active: !timer.expired(frame as i32),
+                start_frame: input["creation"].as_i64().unwrap() as u32,
+            };
+            assert_eq!(
+                u64::from(disguise.shows_real_type(frame)),
+                row["outputs"]["draw_actual"].as_u64().unwrap(),
+                "{}",
+                row["name"]
+            );
+            assert_eq!(
+                256 | u64::from(disguise.selector_bits(frame)),
+                row["outputs"]["flags_arg256"].as_u64().unwrap(),
+                "{}",
+                row["name"]
+            );
+            let decision = DrawState::resolve(
+                DrawStateInput {
+                    disguise: Some(disguise),
+                    ..Default::default()
+                },
+                frame,
+                0,
+            );
+            let admitted_flags = if disguise.active && disguise.owner_is_current_player {
+                row["outputs"]["flags_arg256"].as_u64().unwrap() & 6
+            } else {
+                0
+            };
+            assert_eq!(
+                u64::from(decision.state.native_selector_bits()),
+                admitted_flags,
+                "{}: caller gates the standalone flag helper",
+                row["name"]
+            );
+            assert_eq!(
+                row["rng_before"], row["rng_after"],
+                "read-only native observer"
+            );
+        }
     }
 }

@@ -6,7 +6,6 @@
 
 use super::eva_producers;
 use crate::audio::events::{GameSoundEvent, SoundEventQueue, SoundSource};
-use crate::audio::sfx::SfxPlayer;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
@@ -34,22 +33,25 @@ pub(crate) fn selection_voice_event(
     })
 }
 
-/// The two presentation draws used while interpreting a simulation event.
-/// Production delegates to the existing player RNG; absence of that player
-/// still suppresses the same random-dependent cues.
-pub(super) trait SoundEventRandom {
-    fn roll_percent(&mut self) -> i32;
+/// QueueMegaMission6FFD42's default command acknowledgement. Simulation
+/// owns the ordered-list Main draw and QueueVoice708D90 admission; the
+/// existing unit voice queue owns pending replacement and eventual playback.
+pub(crate) fn default_order_voice_event(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    entity_id: u64,
+    voices_enabled: bool,
+) -> Option<GameSoundEvent> {
+    let sound_id = sim.default_order_voice_request(rules, entity_id, voices_enabled)?;
+    Some(GameSoundEvent::UnitMoveOrder {
+        speaker_id: entity_id,
+        sound_id: sound_id.to_string(),
+    })
 }
 
-impl SoundEventRandom for SfxPlayer {
-    fn roll_percent(&mut self) -> i32 {
-        SfxPlayer::roll_percent(self)
-    }
-}
-
-/// Append each event's output in producer order, including multi-cue events.
-/// Keep this call at the frame's original sound-publication point: feedback
-/// rolls precede listener gating and must not move to playback or simulation.
+/// Append each already-admitted event in producer order, including multi-cue
+/// events. Simulation owns feedback admission and its Main draws at damage
+/// time; this adapter never advances a random stream.
 ///
 /// `admit_radar` is the local client's `CreateRadarEvent @ 0x0065FA70`. Caller
 /// admission can already belong to the producer: `StructureAbandoned` carries
@@ -68,13 +70,16 @@ pub(super) fn dispatch_sim_sound_events(
     sim: &Simulation,
     rules: &RuleSet,
     local_owner_name: Option<&str>,
-    mut random: Option<&mut dyn SoundEventRandom>,
     admit_radar: &mut dyn FnMut(crate::sim::radar::RadarEventRequest) -> bool,
     output: &mut SoundEventQueue,
 ) {
     // Convert sim sound events to app-layer sound events for playback.
     for sim_event in events {
         let app_event: GameSoundEvent = match sim_event {
+            SimSoundEvent::UnitVoiceVisit { owner } => GameSoundEvent::UnitVoiceVisit { owner },
+            SimSoundEvent::UnitVoiceDestroyed { owner } => {
+                GameSoundEvent::UnitVoiceDestroyed { owner }
+            }
             SimSoundEvent::ObjectSoundStarted {
                 owner,
                 sound_id,
@@ -90,7 +95,7 @@ pub(super) fn dispatch_sim_sound_events(
                 world,
             } => GameSoundEvent::AnimationStarted {
                 anim_id,
-                sound_id: sim.interner.resolve(sound_id).to_string(),
+                sound_id,
                 source: Some(anim_world_sound_source(world)),
             },
             SimSoundEvent::AnimationStopped {
@@ -110,7 +115,7 @@ pub(super) fn dispatch_sim_sound_events(
                 world,
             } => GameSoundEvent::AnimationStarted {
                 anim_id: owner,
-                sound_id: sim.interner.resolve(sound_id).to_string(),
+                sound_id,
                 source: Some(anim_world_sound_source(world)),
             },
             SimSoundEvent::GattlingLoopStop { owner } => GameSoundEvent::AnimationStopped {
@@ -122,6 +127,9 @@ pub(super) fn dispatch_sim_sound_events(
             | SimSoundEvent::ObjectSoundReleased { owner } => {
                 GameSoundEvent::AnimationReleased { anim_id: owner }
             }
+            SimSoundEvent::ObjectSoundDetached { owner } => {
+                GameSoundEvent::AnimationDetached { anim_id: owner }
+            }
             SimSoundEvent::AircraftPhase { sound_id, world } => GameSoundEvent::AircraftPhase {
                 sound_id: sim.interner.resolve(sound_id).to_string(),
                 source: Some(anim_world_sound_source(world)),
@@ -131,7 +139,7 @@ pub(super) fn dispatch_sim_sound_events(
                 rx,
                 ry,
             } => GameSoundEvent::EntityDestroyed {
-                sound_id: sim.interner.resolve(die_sound_id).to_string(),
+                sound_id: die_sound_id,
                 source: Some(sound_source_at_cell(rx, ry)),
             },
             SimSoundEvent::EntityCrushed {
@@ -500,63 +508,6 @@ pub(super) fn dispatch_sim_sound_events(
                     source: Some(sound_source_at_cell(rx, ry)),
                 }
             }
-            SimSoundEvent::VoiceFeedback {
-                owner,
-                type_ref,
-                rx,
-                ry,
-            } => {
-                // `TechnoClass::ReceiveDamage @ 0x00701900`, arm
-                // `0x00702695`. `sim/` has already applied the two
-                // gates that are deterministic — result 2 (the
-                // `Strength >> 1` crossing) and a non-empty
-                // `VoiceFeedback=` list (`0x007026A1`/`0x007026A9`).
-                // What is left runs in native's exact order.
-                //
-                // 1. `0x007026B3` `RandomRanged(0, 99)` on
-                //    `g_MainRng @ 0x00886B88`, `0x007026BD CMP
-                //    EAX,0x1E ; JGE` — speaks on 0..=29. Native spends
-                //    this draw for every house, so it is drawn before
-                //    the owner gate here too.
-                let Some(player) = random.as_deref_mut() else {
-                    continue;
-                };
-                let roll = player.roll_percent();
-                // 2. `0x007026C6 MOV ECX,[ESI+0x21C]` / `CALL
-                //    HouseClass::IsHumanPlayer @ 0x0050B6F0`. With
-                //    `g_GameMode != 0` (skirmish/multiplayer) that
-                //    function is `house == g_PlayerPtr`, so only the
-                //    local player's objects speak.
-                let owner_is_local_human = owner_is_local(&sim.interner, owner, local_owner_name);
-                if !voice_feedback_speaks(roll, owner_is_local_human) {
-                    continue;
-                }
-                // 3. `0x007026DE CALL 0x0065C780` / `0x007026E7 DIV
-                //    [EDI+0x4E8]` picks `items[rand % count]`.
-                //    RESIDUAL: VERA models `VoiceFeedback=` as one id
-                //    where native holds a `CCINIClass::ReadSoundList`
-                //    vector, so no draw is spent here. Trigger: every
-                //    spoken line. Player effect: none on retail — all
-                //    133 `VoiceFeedback=` authors in `rulesmd.ini` are
-                //    single-entry (0 contain a comma), so `rand % 1`
-                //    is 0 either way. Frequency: every half-health
-                //    crossing that passes the roll. Downstream risk:
-                //    none for lockstep — `g_MainRng` is not
-                //    synchronised — but a modded comma list would pick
-                //    the wrong entry. Same divergence as the
-                //    `VoiceMove=` one recorded on `voice_id_for_key`.
-                let sound_id = match rules
-                    .object(sim.interner.resolve(type_ref))
-                    .and_then(|object| object.voice_feedback.as_deref())
-                {
-                    Some(s) if !s.is_empty() => s.to_string(),
-                    _ => continue,
-                };
-                GameSoundEvent::VoiceFeedback {
-                    sound_id,
-                    source: Some(sound_source_at_cell(rx, ry)),
-                }
-            }
             SimSoundEvent::BunkerWallsUp { rx, ry } => {
                 // Walls-up cue on install; skip when the rules key is empty.
                 let sound_id =
@@ -854,24 +805,6 @@ pub(super) fn dispatch_sim_sound_events(
     }
 }
 
-/// Chance in 100 that a techno speaks its `VoiceFeedback=` line on the
-/// half-strength crossing. `TechnoClass::ReceiveDamage @ 0x007026BD
-/// CMP EAX,0x1E ; JGE` against `RandomRanged(0, 99)` — the cue speaks for a
-/// draw of 0..=29. Hardcoded in the binary, not an INI key.
-const VOICE_FEEDBACK_PERCENT: i32 = 0x1E;
-
-/// `TechnoClass::ReceiveDamage @ 0x00702695`'s two post-list gates, in native
-/// order: the roll at `0x007026BD CMP EAX,0x1E ; JGE 0x007027F7` against
-/// `RandomRanged(0, 99)`, then `HouseClass::IsHumanPlayer @ 0x0050B6F0` at
-/// `0x007026C6` — which for `g_GameMode != 0` (skirmish and multiplayer) is
-/// `house == g_PlayerPtr`, the local player alone.
-///
-/// The caller must have drawn `roll` already whatever the owner is: native
-/// spends the draw at `0x007026B3`, before it loads `[ESI+0x21C]`.
-fn voice_feedback_speaks(roll: i32, owner_is_local_human: bool) -> bool {
-    roll < VOICE_FEEDBACK_PERCENT && owner_is_local_human
-}
-
 fn wall_sell_sound_for_local(
     receiver_name: &str,
     local_owner: Option<&str>,
@@ -1154,19 +1087,6 @@ mod tests {
         .unwrap()
     }
 
-    #[derive(Default)]
-    struct ScriptedRandom {
-        rolls: std::collections::VecDeque<i32>,
-        calls: Vec<&'static str>,
-    }
-
-    impl SoundEventRandom for ScriptedRandom {
-        fn roll_percent(&mut self) -> i32 {
-            self.calls.push("percent");
-            self.rolls.pop_front().expect("scripted percentage draw")
-        }
-    }
-
     /// Original458200 calls global Voc before radar15 and speaks only when
     /// that radar request accepts. Simulation already admitted House50B6F0;
     /// a campaign human need not be the local-owner name used by other arms.
@@ -1241,7 +1161,6 @@ mod tests {
                 observed.borrow_mut().push("radar_event");
                 native_radar["accepted"].as_bool().unwrap()
             };
-            let mut random = ScriptedRandom::default();
             let mut output = SoundEventQueue::new();
             // Observe each prepared producer event at the existing dispatcher
             // boundary, preserving one ledger across the sound and radar calls.
@@ -1252,7 +1171,6 @@ mod tests {
                     &sim,
                     &rules,
                     Some(local_name),
-                    Some(&mut random),
                     &mut gate,
                     &mut output,
                 );
@@ -1282,7 +1200,6 @@ mod tests {
                 .filter(|op| matches!(*op, "abandoned_sound" | "radar_event" | "abandoned_eva"))
                 .collect::<Vec<_>>();
             assert_eq!(*observed.borrow(), expected, "{name}");
-            assert!(random.calls.is_empty(), "{name}: no notification RNG");
         }
     }
 
@@ -1323,19 +1240,16 @@ mod tests {
             admitted.push(actual);
             result
         };
-        let mut random = ScriptedRandom::default();
         let mut output = SoundEventQueue::new();
         dispatch_sim_sound_events(
             [event(remote), event(local), event(local)],
             &sim,
             &rules,
             Some("LOCAL"),
-            Some(&mut random),
             &mut gate,
             &mut output,
         );
         assert_eq!(admitted.len(), suffix.len());
-        assert!(random.calls.is_empty(), "native notification spends no RNG");
         let emitted = output.drain();
         assert_eq!(
             emitted.len(),
@@ -1368,7 +1282,6 @@ mod tests {
             &sim,
             &rules,
             Some("LOCAL"),
-            None,
             &mut |_| true,
             &mut output,
         );
@@ -1439,7 +1352,6 @@ mod tests {
             &sim,
             &rules,
             Some("LOCAL"),
-            None,
             &mut admit_radar,
             &mut output,
         );
@@ -1504,7 +1416,6 @@ mod tests {
             &sim,
             &rules,
             Some("LOCAL"),
-            None,
             &mut |request| {
                 admitted.push((request.event_type, request.rx));
                 request.rx != 99
@@ -1529,87 +1440,55 @@ mod tests {
     }
 
     #[test]
-    fn dispatcher_draws_feedback_before_listener_gate_and_keeps_rng_event_order() {
-        let rules = dispatch_rules();
-        let mut sim = Simulation::new();
-        let local = sim.interner.intern("Local");
-        let remote = sim.interner.intern("Remote");
-        let type_ref = sim.interner.intern("E1");
-        let feedback = |owner| SimSoundEvent::VoiceFeedback {
-            owner,
-            type_ref,
-            rx: 3,
-            ry: 4,
-        };
-        let mut random = ScriptedRandom {
-            rolls: [0, 99, 29].into(),
-            ..Default::default()
-        };
+    fn dispatcher_preserves_resolved_feedback_before_the_building_cue() {
+        let mut rules = dispatch_rules();
+        rules.general.building_damage_sound = Some("Damaged".into());
+        let sim = Simulation::new();
+        let before = sim.rng_state();
         let mut output = SoundEventQueue::new();
         dispatch_sim_sound_events(
             [
-                feedback(remote),
-                feedback(local),
                 SimSoundEvent::VocAt {
-                    sound_id: "StrikeB".into(),
+                    sound_id: "Feedback".into(),
                     audible_to: None,
-                    rx: 8,
-                    ry: 9,
-                    sub_x: SimFixed::from_num(128),
-                    sub_y: SimFixed::from_num(128),
-                    world_z_leptons: 0,
+                    rx: 3,
+                    ry: 4,
+                    sub_x: SimFixed::from_num(61),
+                    sub_y: SimFixed::from_num(174),
+                    world_z_leptons: 104,
                 },
-                feedback(local),
+                SimSoundEvent::BuildingDamagedSfx { rx: 3, ry: 4 },
             ],
             &sim,
             &rules,
-            Some("Local"),
-            Some(&mut random),
-            &mut |_| panic!("no radar-gated event in this batch"),
+            Some("DifferentListener"),
+            &mut |_| panic!("these cues have no radar gate"),
             &mut output,
         );
-        assert_eq!(random.calls, ["percent", "percent", "percent"]);
-        assert!(random.rolls.is_empty());
         let events = output.drain();
         assert_eq!(
             events
                 .iter()
                 .map(GameSoundEvent::sound_id)
                 .collect::<Vec<_>>(),
-            ["StrikeB", "Feedback"]
+            ["Feedback", "Damaged"]
         );
-        assert_eq!(events[0].source().unwrap().cell(), (8, 9));
-        assert_eq!(events[1].source().unwrap().cell(), (3, 4));
-    }
-
-    #[test]
-    fn dispatcher_without_audio_rng_keeps_nonrandom_events() {
-        let rules = dispatch_rules();
-        let mut sim = Simulation::new();
-        let local = sim.interner.intern("Local");
-        let type_ref = sim.interner.intern("E1");
-        let mut output = SoundEventQueue::new();
-        dispatch_sim_sound_events(
-            [
-                SimSoundEvent::VoiceFeedback {
-                    owner: local,
-                    type_ref,
-                    rx: 1,
-                    ry: 2,
-                },
-                SimSoundEvent::C4Planted { rx: 1, ry: 2 },
-            ],
-            &sim,
-            &rules,
-            Some("Local"),
-            None,
-            &mut |_| panic!("no radar-gated event in this batch"),
-            &mut output,
+        let source = events[0].source().unwrap();
+        assert_eq!(source.cell(), (3, 4));
+        assert_eq!(
+            source.screen_pos(),
+            crate::util::lepton::lepton_to_screen_exact_z(
+                3,
+                4,
+                SimFixed::from_num(61),
+                SimFixed::from_num(174),
+                104,
+            )
         );
-        let events = output.drain();
-        assert_eq!(events.len(), 1);
-        assert!(
-            matches!(&events[0], GameSoundEvent::C4Planted { sound_id, .. } if sound_id == "SealPlaceBomb")
+        assert_eq!(
+            sim.rng_state(),
+            before,
+            "the app only forwards resolved requests"
         );
     }
 
@@ -1621,7 +1500,6 @@ mod tests {
         let rules = dispatch_rules();
         let sim = Simulation::new();
         for local_owner in [None, Some("DifferentOwner")] {
-            let mut random = ScriptedRandom::default();
             let mut output = SoundEventQueue::new();
             dispatch_sim_sound_events(
                 [
@@ -1635,7 +1513,6 @@ mod tests {
                 &sim,
                 &rules,
                 local_owner,
-                Some(&mut random),
                 &mut |_| panic!("centred Voc has no radar admission"),
                 &mut output,
             );
@@ -1647,7 +1524,6 @@ mod tests {
                     GameSoundEvent::VocAt { sound_id: second, source: None },
                 ] if first == "MenuScold" && second == "OtherRulesSound"
             ));
-            assert!(random.calls.is_empty());
         }
     }
 
@@ -1709,7 +1585,6 @@ mod tests {
             &sim,
             &rules,
             Some("LOCAL"),
-            None,
             &mut |request| {
                 admitted.push((request.rx, request.ry));
                 true
@@ -1816,7 +1691,6 @@ mod tests {
                     &sim,
                     &rules,
                     Some("LOCAL"),
-                    None,
                     &mut |_| true,
                     &mut output,
                 );
@@ -1898,7 +1772,6 @@ mod tests {
                 &sim,
                 &rules,
                 Some("LOCAL"),
-                None,
                 &mut |_| true,
                 &mut output,
             );
@@ -1988,44 +1861,6 @@ mod tests {
             ))
             .unwrap();
         assert!(base_under_attack_siren(false, &no_key).is_none());
-    }
-
-    /// `TechnoClass::ReceiveDamage @ 0x00702695`, the `VoiceFeedback=` arm:
-    /// `0x007026BD CMP EAX,0x1E ; JGE 0x007027F7` against
-    /// `RandomRanged(0, 99)`, then `HouseClass::IsHumanPlayer @ 0x0050B6F0`.
-    #[test]
-    fn the_damage_voice_speaks_on_a_roll_under_thirty_and_only_for_the_local_owner() {
-        // `JGE 0x1E` — 0..=29 speak (30 in 100), 30..=99 fall to the tail.
-        assert!(voice_feedback_speaks(0, true));
-        assert!(voice_feedback_speaks(29, true));
-        assert!(!voice_feedback_speaks(30, true));
-        assert!(!voice_feedback_speaks(99, true));
-
-        // `0x007026C6 MOV ECX,[ESI+0x21C]` / `IsHumanPlayer`: an AI's or an
-        // opponent's object never speaks, however the roll landed.
-        assert!(!voice_feedback_speaks(0, false));
-        assert!(!voice_feedback_speaks(29, false));
-        assert!(!voice_feedback_speaks(30, false));
-    }
-
-    /// The roll itself is `RandomRanged(0, 99)` (`0x007026AF PUSH 0x63 ;
-    /// PUSH 0x0`), and `Random__RandomRanged @ 0x0065C7E0` only skips the draw
-    /// when its two endpoints are equal, so this one always advances the
-    /// generator.
-    #[test]
-    fn the_damage_voice_roll_covers_the_native_range_at_the_native_rate() {
-        let mut rng = crate::audio::sfx::SfxRng::seeded(0x5EED);
-        let mut speaks = 0usize;
-        for _ in 0..10_000 {
-            let roll = crate::audio::sfx::SampleRng::ranged(&mut rng, 0, 99);
-            assert!((0..=99).contains(&roll), "roll {roll} left [0, 99]");
-            if roll < VOICE_FEEDBACK_PERCENT {
-                speaks += 1;
-            }
-        }
-        // 30 in 100. The band is wide on purpose: this pins what the 0x1E
-        // threshold means, not the generator behind it.
-        assert!((2_600..3_400).contains(&speaks), "spoke {speaks} of 10000");
     }
 
     /// Stock `[AudioVisual]` values, so the table below is what a retail
@@ -2156,7 +1991,6 @@ mod tests {
             &sim,
             &dispatch_rules(),
             Some("Local"),
-            None,
             &mut |_| panic!("a refusal is not a radar event"),
             &mut output,
         );
@@ -2202,7 +2036,6 @@ mod tests {
                 &sim,
                 &rules,
                 local,
-                None,
                 &mut |_| panic!("the storm's lines are not radar events"),
                 &mut output,
             );

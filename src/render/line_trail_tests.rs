@@ -26,12 +26,18 @@ fn native_line_trail_clipped_three_axis_raster_preserves_repeated_pixel_stores()
         let input = &row["input"];
         let z_origin = input["z_origin_y"].as_i64().unwrap_or(0) as i32;
         let old_z = input["old_z"].as_u64().unwrap() as u16;
-        let alpha = input["alpha"].as_u64().unwrap();
+        let alpha = |[x, y]: [i32; 2]| {
+            if input["alpha"] == "mixed" {
+                [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize]
+            } else {
+                input["alpha"].as_u64().unwrap()
+            }
+        };
         let mut stores = Vec::new();
         for call in row["draw_calls"].as_array().unwrap() {
             let clip = std::array::from_fn(|i| call["clip"][i].as_i64().unwrap() as i32);
             rasterize(projected(call), clip, z_origin, |p| {
-                if p.z < old_z && alpha != 0 {
+                if p.z < old_z && alpha(p.point) != 0 {
                     stores.push((p.point[1] * 64 + p.point[0]) * 2);
                 }
             });

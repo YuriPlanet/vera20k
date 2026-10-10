@@ -48,6 +48,20 @@ pub(crate) fn observer_draw_context(
         crate::map::houses::is_allied_with(&sim.house_alliances, observer, owner)
     });
     let object = rules.and_then(|r| r.object(sim.interner.resolve(entity.type_ref())));
+    let disguise_cell = entity
+        .disguise
+        .as_ref()
+        .filter(|disguise| disguise.is_disguised())
+        .and_then(|_| sim.resolved_terrain.as_ref())
+        .map(|terrain| {
+            // Presentation queries isolate Dummy and never change lockstep state.
+            let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+            let cell = crate::sim::movement::ground_pose::query_object_cell(
+                &cells,
+                crate::sim::movement::ground_pose::position_world_coord(&entity.position),
+            );
+            cells.coord(cell)
+        });
     crate::render::draw_state::ObserverDrawContext {
         owner_is_allied: allied,
         owner_is_mutually_allied: allied
@@ -67,7 +81,42 @@ pub(crate) fn observer_draw_context(
             obj.invisible || (entity.category == EntityCategory::Structure && obj.invisible_in_game)
         }),
         is_campaign: !sim.session.game_mode_nonzero,
+        owner_is_current_player: sim.house_is_human_player(entity.owner()),
+        disguise_cell_present: disguise_cell.is_some(),
+        detects_disguise: local_owner_id
+            .zip(disguise_cell)
+            .is_some_and(|(observer, cell)| {
+                sim.fog
+                    .detects_disguise_for_house(observer, cell.0 as u16, cell.1 as u16)
+            }),
+        drawn_voxel: None,
     }
+}
+
+/// Unit73D2CA..73D38F dispatches on the selected type's Voxel field. The
+/// original identity remains authoritative for animation, pose and lifecycle.
+pub(crate) fn drawn_type_uses_voxel(
+    entity: &GameEntity,
+    type_id: &str,
+    interner: &crate::sim::intern::StringInterner,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> bool {
+    if type_id == interner.resolve(entity.type_ref()) {
+        return entity.is_voxel;
+    }
+    let Some(rules) = rules else {
+        return entity.is_voxel;
+    };
+    if rules
+        .terrain_object_type_case_insensitive(type_id)
+        .is_some()
+    {
+        return rules.art().get(type_id).is_some_and(|art| art.voxel);
+    }
+    rules
+        .object(type_id)
+        .and_then(|object| rules.art().resolve_metadata_entry(type_id, &object.image))
+        .map_or(entity.is_voxel, |art| art.voxel)
 }
 
 /// Native Building6D9920 ->43CEA0 ->43D290 submits ordinary building bodies

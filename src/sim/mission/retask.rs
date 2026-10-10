@@ -94,7 +94,7 @@ impl Simulation {
     /// native event-execute shape (Queue `0x004C73B9=dynamic/0`). Promotion to
     /// `current` happens at the per-object AI host's Ready→Commence. Used by
     /// the shared MegaMission command funnel (Move, Attack, ForceAttack,
-    /// ForceAttackCell, AttackMove, RepairAtDepot, EnterTransport, PlantC4,
+    /// ForceAttackCell, AttackMove, Guard, RepairAtDepot, EnterTransport, PlantC4,
     /// CaptureBuilding). Stop has its own no-queue Event6 route above.
     pub fn queue_order_mission(&mut self, id: u64, mission: MissionType) {
         let now = self.session.binary_frame;
@@ -138,7 +138,7 @@ impl Simulation {
     /// store to `+0x2B8` or `+0x5A8`. Clearing there would leave a unit parked
     /// after a Stop where retail resumes its archived move on the next Restore.
     ///
-    /// Guard, MinerReturn and HarvestCell use the shared pre-queue prefix,
+    /// MinerReturn and HarvestCell use the shared pre-queue prefix,
     /// but their legacy mission paths still bypass the post-Queue archive
     /// clears here. EjectBunker and dormant aircraft passenger Unload also
     /// bypass the prefix. These pre-existing command routes can Restore a

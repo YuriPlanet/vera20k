@@ -45,6 +45,7 @@ fn retail_tibtre_decode_and_atlas_pairs_match_original_shape_draw() {
             &batch,
             &[],
             &objects,
+            &[],
             &assets,
             &theater.iso_palette,
             &theater.unit_palette,

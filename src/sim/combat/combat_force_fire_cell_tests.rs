@@ -180,12 +180,11 @@ fn force_fire_detonation_builds_an_anim_instance_and_plays_its_report() {
     assert_eq!(anim.z_adjust, COMBAT_EXPLOSION_Z_ADJUST);
     assert!(anim.start_sound_active);
 
-    let report = sim.interner.intern("EXPLOSION06");
     assert!(
         sim.sound_events.iter().any(|event| matches!(
             event,
             SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                if *anim_id == id && *sound_id == report
+                if *anim_id == id && sound_id == "EXPLOSION06"
         )),
         "the explosion must play its art `Report=`"
     );

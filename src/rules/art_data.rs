@@ -114,7 +114,8 @@ pub struct ArtEntry {
     pub primary_fire_pixel_offset: Option<(i32, i32)>,
     /// Fixed building secondary fire screen-pixel offset.
     pub secondary_fire_pixel_offset: Option<(i32, i32)>,
-    /// Building primary fire alternates the X pixel offset by burst side.
+    /// Building GetFLH adds the selected base Techno FLH to the unmirrored
+    /// primary pixel offset (PrimaryFireDualOffset +1764, 4538ED..45395A).
     pub primary_fire_dual_offset: bool,
     /// Building fire is held behind the SpecialAnim before weapon emission.
     pub is_anim_delayed_fire: bool,

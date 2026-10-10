@@ -69,10 +69,10 @@ fn build_random_map_preview_grid(
     theater: Option<&crate::map::theater::TheaterData>,
     asset_manager: Option<&crate::assets::asset_manager::AssetManager>,
     terrain_rules: Option<&crate::rules::terrain_rules::TerrainRules>,
-    frontend_main_rng: &mut crate::sim::rng::SimRng,
+    main: &mut crate::sim::rng::MainRngDraws<'_>,
     selector_cache: &mut crate::map::tile_variant_selector::TileVariantSelectorCache,
 ) -> crate::map::resolved_terrain::ResolvedTerrainGrid {
-    let mut raw_draw = || frontend_main_rng.next_u32();
+    let mut raw_draw = || main.next_u32();
     let mut selector = selector_cache.begin_load(&mut raw_draw);
     // RMG InitMap supplies explicit Clear cells. Its preview never borrows a
     // Scenario cursor; equal-bound Fill remains zero-cost.
@@ -548,8 +548,18 @@ impl App {
         // The ordinary Generate path also stamps the localized working label
         // immediately before generator construction (0x00595BC0).
         let mut generation_options = options.clone();
-        generation_options.description = Self::csf_label(state, RANDOM_MAP_DESCRIPTION_KEY, RANDOM_MAP_DESCRIPTION_FALLBACK).into();
-        if let Some(modal) = state.frontend.skirmish_shell_state.random_map_setup_modal.as_mut() {
+        generation_options.description = Self::csf_label(
+            state,
+            RANDOM_MAP_DESCRIPTION_KEY,
+            RANDOM_MAP_DESCRIPTION_FALLBACK,
+        )
+        .into();
+        if let Some(modal) = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_mut()
+        {
             modal.options.description = generation_options.description.clone();
         }
         let options = &generation_options;
@@ -846,7 +856,10 @@ impl App {
         // path will; a different setting here would colour cells the player
         // never sees.
         let resolved_terrain = {
-            let frontend_main_rng = &mut state.frontend.frontend_main_rng;
+            let mut main = crate::app::state::process_main_draws(
+                state.match_state.sim_runtime.as_mut(),
+                &mut state.frontend.frontend_main_rng,
+            );
             let (manager, _, selector_cache) =
                 state.process_assets.manager_and_rules_with_tile_cache();
             let asset_manager = manager.map(|m| &*m);
@@ -855,7 +868,7 @@ impl App {
                 Some(&job.theater),
                 asset_manager,
                 Some(&job.terrain_rules),
-                frontend_main_rng,
+                &mut main,
                 selector_cache,
             )
         };
@@ -1152,16 +1165,16 @@ impl App {
         let mut generate_requested = false;
         let mut accept_requested = false;
         let mut open_browser: Option<SavedSeedMode> = None;
+        let mut main = crate::app::state::process_main_draws(
+            state.match_state.sim_runtime.as_mut(),
+            &mut state.frontend.frontend_main_rng,
+        );
         match released.expect("checked equal to pressed control") {
             Control::Randomize0x621 => {
-                modal.randomize_options(
-                    &settings,
-                    &mut state.frontend.frontend_main_rng,
-                    &description,
-                );
+                modal.randomize_options(&settings, &mut main, &description);
             }
             Control::Generate0x620 => {
-                modal.reroll_derived_for_generate(&settings, &mut state.frontend.frontend_main_rng);
+                modal.reroll_derived_for_generate(&settings, &mut main);
                 modal.begin_generate();
                 generate_requested = true;
             }
@@ -1172,10 +1185,7 @@ impl App {
                     modal.accept(),
                     crate::ui::skirmish_shell::AcceptOutcome::NeedsGenerate
                 ) {
-                    modal.reroll_derived_for_generate(
-                        &settings,
-                        &mut state.frontend.frontend_main_rng,
-                    );
+                    modal.reroll_derived_for_generate(&settings, &mut main);
                     modal.begin_generate();
                     generate_requested = true;
                 }
@@ -1515,12 +1525,13 @@ mod tests {
         let mut selector_cache =
             crate::map::tile_variant_selector::TileVariantSelectorCache::default();
         for _ in 0..6 {
+            let mut main = crate::app::state::process_main_draws(None, &mut frontend_main_rng);
             let preview_grid = build_random_map_preview_grid(
                 &map,
                 None,
                 None,
                 None,
-                &mut frontend_main_rng,
+                &mut main,
                 &mut selector_cache,
             );
             assert!(

@@ -14,9 +14,9 @@ pub(crate) mod options;
 pub(crate) mod options_profile;
 
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 #[cfg(any(feature = "dev-ui", test))]
 use std::time::Instant;
+use std::time::SystemTime;
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -284,7 +284,6 @@ impl PreparedLoad {
         // the handle table; a missing name must never become sidebar ID zero.
         simulation.intern_rule_type_ids(rules);
         simulation.resolve_type_handles(rules);
-        simulation.restore_move_sound_handles_after_load(rules)?;
         simulation.rebuild_lighting_sources_after_load(rules);
 
         // A render cache can retain an outgoing ID until its next sweep. Only

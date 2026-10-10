@@ -126,7 +126,16 @@ class TrailMachine(ArtStateReader):
         n=self.width*self.height
         self.before=struct.pack('<H',color)*n;self.before_z=struct.pack('<H',z)*n
         self.u.mem_write(self.pixels,self.before);self.u.mem_write(self.z,self.before_z)
-        self.u.mem_write(self.alpha,struct.pack('<H',alpha)*n)
+        if alpha=='mixed':
+            # Supplied plane, matching the Prism comparison's mixed input.
+            # Original4BEAC0 samples walked X/Y; additive laser4BDF00 instead
+            # retains the clipped start X while advancing A only along Y.
+            values=[(0,1,63,127,255)[(x//9+y//7)%5]
+                    for y in range(self.height) for x in range(self.width)]
+            raw=struct.pack('<'+'H'*n,*values)
+        else:
+            raw=struct.pack('<H',alpha)*n
+        self.u.mem_write(self.alpha,raw)
     def pixel_state(self):
         raw=bytes(self.u.mem_read(self.pixels,len(self.before)));zr=bytes(self.u.mem_read(self.z,len(self.before_z)))
         return dict(color_sha256=hashlib.sha256(raw).hexdigest(),z_unchanged=zr==self.before_z,
@@ -333,6 +342,9 @@ def generate():
         (-31,0),(32,0),(62,0),(63,0),(0,-47),(0,48),(0,62),(128,128)]))
     pixels.extend(pixel_case('fade_'+str(i),idle_visits=i) for i in (1,7,14,15,16))
     pixels.extend(pixel_case('origin_'+str(i),clip=(4,7,48,72),z_origin_y=origin) for i,origin in enumerate((0,7,21)))
+    pixels.extend(pixel_case('alpha_mixed_'+name,delta,alpha='mixed') for name,delta in (
+        ('x',(256,0,0)),('y',(256,256,0)),('z',(256,0,1000)),
+        ('clipped_reversed',(-768,0,0))))
     cadence=[]
     for render_pass in (0,1,2,3):
         m=TrailMachine();m.produce();cadence.append(m.tactical_composite(render_pass))
@@ -373,6 +385,7 @@ def metadata():
         (0x4c1b50,0x4c1b76),(0x4cac40,0x4cacae),(0x6d4582,0x6d4678),
         (0x5fa350,0x5fa377),(0x5fa776,0x5fa7b4)]
     return dict(native_sha256=image_sha256(),
+        command='VERA20K_PROJECTILE_RENDER_ASSETS=/path/to/extracted-inputs python -m tools.projectile_oracle.line_trail --check',
         coverage='Selected DRAGON Object producer, LineTrail registry/update/draw/detach and bounded Bullet save/load',
         substitutions=[
             'Physical extracted INI bytes become supplied cached native INI indices; no original archive walk',
@@ -387,11 +400,13 @@ def metadata():
             'No Rust/GPU/native full-scene comparison claimed by this corpus alone',
             'No outer OS/network scheduling clock or fixed real-time frame rate established',
             'No failed/repeated Unlimbo, full postload reconstruction or all multi-trail ClearAll claim',
-            'ZBuffer row seed32768 and RGB565 format globals are supplied established renderer inputs'],
+            'ZBuffer row seed32768 and RGB565 format globals are supplied established renderer inputs',
+            "Four mixed-alpha rows supply (0,1,63,127,255)[(x//9+y//7)%5] per pixel, exercising X/Y/Z-dominant and reversed/clipped4BEAC0 walks. This establishes that consumer's A sample, not the scene ABuffer producer."],
         original_slices=[dict(start=f'{a:08X}',end_exclusive=f'{b:08X}',
             sha256=hashlib.sha256(bytes(m.u.mem_read(a,b-a))).hexdigest(),
             hex=bytes(m.u.mem_read(a,b-a)).hex()) for a,b in spans],
         dependencies={p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in (
+            'tools/projectile_oracle/line_trail.py',
             'tools/projectile_oracle/bridge_render_art_state.py',
             'tools/projectile_oracle/bridge_render_inputs.py',
             'tools/spatial_oracle/building_body_rules.py','tools/native_oracle.py')})

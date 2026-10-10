@@ -304,6 +304,7 @@ fn push_object_piece(pass: &mut ObjectLayerPass, owner: DrawId, piece: ObjectPie
             | ObjectTexture::UnitTransitionPage(_)
             | ObjectTexture::UnitPose
             | ObjectTexture::ShpPage(_)
+            | ObjectTexture::TerrainShp(crate::render::terrain_draw::TerrainPiece::Body)
     ) && piece.instance.draw_state.native_selector_bits() & 6 != 0
         && piece.instance.draw_state.fx_flags & crate::render::draw_state::FX_SHADOW == 0)
         .then_some(owner);
@@ -633,7 +634,7 @@ mod tests {
 
     #[test]
     fn packed_material_retains_parent_across_all_native_sprite_sources() {
-        let order = NativeDisplayOrder::new(&[1, 2, 3, 4]);
+        let order = NativeDisplayOrder::new(&[1, 2, 3, 4, 5]);
         let packed = |target, marker, bits| {
             let mut piece = marked_piece(target, marker);
             piece.instance.draw_state.fx_params[1] = bits as f32;
@@ -660,14 +661,30 @@ mod tests {
                 plain_parent(&order, 4),
                 vec![packed(ObjectTexture::ShpPage(0), 4, 2)],
             ),
+            PlannedObjectInstance::object(
+                plain_parent(&order, 5),
+                vec![packed(
+                    ObjectTexture::TerrainShp(crate::render::terrain_draw::TerrainPiece::Body),
+                    5,
+                    4,
+                )],
+            ),
         ]);
-        assert_eq!(pass.owners, [1, 1, 1, 2, 3, 4]);
+        assert_eq!(pass.owners, [1, 1, 1, 2, 3, 4, 5]);
         assert_eq!(
             pass.runs
                 .iter()
                 .map(|run| run.packed_parent)
                 .collect::<Vec<_>>(),
-            [Some(1), Some(1), Some(1), Some(2), Some(3), Some(4)],
+            [
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(5)
+            ],
             "atlas coalescing must not merge distinct destination composites"
         );
     }
@@ -684,7 +701,7 @@ mod tests {
         shadow.instance.draw_state.fx_params[1] = 4.0;
         shadow.instance.draw_state.fx_flags |= FX_SHADOW;
         let mut terrain = marked_piece(
-            ObjectTexture::TerrainShp(crate::render::terrain_draw::TerrainPiece::Body),
+            ObjectTexture::TerrainShp(crate::render::terrain_draw::TerrainPiece::Shadow),
             4,
         );
         terrain.instance.draw_state.fx_params[1] = 4.0;

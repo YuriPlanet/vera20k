@@ -1,5 +1,6 @@
 {
   "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "command": "VERA20K_PROJECTILE_RENDER_ASSETS=/path/to/extracted-inputs python -m tools.projectile_oracle.line_trail --check",
   "coverage": "Selected DRAGON Object producer, LineTrail registry/update/draw/detach and bounded Bullet save/load",
   "substitutions": [
     "Physical extracted INI bytes become supplied cached native INI indices; no original archive walk",
@@ -15,7 +16,8 @@
     "No Rust/GPU/native full-scene comparison claimed by this corpus alone",
     "No outer OS/network scheduling clock or fixed real-time frame rate established",
     "No failed/repeated Unlimbo, full postload reconstruction or all multi-trail ClearAll claim",
-    "ZBuffer row seed32768 and RGB565 format globals are supplied established renderer inputs"
+    "ZBuffer row seed32768 and RGB565 format globals are supplied established renderer inputs",
+    "Four mixed-alpha rows supply (0,1,63,127,255)[(x//9+y//7)%5] per pixel, exercising X/Y/Z-dominant and reversed/clipped4BEAC0 walks. This establishes that consumer's A sample, not the scene ABuffer producer."
   ],
   "original_slices": [
     {
@@ -86,9 +88,10 @@
     }
   ],
   "dependencies": {
+    "tools/projectile_oracle/line_trail.py": "687719509fb4c091fd243f822436afc589cffa50aababc77cf7c393573f274a8",
     "tools/projectile_oracle/bridge_render_art_state.py": "57ce9e4492a47b320d218135b61b9017fa3d1ad39424d108f2089193f7b8bc73",
-    "tools/projectile_oracle/bridge_render_inputs.py": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
+    "tools/projectile_oracle/bridge_render_inputs.py": "2f05d2e7e917aef585553502830947ea8ca121eab2d886d2c9ba4df7c935727d",
     "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-    "tools/native_oracle.py": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c"
+    "tools/native_oracle.py": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb"
   }
 }

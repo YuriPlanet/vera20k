@@ -249,11 +249,6 @@ impl Simulation {
         self.set_object_height(id, 0, Some(rules), overlay_registry);
         let bridge_state_changed = self.fire_death_weapon(id, rules, overlay_registry);
         self.play_crash_impact_sound(id, rules);
-        // `FootClass::~FootClass` releases the crash sound the object holds
-        // (`0x004D3677`): a one-shot plays out.
-        self.sound_events
-            .push(super::SimSoundEvent::ObjectSoundReleased { owner: id });
-        self.release_move_sound(id);
         self.uninit_with_context(id, UninitContext::new(Some(rules), overlay_registry));
         bridge_state_changed
     }
@@ -299,9 +294,6 @@ impl Simulation {
             self.unit_death_explosion(rules, id, &mut Vec::new());
             false
         };
-        self.sound_events
-            .push(super::SimSoundEvent::ObjectSoundReleased { owner: id });
-        self.release_move_sound(id);
         self.uninit_with_context(id, UninitContext::new(Some(rules), overlay_registry));
         bridge_state_changed
     }
@@ -368,7 +360,10 @@ impl Simulation {
             return;
         }
         if entity.crashing {
-            self.release_move_sound(id);
+            // Foot4DAD01 releases the shared handle even if its MoveSound
+            // latch was already cleared by the preceding tail.
+            self.sound_events
+                .push(super::SimSoundEvent::ObjectSoundReleased { owner: id });
             let entity = self.substrate.entities.get(id).expect("checked above");
             let owner = entity.owner();
             let object = self.object_type(entity.type_ref(), rules);
@@ -383,16 +378,21 @@ impl Simulation {
             }
             if let Some(sound) = crashing_sound {
                 let world = Self::movement_sound_world(entity);
-                let sound_id = self.interner.intern(&sound);
                 self.sound_events
                     .push(super::SimSoundEvent::AnimationStarted {
                         anim_id: id,
-                        sound_id,
+                        sound_id: sound,
                         world,
                     });
             }
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
+            // Falling crash edge4DADA9..4DADB7 leaves an active MoveSound's
+            // shared handle alone; otherwise it releases the crash sound.
+            if !entity.crashing && !entity.move_sound.is_active() {
+                self.sound_events
+                    .push(super::SimSoundEvent::ObjectSoundReleased { owner: id });
+            }
             entity.crashing_seen = entity.crashing;
         }
     }

@@ -96,12 +96,8 @@ fn delivery_sounds(sim: &Simulation) -> Vec<String> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::EntityDied { die_sound_id, .. } => {
-                Some(sim.interner.resolve(*die_sound_id).to_owned())
-            }
-            SimSoundEvent::AnimationStarted { sound_id, .. } => {
-                Some(sim.interner.resolve(*sound_id).to_owned())
-            }
+            SimSoundEvent::EntityDied { die_sound_id, .. } => Some(die_sound_id.clone()),
+            SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id.clone()),
             _ => None,
         })
         .collect()

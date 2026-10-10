@@ -1526,7 +1526,7 @@ fn initialized_gi_deploy_class_contexts_match_original_returns() {
     }
 }
 
-fn corpus() -> Value {
+pub(super) fn corpus() -> Value {
     let data: Value = serde_json::from_str(crate::test_fixture::text(
         "src/sim/world/fixtures/factory_infantry_local_native.json",
     ))
@@ -1560,7 +1560,7 @@ fn assert_native_fields(actual: &Value, expected: &Value, context: &str) {
 /// Supplied clear33x33/diamond16 map from the native fixture's local ground
 /// prior. The physical map/theater startup is outside this test; path/zone,
 /// terrain-cost and occupation updates still use their production owners.
-fn install_ground(
+pub(super) fn install_ground(
     sim: &mut Simulation,
     rules: &RuleSet,
     terrain_rules: &TerrainRules,
@@ -1654,7 +1654,7 @@ fn local_state(sim: &Simulation, id: u64) -> Value {
     })
 }
 
-fn pair_radio(log: &[TransmitRecord], producer: u64, product: u64) -> Vec<Value> {
+pub(super) fn pair_radio(log: &[TransmitRecord], producer: u64, product: u64) -> Vec<Value> {
     let participant = |id| {
         if id == producer {
             "producer"

@@ -849,6 +849,14 @@ impl Simulation {
             house.map_is_clear.hash(hasher);
             house.spy_sat_active.hash(hasher);
             house.tracking.hash_defeat_counters(hasher);
+            // House+0x164/+0x168 (Tech Hospital / Machine Shop). Tagged so a
+            // house that never owned one keeps the historical stream, as the
+            // spatial-threat and match-statistics folds above do.
+            if house.self_heal_infantry() != 0 || house.self_heal_units() != 0 {
+                b"house-self-heal-v1".hash(hasher);
+                house.self_heal_infantry().hash(hasher);
+                house.self_heal_units().hash(hasher);
+            }
             house.tech_level.hash(hasher);
             hash_house_ai_activation_fields(house, hasher);
             house.strategy_emergency.hash(hasher);
@@ -1346,7 +1354,7 @@ impl Simulation {
             // position query: ordinary movement is promote-only while
             // teleport and Set_Clipped_LocalSize own exact demotions.
             entity.in_playfield.hash(hasher);
-            entity.move_sound_active.hash(hasher);
+            entity.move_sound.is_active().hash(hasher);
             entity.crashing.hash(hasher);
             entity.crashing_seen.hash(hasher);
             if !entity.sinking.is_default() {
@@ -1354,7 +1362,7 @@ impl Simulation {
                 entity.sinking.hash(hasher);
             }
             entity.is_mission_only().hash(hasher);
-            entity.move_sound_countdown.hash(hasher);
+            entity.move_sound.countdown().hash(hasher);
             entity.position.rx.hash(hasher);
             entity.position.ry.hash(hasher);
             entity.position.z.hash(hasher);
@@ -1589,13 +1597,7 @@ impl Simulation {
             }
             if let Some(disguise) = entity.disguise.as_ref() {
                 1u8.hash(hasher);
-                disguise.disguised.hash(hasher);
-                disguise.disguise_creation_frame.hash(hasher);
-                disguise.disguise_type.hash(hasher);
-                disguise.disguised_as_house.hash(hasher);
-                disguise.reveal.timer.start_frame().hash(hasher);
-                disguise.reveal.neighbor_cell_packed.hash(hasher);
-                disguise.reveal.timer.duration().hash(hasher);
+                disguise.hash_state(hasher);
             } else {
                 0u8.hash(hasher);
             }

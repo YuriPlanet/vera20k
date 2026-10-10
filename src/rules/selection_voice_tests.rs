@@ -96,3 +96,114 @@ fn voice_select_readstring128_and_untrimmed_tokens_precede_sound_lookup() {
         ["First", "Second"]
     );
 }
+
+/// Feedback uses the same native ReadSoundList owner as Select, with a
+/// separate empty constructor vector and exact-case key. These expected
+/// lists are original712D99..712E03 executions, not a second parser.
+#[test]
+fn voice_feedback_reader_matches_original_constructor_and_reached_passes() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    use crate::rules::ruleset::RuleSet;
+    use serde_json::{Value, json};
+
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/input_oracle/unit_voice_playback.json",
+    ))
+    .unwrap();
+    let mut catalog_ini = String::from("[SoundList]\n");
+    for (index, name) in corpus["retail"]["sound_sections"]["SoundList"]
+        .as_object()
+        .unwrap()
+    {
+        catalog_ini.push_str(&format!("{index}={}\n", name.as_str().unwrap()));
+    }
+    let sounds = SoundRegistry::from_ini(&IniFile::from_str(&catalog_ini));
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[VehicleTypes]\n0=FEEDBACK_READER_CONTROL\n",
+    ));
+    let project = |layers: &RulesLayerStack| {
+        let processed = layers.process().unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        rules.bind_type_sound_references(processed.ini(), &sounds);
+        rules
+    };
+    assert_eq!(
+        json!(
+            project(&layers)
+                .object("FEEDBACK_READER_CONTROL")
+                .unwrap()
+                .voice_feedback
+        ),
+        corpus["retail"]["feedback_constructor"]["names"],
+    );
+    let rows = corpus["retail"]["feedback_reader_controls"]
+        .as_array()
+        .unwrap();
+    assert_eq!(rows.len(), 8, "every executed read in the retained history");
+    for row in rows {
+        let context = row["name"].as_str().unwrap();
+        assert_eq!(
+            json!(
+                project(&layers)
+                    .object("FEEDBACK_READER_CONTROL")
+                    .unwrap()
+                    .voice_feedback
+            ),
+            row["before"]["names"],
+            "{context}: prior vector",
+        );
+        let mut pass = String::from("[FEEDBACK_READER_CONTROL]\n");
+        if let (Some(key), Some(value)) = (row["key"].as_str(), row["raw"].as_str()) {
+            pass.push_str(&format!("{key}={value}\n"));
+        }
+        layers.push(RulesLayerKind::Scenario, IniFile::from_str(&pass));
+        assert_eq!(
+            json!(
+                project(&layers)
+                    .object("FEEDBACK_READER_CONTROL")
+                    .unwrap()
+                    .voice_feedback
+            ),
+            row["after"]["names"],
+            "{context}: resolved ordered vector",
+        );
+    }
+}
+
+#[test]
+fn voice_feedback_matches_the_physical_battle_reader_and_sound_catalog_identity() {
+    use serde_json::{Value, json};
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/input_oracle/unit_voice_playback.json",
+    ))
+    .unwrap();
+    let last = corpus["retail"]["layers"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap();
+    assert_eq!(
+        json!(retail.rules.object("E1").unwrap().voice_feedback),
+        last["voice_feedback"]["names"],
+    );
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    for name in ["RULESMD.INI", "SOUNDMD.INI"] {
+        let original = corpus["physical"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|file| file["name"] == name)
+            .unwrap();
+        let bytes = assets.load_file_from_mix(name).unwrap().bytes;
+        assert_eq!(
+            crate::util::sha256::sha256_hex(&bytes),
+            original["sha256"].as_str().unwrap(),
+            "{name}"
+        );
+    }
+}

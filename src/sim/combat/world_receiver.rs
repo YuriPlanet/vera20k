@@ -691,7 +691,6 @@ pub(crate) fn commit_entities(
             latch_hostile_hit,
             uncloak_after_damage,
             building_damage_cue,
-            voice_feedback_cue,
             threat_feedback,
         }) = receiver_health::commit_receiver_health(
             event,
@@ -702,10 +701,41 @@ pub(crate) fn commit_entities(
             attacker_owner,
             live_source_owner,
             receiver_outcome,
+            world.session.binary_frame,
         )
         else {
             continue;
         };
+
+        // Techno ReceiveDamage702049 selects result 2's arm702695. The
+        // percent draw precedes House50B6F0; accepted lists spend one raw
+        // Main draw even for a singleton. This belongs before common7027F7,
+        // Uncloak70281D, smoke and retaliation, not at app sound publication.
+        // Original executed controls: input_oracle/unit_voice_playback.
+        if receive_state == damage::DamageState::Yellow
+            && let Some(target) = world.substrate.entities.get(target_id)
+            && let Some(object) = rules.object(world.interner.resolve(target.type_ref()))
+            && !object.voice_feedback.is_empty()
+            && world.main_rng.next_range_i32_inclusive(0, 99) < 0x1E
+            && world.house_is_human_player(target.owner())
+        {
+            let index = (world.main_rng.next_u32() % object.voice_feedback.len() as u32) as usize;
+            // Virtual+48 is Object/Building GetCoords, not a cell centre or
+            // the separate navigation+4C getter. Reuse the coordinate owner;
+            // pack only this presentation receipt, never move the actor.
+            let coord = crate::sim::movement::ground_pose::object_get_coords(
+                target,
+                world.resolved_terrain.as_ref(),
+            );
+            let mut position = target.position;
+            crate::sim::movement::ground_pose::put_location(&mut position, coord);
+            if sound_enabled {
+                world.sound_events.push(SimSoundEvent::voc_at(
+                    object.voice_feedback[index].clone(),
+                    &position,
+                ));
+            }
+        }
 
         // gamemd-derived: `TechnoClass__ReceiveDamage @
         // 0x007027AE..0x007027EE` invokes the protected-Techno response after
@@ -1019,21 +1049,6 @@ pub(crate) fn commit_entities(
             }
         }
 
-        // Native order: the TechnoClass arm runs inside
-        // `TechnoClass::ReceiveDamage @ 0x00701900`, which `BuildingClass::
-        // ReceiveDamage` only resumes after at `0x00442425`, so the voice
-        // precedes the building cue.
-        if let Some((owner, type_ref, rx, ry)) = voice_feedback_cue
-            && let Some(sink) = sound_enabled.then_some(&mut world.sound_events)
-        {
-            sink.push(SimSoundEvent::VoiceFeedback {
-                owner,
-                type_ref,
-                rx,
-                ry,
-            });
-        }
-
         if let Some((rx, ry)) = building_damage_cue
             && let Some(sink) = sound_enabled.then_some(&mut world.sound_events)
         {
@@ -1213,7 +1228,7 @@ pub(crate) fn handle_death(
         dead_entities.len() <= 1,
         "ReceiveDamage enters one concrete fatal postlude at a time"
     );
-    let mut death_sounds: Vec<(InternedId, u16, u16)> = Vec::new();
+    let mut death_sounds: Vec<(String, u16, u16)> = Vec::new();
     let mut explosion_effects: Vec<ExplosionEffect> = Vec::new();
     let mut voxel_debris: Vec<crate::sim::voxel_anim::VoxelDebrisSpawn> = Vec::new();
     let mut under_attack_events: Vec<UnderAttackEvent> = Vec::new();
@@ -1266,7 +1281,6 @@ pub(crate) fn handle_death(
                     rules.general.building_die_sound.as_deref(),
                     world.houses.get(&owner).is_some_and(|house| house.is_human),
                     &mut world.main_rng,
-                    &mut world.interner,
                     rx,
                     ry,
                     &mut death_sounds,
@@ -3385,6 +3399,14 @@ pub(super) fn emit_admitted_fire(
         crate::rules::flh::Flh::default(),
     );
     let launch_source = fireat_launch_source(world, rules, snap, &fire, weapon);
+    // Laser width reads +664 inside FireAt, before its caller applies/clears
+    // the support multiplier. Preserve that read across the existing deferred
+    // bullet payload construction below.
+    let prism_support_count = world
+        .substrate
+        .entities
+        .get(snap.stable_id)
+        .map_or(0, |entity| entity.prism_support_count);
     let warhead = selected.warhead;
     let base_damage = fireat_damage(world, rules, snap, obj, weapon, is_garrison);
     let ProjectileDelivery {
@@ -3613,7 +3635,7 @@ pub(super) fn emit_admitted_fire(
             // ProcessDelayedFire writes its support bonus on the bullet this
             // FireAt returns (`0x00450496..0x004504CD`). The rest of FireAt
             // reads neither the bullet's multiplier nor the count, save the
-            // laser width (`0x006FF52B`), which VERA does not draw.
+            // laser width (`0x006FF52B`), sampled before this consumption.
             let damage_multiplier = match snap.building_shot {
                 Some(super::BuildingShot::Delayed { .. }) => {
                     world.take_support_bonus(snap.stable_id, rules)
@@ -3781,6 +3803,17 @@ pub(super) fn emit_admitted_fire(
     if let Some(event) = out.fire_events.last().cloned() {
         crate::sim::world::damage_consequences::admit_muzzle_anim(world, rules, &event);
     }
+    // 6FF4CC..6FF54B: successful FireAt only, after burst advance and before
+    // ammo/RevealOnFire. SpawnLaser recomputes its own current GetFLH.
+    super::laser::fired(
+        world,
+        rules,
+        snap.stable_id,
+        snap.target,
+        selected.index,
+        weapon,
+        prism_support_count,
+    );
     // Aircraft ammo deduction: one ammo per burst completion (not per shot).
     if !mid_burst
         && !world

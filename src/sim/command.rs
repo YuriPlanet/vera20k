@@ -43,7 +43,8 @@ const MEGAMISSION_OWNED_PAYLOAD_LEN: usize = 23;
 const ABSTRACT_OBJECT_TARGET_KIND: u8 = 0x34;
 const CELL_TARGET_KIND: u8 = 0x0b;
 const NULL_TARGET_KIND: u8 = 0;
-const MOVE_ACTION: i16 = 2;
+const MOVE_ACTION: u8 = 2;
+const AREA_GUARD_ACTION: u8 = 11;
 const CELL_TOKEN_ROW_STRIDE: i32 = 1000;
 
 /// A malformed fixed-width synchronized command record.
@@ -320,23 +321,59 @@ impl ExitRecord {
     }
 }
 
-/// Typed view of the ordinary Move form of native MegaMission opcode `0x04`.
+/// The represented ordinary orders of native MegaMission opcode `0x04`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MegaMissionOrder {
+    Move { target_x: i16, target_y: i16 },
+    AreaGuard { post: MegaMissionTarget },
+}
+
+/// A TargetClass token used by an ordinary Area Guard order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MegaMissionTarget {
+    Null,
+    Cell { x: i16, y: i16 },
+    Object { id: i32 },
+}
+
+impl MegaMissionTarget {
+    fn token(self) -> Result<(i32, u8), MegaMissionCellTokenError> {
+        match self {
+            Self::Null => Ok((0, NULL_TARGET_KIND)),
+            Self::Cell { x, y } => Ok((encode_megamission_cell_token(x, y)?, CELL_TARGET_KIND)),
+            Self::Object { id } => Ok((id, ABSTRACT_OBJECT_TARGET_KIND)),
+        }
+    }
+
+    fn from_token(value: i32, kind: u8) -> Option<Self> {
+        match kind {
+            NULL_TARGET_KIND if value == 0 => Some(Self::Null),
+            CELL_TARGET_KIND => {
+                let (x, y) = decode_megamission_cell_token(value)?;
+                Some(Self::Cell { x, y })
+            }
+            ABSTRACT_OBJECT_TARGET_KIND => Some(Self::Object { id: value }),
+            _ => None,
+        }
+    }
+}
+
+/// Typed view of the ordinary Move and Area Guard MegaMission records.
 ///
 /// `EventClass__BuildMegaMissionEnvelope` at `gamemd.exe` `0x004C6860`
-/// writes only the 23 payload bytes named here. In particular, it does not
-/// clear the processed flag or any payload tail bytes in the destination
-/// `EventClass`, so [`MegaMissionMoveRecord::write_into`] preserves them.
+/// writes a byte mission, leaving Event+0D padding untouched. It also leaves
+/// the processed flag and payload tail untouched. The original constructor
+/// comparisons in `tools/input_oracle/area_guard.json` cover both orders.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MegaMissionMoveRecord {
+pub struct MegaMissionRecord {
     pub house_id: i8,
     pub frame: i32,
     pub source_id: i32,
-    pub target_x: i16,
-    pub target_y: i16,
+    pub order: MegaMissionOrder,
 }
 
-impl MegaMissionMoveRecord {
-    /// Write the exact active-YR ordinary Move fields into an existing record.
+impl MegaMissionRecord {
+    /// Write the active-YR ordinary order fields into an existing record.
     ///
     /// The native null-issuer arm writes only opcode zero, house `-1`, and the
     /// frame. It returns before validating or touching any MegaMission payload.
@@ -346,19 +383,34 @@ impl MegaMissionMoveRecord {
             return Ok(());
         }
 
-        let destination = encode_megamission_cell_token(self.target_x, self.target_y)?;
+        // Player_Send_Command6FFBE0 ->646E90 places a Guard post in the
+        // first token. Move places its cell in the second token instead.
+        let (action, target, destination) = match self.order {
+            MegaMissionOrder::Move { target_x, target_y } => (
+                MOVE_ACTION,
+                MegaMissionTarget::Null,
+                MegaMissionTarget::Cell {
+                    x: target_x,
+                    y: target_y,
+                },
+            ),
+            MegaMissionOrder::AreaGuard { post } => {
+                (AREA_GUARD_ACTION, post, MegaMissionTarget::Null)
+            }
+        };
+        let (target_value, target_kind) = target.token()?;
+        let (destination_value, destination_kind) = destination.token()?;
         let payload = &mut record.payload_mut()[..MEGAMISSION_OWNED_PAYLOAD_LEN];
         payload[MEGAMISSION_SOURCE_VALUE_OFFSET..MEGAMISSION_SOURCE_KIND_OFFSET]
             .copy_from_slice(&self.source_id.to_le_bytes());
         payload[MEGAMISSION_SOURCE_KIND_OFFSET] = ABSTRACT_OBJECT_TARGET_KIND;
-        payload[MEGAMISSION_ACTION_OFFSET..MEGAMISSION_SECONDARY_VALUE_OFFSET]
-            .copy_from_slice(&MOVE_ACTION.to_le_bytes());
+        payload[MEGAMISSION_ACTION_OFFSET] = action;
         payload[MEGAMISSION_SECONDARY_VALUE_OFFSET..MEGAMISSION_SECONDARY_KIND_OFFSET]
-            .copy_from_slice(&0_i32.to_le_bytes());
-        payload[MEGAMISSION_SECONDARY_KIND_OFFSET] = NULL_TARGET_KIND;
+            .copy_from_slice(&target_value.to_le_bytes());
+        payload[MEGAMISSION_SECONDARY_KIND_OFFSET] = target_kind;
         payload[MEGAMISSION_DESTINATION_VALUE_OFFSET..MEGAMISSION_DESTINATION_KIND_OFFSET]
-            .copy_from_slice(&destination.to_le_bytes());
-        payload[MEGAMISSION_DESTINATION_KIND_OFFSET] = CELL_TARGET_KIND;
+            .copy_from_slice(&destination_value.to_le_bytes());
+        payload[MEGAMISSION_DESTINATION_KIND_OFFSET] = destination_kind;
         payload[MEGAMISSION_AUXILIARY_VALUE_OFFSET..MEGAMISSION_AUXILIARY_KIND_OFFSET]
             .copy_from_slice(&self.source_id.to_le_bytes());
         payload[MEGAMISSION_AUXILIARY_KIND_OFFSET] = NULL_TARGET_KIND;
@@ -366,8 +418,8 @@ impl MegaMissionMoveRecord {
         Ok(())
     }
 
-    /// Decode only the verified ordinary Move form. Planning/attack-move and
-    /// every other token/action shape remain outside this contract.
+    /// Decode the represented ordinary Move/Area Guard forms. Planning,
+    /// attack-move and other token/action shapes remain outside this contract.
     pub fn decode(record: &CommandRecord) -> Option<Self> {
         if record.opcode() != MEGAMISSION_OPCODE || record.house_id() < 0 {
             return None;
@@ -378,11 +430,7 @@ impl MegaMissionMoveRecord {
                 .try_into()
                 .ok()?,
         );
-        let action = i16::from_le_bytes(
-            payload[MEGAMISSION_ACTION_OFFSET..MEGAMISSION_SECONDARY_VALUE_OFFSET]
-                .try_into()
-                .ok()?,
-        );
+        let action = payload[MEGAMISSION_ACTION_OFFSET];
         let secondary = i32::from_le_bytes(
             payload[MEGAMISSION_SECONDARY_VALUE_OFFSET..MEGAMISSION_SECONDARY_KIND_OFFSET]
                 .try_into()
@@ -399,23 +447,35 @@ impl MegaMissionMoveRecord {
                 .ok()?,
         );
         if payload[MEGAMISSION_SOURCE_KIND_OFFSET] != ABSTRACT_OBJECT_TARGET_KIND
-            || action != MOVE_ACTION
-            || secondary != 0
-            || payload[MEGAMISSION_SECONDARY_KIND_OFFSET] != NULL_TARGET_KIND
-            || payload[MEGAMISSION_DESTINATION_KIND_OFFSET] != CELL_TARGET_KIND
             || auxiliary != source_id
             || payload[MEGAMISSION_AUXILIARY_KIND_OFFSET] != NULL_TARGET_KIND
             || payload[MEGAMISSION_PLANNING_OFFSET] != 0
         {
             return None;
         }
-        let (target_x, target_y) = decode_megamission_cell_token(destination)?;
+        let target =
+            MegaMissionTarget::from_token(secondary, payload[MEGAMISSION_SECONDARY_KIND_OFFSET])?;
+        let destination = MegaMissionTarget::from_token(
+            destination,
+            payload[MEGAMISSION_DESTINATION_KIND_OFFSET],
+        )?;
+        let order = match (action, target, destination) {
+            (MOVE_ACTION, MegaMissionTarget::Null, MegaMissionTarget::Cell { x, y }) => {
+                MegaMissionOrder::Move {
+                    target_x: x,
+                    target_y: y,
+                }
+            }
+            (AREA_GUARD_ACTION, post, MegaMissionTarget::Null) => {
+                MegaMissionOrder::AreaGuard { post }
+            }
+            _ => return None,
+        };
         Some(Self {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
             source_id,
-            target_x,
-            target_y,
+            order,
         })
     }
 }
@@ -481,10 +541,11 @@ pub enum Command {
         target_ry: u16,
         queue: bool,
     },
-    /// Guard a target entity or area (target optional for area guard).
+    /// Area Guard with the first MegaMission token as its destination/post.
+    /// A null post is retained until the Foot handler chooses its own cell.
     Guard {
         entity_id: u64,
-        target_id: Option<u64>,
+        target: Option<crate::sim::combat::TargetKind>,
     },
     /// Unit DEPLOY event: convert an MCV or toggle a SimpleDeployer.
     /// The existing wire spelling is retained for saved commands/replays.
@@ -644,21 +705,126 @@ impl CommandEnvelope {
 mod tests {
     use super::{
         COMMAND_RECORD_LEN, COMMAND_RECORD_PAYLOAD_LEN, CommandRecord, CommandRecordError,
-        EXIT_OPCODE, ExitRecord, MEGAMISSION_OPCODE, MegaMissionCellTokenError,
-        MegaMissionMoveRecord, SELL_WALL_AT_CELL_OPCODE, SellWallAtCellRecord,
+        EXIT_OPCODE, ExitRecord, MEGAMISSION_OPCODE, MegaMissionCellTokenError, MegaMissionOrder,
+        MegaMissionRecord, MegaMissionTarget, SELL_WALL_AT_CELL_OPCODE, SellWallAtCellRecord,
     };
 
     #[test]
-    fn gsi_16_01_megamission_move_writes_exact_fields_and_preserves_tail() {
+    fn area_guard_native_constructor_matches_ordinary_bytes_and_null_issuer() {
+        // Executed original EventClass constructor 4C6860. The before/after
+        // records preserve all 111 bytes, including mission padding at +0D.
+        // Raw large-Cell controls remain outside the ordinary typed codec.
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/input_oracle/area_guard.json",
+        ))
+        .unwrap();
+        let rows = corpus["constructor_rows"].as_array().unwrap();
+        let record = |value: &serde_json::Value| {
+            let hex = value.as_str().unwrap();
+            assert!(hex.is_ascii());
+            assert_eq!(hex.len(), COMMAND_RECORD_LEN * 2);
+            let bytes: Vec<_> = (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+                .collect();
+            CommandRecord::decode_exact(&bytes).unwrap()
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        let mut ordinary = 0;
+        let mut negative = 0;
+        let mut excluded = 0;
+        for row in rows {
+            let name = row["name"].as_str().unwrap();
+            assert!(seen.insert(name), "duplicate native constructor row {name}");
+            assert_eq!(row["returned_receiver"], true, "{name}");
+            let before = record(&row["before"]);
+            let native = record(&row["after"]);
+            assert_ne!(before.as_bytes()[0x0d], 0, "nonzero padding control");
+            assert_eq!(
+                native.as_bytes()[0x0d],
+                before.as_bytes()[0x0d],
+                "{name}: original +0D padding"
+            );
+            let args: [u32; 10] = serde_json::from_value(row["args"].clone()).unwrap();
+            let order = match name {
+                "move" | "guard" => {
+                    // These supplied raw Cell values cannot be represented by
+                    // the codec's signed coordinates. Do not compare an
+                    // invented typed substitute with their constructor bytes.
+                    assert_eq!(MegaMissionRecord::decode(&native), None, "{name}");
+                    excluded += 1;
+                    continue;
+                }
+                // The ordinary corpus declares Cell token50087, i.e.87,50.
+                // Expected wire bytes always come from native execution.
+                "ordinary_move" => MegaMissionOrder::Move {
+                    target_x: 87,
+                    target_y: 50,
+                },
+                "ordinary_guard_cell" => MegaMissionOrder::AreaGuard {
+                    post: MegaMissionTarget::Cell { x: 87, y: 50 },
+                },
+                "ordinary_guard_object" => MegaMissionOrder::AreaGuard {
+                    post: MegaMissionTarget::Object {
+                        id: i32::from_le_bytes(args[4].to_le_bytes()),
+                    },
+                },
+                "ordinary_guard_null" => MegaMissionOrder::AreaGuard {
+                    post: MegaMissionTarget::Null,
+                },
+                // Negative issuers return before reading the raw tokens. This
+                // compares that early-return record only; deliberately invalid
+                // typed coordinates also guard against premature validation.
+                "move_null_house" => MegaMissionOrder::Move {
+                    target_x: i16::MAX,
+                    target_y: i16::MIN,
+                },
+                "guard_null_house" => MegaMissionOrder::AreaGuard {
+                    post: MegaMissionTarget::Cell {
+                        x: i16::MAX,
+                        y: i16::MIN,
+                    },
+                },
+                _ => panic!("uncovered native constructor row {name}"),
+            };
+            let typed = MegaMissionRecord {
+                house_id: i8::try_from(i32::from_le_bytes(args[0].to_le_bytes())).unwrap(),
+                frame: i32::try_from(row["frame"].as_i64().unwrap()).unwrap(),
+                source_id: i32::from_le_bytes(args[1].to_le_bytes()),
+                order,
+            };
+            let mut actual = before.clone();
+            typed.write_into(&mut actual).unwrap();
+            assert_eq!(
+                actual.as_bytes(),
+                native.as_bytes(),
+                "{name}: full native record"
+            );
+            if typed.house_id < 0 {
+                assert_eq!(native.payload(), before.payload(), "{name}: opaque payload");
+                assert_eq!(MegaMissionRecord::decode(&native), None, "{name}");
+                negative += 1;
+            } else {
+                assert_eq!(MegaMissionRecord::decode(&native), Some(typed), "{name}");
+                ordinary += 1;
+            }
+        }
+        assert_eq!((seen.len(), ordinary, negative, excluded), (8, 4, 2, 2));
+    }
+
+    #[test]
+    fn gsi_16_01_area_guard_regression_constructor_preserves_fields_and_padding() {
         let mut bytes = [0xcc; COMMAND_RECORD_LEN];
         bytes[1] = 0xa4;
         let mut record = CommandRecord::decode_exact(&bytes).unwrap();
-        let typed = MegaMissionMoveRecord {
+        let typed = MegaMissionRecord {
             house_id: 3,
             frame: 0x1234_5678,
             source_id: 0x0102_0304,
-            target_x: 34,
-            target_y: 12,
+            order: MegaMissionOrder::Move {
+                target_x: 34,
+                target_y: 12,
+            },
         };
 
         typed.write_into(&mut record).unwrap();
@@ -670,7 +836,11 @@ mod tests {
         assert_eq!(&bytes[3..7], &0x1234_5678_i32.to_le_bytes());
         assert_eq!(&bytes[7..11], &0x0102_0304_i32.to_le_bytes());
         assert_eq!(bytes[11], 0x34);
-        assert_eq!(&bytes[12..14], &2_i16.to_le_bytes());
+        assert_eq!(bytes[12], 2);
+        assert_eq!(
+            bytes[13], 0xcc,
+            "original 4C6860 does not write mission padding"
+        );
         assert_eq!(&bytes[14..18], &0_i32.to_le_bytes());
         assert_eq!(bytes[18], 0);
         assert_eq!(&bytes[19..23], &12_034_i32.to_le_bytes());
@@ -679,7 +849,7 @@ mod tests {
         assert_eq!(bytes[28], 0);
         assert_eq!(bytes[29], 0);
         assert!(bytes[30..].iter().all(|&byte| byte == 0xcc));
-        assert_eq!(MegaMissionMoveRecord::decode(&record), Some(typed));
+        assert_eq!(MegaMissionRecord::decode(&record), Some(typed));
     }
 
     #[test]
@@ -688,12 +858,14 @@ mod tests {
         bytes[1] = 0x5a;
         let mut record = CommandRecord::decode_exact(&bytes).unwrap();
 
-        MegaMissionMoveRecord {
+        MegaMissionRecord {
             house_id: -1,
             frame: -17,
             source_id: i32::MAX,
-            target_x: i16::MAX,
-            target_y: i16::MIN,
+            order: MegaMissionOrder::Move {
+                target_x: i16::MAX,
+                target_y: i16::MIN,
+            },
         }
         .write_into(&mut record)
         .unwrap();
@@ -709,25 +881,29 @@ mod tests {
     fn gsi_16_01_signed_cell_tokens_require_an_exact_native_roundtrip() {
         for (x, y) in [(999, i16::MAX), (-999, i16::MIN), (-999, 0), (0, 0)] {
             let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).unwrap();
-            let typed = MegaMissionMoveRecord {
+            let typed = MegaMissionRecord {
                 house_id: 0,
                 frame: 1,
                 source_id: 7,
-                target_x: x,
-                target_y: y,
+                order: MegaMissionOrder::Move {
+                    target_x: x,
+                    target_y: y,
+                },
             };
             typed.write_into(&mut record).unwrap();
-            assert_eq!(MegaMissionMoveRecord::decode(&record), Some(typed));
+            assert_eq!(MegaMissionRecord::decode(&record), Some(typed));
         }
 
         let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).unwrap();
         assert_eq!(
-            MegaMissionMoveRecord {
+            MegaMissionRecord {
                 house_id: 0,
                 frame: 1,
                 source_id: 7,
-                target_x: 1000,
-                target_y: 0,
+                order: MegaMissionOrder::Move {
+                    target_x: 1000,
+                    target_y: 0
+                },
             }
             .write_into(&mut record),
             Err(MegaMissionCellTokenError { x: 1000, y: 0 })
@@ -737,12 +913,14 @@ mod tests {
     #[test]
     fn gsi_16_01_megamission_move_rejects_wrong_tokens_action_and_planning() {
         let mut valid = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).unwrap();
-        MegaMissionMoveRecord {
+        MegaMissionRecord {
             house_id: 0,
             frame: 1,
             source_id: 7,
-            target_x: 10,
-            target_y: 20,
+            order: MegaMissionOrder::Move {
+                target_x: 10,
+                target_y: 20,
+            },
         }
         .write_into(&mut valid)
         .unwrap();
@@ -750,14 +928,14 @@ mod tests {
         for (offset, value) in [(4, 0x33), (11, 1), (16, 0x0a), (21, 1), (22, 1)] {
             let mut invalid = valid.clone();
             invalid.payload_mut()[offset] = value;
-            assert_eq!(MegaMissionMoveRecord::decode(&invalid), None);
+            assert_eq!(MegaMissionRecord::decode(&invalid), None);
         }
         let mut wrong_action = valid.clone();
         wrong_action.payload_mut()[5..7].copy_from_slice(&3_i16.to_le_bytes());
-        assert_eq!(MegaMissionMoveRecord::decode(&wrong_action), None);
+        assert_eq!(MegaMissionRecord::decode(&wrong_action), None);
         let mut wrong_repeat = valid.clone();
         wrong_repeat.payload_mut()[17..21].copy_from_slice(&8_i32.to_le_bytes());
-        assert_eq!(MegaMissionMoveRecord::decode(&wrong_repeat), None);
+        assert_eq!(MegaMissionRecord::decode(&wrong_repeat), None);
     }
 
     #[test]

@@ -22,8 +22,8 @@ use crate::sim::combat;
 use crate::sim::combat::combat_aoe::CellTargetDetach;
 use crate::sim::combat::combat_aoe::expire_cell_target_references;
 use crate::sim::command::{
-    COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, ExitRecord, MegaMissionMoveRecord,
-    SellWallAtCellRecord,
+    COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, ExitRecord, MegaMissionOrder,
+    MegaMissionRecord, MegaMissionTarget, SellWallAtCellRecord,
 };
 use crate::sim::components::OrderIntent;
 use crate::sim::mission::MissionType;
@@ -128,19 +128,76 @@ fn trace_wall_sell_zone_repair_step(
 }
 
 impl Simulation {
-    /// Build the exact native MegaMission record for one ordinary local Move.
+    /// G/command-bar Guard730D60 chooses each admitted actor's current
+    /// navigation Cell before Player_Send_Command6FFBE0 emits mission11.
+    /// IsControllable700C40 owns the human/bunker/warp/slave gates; after
+    /// that predicate the additional IsActive7010D0 test is the current
+    /// weapon pair. Unit slave-manager/Harvester fallback bypasses both.
+    /// Existing controllability lifecycle residuals remain documented at
+    /// that owner. This is an input producer, never an event-execution gate.
+    pub(crate) fn area_guard_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
+        let actor = self.substrate.entities.get(id)?;
+        if actor.category == EntityCategory::Structure {
+            return None;
+        }
+        let object = self.object_type(actor.type_ref(), rules)?;
+        let ordinary = self.techno_player_controllable(id, rules)
+            && combat::combat_weapon::is_armed(actor, object);
+        let miner = actor.category == EntityCategory::Unit
+            && (actor.slave_manager.is_some() || actor.is_harvester());
+        if !ordinary && !miner {
+            return None;
+        }
+        let (x, y) = self
+            .object_navigation_cell(id, rules)
+            .unwrap_or_else(|cause| panic!("Area Guard input cell: {cause}"));
+        Some(Command::Guard {
+            entity_id: id,
+            target: Some(combat::TargetKind::Cell(x as u16, y as u16)),
+        })
+    }
+
+    /// Build the native MegaMission record for an ordinary Move or Area Guard.
     ///
     /// `EventClass__BuildMegaMissionEnvelope` at `gamemd.exe` `0x004C6860`
     /// stores HouseClass registration and Abstract stable identity separately;
     /// the source therefore need not belong to the issuing house. Rust-only
     /// queued waypoints are not representable here.
-    pub(crate) fn encode_megamission_move_record(
+    pub(crate) fn encode_megamission_record(
         &self,
         command_owner: crate::sim::intern::InternedId,
-        source_id: u64,
-        target_rx: u16,
-        target_ry: u16,
+        command: &Command,
     ) -> Option<CommandRecord> {
+        let (source_id, order) = match *command {
+            Command::Move {
+                entity_id,
+                target_rx,
+                target_ry,
+                queue: false,
+            } => (
+                entity_id,
+                MegaMissionOrder::Move {
+                    target_x: i16::try_from(target_rx).ok()?,
+                    target_y: i16::try_from(target_ry).ok()?,
+                },
+            ),
+            Command::Guard { entity_id, target } => {
+                let post = match target {
+                    None => MegaMissionTarget::Null,
+                    Some(combat::TargetKind::Cell(x, y)) => MegaMissionTarget::Cell {
+                        // Preserve native signed CellStruct word bits. The
+                        // codec still rejects pairs its token cannot roundtrip.
+                        x: x as i16,
+                        y: y as i16,
+                    },
+                    Some(combat::TargetKind::Entity(id)) => MegaMissionTarget::Object {
+                        id: i32::try_from(id).ok()?,
+                    },
+                };
+                (entity_id, MegaMissionOrder::AreaGuard { post })
+            }
+            _ => return None,
+        };
         if !self.houses.contains_key(&command_owner)
             || self.substrate.entities.get(source_id).is_none()
         {
@@ -152,12 +209,11 @@ impl Simulation {
             .iter()
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
-        let typed = MegaMissionMoveRecord {
+        let typed = MegaMissionRecord {
             house_id,
             frame: self.session.binary_frame as i32,
             source_id: i32::try_from(source_id).ok()?,
-            target_x: i16::try_from(target_rx).ok()?,
-            target_y: i16::try_from(target_ry).ok()?,
+            order,
         };
         let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
         typed.write_into(&mut record).ok()?;
@@ -222,7 +278,7 @@ impl Simulation {
         record: &CommandRecord,
         execute_tick: u64,
     ) -> Option<CommandEnvelope> {
-        if let Some(typed) = MegaMissionMoveRecord::decode(record) {
+        if let Some(typed) = MegaMissionRecord::decode(record) {
             let house_index = usize::try_from(typed.house_id).ok()?;
             let owner = *self.session.house_order.get(house_index)?;
             if !self.houses.contains_key(&owner) {
@@ -232,16 +288,27 @@ impl Simulation {
             if self.substrate.entities.get(entity_id).is_none() {
                 return None;
             }
-            return Some(CommandEnvelope::new(
-                owner,
-                execute_tick,
-                Command::Move {
+            let command = match typed.order {
+                MegaMissionOrder::Move { target_x, target_y } => Command::Move {
                     entity_id,
-                    target_rx: u16::try_from(typed.target_x).ok()?,
-                    target_ry: u16::try_from(typed.target_y).ok()?,
+                    target_rx: u16::try_from(target_x).ok()?,
+                    target_ry: u16::try_from(target_y).ok()?,
                     queue: false,
                 },
-            ));
+                MegaMissionOrder::AreaGuard { post } => Command::Guard {
+                    entity_id,
+                    target: match post {
+                        MegaMissionTarget::Null => None,
+                        MegaMissionTarget::Cell { x, y } => {
+                            Some(combat::TargetKind::Cell(x as u16, y as u16))
+                        }
+                        MegaMissionTarget::Object { id } => {
+                            Some(combat::TargetKind::Entity(u64::try_from(id).ok()?))
+                        }
+                    },
+                },
+            };
+            return Some(CommandEnvelope::new(owner, execute_tick, command));
         }
 
         if let Some(typed) = ExitRecord::decode(record) {
@@ -1029,13 +1096,10 @@ impl Simulation {
                 }
                 issued
             }
-            Command::Guard {
-                entity_id,
-                target_id,
-            } => self.apply_guard_command(
+            Command::Guard { entity_id, target } => self.apply_guard_command(
                 command_owner,
                 *entity_id,
-                *target_id,
+                *target,
                 rules,
                 overlay_registry,
             ),
@@ -2116,7 +2180,7 @@ impl Simulation {
             && entity
                 .disguise
                 .as_ref()
-                .is_some_and(|d| d.disguised_as_house.is_none())
+                .is_some_and(|d| d.house().is_none())
             && self.session.current_house.is_some_and(|house| {
                 crate::sim::cloak_disguise::object_disguised_to(
                     entity,
@@ -2225,14 +2289,14 @@ impl Simulation {
     /// * **Mission replacement remains partly per-site.** The shared
     ///   `begin_megamission_retask` owns radio, +500 and Team removal before
     ///   Queue4C73B9. The common funnel also clears suspended target2B8 and
-    ///   Foot destination5A8; Guard, MinerReturn and HarvestCell bypass those
+    ///   Foot destination5A8; MinerReturn and HarvestCell bypass those
     ///   post-Queue archive clears. A later Restore can resume a cancelled
     ///   target or route. Their complete mission/DTO migration is separate.
     ///   Aircraft reservation teardown remains a legacy command policy.
     /// * **The manager abandon** at 0x004C73E1-0x004C73EA calls 0x006B0C80 on
     ///   `[actor+0x2D8]`, the SlaveManagerClass (not a spawn manager), whenever
     ///   the queued mission is not Attack; it is not Foot-gated. The funnel
-    ///   below, the Guard and HarvestCell arms and Stop's own copy
+    ///   below, the HarvestCell arm and Stop's own copy
     ///   (0x004C769C-0x004C76AC) run it (`Simulation::reset_slave_manager`);
     ///   the other orders outside the funnel do not yet.
     /// * **`TeamClass__Remove_Member`** runs in the MEGAMISSION funnel
@@ -2340,17 +2404,15 @@ impl Simulation {
         )
     }
 
-    /// Apply a Guard command: anchor at current position, optionally attack a target.
-    /// Residual: this command's object target still uses the legacy combat-target
-    /// and current-cell intent representation. Native AreaGuard4C7409..4C7430
-    /// clears Target and assigns that object as destination/archive. Every
-    /// object Guard order can therefore use the wrong post/bridge leash; its
-    /// complete command DTO/mission migration is a separate required route.
+    /// Event4C73B9 queues AreaGuard, clears suspended references, then the
+    /// Foot arm4C7409..4C7430 clears Target and assigns the first event token
+    /// as destination and ArchiveTarget. The retained post belongs to the
+    /// existing AreaGuard4D6AA0 handler, including acquisition and return.
     fn apply_guard_command(
         &mut self,
         command_owner: &str,
         entity_id: u64,
-        target_id: Option<u64>,
+        target: Option<combat::TargetKind>,
         rules: Option<&RuleSet>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> bool {
@@ -2365,72 +2427,47 @@ impl Simulation {
         if !self.order_actor_admits(entity_id) {
             return false;
         }
-        if let Some(tid) = target_id.filter(|&tid| self.substrate.entities.contains(tid))
-            && !self.order_object_token_admits(tid)
+        // TargetClass6E6E20 resolves an absent object to NULL. A present but
+        // dead/limboed object rejects the entire event before retask writes;
+        // friendship is not an event-admission test.
+        let target = target.filter(|target| match *target {
+            combat::TargetKind::Entity(id) => self.substrate.entities.contains(id),
+            combat::TargetKind::Cell(..) => true,
+        });
+        if let Some(combat::TargetKind::Entity(id)) = target
+            && !self.order_object_token_admits(id)
         {
             return false;
         }
-        let anchor = self
-            .substrate
+        let foot =
+            self.substrate.entities.get(entity_id).unwrap().category != EntityCategory::Structure;
+        self.queue_megamission(entity_id, MissionType::AreaGuard, rules);
+        self.substrate
             .entities
-            .get(entity_id)
-            .map(|e| (e.position.rx, e.position.ry));
-        let Some((anchor_rx, anchor_ry)) = anchor else {
-            return false;
-        };
-        // Decide before mutating: the alliance test below can still reject, and
-        // clearing the movement target first would stop the unit on an order
-        // that then fails.
-        if let Some(tid) = target_id.filter(|&tid| self.substrate.entities.contains(tid))
-            && !self.can_attack_target_by_id(entity_id, tid)
-        {
-            return false;
+            .get_mut(entity_id)
+            .unwrap()
+            .order_intent = None;
+        // Non-Foot receivers take the ordinary Event4C7467/4C747C arm;
+        // G itself excludes them, but a decoded record still reaches it.
+        self.assign_target_represented(entity_id, if foot { None } else { target }, rules)
+            .unwrap_or_else(|cause| panic!("Area Guard order target: {cause}"));
+        self.assign_destination_represented(
+            entity_id,
+            if foot { target.map(Into::into) } else { None },
+            rules,
+            overlay_registry,
+        )
+        .unwrap_or_else(|cause| panic!("Area Guard order destination: {cause}"));
+        if foot {
+            // The archive write follows the virtual destination call even
+            // when that class setter refuses its request.
+            self.substrate
+                .entities
+                .get_mut(entity_id)
+                .unwrap()
+                .set_archive_target(target);
         }
-        self.begin_megamission_retask(entity_id, MissionType::AreaGuard, rules);
-        if let Some(e) = self.substrate.entities.get_mut(entity_id) {
-            e.movement_target = None;
-        }
-        // `0x004C73E1..0x004C73EA`: the Area Guard order takes a Slave Miner
-        // off its hunt (`sim::slave_manager`).
-        if let Some(rules) = rules {
-            self.reset_slave_manager(entity_id, rules);
-        }
-        match target_id.filter(|&tid| self.substrate.entities.contains(tid)) {
-            Some(tid) => {
-                let issued = self
-                    .assign_target_represented(
-                        entity_id,
-                        Some(combat::TargetKind::Entity(tid)),
-                        rules,
-                    )
-                    .is_ok();
-                // Native 0x004C7420 makes this object the destination (see
-                // the residual above); the represented order stops instead.
-                self.assign_null_destination(entity_id, rules, overlay_registry);
-                if issued {
-                    if let Some(e) = self.substrate.entities.get_mut(entity_id) {
-                        e.order_intent = Some(OrderIntent::Guard {
-                            anchor_rx,
-                            anchor_ry,
-                        });
-                    }
-                }
-                issued
-            }
-            None => {
-                let _ = self.assign_target_represented(entity_id, None, rules);
-                // 0x004C7420: the event's NULL destination through the class
-                // setter (Infantry 0x0051AA40 stops Walk, keeping a paid head).
-                self.assign_null_destination(entity_id, rules, overlay_registry);
-                if let Some(e) = self.substrate.entities.get_mut(entity_id) {
-                    e.order_intent = Some(OrderIntent::Guard {
-                        anchor_rx,
-                        anchor_ry,
-                    });
-                }
-                true
-            }
-        }
+        true
     }
 
     /// The target an Attack order hands its object. A building takes it
@@ -2593,7 +2630,7 @@ mod tests {
             (
                 Command::Guard {
                     entity_id: 1,
-                    target_id: None,
+                    target: None,
                 },
                 false,
             ),
@@ -2703,7 +2740,15 @@ mod tests {
         gsi_16_01_insert_identity_entity(&mut sim, 42, source_owner);
 
         let record = sim
-            .encode_megamission_move_record(local, 42, 34, 12)
+            .encode_megamission_record(
+                local,
+                &Command::Move {
+                    entity_id: 42,
+                    target_rx: 34,
+                    target_ry: 12,
+                    queue: false,
+                },
+            )
             .expect("registered issuer and source encode");
         assert_eq!(
             record.house_id(),
@@ -2735,16 +2780,43 @@ mod tests {
             .insert(local, HouseState::new(local, 0, None, false, 0, 10));
         sim.session.house_order = vec![local];
         gsi_16_01_insert_identity_entity(&mut sim, 42, local);
-        assert_eq!(sim.encode_megamission_move_record(absent, 42, 10, 20), None);
+        assert_eq!(
+            sim.encode_megamission_record(
+                absent,
+                &Command::Move {
+                    entity_id: 42,
+                    target_rx: 10,
+                    target_ry: 20,
+                    queue: false
+                }
+            ),
+            None
+        );
 
         let overflow_id = i32::MAX as u64 + 1;
         gsi_16_01_insert_identity_entity(&mut sim, overflow_id, local);
         assert_eq!(
-            sim.encode_megamission_move_record(local, overflow_id, 10, 20),
+            sim.encode_megamission_record(
+                local,
+                &Command::Move {
+                    entity_id: overflow_id,
+                    target_rx: 10,
+                    target_ry: 20,
+                    queue: false
+                }
+            ),
             None
         );
         assert_eq!(
-            sim.encode_megamission_move_record(local, 42, u16::MAX, 20),
+            sim.encode_megamission_record(
+                local,
+                &Command::Move {
+                    entity_id: 42,
+                    target_rx: u16::MAX,
+                    target_ry: 20,
+                    queue: false
+                }
+            ),
             None,
             "native signed CellStruct coordinates must not be truncated"
         );
@@ -2865,10 +2937,101 @@ mod tests {
         );
     }
 
-    /// Guard branches on mission 0x0B (Area_Guard) at 0x004C73EF, so it travels
-    /// the same MEGAMISSION arm as Move and carries the same admission gate —
-    /// and, like every arm there, a failure must abandon the order having
-    /// touched nothing.
+    /// Event4C73B9 queues before the special raw-mission11 arm runs.
+    #[test]
+    fn area_guard_regression_player_order_queues_the_native_mission() {
+        let rules = amcv_move_rules();
+        let mut sim = Simulation::new();
+        spawn_rule_backed_unit(&mut sim, 1, "AMCV", &rules);
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::Guard {
+                entity_id: 1,
+                target: None,
+            },
+            Some(&rules),
+        ));
+        // Event4C73B9 queues before the AreaGuard target/destination/archive
+        // arm. The next paid Ready/Commence owns promotion to current.
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().mission.queued(),
+            MissionId::from_known(MissionType::AreaGuard),
+        );
+    }
+
+    /// Original Event4C73C7/4C73D7 clear the suspended references while
+    /// preserving the suspended mission selector. AreaGuard4C7409..4C7430
+    /// installs the first token as destination/post, never as combat Target.
+    /// Executed Cell/object/null controls: input_oracle/area_guard.json.
+    #[test]
+    fn area_guard_clears_suspended_references_and_keeps_the_ordered_post() {
+        use crate::sim::components::NavTargetRef;
+        use crate::sim::mission::MissionDispatchTimer;
+        use crate::sim::mission::state::MissionTestFixture;
+
+        for post in [
+            None,
+            Some(combat::TargetKind::Cell(20, 20)),
+            Some(combat::TargetKind::Entity(2)),
+            Some(combat::TargetKind::Entity(999)),
+        ] {
+            let rules = amcv_move_rules();
+            let mut sim = Simulation::new();
+            crate::sim::arena_fixture::supply_native_map(&mut sim);
+            spawn_rule_backed_unit(&mut sim, 1, "AMCV", &rules);
+            spawn_rule_backed_unit(&mut sim, 2, "AMCV", &rules);
+            let before_timer = MissionDispatchTimer::from_raw(4, 45);
+            let actor = sim.substrate.entities.get_mut(1).unwrap();
+            actor.mission.apply_test_fixture(MissionTestFixture {
+                current: MissionId::from_known(MissionType::Guard),
+                suspended: MissionId::from_known(MissionType::Attack),
+                queued: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: before_timer,
+            });
+            actor.suspended_attack_target = Some(combat::TargetKind::Entity(2));
+            actor.navigation.suspended_nav_com = Some(NavTargetRef::cell(12, 12));
+            actor.set_archive_target(Some(combat::TargetKind::Cell(5, 5)));
+            actor.order_intent = Some(OrderIntent::AttackMove {
+                goal_rx: 12,
+                goal_ry: 12,
+            });
+
+            assert!(sim.apply_command(
+                "Americans",
+                &Command::Guard {
+                    entity_id: 1,
+                    target: post
+                },
+                Some(&rules),
+            ));
+            let actor = sim.substrate.entities.get(1).unwrap();
+            let post = post.filter(|post| *post != combat::TargetKind::Entity(999));
+            assert_eq!(
+                actor.mission.current(),
+                MissionId::from_known(MissionType::Guard)
+            );
+            assert_eq!(
+                actor.mission.queued(),
+                MissionId::from_known(MissionType::AreaGuard)
+            );
+            assert_eq!(
+                actor.mission.suspended(),
+                MissionId::from_known(MissionType::Attack)
+            );
+            assert_eq!(actor.mission.dispatch_timer(), before_timer);
+            assert!(actor.suspended_attack_target.is_none());
+            assert!(actor.navigation.suspended_nav_com.is_none());
+            assert!(actor.attack_target.is_none());
+            assert!(actor.order_intent.is_none());
+            assert_eq!(actor.archive_target(), post);
+            assert_eq!(actor.navigation.nav_com, post.map(Into::into));
+        }
+    }
+
     #[test]
     fn guard_order_is_dropped_for_a_limboed_actor_without_touching_it() {
         let rules = amcv_move_rules();
@@ -2886,7 +3049,7 @@ mod tests {
             "Americans",
             &Command::Guard {
                 entity_id: 1,
-                target_id: None,
+                target: None,
             },
             Some(&rules),
         ));
@@ -2898,16 +3061,20 @@ mod tests {
         assert_eq!(actor.mission.queued(), MissionId::NONE);
     }
 
-    /// The other half of "a failure touches nothing": a Guard onto a target the
-    /// alliance test refuses must leave the actor's movement alone. Clearing it
-    /// before that test stopped the unit on an order that then failed.
+    /// A resolved but limboed post rejects the whole event, preserving the
+    /// actor's previous movement. Friendship does not reject a Guard post.
     #[test]
-    fn a_refused_guard_target_leaves_the_actor_moving() {
+    fn a_limboed_guard_post_leaves_the_actor_moving() {
         let rules = amcv_move_rules();
         let mut sim = Simulation::new();
         spawn_rule_backed_unit(&mut sim, 1, "AMCV", &rules);
-        // An ally: `can_attack_target_by_id` refuses it, so the order must bail.
         spawn_rule_backed_unit(&mut sim, 2, "AMCV", &rules);
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .lifecycle
+            .in_limbo = true;
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
         sim.install_fixture_path_grid(Some(&grid));
         assert!(sim.apply_command(
@@ -2933,7 +3100,7 @@ mod tests {
             "Americans",
             &Command::Guard {
                 entity_id: 1,
-                target_id: Some(2),
+                target: Some(crate::sim::combat::TargetKind::Entity(2)),
             },
             Some(&rules),
         ));

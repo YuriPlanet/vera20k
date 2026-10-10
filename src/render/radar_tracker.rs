@@ -16,9 +16,7 @@ use crate::sim::vision::FogState;
 
 use super::minimap_helpers::owner_dot_color;
 use super::native_radar_surface::NativeRadarSurfaceGeometry;
-use super::radar_visibility::{
-    RadarRegistrationVisibilityFacts, radar_owner_is_human_player,
-};
+use super::radar_visibility::{RadarRegistrationVisibilityFacts, radar_owner_is_human_player};
 
 const TRACKER_BUCKET_COUNT: usize = 256;
 
@@ -48,8 +46,8 @@ impl RadarProjectionFacts {
             return surface.zoom();
         }
         // Mapless/headless adapter retained for tests without MapClass data.
-        let x_scale = self.map_pixel_w / self.world_width.max(1.0)
-            * (crate::map::terrain::TILE_WIDTH * 0.5);
+        let x_scale =
+            self.map_pixel_w / self.world_width.max(1.0) * (crate::map::terrain::TILE_WIDTH * 0.5);
         let y_scale = self.map_pixel_h / self.world_height.max(1.0)
             * (crate::map::terrain::TILE_HEIGHT * 0.5);
         x_scale.abs().min(y_scale.abs()).max(f32::EPSILON)
@@ -81,17 +79,45 @@ pub(super) fn radar_entity_owner_color(
     interner: Option<&crate::sim::intern::StringInterner>,
     house_colors: &HouseColorMap,
     ramps: &HouseColorRamps,
+    observer: Option<InternedId>,
+    owner_allied_with_observer: bool,
 ) -> [u8; 4] {
-    let color_owner = entity
-        .disguise
-        .as_ref()
-        .filter(|disguise| disguise.disguised)
-        .and_then(|disguise| disguise.disguised_as_house)
-        .unwrap_or(entity.owner());
+    use crate::map::entities::EntityCategory;
+    // Radar655F48 asks the class's +D0(0) only when +C4 says disguised.
+    // Unit7465F0 and Infantry5226C0 preserve the owner's directional alliance
+    // with the current viewer; selection and disguise sensors are not inputs.
+    let color_owner = match entity.disguise.as_ref().filter(|d| d.is_disguised()) {
+        None => Some(entity.owner()),
+        Some(_)
+            if owner_allied_with_observer
+                && matches!(
+                    entity.category,
+                    EntityCategory::Unit | EntityCategory::Infantry
+                ) =>
+        {
+            Some(entity.owner())
+        }
+        Some(disguise) => match entity.category {
+            EntityCategory::Unit => disguise.house(),
+            // The Spy leaf deliberately differs: NULL disguiseHouse returns
+            // CurrentHouse, whereas a Mirage preserves NULL.
+            EntityCategory::Infantry => disguise.house().or(observer),
+            // Building/Aircraft retain Techno41BE70: XOR EAX,EAX; RET4.
+            EntityCategory::Structure | EntityCategory::Aircraft => None,
+        },
+    };
+    let Some(color_owner) = color_owner else {
+        // 655FD6..655FE5 finds literal LightGrey but copies ColorScheme+330
+        // directly. Constructor68C769..68C7DC writes palette index16 there;
+        // the admitted pixel suffix stores WORD0010, not that scheme's RGB.
+        // Executed source/pixel controls: spatial_oracle/mirage_disguise.json.
+        let rgb = super::native_surface_format::RGB565.unpack_rgb8(16);
+        return super::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
+            .quantize_rgba8([rgb[0], rgb[1], rgb[2], 255]);
+    };
     let owner_str = interner.map_or("", |interner| interner.resolve(color_owner));
     // Building and mobile tracker entries share RenderCellPixel's owner/remap
-    // path. Khaki is terrain-only. The existing RGBA ramp is not yet proof of
-    // native DirectDraw shift/loss packed-color equivalence.
+    // path. Khaki is terrain-only.
     owner_dot_color(owner_str, house_colors, ramps)
 }
 
@@ -116,19 +142,14 @@ pub(super) fn radar_pixel_candidate_eligible(
 
     if let Some(local_owner) = local_owner {
         let friendly = entity.owner() == local_owner
-            || interner.is_some_and(|interner| {
-                fog.is_friendly_id(local_owner, entity.owner(), interner)
-            });
+            || interner
+                .is_some_and(|interner| fog.is_friendly_id(local_owner, entity.owner(), interner));
         if !full_visibility {
             let (rx, ry) = projection
                 .pixel_to_cell(entry.x, entry.y)
                 .unwrap_or((entity.position.rx, entity.position.ry));
-            let owner_is_human = radar_owner_is_human_player(
-                entity.owner(),
-                local_owner,
-                houses,
-                game_mode_nonzero,
-            );
+            let owner_is_human =
+                radar_owner_is_human_player(entity.owner(), local_owner, houses, game_mode_nonzero);
             if !fog.is_cell_revealed(local_owner, rx, ry) && !owner_is_human {
                 return false;
             }
@@ -549,12 +570,10 @@ mod tests {
         assert!(tracker.entries_at(40, 60).is_empty());
         assert_eq!(tracker.entries_at(41, 61), vec![1]);
 
-        moved.visibility = RadarRegistrationVisibilityFacts::Mobile(
-            RadarMobileVisibilityFacts {
-                shrouded: true,
-                ..visible_mobile_facts()
-            },
-        );
+        moved.visibility = RadarRegistrationVisibilityFacts::Mobile(RadarMobileVisibilityFacts {
+            shrouded: true,
+            ..visible_mobile_facts()
+        });
         tracker.update_object(moved, false);
         assert!(!tracker.is_registered(1));
         moved.visibility = RadarRegistrationVisibilityFacts::Mobile(visible_mobile_facts());
@@ -567,13 +586,11 @@ mod tests {
     fn radar_tracker_consumes_nonzero_visibility_outcode_as_local_event() {
         let mut tracker = RetainedRadarTracker::default();
         let mut sensed = update(1, false);
-        sensed.visibility = RadarRegistrationVisibilityFacts::Mobile(
-            RadarMobileVisibilityFacts {
-                cloak_state: 2,
-                has_sensor: true,
-                ..visible_mobile_facts()
-            },
-        );
+        sensed.visibility = RadarRegistrationVisibilityFacts::Mobile(RadarMobileVisibilityFacts {
+            cloak_state: 2,
+            has_sensor: true,
+            ..visible_mobile_facts()
+        });
         assert_eq!(
             tracker.update_object(sensed, false),
             Some(RadarSensedPresentationEvent {
@@ -582,23 +599,19 @@ mod tests {
                 cell: (10, 20),
             })
         );
-        sensed.visibility = RadarRegistrationVisibilityFacts::Mobile(
-            RadarMobileVisibilityFacts {
-                cloak_state: 2,
-                has_sensor: true,
-                allied_with_current_player: true,
-                ..visible_mobile_facts()
-            },
-        );
+        sensed.visibility = RadarRegistrationVisibilityFacts::Mobile(RadarMobileVisibilityFacts {
+            cloak_state: 2,
+            has_sensor: true,
+            allied_with_current_player: true,
+            ..visible_mobile_facts()
+        });
         assert_eq!(tracker.update_object(sensed, false), None);
-        sensed.visibility = RadarRegistrationVisibilityFacts::Mobile(
-            RadarMobileVisibilityFacts {
-                cloak_state: 2,
-                has_sensor: true,
-                allied_with_current_player: false,
-                ..visible_mobile_facts()
-            },
-        );
+        sensed.visibility = RadarRegistrationVisibilityFacts::Mobile(RadarMobileVisibilityFacts {
+            cloak_state: 2,
+            has_sensor: true,
+            allied_with_current_player: false,
+            ..visible_mobile_facts()
+        });
         sensed.enemy_sensed_prefilter = false;
         assert_eq!(
             tracker.update_object(sensed, false),
@@ -613,9 +626,17 @@ mod tests {
             radar_foundation_brush(3, 3, 1.0),
             vec![
                 (0, 0),
-                (-1, 1), (0, 1), (1, 1),
-                (-2, 2), (-1, 2), (0, 2), (1, 2), (2, 2),
-                (-1, 3), (0, 3), (1, 3),
+                (-1, 1),
+                (0, 1),
+                (1, 1),
+                (-2, 2),
+                (-1, 2),
+                (0, 2),
+                (1, 2),
+                (2, 2),
+                (-1, 3),
+                (0, 3),
+                (1, 3),
                 (0, 4),
             ]
         );

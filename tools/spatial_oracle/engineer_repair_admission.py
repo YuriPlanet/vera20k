@@ -189,17 +189,20 @@ class NativeAudioPlatform:
         self.cursor, self.hardware_mapped = 0x32010000, False
         self.prepared_files = MappingProxyType({})
         self.os_clock, self.os_device = None, None
+        self.os_buffer_devices = None
         self.critical_calls = frozenset()
         self.clock_calls, self.file_io, self.device_io = [], [], []
         self.device_stop_updates_status = False
 
     def configure_transport(self, *, prepared_files=None, clock=None,
-                            device=None, critical_calls=None):
+                            device=None, buffer_devices=None, critical_calls=None):
         """Admit raw OS inputs; native readers, clocks and consumers still run.
 
         Files are immutable bytes selected/pinned by the caller. Clock values
         are raw QPF/QPC inputs, not converted milliseconds. Device values are
-        explicit OS status/cursors. Existing controls retain their zero-cursor
+        explicit OS status/cursors. Optional per-buffer inputs are keyed only
+        by device-buffer identities returned by this transport; unlisted
+        buffers retain the configured global behavior. Existing controls retain their zero-cursor
         and unsupported-clock defaults unless these inputs are configured.
         """
         if prepared_files is not None:
@@ -211,6 +214,10 @@ class NativeAudioPlatform:
             self.os_clock = clock
         if device is not None:
             self.os_device = device
+        if buffer_devices is not None:
+            if not set(buffer_devices) <= set(self.buffers):
+                raise ValueError('Per-buffer OS inputs require returned device-buffer identities')
+            self.os_buffer_devices = buffer_devices
         if critical_calls is not None:
             self.critical_calls = frozenset(critical_calls)
 
@@ -261,7 +268,8 @@ class NativeAudioPlatform:
                 destination=pointer, value=value, os_success=1))
             self.callsite(pc, size, [pointer], 1)
             return True
-        if pc in self.critical_calls or (self.os_device is not None and pc in (0x4095F5, 0x409828)):
+        if pc in self.critical_calls or ((self.os_device is not None or self.os_buffer_devices is not None)
+                                       and pc in (0x4095F5, 0x409828)):
             args = [read(sp)]
             if pc in (0x4095F5, 0x409828):
                 self.device_io.append(dict(phase=self.owner.phase, pc=f'0x{pc:08X}',
@@ -349,6 +357,8 @@ class NativeAudioPlatform:
                              15: 2, 16: 2, 17: 2, 18: 1, 19: 5}.get(method))
         assert count is not None, (kind, method)
         args = list(struct.unpack('<' + str(count) + 'I', u.mem_read(sp + 4, count * 4)))
+        device = (self.os_buffer_devices.get(args[0], self.os_device)
+                  if self.os_buffer_devices is not None else self.os_device)
         if kind == 'dsound' and method == 3:
             _, descriptor, output, outer = args
             assert outer == 0
@@ -356,10 +366,10 @@ class NativeAudioPlatform:
         elif kind == 'dsound' and method == 4:
             assert read(args[1]) >= 4  # zero-filled capabilities supplied by device.
         elif kind == 'buffer' and method == 4:
-            cursors = [self.os_device['play_cursor'], self.os_device['write_cursor']] if self.os_device else [0, 0]
+            cursors = [device['play_cursor'], device['write_cursor']] if device else [0, 0]
             u.mem_write(args[1], dwords(cursors[0]))
             u.mem_write(args[2], dwords(cursors[1]))
-            if self.os_device is not None:
+            if device is not None:
                 self.device_io.append(dict(phase=self.owner.phase, pc=f'0x{pc:08X}',
                     caller=f'0x{read(sp):08X}', kind='IDirectSoundBuffer::GetCurrentPosition',
                     args=args, play_cursor=cursors[0], write_cursor=cursors[1], os_success=0))
@@ -367,9 +377,9 @@ class NativeAudioPlatform:
                 self.owner.ret(0, count * 4)
                 return True
         elif kind == 'buffer' and method == 9:
-            if self.os_device is None:
+            if device is None:
                 raise ValueError('GetStatus requires explicit OS device input')
-            status = self.os_device['value']
+            status = device['value']
             u.mem_write(args[1], dwords(status))
             self.device_io.append(dict(phase=self.owner.phase, pc=f'0x{pc:08X}',
                 caller=f'0x{read(sp):08X}', kind='IDirectSoundBuffer::GetStatus', args=args,
@@ -382,9 +392,9 @@ class NativeAudioPlatform:
             self.calls.append(dict(method='buffer:18', args=args, result=0,
                                    abi='original40A62B_receiver_only'))
             if self.device_stop_updates_status:
-                if self.os_device is None:
+                if device is None:
                     raise ValueError('Stop status transition needs an OS device')
-                self.os_device['value'] = 0
+                device['value'] = 0
                 self.device_io.append(dict(phase=self.owner.phase, pc=f'0x{pc:08X}',
                     caller=f'0x{read(sp):08X}', kind='IDirectSoundBuffer::Stop', args=args,
                     os_success=0, os_playing_status_after=0))

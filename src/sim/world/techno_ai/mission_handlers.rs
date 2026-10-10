@@ -12,7 +12,7 @@ use crate::util::direction_tables::CELL_DELTAS;
 
 #[cfg(test)]
 #[path = "foot_mission_oracle_tests.rs"]
-mod foot_mission_oracle_tests;
+pub(in crate::sim::world::techno_ai) mod foot_mission_oracle_tests;
 
 #[cfg(test)]
 #[path = "deployed_guard_oracle_tests.rs"]

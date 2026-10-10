@@ -297,6 +297,14 @@ pub(crate) enum ConcealOutcome {
 /// but the stream preserves the verified native relative ordering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LifecycleOutput {
+    /// Logic55AFB0 increments the process FPS sample even on terminal frames.
+    LogicVisit,
+    /// Logic55B5C3 updates existing lasers before the live object visits.
+    LaserUpdate {
+        frame: i32,
+    },
+    /// Copied LaserDraw54FE60 birth; no source/target pointer to detach.
+    LaserCreated(crate::sim::combat::laser::LaserBirth),
     /// ObjectUnlimbo5F517A/5F5207 constructs and attaches a presentation trail.
     LineTrailConstructed {
         stable_id: u64,
@@ -313,9 +321,6 @@ pub(crate) enum LifecycleOutput {
         stable_id: u64,
     },
     DetachAttachedAnims {
-        stable_id: u64,
-    },
-    StopVoc {
         stable_id: u64,
     },
     DirtyTacticalRect {
@@ -2448,8 +2453,13 @@ impl Simulation {
             .push(LifecycleOutput::DetachAttachedAnims { stable_id });
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealAnimBoundary);
-        self.lifecycle_outputs
-            .push(LifecycleOutput::StopVoc { stable_id });
+        // RESIDUAL: ObjectConceal5F4D81 stops Object+3C and5F4D89
+        // detaches Object+50. Those ambient handles have no Rust owner yet.
+        // They are separate from Foot+544/Anim+1A0/Building+6A0; aliasing
+        // this boundary to their object ID wrongly cuts off those sounds.
+        // Trigger: ObjectType ambient cues; effect: missing conceal teardown
+        // once their upstream playback is implemented; no such handle exists
+        // for this ordinary SQD chain.
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealVocBoundary);
 
@@ -2551,6 +2561,12 @@ impl Simulation {
                 stable_id,
                 crate::sim::house_tracking::HouseTracking::recount,
             );
+            // 0x004459AE..0x004459CA (infantry) and the unit arm after it:
+            // the building's self-heal counts leave its house on the same
+            // first Limbo, each clamped at zero.
+            if let Some(rules) = context.rules() {
+                self.remove_house_self_heal(stable_id, rules);
+            }
         }
         // Building445DA6 precedes Techno Limbo445DDA, including its pointer
         // expiry and InLimbo write. Building4458CE skips it on repeated Limbo;
@@ -2629,6 +2645,21 @@ impl Simulation {
             && let Some(locomotor) = entity.locomotor.as_mut()
         {
             locomotor.walk_lock();
+        }
+        // FootLimbo4DB353 follows the locomotor Lock and precedes the
+        // air-tracker/Techno suffix. It detaches any shared Foot sound, with
+        // no MoveSound latch gate or write. Unit7440B4, Infantry51DF53 and
+        // Aircraft's direct vtable slot all delegate to this one Foot path.
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| {
+                entity.category != EntityCategory::Structure && !entity.lifecycle.in_limbo
+            })
+        {
+            self.sound_events
+                .push(super::SimSoundEvent::ObjectSoundDetached { owner: stable_id });
         }
         self.release_foot_air_tracker_before_limbo(stable_id);
         if self
@@ -4318,6 +4349,30 @@ impl Simulation {
         self.bomb_defuse(stable_id);
         self.team_script_vm.object_deleted(stable_id);
         self.release_house_base_tracking(stable_id);
+        // Selected original Foot destructor4D3632..4D366E clears only its
+        // cached+564 Cell if+E0 still holds this Foot. UnInit/Limbo retain it;
+        // the block sends no notification and leaves the obsolete+564 intact.
+        self.clear_foot_air_slot_at_destruction(stable_id);
+        // Foot destructor4D3677 Release406060 follows class Remove_Tracking
+        // and Foot's cached-cell cleanup. All Foot classes share it, including
+        // constructor-complete limbo disposal. No caller-local hard stop.
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category != EntityCategory::Structure)
+        {
+            self.sound_events
+                .push(super::SimSoundEvent::ObjectSoundReleased { owner: stable_id });
+        }
+        // Foot4D3701 delegates to Techno6F4500 only after its own sound
+        // tail. Techno6F4607 destroys the distinct voice handle via405C00,
+        // before its attached/deploy Anims6F468B. Keep the disposal marker in
+        // the same stream as AI visits and those Anim sound callbacks.
+        if self.substrate.entities.contains(stable_id) {
+            self.sound_events
+                .push(super::SimSoundEvent::UnitVoiceDestroyed { owner: stable_id });
+        }
         // Techno destructor6F467F..6F4691 UnInits its retained deploy Anim.
         // Pointer-expiry may already have cleared it through the Anim owner.
         if let Some(anim) = self
@@ -4335,10 +4390,6 @@ impl Simulation {
             self.release_anim_owner_reference(stable_id);
             self.clear_building_anim_reference(stable_id);
         }
-        // Selected original Foot destructor4D3632..4D366E clears only its
-        // cached+564 Cell if+E0 still holds this Foot. UnInit/Limbo retain it;
-        // the block sends no notification and leaves the obsolete+564 intact.
-        self.clear_foot_air_slot_at_destruction(stable_id);
         // Display registration never outlives the object. Fly's phase tail
         // (4CD4DE) resubmits even an owner concealed earlier in the frame.
         self.substrate.display.remove(stable_id);

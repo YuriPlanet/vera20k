@@ -120,6 +120,7 @@ pub mod infantry_sequence;
 pub mod ini_parser;
 // The readers are a child of the raw store, so only they see raw value text.
 pub use ini_parser::ini_value;
+pub(crate) mod audio_sources;
 pub mod jumpjet_params;
 pub mod locomotor_type;
 pub mod mind_control_rules;
@@ -140,7 +141,6 @@ pub(crate) mod retail_sources;
 pub mod ruleset;
 pub mod shp_vehicle_sequence;
 pub mod smudge_type;
-pub(crate) mod audio_sources;
 pub mod sound_ini;
 pub mod superweapon_type;
 pub mod team_ai_ini;
@@ -153,9 +153,15 @@ pub mod warhead_type;
 pub mod weapon_type;
 
 #[cfg(test)]
-mod path_delay_rules_tests;
+pub(crate) mod area_guard_tests;
 #[cfg(test)]
 mod ini_token_readers_tests;
+#[cfg(test)]
+mod mirage_disguise_tests;
+#[cfg(test)]
+pub(crate) mod move_sound_tests;
+#[cfg(test)]
+mod path_delay_rules_tests;
 #[cfg(test)]
 mod read_double_percent_tests;
 #[cfg(test)]

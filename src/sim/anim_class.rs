@@ -1918,6 +1918,16 @@ impl Simulation {
         true
     }
 
+    /// A producer's plain Anim+19D store. Mirage's attached-ring tail
+    /// `746A9C..746B19` changes drawing without suspending the Anim AI.
+    pub(crate) fn set_anim_hidden(&mut self, id: AnimId, hidden: bool) -> bool {
+        let Some(anim) = self.anim_mut_by_id(id) else {
+            return false;
+        };
+        anim.draw_runtime.hidden = hidden;
+        true
+    }
+
     /// `AnimClass::SetOwnerHouse @ 0x00424CA0`: store `+0x180`.
     pub(crate) fn set_anim_owner_house(&mut self, id: AnimId, house: InternedId) -> bool {
         let Some(anim) = self.anim_mut_by_id(id) else {
@@ -2496,13 +2506,12 @@ impl Simulation {
         if let Some(sound_name) = sound_name
             && let Some(world) = self.anim_absolute_coord(id)
         {
-            let sound_id = self.interner.intern(&sound_name);
             if let Some(anim) = self.anim_mut_by_id(id) {
                 anim.start_sound_active = true;
             }
             self.sound_events.push(SimSoundEvent::AnimationStarted {
                 anim_id: id,
-                sound_id,
+                sound_id: sound_name,
                 world,
             });
         }
@@ -3747,12 +3756,11 @@ mod tests {
         // `delay == 0` means the constructor itself reached Start, so the
         // sound is already out before the first AI visit.
         assert!(anim.start_sound_active);
-        let report = sim.interner.intern("EXPLOSION06");
         assert!(
             sim.sound_events.iter().any(|event| matches!(
                 event,
                 SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                    if *anim_id == id && *sound_id == report
+                    if *anim_id == id && sound_id == "EXPLOSION06"
             )),
             "explosion must emit its art `Report=`, got {:?}",
             sim.sound_events

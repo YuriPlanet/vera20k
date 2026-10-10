@@ -311,6 +311,22 @@ def readers():
                 body_rate_history=body_rows)
 
 
+def run_foot_counter_slice(u, actor, stack, *, through_move_sound=False):
+    """Execute the shared original Foot counter region, optionally its sound tail.
+
+    The legacy cadence boundary starts after an admitted Process. The joined
+    boundary starts at the original locomotor read/saved counter and continues
+    through MoveSound. Its caller owns any declared Process/audio transports;
+    this helper never supplies a counter delta or an IsMovingNow result.
+    """
+    for reg, value in ((UC_X86_REG_ESP, stack), (UC_X86_REG_ESI, actor),
+                       (UC_X86_REG_EBX, 0)):
+        u.reg_write(reg, value)
+    start = 0x4DA806 if through_move_sound else 0x4DA886
+    end = (0x4DAB3C, 0x4DAF00) if through_move_sound else 0x4DAA01
+    return run_checked(u, start, end, count=500000)
+
+
 def body_cadence(art):
     cases = []
     for moving in [False, True]:
@@ -349,9 +365,7 @@ def body_cadence(art):
                 m.ret(4, int(case['moving']))
 
         u.hook_add(UC_HOOK_CODE, hook)
-        for reg, value in [(UC_X86_REG_ESP, SP), (UC_X86_REG_ESI, ACTOR), (UC_X86_REG_EBX, 0)]:
-            u.reg_write(reg, value)
-        run_checked(u, 0x4DA886, 0x4DAA01)
+        run_foot_counter_slice(u, ACTOR, SP)
         rows.append(dict(input=case, counter=m.read32(ACTOR + 0x538)))
     return rows
 

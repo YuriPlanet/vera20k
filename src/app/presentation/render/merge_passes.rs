@@ -92,6 +92,11 @@ pub(super) fn draw_native_object_pass<'a>(
                                     (&page.texture.bind_group, zshape, PackedSpriteKind::Shp)
                                 })
                             }
+                            ObjectTexture::TerrainShp(
+                                crate::render::terrain_draw::TerrainPiece::Body,
+                            ) => overlay_atlas.map(|atlas| {
+                                (&atlas.texture.bind_group, zshape, PackedSpriteKind::Shp)
+                            }),
                             _ => {
                                 unreachable!("packed source classification is retained by lowering")
                             }
@@ -134,11 +139,7 @@ pub(super) fn draw_native_object_pass<'a>(
         }
         if destination_edit(run.target).is_some() {
             let start = cursor;
-            while cursor < ground.runs.len()
-                && destination_edit(ground.runs[cursor].target).is_some()
-            {
-                cursor += 1;
-            }
+            cursor = destination_span_end(&ground.runs, start);
             // Atlas changes preserve parent order. All destination edits in
             // this span share overlap dependencies; ordinary draws are fences.
             let commands = ground.runs[start..cursor].iter().flat_map(|run| {
@@ -321,6 +322,19 @@ fn destination_edit(
     }
 }
 
+/// A shimmered Unit can borrow the same terrain texture as an ordinary tree.
+/// Its packed Convert blit is a fence even though both are TerrainShp sources.
+fn destination_span_end(runs: &[ObjectDrawRun], start: usize) -> usize {
+    let mut end = start;
+    while end < runs.len()
+        && runs[end].packed_parent.is_none()
+        && destination_edit(runs[end].target).is_some()
+    {
+        end += 1;
+    }
+    end
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::draw_plan_lowering::{
@@ -371,6 +385,41 @@ mod tests {
         assert_eq!(packed_span_end(&pass.runs, 4), 5);
         assert_eq!(packed_span_end(&pass.runs, 5), 6);
         assert_eq!(pass.runs[6].packed_parent, None);
+    }
+
+    #[test]
+    fn tree_and_shadow_edits_do_not_absorb_a_following_mirage_blend() {
+        use crate::render::terrain_draw::TerrainPiece;
+        let order = NativeDisplayOrder::new(&[1, 2, 3]);
+        let piece = |kind, bits| ObjectPieceInstance {
+            target: ObjectTexture::TerrainShp(kind),
+            render_z: RenderZPolicy::ReadOnly,
+            instance: SpriteInstance {
+                draw_state: DrawState {
+                    fx_params: [1.0, bits as f32, 1.0, 0.0],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        };
+        let pass = lower_ground_object_instances(vec![
+            PlannedObjectInstance::object(
+                order.object_draw(1, SpriteEncoding::Terrain).unwrap(),
+                vec![piece(TerrainPiece::Body, 0), piece(TerrainPiece::Shadow, 0)],
+            ),
+            PlannedObjectInstance::object(
+                order.object_draw(2, SpriteEncoding::Plain).unwrap(),
+                vec![piece(TerrainPiece::Body, 4), piece(TerrainPiece::Shadow, 0)],
+            ),
+            PlannedObjectInstance::object(
+                order.object_draw(3, SpriteEncoding::Plain).unwrap(),
+                vec![piece(TerrainPiece::Body, 0)],
+            ),
+        ]);
+        assert_eq!(destination_span_end(&pass.runs, 0), 2);
+        assert_eq!(pass.runs[2].packed_parent, Some(2));
+        assert_eq!(packed_span_end(&pass.runs, 2), 3);
+        assert_eq!(destination_span_end(&pass.runs, 3), pass.runs.len());
     }
 }
 

@@ -231,6 +231,10 @@ fn pending_turn_roundtrips_through_save_and_hashes_its_latches() {
         .get_mut(id)
         .unwrap()
         .mcv_deploy_pending = true;
+    assert!(rules.object("AMCV").unwrap().move_sound.is_empty());
+    let sound = sim.substrate.entities.get(id).unwrap().move_sound;
+    assert!(!sound.is_active());
+    assert_eq!(sound.countdown(), 3);
     let data = crate::sim::snapshot::GameSnapshot::save_validated(&sim, 1, 2, "pending MCV", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&data).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
@@ -239,6 +243,13 @@ fn pending_turn_roundtrips_through_save_and_hashes_its_latches() {
     // Retail's save reader deliberately reinitializes Scenario RNG. Align the
     // control run to that documented load contract before comparing continuation.
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    let loaded_sound = restored.substrate.entities.get(id).unwrap().move_sound;
+    assert!(!loaded_sound.is_active());
+    assert_eq!(loaded_sound.countdown(), 0);
+    // The turn refreshed Foot+540 despite the empty MoveSound vector.
+    // FootLoad4DB60D..4DB624 resets it; align that one load transition too,
+    // without reloading the control's deployment/facing/mission authority.
+    sim.restore_move_sound_state_after_load(id);
     assert_eq!(sim.state_hash(), restored.state_hash());
     for _ in 0..80 {
         let a = tick(&mut sim, &rules, None);

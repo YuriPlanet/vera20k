@@ -2155,6 +2155,15 @@ impl ResolvedTerrainGrid {
         self.bridge_set_start.map_or(-1, i32::from)
     }
 
+    /// Cell486750 selects the concrete bridge's first sixteen tile IDs.
+    /// It reads neither the bridge occupancy flags nor the wooden tile set.
+    /// Mirage746997 uses this predicate for its neighbour Infantry list.
+    pub(crate) fn native_cell_is_concrete_bridge(&self, cell: NativeCellIdentity) -> bool {
+        let base = self.concrete_bridge_set_base();
+        let tile = self.native_cell_tile_index(cell);
+        base != -1 && tile >= base && tile < base.wrapping_add(16)
+    }
+
     pub(crate) fn wood_bridge_set_base(&self) -> i32 {
         self.wood_bridge_set_start.map_or(-1, i32::from)
     }

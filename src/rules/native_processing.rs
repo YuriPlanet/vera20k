@@ -14,7 +14,7 @@ use crate::rules::object_type::ObjectCategory;
 use crate::rules::powerups::{PowerupTable, PowerupsAccumulator};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup, parse_prerequisites};
 use crate::rules::projectile_type::ProjectileArtState;
-use crate::rules::ruleset::{GeneralBuildingTypes, PrismSupportRules};
+use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
@@ -303,6 +303,9 @@ struct GeneralTypeLists {
     /// same InfantryType list reader `0x0067BB10`: the types a `MakeInfantry=`
     /// anim's end creates (`AnimClass::AI @ 0x004249F9`).
     anim_to_infantry: Vec<String>,
+    /// Rules data+0xFFC/count+0x1008;671D3E uses TerrainType reader67BDD0.
+    /// Native reader/identity controls: spatial_oracle/mirage_disguise.
+    default_mirage_disguises: Vec<String>,
 }
 
 /// The `[General]` keys of [`GeneralTypeLists::paradrop_infantry`], in its
@@ -363,6 +366,20 @@ impl ProcessedRulesLayers {
             .into_iter()
             .flatten()
             .map(|member| (member.native_stored_id.as_str(), member.building_foundation))
+    }
+
+    /// Unit747620's retained frame fields after the last reached Rules body.
+    /// Missing Rules sections skip ART; the fixed ART itself is never layered.
+    pub(crate) fn unit_shp_read_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, &crate::rules::shp_vehicle_sequence::UnitShpReadState)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Vehicle)
+            .into_iter()
+            .flatten()
+            .map(|member| (member.native_stored_id.as_str(), &member.unit_shp))
     }
 
     /// TechnoType +810/+814 state after the reached generic and FV readers.
@@ -478,6 +495,12 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_gravity
+    }
+
+    pub(crate) fn detail(&self) -> DetailRules {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_detail
     }
 
     pub(crate) fn prism_support(&self) -> PrismSupportRules {
@@ -606,6 +629,10 @@ impl ProcessedRulesLayers {
         &self.general_type_lists.anim_to_infantry
     }
 
+    pub(crate) fn default_mirage_disguises(&self) -> &[String] {
+        &self.general_type_lists.default_mirage_disguises
+    }
+
     #[cfg(test)]
     pub(crate) fn native_type_construction_trace(&self) -> &NativeTypeConstructionTrace {
         &self.native_type_construction_trace
@@ -732,11 +759,12 @@ impl NativeTypeConstructionTrace {
 /// been read so far. The receipt is deliberately move-only: preview, Start, and
 /// fresh Full_Init must hand off one authority instead of recounting a merged
 /// INI. Tiberium slots are included even though their constructors spend no ID.
-/// RulesClass Gravity shares this process lifetime, but survives Type resets.
+/// RulesClass scalars share this process lifetime and survive Type resets.
 #[derive(Debug)]
 pub(crate) struct NativeRulesRegistryState {
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
     tiberiums: Vec<ProcessedType>,
+    rules_detail: DetailRules,
     rules_gravity: i32,
     rules_missile_rot_var: f64,
     rules_safety_altitude: i32,
@@ -756,6 +784,7 @@ impl Default for NativeRulesRegistryState {
         Self {
             families: HashMap::new(),
             tiberiums: Vec::new(),
+            rules_detail: DetailRules::default(),
             // RulesClass665650 initializes +16B8 before any AudioVisual read.
             rules_gravity: 3,
             rules_missile_rot_var: 0.25,
@@ -792,7 +821,8 @@ impl NativeRulesRegistryState {
 
     /// Consume the pre-reset registry owner at Full_Init's destructive Rules
     /// reset and return an owner with empty Type registries. RulesClass itself
-    /// survives 6686C0, so its Gravity is retained for the first postpass.
+    /// survives 6686C0, retaining Gravity, detail thresholds and its other
+    /// scalar values for the first postpass.
     ///
     /// Original reset retires every referenced Type: LightningWarhead detaches
     /// to null, while these Rules Anim references/list retain freed addresses.
@@ -805,6 +835,7 @@ impl NativeRulesRegistryState {
     /// cannot be rewound by this operation.
     pub(crate) fn destructive_reset(self) -> Self {
         Self {
+            rules_detail: self.rules_detail,
             rules_gravity: self.rules_gravity,
             rules_missile_rot_var: self.rules_missile_rot_var,
             rules_safety_altitude: self.rules_safety_altitude,
@@ -945,6 +976,8 @@ struct ProcessedType {
     /// BuildingType45DF13 initializes +EF0 to zero; ReadINI461225..46125D
     /// updates it from fixed ART after ObjectType5F933B reads effective Image.
     building_foundation: u8,
+    /// Unit ctor747167..7471B2 and reached fixed-ART reader7477C1..747AAE.
+    unit_shp: crate::rules::shp_vehicle_sequence::UnitShpReadState,
     /// TechnoType ctor71136F/711781, generic flag read71287E and FV pair
     /// reads747BBD..747E90, retained across every reached Rules pass.
     gunner_turrets: GunnerTurrets,
@@ -975,6 +1008,7 @@ impl ProcessedType {
             native_stored_id,
             anim_art_read: false,
             building_foundation: 0,
+            unit_shp: Default::default(),
             gunner_turrets: GunnerTurrets::default(),
             recoil: crate::rules::recoil::RecoilConfig::default(),
             prerequisite: Vec::new(),
@@ -996,6 +1030,7 @@ struct RulesPassProcessor {
     native_type_construction_events: Vec<NativeTypeConstructionEvent>,
     tiberiums: Vec<ProcessedType>,
     colors: Vec<(String, String)>,
+    rules_detail: DetailRules,
     rules_gravity: i32,
     rules_missile_rot_var: f64,
     rules_safety_altitude: i32,
@@ -1020,6 +1055,7 @@ impl Default for RulesPassProcessor {
             native_type_construction_events: Vec::new(),
             tiberiums: Vec::new(),
             colors: Vec::new(),
+            rules_detail: DetailRules::default(),
             rules_gravity: NativeRulesRegistryState::default().rules_gravity,
             rules_missile_rot_var: NativeRulesRegistryState::default().rules_missile_rot_var,
             rules_safety_altitude: NativeRulesRegistryState::default().rules_safety_altitude,
@@ -1040,6 +1076,7 @@ impl RulesPassProcessor {
         Self {
             families: registry_state.families,
             tiberiums: registry_state.tiberiums,
+            rules_detail: registry_state.rules_detail,
             rules_gravity: registry_state.rules_gravity,
             rules_missile_rot_var: registry_state.rules_missile_rot_var,
             rules_safety_altitude: registry_state.rules_safety_altitude,
@@ -1380,6 +1417,13 @@ impl RulesPassProcessor {
                 if let Some(resolved) = self.resolve_list_from(section, key, family, 0x80) {
                     self.general_type_lists.anim_to_infantry = resolved;
                 }
+            } else if key == "DefaultMirageDisguises" {
+                // Keep actual FindOrAllocate identities, duplicate slots and
+                // empty/missing-layer retention. Null factory tokens are
+                // excluded by this shared native list reader.
+                if let Some(resolved) = self.resolve_list_from(section, key, family, 0x80) {
+                    self.general_type_lists.default_mirage_disguises = resolved;
+                }
             } else if matches!(
                 key,
                 "LightningWarhead"
@@ -1695,7 +1739,17 @@ impl RulesPassProcessor {
                             RulesTypeFamily::Animation,
                         );
                     }
-                    RulesTypeFamily::Vehicle => {}
+                    RulesTypeFamily::Vehicle => {
+                        // Object5F933B retains the Image buffer+1F8; Unit7477C1
+                        // uses that section without a type-name fallback. The
+                        // existing reached-body projection retains Image/Turret
+                        // defaults across only the admitted Rules passes.
+                        let image = effective.read_string("Image", &native_stored_id, 0x19);
+                        let has_turret = effective.read_bool("Turret", false);
+                        self.families.get_mut(&family).unwrap()[index]
+                            .unit_shp
+                            .read_pass(fixed_art.section_or_empty(&image), has_turret);
+                    }
                     RulesTypeFamily::Infantry => {
                         self.allocate_scalar_from(
                             &raw,
@@ -2059,6 +2113,9 @@ impl RulesPassProcessor {
         let Some(section) = pass.section("AudioVisual") else {
             return;
         };
+        // Original 66920D..669258 reads these first, including the cold
+        // startup's same AudioVisual call before any complete Process.
+        self.rules_detail = self.rules_detail.read_pass(section);
         // Full AudioVisual6691E0's 66B3C4 read uses the retained signed dword
         // default. Cold startup52D132 calls the same reader before Process.
         self.rules_gravity = section.read_int("Gravity", self.rules_gravity);
@@ -2219,6 +2276,7 @@ impl RulesPassProcessor {
                 registry_state: NativeRulesRegistryState {
                     families: self.families,
                     tiberiums: self.tiberiums,
+                    rules_detail: self.rules_detail,
                     rules_gravity: self.rules_gravity,
                     rules_missile_rot_var: self.rules_missile_rot_var,
                     rules_safety_altitude: self.rules_safety_altitude,

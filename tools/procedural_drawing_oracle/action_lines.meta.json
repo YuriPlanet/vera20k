@@ -60,21 +60,21 @@
     "fill_endpoint": "0x007BB020"
   },
   "source_normalized_lf_sha256": {
-    "producer": "045808eb6007d7b368e205eb1147d5b35258edac0b0fcfc925b5a5f7c0fd131f",
-    "native_oracle": "141fc5f3981b40d41869643c0350e3988e40be2e470cba8a0b4a77bb7df39b27",
-    "native_inspect": "12038060971ec7a41da24e13a9851e23858fba4542c6e9a9f9ca17f3a8252087",
+    "producer": "51bf02e7cef187b1ad1620380a0710050b190061304cfe5f8d82947dcbb02dc6",
+    "native_oracle": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb",
+    "native_inspect": "9f1aa80986702ae6e045c8f93578a5f9c4c2ee5be9ec897c7cbeb3697f839dcc",
     "rally_fixture": "0168afa40ab7fa79a606116d117d24f634b00a37d3b38ec9121ec15f5636023d",
-    "palette_fixture": "498e9211ea32cae3efc0257f5a4d5b0aaf348e7aa6632b366ffa56dccc8255a2",
-    "house_color_fixture": "7c1a1bcb56f471a16fe87bb67778d373836bb8c210c63119caadfc35eb3b9cb3",
+    "palette_fixture": "d43340f982e976ded1363eebced2518041c1536713309b02737dda7e97f2517c",
+    "house_color_fixture": "791b7ddc19a6edc9635fa77a1e971e5afeac6c55b3a4af87a71248f3a5cf8184",
     "packed_palette_fixture": "12f63f378e77070f5278912d71eb9fcc09d247b4680c785e838ee4997ecd1a90",
-    "render_inputs_fixture": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
+    "render_inputs_fixture": "2f05d2e7e917aef585553502830947ea8ca121eab2d886d2c9ba4df7c935727d",
     "archive_fixture": "62b855dba1836bf484bb6c112b9249003ff4427c3004a1ef3d95c3aac985ba9b",
     "map_fixture": "25525c7397377b5ca9478d26a0275180e29824da5e1a760161720d4a6f9d3136",
     "ini_registry_fixture": "fc0d267d9c8453ba3090bfacd056af5207f47cb1170651cce5b0c41c80e90a2e",
     "allocation_fixture": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
     "ini_fixture": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
     "crc_fixture": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
-    "lexical_fixture": "ea32c11dbb9f1ee1aeb3cdc1069605658ca100d864e90dacb3cd5bfe8f01c350",
+    "lexical_fixture": "411fae85e38850208ce1c9dc8a5b411459fd0c043f2a20a6090bee0cbf92e7da",
     "destination_fixture": "db7ac918c743ce625bfaaa1c7a56f41d2336def4b42193cb1332fe0eb0d0912d",
     "unit_source_fixture": "3384579566b40ebcc9d8d56d53a0736655eb3a15a6bf7f08730611b15852a009",
     "unit_state_fixture": "c8269a41294316c97f990051506c4a9d9dbe923d8143a54a1a92c69645d2a112",
@@ -84,5 +84,5 @@
     "weapon_speed_fixture": "022156d2243883ddad452076238f45e1186464d48908feec77e4825f8d4851ed",
     "slope_fixture": "737b8294db419d298d362029825a255ae70df9945bef4c8b588369a53eaf13de"
   },
-  "payload_sha256": "eb25c3fad5cb9bffd6795d6513bfd69e1eefe6e72e35c41b5ba01e0da6515786"
+  "payload_sha256": "529edef6c7f7fa9f9bfb9d2a6685fe7d39aa6eba83978f86badba03b8613178e"
 }

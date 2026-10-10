@@ -576,13 +576,24 @@ fn ordinary_commands_land_animate_deploy_reverse_and_resume_flight() {
 
 fn compare_snapshot_continuation(mut sim: Simulation, rules: &RuleSet, id: u64, description: &str) {
     let attachment = sim.substrate.entities.get(id).unwrap().deploy_anim();
+    assert!(rules.object("SCHP").unwrap().move_sound.is_empty());
+    let sound = sim.substrate.entities.get(id).unwrap().move_sound;
+    assert!(!sound.is_active());
+    assert_eq!(sound.countdown(), 3);
     let bytes = GameSnapshot::save_validated(&sim, 1, 2, description, 0);
     let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
     loaded.restore_after_snapshot_load().unwrap();
     // Map geometry is an external save input, and native load deliberately
-    // reseeds Scenario RNG. Align only that documented load rule for the control.
+    // reseeds Scenario RNG. FootLoad4DB60D..4DB624 also clears the inactive
+    // +540 countdown refreshed while airborne, even with no MoveSound list.
+    // Align these load transitions without changing the control's Jumpjet,
+    // deployment or attached Anim state; full hashes still compare all of them.
     crate::sim::arena_fixture::flat_ground(&mut loaded, rules);
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    let loaded_sound = loaded.substrate.entities.get(id).unwrap().move_sound;
+    assert!(!loaded_sound.is_active());
+    assert_eq!(loaded_sound.countdown(), 0);
+    sim.restore_move_sound_state_after_load(id);
     assert_eq!(
         loaded.substrate.entities.get(id).unwrap().deploy_anim(),
         attachment

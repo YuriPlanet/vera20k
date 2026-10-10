@@ -576,7 +576,14 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // the kill points and MatchStatistics hashes no score. A control binary (main
 // with only that hash layout) gives this value in the same test, with every
 // tripwire above green. Control removed.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xEAFC_3C0D_2066_C880;
+// Snapshot318 hashes MoveSound's signed i32 countdown instead of u8. The
+// fixture's vectors are empty, but qualifying Foot visits retain countdown3
+// while inactive (4DAA87; foot_move_sound.json empty_qualifies). No sound is
+// selected and no Main draw is paid. This remains a Rust regression pin.
+// Snapshot320 retains native Techno constructor disguise identity/timer state
+// for every actor, replacing the absent component. These fixtures acquire no
+// disguise; their gameplay and absolute RNG pins remain the independent gates.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xF493_EA6A_538B_57AC;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a

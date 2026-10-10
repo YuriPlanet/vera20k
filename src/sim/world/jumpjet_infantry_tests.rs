@@ -625,7 +625,6 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
             target_id: rocketeer,
         },
     );
-    let crash_sound = sim.interner.intern("RocketeerDie");
     let mut orders = vec![attack];
     let mut seen: std::collections::BTreeSet<_> =
         sim.substrate.anims.iter().map(|(id, _)| *id).collect();
@@ -646,7 +645,7 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
             .iter()
             .filter(|event| {
                 matches!(event, super::SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                    if *anim_id == rocketeer && *sound_id == crash_sound)
+                    if *anim_id == rocketeer && sound_id == "RocketeerDie")
             })
             .count();
         let entity = sim

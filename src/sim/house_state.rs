@@ -376,6 +376,25 @@ pub struct HouseState {
     /// owner change.
     #[serde(default)]
     pub(crate) tracking: crate::sim::house_tracking::HouseTracking,
+    /// Tech Hospital self-heal capacity — `HouseClass+0x164`.
+    ///
+    /// `BuildingClass::OnConstructionComplete` adds the built type's
+    /// `InfantryGainSelfHeal` here (`0x0044638E..0x00446398`), Limbo and
+    /// ChangeOwner subtract it again. `TechnoClass::AI_Update`'s infantry pulse
+    /// runs while it is above zero (`0x0050D9C0`) and heals
+    /// `SelfHealInfantryAmount × this` (`0x0050D9E0`); `0x0070A534` reads the
+    /// same predicate for the status pip. Stock source: `[CATHOSP]`.
+    ///
+    /// Private to this owner: every read is [`Self::self_heal_infantry`] and
+    /// every write is [`Self::grant_self_heal`] / [`Self::revoke_self_heal`].
+    #[serde(default)]
+    self_heal_infantry: i32,
+    /// Tech Machine Shop self-heal capacity — `HouseClass+0x168`. The unit
+    /// counterpart of [`Self::self_heal_infantry`], fed by
+    /// `UnitsGainSelfHeal` and read by `0x0050D9D0`/`0x0050D9F0`. Stock source:
+    /// `[CAMACH]`. Private, as above.
+    #[serde(default)]
+    self_heal_units: i32,
     /// Historical House4FD150 primary base cell; updates at native building
     /// lifecycle boundaries rather than when a consumer requests a destination.
     /// The existing House base owner publishes this with its private radius;
@@ -601,6 +620,38 @@ impl Default for HouseSuperWeaponCells {
 }
 
 impl HouseState {
+    /// The infantry self-heal count — `HouseClass+0x164`, the value
+    /// `HasInfSelfHeal @ 0x0050D9C0` tests and `0x0070A534` draws the status
+    /// pip from.
+    pub(crate) fn self_heal_infantry(&self) -> i32 {
+        self.self_heal_infantry
+    }
+
+    /// The unit self-heal count — `HouseClass+0x168`, the value
+    /// `HasUnitSelfHeal @ 0x0050D9D0` tests and `0x0070A5A0` draws the status
+    /// pip from.
+    pub(crate) fn self_heal_units(&self) -> i32 {
+        self.self_heal_units
+    }
+
+    /// `BuildingClass::OnConstructionComplete`'s grant
+    /// (`0x00446382..0x004463B4`) and the arrival half of `ChangeOwner`
+    /// (`0x00448B0A..`): a plain 32-bit add of the built type's
+    /// `InfantryGainSelfHeal` / `UnitsGainSelfHeal`, with no clamp.
+    pub(crate) fn grant_self_heal(&mut self, infantry: i32, units: i32) {
+        self.self_heal_infantry = self.self_heal_infantry.wrapping_add(infantry);
+        self.self_heal_units = self.self_heal_units.wrapping_add(units);
+    }
+
+    /// `BuildingClass::Limbo`'s share (`0x004459AE..0x004459CA`, unit arm at
+    /// `0x004459E0`) and the departure half of `ChangeOwner`
+    /// (`0x00448AFC..0x00448B04`, `0x00448B3E..0x00448B46`): subtract, then
+    /// raise a negative count to zero.
+    pub(crate) fn revoke_self_heal(&mut self, infantry: i32, units: i32) {
+        self.self_heal_infantry = self.self_heal_infantry.wrapping_sub(infantry).max(0);
+        self.self_heal_units = self.self_heal_units.wrapping_sub(units).max(0);
+    }
+
     /// The cell the house's nuclear missile flies to (`HouseClass+0x5784`).
     pub(crate) fn nuke_target(&self) -> (u16, u16) {
         self.super_weapon_cells.nuke_target
@@ -912,6 +963,8 @@ impl HouseState {
             map_is_clear: false,
             spy_sat_active: false,
             tracking: Default::default(),
+            self_heal_infantry: 0,
+            self_heal_units: 0,
             base_center: None,
             base_projection: crate::sim::world::HouseBaseState::default(),
             alternate_base_center: (0, 0),

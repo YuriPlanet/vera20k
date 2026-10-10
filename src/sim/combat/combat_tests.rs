@@ -24,6 +24,8 @@ use crate::sim::vision::FogState;
 
 #[path = "infantry_fire_facing_tests.rs"]
 mod infantry_fire_facing_tests;
+#[path = "voice_feedback_tests.rs"]
+mod voice_feedback_tests;
 
 /// Establish the supplied fixture's Cell lists through shared Mark, in
 /// ascending fixture ID order. Acquisition no longer synthesizes these lists.
@@ -2299,11 +2301,9 @@ fn gsi_04_07_should_retaliate_world_refusals() {
         .entities
         .get_mut(GATE_SOURCE)
         .unwrap()
-        .disguise = Some(crate::sim::cloak_disguise::DisguiseRuntime {
-        disguised: true,
-        disguised_as_house: Some(victim_owner),
-        ..Default::default()
-    });
+        .disguise
+        .get_or_insert_with(Default::default)
+        .acquire(0, None, Some(victim_owner));
     assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE));
     // `0x00708905..0x007089A5`: a human's C4 infantryman leaves a building
     // alone; a computer's does not.
@@ -4461,7 +4461,7 @@ fn selected_death_sounds_for(
     effects
         .death_sounds
         .into_iter()
-        .map(|(sound, _, _)| interner.resolve(sound).to_string())
+        .map(|(sound, _, _)| sound)
         .collect()
 }
 
@@ -4488,7 +4488,6 @@ fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
     .expect("building die-sound rules parse");
 
     let selected = |type_name: &str, category: EntityCategory| -> Vec<String> {
-        let mut interner = test_interner();
         let mut rng = SimRng::new(11);
         let rng_before = rng.state();
         let mut sounds = Vec::new();
@@ -4498,7 +4497,6 @@ fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
             rules.general.building_die_sound.as_deref(),
             true,
             &mut rng,
-            &mut interner,
             4,
             7,
             &mut sounds,
@@ -4510,9 +4508,9 @@ fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
         );
         sounds
             .into_iter()
-            .map(|(id, rx, ry)| {
+            .map(|(sound, rx, ry)| {
                 assert_eq!((rx, ry), (4, 7), "played at the building's own cell");
-                interner.resolve(id).to_string()
+                sound
             })
             .collect()
     };
@@ -4542,7 +4540,6 @@ fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
 [BuildingTypes]\n0=GAPOWR\n\n[GAPOWR]\nStrength=750\nArmor=wood\n",
     ))
     .expect("bare rules parse");
-    let mut interner = test_interner();
     let mut rng = SimRng::new(11);
     let mut sounds = Vec::new();
     super::append_selected_death_sounds(
@@ -4551,7 +4548,6 @@ fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
         bare.general.building_die_sound.as_deref(),
         true,
         &mut rng,
-        &mut interner,
         4,
         7,
         &mut sounds,
@@ -4747,12 +4743,15 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
         let warhead_ref = interner.intern("PlainWH");
 
         let mut houses = BTreeMap::from([
-            (soviet, HouseState::new(soviet, 0, None, false, 0, 10)),
+            (soviet, HouseState::new(soviet, 0, None, true, 0, 10)),
             (allies, HouseState::new(allies, 1, None, false, 0, 10)),
         ]);
         let house_order = [soviet, allies];
         let mut occupancy = OccupancyGrid::new();
-        let mut main_rng = SimRng::new(11);
+        // Original Random65C7E0 seed2 returns 18 for (0,99), so the
+        // result-2 arm reaches its one-entry raw list draw. Native feedback
+        // block replay is retained in input_oracle/unit_voice_playback.
+        let mut main_rng = SimRng::new(2);
         let mut scenario_rng = SimRng::new(13);
         let mut handled_deaths = Vec::new();
         let mut hooks = None;
@@ -4788,18 +4787,26 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
             &mut hooks,
             &mut sound_sink,
         );
-        // Both native draws are on `g_MainRng @ 0x00886B88`, which per-frame
-        // draw paths also consume, so the cue must cost `sim/` nothing.
+        // Feedback advances the one process Main stream inside the damage
+        // receiver even without an audio device; Scenario remains untouched.
         assert_eq!(
             scenario_rng.state(),
             scenario_before,
             "the damage voice must not spend a scenario draw"
         );
-        assert_eq!(
-            main_rng.state(),
-            main_before,
-            "the damage voice must not spend a sim main draw"
-        );
+        if damage == 60 && victim_type != "E2" {
+            assert_ne!(
+                main_rng.state(),
+                main_before,
+                "the admitted list consumes Main"
+            );
+        } else {
+            assert_eq!(
+                main_rng.state(),
+                main_before,
+                "other damage results and empty lists are silent"
+            );
+        }
         let hp = entities.get(2).map_or(0, |victim| victim.health.current);
         (collected, hp)
     };
@@ -4808,7 +4815,9 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
         sounds
             .iter()
             .filter_map(|sound| match sound {
-                SimSoundEvent::VoiceFeedback { rx, ry, .. } => Some((*rx, *ry)),
+                SimSoundEvent::VocAt {
+                    sound_id, rx, ry, ..
+                } if matches!(sound_id.as_str(), "GIFear" | "StructureFear") => Some((*rx, *ry)),
                 _ => None,
             })
             .collect()
@@ -4854,7 +4863,7 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
     let order: Vec<&str> = sounds
         .iter()
         .filter_map(|sound| match sound {
-            SimSoundEvent::VoiceFeedback { .. } => Some("voice"),
+            SimSoundEvent::VocAt { sound_id, .. } if sound_id == "StructureFear" => Some("voice"),
             SimSoundEvent::BuildingDamagedSfx { .. } => Some("building"),
             _ => None,
         })
@@ -4932,7 +4941,7 @@ fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
             .iter()
             .filter_map(|event| match event {
                 SimSoundEvent::EntityDied { die_sound_id, .. } => {
-                    Some(interner.resolve(*die_sound_id))
+                    Some(die_sound_id.as_str())
                 }
                 _ => None,
             })

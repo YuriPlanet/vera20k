@@ -5,6 +5,16 @@
 //! walks a pattern in caller direction after arranging points left to right.
 //! Native execution: tools/procedural_drawing_oracle/{rally,action_lines}.py.
 
+/// Logical pixels are unzoomed screen coordinates; ZOrigin remains an explicit
+/// native input and never becomes a second depth buffer.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SurfaceLineViewport {
+    pub camera: [i32; 2],
+    pub clip: [i32; 4],
+    pub z_origin_y: i32,
+    pub zoom: f32,
+}
+
 /// Original7BC2B0 mutates endpoints only on success. Callers such as rally
 /// deliberately reuse those clipped endpoints for their next offset row.
 /// Nearest-f64 retains a one-pixel edge residual versus native chop rounding;
@@ -156,6 +166,126 @@ fn walk_line(mut from: [i32; 2], to: [i32; 2], mut emit: impl FnMut([i32; 2])) {
             }
             from[1] += y_step;
             error += 2 * dx;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LinePixel {
+    pub point: [i32; 2],
+    pub z: u16,
+    /// Additive4BDF00 advances A only with Y; its X stays at the clipped
+    /// start. Packed4BFD30 and LineTrail4BEAC0 advance A with both axes.
+    pub clipped_start_x: i32,
+}
+
+/// Shared clipped three-axis walk of DSurface4BEAC0,4BDF00,4BFD30.
+/// Each consumer keeps its own admission/color operation. Z is sampled as an
+/// unsigned16 word and never mutated by these consumers. Executed original
+/// pixels: projectile_oracle/line_trail and spatial_oracle/building_prism.
+pub(crate) fn rasterize_z_clipped(
+    from: [i32; 2],
+    to: [i32; 2],
+    z_adjust: [i32; 2],
+    clip: [i32; 4],
+    z_origin_y: i32,
+    mut emit: impl FnMut(LinePixel),
+) {
+    if clip[2] <= 0 || clip[3] <= 0 {
+        return;
+    }
+    let mut a = [from[0].wrapping_add(clip[0]), from[1].wrapping_add(clip[1])];
+    let mut b = [to[0].wrapping_add(clip[0]), to[1].wrapping_add(clip[1])];
+    let mut za = z_adjust[0];
+    let mut zb = z_adjust[1];
+    if a[0] > b[0] {
+        std::mem::swap(&mut a, &mut b);
+        std::mem::swap(&mut za, &mut zb);
+    }
+    let original_a = a;
+    let original_b = b;
+    if !clip_line(&mut a, &mut b, clip) {
+        return;
+    }
+    // Original4C1B50 stores x²+y² then uses the existing retail table owner,
+    // not host sqrt. Its two-coordinate scalar equals the zero-Z helper.
+    let length = |a: [i32; 2], b: [i32; 2]| {
+        crate::util::native_x87::distance_3d_leptons([a[0], a[1], 0], [b[0], b[1], 0])
+    };
+    let full_length = if a != original_a || b != original_b {
+        length(original_a, original_b)
+    } else {
+        0
+    };
+    let clipped_adjust = |distance: i32, delta: i32| {
+        use crate::util::native_x87::X87Chop53 as X;
+        let ratio = X::div(X::load_i32(distance), X::load_i32(full_length))
+            .expect("nonzero clipped line length");
+        X::ftol_i64(X::mul(ratio, X::load_i32(delta))).expect("finite clipped line adjustment")
+            as i32
+    };
+    let original_za = za;
+    let original_zb = zb;
+    if b != original_b {
+        let delta = clipped_adjust(length(original_a, b), original_za.wrapping_sub(original_zb));
+        zb = if original_za < original_zb {
+            original_za.wrapping_add(delta.wrapping_abs())
+        } else {
+            original_za.wrapping_sub(delta.wrapping_abs())
+        };
+    }
+    if a != original_a {
+        let delta = clipped_adjust(length(a, original_b), original_za.wrapping_sub(original_zb));
+        za = if original_zb > original_za {
+            original_zb.wrapping_sub(delta.wrapping_abs())
+        } else {
+            original_zb.wrapping_add(delta.wrapping_abs())
+        };
+    }
+    let dx = b[0] - a[0];
+    let dy = (b[1] - a[1]).abs();
+    let dz = zb.wrapping_sub(za).wrapping_abs();
+    let y_step = if b[1] < a[1] { -1 } else { 1 };
+    let z_step = if zb < za { -1 } else { 1 };
+    let dominant = if dz > dx && dz > dy {
+        2
+    } else if dx > dy {
+        0
+    } else {
+        1
+    };
+    let lengths = [dx, dy, dz];
+    let count = lengths[dominant];
+    let mut errors = [-count; 3];
+    let mut point = a;
+    let mut adjustment = za;
+    for _ in 0..count {
+        for axis in 0..3 {
+            if axis != dominant {
+                errors[axis] += 2 * lengths[axis];
+            }
+        }
+        // 4BEF03/4BF186/4BF3EE narrow before unsigned comparison, unlike SHP.
+        let z = (crate::render::native_z::DEFAULT_Z.wrapping_add(z_origin_y) as u16 as i32)
+            .wrapping_sub(point[1])
+            .wrapping_sub(clip[1])
+            .wrapping_add(adjustment) as u16;
+        emit(LinePixel {
+            point,
+            z,
+            clipped_start_x: a[0],
+        });
+        for axis in 0..3 {
+            if axis == dominant || errors[axis] > 0 {
+                match axis {
+                    0 => point[0] += 1,
+                    1 => point[1] += y_step,
+                    _ => adjustment += z_step,
+                }
+                if axis != dominant {
+                    errors[axis] -= 2 * count;
+                }
+            }
         }
     }
 }

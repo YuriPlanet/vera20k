@@ -3,15 +3,12 @@
 //! belong to `MatchAudioState`. Output state survives scenario transitions.
 
 use crate::assets::asset_manager::AssetManager;
+use crate::audio::arbiter::AudioServiceClock;
 use crate::audio::music::MusicPlayer;
 use crate::audio::sfx::SfxPlayer;
 use crate::audio::theme::{
     MusicOutputState, PreparedTrack, ThemeAction, ThemeAllowContext, ThemeGates, ThemeRuntime,
 };
-
-/// `AudioSystem__Pump @ 0x00406F70` runs its services only when more than
-/// 0x21 ms elapsed since the previous pass.
-const THEME_POLL_GATE_MS: u64 = 0x21;
 
 pub(crate) const fn derive_launcher_audio_available(
     audio_requested: bool,
@@ -67,8 +64,9 @@ fn apply_theme_action_to_output(
 pub(crate) struct AppAudioRuntime {
     /// Always-present device-independent Theme owner.
     pub(crate) theme: ThemeRuntime,
-    /// Last wall time the Theme AI ran (the audio pump's own > 33 ms gate).
-    pub(crate) last_theme_poll_ms: Option<u64>,
+    /// One process cadence for Sound, Vox and Theme; device callbacks run
+    /// independently of this gate.
+    pub(crate) service_clock: AudioServiceClock,
     /// Background music player (rodio). `None` when audio output is disabled
     /// or initialization failed.
     pub(crate) music_player: Option<MusicPlayer>,
@@ -110,26 +108,59 @@ impl AppAudioRuntime {
     }
 
     pub(crate) fn maintain_main_menu_theme(&mut self, assets: &AssetManager, wall_ms: u64) {
-        // Let Theme AI consume a real physical completion first. A subsequent
-        // direct INTRO maintenance call then takes the native same-track no-op
-        // when AI already restarted the repeating menu theme.
-        self.update_theme(assets, wall_ms);
+        // The common audio service already consumed any physical completion.
+        // INTRO maintenance takes the native same-track no-op when Theme AI
+        // restarted the repeating menu theme on that service pass.
         let gates = self.theme_gates();
         let physical = self.music_output_state();
         let action = self.theme.play_menu_theme(assets, gates, physical, wall_ms);
         self.apply_theme_action(action);
     }
 
-    /// `ThemeClass::AI @ 0x007209D0` as driven by `AudioSystem__Pump @
-    /// 0x00406F70`: every screen, rate-gated to more than 33 ms.
-    pub(crate) fn update_theme(&mut self, assets: &AssetManager, wall_ms: u64) {
-        if self
-            .last_theme_poll_ms
-            .is_some_and(|last| wall_ms.saturating_sub(last) <= THEME_POLL_GATE_MS)
-        {
+    /// `AudioSystem406F70`: service Sound4041D0, Vox752760, then Theme7209D0
+    /// behind one process gate. Device completion/refill is serviced on every
+    /// call. Each consumer borrows the same Main886B88 continuation.
+    pub(crate) fn service_audio(
+        &mut self,
+        wall_ms: u64,
+        paused: bool,
+        assets: Option<&AssetManager>,
+        catalog: Option<&crate::app::process_assets::ProcessAudioCatalog>,
+        main: &mut crate::sim::rng::MainRngDraws<'_>,
+    ) {
+        let mut draw_main = |low, high| main.ranged(low, high);
+        if let Some(sfx) = self.sfx_player.as_mut() {
+            sfx.set_paused(paused, wall_ms);
+            if let Some(catalog) = catalog {
+                sfx.service_device_outputs(wall_ms, catalog.sounds(), &mut draw_main);
+            }
+        }
+        if !self.service_clock.admit(wall_ms) {
             return;
         }
-        self.last_theme_poll_ms = Some(wall_ms);
+        let Some(assets) = assets else {
+            return;
+        };
+        if let (Some(sfx), Some(catalog)) = (self.sfx_player.as_mut(), catalog) {
+            sfx.service_events(
+                wall_ms,
+                catalog.sounds(),
+                assets,
+                catalog.index(),
+                &mut draw_main,
+            );
+        }
+        self.service_theme(assets, wall_ms, &mut draw_main);
+    }
+
+    /// Theme AI is the last service in the shared AudioSystem pass. Callers
+    /// request tracks separately; none run another independently gated AI.
+    fn service_theme(
+        &mut self,
+        assets: &AssetManager,
+        wall_ms: u64,
+        draw_main: &mut impl FnMut(i32, i32) -> i32,
+    ) {
         let gates = self.theme_gates();
         let physical = self.music_output_state();
         if physical == MusicOutputState::Finished
@@ -137,7 +168,9 @@ impl AppAudioRuntime {
         {
             output.discard_finished();
         }
-        let action = self.theme.update(assets, gates, physical, wall_ms);
+        let action = self
+            .theme
+            .update(assets, gates, physical, wall_ms, draw_main);
         self.apply_theme_action(action);
     }
 
@@ -153,19 +186,18 @@ impl AppAudioRuntime {
         logical_started
     }
 
-    /// Start_Scenario tail: seed the presentation shuffle stream, pin the
-    /// local player's side, then `Stop(1)` / `Queue_Song([Basic] Theme)`.
+    /// Start_Scenario tail: pin the local player's side, then `Stop(1)` /
+    /// `Queue_Song([Basic] Theme)`. Later AI borrows the installed Main stream.
     pub(crate) fn request_scenario_theme(
         &mut self,
         requested_section: Option<&str>,
         assets: &AssetManager,
-        match_seed: u32,
         context: ThemeAllowContext,
         resolve_side: impl Fn(&str) -> Option<i32>,
         wall_ms: u64,
     ) {
         self.theme.initialize_catalog(assets);
-        self.theme.begin_scenario(match_seed, context, resolve_side);
+        self.theme.begin_scenario(context, resolve_side);
         let gates = self.theme_gates();
         let physical = self.music_output_state();
         let action =
@@ -322,22 +354,25 @@ mod tests {
     /// unconditional per-frame pump (`frame.rs`, outside every screen gate)
     /// reaches AI on the menu, loading and score screens alike.
     #[test]
-    fn theme_poll_carries_the_audio_pump_rate_gate_independent_of_screen() {
+    fn common_audio_service_owns_the_gate_without_an_output_device() {
         let assets = empty_assets("poll-gate");
         let mut runtime = AppAudioRuntime {
             theme: ThemeRuntime::default(),
-            last_theme_poll_ms: None,
+            service_clock: AudioServiceClock::default(),
             music_player: None,
             sfx_player: None,
             launcher_audio_available: true,
             theme_startup_suppressed: false,
         };
-        runtime.update_theme(&assets, 100);
-        assert_eq!(runtime.last_theme_poll_ms, Some(100));
-        runtime.update_theme(&assets, 133);
-        assert_eq!(runtime.last_theme_poll_ms, Some(100), "33 ms is not > 0x21");
-        runtime.update_theme(&assets, 134);
-        assert_eq!(runtime.last_theme_poll_ms, Some(134));
+        let mut frontend = crate::sim::rng::SimRng::new(1);
+        let mut main = crate::app::state::process_main_draws(None, &mut frontend);
+        runtime.service_audio(100, false, Some(&assets), None, &mut main);
+        assert!(!runtime.service_clock.admit(100));
+        runtime.service_audio(133, false, Some(&assets), None, &mut main);
+        assert!(
+            runtime.service_clock.admit(134),
+            "the denied call did not reset the gate"
+        );
     }
 
     #[test]

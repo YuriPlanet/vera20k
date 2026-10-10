@@ -584,7 +584,24 @@ impl MinimapRenderer {
             let Some(entity) = entities.get(entry.stable_id) else {
                 continue;
             };
-            let color = radar_entity_owner_color(entity, interner, house_colors, ramps);
+            let owner_allied_with_observer = local_owner.is_some_and(|observer| {
+                entity.owner() == observer
+                    || interner.is_some_and(|interner| {
+                        crate::map::houses::is_allied_with(
+                            &fog.alliances,
+                            interner.resolve(entity.owner()),
+                            interner.resolve(observer),
+                        )
+                    })
+            });
+            let color = radar_entity_owner_color(
+                entity,
+                interner,
+                house_colors,
+                ramps,
+                local_owner,
+                owner_allied_with_observer,
+            );
             if entry.x >= 0 && entry.y >= 0 {
                 if let Some((x, y)) =
                     aperture_pixel(self.native_radar_surface, (entry.x as u32, entry.y as u32))

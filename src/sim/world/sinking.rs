@@ -40,18 +40,6 @@ impl SinkingState {
 }
 
 impl Simulation {
-    /// FootLoad4DB60D..4DB624 resets its live handle and MoveSound bytes.
-    /// Techno/Unit raw loading preserves +3CD/+3CE, so an observed sinking
-    /// edge stays observed; it must not replay its sound after loading.
-    pub(crate) fn restore_sinking_sound_state_after_load(&mut self, id: u64) {
-        if let Some(entity) = self.substrate.entities.get_mut(id)
-            && entity.sinking.active
-        {
-            entity.move_sound_active = false;
-            entity.move_sound_countdown = 0;
-        }
-    }
-
     /// Unit737E43..737E58: restore Health/Alive, raise +3CD, then a second
     /// Stun. Keep cell marking and passenger/crew work at the receiver's
     /// existing postlude, after this call. Object's exact-zero callback has
@@ -108,10 +96,9 @@ impl Simulation {
                 });
             }
             if let Some(sound) = sound {
-                let sound_id = self.interner.intern(&sound);
                 self.sound_events.push(SimSoundEvent::AnimationStarted {
                     anim_id: id,
-                    sound_id,
+                    sound_id: sound,
                     world: AnimWorldCoord {
                         x: coord.x,
                         y: coord.y,
@@ -119,7 +106,7 @@ impl Simulation {
                     },
                 });
             }
-        } else if !entity.move_sound_active {
+        } else if !entity.move_sound.is_active() {
             self.sound_events
                 .push(SimSoundEvent::ObjectSoundReleased { owner: id });
         }

@@ -145,14 +145,13 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     ) != CellVisibilityState::Visible
     {
         // Over shrouded/fogged cells the player can still issue move orders,
-        // so show the queued-order-mode cursor (Move / AttackMove / Guard)
+        // so show the queued-order-mode cursor (Move / AttackMove)
         // instead of reverting to the default arrow.
         return Some(match state.match_state.input.queued_order_mode {
             crate::app::presentation::render::OrderMode::Move => CursorFeedbackKind::Move,
             crate::app::presentation::render::OrderMode::AttackMove => {
                 CursorFeedbackKind::AttackMove
             }
-            crate::app::presentation::render::OrderMode::Guard => CursorFeedbackKind::Guard,
         });
     }
     let modifier = crate::app::input::context_order::resolve_order_modifiers(
@@ -270,7 +269,6 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     Some(match state.match_state.input.queued_order_mode {
         crate::app::presentation::render::OrderMode::Move => CursorFeedbackKind::Move,
         crate::app::presentation::render::OrderMode::AttackMove => CursorFeedbackKind::AttackMove,
-        crate::app::presentation::render::OrderMode::Guard => CursorFeedbackKind::Guard,
     })
 }
 
@@ -1068,9 +1066,6 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         CursorFeedbackKind::FriendlyUnit | CursorFeedbackKind::FriendlyStructure => {
             Some(CursorId::Select)
         }
-        // Guard-area has its own reticle (cursor row 22); it is not the select
-        // cursor, which is what VERA used to show while guard mode was armed.
-        CursorFeedbackKind::Guard => Some(CursorId::GuardArea),
         CursorFeedbackKind::Move => Some(CursorId::Move),
         CursorFeedbackKind::AttackMove => Some(CursorId::AttackMove),
         CursorFeedbackKind::EnemyUnit | CursorFeedbackKind::EnemyStructure => {
@@ -2331,15 +2326,6 @@ mod cursor_animation_tests {
         let mut anim = CursorAnimation::new();
         anim.advance(CursorId::IronCurtain, 5, 0, 0);
         assert_eq!(anim.advance(CursorId::IronCurtain, 5, 0, 10_000), 0);
-    }
-
-    /// Guard mode shows the guard-area reticle, not the select cursor.
-    #[test]
-    fn guard_feedback_maps_to_the_guard_area_reticle() {
-        assert_eq!(
-            super::cursor_id_for_feedback(CursorFeedbackKind::Guard),
-            Some(CursorId::GuardArea)
-        );
     }
 
     /// Harvest shares cursor row 21 with an out-of-range attack, and is not the

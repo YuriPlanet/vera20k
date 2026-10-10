@@ -4,7 +4,7 @@ Extends, and does not modify, frozen naval_occupants evidence. Prepared INI
 caches and selected SoundList are explicit boundaries; 7509E0 is an observed
 void playback boundary. No audible output or whole audio RNG claim is made.
 """
-from naval_occupants import *
+from tools.spatial_oracle.naval_occupants import *
 from tools.rules_oracle.bridge_anim_inputs import crc
 from tools.rules_oracle.bridge_child_sound import sections
 

@@ -398,7 +398,8 @@ impl SoundRegistry {
 
     /// ReadSoundList525430 reads at most127 bytes, tokenizes on commas, then
     /// resolves each token through Voc FindPtr751520/FindIndex7515C0. Unknown
-    /// tokens are skipped, duplicates retained. The processed Rules section
+    /// tokens and FindPtr's reserved `<none>` are skipped, duplicates retained.
+    /// Bare `none` still resolves if registered. The processed Rules section
     /// owns reached pass order: empty/missing reads retain the prior vector;
     /// a nonempty read replaces it, even when no token resolves.
     pub(crate) fn read_rules_sound_list(&self, section: &IniSection, key: &str) -> Vec<String> {
@@ -406,6 +407,7 @@ impl SoundRegistry {
             .read_sound_list(key)
             .unwrap_or_default()
             .into_iter()
+            .filter(|name| !name.eq_ignore_ascii_case("<none>"))
             .filter_map(|name| self.get(name).map(|entry| entry.id.clone()))
             .collect()
     }

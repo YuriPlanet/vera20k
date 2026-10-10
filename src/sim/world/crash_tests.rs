@@ -1486,7 +1486,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
                 super::SimSoundEvent::AnimationStarted {
                     anim_id, sound_id, ..
                 } if *anim_id == harrier => {
-                    sounds.push((frame, sim.interner.resolve(*sound_id).to_string()));
+                    sounds.push((frame, sound_id.clone()));
                 }
                 _ => {}
             }
@@ -1794,7 +1794,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                 super::SimSoundEvent::AnimationStarted {
                     anim_id, sound_id, ..
                 } if *anim_id == nighthawk || *anim_id == kirov => {
-                    sounds.push((frame, sim.interner.resolve(*sound_id).to_string()));
+                    sounds.push((frame, sound_id.clone()));
                 }
                 _ => {}
             }

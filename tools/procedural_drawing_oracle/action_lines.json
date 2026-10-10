@@ -48219,7 +48219,7 @@
     },
     "prerequisite_packet": {
       "fields": "type_inputs, type_readers.turret_offset, type_readers.warhead_ap, aim_cases",
-      "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/tools/procedural_drawing_oracle/action_lines_attack_prerequisites.json",
+      "path": "tools/procedural_drawing_oracle/action_lines_attack_prerequisites.json",
       "sha256": "4584867d33dbe588dcc956e4ea7255a7f905222b15754153a5520c44ba78e8e9"
     },
     "production_camera": [

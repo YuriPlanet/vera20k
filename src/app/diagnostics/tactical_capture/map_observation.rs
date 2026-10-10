@@ -6,6 +6,7 @@ use super::super::manifest::{PublishFault, encode_manifest, publish_transaction}
 use super::*;
 use crate::app::diagnostics::state::{MAP_PRESENTATION_CLOCK_POLICY, MAP_PRESENTATION_INTERVAL_MS};
 use crate::app::presentation::render::GameRenderTimes;
+use crate::audio::sfx::{PcmObservationConfig, PcmObservationContext, PcmObservationReport};
 use crate::skirmish_launch::{LaunchStartPosition, PreFillHouseRoster, SkirmishLaunchSession};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -19,12 +20,50 @@ const MAX_GESTURES: usize = 1024;
 const GESTURE_POLICY: &str = "map-tactical-left-gesture-v1";
 const SIDEBAR_GESTURE_POLICY: &str = "map-local-left-gesture-v2";
 const KEYBOARD_GESTURE_POLICY: &str = "map-local-gesture-v3";
+const COMMAND_BAR_GESTURE_POLICY: &str = "map-local-gesture-v4";
 const SIDEBAR_POLICY: &str = "map-retained-sidebar-observation-v1";
 const MAX_OBSERVED_OWNERS: usize = 30;
 const MAX_OBSERVED_TYPES: usize = 256;
 const MAX_TERRAIN_CELLS: usize = 256;
 const MAX_OBSERVATION_SAMPLES: usize = 100_000;
 const MAX_RECEIPT_BYTES: usize = 128 * 1024 * 1024;
+const AUDIO_POLICY: &str = "map-device-pulled-player-pcm-v2";
+const LOAD_SEGMENT_POLICY: &str = "map-literal-quickload-clock-segments-v1";
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct MapAudioProfile {
+    sound_ids: Vec<String>,
+    max_events: usize,
+    max_samples_per_event: usize,
+    completion_tail_ms: u64,
+}
+
+impl MapAudioProfile {
+    fn config(&self) -> PcmObservationConfig {
+        PcmObservationConfig {
+            sound_ids: self.sound_ids.clone(),
+            max_events: self.max_events,
+            max_samples_per_event: self.max_samples_per_event,
+        }
+    }
+
+    fn validate(&self) -> Result<()> {
+        self.config().validate().map_err(anyhow::Error::msg)?;
+        ensure!(
+            (1..=10_000).contains(&self.completion_tail_ms),
+            "audio completion tail must be 1..10000 ms"
+        );
+        let mut ids = BTreeSet::new();
+        ensure!(
+            self.sound_ids
+                .iter()
+                .all(|id| ids.insert(id.to_ascii_uppercase())),
+            "duplicate observed sound ID"
+        );
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -60,19 +99,53 @@ enum MapGesture {
     Sidebar {
         target: MapSidebarTarget,
     },
+    /// Resolve a loaded command-bar control and send ordinary mouse edges.
+    CommandBar {
+        command: String,
+    },
     Key {
         key: String,
+        #[serde(
+            default,
+            deserialize_with = "deserialize_present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        modifiers: Option<Vec<String>>,
     },
 }
 
 impl MapGesture {
+    fn is_quickload(&self) -> bool {
+        matches!(self, Self::Key { key, modifiers: Some(modifiers) }
+            if key.eq_ignore_ascii_case("N") && modifiers.len() == 2
+                && modifiers.iter().any(|m| m == "Ctrl") && modifiers.iter().any(|m| m == "Shift"))
+    }
     fn points(&self) -> Option<([u32; 2], [u32; 2])> {
         match self {
             Self::Click { position } => Some((*position, *position)),
             Self::Drag { from, to } => Some((*from, *to)),
-            Self::Sidebar { .. } | Self::Key { .. } => None,
+            Self::Sidebar { .. } | Self::CommandBar { .. } | Self::Key { .. } => None,
         }
     }
+}
+
+fn literal_modifiers(names: &[String]) -> Result<Vec<winit::keyboard::KeyCode>> {
+    use winit::keyboard::KeyCode;
+    ensure!(names.len() <= 4, "too many literal modifiers");
+    let mut seen = BTreeSet::new();
+    names
+        .iter()
+        .map(|name| {
+            ensure!(seen.insert(name), "duplicate literal modifier");
+            Ok(match name.as_str() {
+                "Ctrl" => KeyCode::ControlLeft,
+                "Shift" => KeyCode::ShiftLeft,
+                "Alt" => KeyCode::AltLeft,
+                "Super" => KeyCode::SuperLeft,
+                _ => bail!("unknown literal modifier"),
+            })
+        })
+        .collect()
 }
 
 /// Diagnostic spelling to winit identity only. The production keyboard owner
@@ -254,6 +327,18 @@ pub(crate) struct MapCaptureProfile {
         skip_serializing_if = "Option::is_none"
     )]
     observe_anim_types: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    observe_audio: Option<MapAudioProfile>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    allow_load_segments: Option<bool>,
     // Opt-in immutable inputs for native Attack-coordinate comparisons.
     // Historical profiles and their exact observation rows stay unchanged.
     #[serde(
@@ -262,6 +347,20 @@ pub(crate) struct MapCaptureProfile {
         skip_serializing_if = "Option::is_none"
     )]
     observe_action_line_inputs: Option<bool>,
+    /// Read retained disguise state and the actual body-builder decisions.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    observe_disguise_inputs: Option<bool>,
+    /// Read live lasers, process detail state and each building's Prism latch.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    observe_lasers: Option<bool>,
     #[serde(
         default,
         deserialize_with = "deserialize_present",
@@ -326,7 +425,11 @@ impl MapCaptureProfile {
                     && self.observe_types.is_none()
                     && self.observe_projectiles.is_none()
                     && self.observe_anim_types.is_none()
+                    && self.observe_audio.is_none()
+                    && self.allow_load_segments.is_none()
                     && self.observe_action_line_inputs.is_none()
+                    && self.observe_disguise_inputs.is_none()
+                    && self.observe_lasers.is_none()
                     && self.camera_cell.is_none()
                     && self.cursor_position.is_none()
                     && self.terrain_cells.is_none()
@@ -346,6 +449,9 @@ impl MapCaptureProfile {
             );
         }
         ensure!(self.ticks <= 100_000, "capture tick budget exceeds 100000");
+        if let Some(audio) = &self.observe_audio {
+            audio.validate()?;
+        }
         ensure!(
             (1..=900).contains(&self.timeout_seconds),
             "timeout must be 1..900 seconds"
@@ -434,9 +540,17 @@ impl MapCaptureProfile {
                     | MapSidebarTarget::Sell {} => {}
                 }
             }
-            if let MapGesture::Key { key } = &gesture.gesture {
+            if let MapGesture::Key { key, modifiers } = &gesture.gesture {
                 literal_key(key)?;
+                literal_modifiers(modifiers.as_deref().unwrap_or_default())?;
             }
+            if let MapGesture::CommandBar { command } = &gesture.gesture {
+                command_bar_index(command)?;
+            }
+            ensure!(
+                !gesture.gesture.is_quickload() || self.allow_load_segments == Some(true),
+                "literal quickload requires allow_load_segments"
+            );
             previous = gesture.issue_after_step;
         }
         if let Some(steps) = &self.observe_sidebar_steps {
@@ -542,7 +656,13 @@ impl MapCaptureProfile {
     }
 
     fn gesture_policy(&self) -> &'static str {
-        if self.observes_local_input() {
+        if self
+            .gestures()
+            .iter()
+            .any(|entry| matches!(entry.gesture, MapGesture::CommandBar { .. }))
+        {
+            COMMAND_BAR_GESTURE_POLICY
+        } else if self.observes_local_input() {
             KEYBOARD_GESTURE_POLICY
         } else if self
             .gestures()
@@ -565,7 +685,10 @@ impl MapCaptureProfile {
             .any(|entry| matches!(entry.gesture, MapGesture::Key { .. }))
     }
 
-    fn observes_sidebar_step(&self, step: u64) -> bool {
+    fn observes_sidebar_step(&self, frame: &MapFrameObservation) -> bool {
+        // Requested rows follow exact-step receipts even when a load rewinds
+        // the simulation clock retained by the same frame observation.
+        let step = frame.completed_steps;
         self.observe_sidebar_steps.as_ref().is_some_and(|steps| {
             u32::try_from(step).is_ok_and(|step| steps.binary_search(&step).is_ok())
         })
@@ -608,6 +731,83 @@ pub(super) struct MapObservation {
     frames: Vec<MapFrameObservation>,
     observed_ids: BTreeSet<u64>,
     sample_count: usize,
+    allow_load_segments: bool,
+    load_segments: Vec<MapLoadSegment>,
+    audio_tail_started: Option<Instant>,
+    audio_tail_draws: u32,
+    audio: Option<Value>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+struct MapClock {
+    simulation_tick: u64,
+    binary_frame: u32,
+    total_simulation_ms: u64,
+}
+
+impl MapClock {
+    fn capture(state: &AppState) -> Result<Self> {
+        let session = &state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .context("clock simulation absent")?
+            .simulation
+            .session;
+        Ok(Self {
+            simulation_tick: session.tick,
+            binary_frame: session.binary_frame,
+            total_simulation_ms: session.total_sim_ms,
+        })
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct MapLoadSegment {
+    after_step: u64,
+    gesture_ordinal: usize,
+    before: MapClock,
+    after: MapClock,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    restored_audio_state: Option<Value>,
+}
+
+fn sound_state(state: &AppState, profile: &MapCaptureProfile) -> Result<Value> {
+    let sim = &state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .context("sound observation simulation absent")?
+        .simulation;
+    let rng = sim.rng_views();
+    let actors = sim.entities().iter_sorted().filter_map(|(id, entity)| {
+        let owner = sim.interner.resolve(entity.owner());
+        let type_id = sim.interner.resolve(entity.type_ref());
+        (profile.observe_owners().iter().any(|watch| watch == owner)
+            && profile.observe_types.as_ref().is_none_or(|types| types.iter().any(|watch| watch == type_id)))
+            .then(|| json!({"stable_id": id, "body_counter": entity.body_frame_counter,
+                "active": entity.move_sound.is_active(), "countdown": entity.move_sound.countdown()}))
+    }).collect::<Vec<_>>();
+    let snapshot = json!({"main_rng_cursor": [rng.main.index_a, rng.main.index_b],
+        "scenario_rng_cursor": [rng.scenario.index_a, rng.scenario.index_b], "actors": actors});
+    ensure!(
+        sound_state_sample_count(&snapshot) <= MAX_OBSERVATION_SAMPLES,
+        "sound state exceeds sample budget"
+    );
+    Ok(snapshot)
+}
+
+fn sound_state_sample_count(state: &Value) -> usize {
+    2 + state["actors"].as_array().map_or(0, Vec::len)
+}
+
+fn pcm_report(report: PcmObservationReport, tail_ms: u64, settled: bool) -> Value {
+    let mut result = report.into_json();
+    result["policy"] = json!(AUDIO_POLICY);
+    result["point"] = json!("post_player_pre_device_mixer");
+    result["completion_tail_ms"] = json!(tail_ms);
+    result["settled"] = json!(settled);
+    result
 }
 
 #[derive(Debug, Serialize)]
@@ -930,23 +1130,98 @@ impl MapSidebarObservation {
                 (toggle.rect, toggle.disabled, 0)
             }
         };
-        ensure!(!disabled, "requested sidebar control is disabled");
+        Ok((control_center(rect, disabled, extent)?, slot))
+    }
+}
+
+fn control_center(rect: [f32; 4], disabled: bool, extent: [u32; 2]) -> Result<[u32; 2]> {
+    ensure!(!disabled, "requested control is disabled");
+    ensure!(
+        rect.iter().all(|part| part.is_finite()) && rect[2] > 0.0 && rect[3] > 0.0,
+        "requested control has no finite hit area"
+    );
+    let center = [
+        (rect[0] + rect[2] / 2.0).floor(),
+        (rect[1] + rect[3] / 2.0).floor(),
+    ];
+    ensure!(
+        center
+            .into_iter()
+            .zip(extent)
+            .all(|(point, limit)| limit > 1 && point > 0.0 && point < (limit - 1) as f32),
+        "requested control center is outside the capture"
+    );
+    Ok(center.map(|point| point as u32))
+}
+
+fn command_bar_index(command: &str) -> Result<usize> {
+    crate::ui::sidebar::command_bar::COMMAND_NAMES
+        .iter()
+        .position(|name| *name == command)
+        .context("unknown command-bar command")
+}
+
+#[derive(Debug, Serialize)]
+struct MapCommandBarGestureReceipt {
+    command: String,
+    slot: usize,
+    gadget_id: u16,
+    rect: [f32; 4],
+    resolved_position: [u32; 2],
+}
+
+impl MapCommandBarGestureReceipt {
+    fn capture(state: &AppState, command: &str) -> Result<(Self, crate::ui::gadget::GadgetHandle)> {
+        let (layout, slots) =
+            crate::app::presentation::sidebar_build::command_bar::layout_and_slots(state)
+                .context("command-bar layout is absent")?;
+        Self::resolve(
+            command,
+            layout,
+            &slots,
+            &state.match_state.match_presentation.in_game_gadgets,
+            [state.render_width(), state.render_height()],
+        )
+    }
+
+    fn resolve(
+        command: &str,
+        layout: crate::ui::sidebar::command_bar::CommandBarLayout,
+        slots: &[Option<usize>],
+        gadgets: &crate::app::input::gadget_input::InGameGadgets,
+        extent: [u32; 2],
+    ) -> Result<(Self, crate::ui::gadget::GadgetHandle)> {
+        let command_index = command_bar_index(command)?;
+        let slot = slots
+            .iter()
+            .position(|entry| *entry == Some(command_index))
+            .context("requested command is absent from the loaded command bar")?;
+        let layout_rect = layout
+            .slot(slot)
+            .context("requested command-bar slot is closed or clipped")?;
+        let handle = gadgets
+            .command_bar
+            .context("command-bar controls are absent")?[command_index];
+        let gadget = gadgets
+            .list
+            .get(handle)
+            .context("requested command-bar control is absent")?;
+        let rect = [gadget.rect.x, gadget.rect.y, gadget.rect.w, gadget.rect.h].map(|v| v as f32);
         ensure!(
-            rect.iter().all(|part| part.is_finite()) && rect[2] > 0.0 && rect[3] > 0.0,
-            "requested sidebar control has no finite hit area"
+            rect == [layout_rect.x, layout_rect.y, layout_rect.w, layout_rect.h],
+            "command-bar control differs from its current layout"
         );
-        let center = [
-            (rect[0] + rect[2] / 2.0).floor(),
-            (rect[1] + rect[3] / 2.0).floor(),
-        ];
-        ensure!(
-            center
-                .into_iter()
-                .zip(extent)
-                .all(|(point, limit)| point > 0.0 && point < (limit - 1) as f32),
-            "requested sidebar control center is outside the capture"
-        );
-        Ok((center.map(|point| point as u32), slot))
+        let resolved_position = control_center(rect, gadget.is_disabled, extent)?;
+        Ok((
+            Self {
+                command: command.to_owned(),
+                slot,
+                gadget_id: gadget.id,
+                rect,
+                resolved_position,
+            },
+            handle,
+        ))
     }
 }
 
@@ -976,7 +1251,7 @@ struct MapKeyboardGestureReceipt {
 }
 
 impl MapKeyboardGestureReceipt {
-    fn dispatch(state: &mut AppState, key: &str) -> Result<Self> {
+    fn dispatch(state: &mut AppState, key: &str, modifiers: &[String]) -> Result<Self> {
         use crate::app::input::hotkeys::{self, HotkeyResolution};
         use crate::app::input::keyboard::{InGameKeyEdge, in_game_key_edge};
         use winit::event::ElementState;
@@ -988,6 +1263,20 @@ impl MapKeyboardGestureReceipt {
             "key gesture requires ordinary unpaused in-game input"
         );
         let (physical, logical) = literal_key(key)?;
+        let modifier_keys = literal_modifiers(modifiers)?;
+        let modifier_edge = |state: &mut AppState, code, pressed| {
+            hotkeys::record_modifier_key(
+                &mut state.platform.held_modifier_keys,
+                &mut state.platform.live_modifiers,
+                &mut state.match_state.input.hotkey_modifiers,
+                code,
+                pressed,
+                false,
+            );
+        };
+        for code in &modifier_keys {
+            modifier_edge(state, *code, true);
+        }
         let location = KeyLocation::Standard;
         let encoded_key = hotkeys::logical_virtual_key(&logical, location)
             .context("literal key has no production virtual-key identity")?;
@@ -1022,8 +1311,11 @@ impl MapKeyboardGestureReceipt {
         let press_held = state.match_state.input.keys_held.contains(&physical);
         edge(state, ElementState::Released);
         let release_cleared = !state.match_state.input.keys_held.contains(&physical);
+        for code in modifier_keys.iter().rev() {
+            modifier_edge(state, *code, false);
+        }
         ensure!(
-            press_held && release_cleared,
+            press_held && release_cleared && state.match_state.input.hotkey_modifiers.is_empty(),
             "key gesture did not traverse ordinary held-key edges"
         );
         ensure!(
@@ -1066,6 +1358,139 @@ struct MapGestureReceipt {
     sidebar: Option<MapSidebarGestureReceipt>,
     #[serde(skip_serializing_if = "Option::is_none")]
     keyboard: Option<MapKeyboardGestureReceipt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command_bar: Option<MapCommandBarGestureReceipt>,
+}
+
+fn disguise_inputs(
+    state: &AppState,
+    entity: &crate::sim::game_entity::GameEntity,
+) -> Result<Value> {
+    use crate::app::presentation::instances;
+    let Some(disguise) = entity.disguise.as_ref() else {
+        return Ok(Value::Null);
+    };
+    let runtime = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .context("disguise simulation absent")?;
+    let sim = &runtime.simulation;
+    let draw = if entity.category == crate::map::entities::EntityCategory::Unit {
+        let local = crate::app::input::commands::preferred_local_owner_name(state);
+        let local_id = local.as_deref().and_then(|name| sim.interner.get(name));
+        let mut observer = instances::observer_draw_context(
+            sim,
+            entity,
+            local.as_deref(),
+            local_id,
+            state.rules(),
+        );
+        let chosen = instances::drawn_model_id(
+            entity,
+            &sim.interner,
+            state.rules(),
+            sim.session.binary_frame,
+            observer,
+        );
+        let voxel = instances::drawn_type_uses_voxel(entity, &chosen, &sim.interner, state.rules());
+        observer.drawn_voxel = Some(voxel);
+        let frame = (!voxel)
+            .then(|| {
+                instances::resolve_object_shp_frame(
+                    state,
+                    &chosen,
+                    entity,
+                    sim.session.binary_frame,
+                    None,
+                )
+            })
+            .flatten();
+        let terrain_pair = frame
+            .and_then(|frame| u8::try_from(frame).ok())
+            .is_some_and(|frame| {
+                state
+                    .match_state
+                    .match_presentation
+                    .overlay_atlas
+                    .as_ref()
+                    .and_then(|atlas| atlas.native_terrain_pair(&chosen, frame))
+                    .is_some()
+            });
+        let decision = crate::render::draw_state::DrawState::for_entity(
+            entity,
+            sim.session.binary_frame,
+            0,
+            observer,
+        );
+        json!({"type_id": chosen, "voxel": voxel, "shp_frame": frame,
+            "terrain_pair_available": terrain_pair, "draw_state_visible": decision.visible,
+            "native_selector_bits": decision.state.native_selector_bits()})
+    } else {
+        Value::Null
+    };
+    Ok(
+        json!({"active": disguise.is_disguised(), "creation_frame": disguise.creation_frame(),
+        "type_id": disguise.type_id().map(|id| sim.interner.resolve(id)),
+        "house": disguise.house().map(|id| sim.interner.resolve(id)),
+        "reveal_start": disguise.reveal_timer().start_frame(),
+        "reveal_duration": disguise.reveal_timer().duration(), "draw": draw}),
+    )
+}
+
+fn retask_observation(entity: &crate::sim::game_entity::GameEntity) -> Value {
+    json!({
+        "suspended_target": entity.suspended_attack_target,
+        "suspended_nav": entity.navigation.suspended_nav_com,
+    })
+}
+
+fn prism_observation(entity: &crate::sim::game_entity::GameEntity, frame: i32) -> Value {
+    use crate::sim::game_entity::DelayedFire;
+    if entity.category != crate::map::entities::EntityCategory::Structure {
+        return Value::Null;
+    }
+    let pending = entity
+        .pending_building_fire
+        .map(|pending| match pending.fire {
+            DelayedFire::Weapon(slot) => json!({"mode": 1, "payload": {"weapon": slot},
+            "remaining": pending.remaining_ticks}),
+            DelayedFire::SupportBeam { to } => json!({"mode": 2,
+            "payload": {"to": [to.x, to.y, to.z]}, "remaining": pending.remaining_ticks}),
+        });
+    json!({"support_count": entity.prism_support_count, "pending": pending,
+        "rearm": {"start": entity.rearm_timer.start_frame(),
+                  "duration": entity.rearm_timer.duration(),
+                  "remaining": entity.rearm_timer.remaining(frame)}})
+}
+
+#[derive(Debug, Serialize)]
+struct MapLaserObservation {
+    detail: crate::app::presentation::detail::DetailObservation,
+    live: Vec<crate::app::presentation::lasers::LaserObservation>,
+}
+
+impl MapLaserObservation {
+    fn capture(state: &AppState) -> Result<Self> {
+        let presentation = &state.match_state.match_presentation;
+        let snapshot = Self {
+            detail: presentation.detail.borrow().observation(),
+            live: presentation
+                .lasers
+                .observations()
+                .take(MAX_OBSERVATION_SAMPLES + 1)
+                .collect(),
+        };
+        ensure!(
+            snapshot.sample_count() <= MAX_OBSERVATION_SAMPLES,
+            "laser observation exceeds sample budget"
+        );
+        Ok(snapshot)
+    }
+
+    fn sample_count(&self) -> usize {
+        1 + self.live.len()
+    }
 }
 
 /// Boundary snapshots of the production stores, without retained provenance,
@@ -1148,7 +1573,11 @@ struct MapFrameObservation {
     #[serde(skip_serializing_if = "Option::is_none")]
     effects: Option<MapEffectObservation>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    lasers: Option<MapLaserObservation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     input: Option<MapInputObservation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audio_state: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1157,9 +1586,45 @@ struct MapDrawTime {
     radar_ms: u64,
     tooltip_ms: u64,
     message_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    simulation_tick: Option<u64>,
 }
 
 impl MapObservation {
+    fn observe_load_segment(&mut self, segment: MapLoadSegment) -> Result<()> {
+        let count = self
+            .sample_count
+            .checked_add(
+                segment
+                    .restored_audio_state
+                    .as_ref()
+                    .map_or(0, sound_state_sample_count),
+            )
+            .context("restored observation sample count overflow")?;
+        ensure!(
+            count <= MAX_OBSERVATION_SAMPLES,
+            "restored sound observation exceeds sample budget"
+        );
+        self.sample_count = count;
+        self.load_segments.push(segment);
+        Ok(())
+    }
+
+    fn expected_clock(&self, step: u64, after_inputs: bool) -> (u64, u32) {
+        self.load_segments
+            .iter()
+            .rev()
+            .find(|segment| {
+                segment.after_step < step || (after_inputs && segment.after_step == step)
+            })
+            .map_or((step, step as u32), |segment| {
+                let delta = step - segment.after_step;
+                (
+                    segment.after.simulation_tick + delta,
+                    segment.after.binary_frame.wrapping_add(delta as u32),
+                )
+            })
+    }
     fn observes_actor(
         &self,
         profile: &MapCaptureProfile,
@@ -1203,6 +1668,13 @@ impl MapObservation {
             observations["sidebar"] =
                 json!({"policy": SIDEBAR_POLICY, "frames": self.sidebar_frames});
         }
+        if profile.observe_audio.is_some() {
+            observations["audio"] = json!(self.audio);
+        }
+        if profile.allow_load_segments == Some(true) {
+            observations["load_segments"] =
+                json!({"policy": LOAD_SEGMENT_POLICY, "transitions": self.load_segments});
+        }
         observations
     }
 
@@ -1237,10 +1709,11 @@ impl MapObservation {
     }
 
     fn observe_frame(&mut self, frame: MapFrameObservation, ids: BTreeSet<u64>) -> Result<()> {
+        let (tick, binary_frame) = self.expected_clock(frame.completed_steps, false);
         ensure!(
             frame.completed_steps == self.frames.len() as u64
-                && frame.simulation_tick == frame.completed_steps
-                && u64::from(frame.binary_frame) == frame.completed_steps,
+                && frame.simulation_tick == tick
+                && frame.binary_frame == binary_frame,
             "actor observation skipped or repeated a committed frame"
         );
         let count = self
@@ -1266,9 +1739,25 @@ impl MapObservation {
             .and_then(|count| {
                 count.checked_add(
                     frame
+                        .audio_state
+                        .as_ref()
+                        .map_or(0, sound_state_sample_count),
+                )
+            })
+            .and_then(|count| {
+                count.checked_add(
+                    frame
                         .effects
                         .as_ref()
                         .map_or(0, MapEffectObservation::sample_count),
+                )
+            })
+            .and_then(|count| {
+                count.checked_add(
+                    frame
+                        .lasers
+                        .as_ref()
+                        .map_or(0, MapLaserObservation::sample_count),
                 )
             })
             .and_then(|count| {
@@ -1310,7 +1799,8 @@ impl MapObservation {
             completed_steps == expected_step,
             "map draw skipped or repeated a committed step"
         );
-        let expected_ms = expected_step
+        let clock_tick = self.expected_clock(expected_step, false).0;
+        let expected_ms = clock_tick
             .checked_mul(MAP_PRESENTATION_INTERVAL_MS)
             .context("map presentation time overflow")?;
         let message_ms = times
@@ -1327,12 +1817,34 @@ impl MapObservation {
             radar_ms: times.radar_ms,
             tooltip_ms: times.tooltip_ms,
             message_ms,
+            simulation_tick: self.allow_load_segments.then_some(clock_tick),
         });
         Ok(())
     }
 }
 
 impl TacticalCaptureSession {
+    fn set_map_audio_context(&self, state: &mut AppState) -> Result<()> {
+        if self
+            .request
+            .map_profile()
+            .is_some_and(|profile| profile.value.observe_audio.is_some())
+        {
+            let clock = MapClock::capture(state)?;
+            state
+                .audio
+                .sfx_player
+                .as_mut()
+                .context("PCM capture lost its SFX device")?
+                .set_pcm_observation_context(PcmObservationContext {
+                    completed_steps: self.exact_step_receipts.len() as u64,
+                    simulation_tick: clock.simulation_tick,
+                    binary_frame: clock.binary_frame,
+                });
+        }
+        Ok(())
+    }
+
     fn map_state(&self) -> Result<&MapObservation> {
         match &self.controller {
             CaptureController::Map(map) => Ok(map),
@@ -1531,6 +2043,8 @@ impl TacticalCaptureSession {
             }
             let camera_cell = profile.camera_cell;
             let cursor_position = profile.cursor_position;
+            let audio_config = profile.observe_audio.as_ref().map(MapAudioProfile::config);
+            let allow_load_segments = profile.allow_load_segments == Some(true);
             let keyboard_bindings: Vec<_> = if profile.observes_local_input() {
                 crate::app::input::hotkeys::catalog::registered_commands()
                     .iter()
@@ -1572,6 +2086,17 @@ impl TacticalCaptureSession {
             self.map_state_mut()?.rule_types = rule_types;
             self.map_state_mut()?.sample_count += keyboard_bindings.len();
             self.map_state_mut()?.keyboard_bindings = keyboard_bindings;
+            self.map_state_mut()?.allow_load_segments = allow_load_segments;
+            if let Some(config) = audio_config {
+                state
+                    .audio
+                    .sfx_player
+                    .as_mut()
+                    .context("PCM observation requires the production SFX device")?
+                    .observe_pcm(config)
+                    .map_err(anyhow::Error::msg)?;
+                self.set_map_audio_context(state)?;
+            }
             if let Some([rx, ry]) = camera_cell {
                 crate::app::input::camera::center_camera_on_cell(state, rx, ry);
             }
@@ -1597,12 +2122,53 @@ impl TacticalCaptureSession {
             // A sealed profile has two distinct producers: already prepared
             // typed commands first, then ordinary local input gestures. Ties
             // retain order within each list; neither producer runs simulation.
+            self.set_map_audio_context(state)?;
             self.issue_map_commands(state)?;
             self.issue_map_gestures(state)?;
+            self.set_map_audio_context(state)?;
             self.advance_exact_step(state)?;
+            self.set_map_audio_context(state)?;
             self.record_map_frame(state)?;
         }
         if self.exact_step_receipts.len() == requested {
+            let tail_limit = self
+                .request
+                .map_profile()
+                .and_then(|profile| profile.value.observe_audio.as_ref())
+                .map(|audio| audio.completion_tail_ms);
+            if let Some(tail_limit) = tail_limit
+                && self.map_state()?.audio.is_none()
+            {
+                let started = *self
+                    .map_state_mut()?
+                    .audio_tail_started
+                    .get_or_insert_with(Instant::now);
+                let elapsed = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+                let sfx = state
+                    .audio
+                    .sfx_player
+                    .as_mut()
+                    .context("PCM completion lost its SFX device")?;
+                let settled = sfx.observed_pcm_settled();
+                if !settled && elapsed < tail_limit {
+                    self.failure_stage = "audio-completion-tail".to_owned();
+                    return Ok(());
+                }
+                let report = sfx
+                    .finish_pcm_observation()
+                    .context("PCM recorder absent at completion")?;
+                let truncated =
+                    report.truncated || report.outputs.iter().any(|output| output.truncated);
+                self.map_state_mut()?.audio = Some(pcm_report(report, elapsed, settled));
+                ensure!(
+                    settled,
+                    "observed SFX did not complete within its wall-clock audio tail"
+                );
+                ensure!(
+                    !truncated,
+                    "PCM observation exhausted a declared event/sample/action budget"
+                );
+            }
             self.capture_requested = true;
             self.failure_stage = "final-render".to_owned();
         }
@@ -1633,7 +2199,7 @@ impl TacticalCaptureSession {
                 .session
                 .tick;
             ensure!(
-                issued_tick == completed_steps,
+                issued_tick == self.map_state()?.expected_clock(completed_steps, true).0,
                 "command issue is outside exact-step boundary"
             );
             // The sole ordinary input producer owns envelope encoding, stamping
@@ -1701,25 +2267,37 @@ impl TacticalCaptureSession {
                 .simulation;
             let issued_simulation_tick = sim.session.tick;
             let issued_binary_frame = sim.session.binary_frame;
+            let clock_before = MapClock::capture(state)?;
+            let expected_clock = self.map_state()?.expected_clock(completed_steps, true);
             ensure!(
-                issued_simulation_tick == completed_steps
-                    && u64::from(issued_binary_frame) == completed_steps,
+                (issued_simulation_tick, issued_binary_frame) == expected_clock,
                 "gesture issue is outside exact-step boundary"
             );
             let pending_before = sim.pending_command_snapshot();
             let local_input = profile.observes_local_input();
             let before = MapInputObservation::capture(state, local_input)?;
-            let (left_press_captured, band_box_before_release, sidebar, keyboard) =
-                if let MapGesture::Key { key } = &scheduled.gesture {
+            let (left_press_captured, band_box_before_release, sidebar, keyboard, command_bar) =
+                if let MapGesture::Key { key, modifiers } = &scheduled.gesture {
                     (
                         false,
                         false,
                         None,
-                        Some(MapKeyboardGestureReceipt::dispatch(state, key)?),
+                        Some(MapKeyboardGestureReceipt::dispatch(
+                            state,
+                            key,
+                            modifiers.as_deref().unwrap_or_default(),
+                        )?),
+                        None,
                     )
                 } else {
                     let sidebar_before = match &scheduled.gesture {
                         MapGesture::Sidebar { .. } => Some(MapSidebarObservation::capture(state)?),
+                        _ => None,
+                    };
+                    let command_bar = match &scheduled.gesture {
+                        MapGesture::CommandBar { command } => {
+                            Some(MapCommandBarGestureReceipt::capture(state, command)?)
+                        }
                         _ => None,
                     };
                     let (from, to, sidebar_slot) = match &scheduled.gesture {
@@ -1729,6 +2307,14 @@ impl TacticalCaptureSession {
                                 .expect("sidebar captured")
                                 .resolve(target, [state.render_width(), state.render_height()])?;
                             (position, position, Some(slot))
+                        }
+                        MapGesture::CommandBar { .. } => {
+                            let position = command_bar
+                                .as_ref()
+                                .expect("command bar captured")
+                                .0
+                                .resolved_position;
+                            (position, position, None)
                         }
                         _ => {
                             let (from, to) =
@@ -1756,10 +2342,13 @@ impl TacticalCaptureSession {
                     button(state, ElementState::Pressed);
                     let mouse = &state.match_state.input.tactical_mouse;
                     let gadgets = &state.match_state.match_presentation.in_game_gadgets;
-                    let left_press_captured =
-                        if let MapGesture::Sidebar { target } = &scheduled.gesture {
+                    let left_press_captured = if matches!(
+                        scheduled.gesture,
+                        MapGesture::Sidebar { .. } | MapGesture::CommandBar { .. }
+                    ) {
+                        let expected = if let MapGesture::Sidebar { target } = &scheduled.gesture {
                             let slot = sidebar_slot.expect("resolved sidebar slot");
-                            let expected = match target {
+                            match target {
                                 MapSidebarTarget::Tab { .. } => {
                                     gadgets.handles.as_ref().map(|handles| handles.tabs[slot])
                                 }
@@ -1776,22 +2365,25 @@ impl TacticalCaptureSession {
                                 MapSidebarTarget::Sell {} => {
                                     gadgets.handles.as_ref().map(|handles| handles.sell)
                                 }
-                            };
-                            let routed = gadgets.out.consumed_by.or(gadgets.focus.sticky);
-                            expected.is_some()
-                                && routed == expected
-                                && gadgets.left_held
-                                && !gadgets.right_held
-                                && !mouse.left_held
-                                && !mouse.captured
-                                && !mouse.right_held
+                            }
                         } else {
-                            mouse.left_held
-                                && mouse.captured
-                                && !mouse.right_held
-                                && gadgets.left_held
-                                && !gadgets.right_held
+                            command_bar.as_ref().map(|(_, handle)| *handle)
                         };
+                        let routed = gadgets.out.consumed_by.or(gadgets.focus.sticky);
+                        expected.is_some()
+                            && routed == expected
+                            && gadgets.left_held
+                            && !gadgets.right_held
+                            && !mouse.left_held
+                            && !mouse.captured
+                            && !mouse.right_held
+                    } else {
+                        mouse.left_held
+                            && mouse.captured
+                            && !mouse.right_held
+                            && gadgets.left_held
+                            && !gadgets.right_held
+                    };
                     if matches!(scheduled.gesture, MapGesture::Drag { .. }) {
                         move_cursor(state, to);
                     }
@@ -1823,7 +2415,13 @@ impl TacticalCaptureSession {
                             })
                         })
                         .transpose()?;
-                    (left_press_captured, band_box_before_release, sidebar, None)
+                    (
+                        left_press_captured,
+                        band_box_before_release,
+                        sidebar,
+                        None,
+                        command_bar.map(|(receipt, _)| receipt),
+                    )
                 };
             let neutral_input_restored = crate::app::input::camera::camera_input_idle(state)
                 && !state.match_state.input.selection_state.is_band_box_active()
@@ -1850,6 +2448,34 @@ impl TacticalCaptureSession {
                 "gesture left retained input active after release"
             );
             let after = MapInputObservation::capture(state, local_input)?;
+            let clock_after = MapClock::capture(state)?;
+            if scheduled.gesture.is_quickload() {
+                ensure!(
+                    self.map_state()?.allow_load_segments
+                        && self.map_state()?.load_segments.len() < 16,
+                    "quickload segment is not admitted or exceeds its 16-transition bound"
+                );
+                ensure!(
+                    clock_after.simulation_tick < clock_before.simulation_tick
+                        && clock_after.binary_frame < clock_before.binary_frame
+                        && clock_after.total_simulation_ms < clock_before.total_simulation_ms,
+                    "literal quickload did not restore an earlier simulation clock"
+                );
+                let restored_audio_state = self
+                    .request
+                    .map_profile()
+                    .filter(|profile| profile.value.observe_audio.is_some())
+                    .map(|profile| sound_state(state, &profile.value))
+                    .transpose()?;
+                let map = self.map_state_mut()?;
+                map.observe_load_segment(MapLoadSegment {
+                    after_step: completed_steps,
+                    gesture_ordinal: map.gestures.len(),
+                    before: clock_before,
+                    after: clock_after,
+                    restored_audio_state,
+                })?;
+            }
             let sim = &state
                 .match_state
                 .sim_runtime
@@ -1857,18 +2483,23 @@ impl TacticalCaptureSession {
                 .context("gesture simulation disappeared")?
                 .simulation;
             ensure!(
-                sim.session.tick == issued_simulation_tick
-                    && sim.session.binary_frame == issued_binary_frame,
+                scheduled.gesture.is_quickload()
+                    || (sim.session.tick == issued_simulation_tick
+                        && sim.session.binary_frame == issued_binary_frame),
                 "gesture advanced simulation outside the exact-step owner"
             );
             let pending_after = sim.pending_command_snapshot();
             ensure!(
-                pending_after.starts_with(&pending_before),
+                scheduled.gesture.is_quickload() || pending_after.starts_with(&pending_before),
                 "gesture changed previously queued commands"
             );
             let queued_commands: Vec<_> = pending_after
                 .into_iter()
-                .skip(pending_before.len())
+                .skip(if scheduled.gesture.is_quickload() {
+                    usize::MAX
+                } else {
+                    pending_before.len()
+                })
                 .map(|envelope| MapGestureCommandReceipt {
                     owner: sim.interner.resolve(envelope.owner).to_owned(),
                     execute_tick: envelope.execute_tick,
@@ -1881,6 +2512,7 @@ impl TacticalCaptureSession {
                 .checked_add(before.sample_count())
                 .and_then(|count| count.checked_add(after.sample_count()))
                 .and_then(|count| count.checked_add(queued_commands.len()))
+                .and_then(|count| count.checked_add(usize::from(command_bar.is_some())))
                 .and_then(|count| {
                     count.checked_add(sidebar.as_ref().map_or(0, |receipt| {
                         receipt.before.sample_count()
@@ -1908,6 +2540,7 @@ impl TacticalCaptureSession {
                 queued_commands,
                 sidebar,
                 keyboard,
+                command_bar,
             });
         }
     }
@@ -2130,12 +2763,20 @@ impl TacticalCaptureSession {
                         "dispatch_timer": {"start_frame": timer.start_frame(), "delay": timer.delay()}},
                     "target": entity.attack_target.as_ref().map(|target| target.target),
                     "archive": entity.archive_target(), "nav": entity.navigation.nav_com, "foot": foot,
+                    "retask": retask_observation(entity),
                     "jumpjet": jumpjet,
                     "cloak": cloak,
                     "building": building, "unit": unit,
                     "miner": miner,
                     "radio": {"contacts": contacts, "dock_entered_with": entity.dock_entered_with},
                 });
+                if profile.observe_disguise_inputs == Some(true) {
+                    observation["disguise_inputs"] = disguise_inputs(state, entity)?;
+                }
+                if profile.observe_lasers == Some(true) {
+                    observation["prism"] =
+                        prism_observation(entity, sim.session.binary_frame as i32);
+                }
                 if profile.observe_action_line_inputs == Some(true) {
                     let inputs = if entity.category
                         == crate::map::entities::EntityCategory::Structure
@@ -2244,6 +2885,11 @@ impl TacticalCaptureSession {
             simulation_tick: sim.session.tick,
             binary_frame: sim.session.binary_frame,
             total_simulation_ms: sim.session.total_sim_ms,
+            audio_state: profile
+                .observe_audio
+                .as_ref()
+                .map(|_| sound_state(state, profile))
+                .transpose()?,
             actors,
             houses,
             missing_actor_ids,
@@ -2252,6 +2898,9 @@ impl TacticalCaptureSession {
                 .observes_effects()
                 .then(|| MapEffectObservation::capture(sim, &runtime.resources.rules, profile))
                 .transpose()?,
+            lasers: (profile.observe_lasers == Some(true))
+                .then(|| MapLaserObservation::capture(state))
+                .transpose()?,
             input: profile
                 .gestures
                 .as_ref()
@@ -2259,7 +2908,7 @@ impl TacticalCaptureSession {
                 .transpose()?,
         };
         let sidebar = profile
-            .observes_sidebar_step(sim.session.tick)
+            .observes_sidebar_step(&frame)
             .then(|| MapSidebarObservation::capture(state))
             .transpose()?;
         let completed_steps = frame.completed_steps;
@@ -2300,17 +2949,27 @@ impl TacticalCaptureSession {
             .as_ref()
             .context("map simulation absent")?
             .simulation;
+        let step = self.exact_step_receipts.len() as u64;
         ensure!(
-            sim.session.tick == self.exact_step_receipts.len() as u64
-                && u64::from(sim.session.binary_frame) == sim.session.tick,
+            (sim.session.tick, sim.session.binary_frame)
+                == self.map_state()?.expected_clock(step, false),
             "map draw differs from committed exact-step receipts"
         );
         ensure!(
             state.diagnostic_presentation_ms() == Some(output.times.radar_ms),
             "map diagnostic presentation policy is not active"
         );
-        let step = sim.session.tick;
         let map = self.map_state_mut()?;
+        if map.audio_tail_started.is_some() && map.draws.len() == requested.max(1) as usize {
+            // The existing render/audio service keeps running during the tail.
+            // These repeat draws do not manufacture extra exact-step receipts.
+            ensure!(
+                output.times.radar_ms == sim.session.tick * MAP_PRESENTATION_INTERVAL_MS,
+                "audio-tail draw changed the diagnostic simulation clock"
+            );
+            map.audio_tail_draws = map.audio_tail_draws.saturating_add(1);
+            return Ok(());
+        }
         map.observe_draw(requested, step, output.times)?;
         if let Some(frame) = map
             .sidebar_frames
@@ -2438,6 +3097,12 @@ impl TacticalCaptureSession {
             pixels,
         )?;
         let map = self.map_state()?;
+        if profile.value.observe_audio.is_some() {
+            ensure!(
+                map.audio.is_some(),
+                "audio observation has no completion report"
+            );
+        }
         ensure!(
             map.draws.len() == profile.value.ticks.max(1) as usize,
             "incomplete map draw schedule"
@@ -2456,7 +3121,7 @@ impl TacticalCaptureSession {
         // across the up-to-100000-step capture route.
         render["presentation_clock"] = json!({"policy": MAP_PRESENTATION_CLOCK_POLICY,
             "origin_ms": 0, "interval_ms": MAP_PRESENTATION_INTERVAL_MS, "draws": map.draws});
-        let manifest = json!({
+        let mut manifest = json!({
             "schema_version": CHILD_SCHEMA, "status": "COMPLETE",
             "profile": {"sha256": profile.sha256, "request": profile.value},
             "contract": {"sha256": self.request.sealed_contract().sha256},
@@ -2474,6 +3139,11 @@ impl TacticalCaptureSession {
             "evidence_limitations": ["Production loading, exact stepping and GPU readback only; no native pixel or gameplay equivalence is established.",
                 "Radar and timed HUD presentation consume the recorded diagnostic exact-step clock; ordinary gameplay clocks are unchanged. Audio, menus, animated input and scenario exit are outside this comparison."],
         });
+        if profile.value.observe_audio.is_some() {
+            manifest["observations"]["audio"]["tail_draw_count"] = json!(map.audio_tail_draws);
+            manifest["evidence_limitations"].as_array_mut().expect("limits array").push(json!(
+                "Opt-in audio records the production device mixer's Player queue pulls, including possible initialization prefetch, before resampling/summing. It is not OS loopback, proof of physical speaker output, or native audio parity. Audio-only tail draws advance no simulation steps."));
+        }
         ensure!(
             encode_manifest(&manifest)?.len() < MAX_RECEIPT_BYTES,
             "map observation manifest exceeds the 128 MiB receipt budget"
@@ -2545,6 +3215,130 @@ mod tests {
         assert_eq!(evidence[2]["radar_ms"], 66);
         assert_eq!(map.draws.len(), 3);
         assert!(map.observe_draw(3, 4, times(88)).is_err());
+    }
+
+    #[test]
+    fn quickload_rewind_retains_actual_clock_without_repeating_capture_step_numbers() {
+        let mut map = initialized_map();
+        map.allow_load_segments = true;
+        map.observe_draw(4, 1, times(22)).unwrap();
+        map.observe_draw(4, 2, times(44)).unwrap();
+        map.load_segments.push(MapLoadSegment {
+            after_step: 2,
+            gesture_ordinal: 1,
+            before: MapClock {
+                simulation_tick: 2,
+                binary_frame: 2,
+                total_simulation_ms: 44,
+            },
+            after: MapClock {
+                simulation_tick: 1,
+                binary_frame: 1,
+                total_simulation_ms: 22,
+            },
+            restored_audio_state: None,
+        });
+        assert_eq!(map.expected_clock(2, false), (2, 2));
+        assert_eq!(map.expected_clock(2, true), (1, 1));
+        assert!(
+            map.observe_draw(4, 3, times(66)).is_err(),
+            "cannot conceal a load by using capture count as native time"
+        );
+        map.observe_draw(4, 3, times(44)).unwrap();
+        map.observe_draw(4, 4, times(66)).unwrap();
+        let rows = serde_json::to_value(&map.draws).unwrap();
+        assert_eq!(rows[2]["completed_steps"], 3);
+        assert_eq!(rows[2]["simulation_tick"], 2);
+        assert_eq!(rows[3]["radar_ms"], 66);
+    }
+
+    #[test]
+    fn audio_frames_and_immediate_restore_charge_actors_and_both_rng_cursors() {
+        let audio = json!({"main_rng_cursor": [0, 103], "scenario_rng_cursor": [0, 103],
+            "actors": [{"stable_id": 7, "body_counter": 1, "active": true, "countdown": 2}]});
+        assert_eq!(sound_state_sample_count(&audio), 3);
+        for available in [2, 3] {
+            let mut frames = MapObservation {
+                sample_count: MAX_OBSERVATION_SAMPLES - available,
+                ..Default::default()
+            };
+            let frame = frames.observe_frame(
+                MapFrameObservation {
+                    completed_steps: 0,
+                    simulation_tick: 0,
+                    binary_frame: 0,
+                    total_simulation_ms: 0,
+                    actors: vec![],
+                    houses: vec![],
+                    missing_actor_ids: vec![],
+                    terrain: vec![],
+                    effects: None,
+                    input: None,
+                    lasers: None,
+                    audio_state: Some(audio.clone()),
+                },
+                BTreeSet::new(),
+            );
+            let mut restored = MapObservation {
+                sample_count: MAX_OBSERVATION_SAMPLES - available,
+                ..Default::default()
+            };
+            let segment = restored.observe_load_segment(MapLoadSegment {
+                after_step: 6,
+                gesture_ordinal: 1,
+                before: MapClock {
+                    simulation_tick: 6,
+                    binary_frame: 6,
+                    total_simulation_ms: 132,
+                },
+                after: MapClock {
+                    simulation_tick: 4,
+                    binary_frame: 4,
+                    total_simulation_ms: 88,
+                },
+                restored_audio_state: Some(audio.clone()),
+            });
+            assert_eq!(frame.is_ok(), available == 3);
+            assert_eq!(segment.is_ok(), available == 3);
+            let accepted = usize::from(available == 3);
+            assert_eq!(frames.frames.len(), accepted);
+            assert_eq!(restored.load_segments.len(), accepted);
+            assert_eq!(
+                frames.sample_count,
+                MAX_OBSERVATION_SAMPLES - available + accepted * 3
+            );
+            assert_eq!(restored.sample_count, frames.sample_count);
+        }
+    }
+
+    #[test]
+    fn bounded_pcm_and_literal_restore_options_require_explicit_profile_admission() {
+        let mut value = serde_json::to_value(example()).unwrap();
+        value["schema_version"] = json!(PROFILE_V2);
+        value["ticks"] = json!(3);
+        value["cursor_position"] = json!([720, 556]);
+        value["observe_audio"] = json!({"sound_ids": ["SquidMove"], "max_events": 2,
+            "max_samples_per_event": 262144, "completion_tail_ms": 4000});
+        value["gestures"] = json!([{"issue_after_step": 2,
+            "gesture": {"kind": "key", "key": "N", "modifiers": ["Ctrl", "Shift"]}}]);
+        assert!(
+            serde_json::from_value::<MapCaptureProfile>(value.clone())
+                .unwrap()
+                .validate()
+                .is_err()
+        );
+        value["allow_load_segments"] = json!(true);
+        serde_json::from_value::<MapCaptureProfile>(value.clone())
+            .unwrap()
+            .validate()
+            .unwrap();
+        value["observe_audio"]["max_samples_per_event"] = json!(262145);
+        assert!(
+            serde_json::from_value::<MapCaptureProfile>(value)
+                .unwrap()
+                .validate()
+                .is_err()
+        );
     }
 
     #[test]
@@ -2728,6 +3522,8 @@ mod tests {
                         terrain: vec![],
                         effects: Some(snapshot),
                         input: None,
+                        lasers: None,
+                        audio_state: None,
                     },
                     BTreeSet::new()
                 )
@@ -2767,7 +3563,35 @@ mod tests {
             let invalid: MapCaptureProfile = serde_json::from_value(invalid).unwrap();
             assert!(invalid.validate().is_err(), "{key:?}");
         }
-        for (key, extra) in [("repeat", json!(true)), ("modifiers", json!([]))] {
+        for modifiers in [
+            json!(["Ctrl"]),
+            json!(["Shift"]),
+            json!(["Alt"]),
+            json!(["Super"]),
+            json!(["Ctrl", "Shift", "Alt", "Super"]),
+        ] {
+            let mut admitted = value.clone();
+            admitted["gestures"][0]["gesture"]["key"] = json!("M");
+            admitted["gestures"][0]["gesture"]["modifiers"] = modifiers;
+            let profile: MapCaptureProfile = serde_json::from_value(admitted.clone()).unwrap();
+            profile.validate().unwrap();
+            assert_eq!(serde_json::to_value(profile).unwrap(), admitted);
+        }
+        for modifiers in [
+            json!(["not-a-modifier"]),
+            json!(["Control"]),
+            json!(["Ctrl", "Ctrl"]),
+        ] {
+            let mut invalid = value.clone();
+            invalid["gestures"][0]["gesture"]["modifiers"] = modifiers;
+            let profile: MapCaptureProfile = serde_json::from_value(invalid).unwrap();
+            assert!(profile.validate().is_err());
+        }
+        for (key, extra) in [
+            ("repeat", json!(true)),
+            ("modifiers", json!("Ctrl")),
+            ("modifiers", Value::Null),
+        ] {
             let mut invalid = value.clone();
             invalid["gestures"][0]["gesture"][key] = extra;
             assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
@@ -2789,6 +3613,12 @@ mod tests {
         assert!(legacy.validate().is_err());
         let mut legacy = example();
         legacy.observe_action_line_inputs = Some(false);
+        assert!(legacy.validate().is_err());
+        let mut legacy = example();
+        legacy.observe_disguise_inputs = Some(false);
+        assert!(legacy.validate().is_err());
+        let mut legacy = example();
+        legacy.observe_lasers = Some(false);
         assert!(legacy.validate().is_err());
         let mut legacy = example();
         legacy.cursor_position = Some([720, 556]);
@@ -2813,6 +3643,8 @@ mod tests {
         modern["observe_projectiles"] = json!(true);
         modern["observe_anim_types"] = json!(["BBBLELRG"]);
         modern["observe_action_line_inputs"] = json!(true);
+        modern["observe_disguise_inputs"] = json!(true);
+        modern["observe_lasers"] = json!(true);
         modern["cursor_position"] = json!([720, 556]);
         modern["gestures"] = json!([]);
         modern["observe_super_weapons"] = json!(true);
@@ -2828,6 +3660,8 @@ mod tests {
             "observe_projectiles",
             "observe_anim_types",
             "observe_action_line_inputs",
+            "observe_disguise_inputs",
+            "observe_lasers",
             "camera_cell",
             "cursor_position",
             "terrain_cells",
@@ -2959,9 +3793,6 @@ mod tests {
         let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
         profile.validate().unwrap();
         assert_eq!(profile.gesture_policy(), SIDEBAR_GESTURE_POLICY);
-        assert!(profile.observes_sidebar_step(0));
-        assert!(profile.observes_sidebar_step(3));
-        assert!(!profile.observes_sidebar_step(2));
         assert_eq!(serde_json::to_value(&profile).unwrap(), value);
         let transcript = initialized_map().transcript(&profile);
         assert_eq!(
@@ -2997,6 +3828,63 @@ mod tests {
             let profile = serde_json::from_value::<MapCaptureProfile>(invalid);
             assert!(profile.is_err() || profile.unwrap().validate().is_err());
         }
+    }
+
+    #[test]
+    fn sidebar_sampling_uses_completed_steps_across_quickload_rewind() {
+        let mut profile = example();
+        profile.schema_version = PROFILE_V2.to_owned();
+        profile.ticks = 24;
+        profile.allow_load_segments = Some(true);
+        profile.observe_sidebar_steps = Some(vec![0, 1, 2, 4, 8, 9, 16, 17, 24]);
+        profile.validate().unwrap();
+        let mut map = initialized_map();
+        map.allow_load_segments = true;
+        map.observe_load_segment(MapLoadSegment {
+            after_step: 16,
+            gesture_ordinal: 3,
+            before: MapClock {
+                simulation_tick: 16,
+                binary_frame: 16,
+                total_simulation_ms: 352,
+            },
+            after: MapClock {
+                simulation_tick: 4,
+                binary_frame: 4,
+                total_simulation_ms: 88,
+            },
+            restored_audio_state: None,
+        })
+        .unwrap();
+        let mut sampled = Vec::new();
+        for completed_steps in 0..=u64::from(profile.ticks) {
+            let (simulation_tick, binary_frame) = map.expected_clock(completed_steps, false);
+            let frame = MapFrameObservation {
+                completed_steps,
+                simulation_tick,
+                binary_frame,
+                total_simulation_ms: simulation_tick * MAP_PRESENTATION_INTERVAL_MS,
+                actors: vec![],
+                houses: vec![],
+                missing_actor_ids: vec![],
+                terrain: vec![],
+                effects: None,
+                input: None,
+                lasers: None,
+                audio_state: None,
+            };
+            if profile.observes_sidebar_step(&frame) {
+                sampled.push(completed_steps as u32);
+            }
+            map.observe_frame(frame, BTreeSet::new()).unwrap();
+        }
+        assert_eq!(map.frames[17].simulation_tick, 5);
+        assert_eq!(map.frames[20].simulation_tick, 8);
+        assert_eq!(
+            sampled,
+            profile.observe_sidebar_steps.unwrap(),
+            "capture step17 must sample restored tick5; repeated tick8 at step20 must not sample again"
+        );
     }
 
     #[test]
@@ -3093,6 +3981,166 @@ mod tests {
         );
     }
 
+    fn command_bar_fixture() -> (
+        crate::ui::sidebar::command_bar::CommandBarLayout,
+        Vec<Option<usize>>,
+        crate::app::input::gadget_input::InGameGadgets,
+    ) {
+        use crate::ui::gadget::{
+            GadgetRect,
+            list::{GadgetSpec, ToggleKind},
+        };
+        let layout = crate::ui::sidebar::command_bar::CommandBarLayout::new(
+            [800, 600],
+            168,
+            [28, 32],
+            [52, 32],
+            [28, 32],
+            true,
+        )
+        .unwrap();
+        // Prepared layout data for the diagnostic, not a native order golden.
+        let index = command_bar_index("Guard").unwrap();
+        let slots = vec![None, Some(index)];
+        let rect = layout.slot(1).unwrap();
+        let mut gadgets = crate::app::input::gadget_input::InGameGadgets::new();
+        gadgets.command_bar = Some(std::array::from_fn(|i| {
+            let handle = gadgets.list.add_tail(GadgetSpec::button(
+                if i == index {
+                    GadgetRect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32)
+                } else {
+                    GadgetRect::new(0, 0, 0, 0)
+                },
+                0xD6 + i as u16,
+                ToggleKind::Plain,
+            ));
+            gadgets.list.get_mut(handle).unwrap().is_disabled = i != index;
+            handle
+        }));
+        (layout, slots, gadgets)
+    }
+
+    #[test]
+    fn command_bar_gesture_resolves_current_layout_and_retained_control() {
+        let (layout, slots, mut gadgets) = command_bar_fixture();
+        let (receipt, handle) =
+            MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, &gadgets, [800, 600])
+                .unwrap();
+        assert_eq!(receipt.slot, 1);
+        assert_eq!(
+            handle,
+            gadgets.command_bar.unwrap()[command_bar_index("Guard").unwrap()]
+        );
+        let gadget = gadgets.list.get_mut(handle).unwrap();
+        assert!(gadget.rect.contains(
+            receipt.resolved_position[0] as i32,
+            receipt.resolved_position[1] as i32
+        ));
+        assert_eq!(receipt.gadget_id, gadget.id);
+        // Observed identity comes from the retained control, not a copied ID formula.
+        gadget.id = 777;
+        assert_eq!(
+            MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, &gadgets, [800, 600])
+                .unwrap()
+                .0
+                .gadget_id,
+            777
+        );
+        gadgets.list.get_mut(handle).unwrap().rect.x += 1;
+        assert!(
+            MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, &gadgets, [800, 600])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn command_bar_gesture_rejects_absent_closed_or_unknown_control() {
+        let (mut layout, slots, mut gadgets) = command_bar_fixture();
+        let resolve =
+            |name,
+             layout,
+             slots: &[Option<usize>],
+             gadgets: &crate::app::input::gadget_input::InGameGadgets| {
+                MapCommandBarGestureReceipt::resolve(name, layout, slots, gadgets, [800, 600])
+            };
+        assert!(resolve("guard", layout, &slots, &gadgets).is_err());
+        assert!(resolve("GuardObject", layout, &slots, &gadgets).is_err());
+        assert!(resolve("Guard", layout, &[], &gadgets).is_err());
+        layout.tile_count = 0;
+        assert!(resolve("Guard", layout, &slots, &gadgets).is_err());
+        layout.tile_count = 10;
+        let handle = gadgets.command_bar.unwrap()[command_bar_index("Guard").unwrap()];
+        gadgets.list.get_mut(handle).unwrap().is_disabled = true;
+        assert!(resolve("Guard", layout, &slots, &gadgets).is_err());
+        gadgets.command_bar = None;
+        assert!(resolve("Guard", layout, &slots, &gadgets).is_err());
+    }
+
+    #[test]
+    fn profile_roundtrip_preserves_command_bar_target() {
+        let mut profile = example();
+        profile.schema_version = PROFILE_V2.to_owned();
+        profile.cursor_position = Some([720, 556]);
+        profile.gestures = Some(vec![MapScheduledGesture {
+            issue_after_step: 0,
+            gesture: MapGesture::CommandBar {
+                command: "Guard".to_owned(),
+            },
+        }]);
+        profile.validate().unwrap();
+        assert_eq!(profile.gesture_policy(), COMMAND_BAR_GESTURE_POLICY);
+        let value = serde_json::to_value(&profile).unwrap();
+        assert_eq!(
+            value["gestures"][0]["gesture"],
+            json!({"kind":"command_bar", "command":"Guard"})
+        );
+        serde_json::from_value::<MapCaptureProfile>(value.clone())
+            .unwrap()
+            .validate()
+            .unwrap();
+        for command in ["", "guard", "GuardObject", "G"] {
+            let mut bad = value.clone();
+            bad["gestures"][0]["gesture"]["command"] = json!(command);
+            assert!(
+                serde_json::from_value::<MapCaptureProfile>(bad)
+                    .unwrap()
+                    .validate()
+                    .is_err()
+            );
+        }
+        let mut bad = value;
+        bad["gestures"][0]["gesture"]["modifiers"] = json!(["Ctrl"]);
+        assert!(serde_json::from_value::<MapCaptureProfile>(bad).is_err());
+    }
+
+    #[test]
+    fn actor_retask_snapshot_preserves_tagged_suspended_references() {
+        use crate::sim::{combat::TargetKind, components::NavTargetRef, game_entity::GameEntity};
+        let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 20);
+        entity.suspended_attack_target = Some(TargetKind::Cell(7, 8));
+        entity.navigation.suspended_nav_com = Some(NavTargetRef::object(42));
+        assert_eq!(
+            retask_observation(&entity),
+            json!({
+                "suspended_target":{"Cell":[7,8]}, "suspended_nav":{"Object":{"id":42}}
+            })
+        );
+        entity.suspended_attack_target = Some(TargetKind::Entity(43));
+        entity.navigation.suspended_nav_com = Some(NavTargetRef::cell(9, 10));
+        assert_eq!(
+            retask_observation(&entity),
+            json!({
+                "suspended_target":{"Entity":43}, "suspended_nav":{"Cell":{"rx":9,"ry":10}}
+            })
+        );
+        entity.suspended_attack_target = None;
+        entity.navigation.suspended_nav_com = None;
+        assert_eq!(
+            retask_observation(&entity),
+            json!({"suspended_target":null,"suspended_nav":null})
+        );
+    }
+
     #[test]
     fn gesture_schedule_retains_equal_step_order_and_conditional_receipt_presence() {
         let mut profile = example();
@@ -3147,6 +4195,7 @@ mod tests {
                 queued_commands: Vec::new(),
                 sidebar: None,
                 keyboard: None,
+                command_bar: None,
             });
         }
         assert!(map.pending_gesture(&profile, 1).unwrap().is_none());
@@ -3242,6 +4291,8 @@ mod tests {
                 terrain: Vec::new(),
                 effects: None,
                 input: None,
+                lasers: None,
+                audio_state: None,
             },
             BTreeSet::from([7]),
         )
@@ -3259,6 +4310,8 @@ mod tests {
                 terrain: Vec::new(),
                 effects: None,
                 input: None,
+                lasers: None,
+                audio_state: None,
             },
             BTreeSet::from([7]),
         )
@@ -3444,6 +4497,8 @@ mod tests {
             terrain: Vec::new(),
             effects: None,
             input: None,
+            lasers: None,
+            audio_state: None,
         };
         let mut map = initialized_map();
         assert!(map.observe_frame(frame(1, 1), BTreeSet::new()).is_err());

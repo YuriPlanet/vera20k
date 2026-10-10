@@ -348,7 +348,12 @@ pub(crate) fn build_animation_sequence_catalog(
         else {
             continue;
         };
-        if art.voxel || (art.walk_frames.is_none() && art.firing_frames.is_none()) {
+        // Unit73C5F0 reads its actual UnitType frame layout even when the
+        // observer-selected TerrainType sends a voxel Mirage through SHP.
+        // Keep that immutable layout available without per-frame allocation.
+        if object.category != crate::rules::object_type::ObjectCategory::Vehicle
+            && (art.voxel || (art.walk_frames.is_none() && art.firing_frames.is_none()))
+        {
             continue;
         }
         let cadence = ShpVehicleCadence {
@@ -357,7 +362,19 @@ pub(crate) fn build_animation_sequence_catalog(
         };
         catalog.insert(
             object.id.clone(),
-            crate::rules::shp_vehicle_sequence::build_shp_vehicle_sequences(art, cadence),
+            crate::rules::shp_vehicle_sequence::build_shp_vehicle_sequences(
+                art,
+                cadence,
+                if object.category == crate::rules::object_type::ObjectCategory::Vehicle {
+                    Some(
+                        rules
+                            .unit_shp_read_state(&object.id)
+                            .expect("registered UnitType retains its constructor/ART read state"),
+                    )
+                } else {
+                    None
+                },
+            ),
         );
     }
 
