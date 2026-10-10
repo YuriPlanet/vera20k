@@ -180,7 +180,7 @@ fn retail_gi_and_guardian_gi_complete_deploy_in_bound_runtime() {
     for (name, human) in [("Americans", false), ("French", true)] {
         let owner = sim.interner.intern(name);
         let mut house = HouseState::new(owner, 0, None, human, 0, 10);
-        house.set_difficulty(HouseDifficulty::Normal, &rules.general, 1.0, true, 0, 0);
+        house.set_difficulty(HouseDifficulty::Normal, &rules.general, Default::default(), true, 0, 0);
         sim.houses.insert(owner, house);
     }
     let gi = sim

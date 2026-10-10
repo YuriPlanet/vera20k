@@ -49,7 +49,10 @@ fn voice_select_keeps_the_full_ordered_resolved_list_across_reached_passes() {
     )
     .unwrap();
     let (rules, _, _, _) = owner
-        .load_noncampaign_scenario(Some(&mode), &map)
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode)),
+            &map,
+        )
         .unwrap()
         .into_parts();
     assert!(Arc::ptr_eq(owner.fixed_sounds(), &sounds));
@@ -85,7 +88,10 @@ fn voice_select_readstring128_and_untrimmed_tokens_precede_sound_lookup() {
     )
     .unwrap();
     let (rules, _, _, _) = owner
-        .load_noncampaign_scenario(None, &IniFile::from_str(""))
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+            &IniFile::from_str(""),
+        )
         .unwrap()
         .into_parts();
     assert_eq!(
@@ -295,7 +301,10 @@ fn enslaved_selection_voice_constructor_vectors_match_original_type_constructors
     )
     .unwrap();
     let rules = owner
-        .load_noncampaign_scenario(None, &IniFile::empty())
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+            &IniFile::empty(),
+        )
         .unwrap()
         .into_parts()
         .0;
@@ -396,7 +405,10 @@ fn enslaved_selection_voice_reaches_registered_types_and_retains_process_catalog
     )
     .unwrap();
     let first = owner
-        .load_noncampaign_scenario(Some(&mode), &map)
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode)),
+            &map,
+        )
         .unwrap()
         .into_parts()
         .0;
@@ -419,7 +431,10 @@ fn enslaved_selection_voice_reaches_registered_types_and_retains_process_catalog
         duplicates["raw"].as_str().unwrap()
     ));
     let second = owner
-        .load_noncampaign_scenario(Some(&mode), &late_map)
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode)),
+            &late_map,
+        )
         .unwrap()
         .into_parts()
         .0;
@@ -456,7 +471,10 @@ fn resolved_enslaved_selection_voice_changes_configuration_under_identical_rules
             sounds,
         )
         .unwrap()
-        .load_noncampaign_scenario(None, &IniFile::empty())
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+            &IniFile::empty(),
+        )
         .unwrap()
         .into_parts()
         .0

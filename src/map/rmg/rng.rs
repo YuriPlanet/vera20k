@@ -38,7 +38,7 @@ impl RmgRng {
 
     /// Seal the exact current native cursor into the move-only handoff DTO.
     pub(crate) fn into_continuation(self) -> MapGenRngContinuation {
-        MapGenRngContinuation::from_native_parts(self.state, self.idx_a, self.idx_b)
+        MapGenRngContinuation::from_native_parts(0, self.state, self.idx_a, self.idx_b)
     }
 
     /// Draw one raw word: XOR the lagged pair into the leading slot, return it,

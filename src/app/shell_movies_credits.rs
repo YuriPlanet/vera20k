@@ -24,7 +24,7 @@ const CREDITS_SILENT_SCORE_VOLUME: f32 = 0.4;
 impl App {
     /// The shell dialog being left is destroyed (child `0x71A` with it)
     /// before the next dialog or presentation is created.
-    fn destroy_current_shell_dialog(state: &mut AppState) {
+    pub(super) fn destroy_current_shell_dialog(state: &mut AppState) {
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
     }
@@ -291,8 +291,7 @@ impl App {
         let Some(movie) = state.frontend.fullscreen_movie.take() else {
             return;
         };
-        let return_to = movie.return_to();
-        drop(movie);
+        let return_to = movie.into_return();
         if let Some(music) = state.audio.music_player.as_mut() {
             music.resume_output();
         }
@@ -343,6 +342,12 @@ impl App {
         match return_to {
             MovieReturn::MoviesAndCredits => Self::open_movies_credits_page(state),
             MovieReturn::MovieList => Self::open_movie_list(state),
+            MovieReturn::CampaignStart(request) => {
+                crate::app::loading::pump::begin_loading(state, *request);
+            }
+            MovieReturn::CampaignLoaded(result) => {
+                crate::app::loading::transitions::apply_map_load_result(state, *result);
+            }
         }
     }
 

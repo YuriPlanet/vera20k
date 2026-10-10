@@ -164,7 +164,10 @@ mod tests {
             .expect("cold startup")
             .into_parts();
         let (rules, projection, art, _) = owner
-            .load_noncampaign_scenario(None, &IniFile::empty())
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
             .expect("scenario from retained startup")
             .into_parts();
         assert_eq!(

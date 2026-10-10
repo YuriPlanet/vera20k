@@ -27,6 +27,9 @@ pub(crate) struct ScenarioPostMapInput<'a> {
     pub(crate) overlay_registry: &'a OverlayTypeRegistry,
     pub(crate) house_roster: &'a HouseRoster,
     pub(crate) skirmish_session: Option<&'a crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
+    /// Ordinary NewCampaign only: HomeCell selects the opening waypoint after
+    /// Evade's entry reset. Continuation/save AltHome belongs to its later route.
+    pub(crate) campaign_new_game_map: Option<&'a crate::map::map_file::MapFile>,
 }
 
 /// Presentation/logging facts returned after authoritative initialization.
@@ -35,6 +38,7 @@ pub(crate) struct ScenarioPostMapOutput {
     pub(crate) navigation_published: bool,
     pub(crate) crates: Option<CratePlacement>,
     pub(crate) ore_twinkle: crate::sim::ore_twinkle::OreTwinkleReceipt,
+    pub(crate) opening_view_cell: Option<(u16, u16)>,
     #[cfg(test)]
     pub(crate) skirmish_order: [Option<ScenarioPostMapStep>; 3],
 }
@@ -101,7 +105,14 @@ impl Simulation {
             );
             Some(placement)
         } else {
-            self.install_house_alliances(input.house_roster.alliance_map(), input.rules);
+            if self.session.campaign_mission_counter().is_none() {
+                self.install_house_alliances(
+                    crate::sim::house_threat::HouseAllianceAdmission::Admitted(
+                        input.house_roster.alliance_map(),
+                    ),
+                    input.rules,
+                );
+            }
             None
         };
 
@@ -133,10 +144,29 @@ impl Simulation {
             input.map_height,
         );
 
+        // Original684C30's opening-view choice consumes the already-parsed
+        // Scenario HomeCell/waypoint table. NewCampaign52DF05→4C6140 clears
+        // Evade, so this route uses HomeCell rather than AltHomeCell. Both
+        // indexes reset to699 in SetDefaults683610 before the Basic read.
+        let opening_view_cell = input.campaign_new_game_map.and_then(|map| {
+            assert!(
+                input.skirmish_session.is_none() && !self.session.game_mode_nonzero,
+                "campaign opening view requires the campaign family"
+            );
+            u32::try_from(map.basic.home_cell.unwrap_or(699))
+                .ok()
+                .map(|index| {
+                    map.waypoints
+                        .get(&index)
+                        .map_or((0, 0), |waypoint| (waypoint.rx, waypoint.ry))
+                })
+        });
+
         ScenarioPostMapOutput {
             navigation_published,
             crates,
             ore_twinkle,
+            opening_view_cell,
             #[cfg(test)]
             skirmish_order,
         }
@@ -287,7 +317,172 @@ mod tests {
             overlay_registry: overlays,
             house_roster,
             skirmish_session: None,
+            campaign_new_game_map: None,
         }
+    }
+
+    #[test]
+    fn campaign_opening_view_matches_original_new_game_basic_start_rows() {
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/input_oracle/campaign_start.json",
+        ))
+        .unwrap();
+        let (rules, overlays) = post_map_rules_and_overlays();
+        let roster = HouseRoster::default();
+        let mut compared = 0;
+        for row in native["basic_start"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["alternate"].as_i64() == Some(0))
+        {
+            let mut map = crate::map::map_file::MapFile::from_bytes(
+                b"[Map]\nSize=0,0,4,4\n[IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n",
+            )
+            .unwrap();
+            let ini = IniFile::from_sections_for_test(["Basic", "Waypoints"].map(|name| {
+                let mut section = crate::rules::ini_parser::IniSection::new(name.to_string());
+                for (key, value) in row["sections"][name].as_object().unwrap() {
+                    section.set(key, value.as_str().unwrap());
+                }
+                section
+            }));
+            map.basic = crate::map::basic::parse_basic_section(&ini);
+            map.waypoints = crate::map::waypoints::parse_waypoints(&ini);
+            // Ordinary NewCampaign cleared Evade; a different AltHome must
+            // not alter the selected HomeCell in this shared post-load owner.
+            map.basic.alt_home_cell = Some(-1);
+            let mut sim = Simulation::from_descriptor(&Default::default());
+            sim.session.initialize_campaign_startup(1, 1).unwrap();
+            let before = sim.rng_state();
+            let mut input = generic_post_map_input(&rules, &overlays, &roster);
+            input.campaign_new_game_map = Some(&map);
+            let output = sim.finalize_scenario_post_map(input);
+            assert_eq!(
+                output.opening_view_cell,
+                Some((
+                    row["cell"][0].as_u64().unwrap() as u16,
+                    row["cell"][1].as_u64().unwrap() as u16
+                )),
+                "{}",
+                row["filename"]
+            );
+            assert_eq!(sim.rng_state(), before);
+            compared += 1;
+        }
+        assert_eq!(
+            compared, 2,
+            "alternate1 remains continuation-bound evidence"
+        );
+    }
+
+    #[test]
+    fn campaign_missing_or_zero_home_waypoint_uses_native_zero_cell() {
+        let (rules, overlays) = post_map_rules_and_overlays();
+        let roster = HouseRoster::default();
+        for authored in [
+            "",
+            "[Basic]\nHomeCell=14\n",
+            "[Basic]\nHomeCell=14\n[Waypoints]\n14=0\n",
+        ] {
+            let map = crate::map::map_file::MapFile::from_bytes(
+                format!("[Map]\nSize=0,0,4,4\n[IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n{authored}")
+                    .as_bytes(),
+            )
+            .unwrap();
+            let mut sim = Simulation::from_descriptor(&Default::default());
+            sim.session.initialize_campaign_startup(1, 1).unwrap();
+            let before = sim.rng_state();
+            let mut input = generic_post_map_input(&rules, &overlays, &roster);
+            input.campaign_new_game_map = Some(&map);
+            assert_eq!(
+                sim.finalize_scenario_post_map(input).opening_view_cell,
+                Some((0, 0)),
+                "Scenario683210/68341B initializes absent/zero waypoint cells"
+            );
+            assert_eq!(sim.rng_state(), before);
+        }
+    }
+
+    #[test]
+    fn campaign_post_map_keeps_the_once_installed_house_graph_and_constructor_cursors() {
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/input_oracle/campaign_start_houses.json",
+        ))
+        .unwrap();
+        let row = native["controls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["name"] == "one_way_allies")
+            .unwrap();
+        assert_eq!(row["scenario_init"], 2);
+        let ini = IniFile::from_sections_for_test(row["sections"].as_object().unwrap().iter().map(
+            |(name, values)| {
+                let mut section = crate::rules::ini_parser::IniSection::new(name.clone());
+                for (key, value) in values.as_object().unwrap() {
+                    section.set(key, value.as_str().unwrap());
+                }
+                section
+            },
+        ));
+        let (rules, overlays) = post_map_rules_and_overlays();
+        let roster = crate::map::houses::parse_house_roster(&ini, &[], Some(&rules));
+        let mut sim = Simulation::new();
+        sim.session.initialize_campaign_startup(1, 1).unwrap();
+        crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+            &mut sim,
+            &roster,
+            Some(&rules),
+            Some(&ini),
+        );
+        assert!(crate::map::houses::is_allied_with(
+            &sim.house_alliances,
+            "A",
+            "B"
+        ));
+        assert!(!crate::map::houses::is_allied_with(
+            &sim.house_alliances,
+            "B",
+            "A"
+        ));
+        let alliances = sim.house_alliances.clone();
+        let order = sim.session.house_order.clone();
+        let house_ids: Vec<_> = order
+            .iter()
+            .map(|owner| sim.houses[owner].native_unique_id())
+            .collect();
+        let rng = sim.rng_state();
+        let ids = sim.native_unique_ids.as_ref().unwrap().current_raw();
+        let absent_late_roster = HouseRoster::default();
+        let output = sim.finalize_scenario_post_map(generic_post_map_input(
+            &rules,
+            &overlays,
+            &absent_late_roster,
+        ));
+        assert_eq!(sim.house_alliances, alliances);
+        assert_eq!(sim.session.house_order, order);
+        assert_eq!(
+            order
+                .iter()
+                .map(|owner| sim.houses[owner].native_unique_id())
+                .collect::<Vec<_>>(),
+            house_ids
+        );
+        assert_eq!(sim.rng_state(), rng);
+        // Original68503B constructs GasCloudSys even without OreTwinkle.
+        // It spends one ID after the House pass, never another House/Super ID.
+        assert_eq!(
+            output.ore_twinkle,
+            crate::sim::ore_twinkle::OreTwinkleReceipt {
+                particle_system_id_consumed: true,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            sim.native_unique_ids.as_ref().unwrap().current_raw(),
+            ids.wrapping_add(1)
+        );
     }
 
     /// `FUN_00684C30 @ 0x0068504D..0x006850F3`: one `RandomRanged(0, N-1)`
@@ -673,6 +868,7 @@ mod tests {
             overlay_registry: &overlays,
             house_roster: &roster,
             skirmish_session: Some(&descriptor),
+            campaign_new_game_map: None,
         });
 
         assert_eq!(
@@ -770,6 +966,7 @@ mod tests {
             overlay_registry: &overlays,
             house_roster: &HouseRoster::default(),
             skirmish_session: None,
+            campaign_new_game_map: None,
         });
 
         let native = sim.production.ore_growth_state.native_tiberium_state();
@@ -847,6 +1044,7 @@ mod tests {
             overlay_registry: &overlays,
             house_roster: &HouseRoster::default(),
             skirmish_session: Some(&descriptor),
+            campaign_new_game_map: None,
         });
 
         assert_eq!(
@@ -906,7 +1104,7 @@ mod tests {
                     side: None,
                     player_control: Some(false),
                     iq: 0,
-                    allies: vec!["HouseB".to_string()],
+                    allies: 1 << 1,
                     base_plan: Default::default(),
                 },
                 HouseDefinition {
@@ -916,7 +1114,7 @@ mod tests {
                     side: None,
                     player_control: Some(true),
                     iq: 0,
-                    allies: Vec::new(),
+                    allies: 0,
                     base_plan: Default::default(),
                 },
             ],
@@ -942,6 +1140,7 @@ mod tests {
             overlay_registry: &overlays,
             house_roster: &roster,
             skirmish_session: None,
+            campaign_new_game_map: None,
         });
 
         assert!(output.navigation_published);
@@ -964,7 +1163,7 @@ mod tests {
         assert!(
             sim.house_alliances
                 .get("HOUSEB")
-                .is_some_and(|allies| allies.contains("HOUSEA"))
+                .is_some_and(|allies| !allies.contains("HOUSEA"))
         );
     }
 }

@@ -26,7 +26,7 @@
 //! (overlay grid, bridge topology). Does NOT depend on render/ui/
 //! audio/net.
 
-use crate::map::houses::{HouseAllianceMap, are_houses_friendly};
+use crate::map::houses::{HouseAllianceMap, is_allied_with};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -258,9 +258,11 @@ fn cell_blocks_line_of_fire(
     }
     // 0x004CC458 — `[WallModel] AlliedWallTransparency`. When it is on, a
     // wall belonging to a house allied with the firer does not block.
+    // 4CC470 installs the wall-owner House;4CC477 pushes the firing House
+    // to4F9A50. Only the wall owner's current mask grants transparency.
     if allied_wall_transparency {
         if let (Some(owner), Some(alliances)) = (step.wall_owner, los.alliances) {
-            if are_houses_friendly(alliances, firing_house, interner.resolve(owner)) {
+            if is_allied_with(alliances, interner.resolve(owner), firing_house) {
                 return None;
             }
         }
@@ -799,19 +801,20 @@ mod tests {
     /// 0x004CC458 — with `[WallModel] AlliedWallTransparency=yes` an allied
     /// wall stops blocking; with the stock `no` it still blocks.
     #[test]
-    fn allied_wall_transparency_gates_the_owner_exemption() {
+    fn campaign_directed_allies_keep_wall_owner_transparency_direction() {
         use std::collections::{BTreeMap, BTreeSet};
 
         let terrain = flat_terrain();
-        let mut alliances: HouseAllianceMap = BTreeMap::new();
-        // `normalize_house_name` upper-cases both sides, so the fixture map
-        // has to be keyed the same way.
-        alliances.insert(
-            "AMERICANS".to_string(),
-            BTreeSet::from(["FRENCH".to_string()]),
-        );
-
-        for (transparency, expect) in [("yes", None), ("no", Some((4u16, 2u16)))] {
+        // Original4CC470 uses the wall owner's House receiver;4CC477 pushes
+        // the firing House to IsAlliedWith4F9A50. Reverse-only friendship
+        // cannot waive the wall, even though the map admits one-way allies.
+        for (transparency, asker, other, expect) in [
+            ("yes", "FRENCH", "AMERICANS", None),
+            ("yes", "AMERICANS", "FRENCH", Some((4u16, 2u16))),
+            ("no", "FRENCH", "AMERICANS", Some((4u16, 2u16))),
+        ] {
+            let mut alliances: HouseAllianceMap = BTreeMap::new();
+            alliances.insert(asker.to_owned(), BTreeSet::from([other.to_owned()]));
             let extra = format!(
                 "[SHELL]\nSubjectToWalls=yes\n\n[WallModel]\nAlliedWallTransparency={transparency}\n"
             );
@@ -839,7 +842,7 @@ mod tests {
                     &los,
                 ),
                 expect,
-                "AlliedWallTransparency={transparency}"
+                "AlliedWallTransparency={transparency}, {asker}->{other}"
             );
         }
     }

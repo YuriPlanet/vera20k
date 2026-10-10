@@ -32,17 +32,14 @@
 //!
 //! RESIDUALS:
 //! - A campaign (`GameMode == 0`) gates an AI trigger on the scenario's
-//!   difficulty (`Scenario+0x60C`), which VERA does not keep, and admits a
+//!   difficulty (`Scenario+0x60C`), now retained by ScenarioSession, and admits a
 //!   TaskForce type without a factory when the house owns one it can recruit
 //!   (`0x00509610`'s scan of `0x008B3DC4` with `0x006F1E20`). VERA skips the
-//!   difficulty gate and refuses such a trigger. Trigger: campaigns, which
-//!   VERA does not launch.
-//! - `RatioAITriggerTeam=` (`+0x565C`) keeps its constructor 100: a map
-//!   house's `HouseClass::Read_Scenario_INI` read (`0x00500D0D..0x00500D25`,
-//!   campaigns) and the trigger actions that write it (`0x006DF364`,
-//!   `0x006E330E`) are not ported. The same Read_Scenario_INI seeds a map
-//!   house's team timer (`0x005010F1..0x00501138`); VERA's map-roster houses
-//!   keep the constructor's.
+//!   difficulty gate and refuses such a trigger. Trigger: campaign AI trigger
+//!   selection after startup; effects include missing recruitment and a
+//!   different eligible/weighted trigger set. Required live chain: issue1308.
+//! - The trigger actions that write RatioAITriggerTeam (`0x006DF364`,
+//!   `0x006E330E`) are not ported; the map reader now initializes this owner.
 //! - Conditions 5 and 6 compare a super weapon's charge against its type's
 //!   `RechargeTime=` ([`super_nearly_ready`]'s residual).
 
@@ -78,8 +75,7 @@ pub struct HouseTeamCreation {
     /// `HouseState::set_difficulty` restarts it.
     timer: CdTimer,
     /// `HouseClass+0x565C`, the percent chance a pass picks an AI trigger:
-    /// constructor 100 (`0x004F5BDD`); a map house's `RatioAITriggerTeam=` is
-    /// a module residual.
+    /// constructor 100 (`0x004F5BDD`), followed by the map's exact-key read.
     ratio: i32,
 }
 
@@ -93,6 +89,12 @@ impl Default for HouseTeamCreation {
 }
 
 impl HouseTeamCreation {
+    /// House ReadScenarioINI500D0D..500D25 uses the existing ratio as default;
+    /// its temporary team timer is then overwritten by outer SetDifficulty.
+    pub(crate) fn read_scenario_ratio(&mut self, section: &crate::rules::ini_parser::IniSection) {
+        self.ratio = section.read_int("RatioAITriggerTeam", self.ratio);
+    }
+
     /// Restart the team timer at `frame` for `delay` frames.
     pub(crate) fn restart(&mut self, frame: i32, delay: i32) {
         self.timer.start(frame, delay);
@@ -113,9 +115,12 @@ impl HouseTeamCreation {
         }
     }
 
-    #[cfg(test)]
     pub(crate) const fn timer(&self) -> CdTimer {
         self.timer
+    }
+
+    pub(crate) const fn ratio(&self) -> i32 {
+        self.ratio
     }
 }
 

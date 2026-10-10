@@ -4663,7 +4663,7 @@ mod base_plan_lifecycle_tests {
         let roster =
             crate::map::houses::parse_house_roster(&scenario, &rules.color_schemes, Some(&rules));
         let mut sim = Simulation::new();
-        initialize_map_roster_houses(&mut sim, &roster, Some(&rules));
+        initialize_map_roster_houses(&mut sim, &roster, Some(&rules), None);
         let ai = sim.interner.get("Computer1").unwrap();
         assert_eq!(sim.houses[&ai].base_plan.percent_built, 44);
         assert!(!sim.houses[&ai].base_plan.nodes[0].filled);
@@ -4711,7 +4711,7 @@ mod base_plan_lifecycle_tests {
         let roster =
             crate::map::houses::parse_house_roster(&scenario, &rules.color_schemes, Some(&rules));
         let mut sim = Simulation::new();
-        initialize_map_roster_houses(&mut sim, &roster, Some(&rules));
+        initialize_map_roster_houses(&mut sim, &roster, Some(&rules), None);
         let owner = sim.interner.get("Computer1").unwrap();
 
         let building = sim

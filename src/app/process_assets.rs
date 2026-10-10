@@ -33,6 +33,9 @@ pub(crate) struct ProcessAssets {
     /// manager it never leaves this owner: scenario transitions mutate it
     /// synchronously in place, so later failures cannot drop or roll it back.
     native_rules: Option<crate::rules::process_owner::NativeRulesProcessOwner>,
+    /// CampaignClass's retained array. Init_Game52C605 creates it before
+    /// Load_Game_Rules selects Movies; ClearScene685609 rereads its sources.
+    campaigns: Option<crate::rules::campaigns::CampaignRegistry>,
     /// MapClass's one process-global fallback CellClass (`0x00ABDC50`). Map
     /// reloads bind their resolved grid to this same live identity.
     pub(crate) shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
@@ -75,6 +78,7 @@ impl ProcessAssets {
             load_audio_index,
             audio_catalog: None,
             native_rules: None,
+            campaigns: None,
             shared_cell_dummy: Default::default(),
             csf: None,
             tile_variant_selector_cache: Default::default(),
@@ -97,6 +101,9 @@ impl ProcessAssets {
         ),
         String,
     > {
+        if self.campaigns.is_none() {
+            self.reload_campaigns(assets);
+        }
         if self.audio_catalog.is_none() {
             let index = if self.load_audio_index {
                 assets
@@ -135,6 +142,62 @@ impl ProcessAssets {
 
     pub(crate) fn audio_catalog(&self) -> Option<&ProcessAudioCatalog> {
         self.audio_catalog.as_ref()
+    }
+
+    /// Init_Game52C605/ClearScene685609 use fresh local INI objects while keeping the
+    /// campaign array. This selected retail route reads BATTLEMD.INI through
+    /// the same archive/loose-file resolver as the other process sources.
+    pub(crate) fn reload_campaigns(&mut self, assets: &AssetManager) {
+        self.apply_campaign_source(crate::rules::retail_sources::select_ini(
+            assets,
+            "BATTLEMD.INI",
+        ));
+    }
+
+    /// PrepareSession52DF25 retries Load_Campaigns when the retained array is empty.
+    pub(crate) fn refresh_empty_campaigns_if_available(&mut self) {
+        if self
+            .campaigns
+            .as_ref()
+            .is_some_and(|campaigns| !campaigns.is_empty())
+        {
+            return;
+        }
+        let selected = self
+            .manager
+            .as_ref()
+            .map(|assets| crate::rules::retail_sources::select_ini(assets, "BATTLEMD.INI"));
+        if let Some(selected) = selected {
+            self.apply_campaign_source(selected);
+        }
+    }
+
+    fn apply_campaign_source(
+        &mut self,
+        selected: Result<crate::rules::retail_sources::SelectedIni, String>,
+    ) {
+        let registry = self.campaigns.get_or_insert_with(Default::default);
+        let selected = match selected {
+            Ok(selected) => selected,
+            Err(error) => {
+                log::warn!("Campaign catalog unavailable: {error}");
+                return;
+            }
+        };
+        let empty_movies = crate::rules::movies::MovieRegistry::default();
+        let movies = self
+            .native_rules
+            .as_ref()
+            .map_or(&empty_movies, |owner| owner.movies());
+        registry.apply_ini(&selected.ini, movies, self.csf.as_ref());
+        log::info!(
+            "Campaign catalog read: {}",
+            serde_json::json!(selected.source)
+        );
+    }
+
+    pub(crate) fn campaigns(&self) -> Option<&crate::rules::campaigns::CampaignRegistry> {
+        self.campaigns.as_ref()
     }
 
     pub(crate) fn media_archive_mode(&self) -> MediaArchiveMode {
@@ -329,7 +392,10 @@ mod tests {
                 .native_rules
                 .as_mut()
                 .unwrap()
-                .load_noncampaign_scenario(None, &IniFile::empty())
+                .load_scenario(
+                    crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                    &IniFile::empty(),
+                )
                 .unwrap();
             owner.initialize_sources_if_needed(&manager).unwrap();
             assert!(std::sync::Arc::ptr_eq(

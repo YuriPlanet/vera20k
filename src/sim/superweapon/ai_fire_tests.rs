@@ -303,7 +303,7 @@ fn the_try_fire_arms_match_native() {
         let mut ids = Vec::new();
         for (index, kind) in kinds.iter().enumerate() {
             let id = sim.interner.intern(&format!("SW{index}"));
-            let mut instance = SuperWeaponInstance::new(id, computer);
+            let mut instance = SuperWeaponInstance::new(id, computer, 0);
             instance.is_ready = flag(&kind[1]);
             sim.super_weapons
                 .entry(computer)
@@ -768,7 +768,7 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
             .unwrap_or_else(|| panic!("{kind} stands"));
     }
     let sw_type = sim.interner.intern("NukeSpecial");
-    let mut instance = SuperWeaponInstance::new(sw_type, americans);
+    let mut instance = SuperWeaponInstance::new(sw_type, americans, 0);
     instance.activate(9000, sim.session.binary_frame);
     instance.is_ready = true;
     sim.super_weapons

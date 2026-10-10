@@ -334,7 +334,7 @@ fn auto_repair_start(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     if !(entity.has_been_captured || entity.ai_repairable || controlled) {
         return;
     }
-    let delay = house.repair_delay;
+    let delay = house.repair_delay();
     sim.houses
         .get_mut(&owner)
         .expect("the owner was just read")

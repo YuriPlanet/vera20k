@@ -25,8 +25,10 @@ fn building_repaired_sound_uses_the_fixed_catalog_and_retains_prior_ids() {
     )
     .unwrap();
     let (rules, _, _, _) = owner
-        .load_noncampaign_scenario(
-            Some(&ini("[AudioVisual]\nBuildingRepairedSound= rEpAiR \n")),
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&ini(
+                "[AudioVisual]\nBuildingRepairedSound= rEpAiR \n",
+            ))),
             &ini("[AudioVisual]\nBuildingRepairedSound=\nbuildingrepairedsound=Wrong\n"),
         )
         .unwrap()
@@ -45,7 +47,10 @@ fn building_repaired_sound_uses_the_fixed_catalog_and_retains_prior_ids() {
     )
     .unwrap();
     let (rules, _, _, _) = invalid
-        .load_noncampaign_scenario(None, &ini(""))
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+            &ini(""),
+        )
         .unwrap()
         .into_parts();
     assert!(rules.general.building_repaired_sound.is_none());
@@ -72,8 +77,8 @@ fn construction_sound_references_follow_native_sections_and_retention() {
         sounds,
     )
     .unwrap();
-    let (rules, _, _, _) = owner.load_noncampaign_scenario(
-        Some(&ini("[POWER]\nBuildupSound= bUiLd \n")),
+    let (rules, _, _, _) = owner.load_scenario(crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+        Some(&ini("[POWER]\nBuildupSound= bUiLd \n"))),
         &ini("[POWER]\nBuildupSound=\nbuildupsound=Wrong\n[AudioVisual]\nConstruction=\nconstruction=Wrong\n"),
     ).unwrap().into_parts();
     assert_eq!(rules.general.construction_sound.as_deref(), Some("Dummy"));
@@ -107,7 +112,10 @@ fn sinking_sound_references_keep_valid_prior_ids_and_exact_reader_scope() {
     .unwrap();
     assert!(Arc::ptr_eq(&sounds, owner.fixed_sounds()));
     let (rules, _, _, _) = owner
-        .load_noncampaign_scenario(Some(&mode), &map)
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode)),
+            &map,
+        )
         .unwrap()
         .into_parts();
     let ship = rules.object("SHIP").unwrap();
@@ -123,7 +131,10 @@ fn sinking_sound_references_keep_valid_prior_ids_and_exact_reader_scope() {
     )
     .unwrap();
     let (rules, _, _, _) = empty_catalog
-        .load_noncampaign_scenario(None, &ini(""))
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+            &ini(""),
+        )
         .unwrap()
         .into_parts();
     assert!(rules.object("SHIP").unwrap().sinking_sound.is_none());
@@ -171,7 +182,10 @@ fn infantry_water_sounds_use_fixed_catalog_and_retain_valid_ids_across_passes() 
         NativeRulesProcessOwner::from_cold_start_sources(root.clone(), Some(lang), ini(""), sounds)
             .unwrap();
     let (rules, _, _, _) = owner
-        .load_noncampaign_scenario(Some(&mode), &map)
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode)),
+            &map,
+        )
         .unwrap()
         .into_parts();
     let ghost = rules.object("GHOST").unwrap();
@@ -182,7 +196,10 @@ fn infantry_water_sounds_use_fixed_catalog_and_retain_valid_ids_across_passes() 
         NativeRulesProcessOwner::from_cold_start_sources(root, None, ini(""), Arc::default())
             .unwrap();
     let (rules, _, _, _) = empty
-        .load_noncampaign_scenario(None, &ini(""))
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+            &ini(""),
+        )
         .unwrap()
         .into_parts();
     assert!(rules.object("GHOST").unwrap().enter_water_sound.is_none());

@@ -3,6 +3,112 @@
 use super::*;
 
 #[test]
+fn campaign_difficulty_process_layers_match_original_nine_scalar_outputs() {
+    use crate::rules::ruleset::{DifficultyRules, RuleSet};
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/house_difficulty_readers.json",
+    ))
+    .unwrap();
+    assert_eq!(
+        native["native_sha256"],
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
+    );
+    let Some(root_bytes) = crate::rules::retail_ini_fixture::retail_ini_bytes("rulesmd.ini") else {
+        return;
+    };
+    let Some(art_bytes) = crate::rules::retail_ini_fixture::retail_ini_bytes("artmd.ini") else {
+        return;
+    };
+    assert_eq!(
+        crate::util::sha256::sha256_hex(&root_bytes),
+        native["rulesmd_sha256"]
+    );
+    let art = IniFile::from_bytes(&art_bytes).unwrap();
+    let rows = native["layers"].as_array().unwrap();
+    assert_eq!(rows.len(), 8);
+    fn recorded_row(row: &serde_json::Value) -> DifficultyRules {
+        let bits = |key: &str| {
+            f64::from_bits(u64::from_str_radix(row["biases"][key].as_str().unwrap(), 16).unwrap())
+        };
+        DifficultyRules {
+            firepower: bits("firepower"),
+            ground_speed: bits("groundspeed"),
+            air_speed: bits("airspeed"),
+            armor: bits("armor"),
+            rof: bits("rof"),
+            cost: bits("cost"),
+            build_time: bits("build_time"),
+            repair_delay: bits("repair_delay"),
+            build_delay: bits("build_delay"),
+        }
+    }
+    fn row_bits(row: DifficultyRules) -> [u64; 9] {
+        [
+            row.firepower,
+            row.ground_speed,
+            row.air_speed,
+            row.armor,
+            row.rof,
+            row.cost,
+            row.build_time,
+            row.repair_delay,
+            row.build_delay,
+        ]
+        .map(f64::to_bits)
+    }
+    let names = ["Easy", "Normal", "Difficult"];
+    // The native reader fixture starts with explicit current fields. Seed
+    // those observed inputs on the sole Process owner, then retain its state
+    // through the same eight layers; do not synthesize decimal INI defaults.
+    let mut registry = NativeRulesRegistryState {
+        rules_difficulty_rows: names.map(|name| recorded_row(&rows[0]["before"][name])),
+        ..NativeRulesRegistryState::default()
+    };
+    for row in rows {
+        assert_eq!(
+            registry.rules_difficulty_rows.map(row_bits),
+            names.map(|name| row_bits(recorded_row(&row["before"][name]))),
+            "{}: retained input",
+            row["name"]
+        );
+        let pass = if row["name"] == "physical_rules" {
+            IniFile::from_bytes(&root_bytes).unwrap()
+        } else {
+            IniFile::from_sections_for_test(row["sections"].as_object().unwrap().iter().map(
+                |(name, entries)| {
+                    let mut section = IniSection::new(name.clone());
+                    for (key, value) in entries.as_object().unwrap() {
+                        section.set(key, value.as_str().unwrap());
+                    }
+                    section
+                },
+            ))
+        };
+        let processed = RulesLayerStack::new(pass)
+            .process_with_fixed_art_and_registry_state(&art, registry)
+            .unwrap();
+        let expected = names.map(|name| row_bits(recorded_row(&row["after"][name])));
+        assert_eq!(
+            processed.difficulty_rows().map(row_bits),
+            expected,
+            "{}: live Process fields",
+            row["name"]
+        );
+        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        assert_eq!(
+            rules.general.difficulty_rows.map(row_bits),
+            expected,
+            "{}: production projection",
+            row["name"]
+        );
+        registry = processed
+            .into_ini_and_native_type_construction_trace()
+            .1
+            .into_registry_state_discarding_events();
+    }
+}
+
+#[test]
 fn building_foundation_pass_matches_original_art_reads() {
     let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/engineer_bridge_cursor_caller.json",

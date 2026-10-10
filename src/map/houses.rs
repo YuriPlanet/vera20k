@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use crate::rules::color_scheme::{ColorSchemeEntry, scheme_entry_by_name};
+use crate::rules::color_scheme::ColorSchemeEntry;
 use crate::rules::house_colors::{DEFAULT_SCHEME_ENTRY, HouseColorIndex};
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::ini_value::{crt_atoi, strtok};
@@ -59,13 +59,44 @@ pub struct HouseDefinition {
     pub player_control: Option<bool>,
     /// Scenario-authored `IQ=` read into HouseClass CurrentIQ (ReadInt over 0).
     pub iq: i32,
-    /// Allies listed in the house section.
-    pub allies: Vec<String>,
+    /// ReadHousesList475260 result, resolved against the complete exact-name
+    /// roster. Unknown tokens set bit31; the graph projection admits only
+    /// present, non-self House indices.
+    pub allies: u32,
     /// Scenario-authored BasePlan in numeric node order.
     pub base_plan: ScenarioBasePlanDefinition,
 }
 
+/// Dynamic fields of House ReadScenarioINI500B40. Roster identity, PlayerControl,
+/// IQ, Color, alliances and BasePlan are already read by parse_house_roster;
+/// the mission-counter default must be supplied by the admitted Scenario.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ScenarioHouseParameters {
+    pub tech_level: i32,
+    pub credits: i32,
+    pub edge: i32,
+    pub ratio_team_aircraft: i32,
+    pub ratio_team_infantry: i32,
+    pub ratio_team_units: i32,
+}
+
 impl HouseDefinition {
+    pub(crate) fn read_scenario_parameters(
+        &self,
+        ini: &IniFile,
+        mission_counter: i32,
+    ) -> ScenarioHouseParameters {
+        let section = ini.section(&self.name).unwrap_or(IniSection::empty());
+        ScenarioHouseParameters {
+            tech_level: section.read_int("TechLevel", mission_counter),
+            credits: section.read_int("Credits", 0),
+            edge: section.read_edge("Edge", -1),
+            ratio_team_aircraft: section.read_int("RatioTeamAircraft", 75),
+            ratio_team_infantry: section.read_int("RatioTeamInfantry", 75),
+            ratio_team_units: section.read_int("RatioTeamUnits", 75),
+        }
+    }
+
     /// Resolve the named scenario-house `IQ=` exactly as
     /// `HouseClass::Read_Scenario_INI @ 0x00500B40` does.
     pub const fn scenario_current_iq(&self, max_iq_levels: i32) -> i32 {
@@ -89,20 +120,30 @@ impl HouseRoster {
             .collect()
     }
 
-    /// Convert roster entries to a symmetric alliance graph.
+    /// Original House::FromName50C170 uses byte-exact names in array order.
+    pub(crate) fn find_house_index(&self, name: &str) -> Option<usize> {
+        self.houses.iter().position(|house| house.name == name)
+    }
+
+    /// Project the authored directed graph. Full scenario admission and its
+    /// initialization context belong to the simulation diplomacy owner.
     pub fn alliance_map(&self) -> HouseAllianceMap {
         let mut map: HouseAllianceMap = BTreeMap::new();
         for house in &self.houses {
             map.entry(normalize_house_name(&house.name)).or_default();
         }
-        for house in &self.houses {
+        for (source_index, house) in self.houses.iter().enumerate() {
             let source = normalize_house_name(&house.name);
-            for ally in &house.allies {
-                let target = normalize_house_name(ally);
-                map.entry(source.clone())
-                    .or_default()
-                    .insert(target.clone());
-                map.entry(target).or_default().insert(source.clone());
+            for (target_index, ally) in self.houses.iter().enumerate() {
+                // ReadScenarioINI5010DD visits parsed mask bits in House
+                // array order. CanAlly501575 rejects self/already-allied.
+                if source_index == target_index
+                    || house.allies & 1u32.wrapping_shl(target_index as u32) == 0
+                {
+                    continue;
+                }
+                let target = normalize_house_name(&ally.name);
+                map.entry(source.clone()).or_default().insert(target);
             }
         }
         map
@@ -166,8 +207,9 @@ pub fn parse_house_colors(ini: &IniFile, schemes: &[ColorSchemeEntry]) -> HouseC
 /// Parse the ordered active-house roster from a map's INI data.
 ///
 /// `schemes` is the parsed `[Colors]` list; a house's `Color=<name>` resolves to
-/// that entry's index (case-insensitive). Houses with no/unknown color fall back
-/// to [`DEFAULT_SCHEME_ENTRY`].
+/// that entry's index (case-insensitive). The Rules identity owner supplies the
+/// Country-derived constructor color; missing/unknown map colors retain it.
+/// Callers without Rules use the existing presentation default.
 pub fn parse_house_roster(
     ini: &IniFile,
     schemes: &[ColorSchemeEntry],
@@ -195,24 +237,32 @@ pub fn parse_house_roster(
         // section; `Country` is the 0x80-byte index read at `0x00500A05`.
         let section = ini.section(&house_name);
         let fields = section.unwrap_or(IniSection::empty());
-        let color = fields
-            .read_name("Color", 0x20)
-            .and_then(|name| scheme_entry_by_name(schemes, name))
-            .map(|entry| HouseColorIndex(entry as u8))
-            .unwrap_or(HouseColorIndex(DEFAULT_SCHEME_ENTRY as u8));
         let country = fields.read_name("Country", 0x80).map(str::to_string);
+        let current_color = rules.map_or((DEFAULT_SCHEME_ENTRY * 2 + 1) as i32, |rules| {
+            rules
+                .scenario_country_name(country.as_deref())
+                .map_or(0, |name| rules.country_color_scheme(name))
+        });
+        let native_color = fields.read_color_scheme(
+            "Color",
+            current_color,
+            schemes.iter().map(|scheme| scheme.name.as_str()),
+        );
+        // House500DF7 uses fallback5 only for a negative index or null
+        // scheme. Both shade1/53 members otherwise project to the same
+        // logical palette entry; native0 is a valid shade1 scheme.
+        let color = usize::try_from(native_color)
+            .ok()
+            .map(|index| index / 2)
+            .filter(|&entry| entry < schemes.len())
+            .map_or(HouseColorIndex(DEFAULT_SCHEME_ENTRY as u8), |entry| {
+                HouseColorIndex(entry as u8)
+            });
         // No native read: Rust keeps `Side` as the side fallback for a country
         // it cannot resolve.
         let side = fields.read_name("Side", 0x80).map(str::to_string);
         let player_control = fields.read_bool_value("PlayerControl");
         let iq = fields.read_int("IQ", 0);
-        // `0x00475260`: the house list read, tokens resolved as written.
-        let allies = fields
-            .read_list("Allies", 0x80)
-            .unwrap_or_default()
-            .into_iter()
-            .map(str::to_string)
-            .collect();
         let base_plan = parse_scenario_base_plan(section, rules);
 
         houses.push(HouseDefinition {
@@ -222,13 +272,27 @@ pub fn parse_house_roster(
             side,
             player_control,
             iq,
-            allies,
+            allies: 0,
             base_plan,
         });
     }
 
-    log::info!("HouseRoster: {} entries parsed from map", houses.len());
-    HouseRoster { houses }
+    let mut roster = HouseRoster { houses };
+    // House Read_INI5009B0 constructs the whole array before any per-House
+    // ReadScenarioINI. Resolve 475260 against that same complete identity
+    // table, through its sole typed reader. The original caller passes literal
+    // zero (XOR EDI501089; PUSH EDI5010A3), independent of both stored masks.
+    for index in 0..roster.houses.len() {
+        let allies = ini
+            .section_or_empty(&roster.houses[index].name)
+            .read_houses_list("Allies", 0, |name| roster.find_house_index(name));
+        roster.houses[index].allies = allies;
+    }
+    log::info!(
+        "HouseRoster: {} entries parsed from map",
+        roster.houses.len()
+    );
+    roster
 }
 
 /// Parse the ordered scenario BasePlan through native
@@ -344,25 +408,27 @@ mod tests {
         assert_eq!(roster.houses[0].country.as_deref(), Some("America"));
         assert_eq!(roster.houses[0].player_control, Some(true));
         assert_eq!(roster.houses[0].iq, 0);
-        assert_eq!(
-            roster.houses[1].allies,
-            vec!["Confederation".to_string(), "YuriCountry".to_string()]
-        );
+        assert_eq!(roster.houses[1].allies, 1 << 31);
         let alliances = roster.alliance_map();
-        assert!(are_houses_friendly(&alliances, "Russians", "Confederation"));
-        assert!(are_houses_friendly(&alliances, "YuriCountry", "Russians"));
+        assert!(!are_houses_friendly(
+            &alliances,
+            "Russians",
+            "Confederation"
+        ));
+        assert!(!are_houses_friendly(&alliances, "YuriCountry", "Russians"));
         assert!(!are_houses_friendly(&alliances, "Americans", "Russians"));
     }
 
     #[test]
     fn test_alliance_direction_is_asymmetric() {
-        // Built by hand rather than via `alliance_map()`, which symmetrizes.
-        let mut alliances = HouseAllianceMap::new();
-        alliances
-            .entry("AMERICANS".to_string())
-            .or_default()
-            .insert("RUSSIANS".to_string());
-        alliances.entry("RUSSIANS".to_string()).or_default();
+        let roster = parse_house_roster(
+            &IniFile::from_str(
+                "[Houses]\n0=Americans\n1=Russians\n[Americans]\nAllies=Russians\n[Russians]\n",
+            ),
+            &[],
+            None,
+        );
+        let mut alliances = roster.alliance_map();
 
         assert!(is_allied_with(&alliances, "Americans", "Russians"));
         assert!(!is_allied_with(&alliances, "Russians", "Americans"));
@@ -403,6 +469,48 @@ mod tests {
             IniFile::from_str("[Houses]\n0=Neutral\n[Neutral]\nColor=PinkPolkaDot\n");
         let map = parse_house_colors(&ini, &test_schemes());
         assert_eq!(map["Neutral"], HouseColorIndex(DEFAULT_SCHEME_ENTRY as u8));
+    }
+
+    #[test]
+    fn scenario_house_color_inherits_country_and_retains_unknown_names() {
+        // The executed original American controls have no map Color and
+        // retain Country Gold: native paired index3, logical palette1.
+        // Unknown/empty retention and CI authored lookup follow the same
+        // ReadColor474A90 body; no independent campaign parser is involved.
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/input_oracle/campaign_start_houses.json",
+        ))
+        .unwrap();
+        let control = native["controls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["name"] == "negative_easy")
+            .unwrap();
+        let expected = HouseColorIndex(
+            (control["final_houses"][0]["initial_color_index"]
+                .as_u64()
+                .unwrap()
+                / 2) as u8,
+        );
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Colors]\nLightGold=25,255,255\nGold=43,239,255\n\
+             [Countries]\n0=Americans\n[Americans]\nColor=Gold\n",
+        ))
+        .unwrap();
+        for color in [None, Some(""), Some("UnknownName"), Some("gOlD")] {
+            let mut section = IniSection::new("ControlHouse".to_string());
+            // A missing Country selects the shared entry0 identity; the
+            // House's name cannot supply another constructor color.
+            if let Some(color) = color {
+                section.set("Color", color);
+            }
+            let mut houses = IniSection::new("Houses".to_string());
+            houses.set("0", "ControlHouse");
+            let map = IniFile::from_sections_for_test([houses, section]);
+            let roster = parse_house_roster(&map, &rules.color_schemes, Some(&rules));
+            assert_eq!(roster.houses[0].color, expected, "map Color={color:?}");
+        }
     }
 
     #[test]

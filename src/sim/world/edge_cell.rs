@@ -27,6 +27,16 @@ impl Edge {
         Self::from_index(waypoint_edge).unwrap_or(Edge::North)
     }
 
+    /// Shared authored-edge choice in Retreat415A50, SendParadrop65E6C5
+    /// and SendSpyPlanes65EB17. Their 0..3 override falls back to the sole
+    /// GetEdge50DA80 owner above; it does not overwrite the waypoint field.
+    pub(crate) fn authored_or_waypoint(authored: i32, waypoint_edge: u8) -> Self {
+        u8::try_from(authored)
+            .ok()
+            .and_then(Self::from_index)
+            .unwrap_or_else(|| Self::own_edge(waypoint_edge))
+    }
+
     /// `HouseClass @ 0x0050DAC0`: the edge across from `+0x577C`, through
     /// its jump table `0x0050DAE8` (North to South, East to West and back);
     /// a value past 3 is North (`0x0050DAE4`).

@@ -9,6 +9,7 @@ use crate::rules::crate_rules::{CrateRules, CrateRulesAccumulator};
 use crate::rules::error::RulesError;
 use crate::rules::gunner_turrets::GunnerTurrets;
 use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
+
 use crate::rules::missile_spawn::MissileSpawnRules;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::powerups::{PowerupTable, PowerupsAccumulator};
@@ -17,6 +18,36 @@ use crate::rules::projectile_type::ProjectileArtState;
 use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+
+/// AbstractType constructor410800's stored byte ID. The INI store represents
+/// native bytes as characters, so this cut is shared by Type and Campaign
+/// registries without UTF-8 byte-boundary differences.
+pub(crate) fn abstract_type_stored_id(incoming: &str) -> String {
+    incoming.chars().take(0x18).collect()
+}
+
+/// HouseTypeClass::FindIndexOfName5117D0: the literal `<random>` returns-2;
+/// otherwise each current Country's Name+64 is compared before its ID+24.
+/// Both comparisons are case-insensitive, and an unknown token returns-1.
+/// Side4767C0 and the gameplay identity projections share this one scan.
+/// Executed controls: tools/input_oracle/campaign_start.py --houses,
+/// campaign_start_houses.json side_controls and its meta sidecar.
+pub(crate) fn house_type_index_of_name<'a>(
+    incoming: &str,
+    countries: impl Iterator<Item = (&'a str, Option<&'a str>)>,
+) -> i32 {
+    if incoming.eq_ignore_ascii_case("<random>") {
+        return -2;
+    }
+    countries
+        .enumerate()
+        .find_map(|(index, (id, alias))| {
+            (alias.is_some_and(|alias| alias.eq_ignore_ascii_case(incoming))
+                || id.eq_ignore_ascii_case(incoming))
+            .then(|| i32::try_from(index).expect("native Country index exceeds i32"))
+        })
+        .unwrap_or(-1)
+}
 
 /// One native `RulesClass::Process` source in its runtime position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -261,6 +292,29 @@ pub(crate) fn process_native_noncampaign_rules_prepass(
     process_native_noncampaign_rules_prepass_inner(registry_state, selected_rules_root).0
 }
 
+/// Campaign Full_Init686D35 processes the optional scenario-basename INI
+/// against the retained registry, then destroys Types. It skips Countries,
+/// General and HouseType multiplayer prepass reads. The same Process body
+/// handles every key; an absent named source performs no pass.
+pub(crate) fn process_native_campaign_rules_prepass(
+    registry_state: NativeRulesRegistryState,
+    scenario_named_ini: Option<&IniFile>,
+    fixed_art: &IniFile,
+) -> Result<NativeTypeConstructionTrace, NativeRulesProcessingFailure> {
+    let mut processor = RulesPassProcessor::with_registry_state(registry_state);
+    if let Some(ini) = scenario_named_ini
+        && let Err(error) = processor.apply_pass(ini, fixed_art)
+    {
+        let (_, partial_trace, _, _, _, _) = processor.finish();
+        return Err(NativeRulesProcessingFailure {
+            error,
+            partial_trace,
+        });
+    }
+    let (_, trace, _, _, _, _) = processor.finish();
+    Ok(trace)
+}
+
 /// Shared production/test implementation. Counts are cumulative `E_multi`
 /// boundaries after Countries, General, and the live HouseType body loop.
 fn process_native_noncampaign_rules_prepass_inner(
@@ -501,6 +555,59 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_detail
+    }
+
+    /// Final Difficulty readers after the ordered Process passes. Keeping the
+    /// typed rows preserves literal f64 defaults separately from ReadDouble's
+    /// widened f32 authored values (ReadDifficulty @ 0x0066D270).
+    pub(crate) fn difficulty_rows(&self) -> &[crate::rules::ruleset::DifficultyRules; 3] {
+        &self
+            .native_type_construction_trace
+            .registry_state()
+            .rules_difficulty_rows
+    }
+
+    /// Country+C0 after each reached HouseType ReadINI51193D. The typed
+    /// value preserves catalog availability at the actual read, unlike final
+    /// projected Color strings resolved against later additions.
+    #[cfg(test)]
+    pub(crate) fn country_color_scheme(&self, country: &str) -> Option<i32> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Country)?
+            .iter()
+            .find(|member| member.native_stored_id.eq_ignore_ascii_case(country))
+            .map(|member| member.country_color_scheme)
+    }
+
+    /// Ordered live Country identities, Color+C0 and Side+BC. Side672440
+    /// writes BC before HouseType511850 can override it in ReadTypeData.
+    /// A constructor-only Country retains BC=-1, not an invented side.
+    pub(crate) fn country_registry_states(&self) -> impl Iterator<Item = (&str, i32, i32)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Country)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    member.country_color_scheme,
+                    member.country_side_index,
+                )
+            })
+    }
+
+    pub(crate) fn side_registry_names(&self) -> impl Iterator<Item = &str> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Side)
+            .into_iter()
+            .flatten()
+            .map(|member| member.native_stored_id.as_str())
     }
 
     pub(crate) fn prism_support(&self) -> PrismSupportRules {
@@ -764,7 +871,12 @@ impl NativeTypeConstructionTrace {
 pub(crate) struct NativeRulesRegistryState {
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
     tiberiums: Vec<ProcessedType>,
+    /// The existing Colors66D3A0 find-or-create catalog survives ordinary
+    /// Process handoffs. Reset6686E6..668711 deletes and clears it alongside
+    /// the Type registries, so destructive_reset leaves this field empty.
+    colors: Vec<(String, String)>,
     rules_detail: DetailRules,
+    rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
     rules_gravity: i32,
     rules_missile_rot_var: f64,
     rules_safety_altitude: i32,
@@ -784,7 +896,9 @@ impl Default for NativeRulesRegistryState {
         Self {
             families: HashMap::new(),
             tiberiums: Vec::new(),
+            colors: Vec::new(),
             rules_detail: DetailRules::default(),
+            rules_difficulty_rows: crate::rules::ruleset::GeneralRules::default().difficulty_rows,
             // RulesClass665650 initializes +16B8 before any AudioVisual read.
             rules_gravity: 3,
             rules_missile_rot_var: 0.25,
@@ -807,6 +921,26 @@ impl NativeRulesRegistryState {
             .into_iter()
             .flatten()
             .map(|member| (member.native_stored_id.as_str(), member.anim_art_read))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn side_country_members(&self, side: &str) -> Option<&[i32]> {
+        self.side_registry_states()
+            .find_map(|(id, members)| id.eq_ignore_ascii_case(side).then_some(members))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn side_registry_states(&self) -> impl Iterator<Item = (&str, &[i32])> {
+        self.families
+            .get(&RulesTypeFamily::Side)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    member.side_country_members.as_slice(),
+                )
+            })
     }
 
     #[cfg(test)]
@@ -836,6 +970,7 @@ impl NativeRulesRegistryState {
     pub(crate) fn destructive_reset(self) -> Self {
         Self {
             rules_detail: self.rules_detail,
+            rules_difficulty_rows: self.rules_difficulty_rows,
             rules_gravity: self.rules_gravity,
             rules_missile_rot_var: self.rules_missile_rot_var,
             rules_safety_altitude: self.rules_safety_altitude,
@@ -968,6 +1103,16 @@ struct WarheadAnimReadState {
 struct ProcessedType {
     native_stored_id: String,
     body: IniSection,
+    /// HouseType ctor51141C starts Color+C0 at0; each reached ReadINI
+    /// passes the current index to the shared ReadColor474A90.
+    country_color_scheme: i32,
+    /// HouseType ctor511416 writes-1. Side67259A and the late Side reader
+    /// 51209E/4756F0 update this binding on the same retained Country.
+    country_side_index: i32,
+    /// Side+9C ordered Country indexes. ReadHouses4767C0 retains the prior
+    /// vector on count0 and otherwise replaces it without deduplication.
+    /// Signed entries preserve `<random>`=-2 before the full-reader boundary.
+    side_country_members: Vec<i32>,
     /// False until the native AnimType ART-body boundary has been entered.
     /// Kept on the process-resident type so subsequent Rules passes retain it.
     anim_art_read: bool,
@@ -1006,6 +1151,9 @@ impl ProcessedType {
             body: IniSection::new(native_stored_id.clone()),
             projectile_art: ProjectileArtState::new(&native_stored_id),
             native_stored_id,
+            country_color_scheme: 0,
+            country_side_index: -1,
+            side_country_members: Vec::new(),
             anim_art_read: false,
             building_foundation: 0,
             unit_shp: Default::default(),
@@ -1031,6 +1179,7 @@ struct RulesPassProcessor {
     tiberiums: Vec<ProcessedType>,
     colors: Vec<(String, String)>,
     rules_detail: DetailRules,
+    rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
     rules_gravity: i32,
     rules_missile_rot_var: f64,
     rules_safety_altitude: i32,
@@ -1056,6 +1205,7 @@ impl Default for RulesPassProcessor {
             tiberiums: Vec::new(),
             colors: Vec::new(),
             rules_detail: DetailRules::default(),
+            rules_difficulty_rows: crate::rules::ruleset::GeneralRules::default().difficulty_rows,
             rules_gravity: NativeRulesRegistryState::default().rules_gravity,
             rules_missile_rot_var: NativeRulesRegistryState::default().rules_missile_rot_var,
             rules_safety_altitude: NativeRulesRegistryState::default().rules_safety_altitude,
@@ -1076,7 +1226,9 @@ impl RulesPassProcessor {
         Self {
             families: registry_state.families,
             tiberiums: registry_state.tiberiums,
+            colors: registry_state.colors,
             rules_detail: registry_state.rules_detail,
+            rules_difficulty_rows: registry_state.rules_difficulty_rows,
             rules_gravity: registry_state.rules_gravity,
             rules_missile_rot_var: registry_state.rules_missile_rot_var,
             rules_safety_altitude: registry_state.rules_safety_altitude,
@@ -1104,7 +1256,11 @@ impl RulesPassProcessor {
         // 0x00668BF0`. Colors precede every Type registry but spend no Type ID.
         self.allocate_colors(pass);
         for &(registry, family) in EXPLICIT_RULE_TYPE_FAMILIES {
-            self.allocate_explicit_family(pass, registry, family);
+            if family == RulesTypeFamily::Side {
+                self.process_side_registry(pass)?;
+            } else {
+                self.allocate_explicit_family(pass, registry, family);
+            }
         }
 
         // JumpjetControls and MultiplayerSettings contain no Type factory.
@@ -1113,7 +1269,15 @@ impl RulesPassProcessor {
         self.allocate_general_references(pass);
         self.process_type_data(pass, fixed_art);
 
-        // Difficulty readers contain no Type factories.
+        // ReadDifficulty66D270 skips an absent section. Once present, each
+        // absent key receives its literal default, rather than a prior-pass
+        // field. This cannot be represented by merging raw INI text.
+        for (index, name) in ["Easy", "Normal", "Difficult"].into_iter().enumerate() {
+            if let Some(section) = pass.section(name) {
+                self.rules_difficulty_rows[index] =
+                    crate::rules::ruleset::DifficultyRules::read_pass(section);
+            }
+        }
         self.allocate_crate_references(pass);
         // ReadCrateRules @ 0x0066B900 reads the semantic crate values in the
         // same Process pass; it allocates no Type and spends no ID.
@@ -1145,11 +1309,7 @@ impl RulesPassProcessor {
             return;
         };
         for key in section.keys() {
-            let identity = if family == RulesTypeFamily::Side {
-                key.to_string()
-            } else {
-                section.read_string(key, "", 32)
-            };
+            let identity = section.read_string(key, "", 32);
             if !identity.is_empty() {
                 self.find_or_allocate(family, &identity);
             }
@@ -1158,6 +1318,109 @@ impl RulesPassProcessor {
 
     fn family_mut(&mut self, family: RulesTypeFamily) -> &mut Vec<ProcessedType> {
         self.families.entry(family).or_default()
+    }
+
+    fn find_existing(&self, family: RulesTypeFamily, incoming: &str) -> Option<usize> {
+        self.families
+            .get(&family)?
+            .iter()
+            .position(|member| member.native_stored_id.eq_ignore_ascii_case(incoming))
+    }
+
+    fn country_index_of_name(&self, incoming: &str) -> i32 {
+        house_type_index_of_name(
+            incoming,
+            self.families
+                .get(&RulesTypeFamily::Country)
+                .into_iter()
+                .flatten()
+                .map(|member| {
+                    (
+                        member.native_stored_id.as_str(),
+                        member.body.read_name("Name", 0x31),
+                    )
+                }),
+        )
+    }
+
+    /// ReadHouses4767C0: lookup-only Country5117D0, then existing Side6A46D0
+    /// for exactly-1. A Side token expands its current vector; no Country is
+    /// constructed. Self-reference therefore reads the prior vector until
+    /// the caller replaces it. Executed list controls: campaign_start.py
+    /// --houses / campaign_start_houses.json side_controls (+meta).
+    fn read_side_members(&self, section: &IniSection, key: &str, current: &[i32]) -> Vec<i32> {
+        let Some(tokens) = section.read_list(key, 0x80) else {
+            return current.to_vec();
+        };
+        let mut members = Vec::new();
+        for token in tokens {
+            let country = self.country_index_of_name(token);
+            if country != -1 {
+                members.push(country);
+            } else if let Some(index) = self.find_existing(RulesTypeFamily::Side, token) {
+                members.extend_from_slice(
+                    &self.families[&RulesTypeFamily::Side][index].side_country_members,
+                );
+            }
+        }
+        members
+    }
+
+    /// Rules ReadSides672440 creates/reuses each key and immediately reads
+    /// its membership, then writes Country+BC. Registration is per entry;
+    /// later new Sides cannot be resolved by an earlier entry in this pass.
+    fn process_side_registry(&mut self, pass: &IniFile) -> Result<(), RulesError> {
+        let Some(section) = pass.section("Sides") else {
+            return Ok(());
+        };
+        for key in section.keys() {
+            let Some(index) = self.find_or_allocate(RulesTypeFamily::Side, key) else {
+                continue;
+            };
+            let prior = &self.families[&RulesTypeFamily::Side][index].side_country_members;
+            let members = self.read_side_members(section, key, prior);
+            self.families
+                .get_mut(&RulesTypeFamily::Side)
+                .expect("registered Side exists")[index]
+                .side_country_members = members.clone();
+            for member in members {
+                let country = usize::try_from(member).ok().and_then(|index| {
+                    self.families
+                        .get_mut(&RulesTypeFamily::Country)?
+                        .get_mut(index)
+                });
+                let Some(country) = country else {
+                    // `<random>` remains-2 in the reader.672597 would index
+                    // Country[-2]; reject this undefined pointer route after
+                    // retaining the actual Side mutation for failure recovery.
+                    return Err(RulesError::InvalidValue {
+                        section: "Sides".to_string(),
+                        key: key.to_string(),
+                        expected: "a nonnegative resolved native Country index".to_string(),
+                        value: member.to_string(),
+                    });
+                };
+                country.country_side_index =
+                    i32::try_from(index).expect("native Side index exceeds i32");
+            }
+        }
+        Ok(())
+    }
+
+    /// ReadSide4756F0: ReadString128 with an empty default, then reuse or
+    /// construct a Side. Count0 retains the caller's current index. This
+    /// reader does not read memberships; only Rules ReadSides672440 does.
+    /// Executed controls: campaign_start.py --houses, side_reader_rows in
+    /// campaign_start_houses.json side_controls (+meta).
+    fn read_side_index(&mut self, section: &IniSection, key: &str, current: i32) -> i32 {
+        let name = section.read_string(key, "", 0x80);
+        if name.is_empty() {
+            return current;
+        }
+        let index = self
+            .find_or_allocate(RulesTypeFamily::Side, &name)
+            .expect("a nonempty Side name is a valid factory input");
+        i32::try_from(index).expect("native Side index exceeds i32")
     }
 
     fn find_or_allocate(&mut self, family: RulesTypeFamily, incoming: &str) -> Option<usize> {
@@ -1169,17 +1432,14 @@ impl RulesPassProcessor {
         {
             return None;
         }
-        let members = self.family_mut(family);
-        if let Some(index) = members
-            .iter()
-            .position(|member| member.native_stored_id.eq_ignore_ascii_case(incoming))
-        {
+        if let Some(index) = self.find_existing(family, incoming) {
             return Some(index);
         }
+        let members = self.family_mut(family);
         // AbstractTypeClass::Constructor @ 0x00410800 stores only 0x18 bytes.
         // Lookup above compares that stored ID against the full input, so a
         // repeated >24-byte spelling can construct another equal stored ID.
-        let native_stored_id = incoming.chars().take(0x18).collect::<String>();
+        let native_stored_id = abstract_type_stored_id(incoming);
         let index = members.len();
         members.push(ProcessedType::new(native_stored_id.clone()));
         if let Some(family) = family.native_constructor_family() {
@@ -1567,18 +1827,67 @@ impl RulesPassProcessor {
     }
 
     fn process_house_family(&mut self, pass: &IniFile) {
+        // Process668BFE calls Colors66D3A0 before Country allocation668CD1
+        // and this first ReadTypeData679A2D loop. Use only names registered
+        // now; a later pass cannot resolve an earlier unknown retroactively.
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Country) {
             if let Some((_id, raw, _effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::Country, index, pass)
             {
+                let member = &mut self
+                    .families
+                    .get_mut(&RulesTypeFamily::Country)
+                    .expect("the live Country exists")[index];
+                member.country_color_scheme = raw.read_color_scheme(
+                    "Color",
+                    member.country_color_scheme,
+                    self.colors.iter().map(|(name, _)| name.as_str()),
+                );
                 self.allocate_list_from(&raw, "VeteranInfantry", RulesTypeFamily::Infantry, 0x80);
                 self.allocate_list_from(&raw, "VeteranUnits", RulesTypeFamily::Vehicle, 0x80);
                 self.allocate_list_from(&raw, "VeteranAircraft", RulesTypeFamily::Aircraft, 0x80);
-                self.allocate_scalar_from(&raw, "Side", RulesTypeFamily::Side, 0x80);
+                let current = self.families[&RulesTypeFamily::Country][index].country_side_index;
+                let side = self.read_side_index(&raw, "Side", current);
+                if let Ok(side) = usize::try_from(side) {
+                    self.change_country_side(index, side);
+                }
             }
             index += 1;
         }
+    }
+
+    /// HouseType ReadINI51208C..512162 stores BC, then updates Side vectors
+    /// only when it changed. The old vector deletes POSITION Country+B8,
+    /// not the first matching value; an out-of-count position leaves stale
+    /// membership. The new vector always appends that Country index.
+    /// Executed histories: tools/input_oracle/campaign_start.py --houses,
+    /// campaign_start_houses.json side_controls (+meta).
+    fn change_country_side(&mut self, country_index: usize, side_index: usize) {
+        let side = i32::try_from(side_index).expect("native Side index exceeds i32");
+        let country = &mut self
+            .families
+            .get_mut(&RulesTypeFamily::Country)
+            .expect("the live Country exists")[country_index];
+        let prior = country.country_side_index;
+        country.country_side_index = side;
+        if prior == side {
+            return;
+        }
+        let sides = self
+            .families
+            .get_mut(&RulesTypeFamily::Side)
+            .expect("the new Side exists");
+        if prior != -1 {
+            let prior = usize::try_from(prior).expect("a bound Country Side is nonnegative");
+            let members = &mut sides[prior].side_country_members;
+            if country_index < members.len() {
+                members.remove(country_index);
+            }
+        }
+        sides[side_index]
+            .side_country_members
+            .push(i32::try_from(country_index).expect("native Country index exceeds i32"));
     }
 
     fn process_super_weapon_family(&mut self, pass: &IniFile) {
@@ -2221,8 +2530,8 @@ impl RulesPassProcessor {
         ini.replace_first_section(tiberiums);
 
         let mut colors = IniSection::new("Colors".to_string());
-        for (name, value) in self.colors {
-            colors.set(&name, &value);
+        for (name, value) in &self.colors {
+            colors.set(name, value);
         }
         ini.replace_first_section(colors);
 
@@ -2276,7 +2585,9 @@ impl RulesPassProcessor {
                 registry_state: NativeRulesRegistryState {
                     families: self.families,
                     tiberiums: self.tiberiums,
+                    colors: self.colors,
                     rules_detail: self.rules_detail,
+                    rules_difficulty_rows: self.rules_difficulty_rows,
                     rules_gravity: self.rules_gravity,
                     rules_missile_rot_var: self.rules_missile_rot_var,
                     rules_safety_altitude: self.rules_safety_altitude,
@@ -2300,6 +2611,10 @@ impl RulesPassProcessor {
 #[cfg(test)]
 #[path = "native_processing_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "side_registry_tests.rs"]
+mod side_registry_tests;
 
 #[cfg(test)]
 #[path = "projectile_art_tests.rs"]

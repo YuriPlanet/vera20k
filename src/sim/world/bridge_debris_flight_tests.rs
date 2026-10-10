@@ -257,7 +257,7 @@ fn retail_hills_layered_bridge_landing_inputs_match_original_readers() {
     )
     .unwrap();
     let (mut rules, _, art, _) = owner
-        .load_noncampaign_scenario(Some(&mode), &map.ini)
+        .load_scenario(crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode)), &map.ini)
         .unwrap()
         .into_parts();
     let registry = crate::rules::art_data::ArtRegistry::from_ini(&art);

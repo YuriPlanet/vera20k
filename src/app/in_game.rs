@@ -24,6 +24,14 @@ impl App {
     }
 
     pub(super) fn return_to_main_menu(state: &mut AppState) {
+        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+            // Main55D283 calls BattleControlTerminated686570 on shell return;
+            // its retained Scenario mission counter resets to the ctor's 1.
+            runtime
+                .simulation
+                .session
+                .reset_campaign_mission_counter_on_shell_exit();
+        }
         state.match_state.debug_pause = false;
         state.match_state.match_presentation.in_game_menu =
             crate::ui::pause_menu::InGameMenuState::Closed;

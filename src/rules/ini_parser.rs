@@ -181,6 +181,19 @@ impl IniFile {
         }
     }
 
+    /// Supply recorded native cache sections without physical parsing. Some
+    /// oracle controls contain stored-empty entries or sections, which the
+    /// physical reader would discard. Storage and first-section indexing stay
+    /// with this owner; production projection mutators remain private.
+    #[cfg(test)]
+    pub(crate) fn from_sections_for_test(sections: impl IntoIterator<Item = IniSection>) -> Self {
+        let mut ini = Self::empty();
+        for section in sections {
+            ini.replace_first_section(section);
+        }
+        ini
+    }
+
     /// Parse arbitrary bytes by zero-extending each byte to a Unicode scalar.
     /// This mirrors gamemd's ordinary byte-to-wide helper; INI data is not
     /// interpreted as UTF-8, CP1252, or the Windows active code page.

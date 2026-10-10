@@ -980,7 +980,7 @@ fn anytown_destination_dependencies() -> Option<(
     let mode = crate::rules::retail_sources::select_ini(&assets, &mode.override_file)
         .expect("stock Battle override");
     let (mut rules, processed, art, _) = process
-        .load_noncampaign_scenario(Some(&mode.ini), &map.map.ini)
+        .load_scenario(crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode.ini)), &map.map.ini)
         .expect("AnyTown/Battle production Rules layers")
         .into_parts();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));

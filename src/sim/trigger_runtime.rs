@@ -466,7 +466,10 @@ fn enqueue_trigger(
 ///
 /// gamemd-derived: `TriggerTypeClass::Read` canonicalizes the owner through
 /// `HouseTypeClass__FindIndexOfName @ 0x005117D0` (alias before ID in source
-/// order, with `<none>` selecting index zero). `TriggerClass::Spring @
+/// order; `<random>` returns -2). Before that lookup, ReadINI727292..7272AA
+/// handles its literal `<none>` by selecting Country zero. Scenario475540
+/// does not have this TriggerType caller rule.
+/// Only registered Country results reach this owner. `TriggerClass::Spring @
 /// 0x007265C0` passes that type index to `HouseClass__Find_By_Country_Index @
 /// 0x00502D30`, whose global House-array scan returns the first matching
 /// registration.

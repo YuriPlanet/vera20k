@@ -106,6 +106,10 @@ pub mod animation_sequence;
 pub mod art_data;
 pub mod bridge_warheads;
 pub mod buildup_asset_catalog;
+pub mod campaign_loading;
+#[cfg(test)]
+mod campaign_start_tests;
+pub mod campaigns;
 pub mod color_add;
 pub mod color_scheme;
 pub mod combat_damage;
@@ -127,6 +131,7 @@ pub mod locomotor_type;
 pub mod mind_control_rules;
 pub mod missile_spawn;
 pub mod mission_data;
+pub mod movies;
 pub mod native_processing;
 pub mod object_type;
 pub mod overlay_types;

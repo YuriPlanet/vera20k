@@ -337,7 +337,7 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
     )
     .unwrap();
     let (mut rules, _, _, _) = process
-        .load_noncampaign_scenario(None, &IniFile::from_str("[B]\nMaxNumberOccupants=0\n"))
+        .load_scenario(crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None), &IniFile::from_str("[B]\nMaxNumberOccupants=0\n"))
         .unwrap()
         .into_parts();
     assert_eq!(rules.object("B").unwrap().max_number_occupants, 0);

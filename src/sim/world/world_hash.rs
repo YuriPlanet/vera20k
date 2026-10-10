@@ -919,8 +919,11 @@ impl Simulation {
             house.eva_funds_timer.duration().hash(hasher);
             house.eva_low_power_guard.hash(hasher);
             house.hash_event_notifications(hasher);
+            house.hash_native_construction(hasher);
+            house.hash_difficulty_biases(hasher);
+            house.hash_scenario_parameters(hasher);
             house.hash_super_weapon_cells(hasher);
-            house.repair_delay.to_bits().hash(hasher);
+            house.repair_delay().to_bits().hash(hasher);
             house.repair_start_latch.hash(hasher);
             i64::from(house.repair_latch_timer.start_frame()).hash(hasher);
             house.repair_latch_timer.duration().hash(hasher);
@@ -1227,6 +1230,10 @@ impl Simulation {
                 inst.charge_duration.hash(hasher);
                 inst.charge_drain_state.hash(hasher);
                 inst.ready_tick.hash(hasher);
+                if let Some(id) = inst.native_unique_id() {
+                    b"super-native-identity-v1".hash(hasher);
+                    id.hash(hasher);
+                }
                 // The Chronosphere's source cell and held anim (`+0x62`,
                 // `+0x68`); the tag keeps every Super that never took a
                 // Chronosphere click on its established stream.
@@ -2888,14 +2895,21 @@ mod state_hash_field_tests {
                 let owner = sim.interner.intern("Computer1");
                 let mut house = HouseState::new(owner, 0, None, false, 0, 10);
                 let general = crate::rules::ruleset::GeneralRules {
-                    difficulty_rof: [0.8, 1.0, 1.2],
-                    difficulty_repair_delay: [0.02; 3],
+                    difficulty_rows: [0.8, 1.0, 1.2].map(|rof| {
+                        crate::rules::ruleset::DifficultyRules {
+                            rof,
+                            ..Default::default()
+                        }
+                    }),
                     ..Default::default()
                 };
                 house.set_difficulty(
                     HouseDifficulty::Hard,
                     &general,
-                    0.9,
+                    crate::rules::ruleset::CountryDifficultyBiases {
+                        rof: crate::util::native_x87::NativeF64Bits::from_bits(0.9_f64.to_bits()),
+                        ..Default::default()
+                    },
                     game_mode_nonzero,
                     0,
                     0,

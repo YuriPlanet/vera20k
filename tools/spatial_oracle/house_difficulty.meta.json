@@ -7,15 +7,31 @@
     1,
     33621247
   ],
-  "scope": "SetDifficulty over difficulty 0..2, GameMode nonzero and zero, HouseType ROF (1.0, 1.1f, 0.9f, the largest double below 1), difficulty-row ROF values (the retail rows, and odd values including zero and negative) and house indexes 0, 1, 7 and 0x01000001: the stored difficulty index, ROF bias and team timer start and duration.",
+  "scope": "Whole SetDifficulty body: all nine stored House doubles, literal difficulty index and wrapped team timer over the existing72 controls. Reader fixture separately executes full ReadDifficulty over retained rows and8 layers.",
   "assumptions": [
-    "x87 control word 0x0E7F (PC53, chop), the harness default.",
-    "Row values are ReadDouble's widened singles, as rulesmd.ini yields.",
-    "The other row fields and Rules+0x1418/+0x115C are fixed fixture values; only +0x184, +0x1A8, +0x5798 and +0x57A0 are recorded."
+    "x87 control word0x0E7F (PC53, chop), the shared harness default.",
+    "Rules difficulty rows, GameSpeedBias, TeamDelays11/22/33, Country scalar priors, frame100, GameMode0/5 and House index are explicit inputs. Some odd direct double inputs intentionally do not represent INI-read values.",
+    "Reader rows supply lexical/source cache storage using existing BulletReader owner. Original ReadDouble/ReadBool and full66D270 execute; physical file admission, complete Rules Process and gameplay consumers are excluded. Malformed floating scans leave native stack storage undefined and are excluded; defined numeric-prefix scans are retained.",
+    "Arithmetic storage is established here; no downstream speed/armor/cost effect is implied merely by these stored scalars."
   ],
-  "substitutions": [],
+  "substitutions": [
+    "Reader-only existing bounded allocation/CRT transport and lexical INI cache storage; no numeric operation or gameplay callable is replaced."
+  ],
   "entry_points": {
-    "set_difficulty": "0x004F6EC0"
+    "set_difficulty": "0x004F6EC0",
+    "read_difficulty": "0x0066D270"
   },
-  "payload_sha256": "7845d2786389c6d657384049a3bfba109c93756ba44db38e0ee970bdde0e3068"
+  "reproduce_command": "RA2_DIR='<retail-directory-containing-original-gamemd.exe>' python -m tools.spatial_oracle.house_difficulty --check",
+  "source_normalized_lf_sha256": {
+    "producer": "eb3b2c4c45b06891401b69f0bd05e59b038d930df59c4d51e93f0e966c5d1d59",
+    "native_runner": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb",
+    "native_inspect": "9f1aa80986702ae6e045c8f93578a5f9c4c2ee5be9ec897c7cbeb3697f839dcc",
+    "reader": "2f05d2e7e917aef585553502830947ea8ca121eab2d886d2c9ba4df7c935727d",
+    "reader_base": "fc0d267d9c8453ba3090bfacd056af5207f47cb1170651cce5b0c41c80e90a2e",
+    "reader_lists": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
+    "fixture_base": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
+    "crc": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
+    "lexical": "411fae85e38850208ce1c9dc8a5b411459fd0c043f2a20a6090bee0cbf92e7da"
+  },
+  "payload_sha256": "82f3a74ef7938ff3c2dcccf1adafb7bb0bdf86138c7c5525d5daa92ea0236e7a"
 }

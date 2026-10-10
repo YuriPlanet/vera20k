@@ -1,5 +1,6 @@
 """RGB565-unit comparison of shell captures against native screenshots."""
 
+import copy
 import hashlib
 import json
 import struct
@@ -45,6 +46,97 @@ def write_bundle(directory, width, height, rgb_pixels):
         },
     }
     (directory / "capture.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def campaign_bundle(directory, campaign="all1", phase="first-live-frame"):
+    """Synthetic protocol inputs, not native gameplay or rendered goldens."""
+    write_bundle(directory, 1, 1, [(0, 0, 0)])
+    manifest = json.loads((directory / "capture.json").read_text(encoding="utf-8"))
+    emblem = {"all1": 0x6EA, "sov1": 0x6EC}[campaign]
+    scenario = {"all1": "ALL01UMD.MAP", "sov1": "SOV01UMD.MAP"}[campaign]
+    manifest.update({
+        "schema_version": diff.CAMPAIGN_SCHEMA,
+        "checkpoint": f"campaign-{campaign}-{phase}",
+        "checkpoint_phase": phase,
+        "parity_certification": "NONE",
+        "route": [
+            {"frame": 1, "dialog": 0xE2, "action": "SinglePlayer"},
+            {"frame": 2, "dialog": 0x100, "action": "NewCampaign"},
+            {"frame": 3, "dialog": 0x94, "action": "emblem press", "emblem": emblem,
+             "campaign": campaign, "difficulty": 1},
+            {"frame": 4, "dialog": 0x94, "action": "emblem release", "emblem": emblem,
+             "campaign": campaign, "difficulty": 1},
+            {"frame": 5, "action": "campaign loading admitted"},
+        ],
+        "startup": {
+            "campaign": {"id": campaign.upper(), "index": 0, "cd": 2, "scenario": scenario},
+            "difficulty": 1,
+            "seed": {"value": 9, "source": "Controlled", "seed_authority_certifying": False},
+        },
+        "map_admission": "prepared",
+        "selected_map_source": {"kind": "mix", "logical_name": scenario,
+                                "source_archive": "mapsmd03.mix", "entry_id": -42,
+                                "payload_len": 1, "source_sha256": "0" * 64},
+        "process_source_ini_hashes": {
+            "domain": "IniFile.content_hash parsed cache; not retail byte SHA256",
+            "sources": [{"name": name, "parsed_cache_hash": value}
+                        for name, value in [("RULESMD.INI", "0" * 16),
+                                            ("LANGRULE.INI", None), ("ARTMD.INI", "1" * 16)]],
+        },
+        "coverage": {"mission_opening_1308": "unresolved"},
+        "runtime": {
+            "tick": 0, "game_mode_nonzero": False, "campaign_mission_counter": 1,
+            "campaign_difficulty_rows": {"player": 1, "computer": 1},
+            "current_house": {"name": "House", "native_unique_id": 2},
+            "house_roster": [{"name": "House", "native_unique_id": 2,
+                              "scalar_difficulty_bits": ["0" * 16] * 9}],
+            "native_identity_cursor": 3,
+            "rng": {stream: {"disabled": 0, "index_a": 0, "index_b": 103, "words": list(range(250))}
+                    for stream in ("main", "scenario", "mapgen")},
+            "active_rules": {"source_ini_hash": "0" * 16, "simulation_config_hash": "1" * 16},
+            "camera": {"world_pixel_origin": [0, 0], "tactical_centre_cell": [1, 2],
+                       "view_bookmarks": [[1, 2]] * 4},
+        } if phase == "first-live-frame" else None,
+    })
+    manifest["frame"]["byte_length"] = 4
+    (directory / "capture.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return manifest
+
+
+def abort_bundle(directory, campaign="all1"):
+    receipt = campaign_bundle(directory, campaign)
+    receipt.update(checkpoint=f"campaign-{campaign}-abort-return", checkpoint_phase="abort-return",
+                   capture_frame=23, runtime_observation="first-live-frame-before-Escape-press")
+    receipt["route"] += [
+        {"frame": 6, "action": "first live observed", "tick": 0},
+        {"frame": 6, "action": "Escape press", "dialog": 0xB5},
+        {"frame": 7, "action": "Escape release", "dialog": 0xB5},
+        {"frame": 7, "action": "pause menu presented", "dialog": 0xB5},
+        {"frame": 7, "action": "Abort press", "dialog": 0xB5, "point": [5, 5], "rect": [0, 0, 10, 10]},
+        {"frame": 8, "action": "Abort release", "dialog": 0xB5},
+        {"frame": 9, "action": "abort modal presented", "dialog": 0xB6},
+        {"frame": 9, "action": "Leave press", "dialog": 0xB6, "point": [5, 5], "rect": [0, 0, 10, 10]},
+        {"frame": 10, "action": "Leave release", "dialog": 0xB6},
+        {"frame": 10, "action": "EXIT queued", "queued_at_tick": 0, "execute_tick": 0,
+         "owner": "House", "owner_native_unique_id": 2, "modal_closed": True,
+         "diagnostic_simulation_freeze": False, "quit_requested": False},
+        {"frame": 11, "action": "EXIT consumed", "tick": 0, "scenario_exit_present": True,
+         "scenario_outcome_present": False, "quit_requested": True},
+        {"frame": 18, "action": "abort returned", "dialog": 0xE2, "tick": 0,
+         "campaign_mission_counter": 1},
+    ]
+    receipt["cleanup"] = {
+        "screen": "MainMenu", "route": "MainMenu", "loading_session_present": False,
+        "loading_campaign_startup_present": False, "accepted_match_startup_present": False,
+        "match_startup_receipt_present": False, "asset_manager_leased": False,
+        "asset_manager_available": True, "campaign_page_present": False,
+        "fullscreen_movie_present": False, "scenario_exit_present": False,
+        "scenario_outcome_present": False, "in_game_menu": "Closed",
+        "retained_runtime_present": True, "retained_tick": 0, "retained_quit_requested": True,
+        "campaign_mission_counter": 1, "pending_exit_commands": 0,
+    }
+    (directory / "capture.json").write_text(json.dumps(receipt), encoding="utf-8")
+    return receipt
 
 
 class PngDecodeTests(unittest.TestCase):
@@ -140,6 +232,7 @@ class CompareTests(unittest.TestCase):
             status = diff.main(["--capture", str(temp), "--native", str(temp / "native.png")])
             self.assertEqual(status, 2)
 
+
     def test_tampered_frame_is_invalid_input(self):
         with tempfile.TemporaryDirectory() as temp:
             temp = Path(temp)
@@ -149,6 +242,112 @@ class CompareTests(unittest.TestCase):
             status = diff.main(["--capture", str(temp), "--native", str(temp / "native.png")])
             self.assertEqual(status, 2)
 
+
+class CampaignReceiptTests(unittest.TestCase):
+    def test_both_abort_returns_validate_the_real_route_protocol(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for campaign in ("all1", "sov1"):
+                receipt = abort_bundle(Path(temp), campaign)
+                self.assertEqual(diff.validate_campaign_capture(receipt)["phase"], "abort-return")
+
+    def test_abort_return_rejects_shortcuts_and_unretired_owners(self):
+        with tempfile.TemporaryDirectory() as temp:
+            receipt = abort_bundle(Path(temp))
+            mutations = [
+                lambda value: value["route"].pop(15),  # The EXIT-consumed observation.
+                lambda value: value["route"][14].update(diagnostic_simulation_freeze=True),
+                lambda value: value["route"][12].update(point=[10, 10]),
+                lambda value: value["route"][10].update(frame=7),
+                lambda value: value["cleanup"].update(asset_manager_leased=True),
+                lambda value: value["cleanup"].update(loading_session_present=True),
+                lambda value: value["cleanup"].update(campaign_mission_counter=2),
+                lambda value: value["cleanup"].update(scenario_exit_present=True),
+                lambda value: value["cleanup"].update(retained_quit_requested=False),
+                lambda value: value["route"][14].update(quit_requested=True),
+                lambda value: value.update(runtime_observation="after-return"),
+            ]
+            for mutate in mutations:
+                invalid = copy.deepcopy(receipt)
+                mutate(invalid)
+                with self.assertRaises(diff.InputError):
+                    diff.validate_campaign_capture(invalid)
+
+    def test_four_start_checkpoints_validate_bytes_without_asserting_parity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            for campaign in ("all1", "sov1"):
+                for phase in ("loading-first-frame", "first-live-frame"):
+                    campaign_bundle(directory, campaign, phase)
+                    output = directory / "validation.json"
+                    status = diff.main(["--capture", str(directory), "--validate-only", "--output", str(output)])
+                    self.assertEqual(status, 0)
+                    report = json.loads(output.read_text(encoding="utf-8"))
+                    self.assertEqual(report["campaign"]["campaign"], campaign)
+                    self.assertEqual(report["campaign"]["phase"], phase)
+                    self.assertEqual(report["parity_certification"], "NONE")
+
+    def test_first_loading_readback_requires_prepared_map_bytes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            receipt = campaign_bundle(Path(temp), phase="loading-first-frame")
+            self.assertEqual(diff.validate_campaign_capture(receipt)["selected_map_sha256"], "0" * 64)
+            mutations = [
+                lambda value: value.update(map_admission="pending", selected_map_source=None),
+                lambda value: value.update(selected_map_source=None),
+                lambda value: value.update(map_admission="pending"),
+                lambda value: value.pop("map_admission"),
+            ]
+            for mutate in mutations:
+                invalid = copy.deepcopy(receipt)
+                mutate(invalid)
+                with self.assertRaises(diff.InputError):
+                    diff.validate_campaign_capture(invalid)
+
+    def test_first_live_rejects_a_running_or_skirmish_runtime(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            receipt = campaign_bundle(directory)
+            for key, value in (("tick", 1), ("tick", False), ("game_mode_nonzero", True)):
+                invalid = copy.deepcopy(receipt)
+                invalid["runtime"][key] = value
+                with self.assertRaises(diff.InputError):
+                    diff.validate_campaign_capture(invalid)
+
+    def test_rejects_wrong_emblem_map_identity_and_missing_native_owners(self):
+        with tempfile.TemporaryDirectory() as temp:
+            receipt = campaign_bundle(Path(temp))
+            mutations = [
+                lambda value: value["route"][3].update(emblem=0x6EC),
+                lambda value: value["route"][3].update(frame=3),
+                lambda value: value["selected_map_source"].update(logical_name="SOV01UMD.MAP"),
+                lambda value: value["selected_map_source"].update(kind="legacy_fallback"),
+                lambda value: value["selected_map_source"].update(source_sha256=""),
+                lambda value: value["runtime"]["current_house"].update(native_unique_id=3),
+                lambda value: value["runtime"]["rng"]["scenario"].update(words=[]),
+                lambda value: value["process_source_ini_hashes"]["sources"][0].update(parsed_cache_hash=None),
+            ]
+            for mutate in mutations:
+                invalid = copy.deepcopy(receipt)
+                mutate(invalid)
+                with self.assertRaises(diff.InputError):
+                    diff.validate_campaign_capture(invalid)
+
+    def test_loading_does_not_claim_installed_runtime_and_back_retires_route(self):
+        with tempfile.TemporaryDirectory() as temp:
+            receipt = campaign_bundle(Path(temp), phase="loading-first-frame")
+            receipt["runtime"] = {"tick": 0}
+            with self.assertRaises(diff.InputError):
+                diff.validate_campaign_capture(receipt)
+            receipt.update(checkpoint="campaign-back-return", checkpoint_phase="campaign-back-return")
+            receipt["route"] = receipt["route"][:2] + [
+                {"frame": 3, "dialog": 0x94, "action": "Back"},
+                {"frame": 4, "dialog": 0x100, "action": "Back returned"},
+            ]
+            receipt["shell_return"] = {"screen": "MainMenu", "route": "SinglePlayer",
+                                       "campaign_page_present": False, "loading_session_present": False}
+            self.assertEqual(diff.validate_campaign_capture(receipt)["phase"], "campaign-back-return")
+            receipt["shell_return"]["loading_session_present"] = True
+            with self.assertRaises(diff.InputError):
+                diff.validate_campaign_capture(receipt)
 
 if __name__ == "__main__":
     unittest.main()

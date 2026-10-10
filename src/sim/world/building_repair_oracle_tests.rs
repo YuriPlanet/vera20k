@@ -294,11 +294,11 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
         [timer[0].as_i64().unwrap(), timer[2].as_i64().unwrap()]
     });
     house.repair_latch_timer = CdTimer::from_raw(timer[0] as i32, timer[1] as i32);
-    house.repair_delay = f64::from_bits(
+    house.set_repair_delay_for_test(f64::from_bits(
         input["delay"]
             .as_u64()
             .unwrap_or_else(|| constant(corpus, "delay_02")),
-    );
+    ));
     sim.houses.insert(owner, house);
     assert_eq!(sim.allocate_stable_id(), 1);
     let kind = sim.interner.intern("YAREFN");
@@ -621,7 +621,7 @@ fn retail_repair_keys_read_as_the_oracle_writes_them() {
     ))
     .unwrap();
     assert_eq!(
-        bits(without_key.general.difficulty_repair_delay),
+        bits(without_key.general.difficulty_rows.map(|row| row.repair_delay)),
         [constant(&corpus, "delay_02_default"); 3]
     );
     assert_eq!(
@@ -643,7 +643,7 @@ fn retail_repair_keys_read_as_the_oracle_writes_them() {
         constant(&corpus, "rate_016")
     );
     assert_eq!(
-        bits(rules.general.difficulty_repair_delay),
+        bits(rules.general.difficulty_rows.map(|row| row.repair_delay)),
         [
             constant(&corpus, "delay_02"),
             constant(&corpus, "delay_02"),
@@ -658,8 +658,8 @@ fn retail_repair_keys_read_as_the_oracle_writes_them() {
     // SetDifficulty copies the house's row (HouseDifficulty order: 0 is a
     // Hard AI reading [Easy]).
     let mut house = HouseState::new(Default::default(), 0, None, false, 0, 10);
-    house.set_difficulty(HouseDifficulty::Easy, &rules.general, 1.0, true, 0, 0);
-    assert_eq!(house.repair_delay.to_bits(), constant(&corpus, "delay_05"));
+    house.set_difficulty(HouseDifficulty::Easy, &rules.general, Default::default(), true, 0, 0);
+    assert_eq!(house.repair_delay().to_bits(), constant(&corpus, "delay_05"));
 }
 
 /// The repair step's `ADD`s wrap and its clamp compares signed against the

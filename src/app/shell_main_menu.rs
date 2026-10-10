@@ -1017,6 +1017,7 @@ impl App {
             ShellExitThen::SkirmishStart(session) => Self::commit_skirmish_start(state, *session),
             ShellExitThen::SkirmishBack => Self::commit_skirmish_back(state),
             ShellExitThen::CampaignBack => Self::commit_campaign_back(state),
+            ShellExitThen::CampaignStart(side) => Self::commit_campaign_start(state, side),
             ShellExitThen::LoadSavedGameBack => Self::commit_load_saved_game_back(state),
             ShellExitThen::Options(result) => Self::commit_launcher_options_result(state, result),
             ShellExitThen::KeyboardClose(exit) => {

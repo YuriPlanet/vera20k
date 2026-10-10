@@ -187,7 +187,10 @@ mod tests {
         );
         for _ in 0..2 {
             let (rules, _, _, _) = owner
-                .load_noncampaign_scenario(None, &IniFile::empty())
+                .load_scenario(
+                    crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                    &IniFile::empty(),
+                )
                 .unwrap()
                 .into_parts();
             assert!(Arc::ptr_eq(definitions.sounds(), owner.fixed_sounds()));
@@ -198,7 +201,10 @@ mod tests {
         }
         assert!(
             owner
-                .load_noncampaign_scenario(None, &IniFile::from_str("[Tiberiums]\n-1=INVALID\n"))
+                .load_scenario(
+                    crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                    &IniFile::from_str("[Tiberiums]\n-1=INVALID\n")
+                )
                 .is_err()
         );
         assert!(Arc::ptr_eq(definitions.sounds(), owner.fixed_sounds()));

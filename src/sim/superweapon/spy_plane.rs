@@ -8,9 +8,6 @@
 //! `send_spy_planes` execute the original code; `spy_plane_tests.rs` replays
 //! them.
 //!
-//! RESIDUAL: the house's `Edge=` (`HouseClass+0x1E0`), which SendSpyPlanes
-//! takes over the waypoint edge when it is 0..3 (`0x0065EB17..0x0065EB28`),
-//! as `superweapon::paradrop` records for the shared send.
 
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::NativeCellQuery;

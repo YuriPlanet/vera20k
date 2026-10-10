@@ -271,19 +271,31 @@ impl SimRng {
         }
     }
 
-    /// Adopt the exact post-RMG `g_MapGenRng` cursor without replaying draws.
+    /// Adopt the exact retained `g_MapGenRng` cursor without replaying draws.
     ///
-    /// The two implementations intentionally keep separate draw code, but the
-    /// native 250-word state and lag cursors are the same logical object at the
-    /// launch `.SED` generation -> live-scenario boundary.
+    /// The native disabled byte, 250-word state and lag cursors belong to the
+    /// same logical object across preview, launch and fresh Scenario boundaries.
     pub(crate) fn from_mapgen_continuation(continuation: MapGenRngContinuation) -> Self {
-        let (words, index_a, index_b) = continuation.into_native_parts();
+        let (disabled, words, index_a, index_b) = continuation.into_native_parts();
         Self {
-            disabled: 0,
+            disabled,
             index_a: i32::try_from(index_a).expect("MapGen cursor A fits native i32"),
             index_b: i32::try_from(index_b).expect("MapGen cursor B fits native i32"),
             state: Vec::from(words),
         }
+    }
+
+    /// Seal a retained process cursor for a fresh Scenario handoff. This
+    /// snapshot grants no draw capability and preserves the native disabled
+    /// byte as well as both lag indexes and all 250 words.
+    pub(super) fn mapgen_continuation(&self) -> MapGenRngContinuation {
+        let state = self.logical_state();
+        MapGenRngContinuation::from_native_parts(
+            state.disabled,
+            state.words,
+            usize::try_from(state.index_a).expect("MapGen cursor A is non-negative"),
+            usize::try_from(state.index_b).expect("MapGen cursor B is non-negative"),
+        )
     }
 
     /// Compact deterministic fingerprint of the full internal state.
@@ -541,6 +553,24 @@ impl SimRng {
 #[cfg(test)]
 mod tests {
     use super::{MainRng, SimRng};
+
+    #[test]
+    fn retained_mapgen_transport_preserves_all_logical_fields() {
+        for disabled in [0, 7] {
+            let mut resident = SimRng::new(0xC041_52FC);
+            for _ in 0..353 {
+                let _ = resident.next_u32();
+            }
+            resident.disabled = disabled;
+            let before = resident.logical_state();
+            let mut resumed = SimRng::from_mapgen_continuation(resident.mapgen_continuation());
+
+            assert_eq!(resumed.logical_state(), before);
+            assert_eq!(resident.logical_state(), before, "snapshot cannot draw");
+            assert_eq!(resumed.next_u32(), resident.next_u32());
+            assert_eq!(resumed.logical_state(), resident.logical_state());
+        }
+    }
 
     #[test]
     fn cloned_main_capabilities_interleave_callback_and_owner_draws() {

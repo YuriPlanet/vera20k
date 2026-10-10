@@ -16,8 +16,10 @@ pub(crate) const MAP_READ_NATIVE_ID_RESERVATION: u32 = 0x2710;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 enum NativeFreshIdPhase {
+    // Preserve these existing derived-Hash discriminants when adding phases.
     PrefixSaved,
     MapReadReserved,
+    BuildingPrefix,
 }
 
 /// One Scenario's wrapping numeric-ID cursor. Original689310/689470 save/load
@@ -31,6 +33,44 @@ pub(crate) struct NativeUniqueIdCursor {
 }
 
 impl NativeUniqueIdCursor {
+    /// Campaign Full_Init686B20 runs optional named-INI Process and final
+    /// root/LANG/map Process before its one actual House generation. Reset
+    /// destroys registries without rewinding Scenario+214. Subsequent House,
+    /// Super and Resize constructors use this same cursor before it is saved.
+    pub(crate) fn begin_campaign_prefix(
+        early_type_count: usize,
+        rebuilt_type_count: usize,
+    ) -> Self {
+        let value = advance(
+            advance(FRESH_SCENARIO_NATIVE_ID_SEED, early_type_count),
+            rebuilt_type_count,
+        );
+        Self {
+            value,
+            saved_after_fresh_prefix: FRESH_SCENARIO_NATIVE_ID_SEED,
+            phase: NativeFreshIdPhase::BuildingPrefix,
+        }
+    }
+
+    /// The campaign's one MapClass::Resize565C10 follows House Read_INI.
+    /// Fill consumes no native IDs; mapreader4AD026 then saves this checkpoint
+    /// before theater construction and the saved+0x2710 overwrite.
+    pub(crate) fn finish_campaign_prefix_after_resize(
+        &mut self,
+        map_width: u32,
+        map_height: u32,
+    ) -> Result<(), NativeIdentityError> {
+        if self.phase != NativeFreshIdPhase::BuildingPrefix {
+            return Err(NativeIdentityError::FreshPrefixAlreadyFinished);
+        }
+        self.value = self
+            .value
+            .wrapping_add(resize_constructor_count(map_width, map_height));
+        self.saved_after_fresh_prefix = self.value;
+        self.phase = NativeFreshIdPhase::PrefixSaved;
+        Ok(())
+    }
+
     /// The explicit test/dev simulation entry starts with this declared cursor.
     /// Production descriptors install their original Full_Init prefix instead.
     pub(crate) fn for_synthetic_simulation() -> Self {
@@ -80,6 +120,9 @@ impl NativeUniqueIdCursor {
     /// Shadowed theater constructors may have advanced the current cursor in
     /// between; native overwrites that current value with `C_saved + 0x2710`.
     pub(crate) fn reserve_map_read_from_saved(&mut self) -> Result<u32, NativeIdentityError> {
+        if self.phase == NativeFreshIdPhase::BuildingPrefix {
+            return Err(NativeIdentityError::FreshPrefixNotFinished);
+        }
         if self.phase != NativeFreshIdPhase::PrefixSaved {
             return Err(NativeIdentityError::MapReadReservationAlreadyApplied);
         }
@@ -103,6 +146,10 @@ impl NativeUniqueIdCursor {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum NativeIdentityError {
+    #[error("fresh native-ID prefix has not reached its saved Resize checkpoint")]
+    FreshPrefixNotFinished,
+    #[error("fresh native-ID prefix was already finished")]
+    FreshPrefixAlreadyFinished,
     #[error("fresh native-ID map-read reservation was already applied")]
     MapReadReservationAlreadyApplied,
 }
@@ -317,6 +364,45 @@ mod tests {
     fn runtime_identity_rejects_an_unstaged_production_descriptor() {
         let mut sim = Simulation::from_descriptor(&Default::default());
         sim.next_native_runtime_id();
+    }
+
+    #[test]
+    fn campaign_prefix_requires_one_resize_checkpoint_before_one_map_reservation() {
+        let mut cursor = NativeUniqueIdCursor::begin_campaign_prefix(2, 5);
+        assert_eq!(
+            cursor.current_raw(),
+            1_000_007,
+            "ClearScene resets before E/P, not between them"
+        );
+        assert_eq!(
+            cursor.reserve_map_read_from_saved(),
+            Err(super::NativeIdentityError::FreshPrefixNotFinished)
+        );
+        cursor.next_id();
+        cursor.next_id();
+        cursor.finish_campaign_prefix_after_resize(2, 3).unwrap();
+        let saved = cursor.saved_after_fresh_prefix();
+        assert_eq!(saved, cursor.current_raw());
+        assert_eq!(
+            cursor.finish_campaign_prefix_after_resize(2, 3),
+            Err(super::NativeIdentityError::FreshPrefixAlreadyFinished)
+        );
+        assert_eq!(
+            cursor.current_raw(),
+            saved,
+            "rejected replay spends no Cell IDs"
+        );
+        cursor.next_id(); // shadowed theater construction
+        assert_eq!(
+            cursor.reserve_map_read_from_saved().unwrap(),
+            saved.wrapping_add(MAP_READ_NATIVE_ID_RESERVATION)
+        );
+        let after = cursor.current_raw();
+        assert_eq!(
+            cursor.reserve_map_read_from_saved(),
+            Err(super::NativeIdentityError::MapReadReservationAlreadyApplied)
+        );
+        assert_eq!(cursor.current_raw(), after);
     }
 
     #[test]

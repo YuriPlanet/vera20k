@@ -23,13 +23,18 @@ use crate::render::batch::SpriteInstance;
 use crate::render::bink_movie::{BinkMovieStep, BinkMovieSurface};
 use crate::render::shell_paint::MOVIE_DEPTH;
 
-/// Which dialog Play_Movie's caller recreates afterwards.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The continuation owned by Play_Movie's caller.
 pub(crate) enum MovieReturn {
     /// State `0xD` (Sneak Peeks) sets state 4: Movies & Credits `0x101`.
     MoviesAndCredits,
     /// State `0xE` stays in place: the movie list `0x129` reopens.
     MovieList,
+    /// Start_Scenario683AB0 continues into ReadScenario after the selected
+    /// Intro/Brief finishes, is skipped, is unavailable, or fails to decode.
+    CampaignStart(Box<crate::app::loading::pump::LoadingRequest>),
+    /// Basic.Action plays after ReadScenario, before tactical video mode and
+    /// scenario timing begin (StartScenario683D9C..683DB6).
+    CampaignLoaded(Box<crate::app::loading::init::MapLoadResult>),
 }
 
 /// The name Play_Movie resolves: truncated at the first `.`.
@@ -133,7 +138,7 @@ impl FullscreenMovie {
         }
     }
 
-    pub(crate) fn return_to(&self) -> MovieReturn {
+    pub(crate) fn into_return(self) -> MovieReturn {
         self.return_to
     }
 

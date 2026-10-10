@@ -82,8 +82,8 @@ fn physical_rules() -> RuleSet {
     )
     .unwrap();
     let (mut rules, _, fixed_art, _) = owner
-        .load_noncampaign_scenario(
-            Some(&sections_ini(&history[2]["inputs"])),
+        .load_scenario(crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+            Some(&sections_ini(&history[2]["inputs"]))),
             &sections_ini(&history[3]["inputs"]),
         )
         .unwrap()
@@ -138,7 +138,7 @@ fn supplied_rules(input: &Value) -> RuleSet {
     let mut owner =
         NativeRulesProcessOwner::from_cold_start_sources(root, None, art, sounds).unwrap();
     let (mut rules, _, fixed_art, _) = owner
-        .load_noncampaign_scenario(None, &IniFile::from_str(""))
+        .load_scenario(crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None), &IniFile::from_str(""))
         .unwrap()
         .into_parts();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&fixed_art));

@@ -132,6 +132,8 @@ pub(crate) enum ShellExitThen {
     SkirmishBack,
     /// Campaign selection Back (result -1): state 1 recreates Single Player.
     CampaignBack,
+    /// Campaign emblem result; dispatches after dialog teardown and voice wait.
+    CampaignStart(crate::ui::campaign_shell::CampaignSide),
     /// Load Saved Game Back (result 2): state 1 recreates Single Player.
     LoadSavedGameBack,
     /// An Options result: `0x0055FC80` tears `0xD5` down with its slide, then
@@ -178,7 +180,7 @@ impl ShellExitThen {
             Self::MoviesCredits(_) => ShellSlideKind::MoviesAndCredits,
             Self::PlayMovie | Self::MovieListBack => ShellSlideKind::MovieList,
             Self::SkirmishStart(_) | Self::SkirmishBack => ShellSlideKind::Skirmish,
-            Self::CampaignBack => ShellSlideKind::Campaign,
+            Self::CampaignBack | Self::CampaignStart(_) => ShellSlideKind::Campaign,
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
             Self::Options(_) => ShellSlideKind::Options,
             Self::KeyboardClose(_) => ShellSlideKind::Keyboard,
@@ -521,7 +523,8 @@ pub(crate) fn poll_main_menu_title_reveal(state: &mut AppState) {
         && state.frontend.shell_first_paint_slide.is_none()
     {
         state
-            .frontend.main_menu_shell_state
+            .frontend
+            .main_menu_shell_state
             .title_reveal
             .poll_timer(Instant::now());
     }
@@ -529,7 +532,8 @@ pub(crate) fn poll_main_menu_title_reveal(state: &mut AppState) {
 
 pub(crate) fn current_main_menu_entry_frame(state: &AppState) -> Option<MainMenuEntryPaintFrame> {
     state
-        .frontend.shell_first_paint_slide
+        .frontend
+        .shell_first_paint_slide
         .as_ref()
         .and_then(ShellFrameWave::current_main_menu_frame)
 }
@@ -575,14 +579,16 @@ pub(crate) fn transition_blocks_shell_input(transition: Option<&ShellFrameWave>)
 
 pub(crate) fn main_menu_presented_wake_deadline(state: &AppState) -> Option<Instant> {
     state
-        .frontend.shell_first_paint_slide
+        .frontend
+        .shell_first_paint_slide
         .as_ref()
         .and_then(ShellFrameWave::presented_wake_deadline)
 }
 
 pub(crate) fn main_menu_presented_is_poisoned(state: &AppState) -> bool {
     state
-        .frontend.shell_first_paint_slide
+        .frontend
+        .shell_first_paint_slide
         .as_ref()
         .is_some_and(ShellFrameWave::is_presented_poisoned)
 }
@@ -627,35 +633,34 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             && crate::ui::shell::slide::is_slide_eligible(ShellSlideKind::Options.dialog_id()))
         .then_some(ShellSlideKind::Options);
     }
-    let candidate =
-        if state.frontend.shell_route.skirmish() {
-            skirmish_slide_target(&state.frontend.skirmish_shell_state)?
-        } else if state.frontend.shell_route.single_player() {
-            ShellSlideKind::SinglePlayer
-        } else if state.frontend.shell_route.movies_and_credits() {
-            ShellSlideKind::MoviesAndCredits
-        } else if state.frontend.shell_route.movie_list() {
-            ShellSlideKind::MovieList
-        } else if state.frontend.shell_route.campaign() {
-            ShellSlideKind::Campaign
-        } else if state.frontend.shell_route.load_saved_game() {
-            ShellSlideKind::LoadSavedGame
-        } else if state.frontend.shell_route.wol_welcome() {
-            // The TXT_APIMISSING box runs after 0x10E is destroyed.
-            if state
-                .frontend
-                .wol_welcome
-                .as_ref()
-                .is_some_and(|wol| wol.api_missing.is_some())
-            {
-                return None;
-            }
-            ShellSlideKind::WolWelcome
-        } else if state.frontend.main_menu_shell_error.is_none() {
-            ShellSlideKind::MainMenu
-        } else {
+    let candidate = if state.frontend.shell_route.skirmish() {
+        skirmish_slide_target(&state.frontend.skirmish_shell_state)?
+    } else if state.frontend.shell_route.single_player() {
+        ShellSlideKind::SinglePlayer
+    } else if state.frontend.shell_route.movies_and_credits() {
+        ShellSlideKind::MoviesAndCredits
+    } else if state.frontend.shell_route.movie_list() {
+        ShellSlideKind::MovieList
+    } else if state.frontend.shell_route.campaign() {
+        ShellSlideKind::Campaign
+    } else if state.frontend.shell_route.load_saved_game() {
+        ShellSlideKind::LoadSavedGame
+    } else if state.frontend.shell_route.wol_welcome() {
+        // The TXT_APIMISSING box runs after 0x10E is destroyed.
+        if state
+            .frontend
+            .wol_welcome
+            .as_ref()
+            .is_some_and(|wol| wol.api_missing.is_some())
+        {
             return None;
-        };
+        }
+        ShellSlideKind::WolWelcome
+    } else if state.frontend.main_menu_shell_error.is_none() {
+        ShellSlideKind::MainMenu
+    } else {
+        return None;
+    };
     crate::ui::shell::slide::is_slide_eligible(candidate.dialog_id()).then_some(candidate)
 }
 
@@ -712,7 +717,8 @@ pub(crate) fn poll_main_menu_first_paint_before_acquire(
             // Active-retail stock leaves ShellButtonSlideSound empty, but the
             // completion hook remains a named lifecycle edge.
             crate::app::App::play_shell_slide_completion_sound(state);
-            let title = crate::app::frontend::main_menu_shell_render::main_menu_title_text(state).into_owned();
+            let title = crate::app::frontend::main_menu_shell_render::main_menu_title_text(state)
+                .into_owned();
             if !ShellLifecycleReducer::from_state(state)
                 .complete_presented_main_menu(generation, &title, now)
             {
@@ -729,7 +735,8 @@ pub(crate) fn activate_shell_first_paint_after_acquire(state: &mut AppState) {
     let target = current_shell_slide_target(state);
     if target == Some(ShellSlideKind::MainMenu) {
         if state
-            .frontend.shell_first_paint_slide
+            .frontend
+            .shell_first_paint_slide
             .as_mut()
             .is_some_and(ShellFrameWave::activate_after_acquire)
         {
@@ -804,7 +811,8 @@ pub(crate) fn render_shell_first_paint_slide(
                 crate::app::frontend::skirmish_shell_render::ShellRenderMode::TransitionPreview,
             )?;
             state
-                .renderer.shell_surface_presenter
+                .renderer
+                .shell_surface_presenter
                 .encode_present(encoder, destination);
             true
         }
@@ -884,7 +892,9 @@ pub(crate) fn render_shell_first_paint_slide(
         Some(ShellWaveCompletion::Skirmish) => {
             let now = Instant::now();
             let (title, game_type, map_label) =
-                crate::app::frontend::skirmish_shell_render::skirmish_right_panel_label_strings(state);
+                crate::app::frontend::skirmish_shell_render::skirmish_right_panel_label_strings(
+                    state,
+                );
             state
                 .frontend
                 .skirmish_shell_state

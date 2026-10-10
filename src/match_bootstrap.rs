@@ -76,8 +76,50 @@ pub struct PreparedMatchStartup {
     pub session: AcceptedBattleSession,
 }
 
+/// Start_Scenario683AB0's campaign-array selection. This is an immutable
+/// launch projection from the process catalog, separate from multiplayer
+/// session/slot staging. Full_Init686B6A uses Options.Difficulty literally.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedCampaignStartup {
+    campaign_index: usize,
+    campaign: crate::rules::campaigns::CampaignDefinition,
+    difficulty: i32,
+    pub seed: MatchSeed,
+}
+
+impl PreparedCampaignStartup {
+    pub fn campaign_index(&self) -> usize {
+        self.campaign_index
+    }
+
+    pub fn campaign(&self) -> &crate::rules::campaigns::CampaignDefinition {
+        &self.campaign
+    }
+
+    pub fn difficulty(&self) -> i32 {
+        self.difficulty
+    }
+}
+
+pub fn prepare_campaign_startup(
+    campaigns: &crate::rules::campaigns::CampaignRegistry,
+    name: &str,
+    difficulty: i32,
+    clock: &mut impl MatchSeedClock,
+) -> Option<PreparedCampaignStartup> {
+    let campaign_index = campaigns.find_index(name)?;
+    let campaign = campaigns.get(campaign_index)?.clone();
+    Some(PreparedCampaignStartup {
+        campaign_index,
+        campaign,
+        difficulty,
+        seed: read_match_seed(clock),
+    })
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LoadingStartup {
+    Campaign(PreparedCampaignStartup),
     Accepted(PreparedMatchStartup),
     UnverifiedLegacy {
         session: SkirmishLaunchSession,
@@ -91,6 +133,7 @@ pub enum LoadingStartup {
 impl LoadingStartup {
     pub fn selected_map_file(&self) -> &str {
         match self {
+            Self::Campaign(startup) => startup.campaign().scenario(),
             Self::Accepted(startup) => startup.session.selected_map_file(),
             Self::UnverifiedLegacy { session, .. } => {
                 session.selected_map_file.as_deref().unwrap_or("auto")
@@ -101,6 +144,7 @@ impl LoadingStartup {
 
     pub fn launch_session(&self) -> Option<&SkirmishLaunchSession> {
         match self {
+            Self::Campaign(_) => None,
             Self::Accepted(startup) => Some(startup.session.launch_session()),
             Self::UnverifiedLegacy { session, .. } => Some(session),
             Self::Generic { .. } => None,
@@ -110,13 +154,21 @@ impl LoadingStartup {
     pub fn accepted(&self) -> Option<&PreparedMatchStartup> {
         match self {
             Self::Accepted(startup) => Some(startup),
-            Self::UnverifiedLegacy { .. } | Self::Generic { .. } => None,
+            Self::Campaign(_) | Self::UnverifiedLegacy { .. } | Self::Generic { .. } => None,
+        }
+    }
+
+    pub fn campaign(&self) -> Option<&PreparedCampaignStartup> {
+        match self {
+            Self::Campaign(startup) => Some(startup),
+            _ => None,
         }
     }
 
     #[cfg(test)]
     pub fn seed_or_else(&self, unverified_fallback: impl FnOnce() -> u32) -> u32 {
         match self {
+            Self::Campaign(startup) => startup.seed.value,
             Self::Accepted(startup) => startup.seed.value,
             Self::UnverifiedLegacy { seed, .. } => seed.value,
             Self::Generic { .. } => unverified_fallback(),

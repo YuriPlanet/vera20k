@@ -24,6 +24,10 @@ use crate::rules::ruleset::INCOME_PPM_SCALE;
 pub struct Economy {
     /// House `+0x30C`, the cash balance.
     credits: i32,
+    /// House+1DC: the map's Credits read, scaled by100 before the campaign
+    /// money adjustment. This baseline remains separate from the live wallet.
+    #[serde(default)]
+    scenario_credits: i32,
     /// House `+0x2DC`: the running total `Spend_Money` took.
     spent_credits: i32,
     /// House `+0x54E8`, the score: refinery deposits, kills and captures add
@@ -37,6 +41,7 @@ impl Economy {
     pub(crate) const fn new(credits: i32) -> Self {
         Self {
             credits,
+            scenario_credits: 0,
             spent_credits: 0,
             score: 0,
         }
@@ -52,6 +57,34 @@ impl Economy {
 
     pub const fn score(&self) -> i32 {
         self.score
+    }
+
+    /// House ReadScenarioINI500B40: wrapping Credits*100 sets +1DC and the
+    /// wallet. Only campaign PlayerControl houses apply the option0/2 delta,
+    /// then clamp signed values <=0. Later Basic.Player forcing does not rerun
+    /// this reader. Executed controls: input_oracle/campaign_start --houses.
+    pub(crate) fn initialize_scenario_credits(
+        &mut self,
+        raw_credits: i32,
+        campaign_difficulty: Option<crate::sim::house_state::HouseDifficulty>,
+        player_control: bool,
+        money_delta_easy: i32,
+        money_delta_hard: i32,
+    ) {
+        self.scenario_credits = raw_credits.wrapping_mul(100);
+        self.credits = self.scenario_credits;
+        if let Some(difficulty) = campaign_difficulty.filter(|_| player_control) {
+            self.credits = match difficulty as i32 {
+                0 => self.credits.wrapping_add(money_delta_easy),
+                2 => self.credits.wrapping_add(money_delta_hard),
+                _ => self.credits,
+            }
+            .max(0);
+        }
+    }
+
+    pub(crate) const fn scenario_credits(&self) -> i32 {
+        self.scenario_credits
     }
 
     /// `HouseClass::Available_Money @ 0x004F6990`: `ftol(storage value *

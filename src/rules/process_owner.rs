@@ -20,7 +20,7 @@ use crate::rules::error::RulesError;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{
     NativeRulesRegistryState, NativeTypeConstructionEvent, NativeTypeConstructionTrace,
-    ProcessedRulesLayers, RulesLayerKind, RulesLayerStack,
+    ProcessedRulesLayers, RulesLayerKind, RulesLayerStack, process_native_campaign_rules_prepass,
     process_native_noncampaign_rules_prepass, process_native_rules_cold_start,
 };
 use crate::rules::ruleset::RuleSet;
@@ -36,6 +36,9 @@ struct NativeRulesSourceSnapshot {
     selected_rules_root: IniFile,
     langrule: Option<IniFile>,
     fixed_art: IniFile,
+    /// ARTMD `[Movies]`, selected once by Load_Game_Rules52D121. Movie
+    /// references in campaigns and Basic share these indices across reloads.
+    movies: crate::rules::movies::MovieRegistry,
     /// Immutable Voc catalog selected once by Init_Game52C763..52C796.
     /// It is not a Rules layer and survives scenario Rules reconstruction.
     fixed_sounds: Arc<SoundRegistry>,
@@ -121,6 +124,13 @@ pub(crate) struct NativeScenarioRulesLoad {
     receipt: NativeScenarioRulesReceipt,
 }
 
+/// The mutually exclusive native pre-reset family and its optional source.
+/// Campaigns use a basename INI and never a multiplayer mode override.
+pub(crate) enum NativeScenarioRulesPrefix<'a> {
+    NonCampaign(Option<&'a IniFile>),
+    Campaign(Option<&'a IniFile>),
+}
+
 impl NativeScenarioRulesLoad {
     pub(crate) fn into_parts(self) -> (RuleSet, IniFile, IniFile, NativeScenarioRulesReceipt) {
         (
@@ -143,6 +153,7 @@ impl NativeRulesProcessOwner {
         fixed_art: IniFile,
         fixed_sounds: Arc<SoundRegistry>,
     ) -> Result<Self, RulesError> {
+        let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         let cold_trace = process_native_rules_cold_start(
             NativeRulesRegistryState::default(),
             &selected_rules_root,
@@ -154,6 +165,7 @@ impl NativeRulesProcessOwner {
                 selected_rules_root,
                 langrule,
                 fixed_art,
+                movies,
                 fixed_sounds,
             },
             registry: Some(NativeRulesRegistryOwner::ColdStartup(cold_trace)),
@@ -185,6 +197,26 @@ impl NativeRulesProcessOwner {
         &self.sources.fixed_art
     }
 
+    pub(crate) fn movies(&self) -> &crate::rules::movies::MovieRegistry {
+        &self.sources.movies
+    }
+
+    /// Parsed-cache hashes of the actual frozen process sources. These are
+    /// not byte SHA256 values and do not reopen files after source selection.
+    pub(crate) fn selected_source_ini_hashes(&self) -> [(&'static str, Option<u64>); 3] {
+        [
+            (
+                "RULESMD.INI",
+                Some(self.sources.selected_rules_root.content_hash()),
+            ),
+            (
+                "LANGRULE.INI",
+                self.sources.langrule.as_ref().map(IniFile::content_hash),
+            ),
+            ("ARTMD.INI", Some(self.sources.fixed_art.content_hash())),
+        ]
+    }
+
     /// Build the shell-facing compatibility projection without changing the
     /// one native registry owner.
     pub(crate) fn startup_compatibility_projection(
@@ -194,15 +226,17 @@ impl NativeRulesProcessOwner {
             .process_with_fixed_art(&self.sources.fixed_art)
     }
 
-    /// Execute the active noncampaign Full_Init Rules chronology in place.
+    /// Execute the active Full_Init Rules chronology in place.
     ///
-    /// `E_multi` runs against the process-retained pre-reset registry. That
-    /// registry is then destructively replaced before root/LANG/mode/map P.
+    /// Noncampaign runs `E_multi` against the process-retained registry;
+    /// campaign runs optional scenario-basename INI P against that registry.
+    /// The common destructive reset then precedes root/LANG/(noncampaign
+    /// mode)/map P.
     /// Every error restores the actual partial post-reset registry; no path
     /// rolls back to cold/pre-reset state.
-    pub(crate) fn load_noncampaign_scenario(
+    pub(crate) fn load_scenario(
         &mut self,
-        mode_rules_override: Option<&IniFile>,
+        prefix: NativeScenarioRulesPrefix<'_>,
         map_rules_overrides: &IniFile,
     ) -> Result<NativeScenarioRulesLoad, RulesError> {
         let registry_owner = self
@@ -216,10 +250,31 @@ impl NativeRulesProcessOwner {
             NativeRulesRegistryOwner::Live(state) => state,
         };
 
-        let pre_reset_trace = process_native_noncampaign_rules_prepass(
-            pre_reset_state,
-            &self.sources.selected_rules_root,
-        );
+        let (pre_reset_trace, mode_rules_override) = match prefix {
+            NativeScenarioRulesPrefix::NonCampaign(mode) => (
+                process_native_noncampaign_rules_prepass(
+                    pre_reset_state,
+                    &self.sources.selected_rules_root,
+                ),
+                mode,
+            ),
+            NativeScenarioRulesPrefix::Campaign(named) => {
+                let trace = match process_native_campaign_rules_prepass(
+                    pre_reset_state,
+                    named,
+                    &self.sources.fixed_art,
+                ) {
+                    Ok(trace) => trace,
+                    Err(failure) => {
+                        let (error, partial_trace) = failure.into_parts();
+                        let (_, _, partial_state) = partial_trace.into_parts();
+                        self.registry = Some(NativeRulesRegistryOwner::Live(partial_state));
+                        return Err(error);
+                    }
+                };
+                (trace, None)
+            }
+        };
         let (pre_reset_events, pre_reset_super_count, pre_reset_state) =
             pre_reset_trace.into_parts();
         let post_reset_state = pre_reset_state.destructive_reset();
@@ -331,7 +386,10 @@ mod tests {
         .unwrap();
 
         let first = owner
-            .load_noncampaign_scenario(None, &first_map)
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                &first_map,
+            )
             .expect("first scenario");
         assert!(first.receipt.pre_reset.event_count() > 0);
         assert!(first.receipt.post_reset.events().iter().any(|event| {
@@ -346,7 +404,10 @@ mod tests {
         );
 
         let second = owner
-            .load_noncampaign_scenario(None, &second_map)
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                &second_map,
+            )
             .expect("second scenario");
         assert_eq!(
             second.receipt.pre_reset.event_count(),
@@ -376,7 +437,12 @@ mod tests {
         .unwrap();
 
         assert!(
-            owner.load_noncampaign_scenario(None, &failing_map).is_err(),
+            owner
+                .load_scenario(
+                    crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                    &failing_map
+                )
+                .is_err(),
             "negative Tiberium slot fails after explicit families"
         );
         assert_eq!(

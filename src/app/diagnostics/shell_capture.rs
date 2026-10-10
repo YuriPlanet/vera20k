@@ -46,6 +46,13 @@ const CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT: &str = "campaign-0x94-slider-right"
 /// and Back stays unlit.
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_HELD: &str = "campaign-0x94-slider-held";
 const CHECKPOINT_CAMPAIGN_0X94_ENTRY_PREFIX: &str = "campaign-0x94-entry-tick-";
+const CHECKPOINT_CAMPAIGN_ALL1_LOADING_FIRST: &str = "campaign-all1-loading-first-frame";
+const CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST: &str = "campaign-sov1-loading-first-frame";
+const CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE: &str = "campaign-all1-first-live-frame";
+const CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE: &str = "campaign-sov1-first-live-frame";
+const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN: &str = "campaign-all1-abort-return";
+const CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN: &str = "campaign-sov1-abort-return";
+const CHECKPOINT_CAMPAIGN_BACK_RETURN: &str = "campaign-back-return";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
@@ -171,6 +178,17 @@ pub enum ShellCaptureCheckpoint {
     Campaign0x94SliderHeld,
     /// Its entry slide held at one tick (`campaign-0x94-entry-tick-<N>`).
     Campaign0x94Entry(u32),
+    /// Real emblem press/release through the menu route, then the first
+    /// native loading frame. Intro/Brief is skipped by ordinary Escape release.
+    CampaignLoadingFirst(crate::ui::campaign_shell::CampaignSide),
+    /// The same route's first rendered InGame frame, with simulation frozen
+    /// at tick zero. Authored opening triggers (#1308) are not certified.
+    CampaignFirstLive(crate::ui::campaign_shell::CampaignSide),
+    /// First installed campaign, then physical Escape/B5 Abort/B6 Leave and
+    /// ordinary queued EXIT/audio teardown, read back on the settled main menu.
+    CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide),
+    /// Ordinary Back from campaign selection to the recreated Single Player.
+    CampaignBackReturn,
     /// Single Player -> Load Saved Game: `0xB7` settled. Needs a readable
     /// save in the saves directory.
     LoadSavedGame0xB7Steady,
@@ -415,6 +433,25 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT => Ok(Self::Campaign0x94SliderLeft),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT => Ok(Self::Campaign0x94SliderRight),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_HELD => Ok(Self::Campaign0x94SliderHeld),
+            CHECKPOINT_CAMPAIGN_ALL1_LOADING_FIRST => Ok(Self::CampaignLoadingFirst(
+                crate::ui::campaign_shell::CampaignSide::Allied,
+            )),
+            CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST => Ok(Self::CampaignLoadingFirst(
+                crate::ui::campaign_shell::CampaignSide::Soviet,
+            )),
+            CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE => Ok(Self::CampaignFirstLive(
+                crate::ui::campaign_shell::CampaignSide::Allied,
+            )),
+            CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE => Ok(Self::CampaignFirstLive(
+                crate::ui::campaign_shell::CampaignSide::Soviet,
+            )),
+            CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN => Ok(Self::CampaignAbortReturn(
+                crate::ui::campaign_shell::CampaignSide::Allied,
+            )),
+            CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN => Ok(Self::CampaignAbortReturn(
+                crate::ui::campaign_shell::CampaignSide::Soviet,
+            )),
+            CHECKPOINT_CAMPAIGN_BACK_RETURN => Ok(Self::CampaignBackReturn),
             CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY => Ok(Self::LoadSavedGame0xB7Steady),
             CHECKPOINT_OPTIONS_0XD5_STEADY => Ok(Self::Options0xD5Steady),
             CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE => Ok(Self::MainMenu0xE2NetworkBounce),
@@ -463,6 +500,25 @@ impl ShellCaptureCheckpoint {
             Self::Campaign0x94SliderRight => CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT,
             Self::Campaign0x94SliderHeld => CHECKPOINT_CAMPAIGN_0X94_SLIDER_HELD,
             Self::Campaign0x94Entry(_) => "campaign-0x94-entry",
+            Self::CampaignLoadingFirst(crate::ui::campaign_shell::CampaignSide::Allied) => {
+                CHECKPOINT_CAMPAIGN_ALL1_LOADING_FIRST
+            }
+            Self::CampaignLoadingFirst(crate::ui::campaign_shell::CampaignSide::Soviet) => {
+                CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST
+            }
+            Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Allied) => {
+                CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE
+            }
+            Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Soviet) => {
+                CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE
+            }
+            Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Allied) => {
+                CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN
+            }
+            Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Soviet) => {
+                CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN
+            }
+            Self::CampaignBackReturn => CHECKPOINT_CAMPAIGN_BACK_RETURN,
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::Options0xD5Steady => CHECKPOINT_OPTIONS_0XD5_STEADY,
@@ -547,6 +603,19 @@ impl ShellCaptureCheckpoint {
                 hold_over: None,
                 entry_tick: Some(tick),
             },
+            Self::CampaignLoadingFirst(side) => movies::MoviesTarget::CampaignStart {
+                side,
+                target: movies::CampaignStartTarget::LoadingFirst,
+            },
+            Self::CampaignFirstLive(side) => movies::MoviesTarget::CampaignStart {
+                side,
+                target: movies::CampaignStartTarget::FirstLive,
+            },
+            Self::CampaignAbortReturn(side) => movies::MoviesTarget::CampaignStart {
+                side,
+                target: movies::CampaignStartTarget::AbortReturn,
+            },
+            Self::CampaignBackReturn => movies::MoviesTarget::CampaignBack,
             Self::LoadSavedGame0xB7Steady => {
                 movies::MoviesTarget::LoadSavedGame0xB7 { entry_tick: None }
             }
@@ -1125,6 +1194,16 @@ impl ShellCaptureSession {
         }
     }
 
+    /// The first-live diagnostic records the first game draw before any
+    /// admitted simulation step. The frame owner consults this before its
+    /// ordinary sim_tick call. Abort-return freezes only until that first draw;
+    /// the ordinary modal and EXIT owners govern its remaining frames.
+    pub(crate) fn freezes_simulation_for_first_live(&self, state: &AppState) -> bool {
+        self.movies
+            .as_ref()
+            .is_some_and(|capture| capture.freezes_simulation_for_first_live(state))
+    }
+
     pub(crate) fn prepare_state(&mut self, state: &mut AppState) {
         state.match_state.input.cursor_x = self.request.cursor_x as f32;
         state.match_state.input.cursor_y = self.request.cursor_y as f32;
@@ -1351,15 +1430,6 @@ impl ShellCaptureSession {
             "capture state changed before bundle write"
         );
 
-        fs::create_dir(self.request.output_dir()).with_context(|| {
-            format!(
-                "create immutable shell-capture directory {}",
-                self.request.output_dir().display()
-            )
-        })?;
-        let frame_path = self.request.output_dir().join(FRAME_FILE_NAME);
-        write_new_file(&frame_path, pixels)?;
-
         let mut manifest_bytes = match (&self.skirmish, &self.movies, &self.score) {
             (Some(capture), _, _) => serde_json::to_vec_pretty(&capture.manifest(
                 &self.request,
@@ -1372,7 +1442,8 @@ impl ShellCaptureSession {
                 surface_format,
                 pixels,
                 self.frames_seen,
-            )),
+                state,
+            )?),
             (None, None, Some(capture)) => serde_json::to_vec_pretty(&capture.manifest(
                 &self.request,
                 surface_format,
@@ -1387,6 +1458,14 @@ impl ShellCaptureSession {
         }
         .context("serialize shell-capture manifest")?;
         manifest_bytes.push(b'\n');
+        fs::create_dir(self.request.output_dir()).with_context(|| {
+            format!(
+                "create immutable shell-capture directory {}",
+                self.request.output_dir().display()
+            )
+        })?;
+        let frame_path = self.request.output_dir().join(FRAME_FILE_NAME);
+        write_new_file(&frame_path, pixels)?;
         let manifest_path = self.request.output_dir().join(MANIFEST_FILE_NAME);
         write_new_file(&manifest_path, &manifest_bytes)?;
 
@@ -1849,6 +1928,69 @@ mod tests {
             ShellCaptureCheckpoint::Wol0x10EEntry(17)
         );
         assert!(ShellCaptureCheckpoint::parse("wol-0x10e-entry-tick-18").is_err());
+    }
+
+    #[test]
+    fn campaign_start_checkpoints_select_only_the_normal_route_targets() {
+        use crate::ui::campaign_shell::CampaignSide::{Allied, Soviet};
+        for (name, target) in [
+            (
+                CHECKPOINT_CAMPAIGN_ALL1_LOADING_FIRST,
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::LoadingFirst,
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST,
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::LoadingFirst,
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE,
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::FirstLive,
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE,
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::FirstLive,
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN,
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::AbortReturn,
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN,
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::AbortReturn,
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_BACK_RETURN,
+                movies::MoviesTarget::CampaignBack,
+            ),
+        ] {
+            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("campaign checkpoint");
+            assert_eq!(checkpoint.as_str(), name);
+            assert_eq!(checkpoint.movies_target(), Some(target));
+        }
+        for name in [
+            "campaign-tut1-first-live-frame",
+            "campaign-all1-loading-later-frame",
+        ] {
+            assert!(ShellCaptureCheckpoint::parse(name).is_err());
+        }
     }
 
     #[test]

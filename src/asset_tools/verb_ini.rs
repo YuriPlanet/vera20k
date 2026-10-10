@@ -397,7 +397,12 @@ fn run_inner(
         .into_startup(std::sync::Arc::clone(audio_definitions.sounds()))?
         .into_parts();
     let (rules, processed, _, _) = owner
-        .load_noncampaign_scenario(selected_mode.as_ref().map(|ini| &ini.ini), &map.map.ini)
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+                selected_mode.as_ref().map(|ini| &ini.ini),
+            ),
+            &map.map.ini,
+        )
         .map_err(|e| e.to_string())?
         .into_parts();
     let mut report = match query {
@@ -480,7 +485,10 @@ mod tests {
         )
         .unwrap();
         let (_, processed, _, _) = owner
-            .load_noncampaign_scenario(None, &IniFile::from_str("[General]\nTreeStrength=$xyz\n"))
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::from_str("[General]\nTreeStrength=$xyz\n"),
+            )
             .unwrap()
             .into_parts();
         assert_eq!(
@@ -509,7 +517,10 @@ mod tests {
         )
         .unwrap();
         let (rules, processed, _, _) = owner
-            .load_noncampaign_scenario(None, &IniFile::empty())
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
             .unwrap()
             .into_parts();
         let report = assemble(&processed, "GUN", "Speed", &options("raw", ""), vec![]).unwrap();
@@ -549,7 +560,10 @@ mod tests {
         )
         .unwrap();
         let (rules, processed, _, _) = owner
-            .load_noncampaign_scenario(Some(&mode), &map)
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode)),
+                &map,
+            )
             .unwrap()
             .into_parts();
         let source = json!({"logical_name": "fixture.map", "source_sha256": "fixture identity"});
@@ -614,7 +628,10 @@ mod tests {
         )
         .unwrap();
         let (rules, processed, _, _) = owner
-            .load_noncampaign_scenario(None, &IniFile::empty())
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
             .unwrap()
             .into_parts();
         assert_eq!(

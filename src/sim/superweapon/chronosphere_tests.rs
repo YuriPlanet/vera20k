@@ -197,7 +197,7 @@ pub(crate) fn place(
 /// recharge timer has run out.
 pub(crate) fn charge_super(sim: &mut Simulation, owner: InternedId, name: &str) -> InternedId {
     let sw_type = sim.interner.intern(name);
-    let mut instance = SuperWeaponInstance::new(sw_type, owner);
+    let mut instance = SuperWeaponInstance::new(sw_type, owner, 0);
     instance.activate(6300, sim.session.binary_frame);
     instance.charge_start_tick -= 6300;
     instance.is_ready = true;

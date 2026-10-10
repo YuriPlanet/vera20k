@@ -1,9 +1,9 @@
-//! Native standard Skirmish loading-screen chrome.
+//! Native loading-screen chrome.
 //!
-//! Loads verified `0x00552D60` LS country art and the `PROGBARM.SHP` frame-0
-//! progress source into a batch texture. Callers may also supply a prepared
-//! selected-map preview and the distinct house-color ramps needed to decode
-//! retail `mmpb.shp` marker variants.
+//! `DrawLoading @ 0x00552D60` selects either country art/`PROGBARM.SHP` or
+//! campaign MISSION art/title/bar/`SPLDBR.SHP`. Both use the same UI palette,
+//! SHP frame decoder and atlas packer. Standard Skirmish callers may also
+//! supply a prepared selected-map preview and house-color marker ramps.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -23,6 +23,13 @@ const SOLID_TEXEL_LABEL: &str = "__solid_texel__";
 
 /// Synthetic label for the caller-prepared selected-map preview.
 const LOADING_PREVIEW_LABEL: &str = "__selected_map_preview__";
+
+// Campaign roles can reference the same filename with different palettes;
+// keep their atlas labels distinct from asset names and one another.
+const CAMPAIGN_BACKGROUND_LABEL: &str = "__campaign_background__";
+const CAMPAIGN_TITLE_LABEL: &str = "__campaign_title__";
+const CAMPAIGN_BAR_BACKGROUND_LABEL: &str = "__campaign_bar_background__";
+const CAMPAIGN_PROGRESS_LABEL: &str = "__campaign_progress__";
 
 const MMPB_ASSET_NAME: &str = "mmpb.shp";
 const MMPB_MARKER_LABEL_PREFIX: &str = "__mmpb_marker_color_";
@@ -234,6 +241,11 @@ pub struct LoadingScreenAtlas {
     pub texture: BatchTexture,
     pub background: LoadingScreenEntry,
     pub progress_frame0: LoadingScreenEntry,
+    /// Campaign title strip, or `None` for the native solid-rectangle fallback.
+    /// Standard country loading has no separate title strip.
+    pub title_bar: Option<LoadingScreenEntry>,
+    /// Campaign bar surround, with the same native missing-SHP fallback.
+    pub progress_background: Option<LoadingScreenEntry>,
     /// Caller-prepared selected-map preview, when its RGBA payload is valid.
     pub preview: Option<LoadingScreenEntry>,
     /// Retail `mmpb.shp` frame 0 decoded for each distinct assigned-house color.
@@ -321,11 +333,90 @@ pub fn build_loading_screen_atlas_with_composition(
         texture,
         background: *by_label.get(&background_name.to_ascii_lowercase())?,
         progress_frame0: *by_label.get("progbarm.shp")?,
+        title_bar: None,
+        progress_background: None,
         preview,
         mmpb_markers,
         side_icon,
         solid_texel: *by_label.get(SOLID_TEXEL_LABEL)?,
     })
+}
+
+/// Pack the native campaign art and frame-0 progress source in the existing
+/// loading atlas. Register the LOADMD/LOAD archives through AssetManager first.
+///
+/// `DrawLoading @ 0x00552D60` selects the caller's MISSION background and its
+/// `LS800BkgdPal` at either width. `0x0072B2F0/0x0072B310` select the title/bar
+/// strips; `0x0072B340/0x0072B380` provide LDSCRN/SPLDBR palettes. The progress
+/// source is SPLDBR with that same SPLDBR palette, without a house-color remap.
+/// Missing title/bar shapes remain optional so the drawing owner can fill the
+/// corresponding native rectangles. Empty background names return no atlas;
+/// the caller must preserve the campaign family and its empty-art branch.
+pub fn build_campaign_loading_screen_atlas(
+    gpu: &GpuContext,
+    batch: &BatchRenderer,
+    assets: &AssetManager,
+    width: LoadingScreenWidth,
+    background_name: &str,
+    background_palette_name: &str,
+) -> Option<LoadingScreenAtlas> {
+    let rendered =
+        render_campaign_entries(assets, width, background_name, background_palette_name)?;
+    let (texture, packed) = pack_entries(gpu, batch, &rendered)?;
+    let by_label: HashMap<String, LoadingScreenEntry> = rendered
+        .iter()
+        .map(|entry| entry.label.clone())
+        .zip(packed)
+        .collect();
+    Some(LoadingScreenAtlas {
+        texture,
+        background: *by_label.get(CAMPAIGN_BACKGROUND_LABEL)?,
+        progress_frame0: *by_label.get(CAMPAIGN_PROGRESS_LABEL)?,
+        title_bar: by_label.get(CAMPAIGN_TITLE_LABEL).copied(),
+        progress_background: by_label.get(CAMPAIGN_BAR_BACKGROUND_LABEL).copied(),
+        preview: None,
+        mmpb_markers: BTreeMap::new(),
+        side_icon: None,
+        solid_texel: *by_label.get(SOLID_TEXEL_LABEL)?,
+    })
+}
+
+fn render_campaign_entries(
+    assets: &AssetManager,
+    width: LoadingScreenWidth,
+    background_name: &str,
+    background_palette_name: &str,
+) -> Option<Vec<RenderedLoadingEntry>> {
+    if background_name.is_empty() {
+        return None;
+    }
+    let background_palette = load_named_ui_palette(assets, background_palette_name)?;
+    let title_palette = load_named_ui_palette(assets, "LDSCRN.PAL")?;
+    let bar_palette = load_named_ui_palette(assets, "SPLDBR.PAL")?;
+    let mut background = mandatory_shp(
+        assets,
+        background_name,
+        &background_palette,
+        0,
+        background_palette_name,
+    )?;
+    background.label = CAMPAIGN_BACKGROUND_LABEL.to_owned();
+    let mut progress = mandatory_shp(assets, "SPLDBR.SHP", &bar_palette, 0, "SPLDBR.PAL")?;
+    progress.label = CAMPAIGN_PROGRESS_LABEL.to_owned();
+    let mut rendered = vec![background, progress, solid_texel_entry()];
+    let (title_name, bar_name) = match width {
+        LoadingScreenWidth::W640 => ("TTLBR640.SHP", "SPLDBRS.SHP"),
+        LoadingScreenWidth::W800 => ("TTLBR800.SHP", "SPLDBRL.SHP"),
+    };
+    if let Some(mut title) = render_shp_entry(assets, title_name, &title_palette, 0) {
+        title.label = CAMPAIGN_TITLE_LABEL.to_owned();
+        rendered.push(title);
+    }
+    if let Some(mut bar) = render_shp_entry(assets, bar_name, &bar_palette, 0) {
+        bar.label = CAMPAIGN_BAR_BACKGROUND_LABEL.to_owned();
+        rendered.push(bar);
+    }
+    Some(rendered)
 }
 
 fn progress_palette_with_player_ramp(palette: &Palette, progress_ramp: &[Color; 16]) -> Palette {
@@ -462,12 +553,12 @@ fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<RenderedLo
 
 fn load_named_ui_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
     let Some(bytes) = assets.get_ref(name) else {
-        log::warn!("Missing standard Skirmish loading palette {name}");
+        log::warn!("Missing loading palette {name}");
         return None;
     };
     Palette::from_bytes_gamemd_ui(bytes)
         .map_err(|err| {
-            log::warn!("Could not parse standard Skirmish loading palette {name}: {err:#}");
+            log::warn!("Could not parse loading palette {name}: {err:#}");
             err
         })
         .ok()
@@ -482,7 +573,7 @@ fn mandatory_shp(
 ) -> Option<RenderedLoadingEntry> {
     render_shp_entry(assets, file_name, palette, frame).or_else(|| {
         log::warn!(
-            "Missing mandatory standard Skirmish loading asset {file_name} frame {frame} decoded with {palette_name}"
+            "Missing mandatory loading asset {file_name} frame {frame} decoded with {palette_name}"
         );
         None
     })
@@ -495,18 +586,18 @@ fn render_shp_entry(
     frame: usize,
 ) -> Option<RenderedLoadingEntry> {
     let Some(load) = assets.load_file_from_mix(file_name) else {
-        log::warn!("Missing standard Skirmish loading SHP {file_name}");
+        log::warn!("Missing loading SHP {file_name}");
         return None;
     };
     let shp = ShpFile::from_bytes(&load.bytes)
         .map_err(|err| {
-            log::warn!("Could not parse standard Skirmish loading SHP {file_name}: {err:#}");
+            log::warn!("Could not parse loading SHP {file_name}: {err:#}");
             err
         })
         .ok()?;
     if frame >= shp.frames.len() {
         log::warn!(
-            "Standard Skirmish loading SHP {file_name} missing frame {frame}; frame count {}",
+            "Loading SHP {file_name} missing frame {frame}; frame count {}",
             shp.frames.len()
         );
         return None;
@@ -514,9 +605,7 @@ fn render_shp_entry(
     let frame_rgba = shp
         .frame_to_rgba_ui(frame, palette)
         .map_err(|err| {
-            log::warn!(
-                "Could not decode standard Skirmish loading SHP {file_name} frame {frame}: {err:#}"
-            );
+            log::warn!("Could not decode loading SHP {file_name} frame {frame}: {err:#}");
             err
         })
         .ok()?;
@@ -593,7 +682,7 @@ fn pack_entries(
     }
 
     log::info!(
-        "Standard Skirmish loading atlas: {}x{} px, {} pieces",
+        "Loading atlas: {}x{} px, {} pieces",
         atlas_width,
         atlas_height,
         entries.len()
@@ -621,13 +710,67 @@ fn pack_entries(
 #[cfg(test)]
 mod tests {
     use super::{
-        LOADING_PREVIEW_LABEL, LoadingArtVariant, LoadingScreenEntry, LoadingScreenWidth,
-        MmpbRegionRect, PreparedLoadingPreviewRgba, lookup_optional_atlas_entries,
-        mmpb_marker_label, mmpb_region_rect, prepared_preview_entry,
-        progress_palette_with_player_ramp, render_pcx_entry, render_shp_entry,
+        CAMPAIGN_BACKGROUND_LABEL, CAMPAIGN_BAR_BACKGROUND_LABEL, CAMPAIGN_PROGRESS_LABEL,
+        CAMPAIGN_TITLE_LABEL, LOADING_PREVIEW_LABEL, LoadingArtVariant, LoadingScreenEntry,
+        LoadingScreenWidth, MmpbRegionRect, PreparedLoadingPreviewRgba,
+        lookup_optional_atlas_entries, mmpb_marker_label, mmpb_region_rect, prepared_preview_entry,
+        progress_palette_with_player_ramp, render_campaign_entries, render_pcx_entry,
+        render_shp_entry,
     };
     use crate::assets::pal_file::{Color, Palette};
     use std::collections::HashMap;
+
+    #[test]
+    fn first_campaign_art_decodes_through_the_shared_loading_palette_and_shp_path() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        assert!(
+            assets
+                .register_loading_archives()
+                .expect("retail loading archive setup"),
+            "LOADMD and LOAD archives must register for campaign art"
+        );
+        let mission = crate::rules::ini_parser::IniFile::from_bytes(
+            assets.get_ref("MISSIONMD.INI").expect("retail MISSIONMD"),
+        )
+        .expect("retail MISSIONMD parses");
+        for filename in ["ALL01UMD.MAP", "SOV01UMD.MAP"] {
+            let mut metadata = crate::rules::campaign_loading::CampaignLoadingMetadata::new();
+            metadata.apply_ini(&mission, filename);
+            for (width, expected_body, expected_strip_width) in [
+                (LoadingScreenWidth::W640, [640, 400], 640),
+                (LoadingScreenWidth::W800, [800, 520], 800),
+            ] {
+                let background_name = match width {
+                    LoadingScreenWidth::W640 => metadata.background_name_640(),
+                    LoadingScreenWidth::W800 => metadata.background_name_800(),
+                };
+                let rendered = render_campaign_entries(
+                    &assets,
+                    width,
+                    background_name,
+                    metadata.background_palette_name(),
+                )
+                .expect("stock first-mission loading art decodes");
+                // Full frame/canvas geometries from the physical retail
+                // shapes, not from the atlas layout implementation.
+                for (label, expected) in [
+                    (CAMPAIGN_BACKGROUND_LABEL, expected_body),
+                    (CAMPAIGN_TITLE_LABEL, [expected_strip_width, 40]),
+                    (CAMPAIGN_BAR_BACKGROUND_LABEL, [expected_strip_width, 40]),
+                    (CAMPAIGN_PROGRESS_LABEL, [456, 25]),
+                ] {
+                    let entry = rendered
+                        .iter()
+                        .find(|entry| entry.label == label)
+                        .unwrap_or_else(|| panic!("{filename} {width:?} missing {label}"));
+                    assert_eq!([entry.width, entry.height], expected, "{filename} {label}");
+                    assert_eq!(entry.rgba.len(), (expected[0] * expected[1] * 4) as usize);
+                }
+            }
+        }
+    }
 
     #[test]
     fn progress_palette_replaces_only_the_house_color_band() {

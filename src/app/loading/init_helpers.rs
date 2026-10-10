@@ -228,7 +228,7 @@ pub(crate) fn theater_ext_for(theater_name: &str) -> &'static str {
 
 /// Match-load rules for a test, through the path a match load takes: the cold
 /// startup selection (`load_startup_rules`), then the noncampaign scenario
-/// rebuild on its process owner (`load_noncampaign_scenario`). Returns the
+/// rebuild on its process owner (`load_scenario`). Returns the
 /// rules, the processed INI, the fixed ARTMD snapshot and the native receipt
 /// that binds a stock-offline prefix plan.
 ///
@@ -255,7 +255,7 @@ pub(crate) fn load_rules_with_merged_ini(
     .into_parts();
     let no_map = IniFile::from_str("");
     let (rules, processed_ini, fixed_art_ini, receipt) = native_owner
-        .load_noncampaign_scenario(mode_rules_override, map_rules_overrides.unwrap_or(&no_map))
+        .load_scenario(crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(mode_rules_override), map_rules_overrides.unwrap_or(&no_map))
         .map_err(|error| log::warn!("Failed native noncampaign rules rebuild: {error}"))
         .ok()?
         .into_parts();
@@ -953,7 +953,7 @@ mod tests {
         )
         .expect("cold startup");
         let (rules, processed_ini, fixed_art, _receipt) = owner
-            .load_noncampaign_scenario(Some(mode), map)
+            .load_scenario(crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(mode)), map)
             .expect("noncampaign scenario rebuild")
             .into_parts();
         (rules, processed_ini, fixed_art)

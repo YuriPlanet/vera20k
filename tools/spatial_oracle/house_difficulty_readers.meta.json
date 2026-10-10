@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole SetDifficulty body: all nine stored House doubles, literal difficulty index and wrapped team timer over the existing72 controls. Reader fixture separately executes full ReadDifficulty over retained rows and8 layers.",
+  "assumptions": [
+    "x87 control word0x0E7F (PC53, chop), the shared harness default.",
+    "Rules difficulty rows, GameSpeedBias, TeamDelays11/22/33, Country scalar priors, frame100, GameMode0/5 and House index are explicit inputs. Some odd direct double inputs intentionally do not represent INI-read values.",
+    "Reader rows supply lexical/source cache storage using existing BulletReader owner. Original ReadDouble/ReadBool and full66D270 execute; physical file admission, complete Rules Process and gameplay consumers are excluded. Malformed floating scans leave native stack storage undefined and are excluded; defined numeric-prefix scans are retained.",
+    "Arithmetic storage is established here; no downstream speed/armor/cost effect is implied merely by these stored scalars."
+  ],
+  "substitutions": [
+    "Reader-only existing bounded allocation/CRT transport and lexical INI cache storage; no numeric operation or gameplay callable is replaced."
+  ],
+  "entry_points": {
+    "set_difficulty": "0x004F6EC0",
+    "read_difficulty": "0x0066D270"
+  },
+  "reproduce_command": "RA2_DIR='<retail-directory-containing-original-gamemd.exe>' python -m tools.spatial_oracle.house_difficulty --readers --check",
+  "rulesmd_sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+  "source_normalized_lf_sha256": {
+    "producer": "eb3b2c4c45b06891401b69f0bd05e59b038d930df59c4d51e93f0e966c5d1d59",
+    "native_runner": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb",
+    "native_inspect": "9f1aa80986702ae6e045c8f93578a5f9c4c2ee5be9ec897c7cbeb3697f839dcc",
+    "reader": "2f05d2e7e917aef585553502830947ea8ca121eab2d886d2c9ba4df7c935727d",
+    "reader_base": "fc0d267d9c8453ba3090bfacd056af5207f47cb1170651cce5b0c41c80e90a2e",
+    "reader_lists": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
+    "fixture_base": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
+    "crc": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
+    "lexical": "411fae85e38850208ce1c9dc8a5b411459fd0c043f2a20a6090bee0cbf92e7da"
+  },
+  "payload_sha256": "5b231ac2b1850921effef98a9f7a7092c9d995d923566836fa956cc6ec26d93c"
+}
