@@ -340,7 +340,8 @@ fn upload_to_gpu(
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
     // overlay and before the software cursor (O10).
-    let (tooltip_fill, tooltip_text) = crate::app::input::tooltips::build_tooltip_instances(state);
+    let (tooltip_fill, tooltip_border, tooltip_text) =
+        crate::app::input::tooltips::build_tooltip_instances(state);
 
     // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles;
     // built before the pool borrow (they step the Supers' blinks).
@@ -472,6 +473,7 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "sidebar_text", &sidebar.text);
     pool.upload(&state.renderer.gpu, "message_text", &message_text);
     pool.upload(&state.renderer.gpu, "tooltip_fill", &tooltip_fill);
+    pool.upload(&state.renderer.gpu, "tooltip_border", &tooltip_border);
     pool.upload(&state.renderer.gpu, "tooltip_text", &tooltip_text);
 }
 

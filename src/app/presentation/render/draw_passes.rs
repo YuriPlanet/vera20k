@@ -797,12 +797,29 @@ pub(super) fn dispatch_draw_passes(
         Some(state.renderer.bit_font.atlas()),
         "message_text",
     );
+    // Both solid tooltip quads come from one tintable texel — the fill is tinted
+    // pure black and the 1 px frame takes the tip's text colour, which is what
+    // the retail pop-up shows. The darken strip would have blended the tip into
+    // whatever it covers, so it is not used here.
+    let tooltip_solid = state
+        .match_state
+        .match_presentation
+        .selection_overlay
+        .as_ref()
+        .map(|o| o.white_texture());
     draw_pooled_ui(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        state.renderer.bit_font.darken_texture(),
+        tooltip_solid,
         "tooltip_fill",
+    );
+    draw_pooled_ui(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        tooltip_solid,
+        "tooltip_border",
     );
     draw_pooled_ui(
         &mut pass,
@@ -1199,6 +1216,7 @@ mod tests {
         let boundary = source_offset("\"radar_content_boundary\"");
         let message = source_offset("\"message_text\"");
         let tooltip_fill = source_offset("\"tooltip_fill\"");
+        let tooltip_border = source_offset("\"tooltip_border\"");
         let tooltip_text = source_offset("\"tooltip_text\"");
         let screenshot_boundary = source_offset("stage_pre_cursor_composition");
         let cursor = source_offset("\"software_cursor\"");
@@ -1206,8 +1224,26 @@ mod tests {
         assert!(viewport < boundary);
         assert!(boundary < message);
         assert!(message < tooltip_fill);
-        assert!(tooltip_fill < tooltip_text);
+        assert!(tooltip_fill < tooltip_border);
+        assert!(tooltip_border < tooltip_text);
         assert!(tooltip_text < screenshot_boundary);
         assert!(screenshot_boundary < cursor);
+    }
+
+    /// gamemd's pop-up hides what it lands on, so its fill is a solid texel
+    /// tinted black. Binding the sidebar darken strip instead (175/255 alpha)
+    /// reads as a translucent box, which is what this pins out.
+    #[test]
+    fn tooltip_fill_binds_the_solid_texel_not_the_darken_strip() {
+        let binding = source_offset("let tooltip_solid");
+        let fill = source_offset("\"tooltip_fill\"");
+        let border = source_offset("\"tooltip_border\"");
+        assert!(binding < fill);
+        let slice = &SOURCE[binding..border];
+        assert!(
+            !slice.contains("darken_texture"),
+            "tooltip lanes must not draw with the translucent darken strip"
+        );
+        assert!(fill < border);
     }
 }

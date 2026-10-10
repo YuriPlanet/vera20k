@@ -70,6 +70,8 @@ pub struct TooltipService {
     timer_deadline_ms: Option<u64>,
     /// Cameo-style zero-delay override (contract lane §3.4 hover hook).
     delay_override_ms: Option<u64>,
+    /// Opt-in cursor tracking; see [`TooltipService::set_follow_cursor`].
+    follow_cursor: bool,
     mouse_x: i32,
     mouse_y: i32,
 }
@@ -78,6 +80,7 @@ impl TooltipService {
     pub fn new() -> Self {
         Self {
             enabled: true,
+            follow_cursor: false,
             ..Default::default()
         }
     }
@@ -118,24 +121,34 @@ impl TooltipService {
         self.regions.extend_from_slice(regions);
     }
 
-    /// Mouse move: with a non-zero delay, every move RESTARTS the delay timer
-    /// and hides a visible tip; with a zero delay-override the next poll
-    /// shows immediately (the timer fires at `now`).
+    /// Mouse move. gamemd never drags a shown tip along with the cursor: the box
+    /// keeps the position captured when it appeared, so the 1-px jitter of a
+    /// resting hand leaves it in place. Only leaving the region the tip belongs
+    /// to, a button press or the duration expiry ends it.
+    ///
+    /// With [`set_follow_cursor`](Self::set_follow_cursor) enabled every move
+    /// hides the tip and re-arms the show delay, which the cameo zero-delay
+    /// override re-fires on the same frame's poll — the box then slides after
+    /// the cursor. Hiding there rather than leaving it to `poll` is what keeps
+    /// that mode from blinking: `poll` reads a firing timer beside a visible tip
+    /// as the duration expiry, and that expiry does not re-arm.
     pub fn on_mouse_move(&mut self, x: i32, y: i32, now_ms: u64) {
         if !self.enabled {
             return;
         }
         self.mouse_x = x;
         self.mouse_y = y;
-        let delay = self.delay_ms();
-        if delay != 0 {
-            if self.active.is_some() {
-                self.active = None;
-            }
-            self.timer_deadline_ms = Some(now_ms + delay);
-        } else {
-            self.timer_deadline_ms = Some(now_ms);
+        if !self.follow_cursor
+            && self.active.as_ref().is_some_and(|a| {
+                self.regions
+                    .iter()
+                    .any(|r| r.id == a.id && r.rect.contains_inclusive(x, y))
+            })
+        {
+            return;
         }
+        self.active = None;
+        self.timer_deadline_ms = Some(now_ms + self.delay_ms());
     }
 
     /// CursorCheat's 724251 -> 72429E branch bypasses the show delay and
@@ -208,6 +221,18 @@ impl TooltipService {
     /// while highlighted, restored on leave.
     pub fn set_delay_override(&mut self, delay_ms: Option<u64>) {
         self.delay_override_ms = delay_ms;
+    }
+
+    /// Whether an already visible tip follows the cursor.
+    ///
+    /// Off by default, which is gamemd's behaviour: the pop-up holds the spot it
+    /// appeared in. Native's one tracking branch is the `CursorCheat`
+    /// 724251 → 72429E path behind the in-game coordinate toggle, served by
+    /// [`Self::on_mouse_move_immediate`] and independent of this flag; turning
+    /// it on here makes the ordinary path re-show the tip at the new cursor
+    /// position on every move instead.
+    pub fn set_follow_cursor(&mut self, follow_cursor: bool) {
+        self.follow_cursor = follow_cursor;
     }
 
     /// Enable gate; disabling kills the timer and hides immediately.
@@ -283,6 +308,7 @@ mod tests {
     #[test]
     fn every_move_restarts_the_delay_and_hides() {
         let mut s = service_with(&[region(1, 0, 0, 10, 10, "tip")]);
+        s.set_follow_cursor(true);
         s.on_mouse_move(5, 5, 0);
         s.on_mouse_move(6, 5, 900);
         s.poll(1000);
@@ -294,6 +320,28 @@ mod tests {
         assert!(s.active().is_none(), "moving hides a visible tip");
         s.poll(3000);
         assert!(s.active().is_some(), "re-shown after another full delay");
+    }
+
+    /// gamemd holds a shown tip in the spot it appeared in: moving inside its
+    /// region neither moves nor hides it, and only leaving the region ends it.
+    #[test]
+    fn shown_tip_holds_its_spot_until_the_cursor_leaves() {
+        let mut s = service_with(&[region(1, 0, 0, 10, 10, "tip")]);
+        s.set_delay_override(Some(0));
+        s.on_mouse_move(2, 2, 1000);
+        s.poll(1000);
+        assert_eq!((s.active().unwrap().x, s.active().unwrap().y), (2, 2));
+        for (x, y) in [(4, 3), (7, 8), (9, 1)] {
+            s.on_mouse_move(x, y, 1200);
+            s.poll(1200);
+            let tip = s.active().expect("still inside the region");
+            assert_eq!((tip.x, tip.y), (2, 2), "tip slid after the cursor");
+            assert_eq!(tip.shown_at_ms, 1000, "the duration timer restarted");
+        }
+        s.on_mouse_move(20, 20, 1400);
+        assert!(s.active().is_none(), "leaving the region hides");
+        s.poll(1400);
+        assert!(s.active().is_none(), "nothing to hit outside the region");
     }
 
     #[test]
@@ -393,13 +441,38 @@ mod tests {
         s.on_mouse_move(5, 5, 7000);
         s.poll(7000);
         assert!(s.active().is_some(), "cameo-hover zero delay: immediate");
+        // A frozen tip only ends when the cursor leaves its region, so the
+        // restored delay is measured from that next hiding move.
         s.set_delay_override(None);
-        s.on_mouse_move(6, 5, 7100);
-        assert!(s.active().is_none());
+        s.on_mouse_move(50, 50, 7100);
+        assert!(s.active().is_none(), "leaving the region hides");
+        s.on_mouse_move(6, 5, 7150);
         s.poll(7500);
         assert!(s.active().is_none(), "restored 1000 ms delay applies again");
-        s.poll(8100);
+        s.poll(8150);
         assert!(s.active().is_some());
+    }
+
+    #[test]
+    fn zero_delay_jitter_does_not_toggle_the_visible_tip() {
+        // A mouse resting on a cameo still emits 1-px jitter, and the cameo
+        // hover hook keeps the show delay at zero. The jitter must neither blink
+        // the tip nor move it: hiding on a move is read by `poll` as the
+        // duration expiry, which never re-arms, so the tip blinks at the event
+        // rate.
+        let mut s = service_with(&[region(1, 0, 0, 10, 10, "cameo")]);
+        s.set_delay_override(Some(0));
+        s.on_mouse_move(5, 5, 1000);
+        s.poll(1000);
+        assert!(s.active().is_some());
+        for now in [1016, 1032, 1048, 1064] {
+            s.on_mouse_move(5, 6, now);
+            s.poll(now);
+            let tip = s
+                .active()
+                .unwrap_or_else(|| panic!("tip blinked at {now} ms"));
+            assert_eq!((tip.x, tip.y), (5, 5), "jitter moved the tip at {now} ms");
+        }
     }
 
     #[test]
