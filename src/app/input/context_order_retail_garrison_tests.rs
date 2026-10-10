@@ -120,7 +120,12 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
     for frame in 0..600 {
         let due = runtime.simulation.take_due_commands();
         runtime
-            .advance_frame(&due, crate::app::types::SIM_TICK_MS, TickLane::Ordinary)
+            .advance_frame(
+                &due,
+                crate::app::types::SIM_TICK_MS,
+                TickLane::Ordinary,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         let sim = &runtime.simulation;
         for &gi in &gis {
