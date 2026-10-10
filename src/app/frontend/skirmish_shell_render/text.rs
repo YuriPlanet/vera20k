@@ -590,7 +590,7 @@ pub(super) fn build_shell_text_draws(
         ("GUI:Side", "Side", layout.column_labels.side),
         ("GUI:Color", "Color", layout.column_labels.color),
         (
-            "GUI:LaunchStartPosition",
+            "GUI:StartPosition",
             "Start",
             layout.column_labels.start,
         ),
