@@ -329,7 +329,14 @@ mod tests {
             crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
             &descriptor,
             None,
-            |sim| crate::sim::scenario_bootstrap::initialize_map_roster_houses(sim, &roster, None),
+            |sim| {
+                crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+                    sim, &roster, None, None,
+                );
+                crate::sim::scenario_bootstrap::initialize_campaign_current_house(
+                    sim, &roster, &map.ini,
+                );
+            },
         )
         .expect("staged map-roster construction");
         let selected = sim.interner.get("Alpha").unwrap();
@@ -659,18 +666,6 @@ where
     // handoff. Later live Tag construction can safely publish into this owner.
     sim.initialize_map_triggers(&map_data.triggers, &map_data.local_variables);
     initialize_houses_before_objects(sim);
-    if !descriptor.game_mode_nonzero {
-        let roster = crate::map::houses::parse_house_roster(
-            &map_data.ini,
-            rules.map_or(&[], |rules| rules.color_schemes.as_slice()),
-            rules,
-        );
-        crate::sim::scenario_bootstrap::initialize_campaign_current_house(
-            sim,
-            &roster,
-            &map_data.ini,
-        );
-    }
     // Frame tripwire: every MP start waypoint must sit inside the session
     // bounds (= the fog window, cell-array frame). A start outside means the
     // descriptor was fed wrong-frame bounds (e.g. raw [Map] Size=) and the
@@ -1213,6 +1208,11 @@ pub(crate) fn finalize_constructed_scenario(
     }
     // The caller submits one immutable initialization command; Simulation owns
     // every match-affecting write and Scenario RNG draw in the post-map tail.
+    let campaign_new_game_map = sim
+        .session
+        .campaign_mission_counter()
+        .filter(|_| !sim.session.game_mode_nonzero)
+        .map(|_| map_data);
     let output =
         sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
             map_width: map_data.header.width as u16,
@@ -1222,6 +1222,7 @@ pub(crate) fn finalize_constructed_scenario(
             overlay_registry,
             house_roster,
             skirmish_session,
+            campaign_new_game_map,
         });
     sim.discard_lighting_events();
     output

@@ -172,7 +172,10 @@ fn retail_ifv_speed_passes_production_cold_start_and_scenario_rules_owner() {
     )
     .unwrap();
     let (rules, _, _, _) = owner
-        .load_noncampaign_scenario(None, &IniFile::empty())
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+            &IniFile::empty(),
+        )
         .unwrap()
         .into_parts();
     let native = scalar_corpus();

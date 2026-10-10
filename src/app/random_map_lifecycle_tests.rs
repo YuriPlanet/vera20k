@@ -202,6 +202,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         generated_a.unfilled_start_slots,
     );
     assert!(!finish_random_map_generation_owners(
+        None,
         &mut runtime,
         &mut retention,
         generated_modal.as_mut().expect("generated modal"),
@@ -232,6 +233,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         generated_b.unfilled_start_slots,
     );
     assert!(!finish_random_map_generation_owners(
+        None,
         &mut runtime,
         &mut retention,
         generated_modal.as_mut().expect("generated modal"),
@@ -287,6 +289,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         generated_for_accept.unfilled_start_slots,
     );
     assert!(finish_random_map_generation_owners(
+        None,
         &mut runtime,
         &mut retention,
         empty_modal.as_mut().expect("empty modal"),
@@ -329,6 +332,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     let (entries, generated_for_cancel) = receive_production_generation(receiver);
     generation_entries += entries;
     assert!(!finish_random_map_generation_owners(
+        None,
         &mut runtime,
         &mut retention,
         cancel_modal.as_mut().expect("cancel modal"),
@@ -416,7 +420,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     .logical_state();
     let poison = crate::map::rmg::GeneratedMap {
         map_file: poison_map,
-        mapgen_continuation: RmgRng::new(poison_options.seed_u16()).into_continuation(),
+        mapgen_continuation: Some(RmgRng::new(poison_options.seed_u16()).into_continuation()),
         construction_trace: poison_trace,
         start_waypoints: accepted_start_waypoints.clone(),
         stages_run: Vec::new(),
@@ -452,7 +456,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     // an arbitrary direct `.SED` is intentionally not a parity builder.
     let direct_preview = crate::map::rmg::GeneratedMap {
         map_file: crate::map::rmg::emit::empty_map_file(&options, 32, 32),
-        mapgen_continuation: RmgRng::new(options.seed_u16()).into_continuation(),
+        mapgen_continuation: Some(RmgRng::new(options.seed_u16()).into_continuation()),
         construction_trace: RmgConstructionTrace::default(),
         start_waypoints: accepted_start_waypoints.clone(),
         stages_run: Vec::new(),

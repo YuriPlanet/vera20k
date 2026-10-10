@@ -159,7 +159,12 @@ pub(crate) fn load_with_launch(
     let override_file = launch.session().mode.override_file.trim();
     let mode_override = crate::rules::retail_sources::select_ini(&assets, override_file)?.ini;
     let (mut rules, rules_ini, art_ini, native_rules_receipt) = native_rules_owner
-        .load_noncampaign_scenario(Some(&mode_override), &map.ini)
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(
+                &mode_override,
+            )),
+            &map.ini,
+        )
         .map_err(|error| format!("load native noncampaign rules: {error}"))?
         .into_parts();
     let bound_scenario_prefix =
@@ -379,7 +384,12 @@ impl HeadlessScenario {
     pub fn tick(&mut self) {
         let _ = self
             .runtime
-            .advance_frame(&[], SIM_TICK_MS, crate::sim::world::TickLane::Ordinary, crate::sim::world::FrameEffects::default())
+            .advance_frame(
+                &[],
+                SIM_TICK_MS,
+                crate::sim::world::TickLane::Ordinary,
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("simulation frame failed; prior world mutations remain");
     }
 }

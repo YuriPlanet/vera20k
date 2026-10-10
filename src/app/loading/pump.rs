@@ -14,6 +14,7 @@ mod render;
 mod tests;
 
 use crate::app::AppState;
+use crate::app::loading::campaign_presentation::CampaignLoadingPresentation;
 use crate::app::loading::composition::{
     LoadingCompositionSnapshot, LoadingParticipantId, LoadingStartAssignment,
     RANDOM_MAP_PREVIEW_FILE, build_loading_composition, build_random_map_loading_composition,
@@ -255,6 +256,14 @@ pub(crate) struct LoadingRequest {
 }
 
 impl LoadingRequest {
+    pub(crate) fn campaign(startup: crate::match_bootstrap::PreparedCampaignStartup) -> Self {
+        Self {
+            startup: LoadingStartup::Campaign(startup),
+            accepted_rmg_start_staging: None,
+            random_map_preview: None,
+        }
+    }
+
     pub(crate) fn accepted_skirmish(startup: PreparedMatchStartup) -> Self {
         Self {
             startup: LoadingStartup::Accepted(startup),
@@ -357,7 +366,7 @@ impl LoadingRequest {
         &mut self,
         initial: &MapLoadInitial,
     ) -> anyhow::Result<FreshScenarioLoadContextDescriptor> {
-        FreshScenarioLoadContextDescriptor::admit_stock_offline(
+        FreshScenarioLoadContextDescriptor::admit(
             &self.startup,
             initial.map_data(),
             initial.map_source(),
@@ -370,9 +379,12 @@ impl LoadingRequest {
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
         native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        mapgen_retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
+        resident: Option<&mut crate::sim::world::Simulation>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<PreparedScenarioLoad> {
-        let initial = self.load_initial_with_assets(ra2_dir, assets, native_rules, progress)?;
+        let mut initial = self.load_initial_with_assets(ra2_dir, assets, native_rules, progress)?;
+        initial.retain_process_mapgen(mapgen_retention, resident);
         self.prepare_initial(initial)
     }
 
@@ -384,7 +396,14 @@ impl LoadingRequest {
         native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<init::RandomMapLaunchSnapshot> {
-        let prepared = self.prepare(ra2_dir, assets, native_rules, progress)?;
+        let prepared = self.prepare(
+            ra2_dir,
+            assets,
+            native_rules,
+            &mut Default::default(),
+            None,
+            progress,
+        )?;
         Ok(prepared
             .initial
             .into_random_map_launch_snapshot(assets, prepared.context))
@@ -437,8 +456,14 @@ impl LoadingStage {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeLoadingArt {
+    StockOffline(LoadingArtVariant),
+    Campaign,
+}
+
 pub(crate) struct NativeLoadingScreenState {
-    pub variant: LoadingArtVariant,
+    pub variant: NativeLoadingArt,
     local_side_index: u8,
     /// Local player's MP color scheme — source of the G3 solid backing fill and
     /// bar remap. Derived from the launch session, not the country variant.
@@ -456,6 +481,7 @@ pub(crate) struct NativeLoadingScreenState {
     pub progress_row: LoadingProgressRowSnapshot,
     pub atlas: Option<LoadingScreenAtlas>,
     pub composition: Option<LoadingCompositionSnapshot>,
+    pub campaign_presentation: Option<super::campaign_presentation::CampaignLoadingPresentation>,
     /// Native constructs two runtime ColorScheme objects per current `[Colors]`
     /// entry. Capture that pre-load count before the later rules reset.
     runtime_color_scheme_count: usize,
@@ -471,7 +497,7 @@ impl NativeLoadingScreenState {
         progress_cadence: NativeLoadingProgressCadence,
     ) -> Self {
         Self {
-            variant,
+            variant: NativeLoadingArt::StockOffline(variant),
             local_side_index,
             color_index,
             // Static placeholders; replaced by `resolve_player_colors` once rules load.
@@ -482,9 +508,39 @@ impl NativeLoadingScreenState {
             progress_row,
             atlas: None,
             composition: None,
+            campaign_presentation: None,
             runtime_color_scheme_count: 0,
             progress_cadence,
         }
+    }
+
+    fn campaign(cd: i32) -> Self {
+        Self {
+            variant: NativeLoadingArt::Campaign,
+            // BeginProgress684620 passes Campaign.CD; color resolver642B30
+            // distinguishes exactly zero from all nonzero values.
+            local_side_index: u8::from(cd != 0),
+            color_index: HouseColorIndex(0),
+            backing_rgb: FALLBACK_BACKING_RGB,
+            text_rgb: [1.0; 3],
+            progress_ramp: FALLBACK_PROGRESS_RAMP,
+            progress: LoadingProgressState::standard_skirmish(),
+            // Campaign meter has no participant label, remap or country icon.
+            progress_row: LoadingProgressRowSnapshot {
+                label: String::new(),
+            },
+            atlas: None,
+            composition: None,
+            campaign_presentation: None,
+            runtime_color_scheme_count: 0,
+            progress_cadence: NativeLoadingProgressCadence::SelectedMap,
+        }
+    }
+
+    fn suppresses_chrome(&self) -> bool {
+        self.campaign_presentation
+            .as_ref()
+            .is_some_and(|presentation| presentation.background_name.is_empty())
     }
 
     /// Resolve the backing fill + progress ramp from the rules `[Colors]` data. The
@@ -527,10 +583,20 @@ pub(crate) struct LoadingSession {
 }
 
 impl LoadingSession {
+    fn failure_policy(&self) -> LoadingFailurePolicy {
+        if self.stage.request().startup().campaign().is_some() {
+            LoadingFailurePolicy::RetryCampaignShell
+        } else if self.native.is_some() {
+            LoadingFailurePolicy::ReportNativeFailure
+        } else {
+            LoadingFailurePolicy::InstallGenericFallback
+        }
+    }
+
     fn native_pump_blocked(&self) -> bool {
         self.native
             .as_ref()
-            .is_some_and(|native| native.atlas.is_none())
+            .is_some_and(|native| native.atlas.is_none() && !native.suppresses_chrome())
     }
 
     fn from_request(request: LoadingRequest) -> Self {
@@ -554,7 +620,10 @@ impl LoadingSession {
                     progress_cadence,
                 ))
             }
-            None => None,
+            None => request
+                .startup()
+                .campaign()
+                .map(|startup| NativeLoadingScreenState::campaign(startup.campaign().cd())),
         };
         Self {
             stage: LoadingStage::Selected(request),
@@ -702,6 +771,28 @@ pub(crate) fn loading_map_name(state: &AppState) -> Option<&str> {
         .map(|session| session.stage.request().selected_map_file())
 }
 
+/// Immutable selected campaign for loading diagnostics; the stage retains
+/// authority over its request through preparation and terminal disposition.
+pub(crate) fn loading_campaign_startup(
+    state: &AppState,
+) -> Option<&crate::match_bootstrap::PreparedCampaignStartup> {
+    state
+        .frontend
+        .loading_session
+        .as_ref()?
+        .stage
+        .request()
+        .startup()
+        .campaign()
+}
+
+pub(crate) fn loading_map_source(state: &AppState) -> Option<&crate::map::source::LoadedMapSource> {
+    match &state.frontend.loading_session.as_ref()?.stage {
+        LoadingStage::Prepared(prepared) => Some(prepared.initial.map_source()),
+        LoadingStage::Selected(_) => None,
+    }
+}
+
 pub(crate) fn clear_loading_state(state: &mut AppState) {
     retire_loading_attempt(
         &mut state.frontend.loading_session,
@@ -727,6 +818,7 @@ fn retire_loading_attempt(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LoadingFailurePolicy {
     ReportNativeFailure,
+    RetryCampaignShell,
     InstallGenericFallback,
 }
 
@@ -737,7 +829,7 @@ fn retire_failed_loading_attempt(
     policy: LoadingFailurePolicy,
 ) -> LoadingFailurePolicy {
     retire_loading_attempt(slot, assets);
-    if policy == LoadingFailurePolicy::ReportNativeFailure {
+    if policy != LoadingFailurePolicy::InstallGenericFallback {
         startup.clear();
     }
     policy
@@ -751,6 +843,13 @@ fn is_native_loading_session(state: &AppState) -> bool {
         .is_some_and(|session| session.native.is_some())
 }
 
+fn loading_failure_policy(state: &AppState) -> LoadingFailurePolicy {
+    state.frontend.loading_session.as_ref().map_or(
+        LoadingFailurePolicy::InstallGenericFallback,
+        LoadingSession::failure_policy,
+    )
+}
+
 fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
     let Some(session) = state.frontend.loading_session.take() else {
         return LoadingPump::Pending;
@@ -758,13 +857,19 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
     if session.native_pump_blocked() {
         session.job.retire(&mut state.process_assets);
         return LoadingPump::Failed(anyhow::anyhow!(
-            "native Skirmish loading renderer was not ready before the first loading pump"
+            "native loading renderer was not ready before the first loading pump"
         ));
     }
 
     if matches!(session.stage, LoadingStage::Selected(_)) {
         return match prepare_loading_session(
             &mut state.process_assets,
+            &mut state.frontend.random_map_retention,
+            state
+                .match_state
+                .sim_runtime
+                .as_mut()
+                .map(|runtime| &mut runtime.simulation),
             session,
             false,
             state
@@ -860,6 +965,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
                         .as_ref()
                         .expect("selected rendering sink has atlas");
                     let composition = native.composition.as_ref();
+                    let campaign_presentation = native.campaign_presentation.as_ref();
                     RenderingProgressSink {
                         gpu: &state.renderer.gpu,
                         presenter: &state.renderer.shell_surface_presenter,
@@ -870,6 +976,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
                         progress_row: &native.progress_row,
                         atlas,
                         composition,
+                        campaign_presentation,
                         backing_rgb,
                         text_rgb,
                         render_size,
@@ -1007,6 +1114,8 @@ impl LoadingJob {
 /// sink differs: prepaint must swallow raw8 until the first frame is presented.
 fn prepare_loading_session(
     process_assets: &mut crate::app::process_assets::ProcessAssets,
+    mapgen_retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
+    mut resident: Option<&mut crate::sim::world::Simulation>,
     mut session: LoadingSession,
     before_first_frame: bool,
     configured_ra2_dir: Option<PathBuf>,
@@ -1034,17 +1143,32 @@ fn prepare_loading_session(
                 .asset_manager
                 .as_mut()
                 .expect("asset setup stores manager");
+            if request.startup().campaign().is_some() {
+                // ClearScene685609 rereads campaign sources before the second
+                // Full_Init prefix; the selected StartScenario map is already
+                // an immutable request, while retained catalog fields update.
+                process_assets.reload_campaigns(assets);
+            }
             let prepared = if !before_first_frame && let Some(native) = native.as_mut() {
                 let mut sink = GatedProgressSink {
                     progress: &mut native.progress,
                     cadence: native.progress_cadence,
                 };
-                request.prepare(ra2_dir, assets, process_assets.native_rules(), &mut sink)
+                request.prepare(
+                    ra2_dir,
+                    assets,
+                    process_assets.native_rules(),
+                    mapgen_retention,
+                    resident.as_deref_mut(),
+                    &mut sink,
+                )
             } else {
                 request.prepare(
                     ra2_dir,
                     assets,
                     process_assets.native_rules(),
+                    mapgen_retention,
+                    resident.as_deref_mut(),
                     &mut NoopProgressSink,
                 )
             };
@@ -1098,6 +1222,12 @@ fn prepare_scenario_initial_before_first_frame(state: &mut AppState) -> anyhow::
     };
     state.frontend.loading_session = Some(prepare_loading_session(
         &mut state.process_assets,
+        &mut state.frontend.random_map_retention,
+        state
+            .match_state
+            .sim_runtime
+            .as_mut()
+            .map(|runtime| &mut runtime.simulation),
         session,
         true,
         state
@@ -1194,6 +1324,9 @@ fn ensure_loading_composition_snapshot(state: &mut AppState) {
         let Some(native) = session.native.as_ref() else {
             return;
         };
+        if native.variant == NativeLoadingArt::Campaign {
+            return;
+        }
         if native.composition.is_some() {
             return;
         }
@@ -1280,16 +1413,15 @@ pub(crate) fn theater_ramp_changed_values(runtime_color_scheme_count: usize) -> 
 }
 
 pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Result<()> {
-    let Some(variant) = selected_loading_art_variant(state) else {
+    if !is_native_loading_session(state) {
         return Ok(());
-    };
+    }
     if state
         .frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
-        .and_then(|native| native.atlas.as_ref())
-        .is_some()
+        .is_some_and(|native| native.atlas.is_some() || native.suppresses_chrome())
     {
         return Ok(());
     }
@@ -1317,6 +1449,69 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         ));
     }
     prepare_scenario_initial_before_first_frame(state)?;
+    if state
+        .frontend
+        .loading_session
+        .as_ref()
+        .and_then(|session| session.native.as_ref())
+        .is_some_and(|native| native.variant == NativeLoadingArt::Campaign)
+    {
+        let session = state
+            .frontend
+            .loading_session
+            .as_ref()
+            .expect("native session");
+        let assets = loading_asset_manager(session)
+            .ok_or_else(|| anyhow::anyhow!("campaign loading lost its asset manager"))?;
+        let mut metadata = crate::rules::campaign_loading::CampaignLoadingMetadata::default();
+        // Original Full_Init686D46 opens MISSIONMD for the current filename.
+        // Missing keys retain SetDefaults' zero/empty values. Missing metadata
+        // suppresses DrawLoading552D60 without inventing a generic screen.
+        if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, "MISSIONMD.INI") {
+            log::info!(
+                "Campaign MISSION source: {}",
+                serde_json::json!(selected.source)
+            );
+            metadata.apply_ini(&selected.ini, session.stage.request().selected_map_file());
+        }
+        let csf = state.process_assets.csf.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("campaign loading requires the initialized CSF table")
+        })?;
+        let presentation = super::campaign_presentation::CampaignLoadingPresentation::new(
+            &metadata,
+            csf,
+            [
+                state.renderer.gpu.config.width,
+                state.renderer.gpu.config.height,
+            ],
+        );
+        let atlas = crate::render::loading_screen_chrome::build_campaign_loading_screen_atlas(
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+            assets,
+            presentation.width,
+            &presentation.background_name,
+            &presentation.background_palette_name,
+        );
+        if atlas.is_none() && !presentation.background_name.is_empty() {
+            anyhow::bail!(
+                "campaign loading assets unavailable for {}",
+                presentation.background_name
+            );
+        }
+        let native = state
+            .frontend
+            .loading_session
+            .as_mut()
+            .and_then(|session| session.native.as_mut())
+            .expect("campaign native session");
+        native.campaign_presentation = Some(presentation);
+        native.atlas = atlas;
+        log::info!("Native campaign loading atlas ready");
+        return Ok(());
+    }
+    let variant = selected_loading_art_variant(state)
+        .ok_or_else(|| anyhow::anyhow!("offline loading lost its art variant"))?;
     ensure_loading_composition_snapshot(state);
     let Some(assets) = state
         .frontend
@@ -1416,10 +1611,11 @@ pub(crate) fn render_loading_screen(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> LoadingRenderResult {
+    let failure_policy = loading_failure_policy(state);
     match encode_loading_screen(state, encoder, destination) {
         Ok(result) => result,
         Err(err) => {
-            fail_loading(state, LoadingFailurePolicy::ReportNativeFailure, err);
+            fail_loading(state, failure_policy, err);
             LoadingRenderResult::Failed
         }
     }
@@ -1464,6 +1660,10 @@ fn encode_loading_screen(
     else {
         return Ok(LoadingRenderResult::GenericFallback);
     };
+    if native.suppresses_chrome() {
+        render::encode_blank_loading_frame(&state.renderer, encoder, destination);
+        return Ok(LoadingRenderResult::NativeRendered);
+    }
     render::encode_native_loading_frame(&state.renderer, native, encoder, destination)?;
     Ok(LoadingRenderResult::NativeRendered)
 }
@@ -1483,16 +1683,12 @@ pub(crate) fn after_loading_frame_presented(state: &mut AppState) {
         return;
     }
     loading_screen_presented(state);
-    let policy = if is_native_loading_session(state) {
-        LoadingFailurePolicy::ReportNativeFailure
-    } else {
-        LoadingFailurePolicy::InstallGenericFallback
-    };
+    let policy = loading_failure_policy(state);
     match pump_loading_after_present(state) {
         LoadingPump::Pending => state.platform.window.request_redraw(),
         LoadingPump::Finished(result) => {
             log::debug!(target: "vera20k::loading_attempt", "install_begin");
-            super::transitions::apply_map_load_result(state, result);
+            super::transitions::finish_fresh_scenario_read(state, result);
             log::debug!(target: "vera20k::loading_attempt", "install_end screen={:?} assets_available={} accepted={}", state.frontend.screen, state.process_assets.is_available(), state.match_state.startup.accepted().is_some());
         }
         LoadingPump::Failed(err) => fail_loading(state, policy, err),
@@ -1508,7 +1704,11 @@ fn fail_loading(state: &mut AppState, policy: LoadingFailurePolicy, err: anyhow:
         policy,
     );
     reset_loading_presentation(state);
-    if policy == LoadingFailurePolicy::ReportNativeFailure {
+    if policy == LoadingFailurePolicy::RetryCampaignShell {
+        // MainPrepareSession52E718 tests StartScenario's AL; a failed normal
+        // campaign start retries the main shell at52E732 ->52D9C9.
+        crate::app::App::return_to_main_menu(state);
+    } else if policy == LoadingFailurePolicy::ReportNativeFailure {
         state.frontend.screen = GameScreen::MissionResult {
             title: "Loading Failed".to_string(),
             detail: format!("{err:#}"),
@@ -1567,7 +1767,10 @@ fn selected_loading_art_variant(state: &AppState) -> Option<LoadingArtVariant> {
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
-        .map(|native| native.variant)
+        .and_then(|native| match native.variant {
+            NativeLoadingArt::StockOffline(variant) => Some(variant),
+            NativeLoadingArt::Campaign => None,
+        })
 }
 
 fn loading_art_variant_from_launch_country(country: LaunchCountry) -> LoadingArtVariant {
@@ -1620,6 +1823,7 @@ fn advance_and_present_native_progress(
         font,
         atlas,
         native.composition.as_ref(),
+        native.campaign_presentation.as_ref(),
         &native.progress_row,
         &native.progress,
         native.backing_rgb,
@@ -1647,6 +1851,7 @@ struct RenderingProgressSink<'a> {
     progress_row: &'a LoadingProgressRowSnapshot,
     atlas: &'a LoadingScreenAtlas,
     composition: Option<&'a LoadingCompositionSnapshot>,
+    campaign_presentation: Option<&'a CampaignLoadingPresentation>,
     backing_rgb: [f32; 3],
     text_rgb: [f32; 3],
     render_size: [u32; 2],
@@ -1666,6 +1871,7 @@ impl LoadingProgressSink for RenderingProgressSink<'_> {
                 self.font,
                 self.atlas,
                 self.composition,
+                self.campaign_presentation,
                 self.progress_row,
                 self.progress,
                 self.backing_rgb,

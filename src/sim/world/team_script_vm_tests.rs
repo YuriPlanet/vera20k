@@ -661,7 +661,7 @@ fn super_team_fixture(script: &str) -> (Simulation, RuleSet, u64, [u64; 2], [u64
     let owner = sim.interner.intern("Computer");
     for name in ["IronCurtainSpecial", "ChronoSphereSpecial"] {
         let id = sim.interner.intern(name);
-        let mut instance = crate::sim::superweapon::SuperWeaponInstance::new(id, owner);
+        let mut instance = crate::sim::superweapon::SuperWeaponInstance::new(id, owner, 0);
         instance.activate(
             rules.super_weapon(name).unwrap().recharge_time_frames,
             sim.session.binary_frame,

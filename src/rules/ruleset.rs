@@ -25,7 +25,9 @@ use crate::rules::crate_rules::CrateRules;
 use crate::rules::error::RulesError;
 use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
 use crate::rules::mission_data::MissionControl;
-use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerStack};
+use crate::rules::native_processing::{
+    ProcessedRulesLayers, RulesLayerStack, house_type_index_of_name,
+};
 use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
 use crate::rules::particle_system_type::{
     ParticleSystemType, ParticleSystemTypeId, PendingParticleSystemType,
@@ -52,6 +54,10 @@ mod building_abandoned_sound_tests;
 /// Country-level fields needed by gameplay systems.
 #[derive(Debug, Clone)]
 pub struct CountryRules {
+    /// Native HouseType+C0, initialized0 at51141C and read through
+    /// ReadColor474A90 at51193D with the current index as default. The
+    /// Process owner supplies the typed value from each actual catalog pass.
+    color_scheme: i32,
     /// `MultiplayPassive=` allows non-owner garrison entry in `BuildingClass::CanBeOccupiedBy`.
     pub multiplay_passive: bool,
     /// `WallOwner=` allows this house type's buildings to claim nearby map walls.
@@ -65,8 +71,7 @@ pub struct CountryRules {
     /// Native stores these as f32 and `HouseClass::GetArmorMultForType @
     /// 0x0050BD30` reads the selected slot live for every receiver call.
     ///
-    /// The country's `Armor=` (HouseType `+0xE0`) is not represented: native
-    /// folds it with the difficulty `Armor=` into `House+0x1A0`
+    /// The separate scalar `Armor=` folds with the difficulty into House+1A0
     /// (`HouseClass::SetDifficulty 0x004F6F54`), whose only reader is the
     /// house CRC (`0x00502DD2`); no damage path reads it.
     pub armor_infantry_mult: f32,
@@ -99,6 +104,15 @@ pub struct CountryRules {
     /// at `0x00511A0C`). `HouseClass::SetDifficulty` multiplies it into the
     /// house's ROF bias outside campaigns. No retail country sets it.
     pub rof: f64,
+    /// The HouseType scalar doubles at +C8/+D0/+D8/+E0/+F0/+F8. The
+    /// constructor writes 1.0 and511850 reads with the current field as its
+    /// default. SetDifficulty uses them only outside GameMode zero.
+    pub firepower: f64,
+    pub ground_speed: f64,
+    pub air_speed: f64,
+    pub armor: f64,
+    pub cost: f64,
+    pub build_time: f64,
     /// `UIName=` — the country's string-table key (e.g. `Name:Americans`).
     /// gamemd fills a house's stored display name from this key's localized text,
     /// which is what the end-of-match score screen shows in the Player column.
@@ -140,6 +154,7 @@ impl Default for CountryRules {
         // wipe out all ore income for any house built from the default. The neutral 1.0
         // multiplier is `INCOME_PPM_SCALE`, not 0.
         Self {
+            color_scheme: 0,
             multiplay_passive: false,
             wall_owner: true,
             income_ppm: INCOME_PPM_SCALE,
@@ -152,6 +167,12 @@ impl Default for CountryRules {
             speed_mults: [NativeF32Bits::ONE; 3],
             build_time_mults: [NativeF32Bits::ONE; 5],
             rof: 1.0,
+            firepower: 1.0,
+            ground_speed: 1.0,
+            air_speed: 1.0,
+            armor: 1.0,
+            cost: 1.0,
+            build_time: 1.0,
             ui_name: None,
             name: None,
         }
@@ -161,6 +182,9 @@ impl Default for CountryRules {
 impl CountryRules {
     fn from_ini_section(section: &crate::rules::ini_parser::IniSection) -> Self {
         Self {
+            // Filled from the typed Process receipt, never by resolving an
+            // earlier projected string against the final Colors registry.
+            color_scheme: 0,
             multiplay_passive: section.read_bool("MultiplayPassive", false),
             wall_owner: section.read_bool("WallOwner", true),
             // IncomeMult is a raw multiplier (NOT a percent). Round in f64 to avoid f32
@@ -192,7 +216,13 @@ impl CountryRules {
                 "BuildTimeDefensesMult",
             ]
             .map(|key| section.read_double_to_float(key, NativeF32Bits::ONE)),
+            firepower: section.read_double("Firepower", 1.0),
+            ground_speed: section.read_double("Groundspeed", 1.0),
+            air_speed: section.read_double("Airspeed", 1.0),
+            armor: section.read_double("Armor", 1.0),
             rof: section.read_double("ROF", 1.0),
+            cost: section.read_double("Cost", 1.0),
+            build_time: section.read_double("BuildTime", 1.0),
             // AbstractTypeClass::ReadINI: `Name` into 0x31 bytes (0x00410AA0),
             // `UIName` into 0x20 (0x00410AFB).
             ui_name: section.read_name("UIName", 0x20).map(str::to_owned),
@@ -333,6 +363,33 @@ impl AiIonCannonValues {
     }
 }
 
+/// Immutable HouseType scalar inputs to SetDifficulty4F6EC0. This projection
+/// keeps name resolution with RuleSet; it is not another mutable country table.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CountryDifficultyBiases {
+    pub firepower: NativeF64Bits,
+    pub ground_speed: NativeF64Bits,
+    pub air_speed: NativeF64Bits,
+    pub armor: NativeF64Bits,
+    pub rof: NativeF64Bits,
+    pub cost: NativeF64Bits,
+    pub build_time: NativeF64Bits,
+}
+
+impl Default for CountryDifficultyBiases {
+    fn default() -> Self {
+        Self {
+            firepower: NativeF64Bits::ONE,
+            ground_speed: NativeF64Bits::ONE,
+            air_speed: NativeF64Bits::ONE,
+            armor: NativeF64Bits::ONE,
+            rof: NativeF64Bits::ONE,
+            cost: NativeF64Bits::ONE,
+            build_time: NativeF64Bits::ONE,
+        }
+    }
+}
+
 /// Global gameplay constants from `[General]` that affect vision, gap generators, etc.
 #[derive(Debug, Clone)]
 pub struct GeneralRules {
@@ -385,27 +442,16 @@ pub struct GeneralRules {
     /// at `0x006FD136..0x006FD145` for a `ROF`-ability holder. Constructor
     /// default 1.0 (`0x00665F86`).
     pub veteran_rof: f64,
-    /// `[Easy]`, `[Normal]` and `[Difficult]` `ROF=`, the `ROF` field
-    /// (`+0x20`) of the three difficulty rows at `RulesClass+0x1538`
-    /// (stride `0x50`), in that order. `RulesClass::Process` reads them at
-    /// `0x00668EF5..0x00668F26` through `ReadDifficulty @ 0x0066D270`, which
-    /// runs only when the section exists and reads `ROF` with ReadDouble and
-    /// an explicit default of 1.0 (`0x0066D2E9..0x0066D2FD`). The row index is
-    /// `HouseClass+0x184` ([`HouseDifficulty`](crate::sim::house_state::HouseDifficulty)
-    /// order: 0 is a Hard AI, 2 an Easy AI). The constructor leaves the rows
-    /// unset (it skips from `+0x1530` to `+0x1638`, `0x006673E2`), so a
-    /// missing section is undefined natively; retail defines all three, and
-    /// VERA reads a missing one as 1.0.
-    pub difficulty_rof: [f64; 3],
-    /// The same rows' `RepairDelay=` (`+0x38`, ReadDouble with an explicit
-    /// default of .02, `0x0066D317`; retail `.02`, `.02`, `.05`).
-    /// `HouseClass::SetDifficulty` copies the house's row into `+0x1C0`; the
-    /// computer's auto-repair start draws its latch time from it
-    /// (`0x00450727`). A missing section skips every read
-    /// (`0x0066D27C..0x0066D288`) and leaves the row the constructor never
-    /// writes, undefined natively as the ROF rows are; VERA reads a missing
-    /// one as the key's default .02.
-    pub difficulty_repair_delay: [f64; 3],
+    /// Rules+1538, stride50: Easy, Normal, Difficult in native index order.
+    /// ReadDifficulty66D270 skips an absent whole section and resets every
+    /// missing key of a present section to a literal default. The native
+    /// constructor leaves absent whole rows undefined; VERA's cold fallback
+    /// uses the reader defaults. Retail supplies all three rows.
+    pub difficulty_rows: [DifficultyRules; 3],
+    /// Rules+1418: [General] GameSpeedBias, read at670B18/670B33. This scales
+    /// the stored Groundspeed/Airspeed/BuildTime scalar biases; their native
+    /// active gameplay getters use separate per-category country factors.
+    pub game_speed_bias: f64,
     /// Receiver-side divisor selected by the rank-specific `STRONGER`
     /// ability (`VeteranArmor=` in `[General]`).
     pub veteran_armor: f64,
@@ -460,6 +506,15 @@ pub struct GeneralRules {
     /// Construction Yard waits after a blocked placement before it tries its
     /// finished building again ([`Self::placement_delay_frames`]).
     pub placement_delay: f64,
+    /// `[AI] AttackDelay=`, Rules+0x10A8. The constructor supplies 5.0;
+    /// ReadAI673977..67399E reads a double with that current-field default.
+    /// House construction scales its one Scenario ranged draw by this value.
+    pub attack_delay: f64,
+    /// `[General] CampaignMoneyDeltaEasy/Hard`, ReadInteger at
+    /// 0x0067015B/0x0067017A with current defaults 5000/-5000. Campaign
+    /// House credits apply the selected signed delta after Credits*100.
+    pub campaign_money_delta_easy: i32,
+    pub campaign_money_delta_hard: i32,
     /// `[General] AIAlternateProductionCreditCutoff=` (`Rules+0x1300`,
     /// ReadInt at `0x0066FDFB`, constructor 1000 at `0x0066703B`): the credits
     /// below which the computer's production mode leaves its normal state.
@@ -1706,6 +1761,65 @@ impl ParadropList {
 /// double nearest .02 (`0x3F947AE147AE147B`, pushed at `0x0066D317`).
 const DIFFICULTY_REPAIR_DELAY_DEFAULT: f64 = 0.02;
 
+/// The scalar projection of one original ReadDifficulty66D270 row. ContentScan
+/// and its other AI flags belong to their existing AI admission owners.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DifficultyRules {
+    pub firepower: f64,
+    pub ground_speed: f64,
+    pub air_speed: f64,
+    pub armor: f64,
+    pub rof: f64,
+    pub cost: f64,
+    pub build_time: f64,
+    pub repair_delay: f64,
+    pub build_delay: f64,
+}
+
+impl Default for DifficultyRules {
+    fn default() -> Self {
+        Self {
+            firepower: 1.0,
+            ground_speed: 1.0,
+            air_speed: 1.0,
+            armor: 1.0,
+            rof: 1.0,
+            cost: 1.0,
+            build_time: 1.0,
+            repair_delay: DIFFICULTY_REPAIR_DELAY_DEFAULT,
+            build_delay: 0.03,
+        }
+    }
+}
+
+impl DifficultyRules {
+    /// Called only for a present row section. Each ReadDouble uses a literal
+    /// default, independent of the preceding Process pass. Native key order
+    /// places BuildTime after RepairDelay/BuildDelay and ContentScan.
+    pub(crate) fn read_pass(section: &crate::rules::ini_parser::IniSection) -> Self {
+        let firepower = section.read_double("FirePower", 1.0);
+        let ground_speed = section.read_double("Groundspeed", 1.0);
+        let air_speed = section.read_double("Airspeed", 1.0);
+        let armor = section.read_double("Armor", 1.0);
+        let rof = section.read_double("ROF", 1.0);
+        let cost = section.read_double("Cost", 1.0);
+        let repair_delay = section.read_double("RepairDelay", DIFFICULTY_REPAIR_DELAY_DEFAULT);
+        let build_delay = section.read_double("BuildDelay", 0.03);
+        let build_time = section.read_double("BuildTime", 1.0);
+        Self {
+            firepower,
+            ground_speed,
+            air_speed,
+            armor,
+            rof,
+            cost,
+            build_time,
+            repair_delay,
+            build_delay,
+        }
+    }
+}
+
 /// The single BuildingTypes `RulesClass::ReadGeneral` names in `[General]`,
 /// as stored IDs (`read_building_identity`; the layered reader in
 /// `native_processing` replaces the projection).
@@ -1880,8 +1994,8 @@ impl Default for GeneralRules {
             veteran_combat: 1.0,
             veteran_speed: 1.0,
             veteran_rof: 1.0,
-            difficulty_rof: [1.0; 3],
-            difficulty_repair_delay: [DIFFICULTY_REPAIR_DELAY_DEFAULT; 3],
+            difficulty_rows: [DifficultyRules::default(); 3],
+            game_speed_bias: 1.0,
             veteran_armor: 1.0,
             curley_shuffle: false,
             repair_rate_minutes: 0.016,
@@ -1897,6 +2011,9 @@ impl Default for GeneralRules {
             // Native Rules+0xE48 constructor default; active retail overrides to 3.
             maximum_building_placement_failures: 5,
             placement_delay: 0.05,
+            attack_delay: 5.0,
+            campaign_money_delta_easy: 5000,
+            campaign_money_delta_hard: -5000,
             ai_alternate_production_credit_cutoff: 1000,
             ai_restrict_replace_time: 500,
             team_delays: Vec::new(),
@@ -2573,9 +2690,14 @@ impl GeneralRules {
         // Rules ReadAI6739E5..673A31 is independent of ReadGeneral.
         // Constructor66760E..66761E supplies PathDelay0.016 and blockage60.
         let ai = ini.section_or_empty("AI");
+        let attack_delay = ai.read_double("AttackDelay", defaults.attack_delay);
         let path_delay = ai.read_double("PathDelay", defaults.path_delay);
         let blockage_path_delay_ticks =
             ai.read_int("BlockagePathDelay", defaults.blockage_path_delay_ticks);
+        let difficulty_rows = ["Easy", "Normal", "Difficult"].map(|name| {
+            ini.section(name)
+                .map_or_else(DifficultyRules::default, DifficultyRules::read_pass)
+        });
         let Some(general) = ini.section("General") else {
             return Self {
                 detail,
@@ -2588,6 +2710,8 @@ impl GeneralRules {
                 condition_yellow: condition_yellow_native,
                 condition_red: condition_red_native,
                 path_delay,
+                attack_delay,
+                difficulty_rows,
                 blockage_path_delay_ticks,
                 bomb_ticking_sound,
                 bomb_attach_sound,
@@ -2724,16 +2848,8 @@ impl GeneralRules {
             veteran_combat: general.read_double("VeteranCombat", defaults.veteran_combat),
             veteran_speed: general.read_double("VeteranSpeed", defaults.veteran_speed),
             veteran_rof: general.read_double("VeteranROF", defaults.veteran_rof),
-            difficulty_rof: ["Easy", "Normal", "Difficult"].map(|name| {
-                ini.section(name)
-                    .map_or(1.0, |section| section.read_double("ROF", 1.0))
-            }),
-            difficulty_repair_delay: ["Easy", "Normal", "Difficult"].map(|name| {
-                ini.section(name)
-                    .map_or(DIFFICULTY_REPAIR_DELAY_DEFAULT, |section| {
-                        section.read_double("RepairDelay", DIFFICULTY_REPAIR_DELAY_DEFAULT)
-                    })
-            }),
+            difficulty_rows,
+            game_speed_bias: general.read_double("GameSpeedBias", defaults.game_speed_bias),
             veteran_armor: general.read_double("VeteranArmor", 1.0),
             curley_shuffle: general.read_bool("CurleyShuffle", defaults.curley_shuffle),
             repair_rate_minutes: general.read_double("RepairRate", defaults.repair_rate_minutes),
@@ -2761,6 +2877,11 @@ impl GeneralRules {
                 defaults.maximum_building_placement_failures,
             ),
             placement_delay: general.read_double("PlacementDelay", defaults.placement_delay),
+            attack_delay,
+            campaign_money_delta_easy: general
+                .read_int("CampaignMoneyDeltaEasy", defaults.campaign_money_delta_easy),
+            campaign_money_delta_hard: general
+                .read_int("CampaignMoneyDeltaHard", defaults.campaign_money_delta_hard),
             ai_alternate_production_credit_cutoff: general.read_int(
                 "AIAlternateProductionCreditCutoff",
                 defaults.ai_alternate_production_credit_cutoff,
@@ -3559,7 +3680,8 @@ impl RuleSet {
     pub(crate) fn from_processed_rules(
         processed: &ProcessedRulesLayers,
     ) -> Result<Self, RulesError> {
-        let mut rules = Self::from_projected_ini(processed.ini())?;
+        let mut rules =
+            Self::from_projected_ini(processed.ini(), project_country_side_registry(processed))?;
         rules.crate_rules = processed.crate_rules().clone();
         rules.powerups = processed.powerups().clone();
         rules.missile_spawn = processed.missile_spawn().clone();
@@ -3575,6 +3697,7 @@ impl RuleSet {
         rules.general.default_mirage_disguises = processed.default_mirage_disguises().to_vec();
         rules.bridge_rules.explosions = processed.bridge_explosions().to_vec();
         rules.general.gravity = processed.gravity();
+        rules.general.difficulty_rows = *processed.difficulty_rows();
         rules.general.detail = processed.detail();
         rules.general.prism_support = processed.prism_support();
         rules.general.prism_type = processed.prism_type().map(str::to_owned);
@@ -3764,7 +3887,10 @@ impl RuleSet {
         Self::from_processed_rules(&RulesLayerStack::new(ini.clone()).process_with_fixed_art(art)?)
     }
 
-    fn from_projected_ini(ini: &IniFile) -> Result<Self, RulesError> {
+    fn from_projected_ini(
+        ini: &IniFile,
+        country_side_registry: ProjectedCountrySideRegistry,
+    ) -> Result<Self, RulesError> {
         let mut object_list: Vec<ObjectType> = Vec::new();
         let mut object_index: HashMap<String, TypeHandle> = HashMap::new();
         let mut object_category_index: HashMap<(ObjectCategory, String), TypeHandle> =
@@ -3850,7 +3976,6 @@ impl RuleSet {
         let elevation_model = ElevationModel::from_ini(ini);
         let radiation: RadiationRules = RadiationRules::from_ini(ini);
         let radar_event_config: RadarEventConfig = RadarEventConfig::from_ini(ini);
-        let country_side_registry = parse_country_side_registry(ini);
         let countries = country_side_registry.rules;
         let color_schemes = crate::rules::color_scheme::parse_color_schemes(ini);
         let house_color_ramps =
@@ -4977,9 +5102,23 @@ impl RuleSet {
             .is_some_and(|country| country.multiplay_passive)
     }
 
-    /// The country's `ROF=` (HouseType `+0xE8`); 1.0 for an unknown country.
-    pub fn country_rof(&self, id: &str) -> f64 {
-        self.country_rules(id).map_or(1.0, |country| country.rof)
+    /// HouseType511850 scalar fields used by SetDifficulty4F6EC0. Unknown
+    /// countries retain its constructor's neutral doubles. Category cost,
+    /// speed and armor getters use their own independent fields.
+    pub(crate) fn country_difficulty_biases(&self, id: &str) -> CountryDifficultyBiases {
+        self.country_rules(id)
+            .map_or_else(CountryDifficultyBiases::default, |country| {
+                let bits = |value: f64| NativeF64Bits::from_bits(value.to_bits());
+                CountryDifficultyBiases {
+                    firepower: bits(country.firepower),
+                    ground_speed: bits(country.ground_speed),
+                    air_speed: bits(country.air_speed),
+                    armor: bits(country.armor),
+                    rof: bits(country.rof),
+                    cost: bits(country.cost),
+                    build_time: bits(country.build_time),
+                }
+            })
     }
 
     /// Whether a country/house type may claim nearby map walls. Native default is true.
@@ -5046,25 +5185,61 @@ impl RuleSet {
         self.country_indices.get(&id.to_ascii_uppercase()).copied()
     }
 
+    /// HouseRead500A05 calls ReadHouseType475540: an absent Country maps
+    /// caller-1 to entry0; known tokens use the shared alias-before-ID5117D0
+    /// lookup. Unknown nonempty tokens need the native factory branch and
+    /// return None here, never an invented entry0 binding.
+    pub(crate) fn scenario_country_name(&self, country: Option<&str>) -> Option<&str> {
+        let index = match country {
+            Some(name) => {
+                let index = house_type_index_of_name(name, self.country_lookup_members());
+                if index < 0 {
+                    return None;
+                }
+                CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
+            }
+            None => CountryIdx(0),
+        };
+        self.country_name(index)
+    }
+
+    fn country_lookup_members(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
+        self.country_ids.iter().map(|id| {
+            (
+                id.as_str(),
+                self.countries
+                    .get(id)
+                    .and_then(|country| country.name.as_deref()),
+            )
+        })
+    }
+
+    /// House ctor4F5E5A copies Country+C0 to its current color. A registered
+    /// Country whose entire section was absent retains the ctor's0.
+    pub(crate) fn country_color_scheme(&self, country: &str) -> i32 {
+        self.country_rules(country)
+            .map_or(0, |fields| fields.color_scheme)
+    }
+
     /// Resolve a trigger owner token to the canonical HouseType registration.
     ///
     /// gamemd-derived: `TriggerTypeClass::Read` resolves token 1 through
-    /// `HouseTypeClass__FindIndexOfName @ 0x005117D0`. The source-order scan
+    /// `HouseTypeClass__FindIndexOfName @ 0x005117D0`. Before that scan,
+    /// ReadINI727292..7272AA compares literal817474 (`<none>`) and selects
+    /// Country zero. This is a TriggerType caller rule, not lookup behavior.
+    /// The source-order scan
     /// checks each HouseType's `Name=` alias (`+0x64`) before its registry ID
-    /// (`+0x24`). Native `<none>` selects the first registered HouseType.
+    /// (`+0x24`). The shared owner retains `<random>`=-2 and unknown=-1;
+    /// this typed projection returns only registered Country identities.
+    /// Original caller controls: tools/input_oracle/campaign_start.py
+    /// --houses, side_controls.trigger_type_reader_rows (+meta).
     pub fn trigger_house_type_index(&self, owner: &str) -> Option<CountryIdx> {
         if owner.eq_ignore_ascii_case("<none>") {
-            return (!self.country_ids.is_empty()).then_some(CountryIdx(0));
+            return self.country_name(CountryIdx(0)).map(|_| CountryIdx(0));
         }
-        self.country_ids.iter().enumerate().find_map(|(index, id)| {
-            let alias_matches = self
-                .countries
-                .get(id)
-                .and_then(|country| country.name.as_deref())
-                .is_some_and(|name| name.eq_ignore_ascii_case(owner));
-            (alias_matches || id.eq_ignore_ascii_case(owner)).then(|| {
-                CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
-            })
+        let index = house_type_index_of_name(owner, self.country_lookup_members());
+        (index >= 0).then(|| {
+            CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
         })
     }
 
@@ -5690,7 +5865,7 @@ fn parse_registry(ini: &IniFile, section_name: &str) -> Vec<String> {
     }
 }
 
-struct ParsedCountrySideRegistry {
+struct ProjectedCountrySideRegistry {
     rules: HashMap<String, CountryRules>,
     country_ids: Vec<String>,
     country_indices: HashMap<String, CountryIdx>,
@@ -5699,60 +5874,48 @@ struct ParsedCountrySideRegistry {
     country_sides: Vec<Option<SideIdx>>,
 }
 
-fn parse_country_side_registry(ini: &IniFile) -> ParsedCountrySideRegistry {
-    let mut country_ids = parse_registry(ini, "Countries");
-    let mut country_indices: HashMap<String, CountryIdx> = country_ids
-        .iter()
-        .enumerate()
-        .map(|(index, id)| {
-            let index = u16::try_from(index).expect("[Countries] exceeds u16 identity space");
-            (id.to_ascii_uppercase(), CountryIdx(index))
-        })
-        .collect();
-    let mut side_ids = Vec::new();
-    let mut side_indices = HashMap::new();
-    let mut country_sides = vec![None; country_ids.len()];
-
-    if let Some(sides) = ini.section("Sides") {
-        for side_name in sides.keys() {
-            let side = find_or_allocate_side(side_name, &mut side_ids, &mut side_indices);
-            // `0x004767C0`: ReadString into `char[128]`, then `strtok(",")`.
-            if let Some(members) = sides.read_list(side_name, 0x80) {
-                for member in members {
-                    let country = find_or_allocate_country(
-                        member,
-                        &mut country_ids,
-                        &mut country_indices,
-                        &mut country_sides,
-                    );
-                    country_sides[country.0 as usize] = Some(side);
-                }
-            }
-        }
+/// A gameplay projection of the one live native registry. ReadSides672440
+/// and Country511850 already made every allocation and side assignment in
+/// reached-pass order; reconstructing those decisions from merged text would
+/// invent Countries, lose prior Side vectors and change allocation chronology.
+fn project_country_side_registry(processed: &ProcessedRulesLayers) -> ProjectedCountrySideRegistry {
+    let side_ids: Vec<String> = processed.side_registry_names().map(str::to_owned).collect();
+    let mut side_indices = HashMap::with_capacity(side_ids.len());
+    for (index, id) in side_ids.iter().enumerate() {
+        side_indices
+            .entry(id.to_ascii_uppercase())
+            .or_insert_with(|| {
+                SideIdx(u8::try_from(index).expect("[Sides] exceeds u8 identity space"))
+            });
     }
-
-    let mut rules = HashMap::with_capacity(country_ids.len());
-    for id in &country_ids {
-        if let Some(section) = ini.section(id) {
-            rules.insert(id.clone(), CountryRules::from_ini_section(section));
-        }
+    let mut country_ids = Vec::new();
+    let mut country_indices = HashMap::new();
+    let mut country_sides = Vec::new();
+    let mut rules = HashMap::new();
+    for (id, color, side) in processed.country_registry_states() {
+        let index = CountryIdx(
+            u16::try_from(country_ids.len()).expect("[Countries] exceeds u16 identity space"),
+        );
+        country_ids.push(id.to_owned());
+        country_indices
+            .entry(id.to_ascii_uppercase())
+            .or_insert(index);
+        country_sides.push((side >= 0).then(|| {
+            let index = usize::try_from(side).expect("nonnegative Side index");
+            assert!(index < side_ids.len(), "retained Country Side exists");
+            SideIdx(u8::try_from(side).expect("[Sides] exceeds u8 identity space"))
+        }));
+        rules.entry(id.to_owned()).or_insert_with(|| {
+            let section = processed
+                .ini()
+                .section(id)
+                .expect("an allocated Country has a projected retained body");
+            let mut fields = CountryRules::from_ini_section(section);
+            fields.color_scheme = color;
+            fields
+        });
     }
-
-    // HouseTypeClass::ReadINI runs after the `[Sides]` registration pass. Its
-    // `Side=` value therefore wins and can find-or-allocate a new side.
-    for (country_index, country_id) in country_ids.iter().enumerate() {
-        let Some(section) = ini.section(country_id) else {
-            continue;
-        };
-        let side_name = section.read_string("Side", "", 32);
-        if side_name.is_empty() {
-            continue;
-        }
-        let side = find_or_allocate_side(&side_name, &mut side_ids, &mut side_indices);
-        country_sides[country_index] = Some(side);
-    }
-
-    ParsedCountrySideRegistry {
+    ProjectedCountrySideRegistry {
         rules,
         country_ids,
         country_indices,
@@ -5760,40 +5923,6 @@ fn parse_country_side_registry(ini: &IniFile) -> ParsedCountrySideRegistry {
         side_indices,
         country_sides,
     }
-}
-
-fn find_or_allocate_country(
-    country_name: &str,
-    country_ids: &mut Vec<String>,
-    country_indices: &mut HashMap<String, CountryIdx>,
-    country_sides: &mut Vec<Option<SideIdx>>,
-) -> CountryIdx {
-    let key = country_name.to_ascii_uppercase();
-    if let Some(index) = country_indices.get(&key) {
-        return *index;
-    }
-    let index = u16::try_from(country_ids.len()).expect("[Countries] exceeds u16 identity space");
-    let index = CountryIdx(index);
-    country_ids.push(country_name.to_string());
-    country_indices.insert(key, index);
-    country_sides.push(None);
-    index
-}
-
-fn find_or_allocate_side(
-    side_name: &str,
-    side_ids: &mut Vec<String>,
-    side_indices: &mut HashMap<String, SideIdx>,
-) -> SideIdx {
-    let key = side_name.to_ascii_uppercase();
-    if let Some(index) = side_indices.get(&key) {
-        return *index;
-    }
-    let index = u8::try_from(side_ids.len()).expect("[Sides] exceeds u8 identity space");
-    let index = SideIdx(index);
-    side_ids.push(side_name.to_string());
-    side_indices.insert(key, index);
-    index
 }
 
 /// Collect all weapon IDs referenced by objects (deduplicated).
@@ -6488,7 +6617,80 @@ CellSpread=0
     }
 
     #[test]
-    fn trigger_house_type_owner_uses_alias_then_id_source_order_and_none_default() {
+    fn country_color_retains_the_catalog_present_at_each_reached_read() {
+        // ReadColor474A90 resolves only currently registered schemes. The
+        // original House controls observe Americans' Gold as native3;
+        // Country ctor51141C and whole-section admission establish the0
+        // boundary for the two unread/unresolved members below.
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[Colors]\nLightGold=25,255,255\nGold=43,239,255\n\
+             [Countries]\n0=Americans\n1=UnknownAtRead\n2=MissingBody\n\
+             [Americans]\nColor=Gold\n\
+             [UnknownAtRead]\nColor=AddedLater\n",
+        ));
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str("[Colors]\nAddedLater=0,0,0\n[Americans]\nColor=UnknownName\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).expect("ordered Color reads");
+        assert_eq!(rules.country_color_scheme("americans"), 3);
+        assert_eq!(rules.country_color_scheme("UnknownAtRead"), 0);
+        assert_eq!(rules.country_color_scheme("MissingBody"), 0);
+        assert_eq!(rules.scenario_country_name(None), Some("Americans"));
+        assert_eq!(rules.scenario_country_name(Some("unknown")), None);
+    }
+
+    #[test]
+    fn country_color_catalog_survives_handoff_and_is_cleared_by_type_reset() {
+        let first = RulesLayerStack::new(IniFile::from_str(
+            "[Colors]\nLightGold=25,255,255\nGold=43,239,255\n\
+             [Countries]\n0=Americans\n[Americans]\nColor=Gold\n",
+        ))
+        .process()
+        .unwrap();
+        let (_, trace) = first.into_ini_and_native_type_construction_trace();
+        let second = RulesLayerStack::new(IniFile::from_str("[Americans]\nColor=UnknownName\n"))
+            .process_with_fixed_art_and_registry_state(
+                &IniFile::empty(),
+                trace.into_registry_state_discarding_events(),
+            )
+            .unwrap();
+        let rules = RuleSet::from_processed_rules(&second).unwrap();
+        assert_eq!(rules.country_color_scheme("Americans"), 3);
+        assert_eq!(
+            rules
+                .color_schemes
+                .iter()
+                .map(|scheme| scheme.name.as_str())
+                .collect::<Vec<_>>(),
+            ["LightGold", "Gold"]
+        );
+        let (_, trace) = second.into_ini_and_native_type_construction_trace();
+        let after_reset = RulesLayerStack::new(IniFile::from_str(
+            "[Colors]\nNewAccent=0,0,0\n[Countries]\n0=Americans\n\
+             [Americans]\nColor=UnknownName\n",
+        ))
+        .process_with_fixed_art_and_registry_state(
+            &IniFile::empty(),
+            trace
+                .into_registry_state_discarding_events()
+                .destructive_reset(),
+        )
+        .unwrap();
+        let rules = RuleSet::from_processed_rules(&after_reset).unwrap();
+        assert_eq!(rules.country_color_scheme("Americans"), 0);
+        assert_eq!(
+            rules
+                .color_schemes
+                .iter()
+                .map(|scheme| scheme.name.as_str())
+                .collect::<Vec<_>>(),
+            ["NewAccent"]
+        );
+    }
+
+    #[test]
+    fn trigger_house_type_owner_uses_alias_then_id_and_native_signed_special() {
         let ini = IniFile::from_str(
             "[Countries]\n0=First\n1=Second\n2=Third\n\
              [First]\nName=Shared Alias\n\
@@ -6514,7 +6716,13 @@ CellSpread=0
             rules.trigger_house_type_index("<none>"),
             Some(CountryIdx(0))
         );
+        assert_eq!(rules.trigger_house_type_index("<random>"), None);
         assert_eq!(rules.trigger_house_type_index("missing"), None);
+        assert_eq!(
+            rules.scenario_country_name(Some("shared alias")),
+            Some("First")
+        );
+        assert_eq!(rules.scenario_country_name(Some("second")), Some("Second"));
     }
 
     #[test]
@@ -6559,18 +6767,87 @@ CellSpread=0
     }
 
     #[test]
-    fn ordered_country_side_members_find_or_allocate_missing_country() {
+    fn ordered_country_side_members_do_not_allocate_unknown_country() {
         let ini = IniFile::from_str(
             "[Countries]\n0=Alpha\n\
              [Sides]\nGDI=Alpha,Beta\n\
              [Beta]\nSide=NewSide\nMultiplayPassive=yes\n",
         );
-        let rules = RuleSet::from_ini(&ini).expect("side-created country parses");
+        let processed = RulesLayerStack::new(ini)
+            .process()
+            .expect("Side members process");
+        let rules = RuleSet::from_processed_rules(&processed).expect("registered Country projects");
 
-        assert_eq!(rules.country_index("Beta"), Some(CountryIdx(1)));
-        assert_eq!(rules.side_index("NewSide"), Some(SideIdx(1)));
-        assert_eq!(rules.country_side_index("beta"), Some(SideIdx(1)));
-        assert!(rules.country_multiplay_passive("BETA"));
+        assert_eq!(rules.country_index("Beta"), None);
+        assert_eq!(rules.side_index("NewSide"), None);
+        assert_eq!(rules.country_side_index("beta"), None);
+        assert_eq!(rules.country_side_index("Alpha"), Some(SideIdx(0)));
+        assert_eq!(processed.country_color_scheme("Beta"), None);
+        assert_eq!(
+            processed
+                .native_type_construction_trace()
+                .registry_state()
+                .side_country_members("GDI"),
+            Some([0].as_slice()),
+            "ReadHouses4767C0 skips unknown Beta; its orphan body is never read",
+        );
+    }
+
+    #[test]
+    fn ordered_country_side_failed_binding_keeps_the_live_vector_until_reset() {
+        use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            IniFile::from_str("[Countries]\n0=Alpha\n"),
+            None,
+            IniFile::empty(),
+            std::sync::Arc::default(),
+        )
+        .expect("cold Rules owner");
+        let broken = IniFile::from_str("[Countries]\n0=Alpha\n[Sides]\nBroken=<random>\n");
+        let empty_map = IniFile::empty();
+        let error = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::Campaign(Some(&broken)),
+                &empty_map,
+            )
+            .err()
+            .expect("native Country[-2] binding is outside admitted Rules sources");
+        assert!(matches!(
+            error,
+            RulesError::InvalidValue { section, key, value, .. }
+                if section == "Sides" && key == "Broken" && value == "-2"
+        ));
+
+        // This next real owner transition resolves the retained Side, then
+        // expands its actual signed vector. Losing the failed pass's registry
+        // or replacing its vector with empty would incorrectly succeed here.
+        let probe = IniFile::from_str("[Sides]\nProbe=Broken\n");
+        let error = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::Campaign(Some(&probe)),
+                &empty_map,
+            )
+            .err()
+            .expect("a failed Process retains its actual Side vector");
+        assert!(matches!(
+            error,
+            RulesError::InvalidValue { section, key, value, .. }
+                if section == "Sides" && key == "Probe" && value == "-2"
+        ));
+
+        let repair = IniFile::from_str("[Sides]\nBroken=Alpha\n");
+        let loaded = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::Campaign(Some(&repair)),
+                &empty_map,
+            )
+            .expect("the corrected vector reaches the native destructive reset");
+        let (rules, _, _, _) = loaded.into_parts();
+        assert_eq!(rules.country_index("Alpha"), Some(CountryIdx(0)));
+        assert_eq!(rules.country_side_index("Alpha"), None);
+        assert_eq!(rules.side_index("Broken"), None);
+        assert_eq!(rules.side_index("Probe"), None);
     }
 
     #[test]
@@ -9390,11 +9667,15 @@ Projectile=Invisible
         };
         let rules = RuleSet::from_ini(&ini).expect("retail rules parse");
         assert_eq!(
-            rules.general.difficulty_rof,
+            rules.general.difficulty_rows.map(|row| row.rof),
             [f64::from(0.8f32), 1.0, f64::from(1.2f32)]
         );
         for country in ["Americans", "Russians", "YuriCountry"] {
-            assert_eq!(rules.country_rof(country), 1.0, "{country}");
+            assert_eq!(
+                rules.country_difficulty_biases(country).rof,
+                NativeF64Bits::ONE,
+                "{country}"
+            );
         }
     }
 

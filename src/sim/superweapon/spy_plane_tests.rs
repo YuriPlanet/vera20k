@@ -5,7 +5,7 @@
 
 use super::chronosphere_tests::{charge_super, click, retail_rules_binding, step, world_with};
 use crate::map::playfield::PlayfieldBounds;
-use crate::rules::ini_parser::IniFile;
+use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::SoundRegistry;
 use crate::sim::combat::{AttackTarget, TargetKind};
@@ -125,6 +125,35 @@ pub(super) fn world(rules: RuleSet) -> (RuleSet, Simulation, InternedId) {
     sim.fog.width = 64;
     sim.fog.height = 64;
     (rules, sim, americans)
+}
+
+/// Bind the original reader's authored Edge control through the same map and
+/// House owners as campaign loading. The requested edge is supplied by the
+/// original send-body corpus; its textual input comes from ReadEdge475980.
+pub(super) fn install_campaign_edge(sim: &mut Simulation, owner: InternedId, edge: i32) {
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/input_oracle/campaign_start_houses.json",
+    ))
+    .unwrap();
+    let control = native["edge_controls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["default"] == -1 && row["result"] == edge)
+        .expect("original Edge control");
+    let name = sim.interner.resolve(owner);
+    let mut houses = IniSection::new("Houses".to_owned());
+    houses.set("0", name);
+    let mut body = IniSection::new(name.to_owned());
+    if let Some(value) = control["sections"]["Control"]["Edge"].as_str() {
+        body.set("Edge", value);
+    }
+    let ini = IniFile::from_sections_for_test([houses, body]);
+    let roster = crate::map::houses::parse_house_roster(&ini, &[], None);
+    let read = roster.houses[0].read_scenario_parameters(&ini, 1);
+    let house = sim.houses.get_mut(&owner).unwrap();
+    house.initialize_scenario_parameters(read, None, None);
+    assert_eq!(house.authored_edge(), edge);
 }
 
 fn spy_planes(sim: &Simulation) -> Vec<u64> {
@@ -252,6 +281,7 @@ fn send_spy_planes_matches_native() {
     let oracle = oracle();
     let rows = rows(&oracle, "send_spy_planes");
     assert!(rows.len() > 8);
+    let mut authored_replayed = 0;
     for row in rows {
         let events: Vec<&Value> = row["events"].as_array().unwrap().iter().collect();
         let created = events.iter().find(|event| event[0] == "create").unwrap();
@@ -304,15 +334,20 @@ fn send_spy_planes_matches_native() {
             continue;
         }
         let edge_field = int(&row["edge"]);
-        if (0..=3).contains(&edge_field) {
-            // The campaign house `Edge=` RESIDUAL in `spy_plane`'s module doc.
-            continue;
-        }
         let waypoint_edge = int(&row["waypoint_edge"]);
-        let own = Edge::own_edge(u8::try_from(waypoint_edge).unwrap_or(u8::MAX));
-        assert_eq!(edge(pick), own, "{row}");
+        let own = edge(pick);
 
         let (rules, mut sim, americans) = world(rules(&Keys::default()));
+        if (0..=3).contains(&edge_field) {
+            install_campaign_edge(&mut sim, americans, edge_field);
+            authored_replayed += 1;
+        } else {
+            assert_eq!(
+                own,
+                Edge::own_edge(u8::try_from(waypoint_edge).unwrap_or(u8::MAX)),
+                "{row}"
+            );
+        }
         sim.houses.get_mut(&americans).unwrap().waypoint_edge =
             u8::try_from(waypoint_edge).unwrap_or(u8::MAX);
         // The plane's constructor draws one word before the pick.
@@ -348,6 +383,7 @@ fn send_spy_planes_matches_native() {
         );
         assert_eq!(plane.body_facing_current(sim.session.binary_frame), 0);
     }
+    assert_eq!(authored_replayed, 1);
 }
 
 /// The mission rows' Target cell; each plane stands the row's distance east

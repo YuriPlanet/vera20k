@@ -497,6 +497,7 @@ fn send_paradrop_planes_matches_native() {
     let oracle = oracle();
     let rows = rows(&oracle, "send_paradrop_planes");
     let mut replayed = 0;
+    let mut authored_replayed = 0;
     for row in rows {
         let calls: Vec<&Value> = row["events"].as_array().unwrap().iter().collect();
         assert_eq!(calls[0][0], "create");
@@ -547,16 +548,17 @@ fn send_paradrop_planes_matches_native() {
             continue;
         }
         let house_edge = int(&row["edge"]);
-        if (0..=3).contains(&house_edge) {
-            // The house `Edge=` RESIDUAL in `paradrop`'s module doc.
-            assert_eq!(int(&pick[1]), house_edge, "{row}");
-            continue;
-        }
         let (rules, mut sim, americans) = paradrop_world(retail_list_rules(1024));
+        if (0..=3).contains(&house_edge) {
+            super::super::spy_plane_tests::install_campaign_edge(&mut sim, americans, house_edge);
+            authored_replayed += 1;
+        }
         let waypoint_edge = u8::try_from(int(&row["waypoint_edge"])).unwrap_or(u8::MAX);
         sim.houses.get_mut(&americans).unwrap().waypoint_edge = waypoint_edge;
-        let own = Edge::own_edge(waypoint_edge);
-        assert_eq!(edge(pick), own, "{row}");
+        let own = edge(pick);
+        if !(0..=3).contains(&house_edge) {
+            assert_eq!(own, Edge::own_edge(waypoint_edge), "{row}");
+        }
         // The plane's constructor draws one word before the pick.
         let expected = expected_pick(&sim, own, 1);
         // A NULL InfantryType slot builds nothing; so does a name VERA has
@@ -619,6 +621,7 @@ fn send_paradrop_planes_matches_native() {
         replayed += 1;
     }
     assert!(replayed > 8, "{replayed}");
+    assert_eq!(authored_replayed, 1);
 }
 
 /// The mission rows' Target, inside [`world`]'s playfield (cells whose

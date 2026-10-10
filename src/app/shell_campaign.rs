@@ -224,9 +224,8 @@ impl App {
 
     /// Released on the pressed emblem: the proc stores the slider in
     /// OptionsClass `Difficulty` and plays the queued voice at once
-    /// (`0x0052F2A5..0x0052F347`). The campaign would then start
-    /// (`0x00683AB0`); VERA20k has no campaign scenario start, so the dialog
-    /// stays up.
+    /// (`0x0052F2A5..0x0052F347`). PrepareSession state8 tears the dialog
+    /// down and waits for that voice before starting the selected campaign.
     fn select_campaign(state: &mut AppState, side: CampaignSide) {
         let Some(campaign) = state.frontend.campaign.as_mut() else {
             return;
@@ -237,10 +236,98 @@ impl App {
         if let Some(voice) = voice {
             Self::play_campaign_voice(state, voice);
         }
-        log::warn!(
-            "campaign {} selected at difficulty {difficulty}: campaign scenarios cannot start yet",
-            side.campaign_name()
+        Self::leave_shell_dialog(
+            state,
+            crate::app::frontend::shell_transition::ShellExitThen::CampaignStart(side),
         );
+    }
+
+    pub(super) fn commit_campaign_start(state: &mut AppState, side: CampaignSide) {
+        state.process_assets.refresh_empty_campaigns_if_available();
+        let mut clock = crate::match_bootstrap::OrdinaryMatchSeedClock;
+        let startup = state.process_assets.campaigns().and_then(|campaigns| {
+            crate::match_bootstrap::prepare_campaign_startup(
+                campaigns,
+                side.campaign_name(),
+                state.persistence.options_profile.difficulty,
+                &mut clock,
+            )
+        });
+        let Some(startup) = startup else {
+            // FindIndex46CC90's -1 follows the same result as Back.
+            log::warn!("Campaign {} is unavailable", side.campaign_name());
+            Self::commit_campaign_back(state);
+            return;
+        };
+        state.frontend.campaign = None;
+        state.frontend.campaign_art = None;
+        Self::destroy_current_shell_dialog(state);
+        state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
+        state.frontend.shell_first_paint_slide = None;
+        let request = crate::app::loading::pump::LoadingRequest::campaign(startup);
+        Self::start_campaign_scenario(state, request);
+    }
+
+    /// Start_Scenario683AB0 reads the authored map's Intro/Brief before
+    /// LOADING and ReadScenario. Brief is considered only when the Intro
+    /// registry index is -1; a valid Intro with missing bytes does not fall back.
+    /// Campaign.CD reaches4790B0/4790E0 at683BC9/683BEE; both stock rows require
+    /// media2. The portable installed-archive owner supplies their map bytes.
+    /// Native Windows drive prompt/remount limits are recorded beside the
+    /// original comparison in tools/input_oracle/campaign_start.md.
+    fn start_campaign_scenario(
+        state: &mut AppState,
+        request: crate::app::loading::pump::LoadingRequest,
+    ) {
+        let movie = (|| -> anyhow::Result<Option<String>> {
+            let Some(assets) = state.process_assets.manager() else {
+                return Ok(None);
+            };
+            let Some(rules) = state.process_assets.native_rules() else {
+                return Ok(None);
+            };
+            let Some(config) = state.platform.game_config.as_ref() else {
+                return Ok(None);
+            };
+            let loaded = crate::map::source::load_map_by_name_or_path_with_assets(
+                &config.paths.ra2_dir,
+                request.selected_map_file(),
+                assets,
+            )?;
+            let Some(basic) = loaded.map.ini.section("Basic") else {
+                return Ok(None);
+            };
+            let movies = rules.movies();
+            let intro = basic.read_movie("Intro", -1, movies);
+            let selected = if intro == -1 {
+                basic.read_movie("Brief", -1, movies)
+            } else {
+                intro
+            };
+            Ok(movies.name(selected).map(str::to_owned))
+        })()
+        .unwrap_or_else(|error| {
+            // ReadScenario retains the authoritative load failure. The
+            // optional playback lookup must not install a fallback scenario.
+            log::warn!("Campaign Intro/Brief lookup failed: {error:#}");
+            None
+        });
+        state.match_state.input.zoom_level = 1.0;
+        state.match_state.input.zoom_target = 1.0;
+        if let Some(movie) = movie {
+            // StartScenario683AB0 stops the shell theme before Intro/Brief;
+            // PlayMovie's pause/resume therefore cannot revive INTRO here.
+            state.audio.stop_theme();
+            Self::start_fullscreen_movie(
+                state,
+                &movie,
+                crate::app::frontend::fullscreen_movie::MovieReturn::CampaignStart(Box::new(
+                    request,
+                )),
+            );
+        } else {
+            crate::app::loading::pump::begin_loading(state, request);
+        }
     }
 
     fn play_campaign_voice(state: &mut AppState, side: CampaignSide) {

@@ -279,7 +279,10 @@ pub(crate) fn retail_battle_rules_for_map(map_name: &str) -> Option<RetailBattle
     let mode = select_ini(&assets, &mode.override_file).expect("select Battle override");
     eprintln!("retail mode {:?}; map {:?}", mode.source, map.source);
     let (mut rules, processed_rules, fixed_art, _) = owner
-        .load_noncampaign_scenario(Some(&mode.ini), &map.map.ini)
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode.ini)),
+            &map.map.ini,
+        )
         .expect("process noncampaign retail Battle Rules")
         .into_parts();
     let art = crate::rules::art_data::ArtRegistry::from_ini(&fixed_art);

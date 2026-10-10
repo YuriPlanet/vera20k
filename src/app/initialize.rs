@@ -285,6 +285,7 @@ impl App {
             startup_options.media_archive_mode,
             startup_audio.load_audio_indices,
         );
+        process_assets.csf = startup_csf;
         let (startup_rules, startup_rules_projection) = startup_asset_manager
             .as_ref()
             .and_then(|assets| {
@@ -327,7 +328,7 @@ impl App {
                     scenario_sources::list_skirmish_scenario_records_with_assets(
                         &config.paths.ra2_dir,
                         assets,
-                        startup_csf.as_ref(),
+                        process_assets.csf.as_ref(),
                     )
                 }
                 _ => Ok(Vec::new()),
@@ -473,7 +474,6 @@ impl App {
         if let Some(assets) = startup_asset_manager {
             process_assets.return_from_loading(assets);
         }
-        process_assets.csf = startup_csf;
         let mut state = AppState {
             platform: PlatformState::new(
                 window,
@@ -865,7 +865,12 @@ mod tests {
                 // the tooling tick helper's different millisecond cadence.
                 let output = loaded
                     .runtime
-                    .advance_frame(&[], crate::app::types::SIM_TICK_MS, TickLane::Ordinary, crate::sim::world::FrameEffects::default())
+                    .advance_frame(
+                        &[],
+                        crate::app::types::SIM_TICK_MS,
+                        TickLane::Ordinary,
+                        crate::sim::world::FrameEffects::default(),
+                    )
                     .expect("fixture frame must complete");
                 victory_edges += output.sound_events.iter().filter(|event| matches!(event,
                     SimSoundEvent::MatchOutcome { owner: event_owner, kind: HouseOutcomeKind::Victory }
@@ -923,7 +928,12 @@ mod tests {
                 );
                 let output = loaded
                     .runtime
-                    .advance_frame(&[exit], crate::app::types::SIM_TICK_MS, TickLane::Ordinary, crate::sim::world::FrameEffects::default())
+                    .advance_frame(
+                        &[exit],
+                        crate::app::types::SIM_TICK_MS,
+                        TickLane::Ordinary,
+                        crate::sim::world::FrameEffects::default(),
+                    )
                     .expect("fixture frame must complete");
                 assert_eq!(output.tick.executed_commands, 1);
                 assert!(!output.tick.frame_committed);

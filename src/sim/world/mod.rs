@@ -995,8 +995,9 @@ pub struct Simulation {
     /// native fresh-process state; launch `.SED` generation installs its exact
     /// post-RMG continuation. Bridge repair consumes this stream; destruction
     /// remains Scenario-owned. This cursor is not saved or checksummed; Rust
-    /// retains it across in-scenario restore, while native cross-match process
-    /// retention remains UNCHECKED.
+    /// retains it across in-scenario restore and fresh Scenario handoff.
+    /// Original Init_Random_Number_System52FC20 leaves this entire object
+    /// unchanged; only random-map generation reseeds it at598996.
     #[serde(skip, default = "deserialized_process_rng_placeholder")]
     pub(crate) mapgen_rng: SimRng,
     /// Independent wrapping `AbstractClass+0x10` identity cursor, Scenario+214.
@@ -3022,11 +3023,47 @@ impl Simulation {
         process.install_from(staged);
     }
 
-    /// Install the exact cursor left by the accepted random-map generation.
-    /// VERA fixed-map construction currently keeps `Random__Seed(0)`; native
-    /// fresh-process state is verified, while cross-match retention is UNCHECKED.
+    /// Install the process MapGen cursor prepared by the bootstrap owner.
     pub(super) fn install_generated_mapgen_rng(&mut self, mapgen_rng: SimRng) {
         self.mapgen_rng = mapgen_rng;
+    }
+
+    /// Publish a completed RMG run into the resident process cursor. Original
+    /// Generate598960 advances MapGen in place and returns without restoring
+    /// it; preview OK/Cancel leave it unchanged (59664C,59951F..599527).
+    pub(crate) fn install_mapgen_continuation(
+        &mut self,
+        continuation: crate::rng_continuation::MapGenRngContinuation,
+    ) {
+        self.install_generated_mapgen_rng(SimRng::from_mapgen_continuation(continuation));
+    }
+
+    /// Carry the resident process cursor through a fresh Scenario replacement.
+    /// Original52FC20 reseeds Scenario/Main only. The outgoing world remains
+    /// inactive throughout loading, so this opaque snapshot has no competing
+    /// draw authority and the fresh bootstrap consumes it exactly once.
+    pub(crate) fn mapgen_continuation_for_fresh_load(
+        &self,
+    ) -> crate::rng_continuation::MapGenRngContinuation {
+        self.mapgen_rng.mapgen_continuation()
+    }
+
+    /// Campaign ClearScene/SetDefaults retain these Scenario flag bits. The
+    /// inactive loader can carry their existing owners' draw-free projection
+    /// through map reads without creating a second mutable flags word.
+    /// Original683610/686B20; cold Scenario ctor6833F3 word0x8088.
+    pub(crate) fn retained_campaign_special_flags(&self) -> crate::map::basic::SpecialFlagsSection {
+        crate::map::basic::SpecialFlagsSection {
+            inert: Some(self.session.no_damage),
+            tiberium_grows: Some(self.session.tiberium_grows_flag),
+            tiberium_spreads: Some(self.session.tiberium_spreads_flag),
+            destroyable_bridges: Some(
+                self.bridge_state
+                    .as_ref()
+                    .is_none_or(|state| state.is_destroyable()),
+            ),
+            ..Default::default()
+        }
     }
 
     /// Create a new empty simulation with the test fixtures' seed. Test builds
@@ -3280,8 +3317,7 @@ impl Simulation {
 
     /// Test/replay helper for the per-game Scenario/Main pair only.
     ///
-    /// Same-process MapGen reset/retention is unverified, so reseeding the
-    /// per-game pair must preserve the current MapGen object.
+    /// Original52FC20 preserves MapGen while reseeding the per-game pair.
     #[cfg(test)]
     pub(crate) fn reseed_scenario_and_main(&mut self, seed: u64) {
         self.scenario_rng = SimRng::new(seed);

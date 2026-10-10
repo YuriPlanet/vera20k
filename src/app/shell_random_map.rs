@@ -188,9 +188,64 @@ pub(crate) struct RandomMapGenerationRetention {
     /// the dialog is open. A four-field mismatch replaces its backing storage,
     /// and common dialog teardown destroys it before a later reopen.
     map_storage_key: Option<RandomMapStorageKey>,
+    /// Immutable process cursor after successful generation, while no live
+    /// Simulation exists. Inactive load attempts receive draw-free snapshots;
+    /// only successful Simulation installation retires this transport.
+    pending_process_mapgen: Option<crate::rng_continuation::MapGenRngContinuation>,
 }
 
 impl RandomMapGenerationRetention {
+    /// Publish the completed generator's exact resident cursor before any
+    /// preview choice or fallible load admission. Both dialog preview and
+    /// launch-time .SED regeneration use this owner selection.
+    pub(crate) fn publish_mapgen_continuation(
+        &mut self,
+        resident: Option<&mut crate::sim::world::Simulation>,
+        continuation: crate::rng_continuation::MapGenRngContinuation,
+    ) {
+        match resident {
+            Some(simulation) => {
+                assert!(
+                    self.pending_process_mapgen.is_none(),
+                    "resident Simulation cannot coexist with pending cold MapGen transport"
+                );
+                simulation.install_mapgen_continuation(continuation);
+            }
+            None => self.pending_process_mapgen = Some(continuation),
+        }
+    }
+
+    /// Snapshot the sole previous process cursor for an inactive load attempt.
+    /// The selected authored load has no MapGen draws before installation:
+    /// ReadScenario684620→ReadScenarioINI686730→Full_Init/Fill/postload.
+    /// Later Engineer repairs draw through the live Simulation. Native
+    /// evidence: tools/input_oracle/campaign_start.py and its meta coverage.
+    pub(crate) fn snapshot_mapgen_continuation_for_fresh_load(
+        &self,
+        resident: Option<&crate::sim::world::Simulation>,
+    ) -> Option<crate::rng_continuation::MapGenRngContinuation> {
+        match resident {
+            Some(simulation) => {
+                assert!(
+                    self.pending_process_mapgen.is_none(),
+                    "resident Simulation cannot coexist with pending cold MapGen transport"
+                );
+                Some(simulation.mapgen_continuation_for_fresh_load())
+            }
+            None => self
+                .pending_process_mapgen
+                .as_ref()
+                .map(crate::rng_continuation::MapGenRngContinuation::snapshot_for_fresh_load),
+        }
+    }
+
+    /// Retire cold transport only at successful incoming-Simulation install.
+    /// Error/cancel and incoming-None fallback do not call this method. The
+    /// app transports an outgoing resident cursor before dropping that owner.
+    pub(crate) fn discard_pending_mapgen_on_simulation_install(&mut self) {
+        self.pending_process_mapgen = None;
+    }
+
     pub(super) fn map_storage_decision(
         &self,
         options: &crate::map::rmg::RmgOptions,
@@ -383,13 +438,25 @@ pub(super) fn spawn_random_map_generation_worker(
 /// Apply the finished worker receipt to the same shell owners the live poll
 /// mutates. The return value tells the caller whether deferred OK may now run.
 pub(super) fn finish_random_map_generation_owners(
+    resident_simulation: Option<&mut crate::sim::world::Simulation>,
     runtime: &mut crate::app::frontend::skirmish_session::OfflineSkirmishRuntime,
     retention: &mut RandomMapGenerationRetention,
     modal: &mut crate::ui::skirmish_shell::RandomMapSetupModalState,
-    generated: crate::map::rmg::GeneratedMap,
+    mut generated: crate::map::rmg::GeneratedMap,
     preview: Option<crate::map::rmg::preview::PreviewImage>,
     accept_on_finish: bool,
 ) -> bool {
+    if resident_simulation.is_some() {
+        assert!(
+            retention.pending_process_mapgen.is_none(),
+            "resident Simulation cannot coexist with pending cold MapGen transport"
+        );
+    }
+    // Original598960 seeds and advances the resident g_MapGenRng, returning
+    // without restoring it (59951F..599527). The dialog's OK/Cancel branches
+    // only select a modal result, so publish before preview disposition.
+    let continuation = generated.take_mapgen_continuation();
+    retention.publish_mapgen_continuation(resident_simulation, continuation);
     runtime.replay_random_map_preview_construction(&generated.construction_trace);
     retention.finish_generation(generated);
     modal.finish_generate(preview);
@@ -683,6 +750,11 @@ impl App {
             let preview = Self::rasterise_generated_map(state, &job, &generated);
             let generated = *generated;
             let accept = {
+                let resident_simulation = state
+                    .match_state
+                    .sim_runtime
+                    .as_mut()
+                    .map(|runtime| &mut runtime.simulation);
                 let frontend = &mut state.frontend;
                 match frontend
                     .skirmish_shell_state
@@ -690,6 +762,7 @@ impl App {
                     .as_mut()
                 {
                     Some(modal) => finish_random_map_generation_owners(
+                        resident_simulation,
                         &mut frontend.offline_skirmish_runtime,
                         &mut frontend.random_map_retention,
                         modal,
@@ -1552,12 +1625,229 @@ mod tests {
         options.seed = seed;
         crate::map::rmg::GeneratedMap {
             map_file: crate::map::rmg::emit::empty_map_file(&options, 32, 32),
-            mapgen_continuation: crate::map::rmg::RmgRng::new(seed as u16).into_continuation(),
+            mapgen_continuation: Some(
+                crate::map::rmg::RmgRng::new(seed as u16).into_continuation(),
+            ),
             construction_trace: crate::map::rmg::RmgConstructionTrace::default(),
             start_waypoints: vec![(0, start_x, 20)],
             stages_run: Vec::new(),
             unfilled_start_slots: 0,
         }
+    }
+
+    fn complete_process_preview(
+        retention: &mut RandomMapGenerationRetention,
+        resident: Option<&mut crate::sim::world::Simulation>,
+        seed: u16,
+    ) -> crate::sim::rng::SimRngLogicalState {
+        let mut rng = crate::map::rmg::RmgRng::new(seed);
+        for _ in 0..353 {
+            let _ = rng.next_u32();
+        }
+        let expected =
+            crate::sim::rng::SimRng::from_mapgen_continuation(rng.clone().into_continuation())
+                .logical_state();
+        let mut generated = generated_preview(i32::from(seed), 10);
+        generated.mapgen_continuation = Some(rng.into_continuation());
+        let options = crate::map::rmg::RmgOptions {
+            seed: i32::from(seed),
+            ..Default::default()
+        };
+        let mut modal =
+            crate::ui::skirmish_shell::RandomMapSetupModalState::open(options, None, false);
+        modal.begin_generate();
+        let mut runtime =
+            crate::app::frontend::skirmish_session::OfflineSkirmishRuntime::initialize(
+                0x52FC_594C,
+                None,
+                None,
+                None,
+                crate::app::frontend::skirmish_session::skirmish_global_defaults(
+                    &crate::ui::skirmish_shell::SkirmishShellState::default(),
+                ),
+            );
+        assert!(!finish_random_map_generation_owners(
+            resident,
+            &mut runtime,
+            retention,
+            &mut modal,
+            generated,
+            None,
+            false,
+        ));
+        assert!(
+            retention
+                .candidate
+                .as_ref()
+                .expect("completed preview retained")
+                .mapgen_continuation
+                .is_none(),
+            "presentation must no longer own the process cursor"
+        );
+        expected
+    }
+
+    #[test]
+    fn completed_preview_publishes_only_mapgen_to_resident_simulation() {
+        let mut simulation = crate::sim::world::Simulation::from_descriptor(
+            &crate::sim::scenario_session::ScenarioDescriptor {
+                seed: 0x52FC_1000,
+                ..Default::default()
+            },
+        );
+        let before = simulation.rng_state();
+        let mut retention = RandomMapGenerationRetention::default();
+        let expected = complete_process_preview(&mut retention, Some(&mut simulation), 0xBEEF);
+        let after = simulation.rng_state();
+
+        assert_eq!(after.mapgen, expected);
+        assert_ne!(after.mapgen, before.mapgen);
+        assert_eq!(after.scenario, before.scenario);
+        assert_eq!(after.main, before.main);
+        assert!(retention.pending_process_mapgen.is_none());
+        let transported = retention
+            .snapshot_mapgen_continuation_for_fresh_load(Some(&simulation))
+            .expect("resident cursor snapshot");
+        assert_eq!(
+            crate::sim::rng::SimRng::from_mapgen_continuation(transported).logical_state(),
+            expected
+        );
+        assert_eq!(simulation.rng_state(), after, "snapshot cannot advance RNG");
+    }
+
+    #[test]
+    fn cold_completed_preview_cursor_survives_presentation_disposition() {
+        for disposition in 0..5 {
+            let mut retention = RandomMapGenerationRetention::default();
+            let expected = complete_process_preview(&mut retention, None, 0xC01D);
+            match disposition {
+                0 => retention.begin_generation(),
+                1 => retention.cancel_setup(),
+                2 => {
+                    retention.accept_setup(RANDMAP_SED_FILE);
+                    let _ = retention.take_acceptance_for_loading(Some(RANDMAP_SED_FILE));
+                }
+                3 => {
+                    retention.accept_setup(RANDMAP_SED_FILE);
+                    retention.select_map("OTHER.MAP");
+                }
+                4 => retention.destroy_map_storage(),
+                _ => unreachable!(),
+            }
+            let transported = retention
+                .snapshot_mapgen_continuation_for_fresh_load(None)
+                .expect("completed cold process cursor survives preview disposition");
+            assert_eq!(
+                crate::sim::rng::SimRng::from_mapgen_continuation(transported).logical_state(),
+                expected,
+                "disposition {disposition}"
+            );
+            let second_snapshot = retention
+                .snapshot_mapgen_continuation_for_fresh_load(None)
+                .expect("an inactive attempt cannot retire the process cursor");
+            assert_eq!(
+                crate::sim::rng::SimRng::from_mapgen_continuation(second_snapshot).logical_state(),
+                expected
+            );
+            retention.discard_pending_mapgen_on_simulation_install();
+            assert!(
+                retention
+                    .snapshot_mapgen_continuation_for_fresh_load(None)
+                    .is_none()
+            );
+        }
+
+        let mut retention = RandomMapGenerationRetention::default();
+        let first = complete_process_preview(&mut retention, None, 0xC01D);
+        retention.begin_generation();
+        let second = complete_process_preview(&mut retention, None, 0xC02D);
+        assert_ne!(first, second);
+        let transported = retention
+            .snapshot_mapgen_continuation_for_fresh_load(None)
+            .expect("latest completed run wins");
+        assert_eq!(
+            crate::sim::rng::SimRng::from_mapgen_continuation(transported).logical_state(),
+            second
+        );
+    }
+
+    #[test]
+    fn cold_mapgen_survives_failed_staging_and_retires_only_on_successful_install() {
+        let mut retention = RandomMapGenerationRetention::default();
+        let first = complete_process_preview(&mut retention, None, 0xC01D);
+        let descriptor = crate::sim::scenario_session::ScenarioDescriptor {
+            seed: 123,
+            ..Default::default()
+        };
+        let stage_attempt = |retention: &RandomMapGenerationRetention| {
+            let mut bootstrap = crate::sim::scenario_bootstrap::ScenarioBootstrapRng::new(123);
+            bootstrap.install_process_mapgen_continuation(
+                retention
+                    .snapshot_mapgen_continuation_for_fresh_load(None)
+                    .expect("retained process receipt"),
+            );
+            bootstrap.into_simulation(&descriptor)
+        };
+
+        let failed_staging = stage_attempt(&retention);
+        assert_eq!(failed_staging.rng_state().mapgen, first);
+        // Loading cancellation, request replacement and any later authored
+        // loader error discard inactive staging. None retires this owner.
+        drop(failed_staging);
+        retention.cancel_setup();
+        retention.select_map("all01umd.map");
+        let retry = stage_attempt(&retention);
+        assert_eq!(retry.rng_state().mapgen, first);
+        drop(retry);
+
+        // Launch-time .SED generation publishes through the same seam before
+        // fallible admission. Its newer native cursor survives another error.
+        let second = complete_process_preview(&mut retention, None, 0xC02D);
+        assert_ne!(first, second);
+        let failed_regenerated_load = stage_attempt(&retention);
+        assert_eq!(failed_regenerated_load.rng_state().mapgen, second);
+        drop(failed_regenerated_load);
+        let installed = stage_attempt(&retention);
+        retention.discard_pending_mapgen_on_simulation_install();
+        assert!(
+            retention
+                .snapshot_mapgen_continuation_for_fresh_load(None)
+                .is_none()
+        );
+        let live_snapshot = retention
+            .snapshot_mapgen_continuation_for_fresh_load(Some(&installed))
+            .expect("success leaves the resident Simulation authoritative");
+        assert_eq!(
+            crate::sim::rng::SimRng::from_mapgen_continuation(live_snapshot).logical_state(),
+            second
+        );
+    }
+
+    #[test]
+    fn resident_and_unconsumed_cold_mapgen_are_rejected_before_mutation() {
+        let mut retention = RandomMapGenerationRetention::default();
+        let cold = complete_process_preview(&mut retention, None, 0xC01D);
+        let mut simulation = crate::sim::world::Simulation::from_descriptor(
+            &crate::sim::scenario_session::ScenarioDescriptor::default(),
+        );
+        let before = simulation.rng_state();
+        let completion = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            complete_process_preview(&mut retention, Some(&mut simulation), 0xBEEF)
+        }));
+        assert!(completion.is_err());
+        assert_eq!(simulation.rng_state(), before);
+
+        let load = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            retention.snapshot_mapgen_continuation_for_fresh_load(Some(&simulation))
+        }));
+        assert!(load.is_err());
+        let transported = retention
+            .snapshot_mapgen_continuation_for_fresh_load(None)
+            .expect("rejected duplicate owner cannot drop cold transport");
+        assert_eq!(
+            crate::sim::rng::SimRng::from_mapgen_continuation(transported).logical_state(),
+            cold
+        );
     }
 
     #[test]

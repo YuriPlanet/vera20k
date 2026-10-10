@@ -119,8 +119,10 @@ fn production_root_langrule_mode_map_order_matches_native_reader_history() {
     .unwrap();
     for index in [3, 4] {
         let (rules, _, _, _) = owner
-            .load_noncampaign_scenario(
-                Some(&cached_ini(&history[2]["sections"])),
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(
+                    &cached_ini(&history[2]["sections"]),
+                )),
                 &cached_ini(&history[index]["sections"]),
             )
             .unwrap()
@@ -184,7 +186,10 @@ fn retail_root_ifv_and_passengers_match_original_readers() {
     )
     .unwrap();
     let (rules, _, _, _) = owner
-        .load_noncampaign_scenario(None, &IniFile::empty())
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+            &IniFile::empty(),
+        )
         .unwrap()
         .into_parts();
     let native = corpus();

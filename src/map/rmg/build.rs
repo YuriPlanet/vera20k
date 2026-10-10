@@ -282,7 +282,7 @@ pub fn generate_map_observed(
 
     GeneratedMap {
         map_file,
-        mapgen_continuation: rng.into_continuation(),
+        mapgen_continuation: Some(rng.into_continuation()),
         construction_trace: output.construction_trace,
         start_waypoints: output.waypoints,
         stages_run: executed_stages(&options),
@@ -446,7 +446,7 @@ mod tests {
         let settings = RmgSettings::default();
         let options = options(1, 0);
         let snapshot = || {
-            let g = generate_map(&options, &settings, &resolved, &blocks, &[]);
+            let mut g = generate_map(&options, &settings, &resolved, &blocks, &[]);
             let tiles: Vec<i32> = g.map_file.cells.iter().map(|c| c.tile_index).collect();
             let overlays: Vec<(u16, u16, u8)> = g
                 .map_file
@@ -454,7 +454,7 @@ mod tests {
                 .iter()
                 .map(|o| (o.rx, o.ry, o.overlay_id))
                 .collect();
-            let mapgen = g.mapgen_continuation.into_native_parts();
+            let mapgen = g.take_mapgen_continuation().into_native_parts();
             (tiles, overlays, g.start_waypoints, mapgen)
         };
         let first = snapshot();

@@ -141,7 +141,7 @@ fn replay(row: &Value, plant: bool) -> Replay {
     sim.power_states.insert(owner, power);
     for (index, sw) in row["supers"].as_array().unwrap().iter().enumerate() {
         let id = sim.interner.intern(&format!("SW{index}"));
-        let mut instance = SuperWeaponInstance::new(id, owner);
+        let mut instance = SuperWeaponInstance::new(id, owner, 0);
         instance.is_ready = flag(&sw["charged"]);
         instance.is_active = flag(&sw["granted"]);
         instance.charge_start_tick = int(&sw["start"]);

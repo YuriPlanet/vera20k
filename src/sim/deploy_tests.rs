@@ -1089,7 +1089,7 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
         )
         .unwrap(),
         &rules.general,
-        1.0,
+        Default::default(),
         sim.session.game_mode_nonzero,
         0,
         0,

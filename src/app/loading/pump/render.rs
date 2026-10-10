@@ -4,11 +4,15 @@
 //! complete drawing operations; layout helpers remain private.
 
 use super::{LoadingProgressState, NativeLoadingScreenState};
+use crate::app::loading::campaign_presentation::{
+    CampaignLoadingLayout, CampaignLoadingPresentation,
+};
 use crate::app::loading::composition::{
     LoadingCompositionSnapshot, MmpbRegionRect, loading_base_origin,
 };
 use crate::app::loading::progress_row::{
-    LoadingProgressRowLayout, LoadingProgressRowSnapshot, layout_standard_skirmish_progress_row,
+    LoadingProgressRowLayout, LoadingProgressRowPlacement, LoadingProgressRowSnapshot,
+    PROGRESS_ROW_MEASURE_TEXT, layout_loading_progress_row,
 };
 use crate::app::renderer_state::RendererState;
 use crate::render::batch::{BatchRenderer, SpriteInstance};
@@ -23,6 +27,8 @@ use crate::rules::color_scheme::scheme_entry_for_priority;
 const BACKGROUND_DEPTH: f32 = 0.90;
 const PREVIEW_DEPTH: f32 = 0.80;
 const MARKER_DEPTH: f32 = 0.70;
+/// Native prints the campaign title before the briefing's backing and copy.
+const CAMPAIGN_TITLE_TEXT_DEPTH: f32 = 0.70;
 const TEXT_BACKING_DEPTH: f32 = 0.60;
 const TEXT_DEPTH: f32 = 0.50;
 const TEXT_BACKING_ALPHA: f32 = 159.0 / 255.0;
@@ -102,120 +108,31 @@ pub(super) fn encode_native_loading_frame(
 ) -> anyhow::Result<()> {
     let Some(atlas) = native.atlas.as_ref() else {
         return Err(anyhow::anyhow!(
-            "native Skirmish loading atlas was not available for render"
+            "native loading atlas was not available for render"
         ));
     };
-    let target = renderer.shell_surface_presenter.source_render_view();
-
     let frame_plan = build_native_loading_frame_plan(
         &renderer.bit_font,
         atlas,
         native.composition.as_ref(),
+        native.campaign_presentation.as_ref(),
         &native.progress_row,
         &native.progress,
         native.backing_rgb,
         native.text_rgb,
         [renderer.gpu.config.width, renderer.gpu.config.height],
     );
-    let instances = frame_plan.instances;
-    let text_draws = frame_plan.text_draws;
-
-    renderer.batch_renderer.update_camera(
+    encode_native_loading_plan(
         &renderer.gpu,
-        renderer.gpu.config.width as f32,
-        renderer.gpu.config.height as f32,
-        0.0,
-        0.0,
-        1.0,
-        crate::render::batch::DepthAxis::NONE,
-    );
-    let Some((buffer, count)) = renderer
-        .batch_renderer
-        .create_instance_buffer(&renderer.gpu, &instances)
-    else {
-        return Err(anyhow::anyhow!(
-            "native Skirmish loading instances could not be uploaded"
-        ));
-    };
-    let backing_buffers = text_draws
-        .iter()
-        .map(|draw| {
-            renderer
-                .batch_renderer
-                .create_instance_buffer(&renderer.gpu, &draw.backing)
-        })
-        .collect::<Vec<_>>();
-    let text_buffers = text_draws
-        .iter()
-        .map(|draw| {
-            renderer
-                .batch_renderer
-                .create_instance_buffer(&renderer.gpu, &draw.text.instances)
-        })
-        .collect::<Vec<_>>();
-
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("Native Loading Screen"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: &target,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(crate::app::types::CLEAR_COLOR),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            view: &renderer.depth_view,
-            depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(1.0),
-                store: wgpu::StoreOp::Store,
-            }),
-            stencil_ops: None,
-        }),
-        timestamp_writes: None,
-        occlusion_query_set: None,
-    });
-    renderer
-        .batch_renderer
-        .draw_with_buffer_passthrough(&mut pass, &atlas.texture, &buffer, count);
-    for ((draw, backing_buffer), text_buffer) in text_draws
-        .iter()
-        .zip(backing_buffers.iter())
-        .zip(text_buffers.iter())
-    {
-        if let Some((buffer, count)) = backing_buffer.as_ref() {
-            renderer.batch_renderer.draw_with_buffer_passthrough(
-                &mut pass,
-                &atlas.texture,
-                buffer,
-                *count,
-            );
-        }
-        let Some((buffer, count)) = text_buffer.as_ref() else {
-            continue;
-        };
-        let Some(scissor) = clamp_loading_scissor(
-            draw.text.scissor,
-            renderer.gpu.config.width,
-            renderer.gpu.config.height,
-        ) else {
-            continue;
-        };
-        pass.set_scissor_rect(scissor.x, scissor.y, scissor.w, scissor.h);
-        renderer.batch_renderer.draw_with_buffer_passthrough(
-            &mut pass,
-            renderer.bit_font.atlas(),
-            buffer,
-            *count,
-        );
-    }
-    pass.set_scissor_rect(0, 0, renderer.gpu.config.width, renderer.gpu.config.height);
-    drop(pass);
-    renderer
-        .shell_surface_presenter
-        .encode_present(encoder, destination);
-    Ok(())
+        &renderer.shell_surface_presenter,
+        &renderer.depth_view,
+        &renderer.batch_renderer,
+        &renderer.bit_font,
+        atlas,
+        frame_plan,
+        encoder,
+        destination,
+    )
 }
 
 struct NativeLoadingTextDraw {
@@ -233,79 +150,150 @@ fn native_loading_row_layout(
     atlas: &LoadingScreenAtlas,
     progress: &LoadingProgressState,
     render_size: [u32; 2],
+    campaign: Option<&CampaignLoadingPresentation>,
 ) -> Option<LoadingProgressRowLayout> {
     if progress.current_value() == 0.0 {
         return None;
     }
-    Some(layout_standard_skirmish_progress_row(
-        render_size,
+    let placement = campaign.map_or(
+        LoadingProgressRowPlacement::StandardSkirmish(render_size),
+        |campaign| LoadingProgressRowPlacement::Campaign(campaign.layout.progress_point),
+    );
+    Some(layout_loading_progress_row(
+        placement,
         [
             atlas.progress_frame0.pixel_size[0] as i32,
             atlas.progress_frame0.pixel_size[1] as i32,
         ],
-        atlas
-            .side_icon
+        (campaign.is_none())
+            .then_some(atlas.side_icon)
+            .flatten()
             .map(|icon| [icon.pixel_size[0] as i32, icon.pixel_size[1] as i32]),
-        font.cell_height() as i32,
+        [
+            font.text_width(PROGRESS_ROW_MEASURE_TEXT) as i32,
+            font.cell_height() as i32,
+        ],
     ))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "combines immutable family metadata with the shared loading text owner"
+)]
 fn build_native_loading_text_draws(
     font: &BitFont,
-    atlas: &LoadingScreenAtlas,
+    solid_texel: LoadingScreenEntry,
     composition: Option<&LoadingCompositionSnapshot>,
+    campaign: Option<&CampaignLoadingPresentation>,
     row: &LoadingProgressRowSnapshot,
     row_layout: Option<&LoadingProgressRowLayout>,
     text_rgb: [f32; 3],
     row_rgb: [f32; 3],
+    render_size: [u32; 2],
 ) -> Vec<NativeLoadingTextDraw> {
     let mut draws = Vec::with_capacity(5);
+    if let Some(campaign) = campaign {
+        // Campaign DrawLoading552D60 returns before all country/loading copy
+        // and player labels. PrintUnicode4A61C0→4A5EB0's 0x19 title flags have
+        // no 0x100/0x200 alignment or 0x400/0x8000 backing bits. Its bottom
+        // BitText_Print434B90 call has no width/height limit and clips to the
+        // screen, unlike the briefing's rectangle-relative Path-A flags.
+        if let Some(text) = campaign.title.as_deref() {
+            let mut draw = build_native_loading_text_draw(
+                font,
+                solid_texel,
+                text,
+                crate::ui::shell::geom::RectPx::new(
+                    campaign.title_origin[0],
+                    campaign.title_origin[1],
+                    0,
+                    0,
+                ),
+                text_rgb,
+                ShellAlign::NONE,
+                None,
+                CAMPAIGN_TITLE_TEXT_DEPTH,
+            );
+            draw.text.scissor = ScissorRect {
+                x: 0,
+                y: 0,
+                w: render_size[0],
+                h: render_size[1],
+            };
+            draws.push(draw);
+        }
+        if let Some(text) = campaign.briefing.as_deref() {
+            // 553194/5531EA both measure with the original fixed 400px cap.
+            // 553214 expands that measured rectangle by4 before the alpha159
+            // backing; 5532F4 draws Path A with0xC (vertical center, no reveal).
+            let measured = font.wrap_layout(
+                text,
+                CampaignLoadingPresentation::BRIEFING_WRAP_WIDTH as u32,
+            );
+            draws.push(build_native_loading_text_draw(
+                font,
+                solid_texel,
+                text,
+                crate::ui::shell::geom::RectPx::new(
+                    campaign.briefing_origin[0],
+                    campaign.briefing_origin[1],
+                    measured.width as i32,
+                    measured.height as i32,
+                ),
+                text_rgb,
+                ShellAlign::V_CENTER,
+                Some(CampaignLoadingPresentation::BRIEFING_BACKING_PADDING as f32),
+                TEXT_DEPTH,
+            ));
+        }
+        return draws;
+    }
     if let Some(composition) = composition {
         if let Some(text) = composition.text.country_name.as_deref() {
             draws.push(build_native_loading_text_draw(
                 font,
-                atlas,
+                solid_texel,
                 text,
                 composition.text_rects.country_name,
                 text_rgb,
                 ShellAlign::H_RIGHT,
-                true,
+                Some(TEXT_BACKING_PADDING),
                 TEXT_DEPTH,
             ));
         }
         if let Some(text) = composition.text.special_unit.as_deref() {
             draws.push(build_native_loading_text_draw(
                 font,
-                atlas,
+                solid_texel,
                 text,
                 composition.text_rects.special_unit,
                 [0.0, 0.0, 0.0],
                 ShellAlign::NONE,
-                false,
+                None,
                 TEXT_DEPTH,
             ));
         }
         if let Some(text) = composition.text.load_brief.as_deref() {
             draws.push(build_native_loading_text_draw(
                 font,
-                atlas,
+                solid_texel,
                 text,
                 composition.text_rects.load_brief,
                 text_rgb,
                 ShellAlign::NONE,
-                true,
+                Some(TEXT_BACKING_PADDING),
                 TEXT_DEPTH,
             ));
         }
         if let Some(text) = composition.text.loading.as_deref() {
             draws.push(build_native_loading_text_draw(
                 font,
-                atlas,
+                solid_texel,
                 text,
                 composition.text_rects.loading,
                 text_rgb,
                 ShellAlign::NONE,
-                true,
+                Some(TEXT_BACKING_PADDING),
                 TEXT_DEPTH,
             ));
         }
@@ -317,12 +305,12 @@ fn build_native_loading_text_draws(
     {
         draws.push(build_native_loading_text_draw(
             font,
-            atlas,
+            solid_texel,
             &row.label,
             layout.label_rect,
             row_rgb,
             ShellAlign::NONE,
-            false,
+            None,
             ROW_LABEL_DEPTH,
         ));
     }
@@ -332,12 +320,12 @@ fn build_native_loading_text_draws(
 #[allow(clippy::too_many_arguments)]
 fn build_native_loading_text_draw(
     font: &BitFont,
-    atlas: &LoadingScreenAtlas,
+    solid_texel: LoadingScreenEntry,
     text: &str,
     rect: crate::ui::shell::geom::RectPx,
     color: [f32; 3],
     align: ShellAlign,
-    with_backing: bool,
+    backing_padding: Option<f32>,
     depth: f32,
 ) -> NativeLoadingTextDraw {
     let width = rect.w.max(0) as u32;
@@ -350,7 +338,9 @@ fn build_native_loading_text_draw(
     };
     let text_draw = draw_in_rect(font, text, text_rect, color, align, [0.0, 0.0], depth);
     let mut backing = Vec::new();
-    if with_backing && !text_draw.instances.is_empty() {
+    if let Some(padding) = backing_padding
+        && !text_draw.instances.is_empty()
+    {
         let layout = font.wrap_layout(text, width);
         let aligned_x = if align.contains(ShellAlign::H_RIGHT) && layout.width < width {
             rect.x + (width - layout.width) as i32
@@ -361,14 +351,11 @@ fn build_native_loading_text_draw(
         };
         push_entry_tinted(
             &mut backing,
-            atlas.solid_texel,
+            solid_texel,
+            [aligned_x as f32 - padding, rect.y as f32 - padding],
             [
-                aligned_x as f32 - TEXT_BACKING_PADDING,
-                rect.y as f32 - TEXT_BACKING_PADDING,
-            ],
-            [
-                layout.width as f32 + TEXT_BACKING_PADDING * 2.0,
-                layout.height.min(height) as f32 + TEXT_BACKING_PADDING * 2.0,
+                layout.width as f32 + padding * 2.0,
+                layout.height.min(height) as f32 + padding * 2.0,
             ],
             TEXT_BACKING_DEPTH,
             [0.0, 0.0, 0.0],
@@ -401,22 +388,35 @@ fn clamp_loading_scissor(
 fn build_native_loading_instances(
     atlas: &LoadingScreenAtlas,
     composition: Option<&LoadingCompositionSnapshot>,
+    campaign: Option<&CampaignLoadingPresentation>,
     progress: &LoadingProgressState,
     backing_rgb: [f32; 3],
     row_layout: Option<&LoadingProgressRowLayout>,
     base_origin: [i32; 2],
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::with_capacity(12);
-    // The art hangs off the same base origin as the progress row and the text
-    // layers, so an oversized window centers all three together.
-    push_entry(
-        &mut instances,
-        atlas.background,
-        [base_origin[0] as f32, base_origin[1] as f32],
-        BACKGROUND_DEPTH,
-    );
+    if let Some(campaign) = campaign {
+        push_campaign_loading_chrome(
+            &mut instances,
+            &campaign.layout,
+            atlas.background,
+            atlas.title_bar,
+            atlas.progress_background,
+            atlas.solid_texel,
+        );
+    } else {
+        // Standard art hangs off the same base origin as its row and copy.
+        push_entry(
+            &mut instances,
+            atlas.background,
+            [base_origin[0] as f32, base_origin[1] as f32],
+            BACKGROUND_DEPTH,
+        );
+    }
 
-    if let Some(composition) = composition {
+    if campaign.is_none()
+        && let Some(composition) = composition
+    {
         if let (Some(prepared), Some(preview_entry)) = (composition.preview.as_ref(), atlas.preview)
         {
             // gamemd blits the source preview into the fitted destination rect,
@@ -464,41 +464,27 @@ fn build_native_loading_instances(
     let Some(row_layout) = row_layout else {
         return instances;
     };
-    let bar_w = atlas.progress_frame0.pixel_size[0];
-    let bar_h = atlas.progress_frame0.pixel_size[1];
     let bar_origin = [
         row_layout.bar_origin[0] as f32,
         row_layout.bar_origin[1] as f32,
     ];
 
-    // G3: solid backing fill — full bar frame rect (W x H), filled with the
-    // player scheme's `[Colors]` HSV→RGB color, drawn BEFORE the clipped bar so
-    // the bar covers it.
-    push_entry_tinted(
+    // ReadScenario6847A3 passes both placement flags false for mode0;
+    // DrawFill643400's +71 solid-fill branch is therefore suppressed.
+    push_loading_progress_span(
         &mut instances,
+        atlas.progress_frame0,
         atlas.solid_texel,
+        progress,
         bar_origin,
-        [bar_w, bar_h],
-        SOLID_FILL_DEPTH,
-        backing_rgb,
+        campaign.is_none().then_some(backing_rgb),
     );
-
-    // G2: clipped progress span. The session atlas already contains the
-    // player's 16-shade remap, so preserve its per-pixel colors.
-    let progress_width = progress.fill_width_gamemd_ftol_positive_domain(bar_w as u32);
-    if progress_width > 0 {
-        push_progress_fill(
-            &mut instances,
-            atlas.progress_frame0,
-            bar_origin,
-            progress_width as f32,
-            PROGRESS_DEPTH,
-        );
-    }
 
     // Country insignia follows the progress span. The atlas has already applied
     // the verified RGB-magenta key.
-    if let (Some(icon), Some(icon_origin)) = (atlas.side_icon, row_layout.icon_origin) {
+    if campaign.is_none()
+        && let (Some(icon), Some(icon_origin)) = (atlas.side_icon, row_layout.icon_origin)
+    {
         push_entry(
             &mut instances,
             icon,
@@ -510,21 +496,88 @@ fn build_native_loading_instances(
     instances
 }
 
+/// DrawLoading552F65..553057: unscaled frame0 at the three executed rectangle
+/// origins. Missing title/bar shapes fill the original black background
+/// (4E8120 initializesA83CD9..DB), with no country layers.
+fn push_campaign_loading_chrome(
+    out: &mut Vec<SpriteInstance>,
+    layout: &CampaignLoadingLayout,
+    background: LoadingScreenEntry,
+    title_bar: Option<LoadingScreenEntry>,
+    progress_background: Option<LoadingScreenEntry>,
+    solid_texel: LoadingScreenEntry,
+) {
+    for (entry, rect) in [
+        (title_bar, layout.title),
+        (Some(background), layout.body),
+        (progress_background, layout.bar),
+    ] {
+        if let Some(entry) = entry {
+            push_entry(out, entry, [rect.x as f32, rect.y as f32], BACKGROUND_DEPTH);
+        } else {
+            push_entry_tinted(
+                out,
+                solid_texel,
+                [rect.x as f32, rect.y as f32],
+                [rect.w as f32, rect.h as f32],
+                BACKGROUND_DEPTH,
+                [0.0; 3],
+            );
+        }
+    }
+}
+
+/// DrawFill643400 emits the optional solid player fill (G3), then the one
+/// clipped shape span (G2). The existing progress owner supplies native ftol;
+/// both loading families use this same submission body.
+fn push_loading_progress_span(
+    out: &mut Vec<SpriteInstance>,
+    frame: LoadingScreenEntry,
+    solid_texel: LoadingScreenEntry,
+    progress: &LoadingProgressState,
+    bar_origin: [f32; 2],
+    backing_rgb: Option<[f32; 3]>,
+) {
+    if let Some(backing_rgb) = backing_rgb {
+        push_entry_tinted(
+            out,
+            solid_texel,
+            bar_origin,
+            frame.pixel_size,
+            SOLID_FILL_DEPTH,
+            backing_rgb,
+        );
+    }
+    let progress_width =
+        progress.fill_width_gamemd_ftol_positive_domain(frame.pixel_size[0] as u32);
+    if progress_width > 0 {
+        push_progress_fill(
+            out,
+            frame,
+            bar_origin,
+            progress_width as f32,
+            PROGRESS_DEPTH,
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_native_loading_frame_plan(
     font: &BitFont,
     atlas: &LoadingScreenAtlas,
     composition: Option<&LoadingCompositionSnapshot>,
+    campaign: Option<&CampaignLoadingPresentation>,
     progress_row: &LoadingProgressRowSnapshot,
     progress: &LoadingProgressState,
     backing_rgb: [f32; 3],
     text_rgb: [f32; 3],
     render_size: [u32; 2],
 ) -> NativeLoadingFramePlan {
-    let row_layout = native_loading_row_layout(font, atlas, progress, render_size);
+    let row_layout = native_loading_row_layout(font, atlas, progress, render_size, campaign);
     let instances = build_native_loading_instances(
         atlas,
         composition,
+        campaign,
         progress,
         backing_rgb,
         row_layout.as_ref(),
@@ -532,12 +585,14 @@ fn build_native_loading_frame_plan(
     );
     let text_draws = build_native_loading_text_draws(
         font,
-        atlas,
+        atlas.solid_texel,
         composition,
+        campaign,
         progress_row,
         row_layout.as_ref(),
         text_rgb,
         backing_rgb,
+        render_size,
     );
     NativeLoadingFramePlan {
         instances,
@@ -550,6 +605,10 @@ fn build_native_loading_frame_plan(
 /// Used by the synchronous-repaint sink to mirror gamemd's per-milestone
 /// `WM_PAINT`. All wgpu ops take `&self`, so only shared references are needed.
 /// Returns an error on acquire/upload failure; the caller treats it as non-fatal.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "borrows existing loading and render owners for the synchronous repaint"
+)]
 pub(super) fn present_native_loading(
     gpu: &GpuContext,
     presenter: &ShellSurfacePresenter,
@@ -558,6 +617,7 @@ pub(super) fn present_native_loading(
     font: &BitFont,
     atlas: &LoadingScreenAtlas,
     composition: Option<&LoadingCompositionSnapshot>,
+    campaign: Option<&CampaignLoadingPresentation>,
     progress_row: &LoadingProgressRowSnapshot,
     progress: &LoadingProgressState,
     backing_rgb: [f32; 3],
@@ -568,7 +628,6 @@ pub(super) fn present_native_loading(
         .surface
         .get_current_texture()
         .map_err(|e| anyhow::anyhow!("loading repaint surface texture: {e}"))?;
-    let view = presenter.source_render_view();
     let mut encoder = gpu
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -579,12 +638,47 @@ pub(super) fn present_native_loading(
         font,
         atlas,
         composition,
+        campaign,
         progress_row,
         progress,
         backing_rgb,
         text_rgb,
         render_size,
     );
+    encode_native_loading_plan(
+        gpu,
+        presenter,
+        depth_view,
+        batch,
+        font,
+        atlas,
+        frame_plan,
+        &mut encoder,
+        &output.texture,
+    )?;
+    gpu.queue.submit(std::iter::once(encoder.finish()));
+    output.present();
+    Ok(())
+}
+
+/// One upload/draw/present encoding body serves the frame loop and native
+/// synchronous repaint, for both loading families.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "borrows existing render owners for one frame"
+)]
+fn encode_native_loading_plan(
+    gpu: &GpuContext,
+    presenter: &ShellSurfacePresenter,
+    depth_view: &wgpu::TextureView,
+    batch: &BatchRenderer,
+    font: &BitFont,
+    atlas: &LoadingScreenAtlas,
+    frame_plan: NativeLoadingFramePlan,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+) -> anyhow::Result<()> {
+    let view = presenter.source_render_view();
     let instances = frame_plan.instances;
     let text_draws = frame_plan.text_draws;
     batch.update_camera(
@@ -639,6 +733,9 @@ pub(super) fn present_native_loading(
             .zip(backing_buffers.iter())
             .zip(text_buffers.iter())
         {
+            // Backings use their own measured rectangle, not the previous
+            // text draw's scissor. Only glyphs use the supplied text clip.
+            pass.set_scissor_rect(0, 0, gpu.config.width, gpu.config.height);
             if let Some((buffer, count)) = backing_buffer.as_ref() {
                 batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, buffer, *count);
             }
@@ -656,9 +753,7 @@ pub(super) fn present_native_loading(
         pass.set_scissor_rect(0, 0, gpu.config.width, gpu.config.height);
     }
 
-    presenter.encode_present(&mut encoder, &output.texture);
-    gpu.queue.submit(std::iter::once(encoder.finish()));
-    output.present();
+    presenter.encode_present(encoder, destination);
     Ok(())
 }
 
@@ -754,8 +849,7 @@ fn push_entry_tinted(
     push_entry_scaled(out, entry, position, size, depth, tint);
 }
 
-/// Push the progress bar's filled span: `PROGBARM.SHP` frame 0 revealed from the
-/// left, full height.
+/// Reveal the selected PROGBARM/SPLDBR frame0 from the left, at full height.
 ///
 /// This is the one loading-screen layer that is *clipped* rather than scaled —
 /// the bar sweeps by uncovering more of the same frame, so the U axis is cut at
@@ -786,6 +880,195 @@ fn push_progress_fill(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
+
+    fn campaign_native() -> Value {
+        let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/input_oracle/campaign_start.json",
+        ))
+        .expect("original campaign-start corpus");
+        assert_eq!(
+            fixture["native_sha256"],
+            "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
+        );
+        fixture
+    }
+
+    /// An arbitrary atlas slot carrying a physical SHP's full canvas size.
+    /// UVs deliberately vary between roles so the submission cannot silently
+    /// replace a title, mission image or bar with another loading entry.
+    fn retail_shape_entry(
+        assets: &crate::assets::asset_manager::AssetManager,
+        name: &str,
+        uv_origin: [f32; 2],
+    ) -> LoadingScreenEntry {
+        let shape = crate::assets::shp_file::ShpFile::from_bytes(
+            assets.get_ref(name).expect("retail loading SHP"),
+        )
+        .expect("retail loading SHP parses");
+        LoadingScreenEntry {
+            uv_origin,
+            uv_size: [0.25, 0.125],
+            pixel_size: [f32::from(shape.width), f32::from(shape.height)],
+        }
+    }
+
+    #[test]
+    fn campaign_chrome_uses_physical_frames_at_the_original_rectangle_origins() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        assert!(assets.register_loading_archives().unwrap());
+        let mission =
+            crate::rules::ini_parser::IniFile::from_bytes(assets.get_ref("MISSIONMD.INI").unwrap())
+                .unwrap();
+        let fixture = campaign_native();
+        for filename in ["ALL01UMD.MAP", "SOV01UMD.MAP"] {
+            let mut metadata = crate::rules::campaign_loading::CampaignLoadingMetadata::new();
+            metadata.apply_ini(&mission, filename);
+            for row in fixture["loading_geometry"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|row| row["mode"].as_u64() == Some(0))
+            {
+                let size = [
+                    row["width"].as_u64().unwrap() as u32,
+                    row["height"].as_u64().unwrap() as u32,
+                ];
+                let (background_name, title_name, bar_name) = if size[0] == 640 {
+                    (
+                        metadata.background_name_640(),
+                        "TTLBR640.SHP",
+                        "SPLDBRS.SHP",
+                    )
+                } else {
+                    (
+                        metadata.background_name_800(),
+                        "TTLBR800.SHP",
+                        "SPLDBRL.SHP",
+                    )
+                };
+                let background = retail_shape_entry(&assets, background_name, [0.25, 0.0]);
+                let title = retail_shape_entry(&assets, title_name, [0.0, 0.0]);
+                let bar = retail_shape_entry(&assets, bar_name, [0.5, 0.0]);
+                let solid = LoadingScreenEntry {
+                    uv_origin: [0.75, 0.0],
+                    uv_size: [0.01, 0.01],
+                    pixel_size: [1.0, 1.0],
+                };
+                let mut instances = Vec::new();
+                push_campaign_loading_chrome(
+                    &mut instances,
+                    &CampaignLoadingLayout::for_render_size(size),
+                    background,
+                    Some(title),
+                    Some(bar),
+                    solid,
+                );
+                assert_eq!(instances.len(), 3, "{filename} {size:?}");
+                for ((draw, entry), role) in instances
+                    .iter()
+                    .zip([title, background, bar])
+                    .zip(["title", "body", "bar"])
+                {
+                    let expected = row["rects"][role].as_array().unwrap();
+                    assert_eq!(
+                        draw.position,
+                        [
+                            expected[0].as_i64().unwrap() as f32,
+                            expected[1].as_i64().unwrap() as f32,
+                        ],
+                        "{filename} {size:?} {role}"
+                    );
+                    assert_eq!(draw.size, entry.pixel_size, "unscaled physical frame");
+                    assert_eq!(draw.uv_origin, entry.uv_origin, "{role} atlas role");
+                    assert_eq!(draw.uv_size, entry.uv_size, "full frame {role}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn campaign_progress_submission_matches_original_executed_clip_rectangles() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        assert!(assets.register_loading_archives().unwrap());
+        let frame = retail_shape_entry(&assets, "SPLDBR.SHP", [0.25, 0.5]);
+        let solid = LoadingScreenEntry {
+            uv_origin: [0.75, 0.0],
+            uv_size: [0.01, 0.01],
+            pixel_size: [1.0, 1.0],
+        };
+        let fixture = campaign_native();
+        let rows = fixture["progress_rows"]["rows"].as_array().unwrap();
+        assert!(!rows.is_empty(), "executed campaign progress cases");
+        for row in rows {
+            let pair = |name: &str| {
+                [
+                    row[name][0].as_i64().unwrap() as i32,
+                    row[name][1].as_i64().unwrap() as i32,
+                ]
+            };
+            assert_eq!(
+                frame.pixel_size,
+                pair("bar_size").map(|value| value as f32),
+                "physical SPLDBR frame dimensions"
+            );
+            let layout = layout_loading_progress_row(
+                LoadingProgressRowPlacement::Campaign(pair("point")),
+                pair("bar_size"),
+                None,
+                pair("font_size"),
+            );
+            let mut progress = LoadingProgressState::standard_skirmish();
+            progress.advance_progress(row["percent"].as_u64().unwrap() as u32);
+            let mut draws = Vec::new();
+            push_loading_progress_span(
+                &mut draws,
+                frame,
+                solid,
+                &progress,
+                layout.bar_origin.map(|value| value as f32),
+                None,
+            );
+            let clip = row["clip_rect"].as_array().unwrap();
+            let clip_width = clip[2].as_i64().unwrap() as f32;
+            if clip_width == 0.0 {
+                assert!(draws.is_empty(), "no visible zero-width span: {row}");
+                continue;
+            }
+            // Original CC_DrawShape's [0,0] point is relative to this clip
+            // (SHAPE_WIN_REL). GPU submission uses its absolute clip origin.
+            assert_eq!(pair("draw_shape_point"), [0, 0]);
+            assert_eq!(draws.len(), 1, "campaign has no solid player fill");
+            let draw = &draws[0];
+            assert_eq!(
+                draw.position,
+                [
+                    clip[0].as_i64().unwrap() as f32,
+                    clip[1].as_i64().unwrap() as f32,
+                ],
+                "native absolute clip origin: {row}"
+            );
+            assert_eq!(
+                draw.size,
+                [clip_width, clip[3].as_i64().unwrap() as f32],
+                "native executed ftol and full frame height: {row}"
+            );
+            // The atlas representation reveals exactly that native width;
+            // this CPU check does not claim native raster/palette equality.
+            assert_eq!(draw.uv_origin, frame.uv_origin);
+            assert_eq!(
+                draw.uv_size,
+                [
+                    frame.uv_size[0] * (clip_width / frame.pixel_size[0]),
+                    frame.uv_size[1],
+                ]
+            );
+        }
+    }
 
     /// Synthetic `mmpb.shp` frame-0 atlas slot: 12x12 pixels somewhere inside a
     /// shared atlas, so cropping has to move both the UV origin and the UV size.

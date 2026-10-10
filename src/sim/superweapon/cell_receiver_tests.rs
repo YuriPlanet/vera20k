@@ -92,7 +92,7 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
     let owner = sim.interner.intern("Americans");
     let sw_type_id = sim.interner.intern(name);
     // Charged on a running timer: ClickFire refuses a stopped one.
-    let mut instance = SuperWeaponInstance::new(sw_type_id, owner);
+    let mut instance = SuperWeaponInstance::new(sw_type_id, owner, 0);
     instance.activate(1, sim.session.binary_frame);
     instance.is_ready = true;
     sim.super_weapons

@@ -1,0 +1,1510 @@
+{
+  "layers": [
+    {
+      "after": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "4012000000000000",
+            "armor": "4016000000000000",
+            "build_delay": "4025000000000000",
+            "build_time": "4021000000000000",
+            "cost": "401e000000000000",
+            "firepower": "4004000000000000",
+            "groundspeed": "400c000000000000",
+            "repair_delay": "4023000000000000",
+            "rof": "401a000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "4012000000000000",
+            "armor": "4016000000000000",
+            "build_delay": "4025000000000000",
+            "build_time": "4021000000000000",
+            "cost": "401e000000000000",
+            "firepower": "4004000000000000",
+            "groundspeed": "400c000000000000",
+            "repair_delay": "4023000000000000",
+            "rof": "401a000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "4012000000000000",
+            "armor": "4016000000000000",
+            "build_delay": "4025000000000000",
+            "build_time": "4021000000000000",
+            "cost": "401e000000000000",
+            "firepower": "4004000000000000",
+            "groundspeed": "400c000000000000",
+            "repair_delay": "4023000000000000",
+            "rof": "401a000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        }
+      },
+      "before": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "4012000000000000",
+            "armor": "4016000000000000",
+            "build_delay": "4025000000000000",
+            "build_time": "4021000000000000",
+            "cost": "401e000000000000",
+            "firepower": "4004000000000000",
+            "groundspeed": "400c000000000000",
+            "repair_delay": "4023000000000000",
+            "rof": "401a000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "4012000000000000",
+            "armor": "4016000000000000",
+            "build_delay": "4025000000000000",
+            "build_time": "4021000000000000",
+            "cost": "401e000000000000",
+            "firepower": "4004000000000000",
+            "groundspeed": "400c000000000000",
+            "repair_delay": "4023000000000000",
+            "rof": "401a000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "4012000000000000",
+            "armor": "4016000000000000",
+            "build_delay": "4025000000000000",
+            "build_time": "4021000000000000",
+            "cost": "401e000000000000",
+            "firepower": "4004000000000000",
+            "groundspeed": "400c000000000000",
+            "repair_delay": "4023000000000000",
+            "rof": "401a000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        }
+      },
+      "name": "absent_initial",
+      "reads": [],
+      "sections": {}
+    },
+    {
+      "after": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3ff0000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        }
+      },
+      "before": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "4012000000000000",
+            "armor": "4016000000000000",
+            "build_delay": "4025000000000000",
+            "build_time": "4021000000000000",
+            "cost": "401e000000000000",
+            "firepower": "4004000000000000",
+            "groundspeed": "400c000000000000",
+            "repair_delay": "4023000000000000",
+            "rof": "401a000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "4012000000000000",
+            "armor": "4016000000000000",
+            "build_delay": "4025000000000000",
+            "build_time": "4021000000000000",
+            "cost": "401e000000000000",
+            "firepower": "4004000000000000",
+            "groundspeed": "400c000000000000",
+            "repair_delay": "4023000000000000",
+            "rof": "401a000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "4012000000000000",
+            "armor": "4016000000000000",
+            "build_delay": "4025000000000000",
+            "build_time": "4021000000000000",
+            "cost": "401e000000000000",
+            "firepower": "4004000000000000",
+            "groundspeed": "400c000000000000",
+            "repair_delay": "4023000000000000",
+            "rof": "401a000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        }
+      },
+      "name": "physical_rules",
+      "reads": [
+        {
+          "default": "3ff0000000000000",
+          "key": "FirePower",
+          "reader": "005283d0",
+          "section": "Easy"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Groundspeed",
+          "reader": "005283d0",
+          "section": "Easy"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Airspeed",
+          "reader": "005283d0",
+          "section": "Easy"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Armor",
+          "reader": "005283d0",
+          "section": "Easy"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "ROF",
+          "reader": "005283d0",
+          "section": "Easy"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Cost",
+          "reader": "005283d0",
+          "section": "Easy"
+        },
+        {
+          "default": "3f947ae147ae147b",
+          "key": "RepairDelay",
+          "reader": "005283d0",
+          "section": "Easy"
+        },
+        {
+          "default": "3f9eb851eb851eb8",
+          "key": "BuildDelay",
+          "reader": "005283d0",
+          "section": "Easy"
+        },
+        {
+          "default": 0,
+          "key": "BuildSlowdown",
+          "reader": "005295f0",
+          "section": "Easy"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "BuildTime",
+          "reader": "005283d0",
+          "section": "Easy"
+        },
+        {
+          "default": 1,
+          "key": "DestroyWalls",
+          "reader": "005295f0",
+          "section": "Easy"
+        },
+        {
+          "default": 0,
+          "key": "ContentScan",
+          "reader": "005295f0",
+          "section": "Easy"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "FirePower",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Groundspeed",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Airspeed",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Armor",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "ROF",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Cost",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3f947ae147ae147b",
+          "key": "RepairDelay",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3f9eb851eb851eb8",
+          "key": "BuildDelay",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": 0,
+          "key": "BuildSlowdown",
+          "reader": "005295f0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "BuildTime",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": 1,
+          "key": "DestroyWalls",
+          "reader": "005295f0",
+          "section": "Normal"
+        },
+        {
+          "default": 0,
+          "key": "ContentScan",
+          "reader": "005295f0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "FirePower",
+          "reader": "005283d0",
+          "section": "Difficult"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Groundspeed",
+          "reader": "005283d0",
+          "section": "Difficult"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Airspeed",
+          "reader": "005283d0",
+          "section": "Difficult"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Armor",
+          "reader": "005283d0",
+          "section": "Difficult"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "ROF",
+          "reader": "005283d0",
+          "section": "Difficult"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Cost",
+          "reader": "005283d0",
+          "section": "Difficult"
+        },
+        {
+          "default": "3f947ae147ae147b",
+          "key": "RepairDelay",
+          "reader": "005283d0",
+          "section": "Difficult"
+        },
+        {
+          "default": "3f9eb851eb851eb8",
+          "key": "BuildDelay",
+          "reader": "005283d0",
+          "section": "Difficult"
+        },
+        {
+          "default": 0,
+          "key": "BuildSlowdown",
+          "reader": "005295f0",
+          "section": "Difficult"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "BuildTime",
+          "reader": "005283d0",
+          "section": "Difficult"
+        },
+        {
+          "default": 1,
+          "key": "DestroyWalls",
+          "reader": "005295f0",
+          "section": "Difficult"
+        },
+        {
+          "default": 0,
+          "key": "ContentScan",
+          "reader": "005295f0",
+          "section": "Difficult"
+        }
+      ],
+      "sections": {
+        "Difficult": {
+          "Airspeed": "1.0",
+          "Armor": ".8",
+          "BuildDelay": ".1",
+          "BuildSlowdown": "yes",
+          "BuildTime": "1.0",
+          "Cost": "1.0",
+          "DestroyWalls": "no",
+          "Groundspeed": "1.0",
+          "ROF": "1.2",
+          "RepairDelay": ".05"
+        },
+        "Easy": {
+          "Airspeed": "1.0",
+          "Armor": "1.2",
+          "BuildDelay": ".03",
+          "BuildTime": ".8",
+          "ContentScan": "yes",
+          "Cost": "1.0",
+          "DestroyWalls": "no",
+          "Groundspeed": "1.0",
+          "ROF": ".8",
+          "RepairDelay": ".02"
+        },
+        "Normal": {
+          "Airspeed": "1.0",
+          "Armor": "1.0",
+          "BuildDelay": ".03",
+          "BuildSlowdown": "yes",
+          "BuildTime": "1",
+          "ContentScan": "yes",
+          "Cost": "1.0",
+          "DestroyWalls": "no",
+          "Groundspeed": "1.0",
+          "ROF": "1.0",
+          "RepairDelay": ".02"
+        }
+      }
+    },
+    {
+      "after": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3ff0000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        }
+      },
+      "before": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3ff0000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        }
+      },
+      "name": "absent_after_retail",
+      "reads": [],
+      "sections": {}
+    },
+    {
+      "after": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3f9eb851eb851eb8",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae147ae147b",
+            "rof": "3ff8000000000000"
+          },
+          "flags": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      "before": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3ff0000000000000"
+          },
+          "flags": [
+            1,
+            0,
+            1
+          ]
+        }
+      },
+      "name": "partial_normal",
+      "reads": [
+        {
+          "default": "3ff0000000000000",
+          "key": "FirePower",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Groundspeed",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Airspeed",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Armor",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "ROF",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Cost",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3f947ae147ae147b",
+          "key": "RepairDelay",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3f9eb851eb851eb8",
+          "key": "BuildDelay",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": 0,
+          "key": "BuildSlowdown",
+          "reader": "005295f0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "BuildTime",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": 1,
+          "key": "DestroyWalls",
+          "reader": "005295f0",
+          "section": "Normal"
+        },
+        {
+          "default": 0,
+          "key": "ContentScan",
+          "reader": "005295f0",
+          "section": "Normal"
+        }
+      ],
+      "sections": {
+        "Normal": {
+          "ROF": "1.5"
+        }
+      }
+    },
+    {
+      "after": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3f9eb851eb851eb8",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae147ae147b",
+            "rof": "3ff8000000000000"
+          },
+          "flags": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      "before": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3f9eb851eb851eb8",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae147ae147b",
+            "rof": "3ff8000000000000"
+          },
+          "flags": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      "name": "wrong_section_case",
+      "reads": [],
+      "sections": {
+        "normal": {
+          "ROF": "2.5"
+        }
+      }
+    },
+    {
+      "after": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3f9eb851eb851eb8",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae147ae147b",
+            "rof": "3ff0000000000000"
+          },
+          "flags": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      "before": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3f9eb851eb851eb8",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae147ae147b",
+            "rof": "3ff8000000000000"
+          },
+          "flags": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      "name": "wrong_key_case",
+      "reads": [
+        {
+          "default": "3ff0000000000000",
+          "key": "FirePower",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Groundspeed",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Airspeed",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Armor",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "ROF",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Cost",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3f947ae147ae147b",
+          "key": "RepairDelay",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3f9eb851eb851eb8",
+          "key": "BuildDelay",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": 0,
+          "key": "BuildSlowdown",
+          "reader": "005295f0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "BuildTime",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": 1,
+          "key": "DestroyWalls",
+          "reader": "005295f0",
+          "section": "Normal"
+        },
+        {
+          "default": 0,
+          "key": "ContentScan",
+          "reader": "005295f0",
+          "section": "Normal"
+        }
+      ],
+      "sections": {
+        "Normal": {
+          "rof": "2.5"
+        }
+      }
+    },
+    {
+      "after": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3fa99999a0000000",
+            "build_time": "bfe0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff8000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fc0000000000000",
+            "rof": "3ff0000000000000"
+          },
+          "flags": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      "before": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3f9eb851eb851eb8",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae147ae147b",
+            "rof": "3ff0000000000000"
+          },
+          "flags": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      "name": "numeric_prefix_normal",
+      "reads": [
+        {
+          "default": "3ff0000000000000",
+          "key": "FirePower",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Groundspeed",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Airspeed",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Armor",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "ROF",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Cost",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3f947ae147ae147b",
+          "key": "RepairDelay",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3f9eb851eb851eb8",
+          "key": "BuildDelay",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": 0,
+          "key": "BuildSlowdown",
+          "reader": "005295f0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "BuildTime",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": 1,
+          "key": "DestroyWalls",
+          "reader": "005295f0",
+          "section": "Normal"
+        },
+        {
+          "default": 0,
+          "key": "ContentScan",
+          "reader": "005295f0",
+          "section": "Normal"
+        }
+      ],
+      "sections": {
+        "Normal": {
+          "BuildDelay": "0.05",
+          "BuildTime": "-0.5",
+          "FirePower": "1.5suffix",
+          "RepairDelay": "0.125suffix"
+        }
+      }
+    },
+    {
+      "after": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3f9eb851eb851eb8",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae147ae147b",
+            "rof": "3ff0000000000000"
+          },
+          "flags": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      "before": {
+        "Difficult": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3fe99999a0000000",
+            "build_delay": "3fb99999a0000000",
+            "build_time": "3ff0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fa99999a0000000",
+            "rof": "3ff3333340000000"
+          },
+          "flags": [
+            1,
+            0,
+            0
+          ]
+        },
+        "Easy": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff3333340000000",
+            "build_delay": "3f9eb851e0000000",
+            "build_time": "3fe99999a0000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff0000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3f947ae140000000",
+            "rof": "3fe99999a0000000"
+          },
+          "flags": [
+            0,
+            0,
+            1
+          ]
+        },
+        "Normal": {
+          "biases": {
+            "airspeed": "3ff0000000000000",
+            "armor": "3ff0000000000000",
+            "build_delay": "3fa99999a0000000",
+            "build_time": "bfe0000000000000",
+            "cost": "3ff0000000000000",
+            "firepower": "3ff8000000000000",
+            "groundspeed": "3ff0000000000000",
+            "repair_delay": "3fc0000000000000",
+            "rof": "3ff0000000000000"
+          },
+          "flags": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      "name": "stored_empty_section",
+      "reads": [
+        {
+          "default": "3ff0000000000000",
+          "key": "FirePower",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Groundspeed",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Airspeed",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Armor",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "ROF",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "Cost",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3f947ae147ae147b",
+          "key": "RepairDelay",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": "3f9eb851eb851eb8",
+          "key": "BuildDelay",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": 0,
+          "key": "BuildSlowdown",
+          "reader": "005295f0",
+          "section": "Normal"
+        },
+        {
+          "default": "3ff0000000000000",
+          "key": "BuildTime",
+          "reader": "005283d0",
+          "section": "Normal"
+        },
+        {
+          "default": 1,
+          "key": "DestroyWalls",
+          "reader": "005295f0",
+          "section": "Normal"
+        },
+        {
+          "default": 0,
+          "key": "ContentScan",
+          "reader": "005295f0",
+          "section": "Normal"
+        }
+      ],
+      "sections": {
+        "Normal": {}
+      }
+    }
+  ],
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "rulesmd_sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+}

@@ -1154,7 +1154,12 @@ mod tests {
         );
         let tick_before = runtime.simulation.session.tick;
         runtime
-            .advance_frame(&[], 33, crate::sim::world::TickLane::Ordinary, crate::sim::world::FrameEffects::default())
+            .advance_frame(
+                &[],
+                33,
+                crate::sim::world::TickLane::Ordinary,
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("fixture frame must complete");
         assert_eq!(runtime.simulation.session.tick, tick_before + 1);
         assert_eq!(state.startup, startup_before);
@@ -1176,6 +1181,7 @@ mod tests {
             &mut saved,
             &roster,
             Some(&rules),
+            Some(&roster_ini),
         );
         crate::sim::scenario_bootstrap::initialize_campaign_current_house(
             &mut saved,
@@ -1194,6 +1200,7 @@ mod tests {
             &mut current,
             &roster,
             Some(&rules),
+            Some(&roster_ini),
         );
         crate::sim::scenario_bootstrap::initialize_campaign_current_house(
             &mut current,
@@ -1232,7 +1239,12 @@ mod tests {
         assert!(!runtime.simulation.houses[&outgoing_owner].player_control);
         let tick = runtime.simulation.session.tick;
         runtime
-            .advance_frame(&[], 1, crate::sim::world::TickLane::Ordinary, crate::sim::world::FrameEffects::default())
+            .advance_frame(
+                &[],
+                1,
+                crate::sim::world::TickLane::Ordinary,
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("restored current-house frame");
         assert_eq!(runtime.simulation.session.tick, tick + 1);
         assert_eq!(runtime.simulation.session.current_house, Some(saved_owner));
@@ -1293,7 +1305,12 @@ mod tests {
             assert!(!runtime.simulation.houses[&ai].is_human);
             let tick = runtime.simulation.session.tick;
             runtime
-                .advance_frame(&[], 1, crate::sim::world::TickLane::Ordinary, crate::sim::world::FrameEffects::default())
+                .advance_frame(
+                    &[],
+                    1,
+                    crate::sim::world::TickLane::Ordinary,
+                    crate::sim::world::FrameEffects::default(),
+                )
                 .expect("restored collision-safe current-house frame");
             assert_eq!(runtime.simulation.session.tick, tick + 1);
             assert_eq!(runtime.simulation.session.current_house, Some(selected));

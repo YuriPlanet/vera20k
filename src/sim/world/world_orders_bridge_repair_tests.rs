@@ -1138,6 +1138,7 @@ fn generated_map_bridge_repair_continues_post_rmg_mapgen_stream() {
     let generated = generated.logical_state();
     let continuation = || {
         MapGenRngContinuation::from_native_parts(
+            generated.disabled,
             generated.words,
             usize::try_from(generated.index_a).expect("test MapGen cursor A is non-negative"),
             usize::try_from(generated.index_b).expect("test MapGen cursor B is non-negative"),

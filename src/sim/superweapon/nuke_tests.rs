@@ -762,7 +762,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
         .spawn_object_at_height("MTNK", "Americans", TARGET.0, TARGET.1, 0, 0, &rules)
         .unwrap();
     let sw_type: InternedId = sim.interner.intern("NukeSpecial");
-    let mut instance = SuperWeaponInstance::new(sw_type, russians);
+    let mut instance = SuperWeaponInstance::new(sw_type, russians, 0);
     instance.activate(9000, sim.session.binary_frame);
     instance.is_ready = true;
     sim.super_weapons

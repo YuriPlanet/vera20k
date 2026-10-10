@@ -8757,7 +8757,7 @@ fn score_award_is_zero_without_a_cost() {
 }
 
 #[test]
-fn projectile_shrapnel_targets_hostile_head_before_random_cell_child() {
+fn campaign_reverse_only_alliance_keeps_shrapnel_hostile_head_before_random_cell_child() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=MTNK\n\n[MTNK]\nStrength=100\nArmor=heavy\nPrimary=PARENT\nSecondary=CHILD\n\n[PARENT]\nDamage=20\nROF=10\nRange=6\nSpeed=30\nProjectile=PARENTPROJ\nWarhead=WH\n\n[PARENTPROJ]\nAirburst=yes\nShrapnelWeapon=CHILD\nShrapnelCount=2\n\n[CHILD]\nDamage=5\nROF=10\nRange=3\nSpeed=40\nProjectile=CHILDPROJ\nWarhead=WH\n\n[CHILDPROJ]\nSubjectToWalls=yes\n\n[WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
@@ -8794,6 +8794,13 @@ fn projectile_shrapnel_targets_hostile_head_before_random_cell_child() {
     let handles =
         crate::sim::type_handle_table::ResolvedRuleHandles::resolve(&rules, &mut interner);
     align_attackers_to_targets(&mut entities);
+    // Original46A4FB asks the firer's House;46A501 supplies the candidate
+    // object to4F9A90. Its owner's reverse-only bit cannot suppress this
+    // child or spend the extra random-cell draws of an excluded candidate.
+    let alliances = HouseAllianceMap::from([(
+        "AMERICANS".to_owned(),
+        std::collections::BTreeSet::from(["SOVIET".to_owned()]),
+    )]);
     let result = tick_combat_with_fog_and_main_rng(
         &mut entities,
         &mut occupancy,
@@ -8804,7 +8811,7 @@ fn projectile_shrapnel_targets_hostile_head_before_random_cell_child() {
         &BTreeMap::new(),
         &mut houses,
         &[],
-        &crate::map::houses::HouseAllianceMap::default(),
+        &alliances,
         None,
         None,
         None,

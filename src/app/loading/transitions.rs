@@ -78,6 +78,7 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             theater_ext: "tem".to_string(),
             initial_local_owner: None,
             sandbox_full_visibility: false,
+            opening_view_cell: None,
             camera_anchor_x: 0.0,
             camera_anchor_y: 0.0,
         },
@@ -101,6 +102,31 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             fnt_file: None,
         },
         asset_manager: None,
+    }
+}
+
+/// Complete StartScenario's successful ReadScenario boundary. Basic.Action
+/// executes before the tactical video-mode/timing handoff. Its existing movie
+/// owner suspends/resumes audio; the later Theme queue/Stop(true) belongs to
+/// apply_map_load_result (683E4D..683E66), after this movie returns.
+pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init::MapLoadResult) {
+    let action_movie = result.scenario.startup.campaign().and_then(|_| {
+        let name = result.scenario.basic.action.as_deref()?;
+        let movies = state.process_assets.native_rules()?.movies();
+        movies.name(movies.find_index(name)).map(str::to_owned)
+    });
+    if let Some(movie) = action_movie {
+        if let Some(manager) = result.asset_manager.take() {
+            state.process_assets.return_from_loading(manager);
+        }
+        crate::app::loading::pump::clear_loading_state(state);
+        crate::app::App::start_fullscreen_movie(
+            state,
+            &movie,
+            crate::app::frontend::fullscreen_movie::MovieReturn::CampaignLoaded(Box::new(result)),
+        );
+    } else {
+        apply_map_load_result(state, result);
     }
 }
 
@@ -148,6 +174,23 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         // generic fallback with no incoming world. Cancellation precedes both
         // dropping the world and installing a fresh Main continuation.
         sfx.stop_all();
+    }
+    if incoming.is_some() {
+        // The inactive load has inherited this process cursor. Only a world
+        // actually installed here retires cold MapGen transport; failed and
+        // cancelled attempts retain it in RandomMapGenerationRetention.
+        state
+            .frontend
+            .random_map_retention
+            .discard_pending_mapgen_on_simulation_install();
+    } else if let Some(outgoing) = state.match_state.sim_runtime.take() {
+        // The generic fallback drops its resident Simulation. MapGen is
+        // process-global in gamemd, so retain its cursor before that drop.
+        let continuation = outgoing.simulation.mapgen_continuation_for_fresh_load();
+        state
+            .frontend
+            .random_map_retention
+            .publish_mapgen_continuation(None, continuation);
     }
     state.match_state.sim_runtime = incoming.map(|(mut simulation, rules)| {
         simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
@@ -305,7 +348,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     crate::app::input::camera::set_camera_position(state, (camera_x, camera_y));
     // gamemd's scenario reader fills all four camera bookmarks with the opening
     // view cell, so F1 before any Ctrl+F1 is a valid "go home".
-    crate::app::input::camera::seed_view_bookmarks_from_current_view(state);
+    crate::app::input::camera::seed_view_bookmarks_from_opening_view(
+        state,
+        result.scenario.opening_view_cell,
+    );
     // F11 slot: only an actually-carried manager returns (Loading ->
     // Available). The fallback result carries None — the old unconditional
     // assignment wiped the manager the failure path had just restored,
@@ -466,6 +512,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             })
             .map(|house| i32::from(house.side_index))
     });
+    let campaign_scenario = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .and_then(|rt| rt.simulation.session.campaign_mission_counter());
     // `Side=` names resolve against the live `[Sides]` registry (native
     // `0x004756F0` → `0x006A46D0`); unresolved names never match any player.
     let side_names: Vec<String> = state
@@ -494,8 +545,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             assets,
             crate::audio::theme::ThemeAllowContext {
                 local_side,
-                // Skirmish (`g_GameMode != 0`) skips the campaign `Scenario=` gate.
-                campaign_scenario: None,
+                campaign_scenario,
             },
             |name| {
                 let wanted = name.to_ascii_uppercase();
@@ -509,6 +559,13 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     }
 
     match startup {
+        crate::match_bootstrap::LoadingStartup::Campaign(_) => {
+            state.match_state.startup.clear();
+            let now_ms = sim_tick::monotonic_frame_pacer_ms(state, std::time::Instant::now());
+            state.match_state.scenario_elapsed_clock.start(now_ms);
+            state.frontend.screen = GameScreen::InGame;
+            log::info!("Transitioned to InGame from the selected campaign");
+        }
         crate::match_bootstrap::LoadingStartup::Accepted(prepared) => {
             let receipt = state.match_state.startup.acknowledge(
                 prepared,

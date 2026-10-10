@@ -93,7 +93,7 @@ pub(super) fn record_replay_diagnostic(
                 "discovered_by_current_house":house.discovered_by_current_house(),
                 "building_order":house.base_projection.buildings(),
                 "eva_funds_timer":house.eva_funds_timer,"eva_low_power_guard":house.eva_low_power_guard,
-                "repair_delay_bits":house.repair_delay.to_bits(),
+                "repair_delay_bits":house.repair_delay().to_bits(),
                 "repair_start_latch":house.repair_start_latch,"repair_latch_timer":house.repair_latch_timer,
             })).collect::<Vec<_>>(),
             "power_states":sim.power_states.iter().map(|(owner,state)|serde_json::json!({

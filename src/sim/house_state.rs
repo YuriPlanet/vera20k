@@ -54,14 +54,72 @@ impl HouseDifficulty {
     }
 }
 
-/// `HouseClass+0x1A8`, the house's ROF multiplier (a double); the
-/// constructor stores 1.0 (`0x004F567E`).
+/// House4F54A0's seven scalar doubles (+188..+1B8) and two delays
+/// (+1C0/+1C8). SetDifficulty4F6EC0 is their one subsequent writer.
+/// Only Firepower, ROF and RepairDelay have reached live scalar readers;
+/// category speed/armor/cost/build-time getters read independent country data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-struct HouseRofBias(NativeF64Bits);
+struct HouseDifficultyBiases {
+    firepower: NativeF64Bits,
+    ground_speed: NativeF64Bits,
+    air_speed: NativeF64Bits,
+    armor: NativeF64Bits,
+    rof: NativeF64Bits,
+    cost: NativeF64Bits,
+    build_time: NativeF64Bits,
+    repair_delay: NativeF64Bits,
+    build_delay: NativeF64Bits,
+}
 
-impl Default for HouseRofBias {
+impl Default for HouseDifficultyBiases {
     fn default() -> Self {
-        Self(NativeF64Bits::ONE)
+        Self {
+            firepower: NativeF64Bits::ONE,
+            ground_speed: NativeF64Bits::ONE,
+            air_speed: NativeF64Bits::ONE,
+            armor: NativeF64Bits::ONE,
+            rof: NativeF64Bits::ONE,
+            cost: NativeF64Bits::ONE,
+            build_time: NativeF64Bits::ONE,
+            repair_delay: NativeF64Bits::from_bits(0),
+            build_delay: NativeF64Bits::from_bits(0),
+        }
+    }
+}
+
+/// Constructor-only state from House4F54A0/4F634F. The ranged draw is owned
+/// by Scenario; this House retains its scaled timer and AbstractClass+10.
+/// Save504080/Load503040 preserve these fields in the raw House block.
+/// Executed initialization: tools/input_oracle/campaign_start.py --houses
+/// and campaign_start_houses.json (+meta). The current literal/nearby-LEA
+/// census and full House Update4F8440 inspection establish no live reader
+/// of+55F0/+55F8/+55FC. Retain the draw/state without inventing an attack
+/// cadence. The live team timer+5798/+57A0 belongs to HouseTeamCreation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+struct NativeHouseConstruction {
+    unique_id: i32,
+    attack_timer: CdTimer,
+    initial_attack_delay: i32,
+}
+
+/// House ReadScenarioINI500B40's independent Edge and three team ratios.
+/// They do not replace the waypoint-derived edge (+577C) or AI-trigger ratio.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+struct HouseScenarioParameters {
+    edge: i32,
+    ratio_team_aircraft: i32,
+    ratio_team_infantry: i32,
+    ratio_team_units: i32,
+}
+
+impl Default for HouseScenarioParameters {
+    fn default() -> Self {
+        Self {
+            edge: -1,
+            ratio_team_aircraft: 75,
+            ratio_team_infantry: 75,
+            ratio_team_units: 75,
+        }
     }
 }
 
@@ -295,6 +353,10 @@ pub struct HouseAiActivationLatches {
 pub struct HouseState {
     /// Owner name as interned ID (resolve via interner for display).
     pub name: InternedId,
+    #[serde(default)]
+    native_construction: Option<NativeHouseConstruction>,
+    #[serde(default)]
+    scenario_parameters: HouseScenarioParameters,
     /// Stable rules-owned side index. Stock YR uses 0=Allied, 1=Soviet,
     /// 2=Yuri, 3=Civilian, and 4=Mutant.
     pub side_index: u8,
@@ -310,12 +372,10 @@ pub struct HouseState {
     /// game-mode initializer explicitly assigns another native value.
     #[serde(default)]
     pub difficulty: HouseDifficulty,
-    /// The house's ROF multiplier, `HouseClass+0x1A8` (a double; the
-    /// constructor stores 1.0 at `0x004F567E`). Only
-    /// [`HouseState::set_difficulty`] writes it after construction; GetROF
-    /// scales every full reload by it (`0x006FD0C5`).
+    /// Original House scalar difficulty fields. All seven biases begin at1.0
+    /// and both delays at0.0; the shared SetDifficulty owner replaces them.
     #[serde(default)]
-    rof_bias: HouseRofBias,
+    difficulty_biases: HouseDifficultyBiases,
     /// `MultiplayPassive=` from this house's country/house-type rules.
     ///
     /// gamemd keeps this on the house type and reads it back out of the house
@@ -428,7 +488,8 @@ pub struct HouseState {
     /// Native `HouseClass+0x5700` BaseClass reservation writer outputs.
     #[serde(default)]
     pub base_reservation: BaseReservationState,
-    /// Max tech level for this player. From game options at match start.
+    /// House TechLevel: launch options offline, or the campaign map reader with
+    /// Scenario's retained mission counter as its default.
     pub tech_level: i32,
     /// Live HouseClass CurrentIQ (+0x24C), used by AI behavior thresholds.
     ///
@@ -558,13 +619,6 @@ pub struct HouseState {
     /// house is the same state. Persisted and hashed (schema v133).
     #[serde(default)]
     pub eva_low_power_guard: bool,
-    /// Native `HouseClass+0x1C0`, RepairDelay: the house's difficulty row's
-    /// `RepairDelay=`, which [`HouseState::set_difficulty`] copies (the
-    /// constructor's 0.0 until then). The computer's auto-repair start draws
-    /// its latch time from it (`production::update_repair_and_power`).
-    /// Persisted and hashed (schema v216).
-    #[serde(default)]
-    pub(crate) repair_delay: f64,
     /// Native `HouseClass+0x245`: a building's auto-repair start sets it
     /// (`0x004506FF`), and while set no other building of the house starts
     /// one. [`HouseState::release_repair_latch`] clears it. Persisted and
@@ -620,6 +674,100 @@ impl Default for HouseSuperWeaponCells {
 }
 
 impl HouseState {
+    /// Bind the actual constructor's numeric identity and one Scenario draw.
+    /// Original4F634F uses RandomRanged450..1800, then ftol of its product
+    /// with Rules+10A8 ([AI] AttackDelay). Only this owner stores the timer.
+    pub(crate) fn bind_native_construction(
+        &mut self,
+        unique_id: i32,
+        computer_difficulty: HouseDifficulty,
+        frame: i32,
+        raw_timer_draw: u32,
+        attack_delay: f64,
+    ) {
+        use crate::util::native_x87::MaskedX87Chop53 as X;
+        assert!(
+            self.native_construction.is_none(),
+            "House construction bound once"
+        );
+        let delay = X::ftol_i32_low_masked(X::mul(
+            X::load_i32(raw_timer_draw as i32),
+            X::load_f64(NativeF64Bits::from_bits(attack_delay.to_bits())),
+        ));
+        self.difficulty = computer_difficulty;
+        self.native_construction = Some(NativeHouseConstruction {
+            unique_id,
+            attack_timer: CdTimer::started(frame, delay),
+            initial_attack_delay: delay,
+        });
+    }
+
+    pub(crate) fn native_unique_id(&self) -> Option<i32> {
+        self.native_construction
+            .map(|construction| construction.unique_id)
+    }
+
+    /// Apply the map-reader's native fields to their existing House/wallet
+    /// owners. Dynamic TechLevel default comes from Scenario's mission counter.
+    pub(crate) fn initialize_scenario_parameters(
+        &mut self,
+        read: crate::map::houses::ScenarioHouseParameters,
+        campaign_difficulty: Option<HouseDifficulty>,
+        general: Option<&crate::rules::ruleset::GeneralRules>,
+    ) {
+        self.tech_level = read.tech_level;
+        self.scenario_parameters = HouseScenarioParameters {
+            edge: read.edge,
+            ratio_team_aircraft: read.ratio_team_aircraft,
+            ratio_team_infantry: read.ratio_team_infantry,
+            ratio_team_units: read.ratio_team_units,
+        };
+        self.economy.initialize_scenario_credits(
+            read.credits,
+            campaign_difficulty,
+            self.player_control,
+            general.map_or(0, |g| g.campaign_money_delta_easy),
+            general.map_or(0, |g| g.campaign_money_delta_hard),
+        );
+    }
+
+    pub(crate) const fn authored_edge(&self) -> i32 {
+        self.scenario_parameters.edge
+    }
+
+    pub(crate) const fn scenario_team_ratios(&self) -> [i32; 3] {
+        [
+            self.scenario_parameters.ratio_team_aircraft,
+            self.scenario_parameters.ratio_team_infantry,
+            self.scenario_parameters.ratio_team_units,
+        ]
+    }
+
+    pub(crate) fn hash_scenario_parameters(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if self.scenario_parameters != HouseScenarioParameters::default() {
+            b"house-scenario-parameters-v1".hash(hasher);
+            self.scenario_parameters.hash(hasher);
+        }
+        if self.economy.scenario_credits() != 0 {
+            b"house-scenario-credits-v1".hash(hasher);
+            self.economy.scenario_credits().hash(hasher);
+        }
+    }
+
+    pub(crate) fn hash_native_construction(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if let Some(construction) = self.native_construction {
+            b"house-native-construction-v1".hash(hasher);
+            construction.hash(hasher);
+        }
+    }
+
+    pub(crate) fn native_attack_timer(&self) -> Option<(CdTimer, i32)> {
+        self.native_construction
+            .map(|construction| (construction.attack_timer, construction.initial_attack_delay))
+    }
+
     /// The infantry self-heal count — `HouseClass+0x164`, the value
     /// `HasInfSelfHeal @ 0x0050D9C0` tests and `0x0070A534` draws the status
     /// pip from.
@@ -770,38 +918,48 @@ impl HouseState {
         }
     }
 
-    /// `HouseClass::SetDifficulty @ 0x004F6EC0`, for the fields VERA keeps:
-    /// the difficulty index (`+0x184`), the ROF bias (`+0x1A8`), the repair
-    /// delay (`+0x1C0`) and the team timer. Outside a campaign the bias is
-    /// the difficulty row's `ROF=` times the country's (`FLD; FMUL; FSTP
-    /// qword`, `0x004F6F6C..0x004F6F79`); in a campaign it is the row's value
-    /// alone (`0x004F7072..0x004F707B`). Both copy the row's `RepairDelay=`
-    /// unchanged (`0x004F6FA5`, `0x004F70AC`). The team timer restarts at
-    /// `frame` for the difficulty's `TeamDelays=` plus 175 frames for each
-    /// house before this one (`array_index`, `+0x30`; wrapping,
-    /// `0x004F70F0..0x004F712D`).
+    /// HouseClass::SetDifficulty4F6EC0 stores the literal row index and nine
+    /// scalar doubles. Groundspeed/Airspeed/BuildTime multiply the row by
+    /// GameSpeedBias first; nonzero GameMode additionally multiplies all seven
+    /// biases by their HouseType scalar. Both delays copy the row. The native
+    /// PC53/chop operation order is retained by the shared arithmetic owner;
+    /// tools/spatial_oracle/house_difficulty executes these original stores.
+    /// TeamTimer restarts at frame for TeamDelays[d]+175*HouseIndex, wrapping.
     pub(crate) fn set_difficulty(
         &mut self,
         difficulty: HouseDifficulty,
         general: &crate::rules::ruleset::GeneralRules,
-        country_rof: f64,
+        country: crate::rules::ruleset::CountryDifficultyBiases,
         game_mode_nonzero: bool,
         array_index: i32,
         frame: i32,
     ) {
         use crate::util::native_x87::MaskedX87Chop53 as X;
         self.difficulty = difficulty;
-        self.repair_delay = general.difficulty_repair_delay[difficulty.table_index()];
-        let row =
-            NativeF64Bits::from_bits(general.difficulty_rof[difficulty.table_index()].to_bits());
-        self.rof_bias = HouseRofBias(if game_mode_nonzero {
-            X::store_f64_masked_chop(X::mul(
-                X::load_f64(row),
-                X::load_f64(NativeF64Bits::from_bits(country_rof.to_bits())),
-            ))
-        } else {
-            row
-        });
+        let row = general.difficulty_rows[difficulty.table_index()];
+        let bits = |value: f64| NativeF64Bits::from_bits(value.to_bits());
+        let bias = bits(general.game_speed_bias);
+        let fold = |value: f64, speed_scaled: bool, country: NativeF64Bits| {
+            let mut value = X::load_f64(bits(value));
+            if speed_scaled {
+                value = X::mul(value, X::load_f64(bias));
+            }
+            if game_mode_nonzero {
+                value = X::mul(value, X::load_f64(country));
+            }
+            X::store_f64_masked_chop(value)
+        };
+        self.difficulty_biases = HouseDifficultyBiases {
+            firepower: fold(row.firepower, false, country.firepower),
+            ground_speed: fold(row.ground_speed, true, country.ground_speed),
+            air_speed: fold(row.air_speed, true, country.air_speed),
+            armor: fold(row.armor, false, country.armor),
+            rof: fold(row.rof, false, country.rof),
+            cost: fold(row.cost, false, country.cost),
+            build_time: fold(row.build_time, true, country.build_time),
+            repair_delay: bits(row.repair_delay),
+            build_delay: bits(row.build_delay),
+        };
         let team_delay = self
             .difficulty_value(&general.team_delays)
             .wrapping_add(array_index.wrapping_mul(175));
@@ -810,7 +968,73 @@ impl HouseState {
 
     /// The house's ROF multiplier (`HouseClass+0x1A8`).
     pub(crate) const fn rof_bias(&self) -> NativeF64Bits {
-        self.rof_bias.0
+        self.difficulty_biases.rof
+    }
+
+    /// The one House+188 Firepower input shared by actual FireAt6FE33D and
+    /// EstimateDamage6FDBCD. Country/difficulty folding happens only above.
+    pub(crate) const fn firepower_bias(&self) -> NativeF64Bits {
+        self.difficulty_biases.firepower
+    }
+
+    /// House+1C0; the computer auto-repair owner scales this retained double
+    /// to its Scenario ranged-draw bounds (450759).
+    pub(crate) fn repair_delay(&self) -> f64 {
+        f64::from_bits(self.difficulty_biases.repair_delay.bits())
+    }
+
+    /// ROF and RepairDelay retain their established hash positions. Fold the
+    /// other stored native biases only off their constructor values.
+    pub(crate) fn hash_difficulty_biases(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        let bias = self.difficulty_biases;
+        let rest = [
+            bias.firepower,
+            bias.ground_speed,
+            bias.air_speed,
+            bias.armor,
+            bias.cost,
+            bias.build_time,
+            bias.build_delay,
+        ];
+        if rest
+            != [
+                NativeF64Bits::ONE,
+                NativeF64Bits::ONE,
+                NativeF64Bits::ONE,
+                NativeF64Bits::ONE,
+                NativeF64Bits::ONE,
+                NativeF64Bits::ONE,
+                NativeF64Bits::from_bits(0),
+            ]
+        {
+            b"house-difficulty-biases-v1".hash(hasher);
+            for value in rest {
+                value.bits().hash(hasher);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_repair_delay_for_test(&mut self, delay: f64) {
+        self.difficulty_biases.repair_delay = NativeF64Bits::from_bits(delay.to_bits());
+    }
+
+    /// Immutable native scalar order: Firepower/Groundspeed/Airspeed/Armor/
+    /// ROF/Cost/BuildTime/RepairDelay/BuildDelay. Used by startup receipts.
+    pub(crate) fn scalar_difficulty_biases(&self) -> [NativeF64Bits; 9] {
+        let b = self.difficulty_biases;
+        [
+            b.firepower,
+            b.ground_speed,
+            b.air_speed,
+            b.armor,
+            b.rof,
+            b.cost,
+            b.build_time,
+            b.repair_delay,
+            b.build_delay,
+        ]
     }
 
     /// The house's entry of a per-difficulty Rules vector, indexed by
@@ -947,12 +1171,14 @@ impl HouseState {
     ) -> Self {
         Self {
             name,
+            native_construction: None,
+            scenario_parameters: HouseScenarioParameters::default(),
             side_index,
             country,
             is_human,
             player_control: is_human,
             difficulty: HouseDifficulty::Normal,
-            rof_bias: HouseRofBias::default(),
+            difficulty_biases: HouseDifficultyBiases::default(),
             multiplay_passive: false,
             country_cost_mults: CountryCostMults::default(),
             country_speed_mults: CountrySpeedMults::default(),
@@ -991,7 +1217,6 @@ impl HouseState {
             harvester_no_ore: false,
             eva_funds_timer: eva_funds_timer_at_construction(),
             eva_low_power_guard: false,
-            repair_delay: 0.0,
             repair_start_latch: false,
             repair_latch_timer: CdTimer::started(0, 0),
             spatial_threat: Default::default(),
@@ -1187,20 +1412,11 @@ pub fn resolve_house_side_index(
         .unwrap_or(fallback)
 }
 
-/// The house type an absent `Country=` binds to.
-///
-/// gamemd's `[Houses]` reader asks the INI for `Country=` with a default of -1
-/// and maps a -1 result to 0, so a house section with no `Country=` key binds to
-/// the first `[Countries]` entry — stock `Americans`, which is not
-/// MultiplayPassive. It does NOT fall back to the house's own section name.
-const ABSENT_COUNTRY_IDX: crate::rules::ruleset::CountryIdx = crate::rules::ruleset::CountryIdx(0);
-
 /// Resolve a house's `MultiplayPassive` fact from its country/house-type rules.
 ///
-/// A house with no `Country=` resolves through [`ABSENT_COUNTRY_IDX`], matching
-/// the native reader. Missing rules, an empty `[Countries]` registry, or an
-/// unknown country name resolve to `false` — the INI default for
-/// `MultiplayPassive=`.
+/// The RuleSet identity owner resolves missing Country to entry0 and known
+/// names through its shared alias lookup. Missing rules or an unresolved
+/// constructor retain the reader's false default.
 pub fn resolve_multiplay_passive(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     country: Option<&str>,
@@ -1208,10 +1424,7 @@ pub fn resolve_multiplay_passive(
     let Some(rules) = rules else {
         return false;
     };
-    let key = match country {
-        Some(country) => Some(country),
-        None => rules.country_name(ABSENT_COUNTRY_IDX),
-    };
+    let key = rules.scenario_country_name(country);
     key.is_some_and(|key| rules.country_multiplay_passive(key))
 }
 
@@ -1224,10 +1437,7 @@ pub fn resolve_wall_owner(
     let Some(rules) = rules else {
         return true;
     };
-    let key = match country {
-        Some(country) => Some(country),
-        None => rules.country_name(ABSENT_COUNTRY_IDX),
-    };
+    let key = rules.scenario_country_name(country);
     key.map_or(true, |key| rules.country_wall_owner(key))
 }
 
@@ -1481,7 +1691,7 @@ mod outcome_tests {
 
 #[cfg(test)]
 mod difficulty_tests {
-    use super::{HouseDifficulty, HouseState};
+    use super::{HouseDifficulty, HouseState, NativeF64Bits};
 
     #[test]
     fn native_difficulty_values_are_hardest_first() {
@@ -1522,12 +1732,25 @@ mod difficulty_tests {
         };
         for row in &rows {
             let input = &row["input"];
-            let row_rof: [f64; 3] = std::array::from_fn(|index| bits(&input["row_rof"][index]));
+            let difficulty_rows = std::array::from_fn(|index| {
+                let v = &input["row_values"][index];
+                crate::rules::ruleset::DifficultyRules {
+                    firepower: bits(&v[0]),
+                    ground_speed: bits(&v[1]),
+                    air_speed: bits(&v[2]),
+                    armor: bits(&v[3]),
+                    rof: bits(&v[4]),
+                    cost: bits(&v[5]),
+                    build_time: bits(&v[6]),
+                    repair_delay: bits(&v[7]),
+                    build_delay: bits(&v[8]),
+                }
+            });
             let difficulty =
                 HouseDifficulty::from_native(input["difficulty"].as_i64().unwrap() as i32).unwrap();
             let general = crate::rules::ruleset::GeneralRules {
-                difficulty_rof: row_rof,
-                difficulty_repair_delay: [0.02; 3],
+                difficulty_rows,
+                game_speed_bias: bits(&input["game_speed_bias"]),
                 team_delays: vec![11, 22, 33],
                 ..Default::default()
             };
@@ -1535,7 +1758,19 @@ mod difficulty_tests {
             house.set_difficulty(
                 difficulty,
                 &general,
-                bits(&input["country_rof"]),
+                {
+                    let c = &input["country_scalars"];
+                    let scalar = |key: &str| NativeF64Bits::from_bits(bits(&c[key]).to_bits());
+                    crate::rules::ruleset::CountryDifficultyBiases {
+                        firepower: scalar("firepower"),
+                        ground_speed: scalar("groundspeed"),
+                        air_speed: scalar("airspeed"),
+                        armor: scalar("armor"),
+                        rof: scalar("rof"),
+                        cost: scalar("cost"),
+                        build_time: scalar("build_time"),
+                    }
+                },
                 input["mode"].as_i64().unwrap() != 0,
                 input["array_index"].as_i64().unwrap() as i32,
                 100,
@@ -1550,6 +1785,26 @@ mod difficulty_tests {
                 row["rof_bias"].as_str().unwrap(),
                 "{input}"
             );
+            for (field, value) in [
+                "firepower",
+                "groundspeed",
+                "airspeed",
+                "armor",
+                "rof",
+                "cost",
+                "build_time",
+                "repair_delay",
+                "build_delay",
+            ]
+            .into_iter()
+            .zip(house.scalar_difficulty_biases())
+            {
+                assert_eq!(
+                    format!("{:016x}", value.bits()),
+                    row["biases"][field].as_str().unwrap(),
+                    "{field}: {input}"
+                );
+            }
             let team_timer = house.team_creation.timer();
             assert_eq!(
                 [team_timer.start_frame(), team_timer.duration()],

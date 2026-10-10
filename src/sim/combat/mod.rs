@@ -1350,9 +1350,8 @@ pub(crate) fn install_entity_attack_target_for_test(
 /// category multiplier for the attacker's type, the attacker's
 /// `ArmorMultiplier`, the attacker's FIREPOWER and the target's STRONGER ranks.
 ///
-/// RESIDUAL: `House+0x188` is 1.0, as in FireAt's damage build
-/// (`world_receiver::fireat_damage`); `Techno+0x160` is the attacker's live
-/// `firepower_multiplier`.
+/// House+188 comes from the shared SetDifficulty owner, as in FireAt's
+/// damage build; Techno+160 is the attacker's live firepower_multiplier.
 pub(crate) fn estimated_damage_on(
     sim: &crate::sim::world::Simulation,
     rules: &RuleSet,
@@ -1394,7 +1393,10 @@ pub(crate) fn estimated_damage_on(
         damage: weapon.damage,
         zeroed: weapon.is_sonic || weapon.use_fire_particles,
         stages: damage::attacker::FireDamageStages {
-            house_firepower: NativeF64Bits::ONE,
+            house_firepower: sim
+                .houses
+                .get(&attacker.owner())
+                .map_or(NativeF64Bits::ONE, |house| house.firepower_bias()),
             unit_firepower: attacker.firepower_multiplier,
             rank_firepower,
             occupied: None,
@@ -2813,7 +2815,7 @@ fn emit_projectile_shrapnel(
             continue;
         };
         let allied = source_owner.is_some_and(|owner| {
-            crate::map::houses::are_houses_friendly(
+            crate::map::houses::is_allied_with(
                 house_alliances,
                 interner.resolve(owner),
                 interner.resolve(target.owner()),

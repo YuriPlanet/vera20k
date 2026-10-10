@@ -9,7 +9,7 @@
 //! tools/spatial_oracle/astar_threat_inputs.json, spatial controls.
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::{HouseAllianceMap, is_allied_with};
+use crate::map::houses::{HouseAllianceMap, HouseRoster, is_allied_with};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
@@ -19,6 +19,14 @@ const LENGTH: usize = 130 * 130;
 // Original retail dwords8243C8/8243EC: row-major surrounding coarse cells.
 const OFFSETS: [i32; 9] = [-131, -130, -129, -1, 0, 1, 129, 130, 131];
 const SHIFTS: [u32; 9] = [2, 1, 2, 1, 0, 1, 2, 1, 2];
+
+/// The native ScenarioInit counter is nonzero during ReadScenarioINI's House
+/// pass (ordinary campaign prior2). CanAlly501540 then bypasses live-world
+/// defeated/count gates; MakeAlly4F9B70 writes only the sender's ally mask.
+pub(crate) enum HouseAllianceAdmission<'a> {
+    ScenarioInitialization { roster: &'a HouseRoster },
+    Admitted(HouseAllianceMap),
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(transparent)]
@@ -367,9 +375,33 @@ impl Simulation {
 
     /// Existing launch diplomacy graph owner: commit its admitted graph, then
     /// rebuild only recipients whose ally bits changed, in House array order.
-    /// This retains the threat dependency of4F9BB9/4FA062/4FA0D5; target/anger/
-    /// paranoid-sight side effects and full CanAlly admission are separate ports.
-    pub(crate) fn install_house_alliances(&mut self, alliances: HouseAllianceMap, rules: &RuleSet) {
+    /// This retains the threat dependency of4F9BB9/4FA062/4FA0D5. The fresh
+    /// ScenarioInit arm precedes every Techno, so live target/anger/paranoid
+    /// sight effects cannot run. Live CanAlly/EVA remain outside that bound.
+    pub(crate) fn install_house_alliances(
+        &mut self,
+        admission: HouseAllianceAdmission<'_>,
+        rules: &RuleSet,
+    ) {
+        let alliances = match admission {
+            HouseAllianceAdmission::Admitted(alliances) => alliances,
+            HouseAllianceAdmission::ScenarioInitialization { roster } => {
+                assert!(
+                    self.entities().is_empty() && self.production.terrain_objects.is_empty(),
+                    "ScenarioInit diplomacy precedes map objects"
+                );
+                assert!(
+                    !self.session.game_mode_nonzero,
+                    "this ScenarioInit admission is the campaign map-read family"
+                );
+                assert_eq!(
+                    roster.houses.len(),
+                    self.session.house_order.len(),
+                    "House ReadScenarioINI follows complete House construction"
+                );
+                roster.alliance_map()
+            }
+        };
         let changed: Vec<_> = self
             .session
             .house_order

@@ -18,6 +18,9 @@
 //! | `read_bool`, `read_bool_value` | `CCINIClass::ReadBool` 0x005295F0 |
 //! | `read_double` (`_bits`, `_to_float`, `_with`, `read_float`) | `CCINIClass::ReadDouble` 0x005283D0 |
 //! | `read_string`, `read_name`, `read_type_name` | `CCINIClass::ReadString` 0x00528A10 |
+//! | `read_movie` | `CCINIClass::ReadMovie` 0x004757D0 |
+//! | `read_edge` | `CCINIClass::ReadEdge` 0x00475980 |
+//! | `read_color_scheme` | `CCINIClass::ReadColor` 0x00474A90 |
 //! | `read_list` | ReadString, then `strtok(",")` (every type, house, sound and ability list) |
 //! | `read_sound_list` | `CCINIClass::ReadSoundList` 0x00525430 (ReadString 0x80, `strtok`) |
 //! | `read_trimmed_list` | ReadString, then `CString::Tokenize(",")` 0x007B5F10 and space trims |
@@ -67,6 +70,58 @@ const STRTRIM_MAX: u8 = 0x20;
 const COMMA: &[char] = &[','];
 
 impl IniSection {
+    /// ReadColor474A90: ReadString32 defaults to the current scheme's name,
+    /// then a case-insensitive scan skips the shade-count1 member of each
+    /// registered pair. Unknown names keep the supplied native index. A
+    /// missing key can therefore normalize valid shade1 index0 to shade53
+    /// index1; a stored-empty copy does not match and retains the current index.
+    ///
+    /// The catalog is the one present at this read, not a later rules-pass
+    /// projection. Native House500DF7 validates the result separately.
+    pub(crate) fn read_color_scheme<'a>(
+        &self,
+        key: &str,
+        current: i32,
+        mut schemes: impl Iterator<Item = &'a str> + Clone,
+    ) -> i32 {
+        let default_name = usize::try_from(current)
+            .ok()
+            .and_then(|index| schemes.clone().nth(index / 2))
+            .unwrap_or("");
+        let name = self.read_string(key, default_name, 0x20);
+        schemes
+            .position(|scheme| scheme.eq_ignore_ascii_case(&name))
+            .map_or(current, |index| {
+                (index as i32).wrapping_mul(2).wrapping_add(1)
+            })
+    }
+
+    /// CCINIClass::ReadEdge475980: ReadString into128 bytes with an empty
+    /// default. Empty retains the caller's value; case-insensitive cardinal
+    /// names map to0..3 and every other nonempty name returns literal-1.
+    pub fn read_edge(&self, key: &str, default: i32) -> i32 {
+        self.read_string_with(key, 128, default, |_, value| {
+            ["North", "East", "South", "West"]
+                .iter()
+                .position(|name| name.eq_ignore_ascii_case(value))
+                .map_or(-1, |index| index as i32)
+        })
+    }
+
+    /// `CCINIClass::ReadMovie @ 0x004757D0`: ReadString with an empty
+    /// default and a 128-byte buffer, followed by the process movie lookup.
+    /// Empty, `<none>` and unknown names retain the caller's current index.
+    pub fn read_movie(
+        &self,
+        key: &str,
+        default: i32,
+        movies: &crate::rules::movies::MovieRegistry,
+    ) -> i32 {
+        let name = self.read_string(key, "", 128);
+        let index = movies.find_index(&name);
+        if index == -1 { default } else { index }
+    }
+
     fn fold_rules_values<T>(
         &self,
         key: &str,
@@ -227,6 +282,24 @@ impl IniSection {
     pub fn read_list(&self, key: &str, capacity: usize) -> Option<Vec<&str>> {
         self.read_name(key, capacity)
             .map(|value| strtok(value, COMMA).collect())
+    }
+
+    /// ReadHousesList475260: ReadString128, comma-only strtok, then the
+    /// caller's byte-exact House::FromName50C170 lookup. An unknown (-1)
+    /// index sets bit31 through x86's masked shift. Missing/empty keeps the
+    /// supplied mask. House array order, not token order, consumes this mask.
+    pub(crate) fn read_houses_list(
+        &self,
+        key: &str,
+        default: u32,
+        mut find_house: impl FnMut(&str) -> Option<usize>,
+    ) -> u32 {
+        let Some(tokens) = self.read_list(key, 0x80) else {
+            return default;
+        };
+        tokens.into_iter().fold(0, |mask, token| {
+            mask | 1u32.wrapping_shl(find_house(token).map_or(u32::MAX, |index| index as u32))
+        })
     }
 
     /// `CCINIClass::ReadSoundList @ 0x00525430`: [`Self::read_list`] at 0x80.
@@ -918,6 +991,75 @@ mod tests {
         IniFile::from_str(body)
     }
 
+    #[test]
+    fn read_edge_matches_original_campaign_controls() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/input_oracle/campaign_start_houses.json",
+        ))
+        .expect("executed original House/Edge controls");
+        let rows = corpus["edge_controls"].as_array().unwrap();
+        assert_eq!(rows.len(), 20);
+        for row in rows {
+            // Native supplies cached sections, including an empty section or
+            // stored-empty value. A physical INI load discards both, so retain
+            // the actual reader input through the parser's test owner.
+            let mut section = IniSection::new("Control".to_string());
+            for (key, value) in row["sections"]["Control"].as_object().unwrap() {
+                section.set(key, value.as_str().unwrap());
+            }
+            let ini = IniFile::from_sections_for_test([section]);
+            let default = i32::try_from(row["default"].as_i64().unwrap()).unwrap();
+            assert_eq!(
+                ini.section("Control").unwrap().read_edge("Edge", default),
+                i32::try_from(row["result"].as_i64().unwrap()).unwrap(),
+                "{row}, default={default}",
+            );
+        }
+    }
+
+    #[test]
+    fn read_color_scheme_matches_original_campaign_controls() {
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/input_oracle/campaign_start_houses.json",
+        ))
+        .unwrap();
+        let controls = &native["color_controls"];
+        let names: Vec<_> = controls["registry"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|scheme| scheme["shade_count"] == 1)
+            .map(|scheme| scheme["name"].as_str().unwrap())
+            .collect();
+        let rows = controls["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 22);
+        for row in rows {
+            let ini = if let Some(physical) = row["physical_ini"].as_str() {
+                IniFile::from_str(physical)
+            } else {
+                IniFile::from_sections_for_test(row["sections"].as_object().unwrap().iter().map(
+                    |(name, values)| {
+                        let mut section = IniSection::new(name.clone());
+                        for (key, value) in values.as_object().unwrap() {
+                            section.set(key, value.as_str().unwrap());
+                        }
+                        section
+                    },
+                ))
+            };
+            let current = row["current"].as_i64().unwrap() as i32;
+            assert_eq!(
+                ini.section_or_empty("Control").read_color_scheme(
+                    "Color",
+                    current,
+                    names.iter().copied(),
+                ),
+                row["result"].as_i64().unwrap() as i32,
+                "original474A90 {row}",
+            );
+        }
+    }
+
     #[test] // P1/P2
     fn test_read_int_hex() {
         let ini = sec("[S]\nA=$1A\nB=1Ah\nC=0FFH\nD=$0\nE=$FF\nF=$0xFF\nG=0xFFh\nH=$-1\n");
@@ -1042,6 +1184,37 @@ mod tests {
             strtok(" a\tb\n\nc ", &[' ', '\t', '\n']).collect::<Vec<_>>(),
             ["a", "b", "c"]
         );
+    }
+
+    #[test]
+    fn read_houses_list_matches_original_exact_lookup_and_default_controls() {
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/input_oracle/campaign_start_houses.json",
+        ))
+        .unwrap();
+        let controls = &native["allies_reader_controls"];
+        assert_eq!(controls["delimiter_hex"], "2c00");
+        let names: Vec<_> = controls["registry"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect();
+        let rows = controls["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 27);
+        for row in rows {
+            let mut ini = IniFile::empty();
+            let section = ini.projection_section_mut("Control");
+            for (key, value) in row["sections"]["Control"].as_object().unwrap() {
+                section.set(key, value.as_str().unwrap());
+            }
+            let actual = section.read_houses_list(
+                "Allies",
+                row["default"].as_u64().unwrap() as u32,
+                |name| names.iter().position(|candidate| *candidate == name),
+            );
+            assert_eq!(actual, row["result"].as_u64().unwrap() as u32, "{row}");
+        }
     }
 
     /// `DifficultyClass::ReadINI_IntVector`: CRT `atoi` per token, so spaces

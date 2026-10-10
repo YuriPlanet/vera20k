@@ -3149,11 +3149,8 @@ fn fireat_launch_aim(
 /// decide the FIREPOWER stage; for a garrison shot that is the building,
 /// exactly as native's `this` is.
 ///
-/// RESIDUAL: the firepower fold's `House+0x188` is 1.0. The house value is
-/// `[Easy]/[Normal]/[Difficult] FirePower=` times the country's `Firepower=`,
-/// both 1.0 by default (`0x0066D28E`, `0x00511980`) and set by no retail
-/// layer. `Techno+0x160` is the firer's live `firepower_multiplier`, raised
-/// by the Firepower crate (`crates::effects`).
+/// House+188 comes from the shared SetDifficulty owner (6FE33D); Techno+160
+/// is the firer's live firepower_multiplier, raised by the Firepower crate.
 ///
 /// A passenger of an `OpenTopped=` transport (retail: `[BFRT]`) fires with
 /// `+0x82` set (`PerCellProcess 0x0051A45E`/`0x0073A75D` ->
@@ -3171,7 +3168,9 @@ fn fireat_damage(
     let f32_bits = |value: f32| NativeF32Bits::from_bits(value.to_bits());
     let multipliers = &rules.garrison_rules;
     let stages = damage::attacker::FireDamageStages {
-        house_firepower: NativeF64Bits::ONE,
+        house_firepower: firer
+            .and_then(|firer| world.houses.get(&firer.owner()))
+            .map_or(NativeF64Bits::ONE, |house| house.firepower_bias()),
         unit_firepower: firer.map_or(NativeF64Bits::ONE, |firer| firer.firepower_multiplier),
         rank_firepower: self::veterancy::has_weapon_ability(
             self::veterancy::rank_from_u16(snap.veterancy),
@@ -4840,6 +4839,10 @@ fn append_fixture_tiberium(_world: &mut Simulation, _out: &mut Vec<TiberiumReduc
         _out.append(&mut fixture.deferred_tiberium);
     }
 }
+
+#[cfg(test)]
+#[path = "house_firepower_tests.rs"]
+mod house_firepower_tests;
 
 #[cfg(test)]
 mod reveal_on_fire_tests {

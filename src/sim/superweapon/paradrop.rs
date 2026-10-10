@@ -39,11 +39,6 @@
 //!   0x00524CB0`) and SendParadropPlanes builds it; VERA builds no passenger.
 //!   Trigger: a list naming a type absent from the rules. Effect: that plane
 //!   flies empty.
-//! - The house's `Edge=` (`HouseClass+0x1E0`), which SendParadropPlanes
-//!   takes over the waypoint edge when it is 0..3 (`0x0065E6C5..0x0065E6D6`).
-//!   Only a campaign map's house section sets it; skirmish keeps the
-//!   constructor's -1, and VERA reads no house sections. Trigger: a campaign
-//!   house with `Edge=`. Effect: its planes enter from the waypoint edge.
 //! - The plane's payload latch (`+0x6C9`), raised before the passengers
 //!   board (`0x0065E7B8`), is not kept. Its readers are AircraftClass
 //!   GetFireError (`0x0041A9FF`: an emptied carrier answers 1) and
@@ -246,11 +241,10 @@ pub(super) fn send_planes(
         .get_mut(plane)
         .expect("constructed plane");
     entity.mark_mission_only();
-    let edge = Edge::own_edge(
-        sim.houses
-            .get(&owner)
-            .map_or(0, |house| house.waypoint_edge),
-    );
+    let (authored, waypoint) = sim.houses.get(&owner).map_or((-1, 0), |house| {
+        (house.authored_edge(), house.waypoint_edge)
+    });
+    let edge = Edge::authored_or_waypoint(authored, waypoint);
     let Some(cell) = find_paradrop_edge_cell(
         sim.playfield_bounds,
         sim.resolved_terrain.as_ref(),

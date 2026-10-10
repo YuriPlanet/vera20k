@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::hash::Hash;
 
 use crate::sim::game_options::GameOptions;
+use crate::sim::house_state::HouseDifficulty;
 use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
 
@@ -464,14 +465,33 @@ impl ScenarioDescriptor {
     }
 }
 
-/// The sim-resident session aggregate. Owns session identity, the seed,
-/// authoritative map bounds, the MP start table, the per-match options, and
-/// the frame clock. Constructed once from the descriptor; serialized and
-/// hashed (lockstep state, set before tick 0).
+/// Campaign-only Scenario inputs written by Full_Init686B20. The menu's
+/// difficulty is the literal player row; the computer row is `2 - row`.
+/// Scenario+1254 starts at one, survives Clear_Scene and defaults map House
+/// TechLevel. Keeping these on Session avoids a second launch-settings owner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+struct CampaignScenarioState {
+    mission_counter: i32,
+    player_difficulty: HouseDifficulty,
+    computer_difficulty: HouseDifficulty,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum CampaignScenarioStartupError {
+    #[error("campaign startup requires native GameMode zero")]
+    NonCampaignMode,
+    #[error("campaign Scenario startup inputs were already installed")]
+    AlreadyInstalled,
+    #[error("campaign difficulty {0} is outside the native menu rows 0..=2")]
+    InvalidDifficulty(i32),
+}
+
+/// The sim-resident session aggregate. Owns identity, seed, map bounds, the
+/// MP start table, family-specific startup inputs, options and the frame
+/// clock. Constructed once from the descriptor; serialized and hashed.
 ///
-/// Bounds note: `Simulation.playfield_bounds` (the FNPC diamond lens over
-/// `LocalSize`) keeps its own verbatim copy; consolidating the two is a
-/// follow-up once the diamond consumers read through the session.
+/// `Simulation.playfield_bounds` still owns the FNPC diamond lens over
+/// LocalSize; migrating those consumers is a separate ownership change.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ScenarioSession {
     /// Construction seed — the negotiated per-match value; the replay header
@@ -484,6 +504,8 @@ pub struct ScenarioSession {
     /// Persisted native zero/nonzero GameMode classification.
     #[serde(default)]
     pub game_mode_nonzero: bool,
+    #[serde(default)]
+    campaign: Option<CampaignScenarioState>,
     /// Persisted native `ScenarioClass` flags bit `0x20`.
     #[serde(default)]
     pub no_damage: bool,
@@ -543,6 +565,53 @@ pub struct ScenarioSession {
 }
 
 impl ScenarioSession {
+    pub(super) fn initialize_campaign_startup(
+        &mut self,
+        difficulty: i32,
+        mission_counter: i32,
+    ) -> Result<(), CampaignScenarioStartupError> {
+        if self.game_mode_nonzero {
+            return Err(CampaignScenarioStartupError::NonCampaignMode);
+        }
+        if self.campaign.is_some() {
+            return Err(CampaignScenarioStartupError::AlreadyInstalled);
+        }
+        let player_difficulty = HouseDifficulty::from_native(difficulty)
+            .ok_or(CampaignScenarioStartupError::InvalidDifficulty(difficulty))?;
+        let computer_difficulty = HouseDifficulty::from_native(2 - difficulty)
+            .expect("the admitted menu row has a complementary computer row");
+        self.campaign = Some(CampaignScenarioState {
+            mission_counter,
+            player_difficulty,
+            computer_difficulty,
+        });
+        Ok(())
+    }
+
+    /// Scenario+1254: a campaign mission's retained TechLevel default and
+    /// progression input. Offline sessions do not synthesize this value.
+    pub fn campaign_mission_counter(&self) -> Option<i32> {
+        self.campaign.map(|campaign| campaign.mission_counter)
+    }
+
+    /// Main_Game55D283 calls BattleControlTerminated686570 on shell exit;
+    /// its interior6865B0 resets Scenario+1254 to one. Difficulty and the
+    /// current House keep their existing owners and are not rebound here.
+    pub(crate) fn reset_campaign_mission_counter_on_shell_exit(&mut self) {
+        if let Some(campaign) = &mut self.campaign {
+            campaign.mission_counter = 1;
+        }
+    }
+
+    pub(crate) fn campaign_house_difficulties(&self) -> Option<(HouseDifficulty, HouseDifficulty)> {
+        self.campaign
+            .map(|campaign| (campaign.player_difficulty, campaign.computer_difficulty))
+    }
+
+    pub fn current_house(&self) -> Option<InternedId> {
+        self.current_house
+    }
+
     /// Session identity/bounds/waypoints — appended AFTER the legacy folds so
     /// the pre-session hash prefix order is preserved (SC-2). The clock and
     /// game options keep their original fold positions above; this fold adds
@@ -554,6 +623,10 @@ impl ScenarioSession {
         s.map_name.hash(hasher);
         s.theater.hash(hasher);
         s.game_mode_nonzero.hash(hasher);
+        if let Some(campaign) = s.campaign {
+            b"scenario-campaign-startup-v1".hash(hasher);
+            campaign.hash(hasher);
+        }
         // current_house is persisted process input, deliberately absent from
         // the shared peer hash: native64DAB0 does not fold A83D4C, and different
         // participants legitimately select different current houses. Gameplay
@@ -672,6 +745,7 @@ impl ScenarioSession {
             map_name: desc.map_name.clone(),
             theater: desc.theater.clone(),
             game_mode_nonzero: desc.game_mode_nonzero,
+            campaign: None,
             no_damage: desc.no_damage,
             free_radar: desc.free_radar,
             ignore_global_ai_triggers: desc.ignore_global_ai_triggers,
@@ -697,6 +771,78 @@ impl ScenarioSession {
 mod tests {
     use super::*;
     use crate::sim::world::Simulation;
+
+    #[test]
+    fn campaign_startup_retains_literal_rows_counter_and_identity() {
+        for difficulty in 0..=2 {
+            let mut sim = Simulation::from_descriptor(&ScenarioDescriptor::default());
+            let hash_before = sim.state_hash();
+            sim.session
+                .initialize_campaign_startup(difficulty, 7)
+                .unwrap();
+            assert_eq!(sim.session.campaign_mission_counter(), Some(7));
+            assert_eq!(
+                sim.session.campaign_house_difficulties(),
+                Some((
+                    HouseDifficulty::from_native(difficulty).unwrap(),
+                    HouseDifficulty::from_native(2 - difficulty).unwrap(),
+                ))
+            );
+            assert_ne!(sim.state_hash(), hash_before);
+            let current = sim.interner.intern("campaign current House");
+            sim.session.current_house = Some(current);
+            let hash = sim.state_hash();
+            let bytes = serde_json::to_vec(&sim.session).unwrap();
+            sim.session = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(sim.session.campaign_mission_counter(), Some(7));
+            assert_eq!(sim.session.current_house(), Some(current));
+            assert_eq!(sim.state_hash(), hash);
+            assert_eq!(
+                sim.session.initialize_campaign_startup(difficulty, 1),
+                Err(CampaignScenarioStartupError::AlreadyInstalled)
+            );
+            sim.session.reset_campaign_mission_counter_on_shell_exit();
+            assert_eq!(sim.session.campaign_mission_counter(), Some(1));
+            assert_eq!(
+                sim.session.campaign_house_difficulties(),
+                Some((
+                    HouseDifficulty::from_native(difficulty).unwrap(),
+                    HouseDifficulty::from_native(2 - difficulty).unwrap(),
+                ))
+            );
+            assert_eq!(sim.session.current_house(), Some(current));
+        }
+    }
+
+    #[test]
+    fn campaign_startup_rejects_wrong_family_and_outside_ui_rows_without_mutation() {
+        let mut offline = Simulation::from_descriptor(&ScenarioDescriptor {
+            game_mode_nonzero: true,
+            ..Default::default()
+        });
+        let hash = offline.state_hash();
+        assert_eq!(
+            offline.session.initialize_campaign_startup(1, 1),
+            Err(CampaignScenarioStartupError::NonCampaignMode)
+        );
+        assert_eq!(offline.state_hash(), hash);
+        assert_eq!(offline.session.campaign_mission_counter(), None);
+        offline
+            .session
+            .reset_campaign_mission_counter_on_shell_exit();
+        assert_eq!(offline.state_hash(), hash);
+
+        for difficulty in [-1, 3, i32::MAX] {
+            let mut sim = Simulation::from_descriptor(&ScenarioDescriptor::default());
+            let hash = sim.state_hash();
+            assert_eq!(
+                sim.session.initialize_campaign_startup(difficulty, 1),
+                Err(CampaignScenarioStartupError::InvalidDifficulty(difficulty))
+            );
+            assert_eq!(sim.state_hash(), hash);
+            assert_eq!(sim.session.campaign_mission_counter(), None);
+        }
+    }
 
     #[test]
     fn from_descriptor_equals_with_seed_widened() {

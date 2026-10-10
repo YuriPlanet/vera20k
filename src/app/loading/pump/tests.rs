@@ -71,6 +71,61 @@ fn prepared_startup(next: &mut u64, seed: u32) -> crate::match_bootstrap::Prepar
     crate::match_bootstrap::prepare_match_startup(correlation, accepted, &mut TestClock(seed))
 }
 
+fn prepared_campaign() -> crate::match_bootstrap::PreparedCampaignStartup {
+    let ini = crate::rules::ini_parser::IniFile::from_str(
+        "[Battles]\n0=ALL1\n[ALL1]\nCD=2\nScenario=ALL01UMD.MAP\n",
+    );
+    let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
+    campaigns.apply_ini(&ini, &crate::rules::movies::MovieRegistry::default(), None);
+    crate::match_bootstrap::prepare_campaign_startup(&campaigns, "ALL1", 1, &mut TestClock(31))
+        .expect("synthetic campaign catalog admits a selected campaign")
+}
+
+#[test]
+fn campaign_preparation_failure_retires_the_lease_with_shell_retry_policy() {
+    let mut assets = crate::app::process_assets::ProcessAssets::new(
+        crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+        false,
+    );
+    assets.return_from_loading(AssetManager::from_loose_root_for_test(&std::env::temp_dir()));
+    let mut audio = test_audio();
+    let mut slot = None;
+    let mut startup = crate::app::match_runtime::startup::MatchStartup::default();
+    for consume_during_preparation in [false, true] {
+        replace_loading_attempt(
+            &mut slot,
+            &mut startup,
+            &mut assets,
+            &mut audio,
+            LoadingSession::from_request(LoadingRequest::campaign(prepared_campaign())),
+            10,
+        );
+        // Capture disposition while the immutable campaign request is still
+        // present: preparation can consume the slot before reporting failure.
+        let policy = slot.as_ref().unwrap().failure_policy();
+        assert_eq!(policy, LoadingFailurePolicy::RetryCampaignShell);
+        if consume_during_preparation {
+            let err = prepare_loading_session(
+                &mut assets,
+                &mut Default::default(),
+                None,
+                slot.take().unwrap(),
+                true,
+                None,
+            )
+            .err()
+            .expect("missing config fails before a scenario can install");
+            assert!(err.to_string().contains("missing game config"));
+        }
+        assert_eq!(
+            retire_failed_loading_attempt(&mut slot, &mut startup, &mut assets, policy),
+            LoadingFailurePolicy::RetryCampaignShell,
+        );
+        assert!(slot.is_none() && assets.is_available() && !assets.is_leased());
+        assert!(startup.accepted().is_none());
+    }
+}
+
 pub(super) fn unverified_seed(value: u32) -> crate::match_bootstrap::MatchSeed {
     crate::match_bootstrap::MatchSeed {
         value,
@@ -101,7 +156,7 @@ fn generated_preview_with_starts(
 ) -> crate::map::rmg::GeneratedMap {
     crate::map::rmg::GeneratedMap {
         map_file: prefix_test_map(starts),
-        mapgen_continuation: crate::map::rmg::RmgRng::new(seed).into_continuation(),
+        mapgen_continuation: Some(crate::map::rmg::RmgRng::new(seed).into_continuation()),
         construction_trace: crate::map::rmg::RmgConstructionTrace::default(),
         start_waypoints: starts.to_vec(),
         stages_run: Vec::new(),
@@ -293,9 +348,16 @@ fn loading_replacement_and_terminal_retirement_preserve_cache_and_admission_orde
         if consumed_during_preparation {
             // Exact production preparation failure before initial selection;
             // no config exists, while the prior lease is already owned.
-            let err = prepare_loading_session(&mut assets, slot.take().unwrap(), true, None)
-                .err()
-                .unwrap();
+            let err = prepare_loading_session(
+                &mut assets,
+                &mut Default::default(),
+                None,
+                slot.take().unwrap(),
+                true,
+                None,
+            )
+            .err()
+            .unwrap();
             assert!(err.to_string().contains("missing game config"));
             assert!(assets.is_available());
         }
@@ -403,8 +465,16 @@ fn loading_preparation_consumes_real_source_and_returns_lease_on_initial_and_adm
     let request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(7));
     let mut session = LoadingSession::from_request(request);
     session.job.asset_manager = assets.lease_for_loading();
-    let session =
-        prepare_loading_session(&mut assets, session, true, Some(ra2_dir.clone())).unwrap();
+    let mut retention = crate::app::shell_random_map::RandomMapGenerationRetention::default();
+    let session = prepare_loading_session(
+        &mut assets,
+        &mut retention,
+        None,
+        session,
+        true,
+        Some(ra2_dir.clone()),
+    )
+    .unwrap();
     assert_eq!(session.next_frame, NextLoadingFrame::Blank);
     assert_eq!(
         session.native.as_ref().unwrap().progress.current_value(),
@@ -430,9 +500,16 @@ fn loading_preparation_consumes_real_source_and_returns_lease_on_initial_and_adm
     ] {
         let mut session = LoadingSession::from_request(LoadingRequest::generic_map_load(selected));
         session.job.asset_manager = assets.lease_for_loading();
-        let err = prepare_loading_session(&mut assets, session, false, Some(ra2_dir.clone()))
-            .err()
-            .unwrap();
+        let err = prepare_loading_session(
+            &mut assets,
+            &mut retention,
+            None,
+            session,
+            false,
+            Some(ra2_dir.clone()),
+        )
+        .err()
+        .unwrap();
         assert!(format!("{err:#}").contains(expected_error), "{err:#}");
         assert!(assets.is_available() && !assets.is_leased());
         assert!(std::sync::Arc::ptr_eq(
@@ -456,7 +533,7 @@ fn loading_side_comes_from_first_launch_node_country() {
 
     assert_eq!(
         session.native.as_ref().map(|native| native.variant),
-        Some(LoadingArtVariant::Alliance)
+        Some(NativeLoadingArt::StockOffline(LoadingArtVariant::Alliance))
     );
 }
 
@@ -1243,7 +1320,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
     let active_scenario_waypoints = map.waypoints.clone();
     let generated = crate::map::rmg::GeneratedMap {
         map_file: map,
-        mapgen_continuation: crate::map::rmg::RmgRng::new(0x4567).into_continuation(),
+        mapgen_continuation: Some(crate::map::rmg::RmgRng::new(0x4567).into_continuation()),
         construction_trace: crate::map::rmg::RmgConstructionTrace::default(),
         start_waypoints: vec![(0, 70, 70), (1, 90, 70), (2, 70, 90)],
         stages_run: Vec::new(),

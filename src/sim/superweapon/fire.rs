@@ -261,7 +261,7 @@ fn super_instance(
         .entry(owner)
         .or_default()
         .entry(sw_type)
-        .or_insert_with(|| super::SuperWeaponInstance::new(sw_type, owner))
+        .or_insert_with(|| super::SuperWeaponInstance::new(sw_type, owner, 0))
 }
 
 /// The Super Fire_SW pairs a `PostClick=` type with: the `[SuperWeaponTypes]`

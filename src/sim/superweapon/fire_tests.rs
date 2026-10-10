@@ -105,7 +105,7 @@ fn click_fire_matches_native() {
         sw.manual_control = flag(&row["manual"]);
         sw.recharge_time_frames = int(&row["recharge"]);
         sim.session.binary_frame = u32::try_from(int(&row["frame"])).unwrap();
-        let mut instance = SuperWeaponInstance::new(sw_type_id, owner);
+        let mut instance = SuperWeaponInstance::new(sw_type_id, owner, 0);
         instance.is_active = flag(&row["granted"]);
         instance.is_ready = flag(&row["charged"]);
         instance.is_suspended = flag(&row["on_hold"]);
@@ -306,7 +306,7 @@ fn a_charged_nuke_held_for_low_power_does_not_launch() {
         .unwrap();
     let nuke = sim.interner.intern("NukeSpecial");
     let sw = rules.super_weapon("NukeSpecial").unwrap();
-    let mut instance = SuperWeaponInstance::new(nuke, owner);
+    let mut instance = SuperWeaponInstance::new(nuke, owner, 0);
     instance.activate(10, 0);
     instance.is_ready = true;
     sim.super_weapons

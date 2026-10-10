@@ -199,9 +199,10 @@ pub fn is_seed_selection(map_name: &str) -> bool {
 #[derive(Debug)]
 pub struct GeneratedMap {
     pub map_file: MapFile,
-    /// Exact `g_MapGenRng` continuation after this accepted generation run.
-    /// Kept crate-private so app code can transport but never draw from it.
-    pub(crate) mapgen_continuation: MapGenRngContinuation,
+    /// Exact `g_MapGenRng` continuation after this generation run. Successful
+    /// shell completion publishes it before retaining this presentation map;
+    /// launch-time `.SED` regeneration transfers its own new receipt.
+    pub(crate) mapgen_continuation: Option<MapGenRngContinuation>,
     /// Ordered native Building-constructor effects produced during this RMG
     /// run. Geometry is MapGen-owned; these events are replayed later on the
     /// appropriate Scenario owner (shell preview or match bootstrap).
@@ -213,6 +214,15 @@ pub struct GeneratedMap {
     /// Start slots no region could fill. Non-zero means this map is short of
     /// spawns: fewer usable start positions than the player count implies.
     pub unfilled_start_slots: usize,
+}
+
+impl GeneratedMap {
+    /// Transfer this run's process cursor exactly once without drawing from it.
+    pub(crate) fn take_mapgen_continuation(&mut self) -> MapGenRngContinuation {
+        self.mapgen_continuation
+            .take()
+            .expect("completed generation transfers its MapGen continuation once")
+    }
 }
 
 /// Walk `STAGE_ORDER`, dropping the stages this configuration skips: the island

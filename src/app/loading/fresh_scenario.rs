@@ -34,12 +34,14 @@ impl FreshMapMaterialization {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FreshScenarioFamily {
     StockOffline,
+    Campaign,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FreshStartupProvenance {
     Accepted,
     ResolvedLegacy,
+    CampaignCatalog,
 }
 
 /// Family-specific authority that advances the sole fresh Scenario cursor.
@@ -51,6 +53,9 @@ enum FreshScenarioPrefixReceipt {
     StockOffline {
         launch: MatchLaunchDescriptor,
         scenario_prefix: PreFillScenarioPrefixPlan,
+    },
+    Campaign {
+        startup: crate::match_bootstrap::PreparedCampaignStartup,
     },
 }
 
@@ -79,8 +84,19 @@ pub(crate) struct StockOfflineFreshScenarioParts {
     pub(crate) scenario_prefix: PreFillScenarioPrefixPlan,
 }
 
+#[derive(Debug)]
+pub(crate) enum FreshScenarioParts {
+    StockOffline(StockOfflineFreshScenarioParts),
+    Campaign {
+        physical_source: LoadedMapSource,
+        signed_new_ini_format: i32,
+        startup: crate::match_bootstrap::PreparedCampaignStartup,
+    },
+}
+
 impl FreshScenarioLoadContextDescriptor {
-    /// Admit the one currently supported fresh family.  This is intentionally
+    /// Admit an authored campaign or the supported stock-offline fresh family.
+    /// This is intentionally
     /// visible only inside the loading owner: no caller can fabricate the
     /// generated arm without surrendering accepted setup staging here.
     ///
@@ -89,7 +105,7 @@ impl FreshScenarioLoadContextDescriptor {
     /// fresh reader, and `ScenarioClass::Full_Init @ 0x00686B20` owns the
     /// family-specific prefix. `ScenarioClass::Read_INI_Basic` stores signed
     /// `NewINIFormat` at `0x0068A156`; only the later pack bodies interpret it.
-    pub(super) fn admit_stock_offline(
+    pub(super) fn admit(
         startup: &LoadingStartup,
         map: &MapFile,
         physical_source: &LoadedMapSource,
@@ -99,6 +115,30 @@ impl FreshScenarioLoadContextDescriptor {
             anyhow::bail!(
                 "fresh scenario loading requires an exact Loose, MIX, or accepted generated source"
             );
+        }
+        if let LoadingStartup::Campaign(campaign) = startup {
+            if !matches!(
+                physical_source,
+                LoadedMapSource::Loose { .. } | LoadedMapSource::Mix { .. }
+            ) {
+                anyhow::bail!("campaign start requires an authored physical map source");
+            }
+            if accepted_rmg_start_staging.is_some() {
+                anyhow::bail!("random-map start staging cannot enter a campaign load");
+            }
+            if campaign.campaign().scenario().is_empty() {
+                anyhow::bail!("campaign catalog entry has no Scenario");
+            }
+            return Ok(Self {
+                physical_source: physical_source.clone(),
+                materialization: FreshMapMaterialization::Authored,
+                signed_new_ini_format: map.basic.new_ini_format.unwrap_or(0),
+                startup_provenance: FreshStartupProvenance::CampaignCatalog,
+                match_seed: campaign.seed.value,
+                prefix: FreshScenarioPrefixReceipt::Campaign {
+                    startup: campaign.clone(),
+                },
+            });
         }
         let (session, match_seed, startup_provenance) = match startup {
             LoadingStartup::Accepted(prepared) => (
@@ -114,6 +154,7 @@ impl FreshScenarioLoadContextDescriptor {
             LoadingStartup::Generic { .. } => {
                 anyhow::bail!("Generic startup cannot enter a typed fresh scenario load")
             }
+            LoadingStartup::Campaign(_) => unreachable!("campaign admitted above"),
         };
         let launch = MatchLaunchDescriptor::from_resolved(session.clone())
             .map_err(|err| anyhow::anyhow!("fresh stock-offline launch is unresolved: {err}"))?;
@@ -234,12 +275,16 @@ impl FreshScenarioLoadContextDescriptor {
     pub(crate) fn family(&self) -> FreshScenarioFamily {
         match &self.prefix {
             FreshScenarioPrefixReceipt::StockOffline { .. } => FreshScenarioFamily::StockOffline,
+            FreshScenarioPrefixReceipt::Campaign { .. } => FreshScenarioFamily::Campaign,
         }
     }
 
     pub(crate) fn stock_offline_launch(&self) -> &MatchLaunchDescriptor {
         match &self.prefix {
             FreshScenarioPrefixReceipt::StockOffline { launch, .. } => launch,
+            FreshScenarioPrefixReceipt::Campaign { .. } => {
+                panic!("campaign has no multiplayer launch descriptor")
+            }
         }
     }
 
@@ -248,6 +293,9 @@ impl FreshScenarioLoadContextDescriptor {
             FreshScenarioPrefixReceipt::StockOffline {
                 scenario_prefix, ..
             } => scenario_prefix.projection(),
+            FreshScenarioPrefixReceipt::Campaign { .. } => {
+                panic!("campaign has no multiplayer start projection")
+            }
         }
     }
 
@@ -272,6 +320,15 @@ impl FreshScenarioLoadContextDescriptor {
                 self.signed_new_ini_format
             );
         }
+        if let FreshScenarioPrefixReceipt::Campaign { startup: admitted } = &self.prefix {
+            if let LoadingStartup::Campaign(startup) = startup {
+                if startup != admitted {
+                    anyhow::bail!("campaign selection or seed changed before terminal transfer");
+                }
+                return Ok(());
+            }
+            anyhow::bail!("campaign receipt cannot enter a multiplayer load");
+        }
         let (provenance, seed, session) = match startup {
             LoadingStartup::Accepted(prepared) => (
                 FreshStartupProvenance::Accepted,
@@ -283,6 +340,9 @@ impl FreshScenarioLoadContextDescriptor {
             }
             LoadingStartup::Generic { .. } => {
                 anyhow::bail!("Generic startup cannot enter a typed fresh scenario load")
+            }
+            LoadingStartup::Campaign(_) => {
+                anyhow::bail!("multiplayer receipt cannot enter a campaign load")
             }
         };
         if provenance != self.startup_provenance {
@@ -303,19 +363,35 @@ impl FreshScenarioLoadContextDescriptor {
         Ok(())
     }
 
+    pub(crate) fn into_parts(self) -> FreshScenarioParts {
+        match self.prefix {
+            FreshScenarioPrefixReceipt::StockOffline {
+                launch,
+                scenario_prefix,
+            } => FreshScenarioParts::StockOffline(StockOfflineFreshScenarioParts {
+                physical_source: self.physical_source,
+                materialization: self.materialization,
+                signed_new_ini_format: self.signed_new_ini_format,
+                startup_provenance: self.startup_provenance,
+                match_seed: self.match_seed,
+                launch,
+                scenario_prefix,
+            }),
+            FreshScenarioPrefixReceipt::Campaign { startup } => FreshScenarioParts::Campaign {
+                physical_source: self.physical_source,
+                signed_new_ini_format: self.signed_new_ini_format,
+                startup,
+            },
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn into_stock_offline_parts(self) -> StockOfflineFreshScenarioParts {
-        let FreshScenarioPrefixReceipt::StockOffline {
-            launch,
-            scenario_prefix,
-        } = self.prefix;
-        StockOfflineFreshScenarioParts {
-            physical_source: self.physical_source,
-            materialization: self.materialization,
-            signed_new_ini_format: self.signed_new_ini_format,
-            startup_provenance: self.startup_provenance,
-            match_seed: self.match_seed,
-            launch,
-            scenario_prefix,
+        match self.into_parts() {
+            FreshScenarioParts::StockOffline(parts) => parts,
+            FreshScenarioParts::Campaign { .. } => {
+                panic!("campaign is not a stock-offline fixture")
+            }
         }
     }
 }

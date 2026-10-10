@@ -21,11 +21,6 @@
 //! draws are aircraft_states.py's (Mission_Attack's state 10 calls it the
 //! same way).
 //!
-//! RESIDUAL: `Edge=`. Only a campaign map's house section sets it; skirmish
-//! keeps the HouseClass constructor's -1 (`0x004F56D9`), and VERA reads no
-//! house sections (as `superweapon::spy_plane`'s). Trigger: a campaign
-//! house with `Edge=` whose aircraft retreats. Effect: it heads for its
-//! waypoint edge instead.
 
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::CellRef;
@@ -37,9 +32,6 @@ use crate::sim::world::edge_cell::Edge;
 #[cfg(test)]
 #[path = "retreat_mission_tests.rs"]
 mod tests;
-
-/// The value each house's `Edge=` holds in VERA (module RESIDUAL).
-const HOUSE_EDGE_UNSET: i32 = -1;
 
 /// Every visit's return (`0x00415AD5`, `0x00415AFF`).
 const RETREAT_FRAMES: i32 = 3;
@@ -70,10 +62,7 @@ fn retreat_visit(
 ) -> i32 {
     match nav_com {
         RetreatNavCom::None => {
-            let edge = u8::try_from(house_edge)
-                .ok()
-                .and_then(Edge::from_index)
-                .unwrap_or_else(|| Edge::own_edge(waypoint_edge));
+            let edge = Edge::authored_or_waypoint(house_edge, waypoint_edge);
             if let Some(cell) = host.edge_cell(edge).filter(|&cell| cell != (0, 0)) {
                 host.assign_destination(Some(cell));
             }
@@ -114,9 +103,13 @@ pub(super) fn retreat(
         }
     };
     let waypoint_edge = sim.aircraft_house_waypoint_edge(id);
+    let house_edge = sim
+        .houses
+        .get(&entity.owner())
+        .map_or(-1, |house| house.authored_edge());
     retreat_visit(
         nav_com,
-        HOUSE_EDGE_UNSET,
+        house_edge,
         waypoint_edge,
         &mut WorldRetreat {
             sim,

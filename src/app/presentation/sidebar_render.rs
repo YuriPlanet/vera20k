@@ -508,13 +508,12 @@ pub(crate) fn current_sidebar_theme(
 ) -> crate::render::sidebar_chrome::SidebarTheme {
     preferred_local_owner_name(state)
         .and_then(|owner| {
-            sidebar_theme_for_owner_sources(
+            sidebar_theme_for_owner(
                 state
                     .match_state
                     .sim_runtime
                     .as_ref()
                     .map(|rt| &rt.simulation),
-                &state.match_state.match_presentation.house_roster,
                 &owner,
             )
         })
@@ -523,10 +522,9 @@ pub(crate) fn current_sidebar_theme(
 
 /// Shared installed-owner and atlas fallback projection for chrome and radar.
 /// The map loader calls the final sidebar refresh only after installing the
-/// new simulation, roster and pinned owner; this helper never reads old load inputs.
+/// new simulation and pinned owner; this helper never reads old load inputs.
 pub(crate) fn project_sidebar_source<'a, T>(
     simulation: Option<&crate::sim::world::Simulation>,
-    roster: &crate::map::houses::HouseRoster,
     owner: Option<&str>,
     allied: Option<&'a T>,
     soviet: Option<&'a T>,
@@ -537,7 +535,7 @@ pub(crate) fn project_sidebar_source<'a, T>(
     &'a T,
 )> {
     let requested = owner
-        .and_then(|owner| sidebar_theme_for_owner_sources(simulation, roster, owner))
+        .and_then(|owner| sidebar_theme_for_owner(simulation, owner))
         .unwrap_or(crate::render::sidebar_chrome::SidebarTheme::Allied);
     let (actual, source) =
         crate::render::sidebar_chrome::select_sidebar_theme(requested, allied, soviet, yuri)?;
@@ -559,7 +557,6 @@ fn current_sidebar_resolution(
             .sim_runtime
             .as_ref()
             .map(|rt| &rt.simulation),
-        &state.match_state.match_presentation.house_roster,
         owner.as_deref(),
         set.allied.as_ref(),
         set.soviet.as_ref(),
@@ -633,45 +630,18 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     presentation.radar_content_insets = Some(insets);
 }
 
-pub(crate) fn sidebar_theme_for_owner_sources(
+/// Original gamemd.exe SHA256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c:
+/// Full_Init @ 0x006877C9..0x0068781F resolves Basic.Player with 0x0050C170,
+/// reads House.Country+0x34 -> Country.Side+0xBC, then installs that side for
+/// InitSideMixFiles @ 0x00534FA0. Radar @ 0x00652E90 and resource selection
+/// @ 0x0072FA10 consume the installed side. Map House Side/Country text is
+/// not a second presentation authority. The executed stock House bindings
+/// are in tools/input_oracle/campaign_start_houses.json; they establish
+/// Americans/0 and Russians/1, without certifying native raster output.
+pub(crate) fn sidebar_theme_for_owner(
     simulation: Option<&crate::sim::world::Simulation>,
-    house_roster: &crate::map::houses::HouseRoster,
     owner: &str,
 ) -> Option<crate::render::sidebar_chrome::SidebarTheme> {
-    if let Some(house) = house_roster
-        .houses
-        .iter()
-        .find(|house| house.name.eq_ignore_ascii_case(owner))
-    {
-        let side = house
-            .side
-            .as_deref()
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        let country = house
-            .country
-            .as_deref()
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-
-        if side.contains("yuri") || country.contains("yuri") {
-            return Some(crate::render::sidebar_chrome::SidebarTheme::Yuri);
-        }
-        if side.contains("soviet")
-            || matches!(
-                country.as_str(),
-                "russia" | "iraq" | "cuba" | "libya" | "soviet"
-            )
-        {
-            return Some(crate::render::sidebar_chrome::SidebarTheme::Soviet);
-        }
-        return Some(crate::render::sidebar_chrome::SidebarTheme::Allied);
-    }
-
-    // Map-loaded houses can still default a missing Side= to Allied. Preserve
-    // the existing roster decision until that producer is exact; ordinary
-    // explicit launch names miss the map roster and carry the resolved live
-    // side. A deliberate name collision therefore keeps the roster decision.
     let simulation = simulation?;
     let live_house = crate::sim::house_state::house_state_for_owner(
         &simulation.houses,

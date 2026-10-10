@@ -477,7 +477,7 @@ mod tests {
                     side: None,
                     player_control: None,
                     iq: 0,
-                    allies: Vec::new(),
+                    allies: 0,
                     base_plan: Default::default(),
                 },
                 HouseDefinition {
@@ -487,7 +487,7 @@ mod tests {
                     side: Some("Allies".to_string()),
                     player_control: Some(true),
                     iq: 0,
-                    allies: Vec::new(),
+                    allies: 0,
                     base_plan: Default::default(),
                 },
             ],
@@ -1618,9 +1618,8 @@ mod tests {
                 .expect("explicit launch must return its pinned local owner");
             assert_eq!(owner, "Commander");
 
-            let actual = crate::app::presentation::sidebar_render::sidebar_theme_for_owner_sources(
+            let actual = crate::app::presentation::sidebar_render::sidebar_theme_for_owner(
                 Some(&sim),
-                &roster,
                 owner,
             )
             .unwrap_or(SidebarTheme::Allied);
@@ -1637,7 +1636,6 @@ mod tests {
             ];
             let selected = crate::app::presentation::sidebar_render::project_sidebar_source(
                 Some(&sim),
-                &roster,
                 Some(owner),
                 Some(&assets[0]),
                 Some(&assets[1]),
@@ -1653,7 +1651,6 @@ mod tests {
             assert_eq!(*selected.2, assets[index]);
             let fallback = crate::app::presentation::sidebar_render::project_sidebar_source(
                 Some(&sim),
-                &roster,
                 Some(owner),
                 Some(&assets[0]),
                 None,
@@ -1672,30 +1669,13 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_theme_sources_preserve_roster_path_on_owner_name_collision() {
+    fn sidebar_theme_requires_installed_live_binding() {
         use crate::render::sidebar_chrome::SidebarTheme;
 
-        let roster = HouseRoster {
-            houses: vec![HouseDefinition {
-                name: "MapPlayer".to_string(),
-                color: HouseColorIndex(4),
-                country: Some("Russians".to_string()),
-                side: Some("Soviet".to_string()),
-                player_control: Some(true),
-                iq: 0,
-                allies: Vec::new(),
-                base_plan: Default::default(),
-            }],
-        };
-
         assert_eq!(
-            crate::app::presentation::sidebar_render::sidebar_theme_for_owner_sources(
-                None,
-                &roster,
-                "MapPlayer",
-            ),
-            Some(SidebarTheme::Soviet),
-            "an absent live owner must preserve the existing roster resolver"
+            crate::app::presentation::sidebar_render::sidebar_theme_for_owner(None, "MapPlayer",),
+            None,
+            "without an installed House the caller owns its explicit fallback"
         );
 
         let mut sim = Simulation::new();
@@ -1703,27 +1683,42 @@ mod tests {
         sim.houses
             .insert(owner_id, HouseState::new(owner_id, 2, None, true, 0, 10));
         assert_eq!(
-            crate::app::presentation::sidebar_render::sidebar_theme_for_owner_sources(
+            crate::app::presentation::sidebar_render::sidebar_theme_for_owner(
                 Some(&sim),
-                &roster,
                 "MapPlayer",
             ),
-            Some(SidebarTheme::Soviet),
-            "an explicit-name collision must preserve the roster-resolved map path"
+            Some(SidebarTheme::Yuri),
+            "installed House authority supersedes authored roster metadata"
         );
     }
 
     #[test]
-    fn sidebar_theme_sources_reject_unknown_live_side() {
+    fn sidebar_theme_uses_live_russian_side() {
+        use crate::render::sidebar_chrome::SidebarTheme;
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Russians");
+        sim.houses
+            .insert(owner, HouseState::new(owner, 1, None, true, 0, 10));
+        assert_eq!(
+            crate::app::presentation::sidebar_render::sidebar_theme_for_owner(
+                Some(&sim),
+                "Russians",
+            ),
+            Some(SidebarTheme::Soviet),
+            "SOV01's installed side must reach sidebar and radar art selection"
+        );
+    }
+
+    #[test]
+    fn sidebar_theme_rejects_unknown_live_side() {
         let mut sim = Simulation::new();
         let owner_id = sim.interner.intern("DynamicOwner");
         sim.houses
             .insert(owner_id, HouseState::new(owner_id, 7, None, true, 0, 10));
 
         assert_eq!(
-            crate::app::presentation::sidebar_render::sidebar_theme_for_owner_sources(
+            crate::app::presentation::sidebar_render::sidebar_theme_for_owner(
                 Some(&sim),
-                &HouseRoster::default(),
                 "DynamicOwner",
             ),
             None,

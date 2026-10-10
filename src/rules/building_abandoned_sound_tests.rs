@@ -88,7 +88,12 @@ fn building_abandoned_sound_retains_current_id_across_production_rules_passes() 
         )
         .unwrap();
         let (rules, _, _, _) = owner
-            .load_noncampaign_scenario(Some(&IniFile::from_str(mode)), &IniFile::from_str(map))
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(
+                    &IniFile::from_str(mode),
+                )),
+                &IniFile::from_str(map),
+            )
             .unwrap()
             .into_parts();
         assert_eq!(
@@ -117,7 +122,10 @@ fn retail_root_building_abandoned_sound_keeps_the_silent_constructor_default() {
     )
     .unwrap();
     let (rules, _, _, _) = owner
-        .load_noncampaign_scenario(None, &IniFile::empty())
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+            &IniFile::empty(),
+        )
         .unwrap()
         .into_parts();
     assert_eq!(rules.general.building_abandoned_sound, None);

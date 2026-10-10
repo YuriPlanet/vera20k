@@ -329,7 +329,10 @@ fn diplomacy_rebuild_preserves_native_foot_and_building_filter_asymmetry() {
         .entry("RUSSIANS".into())
         .or_default()
         .insert("AMERICANS".into());
-    sim.install_house_alliances(alliances.clone(), &rules);
+    sim.install_house_alliances(
+        super::HouseAllianceAdmission::Admitted(alliances.clone()),
+        &rules,
+    );
     assert_eq!(
         threat(&sim, "Russians", (13, 15)),
         0,
@@ -617,7 +620,12 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         .spawn_object("E1", "Americans", 15, 15, 0, &rules)
         .unwrap();
     // PerCellProcess boards from the garrison's own foundation cell.
-    sim.substrate.entities.get_mut(passenger).unwrap().position.rx = 16;
+    sim.substrate
+        .entities
+        .get_mut(passenger)
+        .unwrap()
+        .position
+        .rx = 16;
     assert_eq!(
         sim.substrate
             .entities

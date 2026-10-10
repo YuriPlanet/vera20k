@@ -109,7 +109,7 @@ fn the_countdown_matches_native() {
     let stored = [10368, 10368, 416];
     for row in rows(&oracle, "super_fade") {
         let id = InternedId::from_index(1);
-        let mut instance = SuperWeaponInstance::new(id, id);
+        let mut instance = SuperWeaponInstance::new(id, id, 0);
         instance.arm_fade(int(&row["start"]), stored);
         let mut values = Vec::new();
         let mut plays = Vec::new();
@@ -339,7 +339,7 @@ fn a_grant_keeps_the_countdown_and_releases_the_anim() {
     let sw_type = sim.interner.intern(FORCE_SHIELD);
     let anim = super::super::spawn_super_anim(&mut sim, &rules, "FORCSHLD", [10368, 10368, 5])
         .expect("FORCSHLD constructs");
-    let mut instance = SuperWeaponInstance::new(sw_type, russians);
+    let mut instance = SuperWeaponInstance::new(sw_type, russians, 0);
     instance.arm_fade(100, [10368, 10368, 416]);
     instance.placement_anim = Some(anim);
     sim.super_weapons

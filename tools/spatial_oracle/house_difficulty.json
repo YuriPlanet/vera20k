@@ -1,15 +1,71 @@
 [
   {
+    "biases": {
+      "airspeed": "3ff0000000000000",
+      "armor": "3ff3333340000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3fe99999a0000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff0000000000000",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3fe99999a0000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 0,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3fe99999a0000000",
@@ -19,16 +75,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe70a3d6c28f5c0",
+      "armor": "3ff6e147a851eb80",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "4010624ddf3b645d",
+      "cost": "3fe428f5b3d70a40",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "40024dd2f1a1cabb",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3fe6666660000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 1,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3fe6666660000000",
@@ -38,16 +150,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe666665fffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fe666665fffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fe666665fffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "0000000000000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 7,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -57,16 +225,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fecccccbfffffff",
+      "armor": "3ff4ccccc0000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3ff999999fffffff",
+      "cost": "3fe6666660000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff199999fffffff",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3ff0000000000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 16777217,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff0000000000000",
@@ -76,16 +300,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe0000000000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff99999a0000000",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff4ccccc0000000",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3ff4ccccc0000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 0,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3ff4ccccc0000000",
@@ -95,16 +375,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff70a3d6c28f5bf",
+      "armor": "3ff4ccccbfffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "40047ae151eb851f",
+      "cost": "3fe666665fffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3ffc28f5d3d70a3e",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "bfe0000000000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 1,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "bfe0000000000000",
@@ -114,16 +450,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe6666660000000",
+      "armor": "3fe99999a0000000",
+      "build_delay": "3fb99999a0000000",
+      "build_time": "3fe6666660000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3fe6666660000000",
+      "repair_delay": "3fa99999a0000000",
+      "rof": "3ff3333340000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 7,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff3333340000000",
@@ -133,16 +525,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfdcccccbfffffff",
+      "armor": "3ff6e147a851eb80",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "40047ae151eb851f",
+      "cost": "3fe428f5b3d70a40",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff6e147a851eb7e",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "0000000000000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 16777217,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -152,16 +600,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fefffffffffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fefffffffffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fefffffffffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "3fefffffffffffff"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 0,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "3fefffffffffffff",
@@ -171,16 +675,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff70a3d6c28f5c0",
+      "armor": "3ff8f5c290a3d700",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "4000624ddf3b645d",
+      "cost": "3fe6666660000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ffc28f5d3d70a40",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3fec28f5d3d70a40"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 1,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3fec28f5d3d70a40",
@@ -190,16 +750,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfd6666660000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff1eb851e147ae0",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3fed1eb837ae1480",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3fe8a3d70c28f5c0"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 7,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3fe8a3d70c28f5c0",
@@ -209,16 +825,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fecccccbffffffe",
+      "armor": "3ff4ccccbfffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3ff999999ffffffe",
+      "cost": "3fe666665fffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3ff199999ffffffe",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "0000000000000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 16777217,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -228,16 +900,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff0000000000000",
+      "armor": "3ff0000000000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3ff0000000000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff0000000000000",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3ff19999a0000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 0,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff19999a0000000",
@@ -247,16 +975,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe70a3d6c28f5c0",
+      "armor": "3ff6e147a851eb80",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "4010624ddf3b645d",
+      "cost": "3fe428f5b3d70a40",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "40024dd2f1a1cabb",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3ff6e147a851eb80"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 1,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3ff6e147a851eb80",
@@ -266,16 +1050,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe666665fffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fe666665fffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fe666665fffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "bfe19999a0000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 7,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "bfe19999a0000000",
@@ -285,16 +1125,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fecccccbfffffff",
+      "armor": "3ff0a3d70428f5c0",
+      "build_delay": "3fb99999a0000000",
+      "build_time": "3ff999999fffffff",
+      "cost": "3fe6666660000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff199999fffffff",
+      "repair_delay": "3fa99999a0000000",
+      "rof": "3ff51eb867ae1480"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 16777217,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff51eb867ae1480",
@@ -304,16 +1200,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe0000000000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff99999a0000000",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff4ccccc0000000",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "0000000000000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 0,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -323,16 +1275,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff70a3d6c28f5bf",
+      "armor": "3ff4ccccbfffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "40047ae151eb851f",
+      "cost": "3fe666665fffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3ffc28f5d3d70a3e",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "3ff199999fffffff"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 1,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "3ff199999fffffff",
@@ -342,16 +1350,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe6666660000000",
+      "armor": "3ff3333340000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3fe1eb851e147ae0",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3fe6666660000000",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3fe999999fffffff"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 7,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3fe999999fffffff",
@@ -361,16 +1425,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfdcccccbfffffff",
+      "armor": "3ff6e147a851eb80",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "40047ae151eb851f",
+      "cost": "3fe428f5b3d70a40",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff6e147a851eb7e",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3fe666665fffffff"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 16777217,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3fe666665fffffff",
@@ -380,16 +1500,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fefffffffffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fefffffffffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fefffffffffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "0000000000000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 0,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -399,16 +1575,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff70a3d6c28f5c0",
+      "armor": "3ff4ccccc0000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "40047ae151eb8520",
+      "cost": "3fe6666660000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ffc28f5d3d70a40",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3fefffffffffffff"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 1,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3fefffffffffffff",
@@ -418,16 +1650,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfd6666660000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff1eb851e147ae0",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3fed1eb837ae1480",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3ff4ccccbfffffff"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 7,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3ff4ccccbfffffff",
@@ -437,16 +1725,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fecccccbffffffe",
+      "armor": "3ff4ccccbfffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3ff999999ffffffe",
+      "cost": "3fe666665fffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3ff199999ffffffe",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "bfdfffffffffffff"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 16777217,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "bfdfffffffffffff",
@@ -456,16 +1800,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff0000000000000",
+      "armor": "3fe99999a0000000",
+      "build_delay": "3fb99999a0000000",
+      "build_time": "3ff0000000000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff0000000000000",
+      "repair_delay": "3fa99999a0000000",
+      "rof": "3ff333333fffffff"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 0,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff333333fffffff",
@@ -475,16 +1875,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe70a3d6c28f5c0",
+      "armor": "3ff6e147a851eb80",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "4010624ddf3b645d",
+      "cost": "3fe428f5b3d70a40",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "40024dd2f1a1cabb",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "0000000000000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 1,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -494,16 +1950,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe666665fffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fe666665fffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fe666665fffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "3feffffffffffffe"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 7,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "3feffffffffffffe",
@@ -513,16 +2025,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fecccccbfffffff",
+      "armor": "3ff8f5c290a3d700",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3ff47ae151eb851f",
+      "cost": "3fe6666660000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff199999fffffff",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3fe70a3d6c28f5c0"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 16777217,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3fe70a3d6c28f5c0",
@@ -532,16 +2100,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe0000000000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff99999a0000000",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff4ccccc0000000",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3fe428f5b3d70a40"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 0,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3fe428f5b3d70a40",
@@ -551,16 +2175,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff70a3d6c28f5bf",
+      "armor": "3ff4ccccbfffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "40047ae151eb851f",
+      "cost": "3fe666665fffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3ffc28f5d3d70a3e",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "0000000000000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 1,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -570,16 +2250,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe6666660000000",
+      "armor": "3ff0000000000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3fe6666660000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3fe6666660000000",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3fecccccc0000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 7,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3fecccccc0000000",
@@ -589,16 +2325,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfdcccccbfffffff",
+      "armor": "3ff6e147a851eb80",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "40047ae151eb851f",
+      "cost": "3fe428f5b3d70a40",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff6e147a851eb7e",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3ff2b851d7ae1480"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 16777217,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3ff2b851d7ae1480",
@@ -608,16 +2400,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fefffffffffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fefffffffffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fefffffffffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "bfdcccccc0000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 0,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "bfdcccccc0000000",
@@ -627,16 +2475,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff70a3d6c28f5c0",
+      "armor": "3ff0a3d70428f5c0",
+      "build_delay": "3fb99999a0000000",
+      "build_time": "40047ae151eb8520",
+      "cost": "3fe6666660000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ffc28f5d3d70a40",
+      "repair_delay": "3fa99999a0000000",
+      "rof": "3ff147ae1851eb80"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 1,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 5,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff147ae1851eb80",
@@ -646,16 +2550,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfd6666660000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff1eb851e147ae0",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3fed1eb837ae1480",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "0000000000000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 7,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 5,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -665,16 +2625,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fecccccbffffffe",
+      "armor": "3ff4ccccbfffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3ff999999ffffffe",
+      "cost": "3fe666665fffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3ff199999ffffffe",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "3fecccccbfffffff"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 16777217,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 5,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "3fecccccbfffffff",
@@ -684,16 +2700,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff0000000000000",
+      "armor": "3ff3333340000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3fe99999a0000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff0000000000000",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3fe99999a0000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 0,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3fe99999a0000000",
@@ -703,16 +2775,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe99999a0000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "40047ae151eb8520",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "4000a3d70428f5c0",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3fe6666660000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 1,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3fe6666660000000",
@@ -722,16 +2850,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe666665fffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fe666665fffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fe666665fffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "0000000000000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 7,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -741,16 +2925,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fefffffffffffff",
+      "armor": "3ff0000000000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3fefffffffffffff",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3fefffffffffffff",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3ff0000000000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 16777217,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff0000000000000",
@@ -760,16 +3000,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe0000000000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff99999a0000000",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff4ccccc0000000",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3ff4ccccc0000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 0,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3ff4ccccc0000000",
@@ -779,16 +3075,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff999999fffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3ff999999fffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3ff999999fffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "bfe0000000000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 1,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "bfe0000000000000",
@@ -798,16 +3150,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe6666660000000",
+      "armor": "3fe99999a0000000",
+      "build_delay": "3fb99999a0000000",
+      "build_time": "3fe6666660000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3fe6666660000000",
+      "repair_delay": "3fa99999a0000000",
+      "rof": "3ff3333340000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 7,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff3333340000000",
@@ -817,16 +3225,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfdfffffffffffff",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff999999fffffff",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff4ccccbfffffff",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "0000000000000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 16777217,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -836,16 +3300,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fefffffffffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fefffffffffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fefffffffffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "3fefffffffffffff"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 0,
       "country_rof": "3ff0000000000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff0000000000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "3fefffffffffffff",
@@ -855,16 +3375,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff99999a0000000",
+      "armor": "3ff3333340000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3ff47ae151eb8520",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff99999a0000000",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3fe99999a0000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 1,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3fe99999a0000000",
@@ -874,16 +3450,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfd6666660000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff1eb851e147ae0",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3fed1eb837ae1480",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3fe6666660000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 7,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3fe6666660000000",
@@ -893,16 +3525,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3feffffffffffffe",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3feffffffffffffe",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3feffffffffffffe",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "0000000000000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 16777217,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -912,16 +3600,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff0000000000000",
+      "armor": "3ff0000000000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3ff0000000000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff0000000000000",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3ff0000000000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 0,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff0000000000000",
@@ -931,16 +3675,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe99999a0000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "40047ae151eb8520",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "4000a3d70428f5c0",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3ff4ccccc0000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 1,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3ff4ccccc0000000",
@@ -950,16 +3750,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe666665fffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fe666665fffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fe666665fffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "bfe0000000000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 7,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "bfe0000000000000",
@@ -969,16 +3825,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fefffffffffffff",
+      "armor": "3fe99999a0000000",
+      "build_delay": "3fb99999a0000000",
+      "build_time": "3fefffffffffffff",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3fefffffffffffff",
+      "repair_delay": "3fa99999a0000000",
+      "rof": "3ff3333340000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 16777217,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff3333340000000",
@@ -988,16 +3900,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe0000000000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff99999a0000000",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff4ccccc0000000",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "0000000000000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 0,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -1007,16 +3975,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff999999fffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3ff999999fffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3ff999999fffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "3fefffffffffffff"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 1,
       "country_rof": "3ff19999a0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3ff19999a0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "3fefffffffffffff",
@@ -1026,16 +4050,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe6666660000000",
+      "armor": "3ff3333340000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3fe1eb851e147ae0",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3fe6666660000000",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3fe99999a0000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 7,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3fe99999a0000000",
@@ -1045,16 +4125,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfdfffffffffffff",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff999999fffffff",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff4ccccbfffffff",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3fe6666660000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 16777217,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3fe6666660000000",
@@ -1064,16 +4200,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fefffffffffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fefffffffffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fefffffffffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "0000000000000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 0,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -1083,16 +4275,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff99999a0000000",
+      "armor": "3ff0000000000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3ff99999a0000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff99999a0000000",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3ff0000000000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 1,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff0000000000000",
@@ -1102,16 +4350,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfd6666660000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff1eb851e147ae0",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3fed1eb837ae1480",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3ff4ccccc0000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 7,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3ff4ccccc0000000",
@@ -1121,16 +4425,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3feffffffffffffe",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3feffffffffffffe",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3feffffffffffffe",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "bfe0000000000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 16777217,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "bfe0000000000000",
@@ -1140,16 +4500,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff0000000000000",
+      "armor": "3fe99999a0000000",
+      "build_delay": "3fb99999a0000000",
+      "build_time": "3ff0000000000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff0000000000000",
+      "repair_delay": "3fa99999a0000000",
+      "rof": "3ff3333340000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 0,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff3333340000000",
@@ -1159,16 +4575,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe99999a0000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "40047ae151eb8520",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "4000a3d70428f5c0",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "0000000000000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 1,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -1178,16 +4650,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe666665fffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fe666665fffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fe666665fffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "3fefffffffffffff"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 7,
       "country_rof": "3fefffffffffffff",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fefffffffffffff"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "3fefffffffffffff",
@@ -1197,16 +4725,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fefffffffffffff",
+      "armor": "3ff3333340000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3fe999999fffffff",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3fefffffffffffff",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3fe99999a0000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 16777217,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3fe99999a0000000",
@@ -1216,16 +4800,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfe0000000000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff99999a0000000",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff4ccccc0000000",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3fe6666660000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 0,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3fe6666660000000",
@@ -1235,16 +4875,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff999999fffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3ff999999fffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3ff999999fffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "0000000000000000"
+    },
     "difficulty": 0,
     "input": {
       "array_index": 1,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 0,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -1254,16 +4950,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fe6666660000000",
+      "armor": "3ff0000000000000",
+      "build_delay": "3f9eb851e0000000",
+      "build_time": "3fe6666660000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3fe6666660000000",
+      "repair_delay": "3f947ae140000000",
+      "rof": "3ff0000000000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 7,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff0000000000000",
@@ -1273,16 +5025,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfdfffffffffffff",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff999999fffffff",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3ff4ccccbfffffff",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "3ff4ccccc0000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 16777217,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "3ff4ccccc0000000",
@@ -1292,16 +5100,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3fefffffffffffff",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3fefffffffffffff",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3fefffffffffffff",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "bfe0000000000000"
+    },
     "difficulty": 1,
     "input": {
       "array_index": 0,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 1,
+      "game_speed_bias": "3ff0000000000000",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "bfe0000000000000",
@@ -1311,16 +5175,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3ff99999a0000000",
+      "armor": "3fe99999a0000000",
+      "build_delay": "3fb99999a0000000",
+      "build_time": "3ff99999a0000000",
+      "cost": "3ff0000000000000",
+      "firepower": "3ff0000000000000",
+      "groundspeed": "3ff99999a0000000",
+      "repair_delay": "3fa99999a0000000",
+      "rof": "3ff3333340000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 1,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3ff99999a0000000",
       "mode": 0,
       "row_rof": [
         "3fe99999a0000000",
         "3ff0000000000000",
         "3ff3333340000000"
+      ],
+      "row_values": [
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff3333340000000",
+          "3fe99999a0000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3f947ae140000000",
+          "3f9eb851e0000000"
+        ],
+        [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fe99999a0000000",
+          "3ff3333340000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3fa99999a0000000",
+          "3fb99999a0000000"
+        ]
       ]
     },
     "rof_bias": "3ff3333340000000",
@@ -1330,16 +5250,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "bfd6666660000000",
+      "armor": "3ff19999a0000000",
+      "build_delay": "3fac28f5c0000000",
+      "build_time": "3ff1eb851e147ae0",
+      "cost": "3fecccccc0000000",
+      "firepower": "3fe6666660000000",
+      "groundspeed": "3fed1eb837ae1480",
+      "repair_delay": "3f8eb851e0000000",
+      "rof": "0000000000000000"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 7,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3ff0000000000000",
+        "armor": "3ff0000000000000",
+        "build_time": "3ff0000000000000",
+        "cost": "3ff0000000000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff0000000000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fe6666660000000",
       "mode": 0,
       "row_rof": [
         "3fe6666660000000",
         "3ff4ccccc0000000",
         "0000000000000000"
+      ],
+      "row_values": [
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3fe6666660000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "3ff4ccccc0000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ],
+        [
+          "3fe6666660000000",
+          "3ff4ccccc0000000",
+          "bfe0000000000000",
+          "3ff19999a0000000",
+          "0000000000000000",
+          "3fecccccc0000000",
+          "3ff99999a0000000",
+          "3f8eb851e0000000",
+          "3fac28f5c0000000"
+        ]
       ]
     },
     "rof_bias": "0000000000000000",
@@ -1349,16 +5325,72 @@
     ]
   },
   {
+    "biases": {
+      "airspeed": "3feffffffffffffe",
+      "armor": "3fefffffffffffff",
+      "build_delay": "3fefffffffffffff",
+      "build_time": "3feffffffffffffe",
+      "cost": "3fefffffffffffff",
+      "firepower": "3fefffffffffffff",
+      "groundspeed": "3feffffffffffffe",
+      "repair_delay": "3fefffffffffffff",
+      "rof": "3fefffffffffffff"
+    },
     "difficulty": 2,
     "input": {
       "array_index": 16777217,
       "country_rof": "3fecccccc0000000",
+      "country_scalars": {
+        "airspeed": "3fecccccc0000000",
+        "armor": "3ff4ccccc0000000",
+        "build_time": "3ff99999a0000000",
+        "cost": "3fe6666660000000",
+        "firepower": "3ff0000000000000",
+        "groundspeed": "3ff19999a0000000",
+        "rof": "3fecccccc0000000"
+      },
       "difficulty": 2,
+      "game_speed_bias": "3fefffffffffffff",
       "mode": 0,
       "row_rof": [
         "0000000000000000",
         "bfe0000000000000",
         "3fefffffffffffff"
+      ],
+      "row_values": [
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "0000000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "bfe0000000000000",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ],
+        [
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff",
+          "3fefffffffffffff"
+        ]
       ]
     },
     "rof_bias": "3fefffffffffffff",
