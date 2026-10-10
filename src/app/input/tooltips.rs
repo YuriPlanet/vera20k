@@ -49,9 +49,24 @@ pub(crate) const ID_POWER_TIP: u32 = 999;
 /// `"Power = %d\nDrain = %d"`.
 const TIP_LABEL_POWER_DRAIN: &str = "TXT_POWER_DRAIN";
 
-/// Box placement: cursor offset + screen clamp (the native placement math is
-/// undecoded — plan deferred item).
+/// Whether an already visible tip slides after the cursor. `false` is gamemd:
+/// the pop-up keeps the spot it appeared in and only a move off its region ends
+/// it, so a resting hand's 1-px jitter leaves it steady. Set `true` for the
+/// tracking behaviour (every move hides the tip and re-shows it at the new
+/// cursor position). The in-game coordinate toggle has its own native tracking
+/// branch (`CursorCheat` 724251 → 72429E) and ignores this.
+pub(crate) const TIP_FOLLOWS_CURSOR: bool = false;
+
+/// Box placement: cursor offset, flipped to the other side when the box would
+/// leave the region. Both halves are VERA-local: the native placement branches
+/// on a descriptor byte and its math is undecoded (plan deferred item), so this
+/// offset is a tuned constant, not a gamemd value.
 pub(crate) const TIP_CURSOR_OFFSET: [i32; 2] = [12, 16];
+/// Popup outline weight. gamemd draws the tip as a 1 px frame in the tip's own
+/// text colour around the black fill; captured from the retail client at the
+/// cameo tooltip (frame RGB equals the glyph RGB, one pixel wide on all four
+/// sides of an 86x38 box).
+pub(crate) const TIP_BORDER_PX: f32 = 1.0;
 /// Popup box size = measured text plus this much in **total** (not per side):
 /// gamemd adds 4 to the measured width and 3 to the measured height.
 pub(crate) const TIP_BOX_PAD: [f32; 2] = [4.0, 3.0];
@@ -89,11 +104,9 @@ pub(crate) fn on_mouse_move(state: &mut AppState) {
             .tooltips
             .on_mouse_move_immediate(x, y, now);
     } else {
-        state
-            .match_state
-            .match_presentation
-            .tooltips
-            .on_mouse_move(x, y, now);
+        let tips = &mut state.match_state.match_presentation.tooltips;
+        tips.set_follow_cursor(TIP_FOLLOWS_CURSOR);
+        tips.on_mouse_move(x, y, now);
     }
 }
 
@@ -297,17 +310,16 @@ fn sync_in_game_regions(state: &mut AppState) {
         .sync_regions(&regions);
 }
 
-/// In-game tooltip draw: (fill instances on the darken texture, text
-/// instances on the GAME.FNT atlas), drawn between the chat overlay and the
-/// software cursor (study O10).
+/// In-game tooltip draw: `(fill, outline, text)` instances, drawn between the
+/// chat overlay and the software cursor (study O10).
 pub(crate) fn build_tooltip_instances(
     state: &AppState,
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>, Vec<SpriteInstance>) {
     let Some(tip) = state.match_state.match_presentation.tooltips.active() else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     if state.frontend.screen != GameScreen::InGame {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     }
     // gamemd draws the tip in the current sidebar text colour, so the same
     // side-dependent colour the cameo labels use — not a fixed yellow.
@@ -316,10 +328,18 @@ pub(crate) fn build_tooltip_instances(
         &state.renderer.bit_font,
         &tip.text,
         [tip.x, tip.y],
-        [state.render_width() as f32, state.render_height() as f32],
+        // The whole render surface, not the tactical viewport: gamemd lets the
+        // pop-up run over the sidebar chrome and only moves it when the screen
+        // itself would clip it.
+        [
+            0.0,
+            0.0,
+            state.render_width() as f32,
+            state.render_height() as f32,
+        ],
         tint,
-        // Both tooltip lanes are drawn by `draw_pooled_ui`, which binds the UI
-        // camera. That uniform still carries the rounded *world* camera
+        // All three tooltip lanes are drawn by `draw_pooled_ui`, which binds
+        // the UI camera. That uniform still carries the rounded *world* camera
         // position and the shader subtracts it, so every screen-space UI lane
         // has to add it back — the sidebar text lane and the software cursor
         // both do. `tip.x/y` are cursor coordinates, already screen space, so
@@ -329,6 +349,8 @@ pub(crate) fn build_tooltip_instances(
             state.match_state.input.camera_x,
             state.match_state.input.camera_y,
         ],
+        // The darken strip is only the "a real FNT loaded" sentinel here (the
+        // 5x7 fallback builds none); the pop-up itself no longer draws with it.
         state.renderer.bit_font.darken_texture().is_some(),
     )
 }
@@ -336,26 +358,29 @@ pub(crate) fn build_tooltip_instances(
 /// Geometry half of [`build_tooltip_instances`], split out so the box metrics
 /// and the UI-camera compensation are reachable from a unit test.
 ///
-/// Returns `(fill quads, text quads)`. `camera_offset` must be the live world
-/// camera: the UI pipeline subtracts it in the shader, so passing zero here
-/// walks the popup off screen.
+/// `region` is the `(x, y, width, height)` box the popup must stay inside — the
+/// render surface, so a tip called from the sidebar may overlap the chrome and
+/// only moves when the screen itself would clip it.
+///
+/// Returns `(fill quads, outline quads, text quads)`. `camera_offset` must be
+/// the live world camera: the UI pipeline subtracts it in the shader, so
+/// passing zero here walks the popup off screen.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn tooltip_quads(
     font: &crate::render::bit_font::BitFont,
     text: &str,
     tip_xy: [i32; 2],
-    screen: [f32; 2],
+    region: [f32; 4],
     tint: [f32; 3],
     camera_offset: [f32; 2],
     with_fill: bool,
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    // Region the popup is sized and clamped against. gamemd measures with the
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    // Region the popup is sized and placed against. gamemd measures with the
     // selected region's width; which region record it picks is UNCHECKED, so
-    // the visible screen is used here.
-    let (layout, [box_w, box_h]) = size_tip_box(font, text, screen[0] as u32);
-    // Cursor offset, clamped on-screen (placement math deferred).
-    let bx = ((tip_xy[0] + TIP_CURSOR_OFFSET[0]) as f32).clamp(0.0, (screen[0] - box_w).max(0.0));
-    let by = ((tip_xy[1] + TIP_CURSOR_OFFSET[1]) as f32).clamp(0.0, (screen[1] - box_h).max(0.0));
+    // the render surface width is used here.
+    let (layout, [box_w, box_h]) = size_tip_box(font, text, region[2] as u32);
+    let bx = place_tip(tip_xy[0] as f32, TIP_CURSOR_OFFSET[0] as f32, box_w, region[0], region[2]);
+    let by = place_tip(tip_xy[1] as f32, TIP_CURSOR_OFFSET[1] as f32, box_h, region[1], region[3]);
 
     let mut fill = Vec::with_capacity(1);
     if with_fill {
@@ -365,11 +390,31 @@ pub(crate) fn tooltip_quads(
             uv_origin: [0.0, 0.0],
             uv_size: [1.0, 1.0],
             depth: 0.00021,
-            tint: [1.0, 1.0, 1.0],
+            // Solid black, not the sidebar darken strip: the retail tip fill
+            // hides whatever it lands on instead of dimming it, so the pop-up
+            // stays legible over bright cameo art and the tactical map.
+            tint: [0.0, 0.0, 0.0],
             alpha: 1.0,
             ..Default::default()
         });
     }
+    let outline = [
+        (bx, by, box_w, TIP_BORDER_PX),
+        (bx, by + box_h - TIP_BORDER_PX, box_w, TIP_BORDER_PX),
+        (bx, by, TIP_BORDER_PX, box_h),
+        (bx + box_w - TIP_BORDER_PX, by, TIP_BORDER_PX, box_h),
+    ]
+    .map(|(x, y, w, h)| SpriteInstance {
+        position: [x + camera_offset[0], y + camera_offset[1]],
+        size: [w, h],
+        uv_origin: [0.0, 0.0],
+        uv_size: [1.0, 1.0],
+        depth: 0.000205,
+        tint,
+        alpha: 1.0,
+        ..Default::default()
+    })
+    .to_vec();
     let line_advance = font.cell_height();
     let mut out = Vec::new();
     for (i, span) in layout.lines.iter().enumerate() {
@@ -385,7 +430,19 @@ pub(crate) fn tooltip_quads(
             camera_offset,
         ));
     }
-    (fill, out)
+    (fill, outline, out)
+}
+
+/// Put the box forward-down of the cursor, flipping it to back-up when it would
+/// overrun the region, and keep its leading edge inside the region otherwise.
+fn place_tip(cursor: f32, offset: f32, size: f32, start: f32, extent: f32) -> f32 {
+    let forward = cursor + offset;
+    let pos = if forward + size > start + extent {
+        cursor - offset - size
+    } else {
+        forward
+    };
+    pos.max(start)
 }
 
 /// Native popup sizing: measure the tip with the region width as the wrap
@@ -509,12 +566,12 @@ mod tests {
     #[test]
     fn tooltip_quads_compensate_for_the_ui_camera() {
         let font = make_test_font(&[(b'x' as u16, 6)], 4);
-        let screen = [800.0, 600.0];
+        let region = [0.0, 0.0, 800.0, 600.0];
         let at_origin = tooltip_quads(
             &font,
             "xxx",
             [100, 100],
-            screen,
+            region,
             [1.0, 1.0, 0.0],
             [0.0, 0.0],
             true,
@@ -523,24 +580,31 @@ mod tests {
             &font,
             "xxx",
             [100, 100],
-            screen,
+            region,
             [1.0, 1.0, 0.0],
             [640.0, 480.0],
             true,
         );
 
         assert_eq!(at_origin.0.len(), 1);
-        assert_eq!(at_origin.1.len(), 3);
+        assert_eq!(at_origin.1.len(), 4);
+        assert_eq!(at_origin.2.len(), 3);
         assert_eq!(panned.0.len(), at_origin.0.len());
         assert_eq!(panned.1.len(), at_origin.1.len());
+        assert_eq!(panned.2.len(), at_origin.2.len());
 
-        // Every quad — fill and text — shifts by exactly the camera offset the
-        // shader will subtract, leaving the popup at the cursor on screen.
+        // Every quad — fill, outline and text — shifts by exactly the camera
+        // offset the shader will subtract, leaving the popup at the cursor on
+        // screen.
         for (a, b) in at_origin.0.iter().zip(panned.0.iter()) {
             assert_eq!(b.position[0] - a.position[0], 640.0);
             assert_eq!(b.position[1] - a.position[1], 480.0);
         }
         for (a, b) in at_origin.1.iter().zip(panned.1.iter()) {
+            assert_eq!(b.position[0] - a.position[0], 640.0);
+            assert_eq!(b.position[1] - a.position[1], 480.0);
+        }
+        for (a, b) in at_origin.2.iter().zip(panned.2.iter()) {
             assert_eq!(b.position[0] - a.position[0], 640.0);
             assert_eq!(b.position[1] - a.position[1], 480.0);
         }
@@ -555,12 +619,100 @@ mod tests {
             ]
         );
         assert_eq!(
-            at_origin.1[0].position,
+            at_origin.2[0].position,
             [
                 100.0 + TIP_CURSOR_OFFSET[0] as f32 + 2.0,
                 100.0 + TIP_CURSOR_OFFSET[1] as f32 + 4.0
             ]
         );
+    }
+
+    /// gamemd keeps the box to the right of and below the cursor, overlapping
+    /// the sidebar chrome it describes, and only moves it when the screen itself
+    /// would clip it. Measuring against the tactical viewport instead — the
+    /// previous behaviour — flipped every sidebar tip to the cursor's left.
+    #[test]
+    fn sidebar_tip_only_flips_when_the_screen_would_clip_it() {
+        let font = make_test_font(&[(b'x' as u16, 6)], 4);
+        let screen = [0.0, 0.0, 1024.0, 768.0];
+        // "xxx" measures 21 px, so the box is 25 wide.
+        let (fill, _, text) = tooltip_quads(
+            &font,
+            "xxx",
+            [900, 300],
+            screen,
+            [1.0, 1.0, 0.0],
+            [0.0, 0.0],
+            true,
+        );
+        assert_eq!(
+            fill[0].position,
+            [912.0, 316.0],
+            "a cameo tip must not flip while the screen still has room"
+        );
+        assert_eq!(text[0].position, [914.0, 320.0]);
+
+        // One cursor pixel further right leaves no room for the box, so it
+        // lands back-up of the cursor instead: 1010 - 12 - 25.
+        let (flipped, _, _) = tooltip_quads(
+            &font,
+            "xxx",
+            [1010, 300],
+            screen,
+            [1.0, 1.0, 0.0],
+            [0.0, 0.0],
+            true,
+        );
+        assert_eq!(flipped[0].position, [973.0, 316.0]);
+        assert_eq!(flipped[0].size, [25.0, font.cell_height() + 3.0]);
+    }
+
+    #[test]
+    fn tip_outline_frames_the_box_in_the_text_colour() {
+        let font = make_test_font(&[(b'x' as u16, 6)], 4);
+        let tint = [0.4, 0.6, 1.0];
+        let (fill, border, _) = tooltip_quads(
+            &font,
+            "xxx",
+            [100, 100],
+            [0.0, 0.0, 800.0, 600.0],
+            tint,
+            [0.0, 0.0],
+            true,
+        );
+        let [bx, by] = fill[0].position;
+        let [bw, bh] = fill[0].size;
+        let expected = [
+            [bx, by, bw, 1.0],
+            [bx, by + bh - 1.0, bw, 1.0],
+            [bx, by, 1.0, bh],
+            [bx + bw - 1.0, by, 1.0, bh],
+        ];
+        assert_eq!(border.len(), expected.len());
+        for (quad, [x, y, w, h]) in border.iter().zip(expected) {
+            assert_eq!(quad.position, [x, y]);
+            assert_eq!(quad.size, [w, h]);
+            assert_eq!(quad.tint, tint, "outline follows the side colour");
+        }
+    }
+
+    /// The retail tip's interior is solid black — captured over bright cameo art
+    /// that reads through nowhere. The sidebar darken strip (0,0,0 at 175/255)
+    /// dimmed instead of hiding, so a white-tinted darken quad is a regression.
+    #[test]
+    fn tip_background_is_opaque_black_not_the_darken_strip() {
+        let font = make_test_font(&[(b'x' as u16, 6)], 4);
+        let (fill, _, _) = tooltip_quads(
+            &font,
+            "xxx",
+            [100, 100],
+            [0.0, 0.0, 800.0, 600.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 0.0],
+            true,
+        );
+        assert_eq!(fill[0].tint, [0.0, 0.0, 0.0]);
+        assert_eq!(fill[0].alpha, 1.0);
     }
 
     #[test]
