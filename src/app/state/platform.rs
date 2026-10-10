@@ -65,8 +65,13 @@ pub(crate) struct PlatformState {
     /// parks its main tick in a sleep-and-network-only loop while it is clear:
     /// the frame counter, input, AI, map logic and per-tick update all stop.
     /// Only the message pump keeps running. Starts true — a window that never
-    /// reports an activation edge must keep running.
+    /// reports an activation edge must keep running. Whether a clear flag
+    /// freezes the match is `focus_freeze_active`; input admission reads this
+    /// flag directly.
     pub(crate) window_active: bool,
+    /// `[gameplay] pause_on_focus_loss`: whether a deactivated window freezes
+    /// the match the way native does. Off, the match runs on in the background.
+    pub(crate) pause_on_focus_loss: bool,
     /// Whether the window has no visible surface — minimised, or occluded on
     /// the platforms that report occlusion.
     ///
@@ -99,11 +104,15 @@ impl PlatformState {
         shell_client_size: PhysicalSize<u32>,
         capture_client_size: Option<PhysicalSize<u32>>,
     ) -> Self {
+        let pause_on_focus_loss = game_config
+            .as_ref()
+            .is_some_and(|config| config.gameplay.pause_on_focus_loss);
         Self {
             window,
             live_modifiers: winit::keyboard::ModifiersState::empty(),
             held_modifier_keys: Default::default(),
             window_active: true,
+            pause_on_focus_loss,
             window_hidden: false,
             frame_pacer_epoch: Instant::now(),
             frame_pacer: LocalFramePacer::new(),
@@ -111,5 +120,14 @@ impl PlatformState {
             shell_client_size,
             capture_client_size,
         }
+    }
+
+    /// Is the match frozen because the window is not the foreground?
+    ///
+    /// True only while the window is deactivated and `pause_on_focus_loss` is
+    /// configured; the single gate for the simulation, the message clock and
+    /// the focus-edge audio stop.
+    pub(crate) fn focus_freeze_active(&self) -> bool {
+        self.pause_on_focus_loss && !self.window_active
     }
 }

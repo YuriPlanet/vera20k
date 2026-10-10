@@ -9,6 +9,7 @@ fn ordinary_pass(session_mode: SessionMode, pacer_timing_admits: bool) -> Runtim
     RuntimePassInputs {
         exact_step: false,
         window_active: true,
+        focus_frozen: false,
         startup_admitted: true,
         frame_stepping: false,
         paused: false,

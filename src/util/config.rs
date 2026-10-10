@@ -126,7 +126,7 @@ impl GraphicsConfig {
     }
 }
 
-/// Deterministic simulation and command scheduling settings.
+/// Simulation pacing and command scheduling settings.
 #[derive(Debug, Deserialize)]
 pub struct GameplayConfig {
     /// Fixed simulation tick rate (Hz).
@@ -135,6 +135,12 @@ pub struct GameplayConfig {
     /// Input delay in ticks for lockstep-style command execution.
     #[serde(default = "default_input_delay_ticks")]
     pub input_delay_ticks: u32,
+    /// Freeze a running match while the window is not the foreground, as
+    /// gamemd does when `WM_ACTIVATEAPP` clears. Off by default: the match
+    /// keeps simulating and playing audio behind other windows, and only
+    /// input stops. Local pacing policy; never read by the simulation.
+    #[serde(default)]
+    pub pause_on_focus_loss: bool,
 }
 
 impl Default for GameplayConfig {
@@ -142,6 +148,7 @@ impl Default for GameplayConfig {
         Self {
             sim_tick_hz: default_sim_tick_hz(),
             input_delay_ticks: default_input_delay_ticks(),
+            pause_on_focus_loss: false,
         }
     }
 }
@@ -338,6 +345,7 @@ ra2_dir = "C:/Westwood/RA2"
         assert!(!config.graphics.upscale);
         assert_eq!(config.gameplay.sim_tick_hz, 15);
         assert_eq!(config.gameplay.input_delay_ticks, 2);
+        assert!(!config.gameplay.pause_on_focus_loss);
         // No [profile] section -> no pre-filled player name.
         assert_eq!(config.profile.player_name(), None);
     }

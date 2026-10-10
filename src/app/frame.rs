@@ -27,70 +27,17 @@ const MAIN_MENU_SHELL_PRELUDE: &[ShellFramePreludeStep] = &[
 ];
 
 impl App {
-    /// Dispatch rendering based on current GameScreen state.
-    pub(super) fn render_frame(
+    /// Service the match runtime for one pass: the outcome voice wait, the
+    /// scenario exit cascade, the quit cascade, the audio pump and, when
+    /// admitted, one simulation advance. Shared by the render pass and the
+    /// hidden-window service loop in `about_to_wait`, so the world keeps the
+    /// same cadence whether or not a frame is drawn. Returns true when the
+    /// quit cascade finished and requested the event loop exit.
+    pub(super) fn service_match_runtime(
         state: &mut AppState,
         event_loop: &ActiveEventLoop,
-        mut shell_capture: Option<&mut crate::app::diagnostics::shell_capture::ShellCaptureSession>,
-        mut tactical_capture: Option<
-            &mut crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession,
-        >,
-    ) -> Result<()> {
-        anyhow::ensure!(
-            shell_capture.is_none() || tactical_capture.is_none(),
-            "shell and tactical capture cannot share a render"
-        );
-        if let Some(session) = tactical_capture.as_deref_mut() {
-            session.drive_before_render(state)?;
-        }
-        state.diag.frame_timer.sample(Instant::now());
-        let tooltip_ms = crate::app::input::tooltips::update(state);
-        // The message clock has to observe the focus freeze exactly as it
-        // observes a modal pause: a banner on screen when the player Alt+Tabs
-        // must survive the absence with its remaining lifetime intact, not
-        // expire against wall time while the world is stopped. Park the clock
-        // and skip the expiry pass; `messages::update` closes the span and
-        // resumes ownership on the first foreground frame.
-        let message_ms =
-            if state.frontend.screen == GameScreen::InGame && !state.platform.window_active {
-                let wall = crate::app::input::tooltips::now_ms(state);
-                state
-                    .match_state
-                    .match_presentation
-                    .message_clock
-                    .set_paused(true, wall);
-                None
-            } else {
-                crate::app::input::messages::update(state)
-            };
-        if state
-            .frontend
-            .startup_splash
-            .as_ref()
-            .is_some_and(|splash| splash.is_active(Instant::now()))
-        {
-            let splash = state
-                .frontend
-                .startup_splash
-                .as_ref()
-                .expect("active startup splash exists");
-            startup_splash::render_and_present(
-                &state.renderer.gpu,
-                &state.renderer.batch_renderer,
-                &state.renderer.shell_surface_presenter,
-                &state.renderer.depth_view,
-                splash,
-            )?;
-            state
-                .frontend
-                .startup_splash
-                .as_mut()
-                .expect("active startup splash exists")
-                .mark_presented(Instant::now());
-            return Ok(());
-        }
-        state.frontend.startup_splash = None;
-
+        simulation_allowed: bool,
+    ) -> bool {
         // HouseClass keeps simulating for SavourDelay, then blocks on the
         // current outcome Vox before it raises the victory/defeat exit global.
         // Drive that gate before deciding whether another sim frame is legal.
@@ -133,7 +80,7 @@ impl App {
             if tick.finished {
                 state.frontend.quit_cascade = None;
                 event_loop.exit();
-                return Ok(());
+                return true;
             }
         }
 
@@ -147,14 +94,16 @@ impl App {
         // simulation gate, and carries its own `> 33 ms` rate limit.
         crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
 
-        // Deactivated windows do not simulate. gamemd parks its main tick in a
-        // sleep-and-network-only loop while the app is not the foreground, so
-        // the world is exactly where the player left it on Alt+Tab return. The
-        // gate sits at the call site, not inside the runtime, so a focus edge
-        // never re-anchors the frame pacer on its own.
-        if tactical_capture.is_none()
+        // Deactivated windows do not simulate when `pause_on_focus_loss` is
+        // configured. gamemd parks its main tick in a sleep-and-network-only
+        // loop while the app is not the foreground, so the world is exactly
+        // where the player left it on Alt+Tab return; the default keeps the
+        // match running behind other windows instead. The gate sits at the
+        // call site, not inside the runtime, so a focus edge never re-anchors
+        // the frame pacer on its own.
+        if simulation_allowed
             && matches!(state.frontend.screen, GameScreen::InGame)
-            && state.platform.window_active
+            && !state.platform.focus_freeze_active()
             && state.match_state.scenario_exit.is_none()
             && state.match_state.scenario_outcome.is_none()
         {
@@ -171,6 +120,87 @@ impl App {
                 state, now_ms,
             );
             Self::drive_scenario_exit(state, now_ms);
+        }
+        false
+    }
+
+    /// Does a hidden window still have a running match to service? True while
+    /// in-game and the configured focus freeze is not holding the world; a
+    /// tactical capture never reaches the hidden service loop.
+    pub(super) fn match_runs_while_hidden(state: &AppState) -> bool {
+        state.frontend.screen == GameScreen::InGame && !state.platform.focus_freeze_active()
+    }
+
+    /// Dispatch rendering based on current GameScreen state.
+    pub(super) fn render_frame(
+        state: &mut AppState,
+        event_loop: &ActiveEventLoop,
+        mut shell_capture: Option<&mut crate::app::diagnostics::shell_capture::ShellCaptureSession>,
+        mut tactical_capture: Option<
+            &mut crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession,
+        >,
+    ) -> Result<()> {
+        anyhow::ensure!(
+            shell_capture.is_none() || tactical_capture.is_none(),
+            "shell and tactical capture cannot share a render"
+        );
+        if let Some(session) = tactical_capture.as_deref_mut() {
+            session.drive_before_render(state)?;
+        }
+        state.diag.frame_timer.sample(Instant::now());
+        let tooltip_ms = crate::app::input::tooltips::update(state);
+        // The message clock has to observe the focus freeze exactly as it
+        // observes a modal pause: a banner on screen when the player Alt+Tabs
+        // must survive the absence with its remaining lifetime intact, not
+        // expire against wall time while the world is stopped. Park the clock
+        // and skip the expiry pass; `messages::update` closes the span and
+        // resumes ownership on the first foreground frame. Without the
+        // configured freeze the world keeps running, so the clock does too.
+        let message_ms = if state.frontend.screen == GameScreen::InGame
+            && state.platform.focus_freeze_active()
+        {
+            let wall = crate::app::input::tooltips::now_ms(state);
+            state
+                .match_state
+                .match_presentation
+                .message_clock
+                .set_paused(true, wall);
+            None
+        } else {
+            crate::app::input::messages::update(state)
+        };
+        if state
+            .frontend
+            .startup_splash
+            .as_ref()
+            .is_some_and(|splash| splash.is_active(Instant::now()))
+        {
+            let splash = state
+                .frontend
+                .startup_splash
+                .as_ref()
+                .expect("active startup splash exists");
+            startup_splash::render_and_present(
+                &state.renderer.gpu,
+                &state.renderer.batch_renderer,
+                &state.renderer.shell_surface_presenter,
+                &state.renderer.depth_view,
+                splash,
+            )?;
+            state
+                .frontend
+                .startup_splash
+                .as_mut()
+                .expect("active startup splash exists")
+                .mark_presented(Instant::now());
+            return Ok(());
+        }
+        state.frontend.startup_splash = None;
+
+        // Outcome gates, exit cascades, the audio pump and the simulation
+        // advance, shared with the hidden-window service loop.
+        if Self::service_match_runtime(state, event_loop, tactical_capture.is_none()) {
+            return Ok(());
         }
 
         // Native queues/maintains [INTRO] before arming the 0xE2 first-paint

@@ -7,8 +7,11 @@
 use std::time::Instant;
 
 const FRAME_BUCKET_SHIFT: u32 = 4;
-#[cfg(test)]
 const FRAME_BUCKET_MS: u64 = 1 << FRAME_BUCKET_SHIFT;
+/// Wake interval of the hidden-window match service loop: half a pacer
+/// bucket, so an admitted frame is never late by more than half a bucket.
+pub(crate) const HIDDEN_SERVICE_WAKE: std::time::Duration =
+    std::time::Duration::from_millis(FRAME_BUCKET_MS / 2);
 const MIN_TIMED_GAME_SPEED: u8 = 1;
 const MAX_TIMED_GAME_SPEED: u8 = 6;
 const ELAPSED_CLOCK_STOPPED: u32 = u32::MAX;

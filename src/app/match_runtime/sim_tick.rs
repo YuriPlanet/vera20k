@@ -522,7 +522,11 @@ pub(crate) fn current_session_mode(_state: &AppState) -> SessionMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RuntimePassInputs {
     pub(crate) exact_step: bool,
+    /// The window owns the foreground; gates input polling.
     pub(crate) window_active: bool,
+    /// The deactivated window freezes the world
+    /// (`PlatformState::focus_freeze_active`).
+    pub(crate) focus_frozen: bool,
     pub(crate) startup_admitted: bool,
     pub(crate) frame_stepping: bool,
     pub(crate) paused: bool,
@@ -546,7 +550,7 @@ pub(crate) struct RuntimePassDecision {
 
 /// Decide one in-game runtime pass from raw predicates. This is the single
 /// freeze contract for simulation admission and therefore displayed-credit
-/// cadence: paused/menu redraws, inactive windows, missing startup receipts,
+/// cadence: paused/menu redraws, focus-frozen windows, missing startup receipts,
 /// and closed pacer windows all resolve to `run_sim: false`, and a committed
 /// network-modal frame keeps its non-`Ordinary` lane. `sidebar_credit_gate_matrix`
 /// pins the matrix through this function.
@@ -574,7 +578,7 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
         false,
     );
     let pacer_admitted = service.simulation && inputs.pacer_timing_admits;
-    let run_sim = inputs.window_active
+    let run_sim = !inputs.focus_frozen
         && inputs.startup_admitted
         && (inputs.frame_stepping || pacer_admitted);
     let tick_lane = if inputs.paused && inputs.session_mode.is_network() {
@@ -717,6 +721,7 @@ fn advance_in_game_runtime_mode(
     let decision = decide_runtime_pass(RuntimePassInputs {
         exact_step: matches!(mode, RuntimeAdvanceMode::ExactOneStep),
         window_active: state.platform.window_active,
+        focus_frozen: state.platform.focus_freeze_active(),
         startup_admitted,
         frame_stepping,
         paused: state.match_state.paused(),

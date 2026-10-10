@@ -1134,7 +1134,7 @@ impl ApplicationHandler for App {
                 }
                 event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
             }
-        } else if let Some(state) = &self.state {
+        } else if let Some(state) = self.state.as_mut() {
             if crate::app::frontend::shell_transition::main_menu_presented_is_poisoned(state) {
                 event_loop.set_control_flow(ControlFlow::Wait);
             } else if let Some(deadline) =
@@ -1147,10 +1147,25 @@ impl ApplicationHandler for App {
                     event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
                 }
             } else if state.platform.window_hidden {
-                // Nothing on screen to keep fresh. Park the redraw loop until a
-                // window event (including the un-occlude edge) wakes it, rather
-                // than rendering frames no one can see.
-                event_loop.set_control_flow(ControlFlow::Wait);
+                if Self::match_runs_while_hidden(state) {
+                    // Minimised or fully covered, but the match is not frozen:
+                    // keep the world and its audio moving without drawing
+                    // frames no one can see. macOS stops presenting to an
+                    // occluded layer, so this loop cannot ride on redraws;
+                    // it wakes at half the pacer bucket to hold the cadence.
+                    if Self::service_match_runtime(state, event_loop, true) {
+                        return;
+                    }
+                    event_loop.set_control_flow(ControlFlow::WaitUntil(
+                        Instant::now()
+                            + crate::app::match_runtime::frame_pacer::HIDDEN_SERVICE_WAKE,
+                    ));
+                } else {
+                    // Nothing on screen to keep fresh. Park the redraw loop
+                    // until a window event (including the un-occlude edge)
+                    // wakes it, rather than rendering frames no one can see.
+                    event_loop.set_control_flow(ControlFlow::Wait);
+                }
             } else {
                 if let Some(deadline) = shell_scroll_wake {
                     event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));

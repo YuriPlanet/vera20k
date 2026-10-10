@@ -81,17 +81,23 @@ impl App {
         // stops/restores the primary DirectSound output through 0x00407020 /
         // 0x00407040 while secondary playback cursors continue. Keep this on
         // the same edge as the main-loop gate rather than pausing each stream.
-        if let Some(player) = state.audio.music_player.as_mut() {
-            player.set_focus_output_active(active);
-        }
-        if let Some(player) = state.audio.sfx_player.as_mut() {
-            player.set_focus_output_active(active);
+        // Without the configured freeze the world keeps running, so its audio
+        // keeps playing and the pacer never has a deactivated span to forget.
+        if state.platform.pause_on_focus_loss {
+            if let Some(player) = state.audio.music_player.as_mut() {
+                player.set_focus_output_active(active);
+            }
+            if let Some(player) = state.audio.sfx_player.as_mut() {
+                player.set_focus_output_active(active);
+            }
+            if active {
+                // The deactivated span must not buy a catch-up frame: forget
+                // the pacing window so exactly one frame runs immediately,
+                // then normal pacing resumes.
+                state.platform.frame_pacer.reset_for_immediate_frame();
+            }
         }
         if active {
-            // The deactivated span must not buy a catch-up frame: forget the
-            // pacing window so exactly one frame runs immediately, then normal
-            // pacing resumes.
-            state.platform.frame_pacer.reset_for_immediate_frame();
             state.platform.window.request_redraw();
         }
         log::info!(

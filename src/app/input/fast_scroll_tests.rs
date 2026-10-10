@@ -196,6 +196,7 @@ fn a_drag_between_offline_polls_remains_a_cancel_click() {
         let decision = decide_runtime_pass(RuntimePassInputs {
             exact_step: false,
             window_active: true,
+            focus_frozen: false,
             startup_admitted: true,
             frame_stepping: false,
             paused: false,

@@ -534,6 +534,7 @@ mod tests {
         let admitting = RuntimePassInputs {
             exact_step: false,
             window_active: true,
+            focus_frozen: false,
             startup_admitted: true,
             frame_stepping: false,
             paused: false,
@@ -576,9 +577,10 @@ mod tests {
                 },
             ),
             (
-                "inactive redraw",
+                "focus-frozen redraw",
                 RuntimePassInputs {
                     window_active: false,
+                    focus_frozen: true,
                     ..admitting
                 },
             ),
@@ -597,6 +599,21 @@ mod tests {
                 "{case} must freeze displayed credits"
             );
         }
+
+        // Without `pause_on_focus_loss` a deactivated window keeps the world
+        // and displayed credits advancing; only input polling stops.
+        let background = RuntimePassInputs {
+            window_active: false,
+            ..admitting
+        };
+        let decision = decide_runtime_pass(background);
+        assert!(
+            decision.run_sim,
+            "an unfrozen background match keeps running"
+        );
+        assert!(decision.admitted_by_pacer);
+        assert!(!decision.scroll_input, "a deactivated window never scrolls");
+        assert!(credits_step(background, true));
 
         // A committed network-modal frame keeps the world advancing but must
         // not step displayed credits.

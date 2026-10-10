@@ -16,3 +16,4 @@ extra_animations = true   # cosmetic effects: water/ore sparkles (future: laser 
 [gameplay]
 sim_tick_hz = 15
 input_delay_ticks = 2
+pause_on_focus_loss = false   # true freezes a running match (sim and audio) while the window is in the background, like the original game
