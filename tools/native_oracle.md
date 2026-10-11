@@ -113,9 +113,17 @@ installation, acquisition, firing and rendering remain separate validation.
 ### Stationary attack actions and building control
 
 `python -m tools.spatial_oracle.bunker_attack_action --check` executes original
-DetermineAction, Unit/Foot/Techno action dispatch and the normal Display cursor
-switch. Its 16 ordinary/bunker controls and 24 armed-harvester/deployed-Unit
-controls supply weapon-selection, range and GetFireError verdicts. They establish
+DetermineAction, Unit/Foot/Techno action dispatch and Display4AAE90 through the
+normal cursor setter boundary. Its 16 ordinary/bunker controls and 24
+armed-harvester/deployed-Unit controls supply weapon-selection, range and
+GetFireError verdicts. The Display prefix resolves valid empty ground to
+CellClass* at4AAFF1, and the attack arm at4AB4EE consumes it: single-selection
+in-range ground or Object targets use row20. Four additional display controls
+set selected count2/3 and use row21 even in range; they supply the action actor,
+not a complete multi-object selection lifecycle. The former switch-only fixture
+incorrectly supplied NULL for empty ground and has been replaced. Empty House
+waypoint containers and palette storage support the unmodified prefix; renderer
+and cursor SHP output are outside this harness. These controls establish
 caller ordering and action/cursor values, not weapon arithmetic, reload cadence
 or the full input window. In particular, a bunkered Unit's out-of-range Action0
 is distinct from a fully deployed SimpleDeployer's Action2. Rust input tests in

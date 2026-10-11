@@ -7,16 +7,16 @@
     1,
     33621247
   ],
-  "scope": "Bounded original action dispatch; range verdicts and environmental leaves supplied.\n\nNo game code is patched. Full DetermineAction -> Unit/Foot/Techno WhatAction\nentries execute; the final normal Display switch uses the existing oracle.\nThis establishes action control flow, not weapon/range arithmetic or UI capture.\n",
+  "scope": "Bounded original action dispatch; range verdicts and environmental leaves supplied.\n\nNo game code is patched. Full DetermineAction -> Unit/Foot/Techno WhatAction\nentries execute; the complete ordinary Display4AAE90 path resolves a CellClass\ntarget before its normal action switch. Supplied palette/waypoint storage has\nno graphics backend; the original cursor setter is an observed sink.\nThis establishes action control flow, not weapon/range arithmetic or UI capture.\n",
   "assumptions": [
     "One selected live normal Unit with an original vtable; supplied complete type/house pointers, positive weapon, Selectable/LegalTarget=true, idle death frame=-1, no transport capability. Normal rows have no deploy capability; postprocess rows supply the retained UnitType Harvester/IsSimpleDeployer/DeployFire and Unit+6E0 deployed fields. This is a bounded actor action fixture, not original construction/load or retail data validation.",
     "Installed controls supply nonnull Techno+2E4. Native IsControllable reads it; install lifecycle and weapon range arithmetic belong to locomotor_force_track.bunker_install and walk_cell_range_bunker corpora.",
     "Map lookup supplies one clear revealed playable flat Cell. Ctrl state supplied via original keyboard-call seam; four normal enemy Object controls have Ctrl=false.",
     "Eight Harvester controls vary Harvester flag, clear/ore LandType0/5 and range verdict under Ctrl. Sixteen SimpleDeployer controls vary Cell/Object route, deployed byte, DeployFire and range. Both wrappers select weapon with NULL in the deployed tail; trace records this input. No native deployment lifecycle, INI or weapon-selection arithmetic is claimed.",
-    "The original display normal switch starts at4AB449 after its prologue; reads original selected Unit, optional Object target and cursor table bytes. Setter/frame/SHP output is excluded."
+    "Display4AAE90 executes from its real entry. The original prefix resolves valid no-Object coordinates through Map5657A0 to CellClass* at4AAFF1;4AB4EE consumes that target. Twelve empty House waypoint containers and palette storage support unchanged prefix instructions; the persistent attack-move toggle is0 and ordinary Ctrl does not select Ctrl+Shift. No Windows renderer, setter/frame/SHP output or full waypoint lifecycle is claimed."
   ],
   "substitutions": [
-    "SelectBest5353D0 returns the only selected actor.",
+    "SelectBest5353D0 returns the supplied actor. Ordinary action rows have one selected actor; four display_controls change only the later Display selected-count input to2/3 after action calculation, establishing4AB4F6 count admission without claiming multi-object SelectBest or selection lifecycle.",
     "Keyboard54F5C0 answers the supplied Ctrl state; map lookups5657A0/565730 return supplied Cell; height578080=0, shroud586360/5865E0=false, playable578460=true and terrain-object74CD60=null.",
     "SelectWeapon746CD0 supplies index0; damage6F3970 supplies60; CanFireAt6F77B0 and coordinate wrapper6F7970 supply the case range verdict. This establishes caller control flow, not selection or range arithmetic.",
     "GetFireError virtual3C0 supplies OK; Display CanFireAtTarget6F7780 supplies the same range verdict. No reload/ROF/legality timing claim.",
@@ -31,12 +31,14 @@
     "foot_object": "0x004DDED0",
     "techno_object": "0x006FFEC0",
     "is_controllable": "0x00700C40",
+    "display_entry": "0x004AAE90",
+    "display_cell_target": "0x004AAFF1",
     "display_normal_dispatch": "0x004AB449",
     "cursor_table": "0x0082D028"
   },
   "source_normalized_lf_sha256": {
-    "harness": "c45911d06373d6a8bd4df0bf28791f052a849c7e8ad1ec5d8397f8ee526008dd",
+    "harness": "1d1b78c27d3da2ac99d5cffe3432c1a146e90ad13216c81af9f29adabeb27c87",
     "native_oracle": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb"
   },
-  "payload_sha256": "96de24c9a796b74abb1e808876fb3641c6b129f1690b1b517937c500670547ac"
+  "payload_sha256": "7cba13cee9085ab6554affdc1e374189f8aa3d58a0a3a91fcfbef2c3998dabda"
 }

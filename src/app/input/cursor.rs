@@ -205,7 +205,14 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
                 combat::TargetKind::Entity(hover.stable_id)
             });
         if let Some(feedback) = best_id.and_then(|id| {
-            force_fire_feedback(sim, id, &target, state.rules(), state.overlay_registry())
+            force_fire_feedback(
+                sim,
+                id,
+                &target,
+                selected.len(),
+                state.rules(),
+                state.overlay_registry(),
+            )
         }) {
             return feedback;
         }
@@ -628,14 +635,13 @@ pub(super) fn capability_cursor_for_hover(
                         AttackAction::Attack => {}
                     }
                 }
-                let in_range = super::context_order::resolved_unit_in_range(
+                let in_range = attack_cursor_is_in_range(
                     sim,
                     best_id,
                     &combat::TargetKind::Entity(hover.stable_id),
+                    selected.len(),
                     rules,
-                    sim.resolved_terrain.as_ref(),
                     overlay_registry,
-                    Some(&combat::TargetKind::Entity(hover.stable_id)),
                 );
                 let kind = if in_range {
                     if hover.kind == HoverTargetKind::FriendlyUnit {
@@ -716,14 +722,13 @@ pub(super) fn capability_cursor_for_hover(
                 }
             }
             let in_range = best_id.is_some_and(|id| {
-                super::context_order::resolved_unit_in_range(
+                attack_cursor_is_in_range(
                     sim,
                     id,
                     &combat::TargetKind::Entity(hover.stable_id),
+                    selected.len(),
                     rules,
-                    sim.resolved_terrain.as_ref(),
                     overlay_registry,
-                    Some(&combat::TargetKind::Entity(hover.stable_id)),
                 )
             });
             let kind = if in_range {
@@ -848,16 +853,43 @@ fn forced_bomb_feedback(
     })
 }
 
+/// Ordinary Display attack arm (`gamemd` 0x004AB4EE..0x004AB54B): row20
+/// requires one selected Techno and its CanFireAtTarget verdict; otherwise row21.
+/// Display4AAE90 resolves valid empty ground to CellClass* at4AAFF1, so both
+/// Cell and Object targets participate. Native evidence:
+/// tools/spatial_oracle/bunker_attack_action.json (full Display entry plus
+/// selected-count controls; range verdict supplied, not range arithmetic).
+fn attack_cursor_is_in_range(
+    sim: &crate::sim::world::Simulation,
+    actor_id: u64,
+    target: &combat::TargetKind,
+    selected_count: usize,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+) -> bool {
+    selected_count == 1
+        && super::context_order::resolved_unit_in_range(
+            sim,
+            actor_id,
+            target,
+            rules,
+            sim.resolved_terrain.as_ref(),
+            overlay_registry,
+            Some(target),
+        )
+}
+
 /// Ctrl action feedback. Outer None retains an unarmed receiver's fallback;
 /// Some(None) is native Action0 and preserves the default arrow.
 fn force_fire_feedback(
     sim: &crate::sim::world::Simulation,
     actor_id: u64,
     target: &combat::TargetKind,
+    selected_count: usize,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<Option<CursorFeedbackKind>> {
-    use super::context_order::{AttackAction, force_fire_action, resolved_unit_in_range};
+    use super::context_order::{AttackAction, force_fire_action};
     Some(
         match force_fire_action(sim, rules?, actor_id, target, overlay_registry)? {
             AttackAction::None => None,
@@ -865,21 +897,16 @@ fn force_fire_feedback(
             AttackAction::Rally => Some(CursorFeedbackKind::Move),
             AttackAction::Select => Some(CursorFeedbackKind::FriendlyUnit),
             AttackAction::Attack => Some(
-                if matches!(target, combat::TargetKind::Entity(_))
-                    && resolved_unit_in_range(
-                        sim,
-                        actor_id,
-                        target,
-                        rules,
-                        sim.resolved_terrain.as_ref(),
-                        overlay_registry,
-                        Some(target),
-                    )
-                {
+                if attack_cursor_is_in_range(
+                    sim,
+                    actor_id,
+                    target,
+                    selected_count,
+                    rules,
+                    overlay_registry,
+                ) {
                     CursorFeedbackKind::EnemyUnit
                 } else {
-                    // Original Display4AB4EE: an empty Cell or an out-of-range
-                    // Object uses attack cursor row21; in-range Object uses row20.
                     CursorFeedbackKind::EnemyOutOfRange
                 },
             ),
@@ -1597,7 +1624,7 @@ mod tests {
         ));
         sim.entities_mut().get_mut(tank).unwrap().bunker_link = BunkerLink::Installed(99);
         assert_eq!(
-            force_fire_feedback(&sim, tank, &TargetKind::Cell(20, 2), Some(&rules), None),
+            force_fire_feedback(&sim, tank, &TargetKind::Cell(20, 2), 1, Some(&rules), None),
             Some(None),
             "native Action0 must preserve the default arrow, not attack or NoMove"
         );
@@ -1702,7 +1729,12 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             "tools/spatial_oracle/bunker_attack_action.json",
         ))
         .unwrap();
-        for row in corpus["rows"].as_array().unwrap() {
+        for row in corpus["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(corpus["display_controls"].as_array().unwrap())
+        {
             let case = &row["input"];
             let (mut sim, rules, actor) = stationary_attack_fixture();
             if case["installed"].as_bool().unwrap() {
@@ -1739,8 +1771,12 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             };
             assert_eq!(action, expected, "native input {case}");
             if case["ctrl"] != false {
+                let selected_count =
+                    usize::try_from(row["cursor"]["output"]["selected_count"].as_u64().unwrap())
+                        .unwrap();
                 let feedback =
-                    force_fire_feedback(&sim, actor, &target, Some(&rules), None).unwrap();
+                    force_fire_feedback(&sim, actor, &target, selected_count, Some(&rules), None)
+                        .unwrap();
                 let cursor = feedback
                     .and_then(super::cursor_id_for_feedback)
                     .unwrap_or(CursorId::Default);
@@ -1789,6 +1825,16 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             assert_eq!(
                 force_fire_action(&sim, &rules, actor, &TargetKind::Cell(20, y), None),
                 Some(AttackAction::None)
+            );
+            assert_eq!(
+                force_fire_feedback(&sim, actor, &TargetKind::Cell(4, y), 1, Some(&rules), None),
+                Some(Some(CursorFeedbackKind::EnemyUnit)),
+                "stationary actor's in-range ground uses the red attack cursor"
+            );
+            assert_eq!(
+                force_fire_feedback(&sim, actor, &TargetKind::Cell(20, y), 1, Some(&rules), None),
+                Some(None),
+                "stationary actor's out-of-range action retains the default arrow"
             );
         }
         assert_eq!(
@@ -1873,7 +1919,8 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 Some(expected),
                 "{case}"
             );
-            let feedback = force_fire_feedback(&sim, actor, &target, Some(&rules), None).unwrap();
+            let feedback =
+                force_fire_feedback(&sim, actor, &target, 1, Some(&rules), None).unwrap();
             let cursor = feedback
                 .and_then(super::cursor_id_for_feedback)
                 .unwrap_or(CursorId::Default);
@@ -2099,7 +2146,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         for target in [TargetKind::Cell(20, 2), TargetKind::Entity(target)] {
             for _ in 0..3 {
                 let _ = force_fire_action(&sim, &rules, actor, &target, None);
-                let _ = force_fire_feedback(&sim, actor, &target, Some(&rules), None);
+                let _ = force_fire_feedback(&sim, actor, &target, 1, Some(&rules), None);
                 assert_eq!(dummy.snapshot(), original);
                 assert_eq!(sim.state_hash(), hash);
             }

@@ -1,4 +1,498 @@
 {
+  "display_controls": [
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 2
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "display_selected_count": 2,
+        "in_range": true,
+        "installed": true,
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtCell",
+          "pc": "0x6f7970",
+          "target": 269479776,
+          "verdict": true,
+          "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 3
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "display_selected_count": 3,
+        "in_range": true,
+        "installed": true,
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtCell",
+          "pc": "0x6f7970",
+          "target": 269479776,
+          "verdict": true,
+          "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 2
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "display_selected_count": 2,
+        "in_range": true,
+        "installed": true,
+        "relation": "enemy",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtObject",
+          "pc": "0x6f77b0",
+          "target": 536895488,
+          "verdict": true,
+          "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 3
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "display_selected_count": 3,
+        "in_range": true,
+        "installed": true,
+        "relation": "enemy",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtObject",
+          "pc": "0x6f77b0",
+          "target": 536895488,
+          "verdict": true,
+          "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        }
+      ]
+    }
+  ],
   "postprocess_rows": [
     {
       "action": 5,
@@ -15,7 +509,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -80,6 +575,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
         }
       ]
     },
@@ -87,9 +634,9 @@
       "action": 5,
       "cursor": {
         "output": {
-          "cursor_row": 21,
+          "cursor_row": 20,
           "descriptor_dwords": [
-            58,
+            53,
             5,
             4,
             63,
@@ -97,8 +644,9 @@
             12345,
             12345
           ],
-          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -163,6 +711,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
         }
       ]
     },
@@ -181,7 +781,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -246,6 +847,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
         }
       ]
     },
@@ -253,9 +906,9 @@
       "action": 5,
       "cursor": {
         "output": {
-          "cursor_row": 21,
+          "cursor_row": 20,
           "descriptor_dwords": [
-            58,
+            53,
             5,
             4,
             63,
@@ -263,8 +916,9 @@
             12345,
             12345
           ],
-          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -329,6 +983,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
         }
       ]
     },
@@ -347,7 +1053,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -412,6 +1119,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
         }
       ]
     },
@@ -419,9 +1178,9 @@
       "action": 5,
       "cursor": {
         "output": {
-          "cursor_row": 21,
+          "cursor_row": 20,
           "descriptor_dwords": [
-            58,
+            53,
             5,
             4,
             63,
@@ -429,8 +1188,9 @@
             12345,
             12345
           ],
-          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -495,6 +1255,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
         }
       ]
     },
@@ -513,7 +1325,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -578,6 +1391,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
         }
       ]
     },
@@ -585,9 +1450,9 @@
       "action": 5,
       "cursor": {
         "output": {
-          "cursor_row": 21,
+          "cursor_row": 20,
           "descriptor_dwords": [
-            58,
+            53,
             5,
             4,
             63,
@@ -595,8 +1460,9 @@
             12345,
             12345
           ],
-          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -661,6 +1527,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
         }
       ]
     },
@@ -679,7 +1597,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -745,6 +1664,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
         }
       ]
     },
@@ -752,9 +1723,9 @@
       "action": 5,
       "cursor": {
         "output": {
-          "cursor_row": 21,
+          "cursor_row": 20,
           "descriptor_dwords": [
-            58,
+            53,
             5,
             4,
             63,
@@ -762,8 +1733,9 @@
             12345,
             12345
           ],
-          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -829,6 +1801,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
         }
       ]
     },
@@ -847,7 +1871,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -913,6 +1938,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
         }
       ]
     },
@@ -920,9 +1997,9 @@
       "action": 5,
       "cursor": {
         "output": {
-          "cursor_row": 21,
+          "cursor_row": 20,
           "descriptor_dwords": [
-            58,
+            53,
             5,
             4,
             63,
@@ -930,8 +2007,9 @@
             12345,
             12345
           ],
-          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -997,6 +2075,58 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
         }
       ]
     },
@@ -1015,7 +2145,8 @@
             12345
           ],
           "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -1081,6 +2212,42 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
         }
       ]
     },
@@ -1099,7 +2266,8 @@
             12345
           ],
           "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -1165,6 +2333,42 @@
           "kind": "original",
           "name": "CellSimpleDeployerTail",
           "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
         }
       ]
     },
@@ -1183,7 +2387,8 @@
             12345
           ],
           "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -1268,6 +2473,42 @@
           "target": 269479876,
           "verdict": false,
           "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
         }
       ]
     },
@@ -1275,9 +2516,9 @@
       "action": 5,
       "cursor": {
         "output": {
-          "cursor_row": 21,
+          "cursor_row": 20,
           "descriptor_dwords": [
-            58,
+            53,
             5,
             4,
             63,
@@ -1285,8 +2526,9 @@
             12345,
             12345
           ],
-          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -1371,6 +2613,58 @@
           "target": 269479876,
           "verdict": true,
           "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
         }
       ]
     },
@@ -1389,7 +2683,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -1463,6 +2758,32 @@
           "pc": "0x74037a"
         },
         {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
           "kind": "seam",
           "name": "DisplayCanFireAtTarget",
           "verdict": false
@@ -1484,7 +2805,8 @@
             12345
           ],
           "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -1558,6 +2880,32 @@
           "pc": "0x74037a"
         },
         {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
           "kind": "seam",
           "name": "DisplayCanFireAtTarget",
           "verdict": true
@@ -1579,7 +2927,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -1653,6 +3002,32 @@
           "pc": "0x74037a"
         },
         {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
           "kind": "seam",
           "name": "DisplayCanFireAtTarget",
           "verdict": false
@@ -1674,7 +3049,8 @@
             12345
           ],
           "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -1748,6 +3124,32 @@
           "pc": "0x74037a"
         },
         {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
           "kind": "seam",
           "name": "DisplayCanFireAtTarget",
           "verdict": true
@@ -1769,7 +3171,8 @@
             12345
           ],
           "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -1841,6 +3244,21 @@
           "kind": "original",
           "name": "ObjectSimpleDeployerTail",
           "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
         }
       ]
     },
@@ -1859,7 +3277,8 @@
             12345
           ],
           "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -1931,6 +3350,21 @@
           "kind": "original",
           "name": "ObjectSimpleDeployerTail",
           "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
         }
       ]
     },
@@ -1949,7 +3383,8 @@
             12345
           ],
           "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2040,6 +3475,21 @@
           "target": 536895488,
           "verdict": false,
           "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
         }
       ]
     },
@@ -2058,7 +3508,8 @@
             12345
           ],
           "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2149,6 +3600,32 @@
           "target": 536895488,
           "verdict": true,
           "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
         },
         {
           "kind": "seam",
@@ -2174,7 +3651,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2229,6 +3707,58 @@
           "kind": "original",
           "name": "CellAttackReturn",
           "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
         }
       ]
     },
@@ -2236,9 +3766,9 @@
       "action": 5,
       "cursor": {
         "output": {
-          "cursor_row": 21,
+          "cursor_row": 20,
           "descriptor_dwords": [
-            58,
+            53,
             5,
             4,
             63,
@@ -2246,8 +3776,9 @@
             12345,
             12345
           ],
-          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2302,6 +3833,58 @@
           "kind": "original",
           "name": "CellAttackReturn",
           "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
         }
       ]
     },
@@ -2320,7 +3903,8 @@
             0
           ],
           "descriptor_hex": "00000000010000000000000001000000010000000000000000000000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2398,6 +3982,42 @@
           "kind": "original",
           "name": "NoneReturn",
           "pc": "0x700c26"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
         }
       ]
     },
@@ -2405,9 +4025,9 @@
       "action": 5,
       "cursor": {
         "output": {
-          "cursor_row": 21,
+          "cursor_row": 20,
           "descriptor_dwords": [
-            58,
+            53,
             5,
             4,
             63,
@@ -2415,8 +4035,9 @@
             12345,
             12345
           ],
-          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2479,6 +4100,58 @@
           "kind": "original",
           "name": "CellAttackReturn",
           "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
         }
       ]
     },
@@ -2497,7 +4170,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2559,6 +4233,32 @@
           "pc": "0x70055d"
         },
         {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
           "kind": "seam",
           "name": "DisplayCanFireAtTarget",
           "verdict": false
@@ -2580,7 +4280,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2642,6 +4343,32 @@
           "pc": "0x70055d"
         },
         {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
           "kind": "seam",
           "name": "DisplayCanFireAtTarget",
           "verdict": false
@@ -2663,7 +4390,8 @@
             12345
           ],
           "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2723,6 +4451,32 @@
           "kind": "original",
           "name": "ObjectAttackReturn",
           "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
         },
         {
           "kind": "seam",
@@ -2746,7 +4500,8 @@
             12345
           ],
           "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2806,6 +4561,32 @@
           "kind": "original",
           "name": "ObjectAttackReturn",
           "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
         },
         {
           "kind": "seam",
@@ -2829,7 +4610,8 @@
             0
           ],
           "descriptor_hex": "00000000010000000000000001000000010000000000000000000000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2902,6 +4684,21 @@
           "kind": "original",
           "name": "BunkerGate",
           "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
         }
       ]
     },
@@ -2920,7 +4717,8 @@
             12345
           ],
           "descriptor_hex": "120000000d00000004000000ffffffffffffffff3930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -2988,6 +4786,21 @@
           "kind": "original",
           "name": "SelectReturn",
           "pc": "0x7005da"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
         }
       ]
     },
@@ -3006,7 +4819,8 @@
             12345
           ],
           "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -3076,6 +4890,32 @@
           "pc": "0x70055d"
         },
         {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
           "kind": "seam",
           "name": "DisplayCanFireAtTarget",
           "verdict": true
@@ -3097,7 +4937,8 @@
             12345
           ],
           "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -3167,6 +5008,32 @@
           "pc": "0x70055d"
         },
         {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
           "kind": "seam",
           "name": "DisplayCanFireAtTarget",
           "verdict": true
@@ -3188,7 +5055,8 @@
             12345
           ],
           "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -3251,6 +5119,32 @@
           "pc": "0x70055d"
         },
         {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
           "kind": "seam",
           "name": "DisplayCanFireAtTarget",
           "verdict": false
@@ -3272,7 +5166,8 @@
             12345
           ],
           "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -3335,6 +5230,32 @@
           "pc": "0x70055d"
         },
         {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
           "kind": "seam",
           "name": "DisplayCanFireAtTarget",
           "verdict": true
@@ -3356,7 +5277,8 @@
             0
           ],
           "descriptor_hex": "00000000010000000000000001000000010000000000000000000000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -3430,6 +5352,21 @@
           "kind": "original",
           "name": "BunkerGate",
           "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
         }
       ]
     },
@@ -3448,7 +5385,8 @@
             12345
           ],
           "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
-          "entry": "004AB449"
+          "entry": "004AAE90",
+          "selected_count": 1
         }
       },
       "input": {
@@ -3517,6 +5455,32 @@
           "kind": "original",
           "name": "ObjectAttackReturn",
           "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
         },
         {
           "kind": "seam",

@@ -1,7 +1,9 @@
 """Bounded original action dispatch; range verdicts and environmental leaves supplied.
 
 No game code is patched. Full DetermineAction -> Unit/Foot/Techno WhatAction
-entries execute; the final normal Display switch uses the existing oracle.
+entries execute; the complete ordinary Display4AAE90 path resolves a CellClass
+target before its normal action switch. Supplied palette/waypoint storage has
+no graphics backend; the original cursor setter is an observed sink.
 This establishes action control flow, not weapon/range arithmetic or UI capture.
 """
 import hashlib
@@ -55,10 +57,15 @@ def run(case):
     watch={0x692610:'DetermineAction',0x73FD50:'UnitObject',0x4DDED0:'FootObject',0x6FFEC0:'TechnoObject',0x7404B0:'UnitCell',0x4DDDE0:'FootCell',0x700600:'TechnoCell',0x700C40:'IsControllable',0x700C66:'BunkerGate',0x700C26:'NoneReturn',0x70055D:'ObjectAttackReturn',0x700AA8:'CellAttackReturn',0x7005DA:'SelectReturn'}
     if case.get('name'):
         watch.update({0x740623:'HarvesterMoveOnly',0x74037A:'ObjectSimpleDeployerTail',0x74072B:'CellSimpleDeployerTail',0x7403C7:'ObjectDeploySelectWeaponNULL',0x740793:'CellDeploySelectWeaponNULL'})
+    watch.update({0x4AAE90:'DisplayEntry',0x4AAFC9:'DisplayNoObject',0x4AAFEC:'DisplayResolveCell',0x4AAFF1:'DisplayStoreCell',0x70F0B0:'DisplayModifierAction',0x4AB449:'DisplayNormalSwitch',0x4AB4EE:'DisplayAttackArm'})
     def hook(_u,pc,size,data):
         trail.append(hex(pc));trail[:]=trail[-30:]
         if pc in watch:trace.append({'kind':'original','pc':hex(pc),'name':watch[pc]})
         sp=u.reg_read(UC_X86_REG_ESP)
+        if pc==0x4AAFF1:
+            trace.append({'kind':'display_target_producer','pc':hex(pc),'target':u.reg_read(UC_X86_REG_EAX),'is_cell':u.reg_read(UC_X86_REG_EAX)==CELL})
+        if pc==0x4AB4EE:
+            trace.append({'kind':'display_target_consumer','pc':hex(pc),'target':read(sp+0x18),'is_cell':read(sp+0x18)==CELL})
         if pc==0x5353D0: # Single-selection object has no competitor.
             trace.append({'kind':'seam','name':'SelectBest-singleton','result':ACTOR});ret(ACTOR,0)
         elif pc==0x54F5C0:ret(int(read(sp+4)==17 and case.get('ctrl',True)),1)
@@ -86,18 +93,30 @@ def run(case):
     except Exception as e:raise RuntimeError(f'{case}: {e}; trail={trail}; trace={trace}') from e
     action=u.reg_read(UC_X86_REG_EAX)
     assert before==hashlib.sha256(bytes(u.mem_read(0x401000,0x3E0000))).hexdigest()
-    # Same original normal Display switch frame used by display_cursor; its
-    # Action5 arm additionally reads our selected actor/optional object target.
+    # Execute the actual Display prefix: a missing hovered Object is NOT a
+    # missing Abstract target. Valid Cell coordinates are promoted to CellClass*
+    # at4AAFEC..4AAFF1 before4AB4EE asks the selected actor's vt+3AC.
     receiver,vt,sink=SCRATCH+0x28000,SCRATCH+0x29000,RET_MAGIC+0x100
+    surface,pixels,waypoints=SCRATCH+0x2A000,SCRATCH+0x2A200,SCRATCH+0x2B000
     u.mem_write(receiver,dwords(vt));u.mem_write(vt+0x48,dwords(sink))
-    u.mem_write(SP+0x34,dwords(0));u.mem_write(SP+0x18,dwords(TARGET if case['route']=='object' else 0))
-    u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_ESI,receiver);u.reg_write(UC_X86_REG_EAX,action)
-    run_checked(u,0x4AB449,sink,count=1000,required_addresses=[0x4AB449])
+    # Display's unchanged palette/waypoint prefix has harmless storage, rather
+    # than skipping the Cell target producer or supplying its stack output.
+    u.mem_write(0x87F6C8,dwords(surface));u.mem_write(surface+0x174,dwords(pixels))
+    for index in range(12):
+        u.mem_write(HOUSE+0x210+index*4,dwords(waypoints+index*0x40))
+    u.mem_write(0xB0FE58,b'\x00')  # persistent attack-move toggle absent
+    u.mem_write(0xA8ECC8,dwords(case.get('display_selected_count',1)))
+    assert bytes(u.mem_read(COORD,4)) != bytes(u.mem_read(0x8A03F8,4))
+    u.mem_write(SP+0x20,dwords(RET_MAGIC,COORD,0,TARGET if case['route']=='object' else 0,action,0))
+    u.reg_write(UC_X86_REG_ESP,SP+0x20);u.reg_write(UC_X86_REG_ECX,receiver)
+    required=[0x4AAE90,0x70F0B0,0x4AB449]
+    if case['route']=='cell': required += [0x4AAFC9,0x4AAFEC,0x4AAFF1]
+    run_checked(u,0x4AAE90,sink,count=10000,required_addresses=required)
     sp=u.reg_read(UC_X86_REG_ESP);row,arg=struct.unpack('<II',u.mem_read(sp+4,8))
     assert u.reg_read(UC_X86_REG_ECX)==receiver and sp==SP-12 and arg==0
     assert before==hashlib.sha256(bytes(u.mem_read(0x401000,0x3E0000))).hexdigest()
     descriptor=bytes(u.mem_read(0x82D028+row*28,28))
-    cursor={'output':{'entry':'004AB449','cursor_row':row,'descriptor_hex':descriptor.hex(),'descriptor_dwords':struct.unpack('<7i',descriptor)}}
+    cursor={'output':{'entry':'004AAE90','selected_count':case.get('display_selected_count',1),'cursor_row':row,'descriptor_hex':descriptor.hex(),'descriptor_dwords':struct.unpack('<7i',descriptor)}}
     return {'input':case,'action':action,'trace':trace,'cursor':cursor,'text_sha256':before}
 
 def generate():
@@ -111,21 +130,25 @@ def generate():
         relation='enemy' if route=='object' else 'none',ctrl=True,
         simple_deployer=True,deployed=deployed,deploy_fire=fire,name='simple_deployer')
         for route,deployed,fire,near in product(('cell','object'),(False,True),(False,True),(False,True))]
+    display_cases=[dict(route=route,installed=True,in_range=True,
+        relation='enemy' if route=='object' else 'none',ctrl=True,display_selected_count=count)
+        for route,count in product(('cell','object'),(2,3))]
     return {'schema':1,'rows':[run(c) for c in cases],
-            'postprocess_rows':[run(c) for c in postprocess_cases]}
+            'postprocess_rows':[run(c) for c in postprocess_cases],
+            'display_controls':[run(c) for c in display_cases]}
 
 def metadata():
     return provenance(scope=__doc__,
         entry_points={'determine_action':0x692610,'unit_cell':0x7404B0,'foot_cell':0x4DDDE0,
             'techno_cell':0x700600,'unit_object':0x73FD50,'foot_object':0x4DDED0,
             'techno_object':0x6FFEC0,'is_controllable':0x700C40,
-            'display_normal_dispatch':0x4AB449,'cursor_table':0x82D028},
+            'display_entry':0x4AAE90,'display_cell_target':0x4AAFF1,'display_normal_dispatch':0x4AB449,'cursor_table':0x82D028},
         assumptions=['One selected live normal Unit with an original vtable; supplied complete type/house pointers, positive weapon, Selectable/LegalTarget=true, idle death frame=-1, no transport capability. Normal rows have no deploy capability; postprocess rows supply the retained UnitType Harvester/IsSimpleDeployer/DeployFire and Unit+6E0 deployed fields. This is a bounded actor action fixture, not original construction/load or retail data validation.',
             'Installed controls supply nonnull Techno+2E4. Native IsControllable reads it; install lifecycle and weapon range arithmetic belong to locomotor_force_track.bunker_install and walk_cell_range_bunker corpora.',
             'Map lookup supplies one clear revealed playable flat Cell. Ctrl state supplied via original keyboard-call seam; four normal enemy Object controls have Ctrl=false.',
             'Eight Harvester controls vary Harvester flag, clear/ore LandType0/5 and range verdict under Ctrl. Sixteen SimpleDeployer controls vary Cell/Object route, deployed byte, DeployFire and range. Both wrappers select weapon with NULL in the deployed tail; trace records this input. No native deployment lifecycle, INI or weapon-selection arithmetic is claimed.',
-            'The original display normal switch starts at4AB449 after its prologue; reads original selected Unit, optional Object target and cursor table bytes. Setter/frame/SHP output is excluded.'],
-        substitutions=['SelectBest5353D0 returns the only selected actor.',
+            'Display4AAE90 executes from its real entry. The original prefix resolves valid no-Object coordinates through Map5657A0 to CellClass* at4AAFF1;4AB4EE consumes that target. Twelve empty House waypoint containers and palette storage support unchanged prefix instructions; the persistent attack-move toggle is0 and ordinary Ctrl does not select Ctrl+Shift. No Windows renderer, setter/frame/SHP output or full waypoint lifecycle is claimed.'],
+        substitutions=['SelectBest5353D0 returns the supplied actor. Ordinary action rows have one selected actor; four display_controls change only the later Display selected-count input to2/3 after action calculation, establishing4AB4F6 count admission without claiming multi-object SelectBest or selection lifecycle.',
             'Keyboard54F5C0 answers the supplied Ctrl state; map lookups5657A0/565730 return supplied Cell; height578080=0, shroud586360/5865E0=false, playable578460=true and terrain-object74CD60=null.',
             'SelectWeapon746CD0 supplies index0; damage6F3970 supplies60; CanFireAt6F77B0 and coordinate wrapper6F7970 supply the case range verdict. This establishes caller control flow, not selection or range arithmetic.',
             'GetFireError virtual3C0 supplies OK; Display CanFireAtTarget6F7780 supplies the same range verdict. No reload/ROF/legality timing claim.',
