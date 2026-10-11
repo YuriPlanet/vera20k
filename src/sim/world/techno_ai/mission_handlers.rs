@@ -322,10 +322,10 @@ pub(crate) fn dispatch_foot_mission(
             // draw. The accepted destination is visible to this object's
             // subsequent Drive Process, and is retained while it fires.
             if !sim.approach_balloon_target(id, rules, ctx.overlay_registry, ctx.effects)
-                && sim.owns_unit_cell_approach(id, rules)
+                && sim.owns_foot_approach(id, rules)
             {
-                sim.approach_unit_cell_target(id, rules, ctx.overlay_registry, ctx.effects)
-                    .expect("ordinary Cell approach requires valid live map/navigation state");
+                sim.approach_foot_target(id, rules, ctx.overlay_registry, ctx.effects)
+                    .expect("ordinary Foot approach requires valid live map/navigation state");
             }
             // Foot tests TarCom before calling Approach. Only a null target
             // at entry takes the idle exit; an Approach that clears the target

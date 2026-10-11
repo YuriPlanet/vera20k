@@ -577,7 +577,7 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
             );
             let target_before = actor.attack_target.as_ref().map(|attack| attack.target);
             let result = sim
-                .approach_unit_cell_target(
+                .approach_foot_target(
                     id,
                     &rules,
                     Some(&runtime.resources.overlay_registry),

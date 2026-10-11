@@ -1,5 +1,6 @@
-//! Foot4D5690, reached through Unit7414E0 by the ordinary Cell Attack mission.
-//! Native execution: tools/spatial_oracle/fv_cell_attack. The shared range,
+//! Foot4D5690, reached through Unit7414E0 by Cell Attack, and Infantry522340
+//! by ordinary Teleport infantry object Attack. Native execution:
+//! tools/spatial_oracle/fv_cell_attack. The shared range,
 //! Cell admission, zone-cost, target and destination owners retain their work.
 
 use super::foot_path::{cell_centre, chebyshev, coord_cell};
@@ -11,7 +12,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::{self, CellRect, CellRectPassabilityContext};
 use crate::sim::combat::{self, TargetKind, in_range};
 use crate::sim::components::{DriveCoord, NavTargetRef};
-use crate::sim::mission::{MissionType, concrete_effects::represented_assign_target};
+use crate::sim::mission::MissionType;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 use crate::util::direction_tables::{cell_delta_unchecked, facing16_between};
@@ -103,7 +104,7 @@ impl Simulation {
 
     /// Whether the current mission's own Approach takes `id`'s approach, so the
     /// pursuit pass (`tick_attack_pursuit`) leaves it alone: Mission_Attack's
-    /// Cell approach ([`Self::owns_unit_cell_approach`]), or the BalloonHover
+    /// common Foot approach ([`Self::owns_foot_approach`]), or the BalloonHover
     /// arm on each mission that calls [`Self::approach_balloon_target`]
     /// (Attack, Hunt, AreaGuard and Rescue). Keep it in step with those calls.
     pub(crate) fn mission_owns_approach(&self, id: u64, rules: &RuleSet) -> bool {
@@ -115,7 +116,7 @@ impl Simulation {
         else {
             return false;
         };
-        (mission == MissionType::Attack && self.owns_unit_cell_approach(id, rules))
+        (mission == MissionType::Attack && self.owns_foot_approach(id, rules))
             || (matches!(
                 mission,
                 MissionType::Attack
@@ -125,25 +126,43 @@ impl Simulation {
             ) && self.balloon_hover_approach(id, rules).is_some())
     }
 
-    /// Ownership boundary for the absorbed common Unit override. CloseRange,
+    /// Ownership boundary for the absorbed common Unit/Infantry approach. CloseRange,
     /// the BalloonHover arm ([`Self::balloon_hover_approach`]), non-Cell
     /// queued receivers and DestroyableCliffs redirect have separate native
     /// branches; their old adapter remains explicit.
     /// A mapless fixture cannot execute native cell/zone queries.
-    pub(crate) fn owns_unit_cell_approach(&self, id: u64, rules: &RuleSet) -> bool {
+    pub(crate) fn owns_foot_approach(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return false;
         };
-        let Some(TargetKind::Cell(rx, ry)) = actor.attack_target.as_ref().map(|a| a.target) else {
+        let Some(target) = actor.attack_target.as_ref().map(|a| a.target) else {
             return false;
         };
-        actor.category == EntityCategory::Unit
-            && actor.locomotor.as_ref().is_some_and(|l| {
-                matches!(l.active_kind(), LocomotorKind::Drive | LocomotorKind::Ship)
-            })
+        let represented = match (actor.category, target) {
+            (EntityCategory::Unit, TargetKind::Cell(rx, ry)) => {
+                actor.locomotor.as_ref().is_some_and(|l| {
+                    matches!(l.active_kind(), LocomotorKind::Drive | LocomotorKind::Ship)
+                }) && !terrain.is_destroyable_cliff(rx, ry)
+            }
+            (EntityCategory::Infantry, TargetKind::Entity(target)) => {
+                // Infantry522340's ordinary tail calls Foot4D5690(false).
+                // Doing27..30 and CloseRange use different override arms.
+                actor
+                    .locomotor
+                    .as_ref()
+                    .is_some_and(|l| l.active_kind() == LocomotorKind::Teleport)
+                    && actor
+                        .mission_leaf
+                        .as_infantry()
+                        .is_some_and(|leaf| !matches!(leaf.doing(), 27..=30))
+                    && self.substrate.entities.contains(target)
+            }
+            _ => false,
+        };
+        represented
             && self.zone_grid.is_some()
             && self
                 .object_type(actor.type_ref(), rules)
@@ -154,12 +173,12 @@ impl Simulation {
                 .nav_queue
                 .iter()
                 .all(|target| matches!(target, NavTargetRef::Cell { .. }))
-            && !terrain.is_destroyable_cliff(rx, ry)
     }
 
-    /// Mutable Unit common tail (741689 passes false to Foot). No RNG belongs
+    /// Common Foot4D5690 body (Unit741689 and Infantry52236C pass false).
+    /// No RNG belongs
     /// to Approach itself; MissionAttack draws its cadence after this returns.
-    pub(crate) fn approach_unit_cell_target(
+    pub(crate) fn approach_foot_target(
         &mut self,
         id: u64,
         rules: &RuleSet,
@@ -172,6 +191,23 @@ impl Simulation {
         let Some(target) = actor.attack_target.as_ref().map(|a| a.target) else {
             return Ok(None);
         };
+        if actor
+            .navigation
+            .nav_com
+            .is_some_and(|nav| match (nav, target) {
+                (NavTargetRef::Cell { rx, ry }, TargetKind::Cell(x, y)) => (rx, ry) == (x, y),
+                (
+                    NavTargetRef::Entity { id }
+                    | NavTargetRef::Object { id }
+                    | NavTargetRef::Building { id },
+                    TargetKind::Entity(target),
+                ) => id == target,
+                _ => false,
+            })
+        {
+            //4D56A1..56B1: an existing NavCom identical to TarCom returns.
+            return Ok(None);
+        }
         let Some(selected) = combat::pursuit_selection(
             actor,
             &target,
@@ -190,9 +226,12 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .ok_or("Approach requires map cells")?;
-        let identity = target
-            .cell_identity(terrain)
-            .ok_or("ordinary approach requires Cell TarCom")?;
+        let identity = target.cell_identity(terrain);
+        let target_reference = match target {
+            TargetKind::Cell(rx, ry) => NavTargetRef::cell(rx, ry),
+            TargetKind::Entity(id) => NavTargetRef::object(id),
+        };
+        let cells = NativeCellQuery::canonical(terrain);
         let mut range = combat::combat_weapon::weapon_range(
             actor,
             object,
@@ -204,21 +243,36 @@ impl Simulation {
         if range >= 512 {
             range -= 128;
         }
-        let can_fire = in_range::cell_target_in_range(
-            actor,
-            identity,
-            selected.weapon,
-            rules,
-            &self.interner,
-            &self.substrate.entities,
-            terrain,
-            &combat::line_of_fire::LineOfFireInputs {
-                overlay_grid: self.overlay_grid.as_ref(),
-                overlay_registry: registry,
-                alliances: Some(&self.fog.alliances),
-            },
-        )
-        .ok_or("Approach CanFireAt coordinate failed")?;
+        let los = combat::line_of_fire::LineOfFireInputs {
+            overlay_grid: self.overlay_grid.as_ref(),
+            overlay_registry: registry,
+            alliances: Some(&self.fog.alliances),
+        };
+        let can_fire = if let Some(identity) = identity {
+            in_range::cell_target_in_range(
+                actor,
+                identity,
+                selected.weapon,
+                rules,
+                &self.interner,
+                &self.substrate.entities,
+                terrain,
+                &los,
+            )
+            .ok_or("Approach CanFireAt coordinate failed")?
+        } else {
+            combat::can_fire_at_target_in_query(
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+                id,
+                &target,
+                &cells,
+                Some(&self.house_alliances),
+                &los,
+                Some(&target),
+            )
+        };
         let mission = actor.mission.current().known();
         let human = self
             .houses
@@ -235,8 +289,9 @@ impl Simulation {
                         || human && mission == Some(MissionType::AreaGuard)
                         || !human && mission == Some(MissionType::Hunt)))
         {
-            represented_assign_target(self.substrate.entities.get_mut(id).unwrap(), None);
-            self.set_unit_null_destination(id, Some(rules), None, frame_effects);
+            self.assign_target_represented(id, None, Some(rules))
+                .map_err(|e| format!("Approach target clear: {e}"))?;
+            self.assign_null_destination(id, Some(rules), registry, frame_effects);
             return Ok(None);
         }
 
@@ -248,13 +303,10 @@ impl Simulation {
             && object.can_recalc_approach_target
             && !can_fire
         {
-            let own = crate::sim::cell_kernel::native_cell_own_coords(identity, &cells)
-                .ok_or("Approach target coordinate failed")?;
+            let own = self.approach_nav_center(target_reference, &cells)?;
             let nav = self.approach_nav_center(nav, &cells)?;
-            clear_nav = distance_3d_leptons(
-                [own.0 as i32, own.1 as i32, own.2 as i32],
-                [nav.x, nav.y, nav.z],
-            ) > range.wrapping_mul(rules.general.approach_target_reset_multiplier);
+            clear_nav = distance_3d_leptons([own.x, own.y, own.z], [nav.x, nav.y, nav.z])
+                > range.wrapping_mul(rules.general.approach_target_reset_multiplier);
         }
         if clear_nav {
             //4D59FB/5A01 are precisely FootStopMoving's two direct writes.
@@ -275,7 +327,27 @@ impl Simulation {
             return Ok(None);
         }
         if let Some(NavTargetRef::Cell { rx, ry }) = actor.navigation.nav_queue.first().copied() {
-            self.set_unit_destination(id, NavTargetRef::cell(rx, ry), rules, false, frame_effects);
+            if actor.category == EntityCategory::Unit {
+                self.set_unit_destination(
+                    id,
+                    NavTargetRef::cell(rx, ry),
+                    rules,
+                    false,
+                    frame_effects,
+                );
+            } else {
+                //4D5A64 passes flag0. Infantry51AA40 forwards the flag,
+                // but Foot4D94B0 never reads it; original ordinary CLEG
+                // Cell-setter flag0/1 controls have equal state and RNG.
+                self.assign_destination_represented(
+                    id,
+                    Some(NavTargetRef::cell(rx, ry)),
+                    Some(rules),
+                    registry,
+                    frame_effects,
+                )
+                .map_err(|e| format!("Approach queued destination: {e}"))?;
+            }
             let queue = &mut self
                 .substrate
                 .entities
@@ -289,28 +361,52 @@ impl Simulation {
             return Ok(Some((rx, ry)));
         }
 
-        // For integral range, trunc(range - binary64 179.2), followed by
-        // max(0), equals this integer expression throughout the i32 domain.
-        // No host floating point is needed. Original465 numeric controls and
-        // executed radius1228/972/716/460 are retained in candidates.json.gz.
-        let radius = range.saturating_sub(180).max(0);
-        let mut radius = if radius > 0 { radius.max(256) } else { 0 };
-        let own = crate::sim::cell_kernel::native_cell_own_coords(identity, &cells)
-            .ok_or("Approach target coordinate failed")?;
-        let target_cell = ((own.0 / 256) as i16, (own.1 / 256) as i16);
+        let foundation = match target {
+            TargetKind::Entity(id) => self
+                .substrate
+                .entities
+                .get(id)
+                .filter(|t| t.category == EntityCategory::Structure)
+                .map(|t| {
+                    let (width, height) =
+                        crate::rules::foundation::foundation_dimensions(&t.foundation);
+                    (i32::from(width), i32::from(height))
+                }),
+            TargetKind::Cell(..) => None,
+        };
+        let mut radius = approach_search_radius(range, actor.category, foundation);
+        let own = self.approach_nav_center(target_reference, &cells)?;
+        let target_cell = ((own.x / 256) as i16, (own.y / 256) as i16);
         let source = super::ground_pose::position_world_coord(&actor.position);
-        let facing = facing16_between([own.0 as i32, own.1 as i32], [source.x, source.y]);
+        let facing = facing16_between([own.x, own.y], [source.x, source.y]);
         let facing_byte = ((u32::from(facing) + 128) >> 8) as u8;
-        let target_bridge = cells.flags(identity) & 0x100 != 0;
+        //4D5CBC..5CFE: Cell uses its flag; a Foot uses OnBridge. A
+        // building has no Foot flag, even when its coordinate lies on a bridge.
+        let target_bridge = match target {
+            TargetKind::Cell(..) => cells.flags(identity.unwrap()) & 0x100 != 0,
+            TargetKind::Entity(id) => self.substrate.entities.get(id).is_some_and(|target| {
+                target.category != EntityCategory::Structure && target.on_bridge
+            }),
+        };
         //4D5F6F target+50 may resample ground and flags before any candidate.
-        let _ = in_range::native_cell_range_coords(identity, &cells)
-            .ok_or("Approach target surface failed")?;
+        let _ = if let Some(identity) = identity {
+            in_range::native_cell_range_coords(identity, &cells)
+        } else {
+            in_range::resolve_target_coords_3d(
+                &target,
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+                &cells,
+            )
+        }
+        .ok_or("Approach target surface failed")?;
         let mut retained_candidate = target_cell;
         let mut chosen = None;
         'rings: while radius > 204 {
             for offset in OFFSETS {
                 let direction = (i16::from(facing_byte).wrapping_add(offset) as u16) << 8;
-                let [x, y] = facing_step_world_xy([own.0 as i32, own.1 as i32], direction, radius);
+                let [x, y] = facing_step_world_xy([own.x, own.y], direction, radius);
                 let radial = ((x / 256) as i16, (y / 256) as i16);
                 let mut point = cell_centre(radial);
                 point.z = in_range::native_ground_target_z(point.x, point.y, &cells)
@@ -405,13 +501,14 @@ impl Simulation {
             radius -= 256;
         }
         if let Some(cell) = chosen {
-            self.set_unit_destination(
+            self.assign_destination_represented(
                 id,
-                NavTargetRef::cell(cell.0 as u16, cell.1 as u16),
-                rules,
-                true,
+                Some(NavTargetRef::cell(cell.0 as u16, cell.1 as u16)),
+                Some(rules),
+                registry,
                 frame_effects,
-            );
+            )
+            .map_err(|e| format!("Approach destination: {e}"))?;
             //4D68B8 and4D68C7 perform separate lookups for setter and return.
             self.resolved_terrain
                 .as_ref()
@@ -435,17 +532,19 @@ impl Simulation {
             return Ok(Some(cell));
         }
         let fallback = self.approach_fallback(id, retained_candidate, rules, &cells)?;
-        represented_assign_target(self.substrate.entities.get_mut(id).unwrap(), None);
+        self.assign_target_represented(id, None, Some(rules))
+            .map_err(|e| format!("Approach exhausted target clear: {e}"))?;
         if let Some(cell) = fallback {
-            self.set_unit_destination(
+            self.assign_destination_represented(
                 id,
-                NavTargetRef::cell(cell.0, cell.1),
-                rules,
-                true,
+                Some(NavTargetRef::cell(cell.0, cell.1)),
+                Some(rules),
+                registry,
                 frame_effects,
-            );
+            )
+            .map_err(|e| format!("Approach fallback destination: {e}"))?;
         } else {
-            self.set_unit_null_destination(id, Some(rules), None, frame_effects);
+            self.assign_null_destination(id, Some(rules), registry, frame_effects);
         }
         Ok(None)
     }
@@ -613,6 +712,33 @@ impl Simulation {
         .filter(|cell| *cell != (0, 0))
         .map(|(x, y)| (x as u16, y as u16)))
     }
+}
+
+/// Foot4D5B97..4D5BEE: building dimensions expand the search radius before
+/// Infantry RTTI15 subtracts281.6; the other represented class subtracts179.2.
+/// Integral inputs permit integer-only truncation toward zero, preserving
+/// CRT ftol's consumed low i32 and the wrapping foundation addition.
+/// Executed controls: fv_cell_attack/cleg_approach_vectors.json (original CRT,
+/// both ambient precision controls); no host floating-point math is needed.
+fn approach_search_radius(
+    range: i32,
+    class: EntityCategory,
+    foundation: Option<(i32, i32)>,
+) -> i32 {
+    let range = foundation.map_or(range, |(width, height)| {
+        range.wrapping_add(width.wrapping_add(height).wrapping_mul(64))
+    });
+    let whole = if class == EntityCategory::Infantry {
+        281
+    } else {
+        179
+    };
+    // Original ftol truncates toward zero into i64, then consumes its low
+    // i32. For a negative intermediate the fractional part truncates up;
+    // the low word can wrap at i32::MIN (native corpus boundary controls).
+    let subtraction = whole + i32::from(range > whole);
+    let radius = range.wrapping_sub(subtraction).max(0);
+    if radius > 0 { radius.max(256) } else { 0 }
 }
 
 /// The BalloonHover arm once SelectWeapon has answered

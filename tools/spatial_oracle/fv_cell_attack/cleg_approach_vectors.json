@@ -1,0 +1,5675 @@
+{
+  "cases": [
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483648,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 2147483469,
+      "rtti": 1,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483648,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 2147483469,
+      "rtti": 1,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483648,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 2147483367,
+      "rtti": 15,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483648,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 2147483367,
+      "rtti": 15,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483520,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147483597,
+      "rtti": 1,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483520,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147483597,
+      "rtti": 1,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483520,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147483495,
+      "rtti": 15,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483520,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147483495,
+      "rtti": 15,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483392,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483392,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483392,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 2147483623,
+      "rtti": 15,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483392,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 2147483623,
+      "rtti": 15,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483328,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483328,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483328,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": -2147483328,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": 64,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": 64,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": 64,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -2147483648,
+      "expanded": 64,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": -2147483648
+    },
+    {
+      "adjusted": -1,
+      "expanded": -1,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": -1,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": -1,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": -1,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 127,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 127,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 127,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 127,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 255,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 255,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 255,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 255,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 319,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 319,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 319,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": 319,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": -2147483585,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147483532,
+      "rtti": 1,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": -2147483585,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147483532,
+      "rtti": 1,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": -2147483585,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147483430,
+      "rtti": 15,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": -1,
+      "expanded": -2147483585,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147483430,
+      "rtti": 15,
+      "weapon_range": -1
+    },
+    {
+      "adjusted": 0,
+      "expanded": 0,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 0,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 0,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 0,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 128,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 128,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 128,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 128,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 256,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 256,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 256,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 256,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 320,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 320,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 320,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": 320,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": -2147483584,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147483533,
+      "rtti": 1,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": -2147483584,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147483533,
+      "rtti": 1,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": -2147483584,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147483431,
+      "rtti": 15,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 0,
+      "expanded": -2147483584,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147483431,
+      "rtti": 15,
+      "weapon_range": 0
+    },
+    {
+      "adjusted": 128,
+      "expanded": 128,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 128,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 128,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 128,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 256,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 256,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 256,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 256,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 384,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 384,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 384,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 384,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 448,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 268,
+      "rtti": 1,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 448,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 268,
+      "rtti": 1,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 448,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": 448,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": -2147483456,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": -2147483456,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": -2147483456,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147483559,
+      "rtti": 15,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 128,
+      "expanded": -2147483456,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147483559,
+      "rtti": 15,
+      "weapon_range": 128
+    },
+    {
+      "adjusted": 179,
+      "expanded": 179,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 179,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 179,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 179,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 307,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 307,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 307,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 307,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 435,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 435,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 435,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 435,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 499,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 319,
+      "rtti": 1,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 499,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 319,
+      "rtti": 1,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 499,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": 499,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": -2147483405,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": -2147483405,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": -2147483405,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147483610,
+      "rtti": 15,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 179,
+      "expanded": -2147483405,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147483610,
+      "rtti": 15,
+      "weapon_range": 179
+    },
+    {
+      "adjusted": 180,
+      "expanded": 180,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 180,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 180,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 180,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 308,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 308,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 308,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 308,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 436,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 436,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 436,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 436,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 500,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 320,
+      "rtti": 1,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 500,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 320,
+      "rtti": 1,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 500,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": 500,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": -2147483404,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": -2147483404,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": -2147483404,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147483611,
+      "rtti": 15,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 180,
+      "expanded": -2147483404,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147483611,
+      "rtti": 15,
+      "weapon_range": 180
+    },
+    {
+      "adjusted": 281,
+      "expanded": 281,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 281,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 281,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 281,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 409,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 409,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 409,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 409,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 537,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 357,
+      "rtti": 1,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 537,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 357,
+      "rtti": 1,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 537,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 537,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 601,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 421,
+      "rtti": 1,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 601,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 421,
+      "rtti": 1,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 601,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 319,
+      "rtti": 15,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": 601,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 319,
+      "rtti": 15,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": -2147483303,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": -2147483303,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": -2147483303,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 281,
+      "expanded": -2147483303,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 281
+    },
+    {
+      "adjusted": 282,
+      "expanded": 282,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 282,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 282,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 282,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 410,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 410,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 410,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 410,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 538,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 358,
+      "rtti": 1,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 538,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 358,
+      "rtti": 1,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 538,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 538,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 602,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 422,
+      "rtti": 1,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 602,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 422,
+      "rtti": 1,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 602,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 320,
+      "rtti": 15,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": 602,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 320,
+      "rtti": 15,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": -2147483302,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": -2147483302,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": -2147483302,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 282,
+      "expanded": -2147483302,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 282
+    },
+    {
+      "adjusted": 383,
+      "expanded": 383,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 383,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 383,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 383,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 511,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 331,
+      "rtti": 1,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 511,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 331,
+      "rtti": 1,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 511,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 511,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 639,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 459,
+      "rtti": 1,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 639,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 459,
+      "rtti": 1,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 639,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 357,
+      "rtti": 15,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 639,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 357,
+      "rtti": 15,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 703,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 523,
+      "rtti": 1,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 703,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 523,
+      "rtti": 1,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 703,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 421,
+      "rtti": 15,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": 703,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 421,
+      "rtti": 15,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": -2147483201,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": -2147483201,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": -2147483201,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 383,
+      "expanded": -2147483201,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 383
+    },
+    {
+      "adjusted": 384,
+      "expanded": 384,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 384,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 384,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 384,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 512,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 332,
+      "rtti": 1,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 512,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 332,
+      "rtti": 1,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 512,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 512,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 640,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 460,
+      "rtti": 1,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 640,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 460,
+      "rtti": 1,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 640,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 358,
+      "rtti": 15,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 640,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 358,
+      "rtti": 15,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 704,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 524,
+      "rtti": 1,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 704,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 524,
+      "rtti": 1,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 704,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 422,
+      "rtti": 15,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": 704,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 422,
+      "rtti": 15,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": -2147483200,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": -2147483200,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": -2147483200,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 384,
+      "expanded": -2147483200,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 384
+    },
+    {
+      "adjusted": 511,
+      "expanded": 511,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 331,
+      "rtti": 1,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 511,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 331,
+      "rtti": 1,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 511,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 511,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 639,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 459,
+      "rtti": 1,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 639,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 459,
+      "rtti": 1,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 639,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 357,
+      "rtti": 15,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 639,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 357,
+      "rtti": 15,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 767,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 587,
+      "rtti": 1,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 767,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 587,
+      "rtti": 1,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 767,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 485,
+      "rtti": 15,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 767,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 485,
+      "rtti": 15,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 831,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 651,
+      "rtti": 1,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 831,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 651,
+      "rtti": 1,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 831,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 549,
+      "rtti": 15,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": 831,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 549,
+      "rtti": 15,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": -2147483073,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": -2147483073,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": -2147483073,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 511,
+      "expanded": -2147483073,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 511
+    },
+    {
+      "adjusted": 384,
+      "expanded": 384,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 384,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 1,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 384,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 384,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 512,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 332,
+      "rtti": 1,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 512,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 332,
+      "rtti": 1,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 512,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 512,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 640,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 460,
+      "rtti": 1,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 640,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 460,
+      "rtti": 1,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 640,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 358,
+      "rtti": 15,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 640,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 358,
+      "rtti": 15,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 704,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 524,
+      "rtti": 1,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 704,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 524,
+      "rtti": 1,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 704,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 422,
+      "rtti": 15,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": 704,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 422,
+      "rtti": 15,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": -2147483200,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": -2147483200,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": -2147483200,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 384,
+      "expanded": -2147483200,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 512
+    },
+    {
+      "adjusted": 512,
+      "expanded": 512,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 332,
+      "rtti": 1,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 512,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 332,
+      "rtti": 1,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 512,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 512,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 256,
+      "rtti": 15,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 640,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 460,
+      "rtti": 1,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 640,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 460,
+      "rtti": 1,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 640,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 358,
+      "rtti": 15,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 640,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 358,
+      "rtti": 15,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 768,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 588,
+      "rtti": 1,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 768,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 588,
+      "rtti": 1,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 768,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 486,
+      "rtti": 15,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 768,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 486,
+      "rtti": 15,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 832,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 652,
+      "rtti": 1,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 832,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 652,
+      "rtti": 1,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 832,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 550,
+      "rtti": 15,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": 832,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 550,
+      "rtti": 15,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": -2147483072,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": -2147483072,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": -2147483072,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 512,
+      "expanded": -2147483072,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 640
+    },
+    {
+      "adjusted": 640,
+      "expanded": 640,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 460,
+      "rtti": 1,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 640,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 460,
+      "rtti": 1,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 640,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 358,
+      "rtti": 15,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 640,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 358,
+      "rtti": 15,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 768,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 588,
+      "rtti": 1,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 768,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 588,
+      "rtti": 1,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 768,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 486,
+      "rtti": 15,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 768,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 486,
+      "rtti": 15,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 896,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 716,
+      "rtti": 1,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 896,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 716,
+      "rtti": 1,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 896,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 614,
+      "rtti": 15,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 896,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 614,
+      "rtti": 15,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 960,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 780,
+      "rtti": 1,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 960,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 780,
+      "rtti": 1,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 960,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 678,
+      "rtti": 15,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": 960,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 678,
+      "rtti": 15,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": -2147482944,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": -2147482944,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": -2147482944,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 640,
+      "expanded": -2147482944,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 768
+    },
+    {
+      "adjusted": 896,
+      "expanded": 896,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 716,
+      "rtti": 1,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 896,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 716,
+      "rtti": 1,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 896,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 614,
+      "rtti": 15,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 896,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 614,
+      "rtti": 15,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1024,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 844,
+      "rtti": 1,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1024,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 844,
+      "rtti": 1,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1024,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 742,
+      "rtti": 15,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1024,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 742,
+      "rtti": 15,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1152,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 972,
+      "rtti": 1,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1152,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 972,
+      "rtti": 1,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1152,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 870,
+      "rtti": 15,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1152,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 870,
+      "rtti": 15,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1216,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 1036,
+      "rtti": 1,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1216,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 1036,
+      "rtti": 1,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1216,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 934,
+      "rtti": 15,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": 1216,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 934,
+      "rtti": 15,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": -2147482688,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": -2147482688,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": -2147482688,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 896,
+      "expanded": -2147482688,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 1024
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1152,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 972,
+      "rtti": 1,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1152,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 972,
+      "rtti": 1,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1152,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 870,
+      "rtti": 15,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1152,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 870,
+      "rtti": 15,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1280,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 1100,
+      "rtti": 1,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1280,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 1100,
+      "rtti": 1,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1280,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 998,
+      "rtti": 15,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1280,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 998,
+      "rtti": 15,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1408,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 1228,
+      "rtti": 1,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1408,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 1228,
+      "rtti": 1,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1408,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 1126,
+      "rtti": 15,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1408,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 1126,
+      "rtti": 15,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1472,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 1292,
+      "rtti": 1,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1472,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 1292,
+      "rtti": 1,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1472,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 1190,
+      "rtti": 15,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": 1472,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 1190,
+      "rtti": 15,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": -2147482432,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": -2147482432,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": -2147482432,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1152,
+      "expanded": -2147482432,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 1280
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1408,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 1228,
+      "rtti": 1,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1408,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 1228,
+      "rtti": 1,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1408,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 1126,
+      "rtti": 15,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1408,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 1126,
+      "rtti": 15,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1536,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 1356,
+      "rtti": 1,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1536,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 1356,
+      "rtti": 1,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1536,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 1254,
+      "rtti": 15,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1536,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 1254,
+      "rtti": 15,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1664,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 1484,
+      "rtti": 1,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1664,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 1484,
+      "rtti": 1,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1664,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 1382,
+      "rtti": 15,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1664,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 1382,
+      "rtti": 15,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1728,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 1548,
+      "rtti": 1,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1728,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 1548,
+      "rtti": 1,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1728,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 1446,
+      "rtti": 15,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": 1728,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 1446,
+      "rtti": 15,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": -2147482176,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": -2147482176,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": -2147482176,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 1408,
+      "expanded": -2147482176,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 1536
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147482872,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 2147482692,
+      "rtti": 1,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147482872,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 2147482692,
+      "rtti": 1,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147482872,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 2147482590,
+      "rtti": 15,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147482872,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 2147482590,
+      "rtti": 15,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483000,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147482820,
+      "rtti": 1,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483000,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147482820,
+      "rtti": 1,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483000,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147482718,
+      "rtti": 15,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483000,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147482718,
+      "rtti": 15,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483128,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 2147482948,
+      "rtti": 1,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483128,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 2147482948,
+      "rtti": 1,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483128,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 2147482846,
+      "rtti": 15,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483128,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 2147482846,
+      "rtti": 15,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483192,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 2147483012,
+      "rtti": 1,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483192,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 2147483012,
+      "rtti": 1,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483192,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 2147482910,
+      "rtti": 15,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": 2147483192,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 2147482910,
+      "rtti": 15,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": -712,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": -712,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": -712,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147482872,
+      "expanded": -712,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 2147483000
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": 2147483519,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 2147483339,
+      "rtti": 1,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": 2147483519,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 2147483339,
+      "rtti": 1,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": 2147483519,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3647,
+      "radius": 2147483237,
+      "rtti": 15,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": 2147483519,
+      "foundation": [
+        0,
+        0
+      ],
+      "fpcw": 3711,
+      "radius": 2147483237,
+      "rtti": 15,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": 2147483647,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147483467,
+      "rtti": 1,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": 2147483647,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147483467,
+      "rtti": 1,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": 2147483647,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 2147483365,
+      "rtti": 15,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": 2147483647,
+      "foundation": [
+        1,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 2147483365,
+      "rtti": 15,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -2147483521,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 2147483596,
+      "rtti": 1,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -2147483521,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 2147483596,
+      "rtti": 1,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -2147483521,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 2147483494,
+      "rtti": 15,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -2147483521,
+      "foundation": [
+        2,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 2147483494,
+      "rtti": 15,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -2147483457,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -2147483457,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -2147483457,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3647,
+      "radius": 2147483558,
+      "rtti": 15,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -2147483457,
+      "foundation": [
+        3,
+        2
+      ],
+      "fpcw": 3711,
+      "radius": 2147483558,
+      "rtti": 15,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -65,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -65,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 1,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -65,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3647,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 2147483647
+    },
+    {
+      "adjusted": 2147483519,
+      "expanded": -65,
+      "foundation": [
+        33554432,
+        1
+      ],
+      "fpcw": 3711,
+      "radius": 0,
+      "rtti": 15,
+      "weapon_range": 2147483647
+    }
+  ],
+  "infantry_identity": {
+    "rtti": 15,
+    "rtti_entry": "00523340",
+    "vtable": "007eb058"
+  },
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "numeric": {
+    "fpcw": 3647,
+    "neighbor_offsets": [
+      [
+        0,
+        -1
+      ],
+      [
+        1,
+        -1
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        -1,
+        1
+      ],
+      [
+        -1,
+        0
+      ],
+      [
+        -1,
+        -1
+      ]
+    ],
+    "poses": [
+      {
+        "base_direction": 192,
+        "candidates": [
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 358,
+            "unsnapped_xyz": [
+              6170,
+              2687,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 358,
+            "unsnapped_xyz": [
+              6170,
+              2679,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 358,
+            "unsnapped_xyz": [
+              6170,
+              2696,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 358,
+            "unsnapped_xyz": [
+              6528,
+              2330,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 358,
+            "unsnapped_xyz": [
+              6527,
+              3046,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 486,
+            "unsnapped_xyz": [
+              6042,
+              2687,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 486,
+            "unsnapped_xyz": [
+              6042,
+              2676,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 486,
+            "unsnapped_xyz": [
+              6042,
+              2699,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 486,
+            "unsnapped_xyz": [
+              6528,
+              2202,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 486,
+            "unsnapped_xyz": [
+              6527,
+              3174,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 614,
+            "unsnapped_xyz": [
+              5914,
+              2687,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 614,
+            "unsnapped_xyz": [
+              5914,
+              2672,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 614,
+            "unsnapped_xyz": [
+              5914,
+              2703,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 614,
+            "unsnapped_xyz": [
+              6528,
+              2074,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 614,
+            "unsnapped_xyz": [
+              6527,
+              3302,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 870,
+            "unsnapped_xyz": [
+              5658,
+              2687,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 870,
+            "unsnapped_xyz": [
+              5658,
+              2666,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 870,
+            "unsnapped_xyz": [
+              5658,
+              2709,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 870,
+            "unsnapped_xyz": [
+              6528,
+              1818,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 870,
+            "unsnapped_xyz": [
+              6527,
+              3558,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              5402,
+              2687,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              5402,
+              2660,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              5402,
+              2715,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              6528,
+              1562,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              6527,
+              3814,
+              416
+            ]
+          }
+        ],
+        "facing_word": 49153,
+        "source_xy": [
+          2688,
+          2688
+        ],
+        "target_xy": [
+          6528,
+          2688
+        ]
+      },
+      {
+        "base_direction": 225,
+        "candidates": [
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 358,
+            "unsnapped_xyz": [
+              6281,
+              6524,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 358,
+            "unsnapped_xyz": [
+              6287,
+              6518,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 358,
+            "unsnapped_xyz": [
+              6274,
+              6530,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 358,
+            "unsnapped_xyz": [
+              6787,
+              6537,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 358,
+            "unsnapped_xyz": [
+              6268,
+              7030,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 486,
+            "unsnapped_xyz": [
+              6192,
+              6432,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 486,
+            "unsnapped_xyz": [
+              6201,
+              6423,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 486,
+            "unsnapped_xyz": [
+              6184,
+              6440,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 486,
+            "unsnapped_xyz": [
+              6879,
+              6448,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 486,
+            "unsnapped_xyz": [
+              6176,
+              7119,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 614,
+            "unsnapped_xyz": [
+              6104,
+              6339,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 614,
+            "unsnapped_xyz": [
+              6115,
+              6329,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 614,
+            "unsnapped_xyz": [
+              6093,
+              6349,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 614,
+            "unsnapped_xyz": [
+              6972,
+              6360,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 614,
+            "unsnapped_xyz": [
+              6083,
+              7207,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 870,
+            "unsnapped_xyz": [
+              5928,
+              6153,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 870,
+            "unsnapped_xyz": [
+              5943,
+              6139,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 870,
+            "unsnapped_xyz": [
+              5912,
+              6168,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 870,
+            "unsnapped_xyz": [
+              7158,
+              6184,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 870,
+            "unsnapped_xyz": [
+              5897,
+              7383,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              5751,
+              5968,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              5771,
+              5949,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              5731,
+              5987,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              7343,
+              6007,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              5712,
+              7560,
+              416
+            ]
+          }
+        ],
+        "facing_word": 57598,
+        "source_xy": [
+          2688,
+          2688
+        ],
+        "target_xy": [
+          6528,
+          6784
+        ]
+      },
+      {
+        "base_direction": 0,
+        "candidates": [
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 358,
+            "unsnapped_xyz": [
+              2688,
+              6170,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 358,
+            "unsnapped_xyz": [
+              2696,
+              6170,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 358,
+            "unsnapped_xyz": [
+              2679,
+              6170,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 358,
+            "unsnapped_xyz": [
+              3046,
+              6528,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 358,
+            "unsnapped_xyz": [
+              2330,
+              6527,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 486,
+            "unsnapped_xyz": [
+              2688,
+              6042,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 486,
+            "unsnapped_xyz": [
+              2699,
+              6042,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 486,
+            "unsnapped_xyz": [
+              2676,
+              6042,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 486,
+            "unsnapped_xyz": [
+              3174,
+              6528,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 486,
+            "unsnapped_xyz": [
+              2202,
+              6527,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 614,
+            "unsnapped_xyz": [
+              2688,
+              5914,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 614,
+            "unsnapped_xyz": [
+              2703,
+              5914,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 614,
+            "unsnapped_xyz": [
+              2672,
+              5914,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 614,
+            "unsnapped_xyz": [
+              3302,
+              6528,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 614,
+            "unsnapped_xyz": [
+              2074,
+              6527,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 870,
+            "unsnapped_xyz": [
+              2688,
+              5658,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 870,
+            "unsnapped_xyz": [
+              2709,
+              5658,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 870,
+            "unsnapped_xyz": [
+              2666,
+              5658,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 870,
+            "unsnapped_xyz": [
+              3558,
+              6528,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 870,
+            "unsnapped_xyz": [
+              1818,
+              6527,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              2688,
+              5402,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              2715,
+              5402,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              2660,
+              5402,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              3814,
+              6528,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              1562,
+              6527,
+              416
+            ]
+          }
+        ],
+        "facing_word": 0,
+        "source_xy": [
+          2688,
+          2688
+        ],
+        "target_xy": [
+          2688,
+          6528
+        ]
+      },
+      {
+        "base_direction": 64,
+        "candidates": [
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 358,
+            "unsnapped_xyz": [
+              3046,
+              2688,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 358,
+            "unsnapped_xyz": [
+              3045,
+              2696,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 358,
+            "unsnapped_xyz": [
+              3045,
+              2679,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 358,
+            "unsnapped_xyz": [
+              2687,
+              3046,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 358,
+            "unsnapped_xyz": [
+              2688,
+              2330,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 486,
+            "unsnapped_xyz": [
+              3174,
+              2688,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 486,
+            "unsnapped_xyz": [
+              3173,
+              2699,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 486,
+            "unsnapped_xyz": [
+              3173,
+              2676,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 486,
+            "unsnapped_xyz": [
+              2687,
+              3174,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 486,
+            "unsnapped_xyz": [
+              2688,
+              2202,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 614,
+            "unsnapped_xyz": [
+              3302,
+              2688,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 614,
+            "unsnapped_xyz": [
+              3301,
+              2703,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 614,
+            "unsnapped_xyz": [
+              3301,
+              2672,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 614,
+            "unsnapped_xyz": [
+              2687,
+              3302,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 614,
+            "unsnapped_xyz": [
+              2688,
+              2074,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 870,
+            "unsnapped_xyz": [
+              3558,
+              2688,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 870,
+            "unsnapped_xyz": [
+              3557,
+              2709,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 870,
+            "unsnapped_xyz": [
+              3557,
+              2666,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 870,
+            "unsnapped_xyz": [
+              2687,
+              3558,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 870,
+            "unsnapped_xyz": [
+              2688,
+              1818,
+              416
+            ]
+          },
+          {
+            "direction_index": 0,
+            "offset": 0,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              3814,
+              2688,
+              416
+            ]
+          },
+          {
+            "direction_index": 1,
+            "offset": 1,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              3813,
+              2715,
+              416
+            ]
+          },
+          {
+            "direction_index": 2,
+            "offset": -1,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              3813,
+              2660,
+              416
+            ]
+          },
+          {
+            "direction_index": 23,
+            "offset": 64,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              2687,
+              3814,
+              416
+            ]
+          },
+          {
+            "direction_index": 24,
+            "offset": -64,
+            "radius": 1126,
+            "unsnapped_xyz": [
+              2688,
+              1562,
+              416
+            ]
+          }
+        ],
+        "facing_word": 16383,
+        "source_xy": [
+          6528,
+          2688
+        ],
+        "target_xy": [
+          2688,
+          2688
+        ]
+      }
+    ],
+    "scope": "Original4D5C53..5CBC and4D5FFE..6081 only. Coordinates/radii are supplied; no admission, snap or actual map pose claimed for these numeric controls."
+  },
+  "schema": 1,
+  "startup": {
+    "after_crt_fpcw": 575,
+    "after_winmain_fpcw": 3647,
+    "cached_fpcw": 3647,
+    "image_cached_fpcw": 3711,
+    "supplied_initial_fpcw": 895,
+    "windows_and_cpu_probe_executed": false
+  }
+}

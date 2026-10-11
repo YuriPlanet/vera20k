@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original FootApproach class-specific radius and radial numeric fragments, supplied boundary inputs only.",
+  "assumptions": [
+    "Native image mapping is the shared native_oracle owner. Infantry vtable7EB058+2C selects actual original523340, which executes and returns15. Unit RTTI1 is a supplied comparison input.",
+    "Ranges and foundation dimensions are supplied stack/register inputs. The0,0 row omits the building-only addition; huge dimensions and extreme ranges are arithmetic boundary controls, not valid retail foundations. Original signed wrapping, binary64 subtraction, CRT ftol and radius clamping execute unchanged.",
+    "The existing mapgen_range.Machine.startup owner executes original CRT/WinMain floating-control fragments and cached-control-word writes. Windows/CPU startup probes are excluded. Radius controls additionally declare FPCW0E3F and0E7F inputs; radial geometry retains the established0E3F/cache state. Original RTTI leaf uses the shared call default environment and returns a constant.",
+    "Four supplied XY poses, targetZ416/sourceZ0 and five supplied radii execute the existing geometry owner through original facing/Sin/Cos/ftol. These100 rays do not execute target getters, Cell snapping, map heights, Cell admission, zone costs, destination setters or whole Approach.",
+    "Original Cell compass initializer49F2F0 executes through its realRET49F39B before the shared geometry owner reads its eight packed direction pairs. No compass output is supplied."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "infantry_rtti": "0x00523340",
+    "range_adjustment": "0x004D56E4",
+    "building_radius_addition": "0x004D5B97",
+    "class_radius": "0x004D5BB1",
+    "approach_facing": "0x004D5C53",
+    "approach_radial": "0x004D5FFE"
+  },
+  "source_normalized_lf_sha256": {
+    "tools/spatial_oracle/fv_cell_attack/candidates.py": "6601ef2554063bc17d9e0c8adb99798c9daa51f0fe0b1c6b94a0213cfb661142",
+    "tools/native_oracle.py": "0c94545bb9c4ca049ad7d46b152d9bd79624c7e52b3fec7a42d360974bbaacef",
+    "tools/oracle_sources.py": "93538b3da4eb0d6b47e78ddbab2c50be0458ebe01d4ab3f029e4ba1c102c8ea5",
+    "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
+    "tools/spatial_oracle/mapgen_range.py": "df39b5ab3a2450c98dfa749a67826d5cb87f9d73086dc2511ff3261906724eef",
+    "tools/spatial_oracle/locomotor_head_coordinates.py": "d9500256f69105f3219845fa2f2a994b42a185ecc06a9fa8875db8ffa8d00421"
+  },
+  "replay_command": "python -m tools.spatial_oracle.fv_cell_attack.candidates --cleg-radius",
+  "payload_sha256": "f8cfe018fd97afbc363735cbdc0ebcf96fda0575bab272fdc0ee73df029cd7d4"
+}

@@ -598,7 +598,8 @@ fn line_of_fire_clear(
 /// Resolve target coords for the 3D path. Applies LowFlying ground-snap on
 /// entity targets; Cell targets retain their allocation and run their native
 /// +48/+50 getters, including the WaterSet gate and raw structural bridge bit.
-fn resolve_target_coords_3d(
+/// FootApproach4D5F6F shares this target surface read before its candidate scan.
+pub(crate) fn resolve_target_coords_3d(
     target: &TargetKind,
     entities: &EntityStore,
     rules: &RuleSet,
