@@ -13,7 +13,8 @@
     "Ranges and foundation dimensions are supplied stack/register inputs. The0,0 row omits the building-only addition; huge dimensions and extreme ranges are arithmetic boundary controls, not valid retail foundations. Original signed wrapping, binary64 subtraction, CRT ftol and radius clamping execute unchanged.",
     "The existing mapgen_range.Machine.startup owner executes original CRT/WinMain floating-control fragments and cached-control-word writes. Windows/CPU startup probes are excluded. Radius controls additionally declare FPCW0E3F and0E7F inputs; radial geometry retains the established0E3F/cache state. Original RTTI leaf uses the shared call default environment and returns a constant.",
     "Four supplied XY poses, targetZ416/sourceZ0 and five supplied radii execute the existing geometry owner through original facing/Sin/Cos/ftol. These100 rays do not execute target getters, Cell snapping, map heights, Cell admission, zone costs, destination setters or whole Approach.",
-    "Original Cell compass initializer49F2F0 executes through its realRET49F39B before the shared geometry owner reads its eight packed direction pairs. No compass output is supplied."
+    "Original Cell compass initializer49F2F0 executes through its realRET49F39B before the shared geometry owner reads its eight packed direction pairs. No compass output is supplied.",
+    "Sixteen candidate-height controls reuse OriginalBridgeQuery sparse Cell setup, supplied level/slope/flags, level step104 and deck416. Original CRT/WinMain floating setup executes. The non-CloseRange snap/height block4D60FB..61A4 executes Map578080/Cell47B3A0 then independent Map565730 without substituted queries. Returned snapped XY, ground and final Z are observed, not calculated. At6181 ESP is four bytes below its entry value: [esp+38] aliases the candidate at entryESP+34; the saved ground therefore contributes to final Z. No target/range/admission or whole approach is executed."
   ],
   "substitutions": [],
   "entry_points": {
@@ -22,16 +23,23 @@
     "building_radius_addition": "0x004D5B97",
     "class_radius": "0x004D5BB1",
     "approach_facing": "0x004D5C53",
-    "approach_radial": "0x004D5FFE"
+    "approach_radial": "0x004D5FFE",
+    "candidate_height": "0x004D60FB",
+    "map_ground": "0x00578080",
+    "cell_ground": "0x0047B3A0",
+    "map_flags": "0x00565730"
   },
   "source_normalized_lf_sha256": {
-    "tools/spatial_oracle/fv_cell_attack/candidates.py": "6601ef2554063bc17d9e0c8adb99798c9daa51f0fe0b1c6b94a0213cfb661142",
+    "tools/spatial_oracle/fv_cell_attack/candidates.py": "20a92327f14ad82aa9a907668c2046382d9986f225d37edbcb9bc7184f3b59f6",
     "tools/native_oracle.py": "0c94545bb9c4ca049ad7d46b152d9bd79624c7e52b3fec7a42d360974bbaacef",
     "tools/oracle_sources.py": "93538b3da4eb0d6b47e78ddbab2c50be0458ebe01d4ab3f029e4ba1c102c8ea5",
     "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
     "tools/spatial_oracle/mapgen_range.py": "df39b5ab3a2450c98dfa749a67826d5cb87f9d73086dc2511ff3261906724eef",
-    "tools/spatial_oracle/locomotor_head_coordinates.py": "d9500256f69105f3219845fa2f2a994b42a185ecc06a9fa8875db8ffa8d00421"
+    "tools/spatial_oracle/locomotor_head_coordinates.py": "d9500256f69105f3219845fa2f2a994b42a185ecc06a9fa8875db8ffa8d00421",
+    "tools/spatial_oracle/foot_navigation_coordinate.py": "fd43b2ee4f41a56d1a07503bf8831c9a0cdba7cc5c6bc5b0266e37152d4c0352",
+    "tools/spatial_oracle/locomotor_at_coord.py": "b9d3018fcdc3891cf36184ef24a5b80bcfef93025106d7e0edcb55a492884d3c",
+    "tools/spatial_oracle/map_queries.py": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305"
   },
   "replay_command": "python -m tools.spatial_oracle.fv_cell_attack.candidates --cleg-radius",
-  "payload_sha256": "f8cfe018fd97afbc363735cbdc0ebcf96fda0575bab272fdc0ee73df029cd7d4"
+  "payload_sha256": "6746c773f2d56cbaf1be36400ff8fadfa72d0578dbb1762d6ca143e9311c8d92"
 }

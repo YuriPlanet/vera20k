@@ -1,4 +1,2270 @@
 {
+  "candidate_heights": [
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        0
+      ],
+      "candidate_z": 0,
+      "flags": 0,
+      "ground_z": 0,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 0,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 0,
+            "identity": "cell_0",
+            "level": 0,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 0,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 0,
+            "identity": "cell_0",
+            "level": 0,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        416
+      ],
+      "candidate_z": 416,
+      "flags": 256,
+      "ground_z": 0,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 0,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 256,
+            "identity": "cell_0",
+            "level": 0,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 0,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 256,
+            "identity": "cell_0",
+            "level": 0,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d61a0"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d61a0",
+          "size": 4,
+          "value": 416
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        0
+      ],
+      "candidate_z": 0,
+      "flags": 1024,
+      "ground_z": 0,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 0,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 1024,
+            "identity": "cell_0",
+            "level": 0,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 0,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 1024,
+            "identity": "cell_0",
+            "level": 0,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        416
+      ],
+      "candidate_z": 416,
+      "flags": 1280,
+      "ground_z": 0,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 0,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 1280,
+            "identity": "cell_0",
+            "level": 0,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 0,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 1280,
+            "identity": "cell_0",
+            "level": 0,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d61a0"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d61a0",
+          "size": 4,
+          "value": 416
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        208
+      ],
+      "candidate_z": 208,
+      "flags": 0,
+      "ground_z": 208,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 2,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 0,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 208,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 0,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            208
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 208,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 208,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 208
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        624
+      ],
+      "candidate_z": 624,
+      "flags": 256,
+      "ground_z": 208,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 2,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 256,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 208,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 256,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            208
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 208,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 208,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        },
+        {
+          "candidate_z": 208,
+          "esp_delta": 0,
+          "pc": "004d61a0"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 208
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d61a0",
+          "size": 4,
+          "value": 624
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        208
+      ],
+      "candidate_z": 208,
+      "flags": 1024,
+      "ground_z": 208,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 2,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 1024,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 208,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 1024,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            208
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 208,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 208,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 208
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        624
+      ],
+      "candidate_z": 624,
+      "flags": 1280,
+      "ground_z": 208,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 2,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 1280,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 208,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 1280,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            208
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 208,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 208,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        },
+        {
+          "candidate_z": 208,
+          "esp_delta": 0,
+          "pc": "004d61a0"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 208
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d61a0",
+          "size": 4,
+          "value": 624
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        416
+      ],
+      "candidate_z": 416,
+      "flags": 0,
+      "ground_z": 416,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 4,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 0,
+            "identity": "cell_0",
+            "level": 4,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 416,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 0,
+            "identity": "cell_0",
+            "level": 4,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            416
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 416,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 416,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 416
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        832
+      ],
+      "candidate_z": 832,
+      "flags": 256,
+      "ground_z": 416,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 4,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 256,
+            "identity": "cell_0",
+            "level": 4,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 416,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 256,
+            "identity": "cell_0",
+            "level": 4,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            416
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 416,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 416,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        },
+        {
+          "candidate_z": 416,
+          "esp_delta": 0,
+          "pc": "004d61a0"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 416
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d61a0",
+          "size": 4,
+          "value": 832
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        416
+      ],
+      "candidate_z": 416,
+      "flags": 1024,
+      "ground_z": 416,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 4,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 1024,
+            "identity": "cell_0",
+            "level": 4,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 416,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 1024,
+            "identity": "cell_0",
+            "level": 4,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            416
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 416,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 416,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 416
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        832
+      ],
+      "candidate_z": 832,
+      "flags": 1280,
+      "ground_z": 416,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 4,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 1280,
+            "identity": "cell_0",
+            "level": 4,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 416,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 1280,
+            "identity": "cell_0",
+            "level": 4,
+            "slope": 0,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            416
+          ]
+        }
+      ],
+      "slope": 0,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 416,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 416,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        },
+        {
+          "candidate_z": 416,
+          "esp_delta": 0,
+          "pc": "004d61a0"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 416
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d61a0",
+          "size": 4,
+          "value": 832
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        260
+      ],
+      "candidate_z": 260,
+      "flags": 0,
+      "ground_z": 260,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 2,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 0,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 1,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 260,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 0,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 1,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            260
+          ]
+        }
+      ],
+      "slope": 1,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 260,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 260,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 260
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        676
+      ],
+      "candidate_z": 676,
+      "flags": 256,
+      "ground_z": 260,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 2,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 256,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 1,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 260,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 256,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 1,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            260
+          ]
+        }
+      ],
+      "slope": 1,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 260,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 260,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        },
+        {
+          "candidate_z": 260,
+          "esp_delta": 0,
+          "pc": "004d61a0"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 260
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d61a0",
+          "size": 4,
+          "value": 676
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        260
+      ],
+      "candidate_z": 260,
+      "flags": 1024,
+      "ground_z": 260,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 2,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 1024,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 1,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 260,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 1024,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 1,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            260
+          ]
+        }
+      ],
+      "slope": 1,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 260,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 260,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 260
+        }
+      ]
+    },
+    {
+      "candidate_xyz": [
+        1920,
+        1408,
+        676
+      ],
+      "candidate_z": 676,
+      "flags": 1280,
+      "ground_z": 260,
+      "input": {
+        "cell_xy": [
+          7,
+          5
+        ],
+        "deck_offset": 416,
+        "incoming_xyz": [
+          1833,
+          1485,
+          987
+        ],
+        "level_step": 104
+      },
+      "level": 2,
+      "point_xy": [
+        1920,
+        1408
+      ],
+      "queries": [
+        {
+          "cell": {
+            "flags": 1280,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 1,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00578080",
+          "ground": 260,
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            0
+          ]
+        },
+        {
+          "cell": {
+            "flags": 1280,
+            "identity": "cell_0",
+            "level": 2,
+            "slope": 1,
+            "xy": [
+              7,
+              5
+            ]
+          },
+          "dummy_after": {
+            "flags": 1280,
+            "identity": "dummy",
+            "level": -7,
+            "slope": 1,
+            "xy": [
+              1234,
+              -2345
+            ]
+          },
+          "entry": "0x00565730",
+          "stage": "approach_candidate",
+          "xyz": [
+            1920,
+            1408,
+            260
+          ]
+        }
+      ],
+      "slope": 1,
+      "stack": [
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6172"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6177"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": 0,
+          "pc": "004d6180"
+        },
+        {
+          "candidate_z": 0,
+          "esp_delta": -4,
+          "pc": "004d6181"
+        },
+        {
+          "candidate_z": 260,
+          "esp_delta": -4,
+          "pc": "004d6185"
+        },
+        {
+          "candidate_z": 260,
+          "esp_delta": 0,
+          "pc": "004d618a"
+        },
+        {
+          "candidate_z": 260,
+          "esp_delta": 0,
+          "pc": "004d61a0"
+        }
+      ],
+      "writes": [
+        {
+          "effective_offset": 52,
+          "pc": "004d6142",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d6181",
+          "size": 4,
+          "value": 260
+        },
+        {
+          "effective_offset": 52,
+          "pc": "004d61a0",
+          "size": 4,
+          "value": 676
+        }
+      ]
+    }
+  ],
   "cases": [
     {
       "adjusted": -2147483648,

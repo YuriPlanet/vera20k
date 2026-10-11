@@ -85,6 +85,49 @@ def metadata():
   'Numeric-only controls enter original4D5C53 and4D5FFE with declared stack/source inputs in the same native-initialized VM, ambientFPCW0E3F. Native facing conversion and Sin/Cos/ftol execute; no numeric expected result is hand-computed. Negative/zero-delta poses and shorter radii are boundary inputs, not stock map states.'
  ];return result
 
+def cleg_candidate_heights():
+ """Original snapped candidate height; observe the changing ESP aliases.
+
+ The existing bridge-query fixture owns the sparse map/Cell inputs. Native
+ Map578080, Cell47B3A0 and the later independent Map565730 all execute.
+ """
+ from unicorn import UC_HOOK_CODE,UC_HOOK_MEM_WRITE
+ from unicorn.x86_const import UC_X86_REG_EIP
+ from types import SimpleNamespace
+ from tools.spatial_oracle.foot_navigation_coordinate import OriginalBridgeQuery,bridge_case
+ from tools.spatial_oracle.mapgen_range import Machine
+ rows=[]
+ for level,slope in ((0,0),(2,0),(4,0),(2,1)):
+  for flags in (0,0x100,0x400,0x500):
+   case=bridge_case('walk','foot_candidate_height',nav_com_coord=None,
+                   cells=[dict(xy=[7,5],level=level,slope=slope,flags=flags)])
+   fixture=OriginalBridgeQuery(case);u=fixture.uc;fixture.stage='approach_candidate'
+   Machine.startup(SimpleNamespace(u=u))
+   incoming=[1833,1485,987]
+   u.mem_write(SP+0x2C,dwords(*incoming));u.mem_write(SP+0x23,b'\0')
+   # The deck scalar is a declared initialized input, not a queried answer.
+   u.mem_write(0x8B3DF4,dwords(416));u.reg_write(UC_X86_REG_ESP,SP)
+   stack=[];writes=[]
+   def observe_code(_u,pc,_size,_data):
+    if pc in (0x4D6172,0x4D6177,0x4D6180,0x4D6181,0x4D6185,0x4D618A,0x4D61A0):
+     stack.append(dict(pc=f'{pc:08x}',esp_delta=u.reg_read(UC_X86_REG_ESP)-SP,
+                       candidate_z=struct.unpack('<i',u.mem_read(SP+0x34,4))[0]))
+   def observe_write(_u,_access,address,size,value,_data):
+    if address==SP+0x34:
+     writes.append(dict(pc=f'{u.reg_read(UC_X86_REG_EIP):08x}',
+                        effective_offset=address-SP,size=size,value=value))
+   u.hook_add(UC_HOOK_CODE,observe_code);u.hook_add(UC_HOOK_MEM_WRITE,observe_write)
+   run_checked(u,0x4D60FB,0x4D61A4,count=10000,
+               required_addresses=(0x4D6134,0x578080,0x47B3A0,0x565730,0x4D6181))
+   assert u.reg_read(UC_X86_REG_ESP)==SP and not fixture.pending
+   candidate_xyz=list(struct.unpack('<iii',u.mem_read(SP+0x2C,12)))
+   rows.append(dict(level=level,slope=slope,flags=flags,
+                    ground_z=fixture.queries[0]['ground'],candidate_z=candidate_xyz[2],
+                    point_xy=candidate_xyz[:2],candidate_xyz=candidate_xyz,
+                    input=dict(incoming_xyz=incoming,cell_xy=[7,5],level_step=104,deck_offset=416),
+                    queries=fixture.queries,stack=stack,writes=writes))
+ return rows
+
 def cleg_approach_vectors():
  """Original class-specific radius and radial geometry at supplied boundaries.
 
@@ -147,7 +190,8 @@ def cleg_approach_vectors():
                                   for index in (0,1,2,23,24)])
  return dict(schema=1,native_sha256=image_sha256(),
              infantry_identity=dict(vtable='007eb058',rtti_entry=f'{rtti_address:08x}',rtti=rtti),
-             startup=startup,cases=rows,numeric=numeric)
+             startup=startup,cases=rows,numeric=numeric,
+             candidate_heights=cleg_candidate_heights())
 
 def cleg_metadata():
  from tools.native_oracle import provenance
@@ -159,9 +203,11 @@ def cleg_metadata():
    'The existing mapgen_range.Machine.startup owner executes original CRT/WinMain floating-control fragments and cached-control-word writes. Windows/CPU startup probes are excluded. Radius controls additionally declare FPCW0E3F and0E7F inputs; radial geometry retains the established0E3F/cache state. Original RTTI leaf uses the shared call default environment and returns a constant.',
    'Four supplied XY poses, targetZ416/sourceZ0 and five supplied radii execute the existing geometry owner through original facing/Sin/Cos/ftol. These100 rays do not execute target getters, Cell snapping, map heights, Cell admission, zone costs, destination setters or whole Approach.',
    'Original Cell compass initializer49F2F0 executes through its realRET49F39B before the shared geometry owner reads its eight packed direction pairs. No compass output is supplied.',
+   'Sixteen candidate-height controls reuse OriginalBridgeQuery sparse Cell setup, supplied level/slope/flags, level step104 and deck416. Original CRT/WinMain floating setup executes. The non-CloseRange snap/height block4D60FB..61A4 executes Map578080/Cell47B3A0 then independent Map565730 without substituted queries. Returned snapped XY, ground and final Z are observed, not calculated. At6181 ESP is four bytes below its entry value: [esp+38] aliases the candidate at entryESP+34; the saved ground therefore contributes to final Z. No target/range/admission or whole approach is executed.',
   ],substitutions=[],entry_points=dict(infantry_rtti=0x523340,range_adjustment=0x4D56E4,
    building_radius_addition=0x4D5B97,class_radius=0x4D5BB1,
-   approach_facing=0x4D5C53,approach_radial=0x4D5FFE))
+   approach_facing=0x4D5C53,approach_radial=0x4D5FFE,
+   candidate_height=0x4D60FB,map_ground=0x578080,cell_ground=0x47B3A0,map_flags=0x565730))
  return result
 
 if __name__=='__main__':
@@ -177,6 +223,9 @@ if __name__=='__main__':
                          'tools/spatial_oracle/building_body_rules.py':HERE.parent/'building_body_rules.py',
                          'tools/spatial_oracle/mapgen_range.py':HERE.parent/'mapgen_range.py',
                          'tools/spatial_oracle/locomotor_head_coordinates.py':HERE.parent/'locomotor_head_coordinates.py',
+                         'tools/spatial_oracle/foot_navigation_coordinate.py':HERE.parent/'foot_navigation_coordinate.py',
+                         'tools/spatial_oracle/locomotor_at_coord.py':HERE.parent/'locomotor_at_coord.py',
+                         'tools/spatial_oracle/map_queries.py':HERE.parent/'map_queries.py',
                         })
  else:
   finish_vectors(generate,HERE/'candidates.json.gz',provenance=metadata)

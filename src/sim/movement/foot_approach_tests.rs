@@ -55,6 +55,60 @@ fn original_infantry_and_unit_approach_radii_and_rays() {
     assert_eq!(rays, 100);
 }
 
+/// Original non-CloseRange candidate block4D60FB..61A4 executes both map
+/// queries. Ground at4D6181 is stored after PUSH: [esp+38] is the candidate's
+/// Z, not a temporary. These controls cover flat, elevated, sloped and bridge
+/// cells; they do not execute the whole approach or terrain admission.
+#[test]
+fn original_approach_candidate_heights() {
+    use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/cleg_approach_vectors.json",
+    ))
+    .unwrap();
+    let rows = native["candidate_heights"].as_array().unwrap();
+    assert_eq!(rows.len(), 16);
+    for row in rows {
+        let point: [i32; 2] = serde_json::from_value(row["point_xy"].clone()).unwrap();
+        let cell: [u16; 2] = serde_json::from_value(row["input"]["cell_xy"].clone()).unwrap();
+        let width = cell[0] + 1;
+        let height = cell[1] + 1;
+        let mut terrain = ResolvedTerrainGrid::from_cells(
+            width,
+            height,
+            (0..height)
+                .flat_map(|ry| (0..width).map(move |rx| test_flat_cell(rx, ry)))
+                .collect(),
+        );
+        let sampled =
+            &mut terrain.cells[usize::from(cell[1]) * usize::from(width) + usize::from(cell[0])];
+        sampled.level = row["level"].as_u64().unwrap().try_into().unwrap();
+        sampled.slope_type = row["slope"].as_u64().unwrap().try_into().unwrap();
+        sampled.bridge_facts.raw_flags = row["flags"].as_u64().unwrap().try_into().unwrap();
+        let cells = NativeCellQuery::canonical(&terrain);
+        assert_eq!(
+            i64::from(
+                crate::sim::movement::ground_pose::query_ground_height(
+                    &cells,
+                    DriveCoord {
+                        x: point[0],
+                        y: point[1],
+                        z: 0
+                    },
+                )
+                .unwrap()
+            ),
+            row["ground_z"].as_i64().unwrap(),
+            "{row}"
+        );
+        assert_eq!(
+            in_range::native_ground_target_z(point[0], point[1], &cells),
+            row["candidate_z"].as_i64(),
+            "{row}"
+        );
+    }
+}
+
 /// Stock CLEG weapon/type/ART readers, with supplied flat cells and a stationary
 /// enemy. This checks the ordinary Attack command through live object turns;
 /// it does not compare exact native first-shot or erase timing.
