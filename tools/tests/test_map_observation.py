@@ -1123,6 +1123,83 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(observation._local_input_observation(local, 'extended'),
                          len(local['selection_voice_requests']) + 1 + len(local['hud_messages']))
 
+    def test_building_placement_projection_preserves_distinct_targets_and_legacy_absence(self):
+        historical = self.local_input_observation()
+        self.assertNotIn('building_placement', historical)
+        self.assertEqual(observation._local_input_observation(historical, 'historical'), 0)
+        placement = {'current': {'type_id': 'GAPILL', 'product_id': 13, 'issuer': 'ActualIssuer'},
+                     'saved_retry': {'type_id': 'GAPOWR', 'product_id': 12, 'issuer': 'OtherIssuer'},
+                     'current_preview_present': False, 'saved_preview_present': True}
+        self.assertEqual(observation._local_input_observation(
+            dict(historical, building_placement=placement), 'projected'), 3)
+        orphan = deepcopy(placement)
+        orphan['current']['product_id'] = None
+        self.assertEqual(observation._local_input_observation(
+            dict(historical, building_placement=orphan), 'expired-product'), 3)
+        empty = {'current': None, 'saved_retry': None, 'current_preview_present': False,
+                 'saved_preview_present': False}
+        self.assertEqual(observation._local_input_observation(
+            dict(historical, building_placement=empty), 'observed-empty'), 1)
+        # Synthetic serialization receipts, not a production load or native golden.
+        self.keyboard_profile()
+        self.gesture_receipts[0]['before']['local_input']['building_placement'] = placement
+        self.gesture_receipts[0]['after']['local_input']['building_placement'] = empty
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        actual = report['capture']['observations']['gesture_input']['receipts'][0]
+        self.assertEqual(actual['before']['local_input']['building_placement'], placement)
+        self.assertEqual(actual['after']['local_input']['building_placement'], empty)
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+
+    def test_building_placement_projection_rejects_malformed_references_and_flags(self):
+        local = dict(self.local_input_observation(), building_placement={
+            'current': {'type_id': 'GAPILL', 'product_id': 13, 'issuer': 'ActualIssuer'},
+            'saved_retry': {'type_id': 'GAPOWR', 'product_id': 12, 'issuer': 'ActualIssuer'},
+            'current_preview_present': True, 'saved_preview_present': True})
+        mutations = [lambda row: row.update(building_placement=None),
+                     lambda row: row.update(building_placement=[]),
+                     lambda row: row['building_placement'].pop('saved_retry'),
+                     lambda row: row['building_placement'].pop('current_preview_present'),
+                     lambda row: row['building_placement'].update(extra=True),
+                     lambda row: row['building_placement'].update(current_preview_present=1),
+                     lambda row: row['building_placement'].update(saved_preview_present=None)]
+        for key in ('current', 'saved_retry'):
+            mutations.extend([
+                lambda row, key=key: row['building_placement'].update({key: []}),
+                lambda row, key=key: row['building_placement'][key].pop('issuer'),
+                lambda row, key=key: row['building_placement'][key].pop('product_id'),
+                lambda row, key=key: row['building_placement'][key].update(type_id=''),
+                lambda row, key=key: row['building_placement'][key].update(type_id=None),
+                lambda row, key=key: row['building_placement'][key].update(issuer=''),
+                lambda row, key=key: row['building_placement'][key].update(issuer=7),
+                lambda row, key=key: row['building_placement'][key].update(product_id=0),
+                lambda row, key=key: row['building_placement'][key].update(product_id=True),
+                lambda row, key=key: row['building_placement'][key].update(product_id=-1),
+                lambda row, key=key: row['building_placement'][key].update(product_id=1 << 64),
+                lambda row, key=key: row['building_placement'][key].update(product_id=1.0),
+                lambda row, key=key: row['building_placement'][key].update(extra=True)])
+        for index, mutation in enumerate(mutations):
+            candidate = deepcopy(local)
+            mutation(candidate)
+            with self.subTest(case=index), self.assertRaises(ValidationError):
+                observation._local_input_observation(candidate, 'local-input')
+
+    def test_building_placement_projection_counts_empty_and_populated_owner_rows(self):
+        self.keyboard_profile()
+        self.gesture_receipts[0]['before']['local_input']['building_placement'] = {
+            'current': {'type_id': 'GAPILL', 'product_id': 13, 'issuer': 'ActualIssuer'},
+            'saved_retry': {'type_id': 'GAPOWR', 'product_id': 12, 'issuer': 'ActualIssuer'},
+            'current_preview_present': False, 'saved_preview_present': True}
+        self.gesture_receipts[0]['after']['local_input']['building_placement'] = {
+            'current': None, 'saved_retry': None, 'current_preview_present': False,
+            'saved_preview_present': False}
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        transcript = report['capture']['observations']['gesture_input']
+        count = observation._gesture_observations(transcript, self.profile)
+        with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', count - 1), self.assertRaises(ValidationError):
+            observation._gesture_observations(transcript, self.profile)
+
     def test_veterancy_snapshot_projection_preserves_independent_categories_and_charges_ids(self):
         historical = dict(self.local_input_observation(), selection_scope={
             'mode': 'ordinary', 'across_map': False, 'last_outcome_key': None})
@@ -1242,6 +1319,136 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(data['gesture_input']['receipts'], self.gesture_receipts)
         self.assertEqual(data['sidebar']['frames'], self.sidebar_frames)
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+
+    def right_button_profile(self):
+        # Protocol fixtures only. Production resolves these literal edges through
+        # the shared mouse driver; these values do not establish cancel behavior.
+        self.sidebar_profile()
+        self.profile['gestures'][0]['gesture'] = {
+            'kind': 'click', 'position': [1, 1], 'button': 'right'}
+        self.gesture_receipts[0].pop('sidebar')
+        self.profile['gestures'][1]['gesture']['button'] = 'right'
+        for index, (request, receipt) in enumerate(zip(self.profile['gestures'], self.gesture_receipts)):
+            receipt['gesture'] = deepcopy(request['gesture'])
+            if index < 2:
+                receipt.update(left_press_captured=False, right_press_captured=True)
+            for when in ('before', 'after'):
+                receipt[when]['local_input'] = self.local_input_observation()
+        for step in range(self.profile['ticks'] + 1):
+            self.input_frames.setdefault(step, self.input_observation())['local_input'] = self.local_input_observation()
+        self.profile_path.write_text(json.dumps(self.profile))
+
+    def test_right_tactical_and_cameo_gestures_retain_literal_button_and_owner_receipts(self):
+        self.right_button_profile()
+        self.gesture_receipts[0]['before']['local_input']['targeting'] = {
+            'kind': 'building_placement', 'type_id': 'GAPOWR'}
+        self.gesture_receipts[1]['queued_commands'][0]['payload'] = {
+            'CancelProduction': {'type_id': 41}}
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        data = report['capture']['observations']['gesture_input']
+        self.assertEqual(data['policy'], observation.RIGHT_BUTTON_GESTURE_POLICY)
+        self.assertEqual(data['receipts'], self.gesture_receipts)
+        self.assertEqual(data['keyboard_bindings'], [])  # No dummy key is needed.
+        self.assertFalse(data['receipts'][0]['left_press_captured'])
+        self.assertTrue(data['receipts'][1]['right_press_captured'])
+        self.assertEqual(data['receipts'][1]['sidebar']['resolved_position'], [6, 3])
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+
+    def test_omitted_and_explicit_left_keep_legacy_policy_and_receipt_shape(self):
+        self.gesture_profile()
+        for explicit in (False, True):
+            with self.subTest(explicit=explicit):
+                if explicit:
+                    self.profile['gestures'][0]['gesture']['button'] = 'left'
+                    self.gesture_receipts[0]['gesture']['button'] = 'left'
+                    self.profile_path.write_text(json.dumps(self.profile))
+                self.output = self.root / f'left-{explicit}'
+                report = self.run_capture()
+                self.assertEqual(report['status'], 'VALID', report['errors'])
+                data = report['capture']['observations']['gesture_input']
+                self.assertEqual(data['policy'], observation.GESTURE_POLICY)
+                self.assertNotIn('keyboard_bindings', data)
+                for row in data['receipts']:
+                    self.assertNotIn('right_press_captured', row)
+                    self.assertNotIn('local_input', row['before'])
+                self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+
+    def test_button_profile_rejects_unknown_values_and_non_cameo_right_before_launch(self):
+        self.right_button_profile()
+        invalid = [dict(self.profile['gestures'][0]['gesture'], button=button)
+                   for button in (None, True, 1, [], {}, '', 'middle', 'Right', 'LEFT')]
+        invalid += [dict(gesture, button=button) for gesture in (
+            {'kind': 'drag', 'from': [1, 1], 'to': [4, 4]},
+            {'kind': 'key', 'key': 'P'}, {'kind': 'command_bar', 'command': 'Guard'})
+            for button in ('left', 'right')]
+        invalid += [{'kind': 'sidebar', 'button': 'right', 'target': target} for target in (
+            {'kind': 'tab', 'tab': 'building'}, {'kind': 'scroll_up'},
+            {'kind': 'scroll_down'}, {'kind': 'repair'}, {'kind': 'sell'})]
+        for index, gesture in enumerate(invalid):
+            with self.subTest(case=index), patch.object(observation, 'run_child') as child:
+                candidate = deepcopy(self.profile)
+                candidate['gestures'][0]['gesture'] = gesture
+                self.profile_path.write_text(json.dumps(candidate))
+                with self.assertRaises(ValidationError):
+                    observation.capture(profile_path=self.profile_path, contract_path=self.contract,
+                                        output=self.output, working_directory=self.root,
+                                        executable=self.executable)
+                child.assert_not_called()
+                self.assertFalse(self.output.exists())
+
+    def test_right_receipts_reject_wrong_button_capture_policy_and_target(self):
+        self.right_button_profile()
+        changes = [lambda data: data.update(policy=observation.SIDEBAR_GESTURE_POLICY),
+                   lambda data: data['receipts'][0]['gesture'].update(button='left'),
+                   lambda data: data['receipts'][0]['gesture'].pop('button'),
+                   lambda data: data['receipts'][1]['sidebar'].update(resolved_position=[6, 2]),
+                   lambda data: data['receipts'][1]['sidebar']['before']['items'][1].update(type_id='GAREFN')]
+        for field, value in (('right_press_captured', False), ('right_press_captured', None),
+                             ('right_press_captured', 1), ('left_press_captured', True),
+                             ('left_press_captured', 0), ('band_box_before_release', True)):
+            for ordinal in (0, 1):
+                changes.append(lambda data, field=field, value=value, ordinal=ordinal:
+                               data['receipts'][ordinal].update({field: value}))
+        changes += [lambda data, ordinal=ordinal: data['receipts'][ordinal].pop('right_press_captured')
+                    for ordinal in (0, 1)]
+        for index, change in enumerate(changes):
+            with self.subTest(case=index):
+                self.output = self.root / f'wrong-right-{index}'
+                self.change = lambda manifest, change=change: change(manifest['observations']['gesture_input'])
+                report = self.run_capture()
+                self.assertEqual(report['status'], 'INVALID', report)
+                self.assertIn('observations.gesture_input', report['errors'][0])
+
+    def test_left_receipts_reject_unrequested_right_marker_and_policy(self):
+        self.gesture_profile()
+        for index, change in enumerate((
+                lambda data: data['receipts'][0].update(right_press_captured=True),
+                lambda data: data['receipts'][0].update(right_press_captured=None),
+                lambda data: data.update(policy=observation.RIGHT_BUTTON_GESTURE_POLICY))):
+            with self.subTest(case=index):
+                self.output = self.root / f'wrong-left-{index}'
+                self.change = lambda manifest, change=change: change(manifest['observations']['gesture_input'])
+                self.assertEqual(self.run_capture()['status'], 'INVALID')
+
+    def test_right_only_requires_existing_local_projection_and_bindings_without_extra_samples(self):
+        self.right_button_profile()
+        report = self.run_capture()
+        data = report['capture']['observations']['gesture_input']
+        count = observation._gesture_observations(data, self.profile)
+        with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', count):
+            self.assertEqual(observation._gesture_observations(data, self.profile), count)
+        with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', count - 1), self.assertRaises(ValidationError):
+            observation._gesture_observations(data, self.profile)
+        changes = [lambda manifest: manifest['observations']['gesture_input'].pop('keyboard_bindings'),
+                   lambda manifest: manifest['observations']['gesture_input']['receipts'][0]['before'].pop('local_input'),
+                   lambda manifest: manifest['observations']['gesture_input']['receipts'][1]['after']['local_input'].update(main_rng_cursor=[0]),
+                   lambda manifest: manifest['observations']['frames'][1]['input'].pop('local_input')]
+        for index, change in enumerate(changes):
+            with self.subTest(case=index):
+                self.output = self.root / f'missing-right-local-{index}'
+                self.change = change
+                self.assertEqual(self.run_capture()['status'], 'INVALID')
 
     def test_sidebar_profile_rejects_unknown_targets_and_bad_snapshot_schedules(self):
         self.sidebar_profile()
@@ -1373,7 +1580,7 @@ class MapObservationTests(unittest.TestCase):
             cases.append(dict(modern, gestures=[dict(valid, **{key: value})]))
         cases.append(dict(modern, gestures=[dict(valid, issue_after_step=1), valid]))
         for gesture in (None, {}, {'kind': 'move', 'position': [1, 1]},
-                        {'kind': 'click', 'position': [1, 1], 'button': 'right'},
+                        {'kind': 'click', 'position': [1, 1], 'button': 'middle'},
                         {'kind': 'drag', 'from': [1, 1]},
                         {'kind': 'drag', 'from': [1, 1], 'to': [1, 1]}):
             cases.append(dict(modern, gestures=[dict(valid, gesture=gesture)]))

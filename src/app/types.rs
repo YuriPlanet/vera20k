@@ -379,14 +379,15 @@ pub(crate) enum HoverTargetKind {
 /// Mutually-exclusive cursor-on-tactical-map targeting modes.
 ///
 /// Building placement and superweapon targeting cannot both be active at
-/// once. Arming one clears the other; right-click and Esc clear both.
+/// once. Arming one clears the other; right-click clears the active mode.
+/// Ordinary Options/Escape opens the menu while retaining the armed cursor.
 /// The variant payload is the type_id (interned section name) the
 /// targeting refers to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TargetingMode {
     /// Ready building waiting to be placed on the tactical map.
-    /// Payload: building INI section name (e.g., "GAPOWR").
-    BuildingPlacement(String),
+    /// Type and cursor handles owned by the match input machine.
+    BuildingPlacement(crate::app::input::state::BuildingPlacementTarget),
     /// Charged superweapon waiting for a target cell.
     /// Payload: SW INI section name (e.g., "LightningStormSpecial").
     SuperWeapon(String),
@@ -395,7 +396,7 @@ pub(crate) enum TargetingMode {
 impl TargetingMode {
     pub fn as_building_placement(&self) -> Option<&str> {
         match self {
-            Self::BuildingPlacement(s) => Some(s.as_str()),
+            Self::BuildingPlacement(target) => Some(target.type_id()),
             _ => None,
         }
     }

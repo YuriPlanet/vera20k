@@ -1213,7 +1213,7 @@ impl Simulation {
             Command::PlaceReadyBuilding { type_id, rx, ry } => {
                 let Some(rules) = rules else { return false };
                 let type_s = self.interner.resolve(*type_id).to_string();
-                let placed = production::place_production_with_overlays(
+                production::place_production_with_overlays(
                     self,
                     rules,
                     command_owner,
@@ -1223,18 +1223,7 @@ impl Simulation {
                     },
                     overlay_registry,
                     frame_effects,
-                );
-                if !placed {
-                    // `HouseClass::Place_Production 0x004FB369..0x004FB377`:
-                    // a placement event whose Unlimbo fails speaks
-                    // `EVA_CannotDeployHere` when `this == PlayerPtr`; the
-                    // app applies the local-owner half.
-                    if let Some(owner) = self.interner.get(command_owner) {
-                        self.sound_events
-                            .push(SimSoundEvent::CannotDeployHere { owner });
-                    }
-                }
-                placed
+                )
             }
             Command::PlaceProducedMobile { category } => {
                 let Some(rules) = rules else {

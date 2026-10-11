@@ -492,6 +492,7 @@ fn gsi_04_07_wall_placement_contract() -> (RuleSet, OverlayTypeRegistry) {
          Adjacent=8\n\
          GuardRange=5\n\
          [WALLKIT]\n\
+         Owner=Americans,Alliance,Russians,Soviet\n\
          Wall=yes\n\
          Armor=concrete\n\
          Strength=300\n\

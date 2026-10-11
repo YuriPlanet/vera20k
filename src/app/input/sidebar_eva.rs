@@ -54,6 +54,9 @@ pub(crate) enum CameoOrder {
 /// What one cameo click does on the clicking machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct CameoClick {
+    /// Select6AADC9..6AADF8 drops any active building placement before sound
+    /// or event handling when this right-clicked cameo owns a factory.
+    pub clear_building_placement: bool,
     /// `[AudioVisual] GUIBuildSound=` (`Rules+0x18C`).
     pub sound: bool,
     pub eva: Option<&'static str>,
@@ -92,37 +95,27 @@ pub(crate) struct CameoClick {
 /// click does nothing. Trigger: a right click within the command delay of a
 /// build's first left click. Rare.
 ///
-/// Residual (building path): a right click on a cameo with its own factory
-/// first drops a pending building placement (`0x006AADC9..0x006AADF8`), and
-/// Abandon_Production drops it for the local player's abandon of any building
-/// (`0x004FAB79..0x004FAB9F`). VERA drops it only when the placed building
-/// itself is abandoned (`sidebar_render::sync_targeting_mode`). Trigger: a
-/// right click on another producing cameo, or another building's abandon,
-/// while a building is being placed. Effect: the placement cursor stays up.
-///
-/// Residual (building path): a left click on a finished building asks it for
-/// its builder (`vt+0x190` at `0x006AB31A`); with none, gamemd sends ABANDON
-/// and says `EVA_UnableToComply` (`0x006AB33F..0x006AB3B1`), while VERA
-/// enters placement. Trigger: the house's only builder of that building is
-/// being sold or is gone. Rare.
+/// `own` resolves the retained strip's Factory link, including an older
+/// cameo linked to a rearmed Factory. Right with that link first attempts to
+/// drop a placement with a non-NULL product (`0x006AADC9..0x006AADF8`),
+/// including another category's building. The queued-copy arm has no prefix. Source:
+/// tools/sidebar_oracle/cameo_order.md, ready-building histories.
 pub(crate) fn cameo_click(
     queue: &[QueueItemView],
     category: ProductionCategory,
     type_id: Option<InternedId>,
+    own: Option<BuildQueueState>,
     press: CameoPress,
     at_build_limit: bool,
 ) -> CameoClick {
     let in_category = || queue.iter().filter(|item| item.queue_category == category);
-    let own = in_category()
-        .find(|item| item.state != BuildQueueState::Queued)
-        .filter(|head| Some(head.type_id) == type_id)
-        .map(|head| head.state);
     let click = |eva: Option<&'static str>, order: CameoOrder| CameoClick {
+        clear_building_placement: false,
         sound: true,
         eva,
         order: Some(order),
     };
-    match (press, own) {
+    let mut result = match (press, own) {
         (CameoPress::Right { .. }, Some(BuildQueueState::Building)) => {
             click(Some(EVA_ON_HOLD), CameoOrder::Suspend)
         }
@@ -141,6 +134,7 @@ pub(crate) fn cameo_click(
         (CameoPress::Left, Some(BuildQueueState::Done)) => {
             let structure = is_structure_strip(category);
             CameoClick {
+                clear_building_placement: false,
                 sound: true,
                 eva: None,
                 order: structure.then_some(CameoOrder::Place),
@@ -153,6 +147,7 @@ pub(crate) fn cameo_click(
             let busy = in_category().next().is_some();
             if busy && is_structure_strip(category) {
                 CameoClick {
+                    clear_building_placement: false,
                     sound: false,
                     eva: Some(EVA_UNABLE_TO_COMPLY),
                     order: None,
@@ -166,7 +161,9 @@ pub(crate) fn cameo_click(
                 )
             }
         }
-    }
+    };
+    result.clear_building_placement = matches!(press, CameoPress::Right { .. }) && own.is_some();
+    result
 }
 
 /// RTTI 7 (BuildingType): the structure and defense strips.
@@ -235,9 +232,17 @@ mod tests {
 
     fn order(sound: bool, eva: Option<&'static str>, order: CameoOrder) -> CameoClick {
         CameoClick {
+            clear_building_placement: false,
             sound,
             eva,
             order: Some(order),
+        }
+    }
+
+    fn own_right_order(eva: Option<&'static str>, value: CameoOrder) -> CameoClick {
+        CameoClick {
+            clear_building_placement: true,
+            ..order(true, eva, value)
         }
     }
 
@@ -253,7 +258,7 @@ mod tests {
             (ProductionCategory::Ship, EVA_BUILDING),
         ] {
             assert_eq!(
-                cameo_click(&[], category, Some(a), LEFT, false),
+                cameo_click(&[], category, Some(a), None, LEFT, false),
                 order(true, Some(line), CameoOrder::Produce),
                 "{category:?}"
             );
@@ -271,8 +276,16 @@ mod tests {
         ] {
             let queue = [item(a, ProductionCategory::Building, state)];
             assert_eq!(
-                cameo_click(&queue, ProductionCategory::Building, Some(b), LEFT, false),
+                cameo_click(
+                    &queue,
+                    ProductionCategory::Building,
+                    Some(b),
+                    None,
+                    LEFT,
+                    false
+                ),
                 CameoClick {
+                    clear_building_placement: false,
                     sound: false,
                     eva: Some(EVA_UNABLE_TO_COMPLY),
                     order: None
@@ -293,7 +306,14 @@ mod tests {
         ] {
             let queue = [item(a, ProductionCategory::Vehicle, state)];
             assert_eq!(
-                cameo_click(&queue, ProductionCategory::Vehicle, Some(b), LEFT, false),
+                cameo_click(
+                    &queue,
+                    ProductionCategory::Vehicle,
+                    Some(b),
+                    None,
+                    LEFT,
+                    false
+                ),
                 order(true, None, CameoOrder::Produce),
                 "{state:?}"
             );
@@ -305,7 +325,14 @@ mod tests {
             BuildQueueState::Building,
         )];
         assert_eq!(
-            cameo_click(&queue, ProductionCategory::Vehicle, Some(a), LEFT, false),
+            cameo_click(
+                &queue,
+                ProductionCategory::Vehicle,
+                Some(a),
+                Some(BuildQueueState::Building),
+                LEFT,
+                false
+            ),
             order(true, None, CameoOrder::Produce)
         );
     }
@@ -314,7 +341,7 @@ mod tests {
     fn a_type_at_its_build_limit_does_nothing_unless_it_is_held() {
         let a = InternedId::from_index(1);
         assert_eq!(
-            cameo_click(&[], ProductionCategory::Infantry, Some(a), LEFT, true),
+            cameo_click(&[], ProductionCategory::Infantry, Some(a), None, LEFT, true),
             CameoClick::default()
         );
         let held = [item(
@@ -323,7 +350,14 @@ mod tests {
             BuildQueueState::Paused,
         )];
         assert_eq!(
-            cameo_click(&held, ProductionCategory::Infantry, Some(a), LEFT, true),
+            cameo_click(
+                &held,
+                ProductionCategory::Infantry,
+                Some(a),
+                Some(BuildQueueState::Paused),
+                LEFT,
+                true
+            ),
             order(true, Some(EVA_TRAINING), CameoOrder::Produce),
             "a held build resumes without a limit check"
         );
@@ -338,25 +372,40 @@ mod tests {
             BuildQueueState::Building,
         )];
         assert_eq!(
-            cameo_click(&running, ProductionCategory::Vehicle, Some(a), RIGHT, false),
-            order(true, Some(EVA_ON_HOLD), CameoOrder::Suspend)
+            cameo_click(
+                &running,
+                ProductionCategory::Vehicle,
+                Some(a),
+                Some(BuildQueueState::Building),
+                RIGHT,
+                false
+            ),
+            own_right_order(Some(EVA_ON_HOLD), CameoOrder::Suspend)
         );
         assert_eq!(
             cameo_click(
                 &running,
                 ProductionCategory::Vehicle,
                 Some(a),
+                Some(BuildQueueState::Building),
                 SHIFT_RIGHT,
                 false
             ),
-            order(true, Some(EVA_ON_HOLD), CameoOrder::Suspend),
+            own_right_order(Some(EVA_ON_HOLD), CameoOrder::Suspend),
             "Shift does not skip the hold"
         );
         for state in [BuildQueueState::Paused, BuildQueueState::Done] {
             let stopped = [item(a, ProductionCategory::Vehicle, state)];
             assert_eq!(
-                cameo_click(&stopped, ProductionCategory::Vehicle, Some(a), RIGHT, false),
-                order(true, Some(EVA_CANCELED), CameoOrder::Abandon { all: false }),
+                cameo_click(
+                    &stopped,
+                    ProductionCategory::Vehicle,
+                    Some(a),
+                    Some(state),
+                    RIGHT,
+                    false
+                ),
+                own_right_order(Some(EVA_CANCELED), CameoOrder::Abandon { all: false }),
                 "{state:?}"
             );
             assert_eq!(
@@ -364,10 +413,11 @@ mod tests {
                     &stopped,
                     ProductionCategory::Vehicle,
                     Some(a),
+                    Some(state),
                     SHIFT_RIGHT,
                     false
                 ),
-                order(true, Some(EVA_CANCELED), CameoOrder::Abandon { all: true }),
+                own_right_order(Some(EVA_CANCELED), CameoOrder::Abandon { all: true }),
                 "{state:?}"
             );
         }
@@ -386,6 +436,7 @@ mod tests {
                 &queue,
                 ProductionCategory::Infantry,
                 Some(b),
+                None,
                 SHIFT_RIGHT,
                 false
             ),
@@ -393,12 +444,26 @@ mod tests {
         );
         let c = InternedId::from_index(3);
         assert_eq!(
-            cameo_click(&queue, ProductionCategory::Infantry, Some(c), RIGHT, false),
+            cameo_click(
+                &queue,
+                ProductionCategory::Infantry,
+                Some(c),
+                None,
+                RIGHT,
+                false
+            ),
             CameoClick::default(),
             "a cameo with nothing built or queued ignores the right click"
         );
         assert_eq!(
-            cameo_click(&queue, ProductionCategory::Vehicle, Some(b), RIGHT, false),
+            cameo_click(
+                &queue,
+                ProductionCategory::Vehicle,
+                Some(b),
+                None,
+                RIGHT,
+                false
+            ),
             CameoClick::default(),
             "only the cameo's own category counts"
         );
@@ -413,18 +478,40 @@ mod tests {
             BuildQueueState::Paused,
         )];
         assert_eq!(
-            cameo_click(&held, ProductionCategory::Vehicle, Some(a), LEFT, false),
+            cameo_click(
+                &held,
+                ProductionCategory::Vehicle,
+                Some(a),
+                Some(BuildQueueState::Paused),
+                LEFT,
+                false
+            ),
             order(true, Some(EVA_BUILDING), CameoOrder::Produce)
         );
         let ready = [item(a, ProductionCategory::Defense, BuildQueueState::Done)];
         assert_eq!(
-            cameo_click(&ready, ProductionCategory::Defense, Some(a), LEFT, false),
+            cameo_click(
+                &ready,
+                ProductionCategory::Defense,
+                Some(a),
+                Some(BuildQueueState::Done),
+                LEFT,
+                false
+            ),
             order(true, None, CameoOrder::Place)
         );
         let unit = [item(a, ProductionCategory::Vehicle, BuildQueueState::Done)];
         assert_eq!(
-            cameo_click(&unit, ProductionCategory::Vehicle, Some(a), LEFT, false),
+            cameo_click(
+                &unit,
+                ProductionCategory::Vehicle,
+                Some(a),
+                Some(BuildQueueState::Done),
+                LEFT,
+                false
+            ),
             CameoClick {
+                clear_building_placement: false,
                 sound: true,
                 eva: None,
                 order: None

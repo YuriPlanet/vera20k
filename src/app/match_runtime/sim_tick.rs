@@ -1072,8 +1072,41 @@ fn advance_one_simulation_frame(
         // Rendering is rebuilt from lifecycle facts every frame. Replay the
         // app-owned transactions in native emission order for state that has a
         // direct attachment or retained audio handle.
+        let local_house = preferred_local_owner_name(state).and_then(|owner| {
+            state
+                .match_state
+                .sim_runtime
+                .as_ref()?
+                .simulation
+                .interner
+                .get(&owner)
+        });
         for output in drained_lifecycle_outputs {
+            if let Some(cursor_clear) = state
+                .match_state
+                .match_presentation
+                .sidebar_projection
+                .apply_factory_output(&output, local_house)
+            {
+                state
+                    .match_state
+                    .input
+                    .apply_building_placement_output(&cursor_clear, local_house);
+            }
+            if state
+                .match_state
+                .input
+                .apply_building_placement_output(&output, local_house)
+            {
+                update_building_placement_preview(state);
+            }
             match output {
+                LifecycleOutput::ProductionFactoryLinked { .. }
+                | LifecycleOutput::ProductionFactoryAbandoning { .. }
+                | LifecycleOutput::ProductionFactoryUnlinked { .. }
+                | LifecycleOutput::BuildingPlacementRetry { .. }
+                | LifecycleOutput::BuildingPlacementSucceeded { .. }
+                | LifecycleOutput::BuildingProductionAbandoned { .. } => {}
                 LifecycleOutput::ObjectPointerExpired { stable_id } => {
                     state
                         .match_state
@@ -1285,6 +1318,16 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         state.match_state.input.building_placement_preview = None;
         return;
     };
+    if state
+        .match_state
+        .input
+        .building_placement_issuer()
+        .is_none()
+    {
+        // Product-only pointer expiry retains the current type/foundation;
+        // it is neither an abandon nor a permission to emit another PLACE.
+        return;
+    }
     let owner: String = preferred_local_owner(state).unwrap_or_else(|| "Americans".to_string());
     let (Some(sim), Some(rules)) = (
         state

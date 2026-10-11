@@ -195,7 +195,14 @@ mod tests {
         );
         assert_eq!(targeting, None);
         // A building placement is not a Super selection: case 4 keeps it.
-        let mut placing = Some(TargetingMode::BuildingPlacement("GAPOWR".to_string()));
+        // Supplied input prior only; this test does not construct a factory.
+        let mut input = crate::app::input::state::MatchInputState::new(Default::default());
+        assert!(input.begin_building_placement(
+            "GAPOWR",
+            7,
+            crate::sim::intern::InternedId::from_index(0)
+        ));
+        let mut placing = input.targeting_mode;
         follow_selection_writes(
             &mut placing,
             &[launched(local, warp)],

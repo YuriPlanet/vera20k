@@ -321,6 +321,31 @@ pub(crate) fn check_build_limit(
     owned.wrapping_add(queued) >= limit
 }
 
+/// ObjectClass::FindFactory5F5C20 resolves this object's actual type and owner,
+/// then calls TypeFindFactory5F7900 without the CanBuild gate. Both the ready
+/// cameo6AB31A and the PLACE receiver4FB1DA use (0,0); mobile delivery uses
+/// (0,1), with an aircraft-only (1,1) retry. Source: cameo_order.md's retained
+/// ready-building histories and the existing factory output oracle.
+pub(crate) fn object_find_factory(
+    sim: &Simulation,
+    rules: &RuleSet,
+    object_id: u64,
+    skip_busy_airfield: bool,
+    require_online: bool,
+) -> Option<u64> {
+    let object = sim.entities().get(object_id)?;
+    let object_type = sim.object_type(object.type_ref(), rules)?;
+    find_factory(
+        sim,
+        rules,
+        object.owner(),
+        object_type,
+        skip_busy_airfield,
+        require_online,
+        false,
+    )
+}
+
 /// Original ObjectType5F7900, scanned in House+6C insertion order. A first
 /// eligible primary wins; without one, return the last eligible building.
 /// Human PLACE4FB1DA retains this transient identity through its radio/release

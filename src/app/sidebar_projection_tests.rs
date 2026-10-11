@@ -58,6 +58,7 @@ fn view(
         0,
         None,
         &[],
+        &[],
         options,
         &[],
         None,

@@ -132,15 +132,11 @@ fn exit_finished_object(
     let Some(product_type) = sim.object_type(object.type_id, rules) else {
         return;
     };
-    let exit = if product_type.category == ObjectCategory::Building {
-        ai_base_building::exit_building(sim, rules, building, product, overlay_registry, effects)
-    } else {
-        let exit = exit_produced_object(sim, rules, building, product, overlay_registry, effects);
-        if exit == BuildingExit::Placed {
-            sim.mission_spawned_entities = true;
-        }
-        exit
-    };
+    let is_building = product_type.category == ObjectCategory::Building;
+    let exit = exit_produced_object(sim, rules, building, product, overlay_registry, effects);
+    if !is_building && exit == BuildingExit::Placed {
+        sim.mission_spawned_entities = true;
+    }
     match exit {
         BuildingExit::Placed => {
             record_last_built(sim, rules, owner, object.type_id);

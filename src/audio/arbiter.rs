@@ -1238,7 +1238,8 @@ impl SoundArbiter {
     /// killing the **tail** — the quietest instance, or with
     /// `Control=interrupt` the oldest already-started one.
     ///
-    /// The new cue is never the victim; the least audible one is.
+    /// Equal-volume ties without INTERRUPT can cull a pending cue before it
+    /// starts (`0x00404312`); stock MenuClick's Limit5 reaches this path.
     fn enforce_limits(
         &mut self,
         now_ms: u64,

@@ -180,12 +180,17 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         &ready_buildings,
         &sw_views,
     );
-    if state
+    let inserted = state
         .match_state
         .match_presentation
         .sidebar_projection
-        .reconcile_cameos(owner, &cameos, visible_rows)
-    {
+        .reconcile_cameos(owner, &cameos, visible_rows);
+    state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .reconcile_factory_links(sim, owner);
+    if inserted {
         crate::app::input::dispatch::push_local_eva(
             state,
             crate::app::input::sidebar_eva::EVA_NEW_CONSTRUCTION_OPTIONS,
@@ -221,17 +226,9 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
             }),
         )
     };
-    sync_targeting_mode(
-        &mut state.match_state.input.targeting_mode,
-        &mut state.match_state.input.building_placement_preview,
-        &ready_buildings,
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation)
-            .map(|s| &s.interner),
-    );
+    // Placement lifetime is driven by the input owner's ordered native
+    // lifecycle facts. A missing Ready row alone is not pointer expiry:
+    // Dispatch7258D0 can clear product while retaining type/foundation.
     // App targeting state -> the sidebar-owned armed projection (F06 seam).
     let armed_entry = state
         .match_state
@@ -240,12 +237,25 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .as_ref()
         .map(|mode| match mode {
             crate::app::types::TargetingMode::BuildingPlacement(section) => {
-                sidebar::ArmedSidebarEntry::BuildingPlacement(section.clone())
+                sidebar::ArmedSidebarEntry::BuildingPlacement(section.type_id().to_string())
             }
             crate::app::types::TargetingMode::SuperWeapon(section) => {
                 sidebar::ArmedSidebarEntry::SuperWeapon(section.clone())
             }
         });
+    let factory_statuses = state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .factory_statuses(
+            &state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .expect("sidebar runtime")
+                .simulation,
+            owner,
+        );
     let mut view = sidebar::build_sidebar_view_with_spec(
         state.match_state.match_presentation.sidebar_layout_spec,
         state.render_width() as f32,
@@ -256,6 +266,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         power_drained,
         tab_btn_size,
         &queue_items,
+        &factory_statuses,
         &build_options,
         &ready_buildings,
         armed_entry.as_ref(),
@@ -315,31 +326,6 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .match_presentation
         .sidebar_projection
         .replace_view(Some(view));
-}
-
-/// Drops a building placement whose building is no longer ready. A selected
-/// Super is not the sidebar's to drop: its writers are
-/// `super_selection::follow_selection_writes`'s.
-pub(crate) fn sync_targeting_mode(
-    targeting_mode: &mut Option<crate::app::types::TargetingMode>,
-    building_placement_preview: &mut Option<crate::sim::production::BuildingPlacementPreview>,
-    ready_buildings: &[production::ReadyBuildingView],
-    interner: Option<&crate::sim::intern::StringInterner>,
-) {
-    let still_valid = match targeting_mode.as_ref() {
-        None | Some(crate::app::types::TargetingMode::SuperWeapon(_)) => true,
-        Some(crate::app::types::TargetingMode::BuildingPlacement(armed)) => {
-            ready_buildings.iter().any(|ready| {
-                interner.map_or(false, |i| {
-                    i.resolve(ready.type_id).eq_ignore_ascii_case(armed)
-                })
-            })
-        }
-    };
-    if !still_valid {
-        *targeting_mode = None;
-        *building_placement_preview = None;
-    }
 }
 
 // ---------------------------------------------------------------------------

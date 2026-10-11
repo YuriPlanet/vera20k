@@ -3,14 +3,28 @@
 //! Extracted from sidebar/mod.rs for file-size limits.
 
 use crate::sim::intern::InternedId;
+#[cfg(test)]
+use crate::sim::production::BuildQueueState;
 use crate::sim::production::{
-    BuildOption, BuildQueueState, PRODUCTION_STEPS, ProducerFocusView, ProductionCategory,
-    QueueItemView, ReadyBuildingView,
+    BuildOption, PRODUCTION_STEPS, ProducerFocusView, ProductionCategory, QueueItemView,
+    ReadyBuildingView,
 };
 use crate::sim::superweapon::SuperWeaponView;
 
 use super::cameo_order::{CameoId, CameoStrips};
 use super::gadget_flash::SidebarGadgetState;
+
+/// Read-only drawing inputs from one retained cameo's actual Factory link.
+/// The same Factory can appear on multiple cameos after a rearm; queue badges
+/// still use the separate House/type count.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CameoFactoryStatus {
+    pub(crate) type_id: InternedId,
+    pub(crate) progress: u16,
+    pub(crate) is_ready: bool,
+    pub(crate) is_building: bool,
+    pub(crate) is_on_hold: bool,
+}
 
 /// The armed targeting selection as the sidebar consumes it (F06): exactly
 /// one of building placement or superweapon may be armed at a time. This is
@@ -67,6 +81,33 @@ pub(crate) fn build_sidebar_view(
 ) -> SidebarView {
     let mut cameos = CameoStrips::layout_fixture(build_options, ready_buildings, &[]);
     cameos.set_scroll_row(active_tab, scroll_rows);
+    // This layout-only fixture links the supplied active heads and completed
+    // buildings. Production supplies its retained, registry-validated links.
+    let mut factory_statuses: Vec<_> = queue_items
+        .iter()
+        .filter(|item| item.state != BuildQueueState::Queued)
+        .map(|item| CameoFactoryStatus {
+            type_id: item.type_id,
+            progress: item.progress,
+            is_ready: item.state == BuildQueueState::Done,
+            is_building: item.state == BuildQueueState::Building,
+            is_on_hold: item.state == BuildQueueState::Paused,
+        })
+        .collect();
+    for ready in ready_buildings {
+        if !factory_statuses
+            .iter()
+            .any(|status| status.type_id == ready.type_id)
+        {
+            factory_statuses.push(CameoFactoryStatus {
+                type_id: ready.type_id,
+                progress: PRODUCTION_STEPS,
+                is_ready: true,
+                is_building: false,
+                is_on_hold: false,
+            });
+        }
+    }
     build_sidebar_view_with_spec(
         SidebarChromeLayoutSpec::stock(),
         screen_w,
@@ -77,6 +118,7 @@ pub(crate) fn build_sidebar_view(
         power_drained,
         tab_button_size,
         queue_items,
+        &factory_statuses,
         build_options,
         ready_buildings,
         armed,
@@ -103,6 +145,7 @@ pub(crate) fn build_sidebar_view_with_spec(
     power_drained: i32,
     tab_button_size: Option<[f32; 2]>,
     queue_items: &[QueueItemView],
+    factory_statuses: &[CameoFactoryStatus],
     build_options: &[BuildOption],
     ready_buildings: &[ReadyBuildingView],
     armed: Option<&ArmedSidebarEntry>,
@@ -124,6 +167,7 @@ pub(crate) fn build_sidebar_view_with_spec(
         let entries = collect_build_entries(
             tab.category(),
             queue_items,
+            factory_statuses,
             build_options,
             ready_buildings,
             armed,
@@ -453,10 +497,10 @@ struct BuildEntry {
     enabled: bool,
     progress: f32,
     queued_count: usize,
-    /// True when this type is the one actively being produced in its category.
+    /// True when this cameo's linked Factory is actively producing.
     is_building_this_type: bool,
     is_ready: bool,
-    /// Production of this type is suspended (paused queue or out of funds).
+    /// The linked Factory has no rate or is suspended; a cash stall is excluded.
     is_on_hold: bool,
     is_armed: bool,
     is_superweapon: bool,
@@ -466,6 +510,7 @@ struct BuildEntry {
 fn collect_build_entries(
     category: ProductionCategory,
     queue_items: &[QueueItemView],
+    factory_statuses: &[CameoFactoryStatus],
     build_options: &[BuildOption],
     ready_buildings: &[ReadyBuildingView],
     armed: Option<&ArmedSidebarEntry>,
@@ -520,73 +565,40 @@ fn collect_build_entries(
         .iter()
         .filter(|opt| category_is_on_tab(category, opt.queue_category) && opt.visible_in_sidebar())
         .map(|opt| {
-            // Check if this type has a completed building waiting for placement.
-            let is_ready = ready_buildings.iter().any(|r| r.type_id == opt.type_id);
+            // StripDraw6A9812/6A9822/6A985D reads this entry's linked
+            // Factory, even when that Factory holds another type. Queue
+            // badges instead count this requested type (6A9C48..6A9CC3).
+            let factory = factory_statuses
+                .iter()
+                .find(|status| status.type_id == opt.type_id);
+            let is_ready = factory.is_some_and(|status| status.is_ready);
             let is_armed = is_ready && armed_building_id == Some(opt.type_id);
-
-            if is_ready {
-                // Building is done — show as ready for placement.
-                BuildEntry {
-                    identity: CameoId::Object(opt.type_id),
-                    type_id: resolve(opt.type_id),
-                    display_name: opt.display_name.clone(),
-                    cost: Some(opt.cost),
-                    queue_category: opt.queue_category,
-                    enabled: true,
-                    progress: 1.0,
-                    queued_count: 1,
-                    is_building_this_type: false,
-                    is_ready: true,
-                    is_on_hold: false,
-                    is_armed,
-                    is_superweapon: false,
-                    super_weapon_section: None,
-                }
-            } else {
-                let queued_count = queue_items
-                    .iter()
-                    .filter(|item| {
-                        item.type_id == opt.type_id && item.queue_category == opt.queue_category
-                    })
-                    .count();
-                // Check if this type has an item in Building state (actively producing).
-                let is_building_this_type = queue_items.iter().any(|item| {
-                    item.type_id == opt.type_id
-                        && item.queue_category == opt.queue_category
-                        && item.state == crate::sim::production::BuildQueueState::Building
-                });
-                // The player's hold. gamemd's `TXT_HOLD` needs a factory with
-                // no rate or a stopped one (`0x006A9E9C..0x006A9ECC`); a cash
-                // stall keeps its rate, so it shows only a frozen clock.
-                let is_on_hold = queue_items.iter().any(|item| {
-                    item.type_id == opt.type_id
-                        && item.queue_category == opt.queue_category
-                        && item.state == BuildQueueState::Paused
-                });
-                let progress = queue_items
-                    .iter()
-                    .find(|item| {
-                        item.type_id == opt.type_id && item.queue_category == opt.queue_category
-                    })
-                    .map(|item| f32::from(item.progress) / f32::from(PRODUCTION_STEPS))
+            let queued_count = queue_items
+                .iter()
+                .filter(|item| {
+                    item.type_id == opt.type_id && item.queue_category == opt.queue_category
+                })
+                .count();
+            BuildEntry {
+                identity: CameoId::Object(opt.type_id),
+                type_id: resolve(opt.type_id),
+                display_name: opt.display_name.clone(),
+                cost: Some(opt.cost),
+                queue_category: opt.queue_category,
+                enabled: is_ready || opt.enabled,
+                progress: factory
+                    .map(|status| f32::from(status.progress) / f32::from(PRODUCTION_STEPS))
                     .unwrap_or(0.0)
-                    .clamp(0.0, 1.0);
-                BuildEntry {
-                    identity: CameoId::Object(opt.type_id),
-                    type_id: resolve(opt.type_id),
-                    display_name: opt.display_name.clone(),
-                    cost: Some(opt.cost),
-                    queue_category: opt.queue_category,
-                    enabled: opt.enabled,
-                    progress,
-                    queued_count,
-                    is_building_this_type,
-                    is_ready: false,
-                    is_on_hold,
-                    is_armed: false,
-                    is_superweapon: false,
-                    super_weapon_section: None,
-                }
+                    .clamp(0.0, 1.0),
+                queued_count,
+                is_building_this_type: factory.is_some_and(|status| status.is_building),
+                is_ready,
+                // Hold6A9E9C requires rate0 or suspension; a cash stall
+                // retains its running rate and displays a frozen clock.
+                is_on_hold: factory.is_some_and(|status| status.is_on_hold),
+                is_armed,
+                is_superweapon: false,
+                super_weapon_section: None,
             }
         })
         .collect();
@@ -611,7 +623,12 @@ fn collect_build_entries(
                 queue_category: r.queue_category,
                 enabled: true,
                 progress: 1.0,
-                queued_count: 1,
+                queued_count: queue_items
+                    .iter()
+                    .filter(|item| {
+                        item.type_id == r.type_id && item.queue_category == r.queue_category
+                    })
+                    .count(),
                 is_building_this_type: false,
                 is_ready: true,
                 is_on_hold: false,
@@ -790,6 +807,7 @@ mod tests {
                 0,
                 0,
                 Some([28., 25.]),
+                &[],
                 &[],
                 options,
                 &[],

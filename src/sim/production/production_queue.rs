@@ -166,7 +166,6 @@ pub fn publish_production_changes(sim: &mut Simulation, rules: &RuleSet) {
             ));
         }
     }
-    sim.production.factories.prune_all_idle();
 }
 
 /// Exercise the next frame's prefix publication and its event tail in focused owner tests,
@@ -192,7 +191,7 @@ pub(crate) fn dispatch_production_changes_for_tests(
     spawned
 }
 
-/// BuildingClass::ExitObject_Main443C60 for one retained mobile object.
+/// BuildingClass::ExitObject_Main443C60 for one retained object.
 /// Human House PLACE and AI Building::Factory_AI use this same exit owner;
 /// their refund/retry/release policies remain with their respective callers.
 /// GetDock/admission, Unlimbo and connected radio/mission effects run once.
@@ -216,6 +215,19 @@ pub(in crate::sim) fn exit_produced_object(
     let Some(product_type) = sim.object_type(product_type_id, rules) else {
         return BuildingExit::Failed;
     };
+    // The native RTTI6 jump-table arm delegates to the existing building
+    // exit owner. Human sentinel-cell PLACE and AI Factory_AI share this
+    // dispatch instead of copying either class's exit path.
+    if product_type.category == crate::rules::object_type::ObjectCategory::Building {
+        return ai_base_building::exit_building(
+            sim,
+            rules,
+            producer_id,
+            stable_id,
+            overlay_registry,
+            effects,
+        );
+    }
     let type_name = product_type.id.as_str();
     let Some(kind) = UnitChoiceKind::of(product_type.category) else {
         return BuildingExit::Failed;

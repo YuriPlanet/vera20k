@@ -22,7 +22,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
+use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::economy::Economy;
 use crate::sim::house_tracking::FactorySlot;
@@ -122,9 +122,10 @@ pub struct Factory {
     /// The factory's construction order: gamemd appends each new FactoryClass
     /// to the global Factories vector (ctor `0x004C9974..0x004C9989`), and
     /// `LogicClass` runs `FactoryClass::AI` in that order (`0x0055B66A..`).
-    /// Set from the build's enqueue stamp when the factory is created or an
-    /// idle one re-armed (gamemd deletes an idle factory and makes a new one);
-    /// a promotion keeps it.
+    /// Set from the build's enqueue stamp when the factory is created. A
+    /// promotion or NULL-product rearm keeps this identity and charge order:
+    /// original Begin4FA350 reuses the live Factory after PointerExpired.
+    /// Source: cameo_order.md, same-category rearm history.
     pub insertion_seq: u64,
     /// Factory+5D. StartProduction/Abandon/CompletedProduction and an actual
     /// stage advance set this; StripAI consumes it through4C9C60, even when
@@ -524,6 +525,9 @@ pub enum CancelOutcome {
     /// Queued copies of `type_id` were removed and the active object kept. No
     /// refund — a queued item was never charged.
     QueuedRemoved,
+    /// A BuildingType with nonzero BuildCat admitted the NULL-held, empty
+    /// factory branch at4FABF6. No object exists to refund or destroy.
+    ReleasedEmpty,
     /// The active object was abandoned; the lifecycle owner credits its
     /// refund and destroys it (`FactoryClass::AbandonProduction @ 0x004C9FF0`
     /// deletes the object stored at `Factory+0x58`).
@@ -557,6 +561,8 @@ pub(crate) struct RevalidationLifecycle {
 /// tests. Never mutates; never hashed. The user hold is not in it: the sidebar reads
 /// that through `production_queue::queue_view_for_owner`.
 pub struct FactoryView<'a> {
+    construction_order: u64,
+    step_rate_frames: u16,
     pub progress: u16,
     pub on_hold: bool,
     pub suspended: bool,
@@ -565,12 +571,38 @@ pub struct FactoryView<'a> {
 }
 
 impl<'a> FactoryView<'a> {
+    pub(crate) fn construction_order(&self) -> u64 {
+        self.construction_order
+    }
+
+    /// Select6AAE01/6AAE0D and6AB2A9/6AB2B5, plus Draw6A9E9C/6A9EB0,
+    /// read rate and suspension
+    /// independently of IsComplete. A cash stall retains a running rate.
+    pub(crate) fn is_running(&self) -> bool {
+        self.step_rate_frames != 0 && !self.suspended
+    }
+
+    /// Select6AAE01/6AB2A9 reads the linked Factory, independently of the
+    /// currently held object's type. Stopped Left then calls IsComplete at
+    ///6AB2BD; stopped Right abandons without that query.
+    pub(crate) fn cameo_state(&self) -> super::BuildQueueState {
+        if self.is_running() {
+            super::BuildQueueState::Building
+        } else if self.complete_object().is_some() {
+            super::BuildQueueState::Done
+        } else {
+            super::BuildQueueState::Paused
+        }
+    }
+
     /// `FactoryClass::IsComplete @ 0x004CA130`: the held object once it has
-    /// reached the last stage (`0x36`). Its special-item arm (`+0x68`) is
+    /// reached exactly the last stage (`0x36`, CMP4CA13C).
+    /// Rate and suspension are caller guards, not part of IsComplete.
+    /// Its special-item arm (`+0x68`) is
     /// dormant: FactoryClass's own writers store only -1 there (`0x004C990D`,
     /// `0x004CA058`, `0x004CA1F0`).
     pub fn complete_object(&self) -> Option<&'a PendingObject> {
-        self.object.filter(|_| self.progress >= PRODUCTION_STEPS)
+        self.object.filter(|_| self.progress == PRODUCTION_STEPS)
     }
 }
 
@@ -645,12 +677,30 @@ impl FactoryRegistry {
     pub fn view(&self, owner: InternedId, category: ProductionCategory) -> Option<FactoryView<'_>> {
         let f = self.factories.get(&FactoryHolder::House(owner, category))?;
         Some(FactoryView {
+            construction_order: f.insertion_seq,
+            step_rate_frames: f.step_rate_frames,
             progress: f.progress,
             on_hold: f.on_hold,
             suspended: f.suspended,
             object: f.object.as_ref(),
             queue: &f.queue,
         })
+    }
+
+    /// FactoryClass::PointerExpired4CA580, called by Dispatch725957 for
+    /// either expiry control: only a matching held product (+58) is cleared.
+    /// The factory, queue, stage, balance, rates and timers remain intact.
+    /// Source: cameo_order.md current/saved product-expiry histories.
+    pub(crate) fn pointer_expired(&mut self, entity_id: u64) {
+        for factory in self.factories.values_mut() {
+            if factory
+                .object
+                .as_ref()
+                .is_some_and(|object| object.entity_id == Some(entity_id))
+            {
+                factory.object = None;
+            }
+        }
     }
 
     /// `FactoryClass::CountTotal @ 0x004CA670` on `owner`'s factory for
@@ -917,7 +967,6 @@ impl FactoryRegistry {
             f.on_hold = false;
             f.suspended = false;
             f.manual = false;
-            f.insertion_seq = enqueue_order;
             f.changed = true;
             return EnqueueOutcome::Started;
         }
@@ -1083,18 +1132,6 @@ impl FactoryRegistry {
         true
     }
 
-    /// Drop EVERY idle House-slot factory (no active object AND empty queue) — the
-    /// post-cancel / post-delivery sweep (replaces the `queues_by_owner.retain` prune). An
-    /// idle factory should never persist into a hashed tick; this enforces it. A
-    /// building's factory is deleted by its own operations (`production::factory_ai`).
-    pub(crate) fn prune_all_idle(&mut self) {
-        self.factories.retain(|holder, f| {
-            matches!(holder, FactoryHolder::Building(_))
-                || f.object.is_some()
-                || !f.queue.is_empty()
-        });
-    }
-
     /// `HouseClass::Update_Factory_Queue @ 0x00509140` over every House
     /// factory, read-only: a queued build no building may build now,
     /// `FindFactory(1,0,1)` (whose CanBuild asks only the build limit), is
@@ -1171,7 +1208,11 @@ impl FactoryRegistry {
     /// queued entries (no refund — never charged), abandons a permanently-blocked active
     /// build (the caller credits its refund and destroys it), then promotes the first
     /// surviving queued entry (C7 StartNextQueued, cost-seeded; the caller arms its
-    /// rate). Idle factories are pruned.
+    /// rate). This every-frame approximation deletes only a factory actually
+    /// abandoned by its plan. PointerExpired4CA580 itself clears only the
+    /// held object. Native509140 deletes an empty factory at5092A0 when the
+    /// building-state trigger runs; that trigger cadence remains the residual
+    /// documented on `plan_revalidation`, not a reason to delete it every frame.
     pub(super) fn apply_revalidation(&mut self, plan: &[RevalAction]) -> RevalidationLifecycle {
         let mut lifecycle = RevalidationLifecycle {
             abandoned: Vec::new(),
@@ -1201,9 +1242,12 @@ impl FactoryRegistry {
                         .promoted
                         .push((action.owner, action.category, type_id));
                 }
+                if f.object.is_none() && f.queue.is_empty() {
+                    self.factories
+                        .remove(&FactoryHolder::House(action.owner, action.category));
+                }
             }
         }
-        self.prune_all_idle();
         lifecycle
     }
 
@@ -1340,6 +1384,7 @@ impl FactoryRegistry {
         category: ProductionCategory,
         type_id: InternedId,
         all: bool,
+        build_cat: Option<BuildCategory>,
     ) -> CancelOutcome {
         let Some(f) = self
             .factories
@@ -1347,6 +1392,14 @@ impl FactoryRegistry {
         else {
             return CancelOutcome::NoMatch;
         };
+        // House4FAACA→4FABEE→4FABF6 admits an empty Building factory when
+        // requested BuildCat is nonzero, without matching a held type. A
+        // BuildCat0 request retains it. No product means no refund/destructor.
+        if build_cat.is_some() && f.object.is_none() && f.queue.is_empty() {
+            self.factories
+                .remove(&FactoryHolder::House(owner, category));
+            return CancelOutcome::ReleasedEmpty;
+        }
         // `FactoryClass::Remove_First @ 0x004CA620`: the first match, the
         // survivors keeping their order.
         let mut removed = false;
@@ -2179,7 +2232,7 @@ mod tests {
             ..Factory::default()
         };
         let mut reg = reg_with(owner, ProductionCategory::Vehicle, f);
-        let outcome = reg.cancel_one(owner, ProductionCategory::Vehicle, a, false);
+        let outcome = reg.cancel_one(owner, ProductionCategory::Vehicle, a, false, None);
         assert_eq!(outcome, CancelOutcome::QueuedRemoved);
         let q: Vec<InternedId> = reg
             .view(owner, ProductionCategory::Vehicle)
@@ -2211,7 +2264,7 @@ mod tests {
             ..Factory::default()
         };
         let mut reg = reg_with(owner, ProductionCategory::Vehicle, f);
-        let outcome = reg.cancel_one(owner, ProductionCategory::Vehicle, a, false);
+        let outcome = reg.cancel_one(owner, ProductionCategory::Vehicle, a, false, None);
         assert_eq!(
             outcome,
             CancelOutcome::QueuedRemoved,
@@ -2243,7 +2296,7 @@ mod tests {
             ..Factory::default()
         };
         let mut reg = reg_with(owner, ProductionCategory::Vehicle, f);
-        let outcome = reg.cancel_one(owner, ProductionCategory::Vehicle, a, false);
+        let outcome = reg.cancel_one(owner, ProductionCategory::Vehicle, a, false, None);
         assert_eq!(
             outcome,
             CancelOutcome::AbandonedActive(AbandonedObject {
@@ -2283,7 +2336,7 @@ mod tests {
             ..Factory::default()
         };
         let mut reg = reg_with(owner, ProductionCategory::Vehicle, f);
-        let outcome = reg.cancel_one(owner, ProductionCategory::Vehicle, a, false);
+        let outcome = reg.cancel_one(owner, ProductionCategory::Vehicle, a, false, None);
         assert_eq!(
             outcome,
             CancelOutcome::AbandonedActive(AbandonedObject {
@@ -2329,7 +2382,7 @@ mod tests {
 
         let mut reg = reg_with(owner, ProductionCategory::Infantry, factory(a));
         assert_eq!(
-            reg.cancel_one(owner, ProductionCategory::Infantry, a, true),
+            reg.cancel_one(owner, ProductionCategory::Infantry, a, true, None),
             CancelOutcome::AbandonedActive(AbandonedObject {
                 type_id: a,
                 balance: 150,
@@ -2346,7 +2399,7 @@ mod tests {
 
         let mut reg = reg_with(owner, ProductionCategory::Infantry, factory(b));
         assert_eq!(
-            reg.cancel_one(owner, ProductionCategory::Infantry, a, true),
+            reg.cancel_one(owner, ProductionCategory::Infantry, a, true, None),
             CancelOutcome::QueuedRemoved,
             "another type's active build stays"
         );
@@ -2395,7 +2448,7 @@ mod tests {
         let z = InternedId::from_index(9);
         let mut empty = FactoryRegistry::default();
         assert_eq!(
-            empty.cancel_one(owner, ProductionCategory::Vehicle, a, false),
+            empty.cancel_one(owner, ProductionCategory::Vehicle, a, false, None),
             CancelOutcome::NoMatch,
             "no factory -> NoMatch"
         );
@@ -2413,7 +2466,7 @@ mod tests {
         };
         let mut reg = reg_with(owner, ProductionCategory::Vehicle, f);
         assert_eq!(
-            reg.cancel_one(owner, ProductionCategory::Vehicle, z, false),
+            reg.cancel_one(owner, ProductionCategory::Vehicle, z, false, None),
             CancelOutcome::NoMatch,
             "type absent -> NoMatch"
         );

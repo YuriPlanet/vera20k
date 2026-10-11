@@ -562,7 +562,17 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
 /// the repair/sell cursor). The final rung — clear the selection — is retail
 /// behaviour, not a VERA deviation.
 fn right_click_cancel_ladder(state: &mut AppState) {
-    if state.match_state.input.targeting_mode.is_some() {
+    if state.match_state.input.cancel_building_placement() {
+        return;
+    }
+    if state
+        .match_state
+        .input
+        .targeting_mode
+        .as_ref()
+        .and_then(crate::app::types::TargetingMode::as_super_weapon)
+        .is_some()
+    {
         state.match_state.input.targeting_mode = None;
         state.match_state.input.building_placement_preview = None;
         return;
@@ -1046,7 +1056,31 @@ fn sidebar_cameo_press(
     };
     let queue = local_queue_view(state);
     let type_iid = local_interned(state, type_id);
-    let click = sidebar_eva::cameo_click(&queue, category, type_iid, press, at_build_limit);
+    let linked_factory = preferred_local_owner_name(state).and_then(|owner| {
+        let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+        state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .cameo_factory(sim, sim.interner.get(&owner)?, type_iid?)
+            .map(|factory| {
+                (
+                    factory.cameo_state(),
+                    factory.complete_object().map(|object| object.type_id),
+                )
+            })
+    });
+    let click = sidebar_eva::cameo_click(
+        &queue,
+        category,
+        type_iid,
+        linked_factory.map(|(status, _)| status),
+        press,
+        at_build_limit,
+    );
+    if click.clear_building_placement {
+        state.match_state.input.cancel_building_placement();
+    }
     if click.sound {
         let sound = state
             .rules()
@@ -1063,24 +1097,49 @@ fn sidebar_cameo_press(
         Some(sidebar_eva::CameoOrder::Abandon { all }) => {
             cancel_build_by_type(state, type_id, all);
         }
-        // Residual (building path): `HouseClass::Manual_Place @ 0x004FB840`
-        // ignores the click while any placement is pending (`0x004FB852..
-        // 0x004FB859`); VERA's click leaves placement mode for the same
-        // building and switches it to another finished one.
+        // ManualPlace4FB852 refuses while any building placement is pending.
         Some(sidebar_eva::CameoOrder::Place) => {
-            let armed = state
-                .armed_building_type()
-                .is_some_and(|armed| armed.eq_ignore_ascii_case(type_id));
-            if armed {
-                state.match_state.input.targeting_mode = None;
-                state.match_state.input.building_placement_preview = None;
-            } else {
-                state.match_state.input.targeting_mode = Some(
-                    crate::app::types::TargetingMode::BuildingPlacement(type_id.to_string()),
-                );
+            // Select6AB30D plays GUIBuildSound before ObjectFindFactory5F5C20
+            // (0,0) at6AB31A, including repeated pending clicks. A null builder
+            // instead queues ABANDON16 before EVA_UnableToComply6AB3A9.
+            let ready_target = preferred_local_owner_name(state).and_then(|owner| {
+                let runtime = state.match_state.sim_runtime.as_ref()?;
+                let sim = &runtime.simulation;
+                let rules = &runtime.resources.rules;
+                let owner_id = sim.interner.get(&owner)?;
+                // Select6AB2CC reads this linked Factory's actual product;
+                // an older cameo can still refer to a rearmed Factory.
+                let held_type = linked_factory?.1?;
+                let held = crate::sim::production::ready_building_entity_for_owner(
+                    sim, rules, owner_id, held_type,
+                )?;
+                Some((
+                    owner_id,
+                    held,
+                    sim.interner.resolve(held_type).to_string(),
+                    crate::sim::production::object_find_factory(sim, rules, held, false, false),
+                ))
+            });
+            let Some((owner_id, held, held_type, builder)) = ready_target else {
+                return;
+            };
+            let Some(_builder) = builder else {
+                cancel_build_by_type(state, type_id, false);
+                push_local_eva(state, sidebar_eva::EVA_UNABLE_TO_COMPLY);
+                return;
+            };
+            if state
+                .match_state
+                .input
+                .begin_building_placement(&held_type, held, owner_id)
+            {
+                // ManualPlace4FB881 calls UnselectAll48DC90 only on entry.
+                // This existing owner clears immediate selection/follow and
+                // schedules the authoritative membership commit. A clear has
+                // no additions, so its effects do not depend on cursor mode.
+                queue_selection_snapshot_command(state, Vec::new(), false);
                 let gadgets = &mut state.match_state.match_presentation.sidebar_gadget_state;
-                gadgets.repair_mode_on = false;
-                gadgets.sell_mode_on = false;
+                gadgets.disable_selection_modes(false);
             }
         }
     }
@@ -1663,7 +1722,7 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
 }
 
 // Native 653952 -> GameState1 -> 48C9BA/4F10E0 opens the pause menu.
-// The button calls this directly; Escape's cancel/resume priority is separate.
+// The button and ordinary Options hotkey share this modal entry.
 fn open_pause_menu(state: &mut AppState) {
     crate::app::App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Menu);
     log::info!("Game paused");
@@ -1691,31 +1750,11 @@ fn handle_options_hotkey(state: &mut AppState) {
             state.platform.window.set_cursor_visible(false);
         }
         log::info!("Game resumed");
-    } else if state.match_state.input.targeting_mode.is_some() {
-        state.match_state.input.targeting_mode = None;
-        state.match_state.input.building_placement_preview = None;
-    } else if state
-        .match_state
-        .match_presentation
-        .sidebar_gadget_state
-        .repair_mode_on
-        || state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .sell_mode_on
-    {
-        state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .repair_mode_on = false;
-        state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .sell_mode_on = false;
     } else {
+        // Options535BE0/5372D0 and unconsumed Escape55E079 both request
+        // GameState1. Deactivate683EB0/4AEAD0 tears down drag/capture without
+        // dropping current building placement or repair/sell. Source:
+        // tools/sidebar_oracle/cameo_order.md, ready-building histories.
         open_pause_menu(state);
     }
 }

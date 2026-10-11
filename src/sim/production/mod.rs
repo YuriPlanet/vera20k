@@ -35,8 +35,10 @@ pub use self::factory::{
     category_for_object, time_to_build,
 };
 pub use self::factory_lifecycle::suspend_production;
-pub(crate) use self::factory_lifecycle::{FactoryRestoreError, validate_restored_factory_state};
-pub(crate) use self::factory_lifecycle::{cancel_by_type_for_owner, enqueue_by_type};
+pub(crate) use self::factory_lifecycle::{
+    FactoryRestoreError, cancel_by_type_for_owner, enqueue_by_type, ready_building_entity_for_owner,
+    validate_restored_factory_state,
+};
 pub use self::production_economy::is_harvester_type;
 pub(crate) use self::production_placement::place_production_with_overlays;
 pub use self::production_placement::{
@@ -74,7 +76,9 @@ pub use self::production_types::*;
 
 // Re-exports for external consumers (files outside production/ that previously
 // imported private submodules directly).
-pub(crate) use self::can_build::{CanBuild, can_build, find_factory, initialize_factory_primary};
+pub(crate) use self::can_build::{
+    CanBuild, can_build, find_factory, initialize_factory_primary, object_find_factory,
+};
 pub(crate) use self::factory_ai::{detach_all as detach_building_factory, factory_ai};
 #[cfg(test)]
 pub(crate) use self::factory_lifecycle::complete_held_building_for_test;

@@ -5,8 +5,52 @@
 //! shells that reuse the same cursor/key plumbing). Sim-authoritative input —
 //! queued commands — lives in the simulation, never here.
 
+use crate::sim::intern::InternedId;
 use std::collections::HashSet;
 use winit::keyboard::{KeyCode, ModifiersState};
+
+/// Client-side handles installed by ManualPlace4FB840. The House factory
+/// remains the owner of the completed object; these are cursor references,
+/// not a second ready-object registry. Type is independent of product pointer
+/// lifetime in DispatchPointerExpired7258D0.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BuildingPlacementTarget {
+    type_id: String,
+    product_id: Option<u64>,
+    /// House+30 at4FB8C4 is captured as the existing command House identity.
+    owner: InternedId,
+}
+
+impl BuildingPlacementTarget {
+    pub(crate) fn type_id(&self) -> &str {
+        &self.type_id
+    }
+
+    pub(crate) fn product_id(&self) -> Option<u64> {
+        self.product_id
+    }
+
+    pub(crate) fn owner(&self) -> InternedId {
+        self.owner
+    }
+}
+
+/// Read-only current and deferred placement references at an input boundary.
+/// Diagnostics borrow the existing owner; they keep no second transaction.
+pub(crate) struct BuildingPlacementInputView<'a> {
+    pub(crate) current: Option<&'a BuildingPlacementTarget>,
+    pub(crate) saved_retry: Option<&'a BuildingPlacementTarget>,
+    pub(crate) current_preview_present: bool,
+    pub(crate) saved_preview_present: bool,
+}
+
+/// BandBoxLeftUp4ABBF5 saves current placement independently of its active
+/// cursor. A later HousePlace4FB35F failure restores this transaction, rather
+/// than inferring the target from the failing event's type.
+struct SavedBuildingPlacement {
+    target: BuildingPlacementTarget,
+    preview: Option<crate::sim::production::BuildingPlacementPreview>,
+}
 
 pub(crate) struct MatchInputState {
     pub(crate) camera_x: f32,
@@ -68,12 +112,17 @@ pub(crate) struct MatchInputState {
     /// its valid byte `+0x119C`. `None` is the cleared pair.
     pub(crate) follow_target: Option<u64>,
     /// Mutually-exclusive cursor-on-tactical-map targeting mode (building
-    /// placement OR superweapon). Right-click and Esc clear; arming one
+    /// placement OR superweapon). Right-click clears; Options preserves it. Arming one
     /// kind clears the other.
     pub(crate) targeting_mode: Option<crate::app::types::TargetingMode>,
     /// Current placement preview for the armed building, if any.
     pub(crate) building_placement_preview: Option<crate::sim::production::BuildingPlacementPreview>,
+    saved_building_placement: Option<SavedBuildingPlacement>,
 }
+
+#[cfg(test)]
+#[path = "ready_building_placement_tests.rs"]
+mod ready_building_placement_tests;
 
 impl MatchInputState {
     /// Construct the match input owner with the ordinary startup defaults.
@@ -90,6 +139,7 @@ impl MatchInputState {
             follow_target: None,
             targeting_mode: None,
             building_placement_preview: None,
+            saved_building_placement: None,
             camera_x: 0.0,
             camera_y: 0.0,
             pending_camera_scroll: Default::default(),
@@ -116,5 +166,187 @@ impl MatchInputState {
     /// shell screens and the gadget layer hit-test with.
     pub(crate) fn cursor_px(&self) -> (i32, i32) {
         (self.cursor_x.round() as i32, self.cursor_y.round() as i32)
+    }
+
+    /// HouseClass::Manual_Place4FB852..4FB859 refuses every new entry while
+    /// a building placement is pending. SelectClass has already played the
+    /// click sound and queried the actual held object's builder.
+    /// Source: tools/sidebar_oracle/cameo_order.md, ready-building histories.
+    /// The caller clears selection and repair/sell only on first entry.
+    pub(crate) fn begin_building_placement(
+        &mut self,
+        type_id: &str,
+        product_id: u64,
+        owner: InternedId,
+    ) -> bool {
+        let armed = self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_building_placement)
+            .is_some();
+        if armed {
+            false
+        } else {
+            self.targeting_mode = Some(crate::app::types::TargetingMode::BuildingPlacement(
+                BuildingPlacementTarget {
+                    type_id: type_id.to_string(),
+                    product_id: Some(product_id),
+                    owner,
+                },
+            ));
+            self.building_placement_preview = None;
+            true
+        }
+    }
+
+    /// Display4AAD30's building rung and Select6AADC9's own-factory prefix.
+    /// Neither consumes the House factory's completed object. A selected
+    /// superweapon has its own input owner and is outside this building rung.
+    pub(crate) fn cancel_building_placement(&mut self) -> bool {
+        // Both native client rungs require current product, not current type.
+        // An expired product can leave an orphan type/foundation pending.
+        if self.building_placement_issuer().is_none() {
+            return false;
+        }
+        self.clear_building_placement()
+    }
+
+    /// Explicit House placement/abandon tails clear the type/foundation even
+    /// when pointer expiry has already cleared the current product.
+    fn clear_building_placement(&mut self) -> bool {
+        if self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_building_placement)
+            .is_none()
+        {
+            return false;
+        }
+        self.targeting_mode = None;
+        self.building_placement_preview = None;
+        true
+    }
+
+    /// BandBoxLeftUp4AB9B0 requires the current product, independently of
+    /// current type/foundation. Product-only expiry leaves those two intact.
+    pub(crate) fn building_placement_issuer(&self) -> Option<InternedId> {
+        let Some(crate::app::types::TargetingMode::BuildingPlacement(target)) =
+            &self.targeting_mode
+        else {
+            return None;
+        };
+        target.product_id.map(|_| target.owner)
+    }
+
+    /// DispatchPointerExpired7258D0 clears a matching current product
+    /// without dropping its type or active foundation. Alive/Health is not
+    /// this notification. Source: cameo_order.md product-only expiry history.
+    pub(crate) fn building_placement_pointer_expired(&mut self, stable_id: u64) {
+        if let Some(crate::app::types::TargetingMode::BuildingPlacement(target)) =
+            &mut self.targeting_mode
+            && target.product_id == Some(stable_id)
+        {
+            target.product_id = None;
+        }
+        // TacticalPointerExpired6DA57D..6DA5A5 drops the complete saved
+        // transaction when its product matches, independently of current.
+        if self
+            .saved_building_placement
+            .as_ref()
+            .is_some_and(|saved| saved.target.product_id == Some(stable_id))
+        {
+            self.saved_building_placement = None;
+        }
+    }
+
+    /// BandBoxLeftUp4ABBF5..4ABC5D transfers current placement to the one
+    /// saved transaction and drops the active cursor even if OutList is full.
+    pub(crate) fn submit_building_placement(&mut self) {
+        let mode = self.targeting_mode.take();
+        match mode {
+            Some(crate::app::types::TargetingMode::BuildingPlacement(target)) => {
+                self.saved_building_placement = Some(SavedBuildingPlacement {
+                    target,
+                    preview: self.building_placement_preview.take(),
+                });
+            }
+            other => self.targeting_mode = other,
+        }
+    }
+
+    /// HousePlace4FB395..4FB49A restores the saved transaction, including an
+    /// empty one left by an earlier success, and consumes the old backup.
+    /// The caller recomputes the active preview from the actual cursor through
+    /// the existing placement-preview owner after a nonempty restoration.
+    pub(crate) fn retry_building_placement(&mut self) -> bool {
+        self.clear_building_placement();
+        let Some(saved) = self.saved_building_placement.take() else {
+            return false;
+        };
+        self.targeting_mode = Some(crate::app::types::TargetingMode::BuildingPlacement(
+            saved.target,
+        ));
+        self.building_placement_preview = saved.preview;
+        true
+    }
+
+    /// HousePlace4FB328..4FB33F clears both current and saved building
+    /// placement after successful Unlimbo and BuildingSlam.
+    pub(crate) fn finish_building_placement(&mut self) {
+        self.clear_building_placement();
+        self.saved_building_placement = None;
+    }
+
+    /// Consume the ordered native lifecycle facts through this input owner.
+    /// Returning true requests an actual-cursor preview refresh after retry.
+    pub(crate) fn apply_building_placement_output(
+        &mut self,
+        output: &crate::sim::world::LifecycleOutput,
+        local_house: Option<InternedId>,
+    ) -> bool {
+        use crate::sim::world::LifecycleOutput;
+        match *output {
+            LifecycleOutput::BuildingPlacementRetry { owner } if local_house == Some(owner) => {
+                return self.retry_building_placement();
+            }
+            LifecycleOutput::BuildingPlacementSucceeded { owner } if local_house == Some(owner) => {
+                self.finish_building_placement();
+            }
+            LifecycleOutput::BuildingProductionAbandoned { owner }
+                if local_house == Some(owner) =>
+            {
+                self.clear_building_placement();
+            }
+            LifecycleOutput::ObjectPointerExpired { stable_id } => {
+                self.building_placement_pointer_expired(stable_id);
+            }
+            _ => {}
+        }
+        false
+    }
+
+    /// New-scenario installation discards references into the outgoing world.
+    pub(crate) fn reset_targeting_for_new_world(&mut self) {
+        self.targeting_mode = None;
+        self.building_placement_preview = None;
+        self.saved_building_placement = None;
+    }
+
+    pub(crate) fn building_placement_view(&self) -> BuildingPlacementInputView<'_> {
+        BuildingPlacementInputView {
+            current: self.targeting_mode.as_ref().and_then(|mode| match mode {
+                crate::app::types::TargetingMode::BuildingPlacement(target) => Some(target),
+                _ => None,
+            }),
+            saved_retry: self
+                .saved_building_placement
+                .as_ref()
+                .map(|saved| &saved.target),
+            current_preview_present: self.building_placement_preview.is_some(),
+            saved_preview_present: self
+                .saved_building_placement
+                .as_ref()
+                .is_some_and(|saved| saved.preview.is_some()),
+        }
     }
 }

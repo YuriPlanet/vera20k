@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "Original whole Strip CompareItems/InsertEntry, AddCameo admission through insertion, Recalculate retained filter/removal and complete pruning-scroll controls, and SuperWeaponType RechargeTime reader block. Synthetic initialized inputs; not a complete tech-tree, native scene, or whole-sidebar claim.",
+  "scope": "Original whole Strip CompareItems/InsertEntry, AddCameo admission through insertion, Recalculate retained filter/removal and complete pruning-scroll controls, and SuperWeaponType RechargeTime reader block. Synthetic initialized ordering inputs; additive original paid ready-building retained SelectAction/ManualPlace/local event/receiver and expiry histories use existing initialized physical joined readers/VM. Not a complete tech-tree, native scene, or whole-sidebar claim.",
   "assumptions": [
     "Fresh PE mapping per case family. Actual RTTI_To_TypeArray, original type vtables, Cost_Of country/FactoryPlant arithmetic and UTF-16 wcscmp execute. Type/House inputs are supplied fields, not a claim of native constructor/INI initialization. FPCW0E7F.",
     "All 33 by33 pair combinations include type-class flag gating, both flags set, same-side priority, signed TechLevel/cost/recharge, name case, supplementary UTF-16 and exact ties.",
@@ -16,12 +16,28 @@
     "A separate capacity history executes the native76th-entry overrun into mapped adjacent storage, then rejection at76, prune to75 and retry. It proves the admission gate and addition-before-removal consequence, not integrity of a native oversized Sidebar. Rust must keep memory safe; adjacent overwritten state is not a golden.",
     "Recalculate starts at6AA600 and stops at6AAAB3 after the complete retained filter. Supers granted bits are supplied. Entries have no linked production factories and House primary-factory fields are zero; original500510 executes on removals. The original histories exclude cancellation events, tab selection and scroll adjustment.",
     "The additive recalculate_scroll cases instead execute whole6AA600 to its RET. Original AddCameo populates the source vehicle strip; cases restore those executed bytes and supply TopRow, geometry and unavailable IDs. Actual prologue capacity, visible record snapshots, snapshot erasure and6AABC9..6AAC76 row adjustment execute. No Python algorithm supplies expected rows. Original69DCF0 initializes all four tab gadgets so the all-entries-gone disable path runs. Other strips remain empty; switching to another populated tab and linked-factory cancellation remain excluded.",
-    "RechargeTime uses original constructor6CE5C0..6CE681 field initialization and reader6CED5C..6CED95 with original ReadDouble and ftol, supplied cached INI lookup, and original floating-scanner startup. Whole SuperWeaponType reader is excluded."
+    "RechargeTime uses original constructor6CE5C0..6CE681 field initialization and reader6CED5C..6CED95 with original ReadDouble and ftol, supplied cached INI lookup, and original floating-scanner startup. Whole SuperWeaponType reader is excluded.",
+    "Additive ready_building_histories reuse building_death_anims.joined_inputs/joined_fixture, building_construction, EngineerJoinedFixture, the one native arena, physical sound/ART readers and native flat-map connectivity/Pathfinder. The old seven family payloads are unchanged. Only the new family requires VERA20K_READY_BUILDING_ASSETS.",
+    "Original selected BuildingType registration45E2ED..45E362 produces GACNST/GAPOWR/GAPILE/GAPILL indices; whole45DD90/45FE50 read GAPILL over RULESMD, optional LANGRULE, Battle mode and Hills map. GUIBuildSound6693A6..6693F1 and BuildingSlam66AA7F..66AACF execute original ReadString528A10/FindIndex7514D0 retaining constructor/current defaults. Selected sound indices and object pointers are fixture-relative; original unlayered SOUNDMD supplies names/samples.",
+    "The new ready baseline executes original healthy GACNST/GAPILE whole43B740 constructors then uses existing explicit admitted preplaced priors and original Mark/Logic admission. House technology10, credits10000, empty FactoryPlant, local House number0, four strips and flat clear map are declared inputs. Whole preplaced map/House constructors are excluded.",
+    "Original House interface constructor region4F5DCC..4F5E02, Factory-expiry listener registration4F5EB8..4F5F0B intoB0F640, BuildingBuilt Counter49F9B0 at55A0, House registry insertion, skirmish store52E10F..119, Factory/selection/preview/Select CRT owners and original Display/Mouse/WWMouse constructor regions execute. The WWMouse region stops before opaque platform wait/window setup; supplied physical pointer is320,240, timeGetTime0. No full GUI startup or hardware cursor drawing is claimed.",
+    "Paid GAPOWR and separate Defense GAPILL factories are created by whole4FA350/4C9C70. Whole4C9B20 visits monotonically increasing frames until original stage54; no ready stage is supplied. Payment, timers, balance and original IsComplete/GetObject/linking are observed. Each subsequent history restores those executed ready VM/CPU/OS-transport bytes. Timer padding is raw observation, not a meaningful semantic field.",
+    "Actual Factory construction-arrayA83E30 order and retained strip records are observed. Entry+08 is BuildCat metadata; entry+0C/strip+64 is the actual Factory link written by6A6140. NULL-held same-category GAPILE rearm retains the original Factory identity and array order while both old GAPOWR and new GAPILE entries reference it. Original 6ABB60 clears all same-Factory links on admitted HouseAbandon. Link publication at 4FA6AA occurs only for the local House after4FA61E; no-builder/Start-refused and queued-tail4FA5F8 returns bypass it. Same suspended-type shortcut passes it. The queued-tail guard is instruction-supported, not an executed forged building queue.",
+    "The additive rearmed_factory_sidebar_abandon_unlinks_all_retains_factory control restores the executed paid baseline, expires GAPOWR through7258D0, and pays for GAPILE in the same live Factory. Whole SidebarAbandon6ABAD0(6,GAPILE index,Factory) executes Strip6ABB60 at a declared direct owner boundary, clearing both retained GAPOWR/GAPILE links while preserving Factory identity/registry order and the independent Defense GAPILL Factory/link. It refunds GAPILE once, destroys its limbo product and dispatches expiry; all three RNG streams and zero draws/advances are recorded. No queue or mobile state is forged, and mobile cancellation/delivery caller reachability is instruction-supported rather than an executed mobile chain.",
+    "The additive local_unlinked_strip_clear_active_abandon_order control restores the executed paid GAPOWR/GAPILL baseline, enters GAPOWR through whole Select, then executes whole StripClear6A81B0(tab0) before whole HouseAbandon4FAA10. This direct initialized helper clears Building-strip records without settling the live Factory. It is not whole UI/scenario reset or mobile execution. The zero-link Sidebar pass has no inner FactoryAbandon;4FAB83 retains current product/type/foundation, whereas product expiry7258D0 sees the cleared cursor after the House prefix and before core Factory deletion. Existing linked cancellation instead refunds/destroys/expires before6ABBDF unlink and the House cursor prefix. StripClear initializes75 slot clocks outside the existing stage/building/action timer watch windows; no whole reset/timer claim. Its raw EAX and opaque timer padding are observations. Complete three RNG states, zero House-abandon draws/advances, the three stage-clock stores and reached lifecycle calls are retained; no link, stage or expected result is authored.",
+    "Old GAPOWR Left after same-Factory paid GAPILE rearm executes6AB2CC GetObject, ObjectFindFactory on the actual held GAPILE and ManualPlace(yard,GAPILE product). Current and saved cursor/event identity is GAPILE, not the requested old cameo type. Whole tactical producer and local receiver successfully place GAPILE and remove the Factory; no Python caller substitutes the held type or placement result.",
+    "Whole SelectAction6AAD00 -> ObjectFindFactory5F5C20 -> TypeFindFactory5F7900 -> ManualPlace4FB840 executes on actual paid products. Fresh ManualPlace calls UnselectAll48DC90; both same and different ready building repeats refuse at the nonnull current-type guard. Sound and builder query occur before that guard. Current/saved issuer880994/880980 is House+30, not a builder pointer. 4A91B0 owns map-cell foundation preview coordinates, not the camera.",
+    "Whole tactical left/right producers, actual111-byte OutList events and local corridor 6474C7..6474BF ->64C380 ->4C6CB0 ->HousePlace4FB0E0 execute. Only actual failed Building Unlimbo440580 restores latest saved product/type; early missing/incomplete/null-held/builder or sentinel guards do not. Both same-cell event orders, two failures and fail-then-Abandon preserve original order. An independent stationary blocker executes whole43B740/440580 at a declared direct caller boundary, not a whole trigger/map-loader/tick.",
+    "Whole7258D0 calls actual FactoryPointerExpired4CA580 and TacticalPointerExpired6DA560. Current product expiry retains type/foundation and prevents tactical event emission; saved product expiry clears saved product/type/issuer/foundation. Current type expiry clears current type/foundation but retains product; saved type expiry alone retains backup. Alive=false and builder Limbo=true are explicit input changes, not fatal/Limbo producers. Original Abandon/destructor/expiry reached by cancellation execute against initialized services. Full fatal death, all destructor classes and scenario/save/modal-resume loading are excluded.",
+    "TacticalRight4AAD30 requires current product and AbstractFlags bit0 before clearing the cursor; NULL product preserves orphan type/foundation. Own-factory Right6AAD00 uses the same retained entry link, and its clear-prefix requires a nonnull Building current product. NULL-held category Factory survives expiry until admitted Abandon or direct queue recheck. HouseAbandon4FABF6 admits NULL held for nonzero requested BuildCat without a requested-index match; stockGACNST BuildCat0 is an executed refusal control, GAPILE nonzero mismatched index and Defense GAPILL admit. NULL-held FactoryAbandon has no refund, timer write or RNG draw.",
+    "Whole HouseUpdateFactoryQueue509140 executes as a direct helper with RTTI7/naval0 and category0 or helper-only Defense5. Selected active stockGACNST callers push category0. Supplied builder Limbo makes actual TypeFindFactory refuse. Original 50921C calls FactoryAbandon directly, not HouseAbandon, followed by StartNextQueued. Original5092A0 scalar deletion4CA770 dispatches Factory expiry; initialized House listener4FB9B0 clears the matching slot and original destructor removes live Factory/object-expiry registry entries. It retains orphan current type/foundation and can leave a raw old cameo link to released arena bytes. Such links are recorded as factory_live=false and never dereferenced. Stale freed-pointer Right, whole builder lifecycle callers, their scheduling and subsequent sidebar recalculate are excluded; no every-frame recheck claim is made.",
+    "Main886B88/Scenario+218 use inherited original seed2; MapGenABE890 uses original seed31. Every step records complete three RNG states, actual draw/advance sequence, timers and lifecycle calls; neither expected mutation nor RNG nor placement predicates are implemented in Python. Native executable sections are checked unchanged."
   ],
   "substitutions": [
     "EVA752700 is an observed no-op sink with its actual RET4 convention.",
     "Recalculate allocator7C8E17 supplies a zeroed visible-copy buffer. Type virtual+94 FindFactory and House4F7870 CanBuild return declared availability inputs. Admission producer bodies and complete House/Building lifecycle are not executed.",
-    "Complete pruning-scroll controls observe UpdateScrollButtons6A6610 and operator_delete7C8B3D as no-op sinks with their actual caller-cleaned conventions. Delete must receive the original supplied allocation. No button appearance or allocator-internal claim; zero-filled unused snapshot slots are an explicit input."
+    "Complete pruning-scroll controls observe UpdateScrollButtons6A6610 and operator_delete7C8B3D as no-op sinks with their actual caller-cleaned conventions. Delete must receive the original supplied allocation. No button appearance or allocator-internal claim; zero-filled unused snapshot slots are an explicit input.",
+    "New ready histories do not use the legacy availability or comparator substitutions. They retain existing joined native physical asset-cache/allocator/OS-file/DirectSound transport and declared presentation sinks. Reached WinMM import callsites receive literal wall_ms0 with caller-owned stack unchanged; the existing6C8C40/646F20 owner arms are not overridden twice. Full mounted MIX/theater traversal, audible hardware output, Options dialog platform/resume and drawing are excluded."
   ],
   "entry_points": {
     "compare": "0x006A8420",
@@ -34,15 +50,46 @@
     "prune_scroll_tail": "0x006AABC9",
     "tab_gadget_ctor": "0x0069DCF0",
     "super_ctor_fields": "0x006CE5C0",
-    "recharge_reader": "0x006CED5C"
+    "recharge_reader": "0x006CED5C",
+    "ready_select": "0x006AAD00",
+    "object_find_factory": "0x005F5C20",
+    "type_find_factory": "0x005F7900",
+    "manual_place": "0x004FB840",
+    "tactical_left_up": "0x004AB9B0",
+    "tactical_right_up": "0x004AAD30",
+    "place_event": "0x004C6AE0",
+    "house_place": "0x004FB0E0",
+    "building_unlimbo": "0x00440580",
+    "house_abandon": "0x004FAA10",
+    "factory_start": "0x004C9C70",
+    "factory_ai": "0x004C9B20",
+    "house_factory_listener_ctor": "0x004F5EB8",
+    "house_factory_expiry": "0x004FB9B0",
+    "house_update_factory_queue": "0x00509140",
+    "factory_scalar_delete": "0x004CA770",
+    "sidebar_link_factory": "0x006A6140",
+    "sidebar_abandon_factory": "0x006ABAD0",
+    "strip_abandon_factory": "0x006ABB60",
+    "pointer_expiry": "0x007258D0",
+    "tactical_expiry": "0x006DA560",
+    "factory_expiry": "0x004CA580",
+    "gui_sound_reader": "0x006693A6",
+    "building_slam_reader": "0x0066AA7F"
   },
+  "command": "VERA20K_GAMEMD_EXE=/absolute/path/gamemd.exe VERA20K_READY_BUILDING_ASSETS=/absolute/path/extracted-retail-cache python -B -m tools.sidebar_oracle.cameo_order --check; replace --check with --write to regenerate",
   "source_normalized_lf_sha256": {
-    "tools/sidebar_oracle/cameo_order.py": "6ecd2470bfe80ba2c001d944748ef8babdcf721cecb46119be30f4d2b3b08242",
+    "tools/sidebar_oracle/cameo_order.py": "39910dab5a929e3829781fc144f5fcda344a0cd5f26e9dd0c05a84a1dad133cc",
     "tools/sidebar_oracle/geometry.py": "3be14607c275ec465c6e6535e6dfa5af6f4db7b9eef2a022ce52e9434e5819d7",
     "tools/spatial_oracle/cost_of.py": "11cc459dc355063e4a7d5207e14c2bdc079f2306bcbb57d2c2ee018973cb5ad8",
     "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-    "tools/native_oracle.py": "0c94545bb9c4ca049ad7d46b152d9bd79624c7e52b3fec7a42d360974bbaacef"
+    "tools/native_oracle.py": "0c94545bb9c4ca049ad7d46b152d9bd79624c7e52b3fec7a42d360974bbaacef",
+    "tools/spatial_oracle/building_construction.py": "077bbae61a9851d06f42e6e67b755d9a2b928791522eae624355081290c7efdb",
+    "tools/spatial_oracle/building_death_anims.py": "ef064ae5e38e5f912c6c61796588786bd787df239099721622a70b7f77aa726e",
+    "tools/spatial_oracle/engineer_repair_admission.py": "72425a6835813cb6d8f448dad5e1c28b70522665dfd52d2bcfb474a7725f95e0",
+    "tools/spatial_oracle/anytown_damage/navigation.py": "84b123f168898386752dae17ad9dec685b3f98ebe1e873c18d14f68c53abf8e4",
+    "tools/spatial_oracle/anytown_damage/mission.py": "e04f940e6cf00369303c763ecc4f2c7500c99dabef149a90d2adb7c37283694a",
+    "tools/spatial_oracle/refinery_dock.py": "c8fb2b33edc7c3100986fb78d90e663b820e10c35d6e450fe5bf923ddb0b8408"
   },
-  "payload_sha256": "41cb85d76a82dbf2d921d1e01bff53bccfde09f21500f5100a0dfeb74a061ddf",
-  "replay_command": "python -m tools.sidebar_oracle.cameo_order"
+  "replay_command": "python -m tools.sidebar_oracle.cameo_order",
+  "payload_sha256": "56080db6c483573d9957517b42acc0d5c49eb845cc498469db5649b9e06d9482"
 }

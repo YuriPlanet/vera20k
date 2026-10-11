@@ -26,6 +26,7 @@ const GESTURE_POLICY: &str = "map-tactical-left-gesture-v1";
 const SIDEBAR_GESTURE_POLICY: &str = "map-local-left-gesture-v2";
 const KEYBOARD_GESTURE_POLICY: &str = "map-local-gesture-v3";
 const COMMAND_BAR_GESTURE_POLICY: &str = "map-local-gesture-v4";
+const RIGHT_BUTTON_GESTURE_POLICY: &str = "map-local-right-gesture-v5";
 const SIDEBAR_POLICY: &str = "map-retained-sidebar-observation-v1";
 const MAX_OBSERVED_OWNERS: usize = 30;
 const MAX_OBSERVED_TYPES: usize = 256;
@@ -77,14 +78,28 @@ struct MapScheduledGesture {
     gesture: MapGesture,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum MapMouseButton {
+    Left,
+    Right,
+}
+
 /// A complete local input gesture between exact steps. Mouse coordinates are
 /// render-target pixels; key names are literal keys, never command identities.
-/// No render sees a synthetic held button or key.
+/// No render sees a synthetic held button or key. Omitted mouse buttons retain
+/// the historical left route; right clicks use the same ordinary edge owner.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum MapGesture {
     Click {
         position: [u32; 2],
+        #[serde(
+            default,
+            deserialize_with = "deserialize_present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        button: Option<MapMouseButton>,
     },
     Drag {
         from: [u32; 2],
@@ -94,6 +109,12 @@ enum MapGesture {
     /// This still sends ordinary mouse edges, never a SidebarAction.
     Sidebar {
         target: MapSidebarTarget,
+        #[serde(
+            default,
+            deserialize_with = "deserialize_present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        button: Option<MapMouseButton>,
     },
     /// Resolve a loaded command-bar control and send ordinary mouse edges.
     CommandBar {
@@ -111,6 +132,19 @@ enum MapGesture {
 }
 
 impl MapGesture {
+    fn is_right_button(&self) -> bool {
+        matches!(
+            self,
+            Self::Click {
+                button: Some(MapMouseButton::Right),
+                ..
+            } | Self::Sidebar {
+                button: Some(MapMouseButton::Right),
+                ..
+            }
+        )
+    }
+
     fn is_quickload(&self) -> bool {
         matches!(self, Self::Key { key, modifiers: Some(modifiers) }
             if key.eq_ignore_ascii_case("N") && modifiers.len() == 2
@@ -118,7 +152,7 @@ impl MapGesture {
     }
     fn points(&self) -> Option<([u32; 2], [u32; 2])> {
         match self {
-            Self::Click { position } => Some((*position, *position)),
+            Self::Click { position, .. } => Some((*position, *position)),
             Self::Drag { from, to } => Some((*from, *to)),
             Self::Sidebar { .. } | Self::CommandBar { .. } | Self::Key { .. } => None,
         }
@@ -531,7 +565,12 @@ impl MapCaptureProfile {
                     "drag endpoints must differ"
                 );
             }
-            if let MapGesture::Sidebar { target } = &gesture.gesture {
+            if let MapGesture::Sidebar { target, .. } = &gesture.gesture {
+                ensure!(
+                    !gesture.gesture.is_right_button()
+                        || matches!(target, MapSidebarTarget::Cameo { .. }),
+                    "right sidebar gestures require a cameo target"
+                );
                 match target {
                     MapSidebarTarget::Tab { tab } => ensure!(
                         crate::ui::sidebar::SidebarTab::all()
@@ -667,6 +706,12 @@ impl MapCaptureProfile {
         if self
             .gestures()
             .iter()
+            .any(|entry| entry.gesture.is_right_button())
+        {
+            RIGHT_BUTTON_GESTURE_POLICY
+        } else if self
+            .gestures()
+            .iter()
             .any(|entry| matches!(entry.gesture, MapGesture::CommandBar { .. }))
         {
             COMMAND_BAR_GESTURE_POLICY
@@ -688,9 +733,9 @@ impl MapCaptureProfile {
     }
 
     fn observes_local_input(&self) -> bool {
-        self.gestures()
-            .iter()
-            .any(|entry| matches!(entry.gesture, MapGesture::Key { .. }))
+        self.gestures().iter().any(|entry| {
+            matches!(entry.gesture, MapGesture::Key { .. }) || entry.gesture.is_right_button()
+        })
     }
 
     fn observes_sidebar_step(&self, frame: &MapFrameObservation) -> bool {
@@ -869,6 +914,49 @@ struct MapTargetingObservation {
     type_id: String,
 }
 
+#[derive(Debug, Serialize)]
+struct MapBuildingPlacementTargetObservation {
+    type_id: String,
+    product_id: Option<u64>,
+    issuer: String,
+}
+
+/// Borrow the current input owner's references without retaining a second
+/// placement transaction. Issuers resolve against this observation's world.
+#[derive(Debug, Serialize)]
+struct MapBuildingPlacementObservation {
+    current: Option<MapBuildingPlacementTargetObservation>,
+    saved_retry: Option<MapBuildingPlacementTargetObservation>,
+    current_preview_present: bool,
+    saved_preview_present: bool,
+}
+
+impl MapBuildingPlacementObservation {
+    fn capture(
+        input: &crate::app::input::state::MatchInputState,
+        interner: &crate::sim::intern::StringInterner,
+    ) -> Self {
+        let view = input.building_placement_view();
+        let target = |target: &crate::app::input::state::BuildingPlacementTarget| {
+            MapBuildingPlacementTargetObservation {
+                type_id: target.type_id().to_owned(),
+                product_id: target.product_id(),
+                issuer: interner.resolve(target.owner()).to_owned(),
+            }
+        };
+        Self {
+            current: view.current.map(target),
+            saved_retry: view.saved_retry.map(target),
+            current_preview_present: view.current_preview_present,
+            saved_preview_present: view.saved_preview_present,
+        }
+    }
+
+    fn sample_count(&self) -> usize {
+        1 + usize::from(self.current.is_some()) + usize::from(self.saved_retry.is_some())
+    }
+}
+
 /// Read-only projection of the shared selection mode and Health/Y snapshot.
 #[derive(Debug, Serialize)]
 struct MapSelectionScopeObservation {
@@ -908,6 +996,10 @@ struct MapLocalInputObservation {
     repair_mode: bool,
     sell_mode: bool,
     targeting: Option<MapTargetingObservation>,
+    /// Historical receipts omit this projection; an observed empty owner
+    /// serializes a present object whose current/saved targets are null.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    building_placement: Option<MapBuildingPlacementObservation>,
     main_rng_cursor: [i32; 2],
     selection_voice_enabled: bool,
     selection_voice_requests: Vec<MapSelectionVoiceRequest>,
@@ -930,14 +1022,20 @@ impl MapLocalInputObservation {
             sell_mode: gadgets.sell_mode_on,
             targeting: input.targeting_mode.as_ref().map(|mode| {
                 let (kind, type_id) = match mode {
-                    TargetingMode::BuildingPlacement(name) => ("building_placement", name),
-                    TargetingMode::SuperWeapon(name) => ("super_weapon", name),
+                    TargetingMode::BuildingPlacement(target) => {
+                        ("building_placement", target.type_id())
+                    }
+                    TargetingMode::SuperWeapon(name) => ("super_weapon", name.as_str()),
                 };
                 MapTargetingObservation {
                     kind,
-                    type_id: type_id.clone(),
+                    type_id: type_id.to_string(),
                 }
             }),
+            building_placement: Some(MapBuildingPlacementObservation::capture(
+                input,
+                &sim.interner,
+            )),
             main_rng_cursor: [main_rng.index_a, main_rng.index_b],
             selection_voice_enabled: input.selection_voice_enabled,
             selection_voice_requests: state
@@ -1002,6 +1100,10 @@ impl MapInputObservation {
                     + 1
                     + input.selection_scope.retained_navigation.len()
                     + input.hud_messages.len()
+                    + input
+                        .building_placement
+                        .as_ref()
+                        .map_or(0, MapBuildingPlacementObservation::sample_count)
             })
     }
 }
@@ -1409,6 +1511,8 @@ struct MapGestureReceipt {
     before: MapInputObservation,
     after: MapInputObservation,
     left_press_captured: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    right_press_captured: Option<bool>,
     band_box_before_release: bool,
     neutral_input_restored: bool,
     queued_commands: Vec<MapGestureCommandReceipt>,
@@ -2487,153 +2591,164 @@ impl TacticalCaptureSession {
             let pending_before = sim.pending_command_snapshot();
             let local_input = profile.observes_local_input();
             let before = MapInputObservation::capture(state, local_input)?;
-            let (left_press_captured, band_box_before_release, sidebar, keyboard, command_bar) =
-                if let MapGesture::Key { key, modifiers } = &scheduled.gesture {
-                    (
-                        false,
-                        false,
-                        None,
-                        Some(MapKeyboardGestureReceipt::dispatch(
-                            state,
-                            key,
-                            modifiers.as_deref().unwrap_or_default(),
-                        )?),
-                        None,
-                    )
-                } else {
-                    let sidebar_before = match &scheduled.gesture {
-                        MapGesture::Sidebar { .. } => Some(MapSidebarObservation::capture(state)?),
-                        _ => None,
-                    };
-                    let command_bar = match &scheduled.gesture {
-                        MapGesture::CommandBar { command } => {
-                            Some(MapCommandBarGestureReceipt::capture(state, command)?)
-                        }
-                        _ => None,
-                    };
-                    let (from, to, sidebar_slot) = match &scheduled.gesture {
-                        MapGesture::Sidebar { target } => {
-                            let (position, slot) = sidebar_before
+            let right = scheduled.gesture.is_right_button();
+            let (
+                left_press_captured,
+                right_press_captured,
+                band_box_before_release,
+                sidebar,
+                keyboard,
+                command_bar,
+            ) = if let MapGesture::Key { key, modifiers } = &scheduled.gesture {
+                (
+                    false,
+                    None,
+                    false,
+                    None,
+                    Some(MapKeyboardGestureReceipt::dispatch(
+                        state,
+                        key,
+                        modifiers.as_deref().unwrap_or_default(),
+                    )?),
+                    None,
+                )
+            } else {
+                let sidebar_before = match &scheduled.gesture {
+                    MapGesture::Sidebar { .. } => Some(MapSidebarObservation::capture(state)?),
+                    _ => None,
+                };
+                let command_bar = match &scheduled.gesture {
+                    MapGesture::CommandBar { command } => {
+                        Some(MapCommandBarGestureReceipt::capture(state, command)?)
+                    }
+                    _ => None,
+                };
+                let (from, to, sidebar_slot) = match &scheduled.gesture {
+                    MapGesture::Sidebar { target, .. } => {
+                        let (position, slot) =
+                            sidebar_before
                                 .as_ref()
                                 .expect("sidebar captured")
                                 .resolve(target, [state.render_width(), state.render_height()])?;
-                            (position, position, Some(slot))
-                        }
-                        MapGesture::CommandBar { .. } => {
-                            let position = command_bar
-                                .as_ref()
-                                .expect("command bar captured")
-                                .0
-                                .resolved_position;
-                            (position, position, None)
-                        }
-                        _ => {
-                            let (from, to) =
-                                scheduled.gesture.points().expect("tactical gesture points");
-                            (from, to, None)
-                        }
-                    };
-                    let move_cursor = |state: &mut AppState, [x, y]: [u32; 2]| {
-                        // Profile coordinates are render-target pixels already. The
-                        // OS window/upscale conversion is not a second input source.
-                        state.match_state.input.cursor_x = x as f32;
-                        state.match_state.input.cursor_y = y as f32;
-                        crate::app::input::tooltips::on_mouse_move(state);
-                        crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                    };
-                    let button = |state: &mut AppState, edge| {
-                        crate::app::input::tooltips::on_button_event(state);
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            MouseButton::Left,
-                            edge,
-                        );
-                    };
-                    move_cursor(state, from);
-                    button(state, ElementState::Pressed);
-                    let mouse = &state.match_state.input.tactical_mouse;
-                    let gadgets = &state.match_state.match_presentation.in_game_gadgets;
-                    let left_press_captured = if matches!(
-                        scheduled.gesture,
-                        MapGesture::Sidebar { .. } | MapGesture::CommandBar { .. }
-                    ) {
-                        let expected = if let MapGesture::Sidebar { target } = &scheduled.gesture {
-                            let slot = sidebar_slot.expect("resolved sidebar slot");
-                            match target {
-                                MapSidebarTarget::Tab { .. } => {
-                                    gadgets.handles.as_ref().map(|handles| handles.tabs[slot])
-                                }
-                                MapSidebarTarget::Cameo { .. } => gadgets.cameos.get(slot).copied(),
-                                MapSidebarTarget::ScrollUp {} => {
-                                    gadgets.handles.as_ref().map(|handles| handles.scroll_up)
-                                }
-                                MapSidebarTarget::ScrollDown {} => {
-                                    gadgets.handles.as_ref().map(|handles| handles.scroll_down)
-                                }
-                                MapSidebarTarget::Repair {} => {
-                                    gadgets.handles.as_ref().map(|handles| handles.repair)
-                                }
-                                MapSidebarTarget::Sell {} => {
-                                    gadgets.handles.as_ref().map(|handles| handles.sell)
-                                }
-                            }
-                        } else {
-                            command_bar.as_ref().map(|(_, handle)| *handle)
-                        };
-                        let routed = gadgets.out.consumed_by.or(gadgets.focus.sticky);
-                        expected.is_some()
-                            && routed == expected
-                            && gadgets.left_held
-                            && !gadgets.right_held
-                            && !mouse.left_held
-                            && !mouse.captured
-                            && !mouse.right_held
-                    } else {
-                        mouse.left_held
-                            && mouse.captured
-                            && !mouse.right_held
-                            && gadgets.left_held
-                            && !gadgets.right_held
-                    };
-                    if matches!(scheduled.gesture, MapGesture::Drag { .. }) {
-                        move_cursor(state, to);
+                        (position, position, Some(slot))
                     }
-                    let band_box_before_release =
-                        state.match_state.input.selection_state.is_band_box_active();
-                    button(state, ElementState::Released);
-                    move_cursor(state, neutral);
-                    ensure!(
-                        left_press_captured,
-                        "gesture left press did not reach its retained input target"
-                    );
-                    let sidebar = sidebar_before
-                        .map(|before| -> Result<_> {
-                            let after = MapSidebarObservation::capture(state)?;
-                            let toggle = match &scheduled.gesture {
-                                MapGesture::Sidebar { target } => {
-                                    before.toggle(target).map(|toggle| MapSidebarToggleReceipt {
-                                        before: toggle.clone(),
-                                        after: after.toggle(target).expect("same target").clone(),
-                                    })
-                                }
-                                _ => None,
-                            };
-                            Ok(MapSidebarGestureReceipt {
-                                resolved_position: from,
-                                before,
-                                after,
-                                toggle,
-                            })
-                        })
-                        .transpose()?;
-                    (
-                        left_press_captured,
-                        band_box_before_release,
-                        sidebar,
-                        None,
-                        command_bar.map(|(receipt, _)| receipt),
-                    )
+                    MapGesture::CommandBar { .. } => {
+                        let position = command_bar
+                            .as_ref()
+                            .expect("command bar captured")
+                            .0
+                            .resolved_position;
+                        (position, position, None)
+                    }
+                    _ => {
+                        let (from, to) =
+                            scheduled.gesture.points().expect("tactical gesture points");
+                        (from, to, None)
+                    }
                 };
+                let move_cursor = |state: &mut AppState, [x, y]: [u32; 2]| {
+                    // Profile coordinates are render-target pixels already. The
+                    // OS window/upscale conversion is not a second input source.
+                    state.match_state.input.cursor_x = x as f32;
+                    state.match_state.input.cursor_y = y as f32;
+                    crate::app::input::tooltips::on_mouse_move(state);
+                    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+                };
+                let mouse_button = if right {
+                    MouseButton::Right
+                } else {
+                    MouseButton::Left
+                };
+                let button = |state: &mut AppState, edge| {
+                    crate::app::input::tooltips::on_button_event(state);
+                    crate::app::input::dispatch::handle_mouse_input(state, mouse_button, edge);
+                };
+                move_cursor(state, from);
+                button(state, ElementState::Pressed);
+                let mouse = &state.match_state.input.tactical_mouse;
+                let gadgets = &state.match_state.match_presentation.in_game_gadgets;
+                let press_captured = if matches!(
+                    scheduled.gesture,
+                    MapGesture::Sidebar { .. } | MapGesture::CommandBar { .. }
+                ) {
+                    let expected = if let MapGesture::Sidebar { target, .. } = &scheduled.gesture {
+                        let slot = sidebar_slot.expect("resolved sidebar slot");
+                        match target {
+                            MapSidebarTarget::Tab { .. } => {
+                                gadgets.handles.as_ref().map(|handles| handles.tabs[slot])
+                            }
+                            MapSidebarTarget::Cameo { .. } => gadgets.cameos.get(slot).copied(),
+                            MapSidebarTarget::ScrollUp {} => {
+                                gadgets.handles.as_ref().map(|handles| handles.scroll_up)
+                            }
+                            MapSidebarTarget::ScrollDown {} => {
+                                gadgets.handles.as_ref().map(|handles| handles.scroll_down)
+                            }
+                            MapSidebarTarget::Repair {} => {
+                                gadgets.handles.as_ref().map(|handles| handles.repair)
+                            }
+                            MapSidebarTarget::Sell {} => {
+                                gadgets.handles.as_ref().map(|handles| handles.sell)
+                            }
+                        }
+                    } else {
+                        command_bar.as_ref().map(|(_, handle)| *handle)
+                    };
+                    let routed = gadgets.out.consumed_by.or(gadgets.focus.sticky);
+                    expected.is_some()
+                        && routed == expected
+                        && gadgets.left_held == !right
+                        && gadgets.right_held == right
+                        && !mouse.left_held
+                        && !mouse.captured
+                        && !mouse.right_held
+                } else {
+                    mouse.left_held == !right
+                        && mouse.captured
+                        && mouse.right_held == right
+                        && gadgets.left_held == !right
+                        && gadgets.right_held == right
+                };
+                if matches!(scheduled.gesture, MapGesture::Drag { .. }) {
+                    move_cursor(state, to);
+                }
+                let band_box_before_release =
+                    state.match_state.input.selection_state.is_band_box_active();
+                button(state, ElementState::Released);
+                move_cursor(state, neutral);
+                ensure!(
+                    press_captured,
+                    "gesture mouse press did not reach its retained input target"
+                );
+                let sidebar = sidebar_before
+                    .map(|before| -> Result<_> {
+                        let after = MapSidebarObservation::capture(state)?;
+                        let toggle = match &scheduled.gesture {
+                            MapGesture::Sidebar { target, .. } => {
+                                before.toggle(target).map(|toggle| MapSidebarToggleReceipt {
+                                    before: toggle.clone(),
+                                    after: after.toggle(target).expect("same target").clone(),
+                                })
+                            }
+                            _ => None,
+                        };
+                        Ok(MapSidebarGestureReceipt {
+                            resolved_position: from,
+                            before,
+                            after,
+                            toggle,
+                        })
+                    })
+                    .transpose()?;
+                (
+                    !right && press_captured,
+                    right.then_some(press_captured),
+                    band_box_before_release,
+                    sidebar,
+                    None,
+                    command_bar.map(|(receipt, _)| receipt),
+                )
+            };
             let neutral_input_restored = crate::app::input::camera::camera_input_idle(state)
                 && !state.match_state.input.selection_state.is_band_box_active()
                 && !state
@@ -2746,6 +2861,7 @@ impl TacticalCaptureSession {
                 before,
                 after,
                 left_press_captured,
+                right_press_captured,
                 band_box_before_release,
                 neutral_input_restored,
                 queued_commands,
@@ -3910,6 +4026,54 @@ mod tests {
     }
 
     #[test]
+    fn building_placement_projection_reads_actual_issuer_and_independent_saved_target() {
+        // Observer serialization inputs only; these are not native placement
+        // goldens or a replacement for a production loader witness.
+        let mut input = crate::app::input::state::MatchInputState::new(
+            crate::app::input::hotkeys::HotkeyBindings::default(),
+        );
+        let mut interner = crate::sim::intern::StringInterner::new();
+        interner.intern("UnrelatedFirstEntry");
+        let issuer = interner.intern("ActualIssuer");
+        let empty = json!({
+            "current": null, "saved_retry": null,
+            "current_preview_present": false, "saved_preview_present": false
+        });
+        let observed = MapBuildingPlacementObservation::capture(&input, &interner);
+        assert_eq!(observed.sample_count(), 1);
+        assert_eq!(serde_json::to_value(observed).unwrap(), empty);
+
+        assert!(input.begin_building_placement("GAPOWR", 20, issuer));
+        input.submit_building_placement();
+        assert!(input.begin_building_placement("GAPILL", 40, issuer));
+        let observed = MapBuildingPlacementObservation::capture(&input, &interner);
+        assert_eq!(observed.sample_count(), 3);
+        let expected = json!({
+            "current": {"type_id": "GAPILL", "product_id": 40, "issuer": "ActualIssuer"},
+            "saved_retry": {"type_id": "GAPOWR", "product_id": 20, "issuer": "ActualIssuer"},
+            "current_preview_present": false, "saved_preview_present": false
+        });
+        assert_eq!(serde_json::to_value(observed).unwrap(), expected);
+        assert_eq!(
+            serde_json::to_value(MapBuildingPlacementObservation::capture(&input, &interner))
+                .unwrap(),
+            expected,
+            "observing does not consume the saved retry"
+        );
+
+        input.building_placement_pointer_expired(40);
+        let orphan = MapBuildingPlacementObservation::capture(&input, &interner);
+        assert_eq!(orphan.current.as_ref().unwrap().product_id, None);
+        assert_eq!(orphan.current.as_ref().unwrap().type_id, "GAPILL");
+        assert_eq!(orphan.saved_retry.as_ref().unwrap().product_id, Some(20));
+
+        input.reset_targeting_for_new_world();
+        let reset = MapBuildingPlacementObservation::capture(&input, &interner);
+        assert_eq!(reset.sample_count(), 1);
+        assert_eq!(serde_json::to_value(reset).unwrap(), empty);
+    }
+
+    #[test]
     fn selection_scope_projection_and_hud_rows_serialize_and_charge_samples() {
         let mut scope = crate::app::types::TypeSelectInputState::default();
         let navigation =
@@ -3937,6 +4101,7 @@ mod tests {
                 repair_mode: false,
                 sell_mode: false,
                 targeting: None,
+                building_placement: None,
                 main_rng_cursor: [0, 103],
                 selection_voice_enabled: true,
                 selection_voice_requests: vec![MapSelectionVoiceRequest {
@@ -3956,6 +4121,7 @@ mod tests {
             "two selections, one voice, one scope, three retained entries and two HUD rows"
         );
         let observed = serde_json::to_value(&input).unwrap();
+        assert!(observed["local_input"].get("building_placement").is_none());
         assert_eq!(
             observed["local_input"]["selection_scope"],
             json!({"mode": "type", "across_map": true, "last_outcome_key": "MSG:SelAcrossMap",
@@ -4234,11 +4400,15 @@ mod tests {
             issue_after_step: 0,
             gesture: MapGesture::Click {
                 position: [width - 2, height - 2],
+                button: None,
             },
         }]);
         profile.validate().unwrap();
         for position in [[0, 1], [1, 0], [width - 1, 1], [1, height - 1], [720, 556]] {
-            profile.gestures.as_mut().unwrap()[0].gesture = MapGesture::Click { position };
+            profile.gestures.as_mut().unwrap()[0].gesture = MapGesture::Click {
+                position,
+                button: None,
+            };
             assert!(profile.validate().is_err(), "{position:?}");
         }
         profile.gestures.as_mut().unwrap()[0].gesture = MapGesture::Drag {
@@ -4255,7 +4425,7 @@ mod tests {
         for gesture in [
             json!({"kind": "click", "position": [true, 1]}),
             json!({"kind": "click", "position": [1.0, 1]}),
-            json!({"kind": "click", "position": [1, 1], "button": "right"}),
+            json!({"kind": "click", "position": [1, 1], "button": "middle"}),
             json!({"kind": "click", "position": [1, 1, 1]}),
             json!({"kind": "drag", "from": [1, 1]}),
             json!({"kind": "move", "position": [1, 1]}),
@@ -4264,6 +4434,92 @@ mod tests {
             let mut invalid = valid.clone();
             invalid["gestures"][0]["gesture"] = gesture;
             assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn literal_mouse_buttons_preserve_legacy_shape_and_share_profile_admission() {
+        let mut legacy = serde_json::to_value(example()).unwrap();
+        legacy["schema_version"] = json!(PROFILE_V2);
+        legacy["cursor_position"] = json!([720, 556]);
+        legacy["gestures"] = json!([
+            {"issue_after_step": 0, "gesture": {"kind": "click", "position": [10, 10]}},
+            {"issue_after_step": 0, "gesture": {"kind": "sidebar", "target": {"kind": "cameo", "type_id": "MTNK"}}}
+        ]);
+        for button in [None, Some("left"), Some("right")] {
+            let mut value = legacy.clone();
+            if let Some(button) = button {
+                for row in value["gestures"].as_array_mut().unwrap() {
+                    row["gesture"]["button"] = json!(button);
+                }
+            }
+            let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
+            profile.validate().unwrap();
+            assert_eq!(serde_json::to_value(&profile).unwrap(), value);
+            let right = button == Some("right");
+            assert_eq!(profile.observes_local_input(), right);
+            assert!(
+                profile
+                    .gestures()
+                    .iter()
+                    .all(|row| row.gesture.is_right_button() == right)
+            );
+            assert_eq!(
+                profile.gesture_policy(),
+                if right {
+                    RIGHT_BUTTON_GESTURE_POLICY
+                } else {
+                    SIDEBAR_GESTURE_POLICY
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn literal_mouse_buttons_reject_unknown_values_other_edges_and_right_chrome() {
+        let mut value = serde_json::to_value(example()).unwrap();
+        value["schema_version"] = json!(PROFILE_V2);
+        value["cursor_position"] = json!([720, 556]);
+        value["gestures"] = json!([
+            {"issue_after_step": 0, "gesture": {"kind": "click", "position": [10, 10], "button": "right"}}
+        ]);
+        for button in [
+            json!("middle"),
+            json!("Right"),
+            json!(true),
+            json!(1),
+            json!([]),
+            json!({}),
+            Value::Null,
+        ] {
+            let mut invalid = value.clone();
+            invalid["gestures"][0]["gesture"]["button"] = button;
+            assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
+        }
+        for gesture in [
+            json!({"kind":"drag", "from":[10,10], "to":[20,20]}),
+            json!({"kind":"key", "key":"P"}),
+            json!({"kind":"command_bar", "command":"Guard"}),
+        ] {
+            for button in ["left", "right"] {
+                let mut invalid = value.clone();
+                invalid["gestures"][0]["gesture"] = gesture.clone();
+                invalid["gestures"][0]["gesture"]["button"] = json!(button);
+                assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
+            }
+        }
+        for target in [
+            json!({"kind":"tab", "tab":"building"}),
+            json!({"kind":"scroll_up"}),
+            json!({"kind":"scroll_down"}),
+            json!({"kind":"repair"}),
+            json!({"kind":"sell"}),
+        ] {
+            let mut invalid = value.clone();
+            invalid["gestures"][0]["gesture"] =
+                json!({"kind":"sidebar", "target":target, "button":"right"});
+            let profile: MapCaptureProfile = serde_json::from_value(invalid).unwrap();
+            assert!(profile.validate().is_err());
         }
     }
 
@@ -4644,7 +4900,10 @@ mod tests {
         profile.gestures = Some(vec![
             MapScheduledGesture {
                 issue_after_step: 0,
-                gesture: MapGesture::Click { position: [10, 10] },
+                gesture: MapGesture::Click {
+                    position: [10, 10],
+                    button: None,
+                },
             },
             MapScheduledGesture {
                 issue_after_step: 0,
@@ -4655,7 +4914,10 @@ mod tests {
             },
             MapScheduledGesture {
                 issue_after_step: 2,
-                gesture: MapGesture::Click { position: [30, 30] },
+                gesture: MapGesture::Click {
+                    position: [30, 30],
+                    button: None,
+                },
             },
         ]);
         profile.validate().unwrap();
@@ -4683,6 +4945,7 @@ mod tests {
                 before: observed(),
                 after: observed(),
                 left_press_captured: true,
+                right_press_captured: None,
                 neutral_input_restored: true,
                 queued_commands: Vec::new(),
                 sidebar: None,
@@ -4704,6 +4967,13 @@ mod tests {
         assert_eq!(
             transcript["gesture_input"]["equal_step_order"],
             "commands_then_gestures"
+        );
+        assert!(
+            transcript["gesture_input"]["receipts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|receipt| receipt.get("right_press_captured").is_none())
         );
         assert_eq!(
             transcript["gesture_input"]["receipts"]
@@ -5262,7 +5532,8 @@ mod tests {
         assert!(matches!(
             gesture.gesture,
             MapGesture::Click {
-                position: [316, 284]
+                position: [316, 284],
+                button: None
             }
         ));
         assert_eq!(profile.camera_cell, Some([45, 55]));

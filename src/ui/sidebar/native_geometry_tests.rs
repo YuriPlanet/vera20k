@@ -65,6 +65,7 @@ fn view(screen: [i32; 2], side: usize, count: usize, scroll: usize) -> SidebarVi
         0,
         Some(if allied { [28., 27.] } else { [32., 28.] }),
         &[],
+        &[],
         &options,
         &[],
         None,

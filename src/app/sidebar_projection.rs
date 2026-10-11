@@ -7,7 +7,8 @@
 use std::collections::HashMap;
 
 use crate::sim::intern::InternedId;
-use crate::sim::world::TickLane;
+use crate::sim::production::{FactoryView, ProductionCategory};
+use crate::sim::world::{LifecycleOutput, TickLane};
 use crate::ui::sidebar::SidebarView;
 use crate::ui::sidebar::cameo_order::{Cameo, CameoId, CameoKey, CameoStrips};
 
@@ -26,6 +27,18 @@ pub(crate) struct SidebarProjectionState {
     /// Retained native strip order, keyed to the local house. `None` is the
     /// scenario-init window (`[0xA8E7AC] != 0`), where insertions are silent.
     cameos: Option<(InternedId, CameoStrips)>,
+    /// Foreign Factory references belonging to retained strip entries. The
+    /// simulation registry owns Factory lifetime/state; only original local
+    /// Begin/House abandonment facts and initial projection seed write these
+    /// derived handles.
+    factory_links: HashMap<InternedId, CameoFactoryLink>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CameoFactoryLink {
+    owner: InternedId,
+    category: ProductionCategory,
+    construction_order: u64,
 }
 
 impl SidebarProjectionState {
@@ -38,6 +51,7 @@ impl SidebarProjectionState {
     pub(crate) fn replace_view(&mut self, view: Option<SidebarView>) {
         if view.is_none() {
             self.cameos = None;
+            self.factory_links.clear();
         }
         self.current_view = view;
     }
@@ -48,6 +62,7 @@ impl SidebarProjectionState {
     /// different pre-placed base never reads as freshly inserted cameos.
     pub(crate) fn reset_cameo_seed(&mut self) {
         self.cameos = None;
+        self.factory_links.clear();
     }
 
     /// AddCameo 6A6406 speaks NewConstructionOptions for an accepted
@@ -64,6 +79,9 @@ impl SidebarProjectionState {
             .as_ref()
             .is_some_and(|(previous, _)| *previous == owner);
         if !initialized {
+            if self.cameos.is_some() {
+                self.factory_links.clear();
+            }
             self.cameos = Some((owner, CameoStrips::default()));
         }
         let inserted = self
@@ -89,6 +107,160 @@ impl SidebarProjectionState {
 
     pub(crate) fn restore_order(&mut self, saved: Option<(InternedId, CameoStrips)>) {
         self.cameos = saved;
+        self.factory_links.clear();
+    }
+
+    /// Sidebar6A6140 links the reached cameo; admitted HouseAbandon's
+    /// Strip6ABBDF unlinks every entry to that Factory before successor Begin.
+    /// Product expiry/rearm alone retain old associations. Both Select and
+    /// Draw consume these same private handles in lifecycle emission order.
+    /// Return the House building-cursor prefix once: before settlement when
+    /// Strip has no matching link, or after linked product expiry/unlink.
+    /// Source: tools/sidebar_oracle/cameo_order.md, executed abandon orders.
+    pub(crate) fn apply_factory_output(
+        &mut self,
+        output: &LifecycleOutput,
+        local_house: Option<InternedId>,
+    ) -> Option<LifecycleOutput> {
+        match *output {
+            LifecycleOutput::ProductionFactoryLinked {
+                owner,
+                type_id,
+                category,
+                construction_order,
+            } if local_house == Some(owner) => {
+                self.factory_links.insert(
+                    type_id,
+                    CameoFactoryLink {
+                        owner,
+                        category,
+                        construction_order,
+                    },
+                );
+                None
+            }
+            LifecycleOutput::ProductionFactoryAbandoning {
+                owner,
+                category,
+                construction_order,
+            }
+            | LifecycleOutput::ProductionFactoryUnlinked {
+                owner,
+                category,
+                construction_order,
+            } if local_house == Some(owner) => {
+                let target = CameoFactoryLink {
+                    owner,
+                    category,
+                    construction_order,
+                };
+                let linked = self.factory_links.values().any(|link| *link == target);
+                let clear_current =
+                    if matches!(output, LifecycleOutput::ProductionFactoryUnlinked { .. }) {
+                        self.factory_links.retain(|_, link| *link != target);
+                        linked
+                    } else {
+                        !linked
+                    };
+                (clear_current
+                    && matches!(
+                        category,
+                        ProductionCategory::Building | ProductionCategory::Defense
+                    ))
+                .then_some(LifecycleOutput::BuildingProductionAbandoned { owner })
+            }
+            _ => None,
+        }
+    }
+
+    /// Validate foreign handles against the one Factory registry and retained
+    /// membership. Product expiry alone leaves a Factory reference intact.
+    /// Initial projection/restore seeds currently held heads; historical
+    /// Mouse-save Factory links remain with the separate persistence chain.
+    pub(crate) fn reconcile_factory_links(
+        &mut self,
+        sim: &crate::sim::world::Simulation,
+        owner: InternedId,
+    ) {
+        let entries = self.cameo_strips().saved_identities();
+        self.factory_links.retain(|type_id, link| {
+            link.owner == owner
+                && entries
+                    .iter()
+                    .flatten()
+                    .any(|id| *id == CameoId::Object(*type_id))
+                && sim
+                    .production
+                    .factories
+                    .view(owner, link.category)
+                    .is_some_and(|factory| factory.construction_order() == link.construction_order)
+        });
+        for category in [
+            ProductionCategory::Building,
+            ProductionCategory::Defense,
+            ProductionCategory::Infantry,
+            ProductionCategory::Vehicle,
+            ProductionCategory::Aircraft,
+            ProductionCategory::Ship,
+        ] {
+            let Some(factory) = sim.production.factories.view(owner, category) else {
+                continue;
+            };
+            if let Some(object) = factory.object
+                && entries
+                    .iter()
+                    .flatten()
+                    .any(|id| *id == CameoId::Object(object.type_id))
+            {
+                self.factory_links
+                    .entry(object.type_id)
+                    .or_insert(CameoFactoryLink {
+                        owner,
+                        category,
+                        construction_order: factory.construction_order(),
+                    });
+            }
+        }
+    }
+
+    /// Select6AAD50 reads the retained entry's link, not its queue-head type.
+    /// Dead or replaced Factory handles cannot be dereferenced by input.
+    pub(crate) fn cameo_factory<'a>(
+        &self,
+        sim: &'a crate::sim::world::Simulation,
+        owner: InternedId,
+        type_id: InternedId,
+    ) -> Option<FactoryView<'a>> {
+        let link = self
+            .factory_links
+            .get(&type_id)
+            .filter(|link| link.owner == owner)?;
+        let factory = sim.production.factories.view(owner, link.category)?;
+        (factory.construction_order() == link.construction_order).then_some(factory)
+    }
+
+    /// StripDraw6A9812/6A9822/6A985D/6A9E9C reads each entry's linked
+    /// Factory for Ready, stage and Hold. Input resolves these same handles.
+    /// Source: tools/sidebar_oracle/cameo_order.md, retained rearm controls.
+    pub(crate) fn factory_statuses(
+        &self,
+        sim: &crate::sim::world::Simulation,
+        owner: InternedId,
+    ) -> Vec<crate::ui::sidebar::CameoFactoryStatus> {
+        self.factory_links
+            .keys()
+            .filter_map(|&type_id| {
+                let factory = self.cameo_factory(sim, owner, type_id)?;
+                let is_ready = factory.complete_object().is_some();
+                Some(crate::ui::sidebar::CameoFactoryStatus {
+                    type_id,
+                    progress: factory.progress,
+                    is_ready,
+                    is_building: !is_ready && factory.is_running(),
+                    is_on_hold: !is_ready && !factory.is_running(),
+                })
+            })
+            .collect()
     }
 
     pub(crate) fn cameo_strips(&self) -> &CameoStrips {
@@ -348,6 +520,93 @@ mod tests {
     use super::*;
     use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
     use crate::ui::sidebar::{SidebarTab, build_sidebar_view};
+
+    /// Original whole Sidebar6ABAD0→Strip6ABB60 clears both retained
+    /// associations while preserving the Factory and the independent strip.
+    /// This tests the private cache owner against executed native links;
+    /// actual same-Factory promotion is covered by paid input integration.
+    #[test]
+    fn admitted_abandon_consumes_native_all_matching_factory_unlinks() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/sidebar_oracle/cameo_order.json",
+        ))
+        .unwrap();
+        let history = corpus["ready_building_histories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == "rearmed_factory_sidebar_abandon_unlinks_all_retains_factory")
+            .unwrap();
+        let step = history["steps"].as_array().unwrap().last().unwrap();
+        assert_eq!(
+            step["before"]["factory_registry"],
+            step["after"]["factory_registry"]
+        );
+        let registry = step["before"]["factory_registry"].as_array().unwrap();
+        let owner = crate::sim::intern::test_intern("Americans");
+        let mut projection = SidebarProjectionState::default();
+        for (tab, entries) in step["before"]["sidebar_entries"].as_object().unwrap() {
+            let category = match tab.as_str() {
+                "0" => ProductionCategory::Building,
+                "1" => ProductionCategory::Defense,
+                _ => {
+                    assert!(entries.as_array().unwrap().is_empty());
+                    continue;
+                }
+            };
+            for entry in entries.as_array().unwrap() {
+                let factory = registry
+                    .iter()
+                    .position(|factory| factory["id"] == entry["factory"])
+                    .unwrap();
+                let _ = projection.apply_factory_output(
+                    &LifecycleOutput::ProductionFactoryLinked {
+                        owner,
+                        type_id: crate::sim::intern::test_intern(entry["type"].as_str().unwrap()),
+                        category,
+                        construction_order: factory as u64,
+                    },
+                    Some(owner),
+                );
+            }
+        }
+        let target = registry
+            .iter()
+            .position(|factory| factory["id"] == step["inputs"]["factory"])
+            .unwrap();
+        let _ = projection.apply_factory_output(
+            &LifecycleOutput::ProductionFactoryUnlinked {
+                owner,
+                category: ProductionCategory::Building,
+                construction_order: target as u64,
+            },
+            Some(owner),
+        );
+        for entries in step["after"]["sidebar_entries"]
+            .as_object()
+            .unwrap()
+            .values()
+        {
+            for entry in entries.as_array().unwrap() {
+                let type_id = crate::sim::intern::test_intern(entry["type"].as_str().unwrap());
+                let actual = projection
+                    .factory_links
+                    .get(&type_id)
+                    .map(|link| &registry[link.construction_order as usize]["id"]);
+                assert_eq!(
+                    actual,
+                    (!entry["factory"].is_null()).then_some(&entry["factory"]),
+                    "{}",
+                    entry["type"]
+                );
+            }
+        }
+        assert_eq!(
+            projection.factory_links.len(),
+            1,
+            "the independent GAPILL association survives"
+        );
+    }
 
     fn retained_test_view(credits: i32) -> SidebarView {
         build_sidebar_view(

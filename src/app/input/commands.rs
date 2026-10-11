@@ -337,7 +337,19 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
 }
 
 pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str) {
-    let owner: String = resolve_owner(state);
+    // The original producer refuses a null current product and uses the
+    // issuer captured by ManualPlace, rather than choosing a House again.
+    let Some(issuer) = state.match_state.input.building_placement_issuer() else {
+        return;
+    };
+    let Some(owner) = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|runtime| runtime.simulation.interner.resolve(issuer).to_string())
+    else {
+        return;
+    };
     // Use the preview's stored (rx, ry) so the placed building exactly matches
     // the cells the player saw, avoiding any cursor-movement drift between frames.
     let (rx, ry) =
@@ -395,8 +407,7 @@ pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str
     );
     // Clear placement mode immediately so the foundation preview stops following
     // the cursor after the order is issued.
-    state.match_state.input.targeting_mode = None;
-    state.match_state.input.building_placement_preview = None;
+    state.match_state.input.submit_building_placement();
     log::info!(
         "Ready building placement queued: owner={} type={} cell=({}, {}) execute_tick=current",
         owner,

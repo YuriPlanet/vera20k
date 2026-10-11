@@ -4,6 +4,11 @@
 //! terrain below/alongside bridges. Retain registered pristine heads plus
 //! independent presentation files; missing sources never become sparse entries.
 
+use super::build::{
+    TileMetadata, merge_tmp_file_metadata, metadata_from_set_name,
+    ordinary_variant_selection_enabled,
+};
+use super::tubes::auto_tube_direction_from_bases;
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

@@ -23,6 +23,7 @@ pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::build_sidebar_view;
 pub(crate) use sidebar_view::build_sidebar_view_with_spec;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
+pub(crate) use sidebar_view::CameoFactoryStatus;
 
 /// Cameo hit zones are fixed 60×48 (`6A8220`), independent of artwork size.
 pub(crate) const CAMEO_COLUMNS: usize = 2;
@@ -150,13 +151,11 @@ pub struct SidebarItem {
     pub enabled: bool,
     pub progress: f32,
     pub queued_count: usize,
-    /// True when this type is the one actively being produced in its category.
+    /// True when this cameo's linked Factory is actively producing.
     pub is_building_this_type: bool,
     pub is_ready: bool,
-    /// True while this type's production is suspended — the player paused the
-    /// queue or ran short of cash mid-build. gamemd draws the `TXT_HOLD`
-    /// status text with the same dark strip as `TXT_READY` in that state, and
-    /// it is the game's only visual cue that a build has stalled.
+    /// True when the linked Factory has no rate or is suspended. A cash stall
+    /// retains its running rate and draws a frozen clock without `TXT_HOLD`.
     pub is_on_hold: bool,
     pub is_armed: bool,
     /// True if this cameo represents a superweapon (not a buildable).

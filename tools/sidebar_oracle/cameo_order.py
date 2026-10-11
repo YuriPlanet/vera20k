@@ -10,6 +10,9 @@ No Python implementation supplies an expected comparison or ordered list.
 
 from itertools import product
 from pathlib import Path
+import copy
+import hashlib
+import os
 import struct
 
 from unicorn import UC_HOOK_CODE
@@ -20,7 +23,7 @@ from unicorn.x86_const import (
 )
 
 from tools.native_oracle import (
-    RET_MAGIC, STACK_BASE, STACK_SIZE, finish_vectors, provenance, run_checked,
+    RET_MAGIC, STACK_BASE, STACK_SIZE, NativeCallTrace, finish_vectors, provenance, run_checked,
 )
 from tools.sidebar_oracle.geometry import machine, put32, read
 from tools.spatial_oracle.cost_of import VTABLE, f32
@@ -522,19 +525,783 @@ def recharge_reader():
     return dict(constructor_frames=initial, cases=rows)
 
 
+def ready_building_inputs(root):
+    """Extend the existing physical joined reader; no placement result is supplied."""
+    from tools.spatial_oracle import building_construction as bc
+    from tools.spatial_oracle import building_death_anims as death
+    from tools.rules_oracle.bridge_child_sound import sections
+    m = death.joined_inputs(root, damage_fires=False)
+    u, get = m.u, m.read32
+    sound = sections((root / 'SOUNDMD.INI').read_bytes())
+    wanted = ('MenuClick', 'PlaceBuilding')
+    selected = {name: values for name, values in sound.items()
+                if name in (*wanted, 'Defaults')}
+    selected['SoundList'] = {key: value for key, value in sound['SoundList'].items()
+                             if value in wanted}
+    m.make_ini(selected)
+    m.invoke(0x7510D0, INI)
+    m.ready_sounds = [dict(name=name, native_index=m.invoke(0x7514D0, m.cstring(name)),
+                          physical_section=sound[name]) for name in wanted]
+    art = sections((root / 'ARTMD.INI').read_bytes())
+    selected_art = {name: values for name, values in art.items()
+                    if name in (*bc.JOINED_ART_NAMES, 'GAPILL')}
+    m.make_ini(selected_art)
+    art_cache = bytes(u.mem_read(INI, 0x40))
+    pill = m.alloc(0x2000)
+    m.invoke(0x45DD90, pill, (m.cstring('GAPILL'),))
+    m.types['GAPILL'] = pill
+    m.ready_layers = []
+    for filename in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.map'):
+        path = root / filename
+        row = dict(file=filename, absent=not path.exists())
+        m.ready_layers.append(row)
+        if not path.exists():
+            continue
+        raw = path.read_bytes()
+        physical = sections(raw)
+        cached = {name: values for name, values in physical.items()
+                  if name in ('GAPILL', 'AudioVisual', 'General')}
+        m.make_ini(cached)
+        layer = m.alloc(0x40)
+        u.mem_write(layer, bytes(u.mem_read(INI, 0x40)))
+        u.mem_write(INI, art_cache)
+        row.update(sha256=hashlib.sha256(raw).hexdigest(), physical_input_sections=cached,
+                   gapill_reader_result=m.invoke(0x45FE50, pill, (layer,)),
+                   sounds_before={'GUIBuildSound': get(m.rules + 0x18C),
+                                  'BuildingSlam': get(m.rules + 0x6EC)})
+        # Original AudioVisual ReadString528A10 -> FindIndex7514D0 retained
+        # readers. Rules665650 owns both initial -1 values. The second slice
+        # starts with the preceding sound's surviving EAX store; supply exactly
+        # that already-read field, not a result for either selected key.
+        for begin, end, previous in ((0x6693A6, 0x6693F1, None),
+                                     (0x66AA7F, 0x66AACF, 0x6E8)):
+            u.mem_write(INI_SP, bytes(0x300))
+            u.reg_write(UC_X86_REG_ESP, INI_SP)
+            u.reg_write(UC_X86_REG_ESI, m.rules)
+            from unicorn.x86_const import UC_X86_REG_EDI
+            u.reg_write(UC_X86_REG_EDI, layer)
+            if previous is not None:
+                u.reg_write(UC_X86_REG_EAX, get(m.rules + previous))
+            run_checked(u, begin, end, count=2_000_000)
+        row['sounds_after'] = {'GUIBuildSound': get(m.rules + 0x18C),
+                               'BuildingSlam': get(m.rules + 0x6EC)}
+    # The reused Engineer input intentionally narrows the registry to GAPOWR.
+    # Reset to a declared empty service, then run the original constructor's
+    # registration tail; ArrayIndex is never authored by this producer.
+    u.mem_write(0xA83C68, dwords(0x7EB6D4, m.alloc(4096), 1024, 1, 0, 10))
+    for name in ('GACNST', 'GAPOWR', 'GAPILE', 'GAPILL'):
+        u.reg_write(UC_X86_REG_ESP, INI_SP)
+        u.reg_write(UC_X86_REG_ESI, m.types[name])
+        u.reg_write(UC_X86_REG_EBX, 0)
+        run_checked(u, 0x45E2ED, 0x45E362)
+    m.ready_art = selected_art
+    return m
+
+
+class ReadyBuildingFixture:
+    """Actual paid factories and retained local Display/command-ring execution.
+
+    Uses the existing joined VM/heap/physical readers/navigation/audio transport.
+    Case restoration copies an executed ready baseline, including native memory,
+    CPU context and transport state. It is not a scenario replacement producer.
+    """
+
+    def __init__(self, inputs, root):
+        from tools.spatial_oracle import building_construction as bc
+        from tools.spatial_oracle import building_death_anims as death
+        from tools.spatial_oracle import engineer_repair_admission as er
+        from tools.spatial_oracle.refinery_dock import cell
+        from unicorn.x86_const import UC_X86_REG_EDI
+        from unicorn import UC_HOOK_MEM_WRITE
+        self.bc, self.er, self.inputs = bc, er, inputs
+        self.f = death.joined_fixture(inputs, 750, seed=2, building_ai=True)
+        self.u, self.get = self.f.u, self.f.read32
+        self.calls, self.writes, self.transport = [], [], []
+        self.call_trace = NativeCallTrace(self.u, self.get, self.calls)
+        self.identities = {0: None, er.HOUSE: 'local_house', self.f.source: 'selected_mtnk'}
+        self.type_names = {pointer: name for name, pointer in self.f.types.items()}
+        self.factories, self.products = {}, {}
+        self.yard, self.bar = self.f.allocate(0x1000), self.f.allocate(0x1000)
+        self.identities.update({self.yard: 'yard', self.bar: 'barracks'})
+        self.watch = {
+            0x4FA350: ('begin_production', 4, 16),
+            0x4C9C70: ('start_production', 3, 12),
+            0x4C9EA0: ('set_production_rate', 1, 4),
+            0x5F7900: ('type_find_factory', 4, 16),
+            0x5F5C20: ('object_find_factory', 2, 8),
+            0x4F7870: ('can_build', 3, 12),
+            0x6AAD00: ('select_action', 3, 12),
+            0x4FB840: ('manual_place', 2, 8),
+            0x4A91B0: ('preview_anchor', 2, 8),
+            0x4A8BF0: ('active_foundation', 1, 4),
+            0x4A8D50: ('saved_foundation', 1, 4),
+            0x4AB9B0: ('tactical_left_up', 5, 20),
+            0x4AAD30: ('tactical_right_up', 1, 4),
+            0x4C6AE0: ('place_event_constructor', 6, 24),
+            0x4FB0E0: ('house_place', 4, 16),
+            0x4FAA10: ('house_abandon', 4, 16),
+            0x4CA1A0: ('factory_completed', 0, 0),
+            0x4C9FF0: ('factory_abandon', 0, 0),
+            0x509140: ('house_update_factory_queue', 3, 12),
+            0x4CA5A0: ('start_next_queued', 0, 0),
+            0x4CA770: ('factory_scalar_delete', 1, 4),
+            0x4FB9B0: ('house_pointer_expired', 2, 8),
+            0x6A6140: ('sidebar_link_factory', 3, 12),
+            0x6ABAD0: ('sidebar_abandon_factory', 3, 12),
+            0x6ABB60: ('strip_abandon_factory', 1, 4),
+            0x48DC90: ('unselect_all', 0, 0),
+            0x5F44A0: ('deselect', 0, 0),
+            0x5F4520: ('select', 0, 0),
+            0x7258D0: ('dispatch_pointer_expired', 0, 0),
+            0x6DA560: ('tactical_pointer_expired', 2, 8),
+            0x4CA580: ('factory_pointer_expired', 2, 8),
+            0x5F5280: ('object_detach', 1, 4),
+            0x43BCF0: ('building_destructor', 0, 0),
+            0x750920: ('play_gui_sound', 2, 8),
+            0x752700: ('eva', 1, 4),
+        }
+        self.branches = {pc: name for pc, name in (
+            (0x4FB1B4, 'cell_not_empty_sentinel'), (0x4FB1C4, 'ordinary_cell'),
+            (0x4FB1F1, 'builder_hello'), (0x4FB234, 'unlimbo_result'),
+            (0x4FB35F, 'failed_unlimbo'), (0x4FB395, 'restore_saved_client'),
+            (0x4FB3DD, 'saved_type_guard'), (0x4FB489, 'clear_saved_retry'),
+            (0x4FB32D, 'success_clear_saved'), (0x4FB520, 'sentinel_corridor'),
+            (0x4FAB64, 'abandon_index_admitted'), (0x4FAB83, 'abandon_clear_current'),
+            (0x6AB32A, 'no_builder_cameo'), (0x4FB852, 'manual_existing_type_guard'),
+            (0x6AADC1, 'right_own_factory_guard'),
+            (0x6AB0AC, 'right_without_own_factory'),
+            (0x6AADDC, 'right_clear_current_building'),
+            (0x509216, 'held_builder_query_result'),
+            (0x50928C, 'queue_recheck_final_factory_state'),
+            (0x5092A0, 'queue_recheck_delete_empty_factory'),
+        )}
+        self.observe_hook = self.u.hook_add(UC_HOOK_CODE, self.observe)
+        self.write_hook = self.u.hook_add(UC_HOOK_MEM_WRITE, self.write)
+        u, get = self.u, self.get
+        self.f.phase = 'setup_clear_tile_physical_prior'
+        self.invoke(0x4E69E0)
+        tile, name = self.f.allocate(0x400), self.f.allocate(32)
+        u.mem_write(name, b'Clear01\0')
+        self.invoke(0x5447C0, tile, 0, 0xFFFFFFBF, 0, name, 0)
+        raw = (root / 'CLEAR01.TEM').read_bytes()
+        data = self.f.allocate(len(raw) + 16)
+        cached = bytearray(raw)
+        struct.pack_into('<I', cached, 16, data + struct.unpack_from('<I', raw, 16)[0])
+        u.mem_write(data, bytes(cached))
+        u.mem_write(tile + 0xA4, dwords(data))
+        u.mem_write(tile + 0x2E4, dwords(1, 1))
+        for y in range(1, 32):
+            for x in range(1, 32):
+                u.mem_write(cell(x, y) + 0x38, dwords(0))
+                self.invoke(0x47D2B0, cell(x, y), 0xFFFFFFFF)
+        for name, pointer, coord in (('GACNST', self.yard, (14, 14)),
+                                      ('GAPILE', self.bar, (18, 14))):
+            self.f.building(name, pointer, self.f.allocate(0x100), coord=coord)
+            u.mem_write(pointer + 0x74, b'\0')
+            self.invoke(0x43F180, pointer, 3)
+            u.mem_write(pointer + 0xAC, dwords(5))
+            u.mem_write(pointer + 0xB4, dwords(-1))
+            u.mem_write(pointer + 0x534, dwords(1))
+        self.f.house_prior(er.HOUSE, (self.yard, self.bar))
+        u.reg_write(UC_X86_REG_EBP, er.HOUSE)
+        run_checked(u, 0x4F5DCC, 0x4F5E02)
+        # This original House constructor slice registers its Factory-expiry
+        # listener. Without it, Factory scalar deletion removes the live
+        # registry entry but leaves a supplied House slot pointing to released
+        # arena bytes. Other House constructor/listener regions remain outside
+        # the declared fixture bounds; no slot-clear is supplied here.
+        self.house_factory_registration = dict(entry='0x004F5EB8', stop='0x004F5F0B',
+            vector='0x00B0F640', before=bytes(u.mem_read(0xB0F640, 24)).hex(),
+            members_before=[self.identity(get(get(0xB0F644) + i * 4))
+                            for i in range(get(0xB0F650))])
+        u.reg_write(UC_X86_REG_EBP, er.HOUSE)
+        u.reg_write(UC_X86_REG_EBX, 0)
+        u.reg_write(UC_X86_REG_ESP, bc.SP)
+        run_checked(u, 0x4F5EB8, 0x4F5F0B)
+        self.house_factory_registration['after'] = bytes(u.mem_read(0xB0F640, 24)).hex()
+        self.house_factory_registration['members_after'] = [
+            self.identity(get(get(0xB0F644) + i * 4)) for i in range(get(0xB0F650))]
+        assert sum(get(get(0xB0F644) + i * 4) == er.HOUSE
+                   for i in range(get(0xB0F650))) == 1
+        self.invoke(0x49F9B0, er.HOUSE + 0x55A0)
+        self.invoke(0x4F9950, er.HOUSE, 10000)
+        u.mem_write(er.HOUSE + 0x1D4, dwords(10))  # declared local House technology prior
+        self.invoke(0x4E6CE0)
+        u.reg_write(UC_X86_REG_EBP, er.HOUSE)
+        u.reg_write(UC_X86_REG_EBX, 0)
+        u.reg_write(UC_X86_REG_ESP, bc.SP)
+        run_checked(u, 0x4F619C, 0x4F61EF)
+        u.reg_write(UC_X86_REG_ESP, bc.SP)
+        run_checked(u, 0x52E10F, 0x52E119)
+        for entry in (0x4E6E60, 0x4F50A0, 0x6A4BC0, 0x6A4DC0, 0x4E7D40):
+            self.invoke(entry)
+        selection = self.f.allocate(64 * 4)
+        u.mem_write(0xA8ECBC, dwords(selection, 64, 1, 0, 10))
+        for begin, end in ((0x4A8738, 0x4A8847), (0x5BDA48, 0x5BDA74)):
+            u.reg_write(UC_X86_REG_ESI, SIDEBAR)
+            u.reg_write(UC_X86_REG_ESP, bc.SP)
+            run_checked(u, begin, end)
+        self.mouse, self.key, self.cell_arg, self.out_cell = (
+            self.f.allocate(0x100), self.f.allocate(4),
+            self.f.allocate(8), self.f.allocate(8))
+        u.mem_write(bc.SP, dwords(RET_MAGIC, 0, 0))
+        u.reg_write(UC_X86_REG_ESP, bc.SP)
+        u.reg_write(UC_X86_REG_ECX, self.mouse)
+        run_checked(u, 0x7B8730, 0x7B8856)
+        u.mem_write(0x887640, dwords(self.mouse))
+        u.mem_write(self.mouse + 0x1C, dwords(320, 240))
+        u.mem_write(self.key, dwords(0))
+        u.mem_write(0x886F9C, dwords(341))
+        u.mem_write(0x886F94, dwords(0))
+        u.mem_write(0xB0B4F8, dwords(158))
+        for tab, strip in enumerate(STRIPS):
+            self.invoke(0x6A80A0, strip, 0)
+            self.invoke(0x6A8220, strip, tab)
+        self.watch[get(get(self.yard) + 0xD8)] = ('building_unlimbo', 2, 8)
+        self.f.phase = 'ready_building_setup_complete'
+        self.setup = self.snapshot()
+
+    def invoke(self, pc, this=0, *args):
+        result = self.bc.invoke(self.u, pc, this, *args)
+        self.call_trace.returned(RET_MAGIC, self.u.reg_read(UC_X86_REG_ESP))
+        return result
+
+    def observe(self, u, pc, size, _data):
+        sp = u.reg_read(UC_X86_REG_ESP)
+        self.call_trace.returned(pc, sp)
+        if pc in self.watch:
+            index = self.call_trace.entered(pc, sp, self.watch[pc])
+            if pc in (0x6AAD00, 0x4FB840, 0x4FB0E0, 0x4FAA10, 0x7258D0):
+                self.calls[index]['placement'] = self.placement()
+        if pc in self.branches:
+            self.calls.append(dict(name=self.branches[pc], pc=hex(pc),
+                eax=u.reg_read(UC_X86_REG_EAX), placement=self.placement()))
+        # Original native event/UI code calls the opaque WinMM import. The
+        # existing VM owns its narrower646F20 arm; extend that SAME raw OS
+        # transport convention to reached callsites, never a gameplay body.
+        if u.reg_read(UC_X86_REG_EIP) == pc and bytes(u.mem_read(pc, size)) == b'\xFF\x15\x30\x15\x7E\x00':
+            self.transport.append(dict(kind='OS_timeGetTime', pc=hex(pc), wall_ms=0))
+            u.reg_write(UC_X86_REG_EAX, 0)
+            u.reg_write(UC_X86_REG_EIP, pc + size)
+
+    def write(self, u, _access, address, size, value, _data):
+        timer_ranges = [(self.yard + 0xC8, 12), (self.bar + 0xC8, 12),
+                        (0xB0EA80, 12)]
+        timer_ranges += [(p + 0x2C, 12) for p in self.factories.values()]
+        if any(low <= address < low + length for low, length in timer_ranges):
+            self.writes.append(dict(pc=hex(u.reg_read(UC_X86_REG_EIP)),
+                address=hex(address), size=size, before=bytes(u.mem_read(address, size)).hex(),
+                after=(value & ((1 << (size * 8)) - 1)).to_bytes(size, 'little').hex()))
+
+    def identity(self, pointer):
+        return self.identities.get(pointer, self.type_names.get(pointer, hex(pointer)))
+
+    def placement(self):
+        get, u = self.get, self.u
+        xy = lambda address: list(struct.unpack('<2h', u.mem_read(address, 4)))
+        return dict(current_product=self.identity(get(0x88098C)),
+            current_type=self.type_names.get(get(0x880990)), issuer=get(0x880994),
+            active_foundation=hex(get(0x880964)), anchor=xy(0x88095C), offset=xy(0x880960),
+            can_place=u.mem_read(0x880968, 1)[0], adjacent=u.mem_read(0x880969, 1)[0],
+            saved_product=self.identity(get(0x880978)),
+            saved_type=self.type_names.get(get(0x88097C)), saved_issuer=get(0x880980),
+            saved_foundation=hex(get(0x880974)), saved_anchor=xy(0x88096A),
+            saved_offset=xy(0x88096E))
+
+    def snapshot(self):
+        u, get = self.u, self.get
+        objects = {}
+        for name, pointer in dict(yard=self.yard, barracks=self.bar, **self.products).items():
+            objects[name] = dict(pointer=hex(pointer), native_id=get(pointer + 0x10),
+                type=self.type_names.get(get(pointer + 0x520)), owner=self.identity(get(pointer + 0x21C)),
+                health=struct.unpack('<i', u.mem_read(pointer + 0x6C, 4))[0],
+                alive=u.mem_read(pointer + 0x90, 1)[0], limbo=u.mem_read(pointer + 0x81, 1)[0],
+                marked=u.mem_read(pointer + 0x74, 1)[0],
+                location=list(struct.unpack('<3i', u.mem_read(pointer + 0x9C, 12))),
+                mission=struct.unpack('<i', u.mem_read(pointer + 0xAC, 4))[0],
+                queued_mission=struct.unpack('<i', u.mem_read(pointer + 0xB4, 4))[0],
+                body_state=struct.unpack('<i', u.mem_read(pointer + 0x534, 4))[0],
+                queued_body_state=struct.unpack('<i', u.mem_read(pointer + 0x538, 4))[0],
+                mission_timer=bytes(u.mem_read(pointer + 0xC8, 12)).hex())
+        factories = {}
+        for name, offset in (('GAPOWR', 0x53BC), ('GAPILL', 0x53CC)):
+            pointer = get(self.er.HOUSE + offset)
+            factories[name] = None if not pointer else dict(pointer=hex(pointer),
+                product=self.identity(get(pointer + 0x58)), stage=get(pointer + 0x24),
+                balance=struct.unpack('<i', u.mem_read(pointer + 0x60, 4))[0],
+                suspended=u.mem_read(pointer + 0x70, 1)[0], queue_count=get(pointer + 0x50),
+                rate=get(pointer + 0x38), stage_timer=bytes(u.mem_read(pointer + 0x2C, 12)).hex())
+        selected = [self.identity(get(get(0xA8ECBC) + i * 4)) for i in range(get(0xA8ECC8))]
+        event_count, event_top = get(0xA802C8), get(0xA802CC)
+        events = [bytes(u.mem_read(0xA802D4 + ((event_top + i) & 127) * 111, 111)).hex()
+                  for i in range(event_count)]
+        factory_order = [get(get(0xA83E34) + i * 4) for i in range(get(0xA83E40))]
+        factory_registry = [dict(pointer=hex(pointer), id=self.identity(pointer))
+                            for pointer in factory_order]
+        sidebar_entries = {}
+        building_names = {get(pointer + 0xDF8): name
+                          for name, pointer in self.f.types.items()
+                          if name in ('GACNST', 'GAPOWR', 'GAPILE', 'GAPILL')}
+        for tab, strip in enumerate(STRIPS):
+            entries = []
+            for slot in range(get(strip + 0x54)):
+                address = strip + 0x58 + slot * 52
+                index, kind, category, factory = struct.unpack('<4I', u.mem_read(address, 16))
+                # +60 is category metadata; +64 is the actual Factory link
+                # written by6A6140 and used by6AAD00 after5BDC80's RET8.
+                live = factory in factory_order
+                entries.append(dict(slot=slot, type_index=index, kind=kind,
+                    type=building_names.get(index) if kind in (6, 7) else None,
+                    category_metadata=category, factory=self.identity(factory),
+                    factory_pointer=hex(factory), factory_live=live,
+                    linked_stage=get(factory + 0x24) if live else None,
+                    linked_product=self.identity(get(factory + 0x58)) if live else None,
+                    linked_rate=get(factory + 0x38) if live else None,
+                    linked_suspended=u.mem_read(factory + 0x70, 1)[0] if live else None))
+            sidebar_entries[str(tab)] = entries
+        return dict(frame=get(self.bc.FRAME), placement=self.placement(), objects=objects,
+            factories=factories, selected=selected, follow=self.identity(get(0x880988)),
+            follow_enabled=u.mem_read(0x880984, 1)[0],
+            modes=dict(zip(('repair', 'sell', 'power'), u.mem_read(0x88099A, 3))),
+            selection_mode=get(0xB0FE54), across_map=u.mem_read(0xB0FE64, 1)[0],
+            action_timer=bytes(u.mem_read(0xB0EA80, 12)).hex(),
+            camera=bytes(u.mem_read(0xB0CE08, 16)).hex(),
+            credits=struct.unpack('<i', u.mem_read(self.er.HOUSE + 0x30C, 4))[0],
+            factory_registry=factory_registry, sidebar_entries=sidebar_entries,
+            out_list=dict(count=event_count, top=event_top, tail=get(0xA802D0), events=events), rng=self.f.rng())
+
+    def step(self, command, operation, **inputs):
+        self.f.phase = command
+        before = self.snapshot()
+        marks = [len(x) for x in (self.calls, self.writes, self.transport,
+                  self.f.draws, self.f.advances, self.f.trace, self.f.events)]
+        result = operation()
+        after = self.snapshot()
+        streams = (self.calls, self.writes, self.transport,
+                   self.f.draws, self.f.advances, self.f.trace, self.f.events)
+        evidence = [copy.deepcopy(stream[mark:]) for stream, mark in zip(streams, marks)]
+        return dict(command=command, inputs=inputs, result=result,
+            before=before, after=after, native_calls=evidence[0], timer_writes=evidence[1],
+            os_transport=evidence[2], rng_requests=evidence[3], rng_advances=evidence[4],
+            lifecycle_trace=evidence[5], runtime_arena_events=evidence[6],
+            native_code_unchanged=self.f.code_unchanged())
+
+    def produce(self, name, tab, offset):
+        get, u = self.get, self.u
+        index = get(self.f.types[name] + 0xDF8)
+        self.invoke(0x6A8710, STRIPS[tab], 6, index)
+        result = self.invoke(0x4FA350, self.er.HOUSE, 6, index, 0, 0)
+        factory = get(self.er.HOUSE + offset)
+        assert factory and result != 3
+        self.factories[name] = factory
+        self.identities.setdefault(factory, name + '_factory')
+        visits, changes = 0, []
+        for _ in range(2500):
+            frame = get(self.bc.FRAME) + 1
+            u.mem_write(self.bc.FRAME, dwords(frame))
+            old = bytes(u.mem_read(factory + 0x24, 0x50))
+            self.invoke(0x4C9B20, factory)
+            visits += 1
+            if old != bytes(u.mem_read(factory + 0x24, 0x50)):
+                changes.append(dict(frame=frame, stage=get(factory + 0x24),
+                    balance=get(factory + 0x60), timer=bytes(u.mem_read(factory + 0x2C, 12)).hex()))
+            if get(factory + 0x24) == 54:
+                break
+        assert self.invoke(0x4CA130, factory) & 255
+        product = self.invoke(0x4CA160, factory)
+        self.products[name] = product
+        self.identities[product] = name + '_product'
+        self.invoke(0x6A8B30, STRIPS[tab], 0, 0)
+        return dict(begin_result=result, factory_visits=visits,
+                    changed_visits=changes, ready_product=self.identity(product))
+
+    def start_without_visits(self, name, offset):
+        result = self.invoke(0x4FA350, self.er.HOUSE, 6,
+                             self.get(self.f.types[name] + 0xDF8), 0, 0)
+        factory = self.get(self.er.HOUSE + offset)
+        assert factory
+        self.factories[name] = factory
+        self.identities[factory] = name + '_factory'
+        product = self.get(factory + 0x58)
+        self.products[name] = product
+        self.identities[product] = name + '_product'
+        return result
+
+    def click(self, name, *, right=False):
+        tab = 1 if name == 'GAPILL' else 0
+        index = self.get(self.f.types[name] + 0xDF8)
+        slots = [slot for slot in range(self.get(STRIPS[tab] + 0x54))
+                 if self.get(STRIPS[tab] + 0x58 + slot * 52) == index
+                 and self.get(STRIPS[tab] + 0x5C + slot * 52) == 6]
+        assert len(slots) == 1, (name, slots)
+        visible_slot = slots[0] - 2 * self.get(STRIPS[tab] + 0x44)
+        assert 0 <= visible_slot < 60
+        return self.invoke(0x6AAD00, 0xB07E80 + (tab * 60 + visible_slot) * 56,
+                           0x10 if right else 1, self.key, 0)
+
+    def preview(self, xy):
+        self.u.mem_write(self.cell_arg, struct.pack('<2h', *xy))
+        self.invoke(0x4A91B0, SIDEBAR, self.out_cell, self.cell_arg)
+        return self.placement()
+
+    def left_up(self, xy):
+        self.u.mem_write(self.cell_arg, struct.pack('<2h', *xy))
+        return self.invoke(0x4AB9B0, SIDEBAR, 0, self.cell_arg, 0, 0, self.key)
+
+    def receive(self):
+        self.u.reg_write(UC_X86_REG_ESP, self.bc.SP)
+        return run_checked(self.u, 0x6474C7, 0x6474BF, count=10_000_000)
+
+    def receiver(self, name, xy):
+        self.u.mem_write(self.cell_arg, struct.pack('<2h', *xy))
+        return self.invoke(0x4FB0E0, self.er.HOUSE, 6,
+                           self.get(self.f.types[name] + 0xDF8), 0, self.cell_arg)
+
+    def abandon(self, name):
+        return self.invoke(0x4FAA10, self.er.HOUSE, 6,
+                           self.get(self.f.types[name] + 0xDF8), 0, 0)
+
+    def expire(self, pointer):
+        from unicorn.x86_const import UC_X86_REG_EDX
+        self.u.reg_write(UC_X86_REG_EDX, 1)
+        return self.invoke(0x7258D0, pointer)
+
+    def stationary_blocker(self, xy):
+        pointer, coord = self.f.allocate(0x1000), self.f.allocate(16)
+        self.invoke(0x43B740, pointer, self.f.types['GAPILL'], self.er.HOUSE)
+        self.identities[pointer] = 'stationary_blocker'
+        self.products['blocker'] = pointer
+        self.u.mem_write(coord, dwords(xy[0] * 256 + 128, xy[1] * 256 + 128, 0))
+        target = self.get(self.get(pointer) + 0xD8)
+        result = self.invoke(target, pointer, coord, 0)
+        assert result & 255
+        return dict(pointer=hex(pointer), unlimbo_entry=hex(target), result=result)
+
+    def select_and_follow(self):
+        result = self.invoke(0x5F4520, self.f.source)
+        self.invoke(0x4AEB30, SIDEBAR, self.f.source)
+        self.u.mem_write(0xB0FE54, dwords(1))
+        self.u.mem_write(0xB0FE64, b'\1')
+        return result
+
+    def save(self):
+        self.baseline = [(low, bytes(self.u.mem_read(low, high - low + 1)))
+                         for low, high, _flags in self.u.mem_regions()]
+        self.baseline_cpu = self.u.context_save()
+        self.baseline_heap = self.f.heap
+        self.baseline_dicts = copy.deepcopy((self.identities, self.products, self.factories))
+        self.baseline_audio = {key: copy.deepcopy(value) for key, value in self.f.platform_audio.__dict__.items()
+                               if key not in ('owner', 'root', 'prepared_files')}
+
+    def restore(self):
+        for low, raw in self.baseline:
+            self.u.mem_write(low, raw)
+        self.u.context_restore(self.baseline_cpu)
+        self.f.heap = self.baseline_heap
+        self.identities, self.products, self.factories = copy.deepcopy(self.baseline_dicts)
+        for key, value in self.baseline_audio.items():
+            setattr(self.f.platform_audio, key, copy.deepcopy(value))
+        self.call_trace.pending.clear()
+        self.f.pending.clear()
+
+
+def ready_building_histories(root=None, *, inputs=None):
+    root = Path(root or os.environ['VERA20K_READY_BUILDING_ASSETS'])
+    inputs = inputs or ready_building_inputs(root)
+    m = ReadyBuildingFixture(inputs, root)
+    rows = [dict(id='paid_stock_ready', inputs=dict(seed=2,
+                  rng_seeds={'main': 2, 'scenario': 2, 'mapgen': 31}, technology_level=10,
+                  initial_credits=10000, builder='GACNST', builder_cell=[14, 14],
+                  barracks_cell=[18, 14], mouse_pixels=[320, 240],
+                  layers=inputs.ready_layers, physical_art_input_sections=inputs.ready_art,
+                  sounds=inputs.ready_sounds, flat_map=m.f.flat_map,
+                  reused_native_rule_layers=inputs.death_layers,
+                  native_types=[dict(name=name, pointer=hex(inputs.types[name]),
+                      array_index=m.get(inputs.types[name] + 0xDF8),
+                      cost=struct.unpack('<i', m.u.mem_read(inputs.types[name] + 0x610, 4))[0],
+                      build_cat=m.get(inputs.types[name] + 0xE08),
+                      factory=m.get(inputs.types[name] + 0xEB8))
+                      for name in ('GACNST', 'GAPOWR', 'GAPILE', 'GAPILL')],
+                  physical_files=[dict(file=name, sha256=hashlib.sha256((root / name).read_bytes()).hexdigest())
+                      for name in ('ARTMD.INI', 'SOUNDMD.INI', 'CLEAR01.TEM',
+                                   'GGPILL.SHP', 'PILLICON.SHP', 'GAPILLMK.SHP')],
+                  initialization=dict(display_fields=['0x004A8738', '0x004A8847'],
+                    mouse_fields=['0x005BDA48', '0x005BDA74'],
+                    ww_mouse_fields=['0x007B8730', '0x007B8856'],
+                    empty_cell='0x004F50A0', preview_sentinels='0x006A4BC0',
+                    select_controls='0x006A4DC0', select_zones='0x006A8220',
+                    building_built_counter='0x0049F9B0@House+55A0',
+                    house_factory_listener_registration=m.house_factory_registration,
+                    supplied_selection_capacity=64, wall_ms=0,
+                    scope='Selected initialized regions/services and supplied admitted House/map/builders; whole platform startup is excluded')),
+                 steps=[m.step('produce_GAPOWR', lambda: m.produce('GAPOWR', 0, 0x53BC)),
+                        m.step('produce_GAPILL', lambda: m.produce('GAPILL', 1, 0x53CC))])]
+    m.save()
+    rows.extend(ready_building_cases(m))
+    return rows
+
+
+def ready_building_retained_factory_cases(m, common):
+    """Original NULL-held, retained link, rearm and direct recheck boundaries."""
+    rows = []
+    m.restore()
+    rows.append(dict(id='current_product_expiry_right_receiver', inputs=common, steps=[
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('dispatch_pointer_expired', lambda: m.expire(m.products['GAPOWR']),
+               target='product', control_dl=1, boundary='Whole7258D0; no fatal destructor'),
+        m.step('tactical_right_up', lambda: m.invoke(0x4AAD30, SIDEBAR, m.key)),
+        m.step('left_cameo', lambda: m.click('GAPILL'), type='GAPILL'),
+        m.step('right_cameo', lambda: m.click('GAPOWR', right=True), type='GAPOWR'),
+        m.step('local_event_corridor', m.receive)]))
+    m.restore()
+    rows.append(dict(id='saved_product_expiry_right_receiver', inputs=common, steps=[
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+        m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18]),
+        m.step('dispatch_pointer_expired', lambda: m.expire(m.products['GAPOWR']),
+               target='product', control_dl=1, boundary='Whole7258D0; no fatal destructor'),
+        m.step('left_cameo', lambda: m.click('GAPILL'), type='GAPILL'),
+        m.step('right_cameo', lambda: m.click('GAPOWR', right=True), type='GAPOWR'),
+        m.step('local_event_corridor', m.receive)]))
+    m.restore()
+    rows.append(dict(id='null_product_direct_abandon_then_no_link_right', inputs=common, steps=[
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('dispatch_pointer_expired', lambda: m.expire(m.products['GAPOWR']),
+               target='product', control_dl=1, boundary='Whole7258D0; no fatal destructor'),
+        m.step('house_abandon', lambda: m.abandon('GAPOWR'), type='GAPOWR'),
+        m.step('left_cameo', lambda: m.click('GAPILL'), type='GAPILL'),
+        m.step('right_cameo', lambda: m.click('GAPOWR', right=True), type='GAPOWR'),
+        m.step('local_event_corridor', m.receive)]))
+    m.restore()
+    rows.append(dict(id='null_product_requested_category_guards', inputs=common, steps=[
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('dispatch_pointer_expired', lambda: m.expire(m.products['GAPOWR']),
+               target='product', control_dl=1, boundary='Whole7258D0; no fatal destructor'),
+        m.step('house_abandon', lambda: m.abandon('GACNST'), type='GACNST',
+               boundary='Direct category0 requested-index control, not a buildable-cameo trigger'),
+        m.step('house_abandon', lambda: m.abandon('GAPILE'), type='GAPILE',
+               boundary='Direct nonzero-category mismatched-index control on NULL held product')]))
+    m.restore()
+    rows.append(dict(id='defense_null_product_direct_abandon', inputs=common, steps=[
+        m.step('left_cameo', lambda: m.click('GAPILL'), type='GAPILL'),
+        m.step('dispatch_pointer_expired', lambda: m.expire(m.products['GAPILL']),
+               target='product', type='GAPILL', control_dl=1,
+               boundary='Whole7258D0; no fatal destructor'),
+        m.step('house_abandon', lambda: m.abandon('GAPILL'), type='GAPILL')]))
+    for case_id, active, expire, category in (
+        ('main_active_factory_queue_recheck', 'GAPOWR', False, 0),
+        ('defense_active_factory_queue_recheck_helper', 'GAPILL', False, 5),
+        ('defense_client_main_factory_queue_recheck', 'GAPILL', False, 0),
+        ('main_null_product_factory_queue_recheck', 'GAPOWR', True, 0),
+        ('defense_null_product_factory_queue_recheck_helper', 'GAPILL', True, 5)):
+        m.restore()
+        steps = [m.step('left_cameo', lambda active=active: m.click(active), type=active)]
+        if expire:
+            steps.append(m.step('dispatch_pointer_expired',
+                lambda active=active: m.expire(m.products[active]), target='product', type=active,
+                control_dl=1, boundary='Whole7258D0; no fatal destructor'))
+        else:
+            steps.append(m.step('supplied_builder_limbo',
+                lambda: m.u.mem_write(m.yard + 0x81, b'\1'), builder='yard', limbo=True,
+                boundary='Explicit admitted-prior mutation; not whole Limbo'))
+        steps.append(m.step('house_update_factory_queue',
+            lambda category=category: m.invoke(0x509140, m.er.HOUSE, 7, 0, category),
+            factory_rtti=7, naval=False, build_cat=category,
+            boundary='Whole original509140 direct helper. StockGACNST active callers push category0; category5 is helper-only. Caller scheduling is not emulated'))
+        rows.append(dict(id=case_id, inputs=common, steps=steps))
+    m.restore()
+    rows.append(dict(id='saved_main_factory_queue_recheck_receiver', inputs=common, steps=[
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+        m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18]),
+        m.step('supplied_builder_limbo', lambda: m.u.mem_write(m.yard + 0x81, b'\1'),
+               builder='yard', limbo=True, boundary='Explicit admitted-prior mutation; not whole Limbo'),
+        m.step('house_update_factory_queue', lambda: m.invoke(0x509140, m.er.HOUSE, 7, 0, 0),
+               factory_rtti=7, naval=False, build_cat=0,
+               boundary='Whole original509140 direct helper; caller scheduling is not emulated'),
+        m.step('local_event_corridor', m.receive)]))
+    m.restore()
+    rows.append(dict(id='expired_product_same_category_rearm_retained_old_right', inputs=common, steps=[
+        m.step('dispatch_pointer_expired', lambda: m.expire(m.products['GAPOWR']),
+               target='product', control_dl=1, boundary='Whole7258D0; no fatal destructor'),
+        m.step('produce_GAPILE', lambda: m.produce('GAPILE', 0, 0x53BC), type='GAPILE'),
+        m.step('left_cameo', lambda: m.click('GAPILL'), type='GAPILL'),
+        m.step('right_cameo', lambda: m.click('GAPOWR', right=True), type='GAPOWR'),
+        m.step('local_event_corridor', m.receive)]))
+    m.restore()
+    rows.append(dict(id='expired_product_same_category_rearm_retained_old_left', inputs=common, steps=[
+        m.step('dispatch_pointer_expired', lambda: m.expire(m.products['GAPOWR']),
+               target='product', control_dl=1, boundary='Whole7258D0; no fatal destructor'),
+        m.step('produce_GAPILE', lambda: m.produce('GAPILE', 0, 0x53BC), type='GAPILE'),
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+        m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18]),
+        m.step('local_event_corridor', m.receive)]))
+    m.restore()
+    rows.append(dict(id='rearmed_factory_sidebar_abandon_unlinks_all_retains_factory', inputs=common, steps=[
+        m.step('dispatch_pointer_expired', lambda: m.expire(m.products['GAPOWR']),
+               target='product', control_dl=1, boundary='Whole7258D0; no fatal destructor'),
+        m.step('produce_GAPILE', lambda: m.produce('GAPILE', 0, 0x53BC), type='GAPILE'),
+        m.step('sidebar_abandon_factory',
+            lambda: m.invoke(0x6ABAD0, SIDEBAR, 6,
+                             m.get(m.f.types['GAPILE'] + 0xDF8), m.factories['GAPILE']),
+            type='GAPILE', kind=6, factory='GAPOWR_factory',
+            boundary='Whole original6ABAD0 ->6ABB60 direct owner boundary; not whole HouseAbandon or mobile delivery')]))
+    m.restore()
+    rows.append(dict(id='local_unlinked_strip_clear_active_abandon_order', inputs=common, steps=[
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('strip_clear', lambda: m.invoke(0x6A81B0, STRIPS[0]), tab=0,
+               boundary='Whole original6A81B0 direct initialized helper; not whole UI/world reset'),
+        m.step('house_abandon', lambda: m.abandon('GAPOWR'), type='GAPOWR')]))
+    return rows
+
+
+def ready_building_cases(m):
+    rows = []
+    common = dict(source='paid_stock_ready executed VM/CPU/OS-transport bytes',
+                  building_types=['GACNST', 'GAPOWR', 'GAPILL', 'GAPILE'],
+                  technology_level=10, builder_cell=[14, 14], barracks_cell=[18, 14],
+                  mouse_pixels=[320, 240], cell=[13, 18])
+    m.restore()
+    rows.append(dict(id='fresh_same_different_right_then_place', inputs=common, steps=[
+        m.step('select_and_follow_prior', m.select_and_follow,
+               selected=['selected_mtnk'], follow='selected_mtnk', selection_mode=1, across_map=True,
+               boundary='Whole ObjectSelect5F4520/follow4AEB30; supplied prior navigation scope'),
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('left_cameo', lambda: m.click('GAPILL'), type='GAPILL'),
+        m.step('tactical_right_up', lambda: m.invoke(0x4AAD30, SIDEBAR, m.key)),
+        m.step('left_cameo', lambda: m.click('GAPILL'), type='GAPILL'),
+        m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+        m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18]),
+        m.step('local_event_corridor', m.receive)]))
+    for right_type in ('GAPOWR', 'GAPILL'):
+        m.restore()
+        rows.append(dict(id='right_own_factory_' + right_type, inputs=common, steps=[
+            m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+            m.step('right_cameo', lambda: m.click(right_type, right=True), type=right_type),
+            m.step('local_event_corridor', m.receive)]))
+    m.restore()
+    rows.append(dict(id='abandon_mismatch_then_other_then_missing_factory', inputs=common, steps=[
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('house_abandon', lambda: m.abandon('GAPILE'), type='GAPILE'),
+        m.step('house_abandon', lambda: m.abandon('GAPILL'), type='GAPILL'),
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('house_abandon', lambda: m.abandon('GAPILL'), type='GAPILL'),
+        m.step('direct_receiver', lambda: m.receiver('GAPILL', (13, 18)), type='GAPILL', cell=[13, 18])]))
+    m.restore()
+    rows.append(dict(id='direct_empty_and_negative_cell_guards', inputs=common, steps=[
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('direct_receiver', lambda: m.receiver('GAPOWR', (0, 0)), type='GAPOWR', cell=[0, 0]),
+        m.step('direct_receiver', lambda: m.receiver('GAPOWR', (-1, -1)), type='GAPOWR', cell=[-1, -1])]))
+    m.restore()
+    rows.append(dict(id='incomplete_factory_receiver_guard', inputs=common, steps=[
+        m.step('house_abandon', lambda: m.abandon('GAPOWR'), type='GAPOWR'),
+        m.step('begin_without_factory_visits', lambda: m.start_without_visits('GAPOWR', 0x53BC),
+               type='GAPOWR', factory_visits=0),
+        m.step('left_cameo', lambda: m.click('GAPILL'), type='GAPILL'),
+        m.step('direct_receiver', lambda: m.receiver('GAPOWR', (13, 18)), type='GAPOWR', cell=[13, 18])]))
+    m.restore()
+    rows.append(dict(id='local_invalid_site_retains_then_valid_place', inputs=common, steps=[
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('preview_cell', lambda: m.preview((14, 14)), cell=[14, 14]),
+        m.step('tactical_left_up', lambda: m.left_up((14, 14)), cell=[14, 14]),
+        m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+        m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18]),
+        m.step('local_event_corridor', m.receive)]))
+    for first, second in (('GAPILL', 'GAPOWR'), ('GAPOWR', 'GAPILL')):
+        m.restore()
+        steps = []
+        for name in (first, second):
+            steps += [m.step('left_cameo', lambda name=name: m.click(name), type=name),
+                      m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+                      m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18])]
+        steps.append(m.step('local_event_corridor', m.receive))
+        rows.append(dict(id='queued_same_cell_' + first + '_then_' + second,
+                         inputs=common, steps=steps))
+    m.restore()
+    steps = [m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+             m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+             m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18]),
+             m.step('direct_stationary_blocker', lambda: m.stationary_blocker((13, 18)),
+                    type='GAPILL', cell=[13, 18],
+                    boundary='Whole43B740 and440580; direct caller, not trigger/map-loader proof'),
+             m.step('local_event_corridor', m.receive),
+             m.step('house_abandon', lambda: m.abandon('GAPOWR'), type='GAPOWR')]
+    rows.append(dict(id='admitted_then_blocked_retry_then_abandon', inputs=common, steps=steps))
+    for queued_abandon in (False, True):
+        m.restore()
+        steps = [m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+                 m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+                 m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18])]
+        if queued_abandon:
+            steps.append(m.step('right_cameo', lambda: m.click('GAPILL', right=True), type='GAPILL'))
+        else:
+            steps += [m.step('left_cameo', lambda: m.click('GAPILL'), type='GAPILL'),
+                      m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+                      m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18])]
+        steps += [m.step('direct_stationary_blocker', lambda: m.stationary_blocker((13, 18)),
+                         type='GAPILL', cell=[13, 18],
+                         boundary='Whole43B740 and440580; direct caller, not trigger/map-loader proof'),
+                  m.step('local_event_corridor', m.receive)]
+        rows.append(dict(id='queued_failure_then_' + ('abandon' if queued_abandon else 'failure'),
+                         inputs=common, steps=steps))
+    for target, saved in (('product', False), ('type', False),
+                          ('product', True), ('type', True)):
+        m.restore()
+        steps = [m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR')]
+        if saved:
+            steps += [m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+                      m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18])]
+        pointer = m.products['GAPOWR'] if target == 'product' else m.f.types['GAPOWR']
+        steps.append(m.step('dispatch_pointer_expired', lambda: m.expire(pointer),
+                            target=target, control_dl=1,
+                            boundary='Whole7258D0 on initialized object; no destructor proof'))
+        if target == 'product':
+            steps.append(m.step('local_event_corridor' if saved else 'tactical_left_up',
+                                m.receive if saved else lambda: m.left_up((13, 18)), cell=[13, 18]))
+        rows.append(dict(id=('saved_' if saved else 'current_') + target + '_expiry',
+                         inputs=common, steps=steps))
+    m.restore()
+    rows.append(dict(id='alive_false_is_not_pointer_expiry', inputs=common, steps=[
+        m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR'),
+        m.step('supplied_product_alive', lambda: m.u.mem_write(m.products['GAPOWR'] + 0x90, b'\0'),
+               product='GAPOWR_product', alive=False, boundary='Explicit Alive byte; no fatal death/destructor'),
+        m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+        m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18])]))
+    for before_cameo in (False, True):
+        m.restore()
+        steps = [m.step('left_cameo', lambda: m.click('GAPOWR'), type='GAPOWR')]
+        if not before_cameo:
+            steps += [m.step('preview_cell', lambda: m.preview((13, 18)), cell=[13, 18]),
+                      m.step('tactical_left_up', lambda: m.left_up((13, 18)), cell=[13, 18])]
+        steps.append(m.step('supplied_builder_limbo', lambda: m.u.mem_write(m.yard + 0x81, b'\1'),
+                            builder='yard', limbo=True, boundary='Explicit admitted-prior mutation; not whole Limbo'))
+        steps += ([m.step('left_cameo', lambda: m.click('GAPILL'), type='GAPILL')]
+                  if before_cameo else [])
+        steps.append(m.step('local_event_corridor', m.receive))
+        rows.append(dict(id='builder_limbo_' + ('before_repeat_cameo' if before_cameo else 'after_admission'),
+                         inputs=common, steps=steps))
+    rows.extend(ready_building_retained_factory_cases(m, common))
+    return rows
+
+
 def generate():
     return dict(schema=1, comparisons=pair_controls(), histories=histories(),
                 cost_contexts=cost_contexts(), capacity_history=capacity_history(),
                 recharge_reader=recharge_reader(),
-                recalculate_scroll=recalculate_scroll_controls())
+                recalculate_scroll=recalculate_scroll_controls(),
+                ready_building_histories=ready_building_histories())
 
 
 def metadata():
-    return provenance(
+    record = provenance(
         scope='Original whole Strip CompareItems/InsertEntry, AddCameo admission through insertion, '
               'Recalculate retained filter/removal and complete pruning-scroll controls, '
               'and SuperWeaponType RechargeTime reader block. '
-              'Synthetic initialized inputs; not a complete tech-tree, native scene, or whole-sidebar claim.',
+              'Synthetic initialized ordering inputs; additive original paid ready-building retained '
+              'SelectAction/ManualPlace/local event/receiver and expiry histories use existing '
+              'initialized physical joined readers/VM. Not a complete tech-tree, native scene, or whole-sidebar claim.',
         assumptions=[
             'Fresh PE mapping per case family. Actual RTTI_To_TypeArray, original type vtables, '
             'Cost_Of country/FactoryPlant arithmetic and UTF-16 wcscmp execute. Type/House inputs '
@@ -565,6 +1332,107 @@ def metadata():
             'RechargeTime uses original constructor6CE5C0..6CE681 field initialization and '
             'reader6CED5C..6CED95 with original ReadDouble and ftol, supplied cached INI lookup, '
             'and original floating-scanner startup. Whole SuperWeaponType reader is excluded.',
+            'Additive ready_building_histories reuse building_death_anims.joined_inputs/joined_fixture, '
+            'building_construction, EngineerJoinedFixture, the one native arena, physical sound/ART '
+            'readers and native flat-map connectivity/Pathfinder. The old seven family payloads are '
+            'unchanged. Only the new family requires VERA20K_READY_BUILDING_ASSETS.',
+            'Original selected BuildingType registration45E2ED..45E362 produces GACNST/GAPOWR/GAPILE/GAPILL '
+            'indices; whole45DD90/45FE50 read GAPILL over RULESMD, optional LANGRULE, Battle mode and '
+            'Hills map. GUIBuildSound6693A6..6693F1 and BuildingSlam66AA7F..66AACF execute original '
+            'ReadString528A10/FindIndex7514D0 retaining constructor/current defaults. Selected sound '
+            'indices and object pointers are fixture-relative; original unlayered SOUNDMD supplies names/samples.',
+            'The new ready baseline executes original healthy GACNST/GAPILE whole43B740 constructors '
+            'then uses existing explicit admitted preplaced priors and original Mark/Logic admission. '
+            'House technology10, credits10000, empty FactoryPlant, local House number0, four strips '
+            'and flat clear map are declared inputs. Whole preplaced map/House constructors are excluded.',
+            'Original House interface constructor region4F5DCC..4F5E02, Factory-expiry listener '
+            'registration4F5EB8..4F5F0B intoB0F640, BuildingBuilt Counter49F9B0 at55A0, '
+            'House registry insertion, skirmish store52E10F..119, Factory/selection/preview/Select CRT owners '
+            'and original Display/Mouse/WWMouse constructor regions execute. The WWMouse region stops '
+            'before opaque platform wait/window setup; supplied physical pointer is320,240, timeGetTime0. '
+            'No full GUI startup or hardware cursor drawing is claimed.',
+            'Paid GAPOWR and separate Defense GAPILL factories are created by whole4FA350/4C9C70. '
+            'Whole4C9B20 visits monotonically increasing frames until original stage54; no ready stage '
+            'is supplied. Payment, timers, balance and original IsComplete/GetObject/linking are observed. '
+            'Each subsequent history restores those executed ready VM/CPU/OS-transport bytes. Timer '
+            'padding is raw observation, not a meaningful semantic field.',
+            'Actual Factory construction-arrayA83E30 order and retained strip records are observed. '
+            'Entry+08 is BuildCat metadata; entry+0C/strip+64 is the actual Factory link written '
+            'by6A6140. NULL-held same-category GAPILE rearm retains the original Factory identity '
+            'and array order while both old GAPOWR and new GAPILE entries reference it. Original '
+            '6ABB60 clears all same-Factory links on admitted HouseAbandon. Link publication at '
+            '4FA6AA occurs only for the local House after4FA61E; no-builder/Start-refused and '
+            'queued-tail4FA5F8 returns bypass it. Same suspended-type shortcut passes it. The '
+            'queued-tail guard is instruction-supported, not an executed forged building queue.',
+            'The additive rearmed_factory_sidebar_abandon_unlinks_all_retains_factory control '
+            'restores the executed paid baseline, expires GAPOWR through7258D0, and pays for '
+            'GAPILE in the same live Factory. Whole SidebarAbandon6ABAD0(6,GAPILE index,Factory) '
+            'executes Strip6ABB60 at a declared direct owner boundary, clearing both retained '
+            'GAPOWR/GAPILE links while preserving Factory identity/registry order and the '
+            'independent Defense GAPILL Factory/link. It refunds GAPILE once, destroys its '
+            'limbo product and dispatches expiry; all three RNG streams and zero draws/advances '
+            'are recorded. No queue or mobile state is forged, and mobile cancellation/delivery '
+            'caller reachability is instruction-supported rather than an executed mobile chain.',
+            'The additive local_unlinked_strip_clear_active_abandon_order control restores '
+            'the executed paid GAPOWR/GAPILL baseline, enters GAPOWR through whole Select, '
+            'then executes whole StripClear6A81B0(tab0) before whole HouseAbandon4FAA10. '
+            'This direct initialized helper clears Building-strip records without settling '
+            'the live Factory. It is not whole UI/scenario reset or mobile execution. '
+            'The zero-link Sidebar pass has no inner FactoryAbandon;4FAB83 retains current '
+            'product/type/foundation, whereas product expiry7258D0 sees the cleared cursor '
+            'after the House prefix and before core Factory deletion. Existing linked '
+            'cancellation instead refunds/destroys/expires before6ABBDF unlink and the '
+            'House cursor prefix. StripClear initializes75 slot clocks outside the existing '
+            'stage/building/action timer watch windows; no whole reset/timer claim. Its '
+            'raw EAX and opaque timer padding are observations. Complete three RNG states, '
+            'zero House-abandon draws/advances, the three stage-clock stores and reached '
+            'lifecycle calls are retained; no link, stage or expected result is authored.',
+            'Old GAPOWR Left after same-Factory paid GAPILE rearm executes6AB2CC GetObject, '
+            'ObjectFindFactory on the actual held GAPILE and ManualPlace(yard,GAPILE product). '
+            'Current and saved cursor/event identity is GAPILE, not the requested old cameo type. '
+            'Whole tactical producer and local receiver successfully place GAPILE and remove '
+            'the Factory; no Python caller substitutes the held type or placement result.',
+            'Whole SelectAction6AAD00 -> ObjectFindFactory5F5C20 -> TypeFindFactory5F7900 -> ManualPlace4FB840 '
+            'executes on actual paid products. Fresh ManualPlace calls UnselectAll48DC90; both same '
+            'and different ready building repeats refuse at the nonnull current-type guard. Sound and '
+            'builder query occur before that guard. Current/saved issuer880994/880980 is House+30, not '
+            'a builder pointer. 4A91B0 owns map-cell foundation preview coordinates, not the camera.',
+            'Whole tactical left/right producers, actual111-byte OutList events and local corridor '
+            '6474C7..6474BF ->64C380 ->4C6CB0 ->HousePlace4FB0E0 execute. Only actual failed Building '
+            'Unlimbo440580 restores latest saved product/type; early missing/incomplete/null-held/builder '
+            'or sentinel guards do not. Both same-cell event orders, two failures and fail-then-Abandon '
+            'preserve original order. An independent stationary blocker executes whole43B740/440580 '
+            'at a declared direct caller boundary, not a whole trigger/map-loader/tick.',
+            'Whole7258D0 calls actual FactoryPointerExpired4CA580 and TacticalPointerExpired6DA560. '
+            'Current product expiry retains type/foundation and prevents tactical event emission; '
+            'saved product expiry clears saved product/type/issuer/foundation. Current type expiry '
+            'clears current type/foundation but retains product; saved type expiry alone retains backup. '
+            'Alive=false and builder Limbo=true are explicit input changes, not fatal/Limbo producers. '
+            'Original Abandon/destructor/expiry reached by cancellation execute against initialized '
+            'services. Full fatal death, all destructor classes and scenario/save/modal-resume loading are excluded.',
+            'TacticalRight4AAD30 requires current product and AbstractFlags bit0 before clearing '
+            'the cursor; NULL product preserves orphan type/foundation. Own-factory Right6AAD00 '
+            'uses the same retained entry link, and its clear-prefix requires a nonnull Building '
+            'current product. NULL-held category Factory survives expiry until admitted Abandon '
+            'or direct queue recheck. HouseAbandon4FABF6 admits NULL held for nonzero requested '
+            'BuildCat without a requested-index match; stockGACNST BuildCat0 is an executed '
+            'refusal control, GAPILE nonzero mismatched index and Defense GAPILL admit. NULL-held '
+            'FactoryAbandon has no refund, timer write or RNG draw.',
+            'Whole HouseUpdateFactoryQueue509140 executes as a direct helper with RTTI7/naval0 '
+            'and category0 or helper-only Defense5. Selected active stockGACNST callers push '
+            'category0. Supplied builder Limbo makes actual TypeFindFactory refuse. Original '
+            '50921C calls FactoryAbandon directly, not HouseAbandon, followed by StartNextQueued. '
+            'Original5092A0 scalar deletion4CA770 dispatches Factory expiry; initialized House '
+            'listener4FB9B0 clears the matching slot and original destructor removes live '
+            'Factory/object-expiry registry entries. It retains orphan current type/foundation '
+            'and can leave a raw old cameo link to released arena bytes. Such links are recorded '
+            'as factory_live=false and never dereferenced. Stale freed-pointer Right, whole '
+            'builder lifecycle callers, their scheduling and subsequent sidebar recalculate '
+            'are excluded; no every-frame recheck claim is made.',
+            'Main886B88/Scenario+218 use inherited original seed2; MapGenABE890 uses original seed31. '
+            'Every step records complete three RNG states, actual draw/advance sequence, timers and '
+            'lifecycle calls; neither expected mutation nor RNG nor placement predicates are implemented '
+            'in Python. Native executable sections are checked unchanged.',
         ],
         substitutions=[
             'EVA752700 is an observed no-op sink with its actual RET4 convention.',
@@ -575,11 +1443,39 @@ def metadata():
             'operator_delete7C8B3D as no-op sinks with their actual caller-cleaned conventions. '
             'Delete must receive the original supplied allocation. No button appearance or '
             'allocator-internal claim; zero-filled unused snapshot slots are an explicit input.',
+            'New ready histories do not use the legacy availability or comparator substitutions. '
+            'They retain existing joined native physical asset-cache/allocator/OS-file/DirectSound '
+            'transport and declared presentation sinks. Reached WinMM import callsites receive '
+            'literal wall_ms0 with caller-owned stack unchanged; the existing6C8C40/646F20 owner '
+            'arms are not overridden twice. Full mounted MIX/theater traversal, audible hardware '
+            'output, Options dialog platform/resume and drawing are excluded.',
         ], entry_points={'compare': COMPARE, 'insert': INSERT, 'add': ADD,
                          'recalculate': RECALCULATE, 'strip_ctor': 0x6A80A0,
                          'strip_clear': 0x6A81B0, 'wcscmp': 0x7CA5D3,
                          'prune_scroll_tail': 0x6AABC9, 'tab_gadget_ctor': 0x69DCF0,
-                         'super_ctor_fields': 0x6CE5C0, 'recharge_reader': 0x6CED5C})
+                         'super_ctor_fields': 0x6CE5C0, 'recharge_reader': 0x6CED5C,
+                         'ready_select': 0x6AAD00, 'object_find_factory': 0x5F5C20,
+                         'type_find_factory': 0x5F7900, 'manual_place': 0x4FB840,
+                         'tactical_left_up': 0x4AB9B0, 'tactical_right_up': 0x4AAD30,
+                         'place_event': 0x4C6AE0, 'house_place': 0x4FB0E0,
+                         'building_unlimbo': 0x440580, 'house_abandon': 0x4FAA10,
+                         'factory_start': 0x4C9C70, 'factory_ai': 0x4C9B20,
+                         'house_factory_listener_ctor': 0x4F5EB8,
+                         'house_factory_expiry': 0x4FB9B0,
+                         'house_update_factory_queue': 0x509140,
+                         'factory_scalar_delete': 0x4CA770,
+                         'sidebar_link_factory': 0x6A6140,
+                         'sidebar_abandon_factory': 0x6ABAD0,
+                         'strip_abandon_factory': 0x6ABB60,
+                         'pointer_expiry': 0x7258D0, 'tactical_expiry': 0x6DA560,
+                         'factory_expiry': 0x4CA580, 'gui_sound_reader': 0x6693A6,
+                         'building_slam_reader': 0x66AA7F})
+    record['command'] = (
+        'VERA20K_GAMEMD_EXE=/absolute/path/gamemd.exe '
+        'VERA20K_READY_BUILDING_ASSETS=/absolute/path/extracted-retail-cache '
+        'python -B -m tools.sidebar_oracle.cameo_order --check; '
+        'replace --check with --write to regenerate')
+    return record
 
 
 if __name__ == '__main__':
@@ -590,4 +1486,10 @@ if __name__ == '__main__':
                        'cost_owner': Path(__file__).parents[1] / 'spatial_oracle/cost_of.py',
                        'ini_fixture': Path(__file__).parents[1] / 'spatial_oracle/building_body_rules.py',
                        'runner': Path(__file__).parents[1] / 'native_oracle.py',
+                       'joined_building_owner': Path(__file__).parents[1] / 'spatial_oracle/building_construction.py',
+                       'joined_scene_owner': Path(__file__).parents[1] / 'spatial_oracle/building_death_anims.py',
+                       'physical_audio_and_admission_owner': Path(__file__).parents[1] / 'spatial_oracle/engineer_repair_admission.py',
+                       'joined_navigation_owner': Path(__file__).parents[1] / 'spatial_oracle/anytown_damage/navigation.py',
+                       'joined_transport_owner': Path(__file__).parents[1] / 'spatial_oracle/anytown_damage/mission.py',
+                       'map_prior_owner': Path(__file__).parents[1] / 'spatial_oracle/refinery_dock.py',
                    })

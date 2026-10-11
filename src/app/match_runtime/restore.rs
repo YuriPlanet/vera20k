@@ -30,6 +30,7 @@ pub(crate) fn commit_prepared_load(
     crate::app::input::dispatch::selection_navigation::reset_for_world_replacement(
         &mut state.match_state.input,
     );
+    state.match_state.input.reset_targeting_for_new_world();
     // F10 lifecycle: a successful in-scenario load closes the outgoing
     // timeline's diagnostic segment BEFORE the restored simulation commits;
     // the restored timeline lazily opens its own segment on the next frame.

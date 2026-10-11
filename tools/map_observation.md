@@ -388,7 +388,8 @@ semantic command dispatcher directly. Its receipt records `command`, actual
 receipt checks the expected gadget captured the press and release restored
 neutral input. The command-bar receipt adds one sample to the existing budget.
 Profiles containing it use `map-local-gesture-v4`; historical tactical/sidebar/
-key-only profiles keep their existing policy and receipt shape. It accepts no
+key-only profiles keep their existing policy and receipt shape unless they also
+request a right button as described below. It accepts no
 click modifiers. Python checks receipt shape/geometry without reproducing the
 runtime command registry, layout or action admission.
 
@@ -689,7 +690,8 @@ rendered steps, the harness checks that the actual `GameRenderOutput.sidebar_vie
 retained projection. Step 0 in a positive-step run is explicitly retained-only.
 
 Sidebar gestures resolve their coordinates from that current view and dispatch
-ordinary left mouse press/release edges through the production gadget router:
+ordinary mouse press/release edges through the production gadget router. An
+omitted button preserves the historical left route:
 
 ```json
 {
@@ -709,6 +711,46 @@ resolved coordinates and before/after views. Commands created by a cameo click
 still use the ordinary synchronized command scheduler. This observes Rust
 production integration; native ordering comparisons are owned by the
 [sidebar oracle](sidebar_oracle/cameo_order.md), with their separate bounds.
+
+## Literal mouse buttons
+
+The v2/v3 `click` and cameo `sidebar` gestures accept an optional literal
+`button`: `"left"` or `"right"`. Omission defaults to Left and keeps the
+historical JSON and receipt shape. An explicit Left is also admitted. For example:
+
+```json
+{"issue_after_step": 100,
+ "gesture": {"kind":"click","position":[236,225],"button":"right"}}
+```
+
+```json
+{"issue_after_step": 101,
+ "gesture": {"kind":"sidebar","target":{"kind":"cameo","type_id":"GAPOWR"},"button":"right"}}
+```
+
+Both buttons use the same cursor move and ordinary gadget/mouse edge driver.
+The driver checks the corresponding held button, tactical capture or resolved
+cameo gadget after press, then releases it and restores the sealed neutral
+cursor before another step. It never writes a synthetic held state or sends a
+semantic sidebar action. A Right receipt has `left_press_captured:false` and
+required `right_press_captured:true`; other receipts omit the latter field.
+Right cameos still resolve the current visible type and retained hit rectangle.
+
+Profiles containing any Right use `map-local-right-gesture-v5`, including mixed
+key, command-bar and Left inputs. They opt in to the existing `local_input`
+projection and startup `keyboard_bindings` table described below, so pending
+placement and immediate Main cursors can be read without a dummy key. This
+does not add a state owner or change the capture schema version. Bare and
+explicit Left-only profiles retain their existing policy/projections. Python
+checks exact requested buttons, typed press receipts, policy and existing target
+geometry; it does not infer cancellation or command admission from the button.
+
+Right is admitted only on tactical clicks and cameo targets. Right tabs,
+chrome controls, command-bar buttons and drags are rejected. Right dragging
+requires the ordinary camera's per-frame polling; the complete between-step
+gesture driver does not advance that poll. Mouse modifiers and held gestures
+across steps are also outside this profile contract. Null, unknown and wrong-case
+button values are rejected before launch.
 
 ## Literal keyboard gestures
 
@@ -730,8 +772,9 @@ reverse order before rendering. The loaded `KEYBOARDMD.INI` bindings and registe
 startup defaults resolve them in production. Each keyboard receipt reports the
 production `encoded_key`, resolved registered `binding_command` (or `null`),
 and observed held-key press/release state. The capture never dispatches a
-semantic hotkey command directly. `Escape` can cancel ordinary world modes;
-an input that opens a menu leaves the capture's admitted in-game state and fails.
+semantic hotkey command directly. An input, including `Escape`, that opens a
+menu leaves the capture's admitted unpaused in-game state and fails. This
+profile does not observe paused Options interactions.
 The gesture transcript also records the startup `keyboard_bindings` table in
 registered command order: each INI command name and its loaded `first_key`, or
 `null` when unbound. This uses the production binding owner rather than parsing
@@ -746,7 +789,8 @@ keys across frames are outside this profile's coverage. The sealed neutral curso
 and all ordinary idle-input checks still apply. A neutral sidebar location can
 keep placement or repair cursors out of the tactical viewport during observations.
 
-Profiles containing a key gesture use `map-local-gesture-v3`. Their existing
+Profiles containing a key gesture use `map-local-gesture-v3` unless a command-bar
+or Right gesture selects the newer policy described above. Their existing
 per-frame and before/after input receipts add `local_input`: current camera
 top-left and zoom, follow target, repair/sell modes, targeting kind and type,
 `main_rng_cursor: [index_a, index_b]`, the selection-voice gate, and ordered
@@ -756,6 +800,19 @@ before/after values can witness immediate Main stream draws during an input
 gesture; they do not establish equality of the whole RNG state. These values
 come from the existing input/sidebar/simulation/audio owners. Voice requests
 are observed without draining the queue and do not prove audible playback.
+The optional `building_placement` projection borrows
+`MatchInputState::building_placement_view()`. Its `current` and `saved_retry`
+are independent targets: each is `null` or `{type_id, product_id, issuer}`.
+`product_id` is the actual stable object ID or `null` after pointer expiry;
+`issuer` resolves the retained House identity through that observation's live
+simulation interner. `current_preview_present` and `saved_preview_present`
+report retained previews without recomputing them. An observed empty owner
+has both targets `null` and both flags `false`. Historical omission means
+unobserved state, not an empty transaction. A projection and each non-null
+target count toward the retained-sample budget. Before/after literal quickload
+receipts can observe a submitted backup and another current target immediately
+across the production prepared-load commit, without waiting for a Place receiver.
+The projection adds no placement writer, queue drain or save schema.
 The optional `selection_scope` projection reads the shared TypeSelect scope
 owner: `mode` (`ordinary`, `combatant`, `type`, `health`, or `veterancy`),
 `across_map`, and `last_outcome_key` (the retained HUD outcome's CSF key or
@@ -775,15 +832,15 @@ Historical omission supplies no inferred rank or timer value.
 `hud_messages` reads actual
 localized message text rows in insertion order through `MessageList.messages()`;
 it neither posts nor expires a message and does not invent source keys for rows.
-New keyboard captures include both projections. Older sealed receipts may omit
-either; omission supplies no evidence about that state. One scope projection,
+New keyboard captures include these projections. Older sealed receipts may omit
+them; omission supplies no evidence about that state. One scope projection,
 every retained navigation ID (including duplicates), each HUD row and each
 voice request count toward the retained-sample budget.
 Ordered `selected_ids` and
 `selection_pending` continue to report the existing optimistic input selection,
 separately from commands queued for the next simulation step.
 
-Mouse-only profiles retain their previous policies and receipt shapes. Keyboard
+Left-only mouse profiles retain their previous policies and receipt shapes. Keyboard
 and sidebar/tactical gestures may share one profile; all its input observations
 then include the extended local state. No save/load state replacement is added
 by these observations. The admitted literal quicksave/quickload route above

@@ -16,6 +16,9 @@ snapshots must match the actual view submitted to the renderer.
 Literal ``key`` gestures traverse the shared in-game keyboard edge owner with
 the loaded bindings. Their policy also observes local camera/mode/follow state
 and pending selection voice requests without draining the audio owner.
+``click`` and cameo ``sidebar`` gestures may include literal ``button``
+``left``/``right``; omitted keeps the historical left route and receipt shape.
+Right gestures use their own policy and the same ordinary mouse-edge driver.
 """
 from __future__ import annotations
 
@@ -57,6 +60,7 @@ GESTURE_POLICY = 'map-tactical-left-gesture-v1'
 SIDEBAR_GESTURE_POLICY = 'map-local-left-gesture-v2'
 KEYBOARD_GESTURE_POLICY = 'map-local-gesture-v3'
 COMMAND_BAR_GESTURE_POLICY = 'map-local-gesture-v4'
+RIGHT_BUTTON_GESTURE_POLICY = 'map-local-right-gesture-v5'
 SIDEBAR_POLICY = 'map-retained-sidebar-observation-v1'
 AUDIO_POLICY = 'map-device-pulled-player-pcm-v2'
 PRIOR_AUDIO_POLICY = 'map-device-pulled-player-pcm-v1'
@@ -259,8 +263,11 @@ def _screen_point(value: Any, label: str, extent: tuple[int, int]) -> list[int]:
 
 def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
     gesture = require_object(value, label)
+    if 'button' in gesture:
+        if gesture.get('kind') not in ('click', 'sidebar') or gesture['button'] not in ('left', 'right'):
+            raise ValidationError(f'{label}.button requires click/sidebar and literal left/right')
     if gesture.get('kind') == 'click':
-        require_exact_keys(gesture, ('kind', 'position'), label)
+        require_exact_keys(gesture, ('kind', 'position', *(('button',) if 'button' in gesture else ())), label)
         _screen_point(gesture['position'], f'{label}.position', extent)
     elif gesture.get('kind') == 'drag':
         require_exact_keys(gesture, ('kind', 'from', 'to'), label)
@@ -286,9 +293,11 @@ def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
         # Rust resolves the name from the existing command-bar registry. The
         # wrapper neither maintains another registry nor maps names to actions.
     elif gesture.get('kind') == 'sidebar':
-        require_exact_keys(gesture, ('kind', 'target'), label)
+        require_exact_keys(gesture, ('kind', 'target', *(('button',) if 'button' in gesture else ())), label)
         target = require_object(gesture['target'], f'{label}.target')
         kind = target.get('kind')
+        if _right_button_gesture(gesture) and kind != 'cameo':
+            raise ValidationError(f'{label} right sidebar gestures require a cameo target')
         if kind == 'tab':
             require_exact_keys(target, ('kind', 'tab'), f'{label}.target')
             if target['tab'] not in SIDEBAR_TABS:
@@ -305,11 +314,18 @@ def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
         raise ValidationError(f'{label}.kind must be click, drag, sidebar, command_bar or key')
 
 
+def _right_button_gesture(gesture: Mapping[str, Any]) -> bool:
+    return gesture.get('kind') in ('click', 'sidebar') and gesture.get('button') == 'right'
+
+
 def _observes_local_input(profile: Mapping[str, Any]) -> bool:
-    return any(row['gesture']['kind'] == 'key' for row in profile.get('gestures', []))
+    return any(row['gesture']['kind'] == 'key' or _right_button_gesture(row['gesture'])
+               for row in profile.get('gestures', []))
 
 
 def _gesture_policy(profile: Mapping[str, Any]) -> str:
+    if any(_right_button_gesture(row['gesture']) for row in profile.get('gestures', [])):
+        return RIGHT_BUTTON_GESTURE_POLICY
     if any(row['gesture']['kind'] == 'command_bar' for row in profile.get('gestures', [])):
         return COMMAND_BAR_GESTURE_POLICY
     if _observes_local_input(profile):
@@ -1341,7 +1357,8 @@ def _local_input_observation(value: Any, label: str) -> int:
                              'sell_mode', 'targeting', 'main_rng_cursor', 'selection_voice_enabled',
                              'selection_voice_requests',
                              *(('selection_scope',) if 'selection_scope' in row else ()),
-                             *(('hud_messages',) if 'hud_messages' in row else ())), label)
+                             *(('hud_messages',) if 'hud_messages' in row else ()),
+                             *(('building_placement',) if 'building_placement' in row else ())), label)
     position = require_array(row['camera_top_left'], f'{label}.camera_top_left')
     if len(position) != 2:
         raise ValidationError(f'{label}.camera_top_left must contain exactly two coordinates')
@@ -1377,6 +1394,27 @@ def _local_input_observation(value: Any, label: str) -> int:
     samples = len(voices)
     # Optional extensions preserve sealed historical keyboard receipts. These
     # are owner projections, not a keyboard/selection algorithm in the wrapper.
+    if 'building_placement' in row:
+        placement_label = f'{label}.building_placement'
+        placement = require_object(row['building_placement'], placement_label)
+        require_exact_keys(placement, ('current', 'saved_retry', 'current_preview_present',
+                                       'saved_preview_present'), placement_label)
+        for key in ('current_preview_present', 'saved_preview_present'):
+            if type(placement[key]) is not bool:
+                raise ValidationError(f'{placement_label}.{key} must be boolean')
+        samples += 1
+        for key in ('current', 'saved_retry'):
+            if placement[key] is None:
+                continue
+            target_label = f'{placement_label}.{key}'
+            target = require_object(placement[key], target_label)
+            require_exact_keys(target, ('type_id', 'product_id', 'issuer'), target_label)
+            for field in ('type_id', 'issuer'):
+                if not require_string(target[field], f'{target_label}.{field}'):
+                    raise ValidationError(f'{target_label}.{field} is empty')
+            if target['product_id'] is not None:
+                _bounded_int(target['product_id'], f'{target_label}.product_id', 1, (1 << 64) - 1)
+            samples += 1
     if 'selection_scope' in row:
         scope_label = f'{label}.selection_scope'
         scope = require_object(row['selection_scope'], scope_label)
@@ -1872,10 +1910,12 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
         sidebar = request['gesture']['kind'] == 'sidebar'
         keyboard = request['gesture']['kind'] == 'key'
         command_bar = request['gesture']['kind'] == 'command_bar'
+        right = _right_button_gesture(request['gesture'])
         require_exact_keys(row, ('ordinal', 'issue_after_step', 'issued_simulation_tick',
                                  'issued_binary_frame', 'gesture', 'before', 'after',
                                  'left_press_captured', 'band_box_before_release',
                                  'neutral_input_restored', 'queued_commands',
+                                 *(('right_press_captured',) if right else ()),
                                  *(('sidebar',) if sidebar else ()),
                                  *(('command_bar',) if command_bar else ()),
                                  *(('keyboard',) if keyboard else ())), row_label)
@@ -1885,9 +1925,11 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
             require_value(row[key], expected, f'{row_label}.{key}')
         _require_equal(row['gesture'], request['gesture'], f'{row_label}.gesture')
         _gesture(row['gesture'], f'{row_label}.gesture', extent)
-        for key, expected in (('left_press_captured', not keyboard), ('neutral_input_restored', True),
+        for key, expected in (('left_press_captured', not keyboard and not right), ('neutral_input_restored', True),
                               ('band_box_before_release', request['gesture']['kind'] == 'drag')):
             require_value(row[key], expected, f'{row_label}.{key}')
+        if right:
+            require_value(row['right_press_captured'], True, f'{row_label}.right_press_captured')
         for key in ('before', 'after'):
             sample_count += _input_observation(row[key], f'{row_label}.{key}', local_input=local_input)
         if sidebar:

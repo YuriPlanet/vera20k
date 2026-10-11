@@ -4,14 +4,12 @@ use crate::app::input::entity_pick::{
     compute_box_selection_snapshot, compute_click_selection_snapshot, hover_target_at_point,
     pick_enemy_target_stable_id,
 };
-use crate::app::presentation::sidebar_render::sync_targeting_mode;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
 use crate::sim::components::Health;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::test_intern;
-use crate::sim::production::ReadyBuildingView;
 use crate::sim::vision::FogState;
 use crate::sim::world::Simulation;
 use std::collections::{BTreeMap, BTreeSet};
@@ -710,65 +708,4 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
     .expect("enemy hover");
     assert_eq!(enemy_hover.kind, HoverTargetKind::EnemyUnit);
     assert_eq!(enemy_hover.stable_id, 11);
-}
-
-#[test]
-fn test_ready_buildings_do_not_auto_arm_placement() {
-    let mut armed: Option<crate::app::types::TargetingMode> = None;
-    let mut preview = None;
-    let ready = vec![ReadyBuildingView {
-        type_id: crate::sim::intern::test_intern("GAPOWR"),
-        display_name: "Power Plant".to_string(),
-        queue_category: crate::sim::production::ProductionCategory::Building,
-    }];
-
-    sync_targeting_mode(&mut armed, &mut preview, &ready, None);
-
-    assert!(
-        armed.is_none(),
-        "ready building should not auto-arm placement"
-    );
-    assert!(preview.is_none());
-}
-
-#[test]
-fn test_invalid_armed_building_clears_when_not_ready() {
-    let mut armed = Some(crate::app::types::TargetingMode::BuildingPlacement(
-        "GAPOWR".to_string(),
-    ));
-    let mut preview = Some(crate::sim::production::BuildingPlacementPreview {
-        rx: 5,
-        ry: 5,
-        width: 2,
-        height: 2,
-        valid: false,
-        reason: None,
-        cell_valid: vec![false; 4],
-        wall_autofill_cells: Vec::new(),
-    });
-
-    sync_targeting_mode(&mut armed, &mut preview, &[], None);
-
-    assert!(armed.is_none());
-    assert!(preview.is_none());
-}
-
-/// No writer of the selected Super (`0x008809A0`) tests its charge or
-/// grant, so the sidebar sync keeps a selection its view no longer shows
-/// ready, or never showed: the Chrono Warp case 3 selects.
-#[test]
-fn test_sw_selection_is_not_the_sidebar_syncs_to_drop() {
-    let mut armed = Some(crate::app::types::TargetingMode::SuperWeapon(
-        "ChronoWarpSpecial".to_string(),
-    ));
-    let mut preview = None;
-
-    sync_targeting_mode(&mut armed, &mut preview, &[], None);
-
-    assert_eq!(
-        armed,
-        Some(crate::app::types::TargetingMode::SuperWeapon(
-            "ChronoWarpSpecial".to_string()
-        ))
-    );
 }
