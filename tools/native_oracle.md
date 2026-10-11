@@ -93,6 +93,51 @@ reference; the Rust test checks production conversion against that reference.
 Python success alone does not show Rust parity. Normal Rust tests use committed
 outputs and do not require Unicorn or an executable. Follow `AGENTS.md` before Cargo.
 
+### Tank-bunker range comparison
+
+`python -m tools.spatial_oracle.walk_cell_range --bunker --check` replays the
+separate `walk_cell_range_bunker.json` corpus. Select a supported executable with
+`VERA20K_GAMEMD_EXE` and set `VERA20K_BUNKER_ASSETS` to a directory containing
+extracted retail `RULESMD.INI` and `MPBattleMD.ini`. Use the existing `asset` tool
+to extract them from the selected installation; include `LANGRULE.INI` only if
+that installation supplies it. The recorded Steam inputs had no LANGRULE layer.
+No executable or retail asset is distributed with this fixture.
+
+The final `supplied_empty_map_rules` layer explicitly supplies no rule overrides.
+It tests original reader admission and retained values; it does not replay a
+complete map. No custom map, ART, SHP or sound file is required. The 20 range rows
+cover the Unit bunker bonus, direct/arcing boundaries and declared ordering and
+overflow controls. Their native input readers establish LTNK/ATGUN/Cannon fields;
+installation, acquisition, firing and rendering remain separate validation.
+
+### Stationary attack actions and building control
+
+`python -m tools.spatial_oracle.bunker_attack_action --check` executes original
+DetermineAction, Unit/Foot/Techno action dispatch and the normal Display cursor
+switch. Its 16 ordinary/bunker controls and 24 armed-harvester/deployed-Unit
+controls supply weapon-selection, range and GetFireError verdicts. They establish
+caller ordering and action/cursor values, not weapon arithmetic, reload cadence
+or the full input window. In particular, a bunkered Unit's out-of-range Action0
+is distinct from a fully deployed SimpleDeployer's Action2. Rust input tests in
+`app::input::cursor::tests::bunker_` consume this corpus; command integration also
+checks an occupied building through queued commands and actual firing ticks.
+
+`python -m tools.procedural_drawing_oracle.factory_destination --control --check`
+uses a separate corpus for Building44F5C0's virtual control capability and the
+Object5F4520 selection prefix. It preserves the original destination corpus.
+`sim::world::world_orders::building_control_tests::` covers 29 nonpositive-EMP
+controls and 58 selection-prefix variants. Eight positive-EMP native controls
+remain unported because this chain has no EMP-state producer; the prefix stops
+before selection commit. Construction-yard controls use the existing House,
+session, mind-control and undeploy owners.
+
+The input action/range probes add no simulation RNG draws, timer writes or detach
+calls. Existing command, deployment and occupied-fire owners retain those effects;
+these fixtures do not establish their complete scheduling parity. The isolated
+query regression covers this attack probe only: the older ordinary-hover/click
+GetFireError path still uses the canonical map query, so missing-cell Dummy writes
+there are a separate residual, not a claim of complete input-query purity.
+
 These generators now default to **read-only checks**, also spelled `--check`:
 
 | Python module | Sampled native behavior | Rust consumer/test location |
@@ -383,3 +428,31 @@ first-save RNG state.
 * [Unicorn 2.1.4 execution implementation](https://github.com/unicorn-engine/unicorn/blob/2.1.4/uc.c):
   the instruction-count hook stops emulation normally; success alone does not
   establish that a native return was reached.
+
+
+### Building animation slot display order
+
+`python -m tools.spatial_oracle.building_slot_replacement --display --check`
+replays the existing owner's separate `building_slot_replacement.display.json`
+corpus. Set `VERA20K_BUILDING_ANIM_ART` only when the physical `ARTMD.INI` is
+outside the checkout's `ini/`; the result records its content hash, not its path.
+
+The original BuildingType constructor and ART slot reader establish NATBNK's
+four normal/damaged wall names, slot ZAdjust/YSort, CAOILD's Active YSort and
+GAHPAD's nonzero Active Y offset. Original `45197B..4519A8` copies slot values
+into supplied Anim objects, and `422BC0` queries their retained sort key.
+Two insertion histories then execute Display submission with actual Anim/Unit
+vtables: back wall, installed Unit, front wall. The scene coordinates, Ground
+layer, initial objects and vector capacities are supplied controls. This is
+not full Anim construction, frame-timer or whole-scene pixel parity.
+
+Rust tests
+`building_art::slot_tests::bunker_and_active_slot_sort_adjustments_match_original_read_and_copy`
+and `app::presentation::instances::shp::building_anim_tests::` connect those
+values to slot construction and the production renderer's independent Anim
+Display output, including normal/damaged names, atlas frame Start, offsets,
+hidden/removed objects and replacement. The explicit ignored GPU regression
+`render::depth_gpu_tests::bunker_front_wall_interleaves_with_indexed_voxel_without_writing_z`
+runs the production SHP/VXL shaders on synthetic texels and reads the output.
+It proves bounded GPU ordering/occlusion, not retail RGB equality; a production
+NATBNK/LTNK played comparison remains necessary.

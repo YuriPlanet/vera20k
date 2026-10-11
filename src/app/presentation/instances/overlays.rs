@@ -207,6 +207,9 @@ pub(crate) fn build_anim_class_instances(
     >,
     ground_order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
 ) {
+    // Slot animations use their existing binding/light path but are now
+    // independent Display objects, including when their body is culled.
+    super::shp::build_building_anim_instances(state, ground_objects, ground_order);
     let (sim, atlas) = match (
         state
             .match_state
@@ -236,7 +239,7 @@ pub(crate) fn build_anim_class_instances(
             continue;
         };
         // DrawIt422CA0..4238AF does not read native19B. Display membership
-        // supplies live generic draws; retained Building slots have their own pass.
+        // supplies live draws; Building slots use the binding owner above.
         if anim.is_building_anim() {
             continue;
         }
@@ -518,7 +521,7 @@ fn parachute_canopy_owner(
 /// level boundary). The lift is the same `AdjustForZ(z)` the projection
 /// subtracted, so depth can cancel exactly what was drawn, as
 /// `AnimClass::DrawIt @ 0x00422CA0` does.
-fn anim_world_render_coords(
+pub(super) fn anim_world_render_coords(
     world: crate::sim::anim_class::AnimWorldCoord,
 ) -> (f32, f32, u16, u16, u8, i32) {
     let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
@@ -1544,16 +1547,6 @@ mod tests {
         // Clamped to the valid depth range.
         assert_eq!(apply_shape_z_adjust(0.002, -100_000, world_height), 0.001);
         assert_eq!(apply_shape_z_adjust(0.998, 100_000, world_height), 0.999);
-    }
-
-    #[test]
-    fn effective_anim_z_adjust_slot_overrides_type() {
-        use crate::app::presentation::instances::helpers::effective_anim_z_adjust;
-        // Nonzero slot override (e.g. ActiveAnimZAdjust=-100) wins.
-        assert_eq!(effective_anim_z_adjust(-100, -300), -100);
-        // Zero slot falls back to the anim type's own ZAdjust=.
-        assert_eq!(effective_anim_z_adjust(0, -300), -300);
-        assert_eq!(effective_anim_z_adjust(0, 0), 0);
     }
 
     #[test]

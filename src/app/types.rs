@@ -309,6 +309,8 @@ pub(crate) enum ScrollDir {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CursorFeedbackKind {
+    /// Native Action0: normal arrow, without a move or attack action.
+    Default,
     Move,
     AttackMove,
     FriendlyUnit,

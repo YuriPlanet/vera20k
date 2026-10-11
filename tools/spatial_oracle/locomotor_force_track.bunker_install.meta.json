@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original bunker installation coordinate/facing/selector and Force_Track producers, bounded states1/2; native retail NATBNK Foundation reader",
+  "assumptions": [
+    "Same physical supported gamemd image as this sidecar identity; original Building/BuildingType/Unit vtables, Drive/base and Facing constructors, Facing Set_ROT/Snap/Set/Current/IsRotating execute",
+    "State1 begins459069 after candidate lookup, radio/contact admission, footprint clearance and scatter; ESI Building and EBP Unit are supplied. State1 writes state2; state2 begins459101 with that retained object/facing state",
+    "Global frame100 is supplied, then advanced directly to original timer start+duration. Original waiting gate executes when duration is positive. Full frame scheduling, per-frame movement and intermediate turning are excluded",
+    "Original Building447AC0 computes Foundation center;459069..4590F9 computes desired16 through original atan2/ftol/Set;459101..4591CE reads Current16, selects track, calls GetCoords/Drive Force_Track and writes speed/state3",
+    "Physical ini/artmd.ini NATBNK Foundation string is extracted by the existing lexical owner and supplied to the existing INI cache. Original type constructor and461225..46125D Foundation caller/readers execute. NATBNK Image identity is supplied; complete type ReadINI, physical asset loading and Scenario rule layers are excluded",
+    "Control foundations1x1/3x2 are explicit synthetic ART strings parsed by the same original reader. Declared raw XYZ, initial facing and ROT inputs are fixtures; expected centers, desired/current facings, timer duration, selector and Force_Track coordinates come only from native execution",
+    "Reuses the existing32x32 level2/no-overlay map, Drive occupation and raw-put controls. Original instructions remain unchanged; read-only observers record input arguments and returned native values. Drive Process, final parking position, walls, reciprocal installation/deselection, screen picking and command delivery remain outside this corpus"
+  ],
+  "substitutions": [
+    "Existing HutTypeReader supplies allocator/constructor CRT seams and INI caches; no such seam may occur during the Foundation reader block",
+    "Explicit initial state and the declared frame advance only; no patched instructions, custom vtables, substituted facing results or computed reference destinations"
+  ],
+  "entry_points": {
+    "facing_block": "0x00459069",
+    "facing_end": "0x004590F9",
+    "install_block": "0x00459101",
+    "install_end": "0x004591CE",
+    "building_coords": "0x00447AC0",
+    "foundation_reader": "0x00461225",
+    "facing_constructor": "0x004C91C0",
+    "facing_rot": "0x004C9680",
+    "facing_snap": "0x004C9300",
+    "facing_set": "0x004C9220",
+    "facing_current": "0x004C93D0",
+    "facing_turning": "0x004C9480",
+    "force_track": "0x004B0C40",
+    "owner_speed_set": "0x004D3710"
+  },
+  "source_normalized_lf_sha256": {
+    "harness": "2696c2e4b23b452b471ba0c1adfe0390a155106a86005d85343e67317bbca7d9"
+  },
+  "payload_sha256": "9005c1c7a6d54fbbef8a29522d23aa2e5bf43e8832e5a50f4feeca4f9138fcaf"
+}

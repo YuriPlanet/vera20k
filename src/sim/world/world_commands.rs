@@ -3857,13 +3857,29 @@ mod tests {
         use crate::sim::docking::bunker_install::{BunkerState, tick_bunker_install};
         use crate::sim::game_entity::BunkerLink;
         let rules = bunker_rules();
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
         let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
+        // Keep this component fixture's declared TANK rules, but use the
+        // production ART reader's retail 2x2 foundation and LTNK turn rate.
+        // This exercises the same-cell case that must slide away from the
+        // building's raw display-registration coordinate before installation.
+        sim.substrate.entities.get_mut(2).unwrap().foundation =
+            retail.rules.object("NATBNK").unwrap().foundation.clone();
+        let center = crate::sim::movement::ground_pose::object_get_coords(
+            sim.substrate.entities.get(2).unwrap(),
+            sim.resolved_terrain.as_ref(),
+        );
         // Place the tank ON the bunker cell. The native destination setter
         // still admits this same-cell order; Drive Process consumes it before
         // the install machine can observe the stopped candidate.
         spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 10, 10);
         let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.body_facing
+            .set_rot(retail.rules.object("LTNK").unwrap().turret_rot);
         unit.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::for_test_kind(
                 crate::rules::locomotor_type::LocomotorKind::Drive,
@@ -3894,27 +3910,45 @@ mod tests {
             sim.substrate.entities.get(1).unwrap().bunker_link,
             BunkerLink::Approaching(2)
         );
-        // Production visits movement before bunker installation. The shared
-        // Drive4B066C..4B06D2 prefix consumes a same-cell NavCom through the
-        // class NULL setter before acquiring any path-search inputs.
-        sim.process_ground_locomotor_stats_for_test(1, Some(&rules), None)
-            .unwrap();
-
-        // 2) Drive the install machine to Occupied, completing each body turn
-        // it issues in this component harness.
-        for _ in 0..6 {
+        // Prepared same-cell admission, then the real production locomotor
+        // corridor and installer, in their production order, one frame at a
+        // time. No head/position writes or Facing::Snap complete the motion.
+        // Object/Techno AI and a whole native match remain outside this test.
+        let mut saw_track_step = false;
+        let mut moved = 0;
+        for _ in 0..600 {
+            let movement = sim
+                .process_ground_locomotor_stats_for_test(1, Some(&rules), None)
+                .expect("flat arena supplies every production movement receiver");
+            moved += movement.moved_steps;
             tick_bunker_install(
                 &mut sim,
                 &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             );
-            let frame = sim.session.binary_frame;
-            if let Some(u) = sim.substrate.entities.get_mut(1) {
-                let destination = u.body_facing.destination();
-                u.body_facing.snap(destination, frame);
+            let state = sim
+                .substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .bunker_runtime
+                .unwrap()
+                .state;
+            saw_track_step |= state == BunkerState::TrackStep;
+            sim.session.binary_frame += 1;
+            if state == BunkerState::Occupied {
+                break;
             }
         }
+        assert!(
+            saw_track_step,
+            "same-cell installation must not skip Force_Track"
+        );
+        assert!(
+            moved > 0,
+            "the production track host must actually place the unit"
+        );
         let rt = sim
             .substrate
             .entities
@@ -3934,6 +3968,22 @@ mod tests {
             "install preserves LogicVector membership"
         );
         assert!(!unit.lifecycle.in_limbo);
+        let parked = crate::sim::movement::ground_pose::object_get_coords(
+            unit,
+            sim.resolved_terrain.as_ref(),
+        );
+        assert_eq!(
+            parked, center,
+            "real Drive Process parks at the foundation centre"
+        );
+        assert_ne!(
+            parked,
+            crate::sim::movement::ground_pose::object_location(
+                sim.substrate.entities.get(2).unwrap(),
+                sim.resolved_terrain.as_ref(),
+            )
+        );
+        assert!(crate::sim::movement::track_head::committed_track_head(unit).is_none());
         assert_eq!(
             sim.bunker_wall_events.iter().filter(|e| e.up).count(),
             1,
@@ -3952,7 +4002,14 @@ mod tests {
         assert_eq!(unit.bunker_link, BunkerLink::None);
         assert!(unit.in_logic_vector, "occupant stays active on eject");
         assert!(!unit.lifecycle.in_limbo);
-        assert_eq!((unit.position.rx, unit.position.ry), (10, 10));
+        assert_eq!(
+            crate::sim::movement::ground_pose::object_get_coords(
+                unit,
+                sim.resolved_terrain.as_ref(),
+            ),
+            parked,
+            "Eject starts Force_Track without teleporting"
+        );
         assert_eq!(
             unit.locomotor
                 .as_ref()
@@ -3971,6 +4028,43 @@ mod tests {
             sim.bunker_wall_events.iter().filter(|e| !e.up).count(),
             1,
             "one walls-down event on eject"
+        );
+        let exit = match unit.navigation.nav_com {
+            Some(crate::sim::components::NavTargetRef::Cell { rx, ry }) => (rx, ry),
+            other => panic!("normal bunker release must issue its exit cell: {other:?}"),
+        };
+        for _ in 0..600 {
+            sim.process_ground_locomotor_stats_for_test(1, Some(&rules), None)
+                .expect("normal release reaches the production movement corridor");
+            tick_bunker_install(
+                &mut sim,
+                &rules,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            );
+            sim.session.binary_frame += 1;
+            let unit = sim.substrate.entities.get(1).unwrap();
+            if (unit.position.rx, unit.position.ry) == exit
+                && crate::sim::movement::track_head::committed_track_head(unit).is_none()
+                && unit.movement_target.is_none()
+            {
+                break;
+            }
+        }
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!((unit.position.rx, unit.position.ry), exit);
+        assert!(crate::sim::movement::track_head::committed_track_head(unit).is_none());
+        assert!(unit.movement_target.is_none());
+        assert_eq!(unit.bunker_link, BunkerLink::None);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .bunker_runtime
+                .unwrap()
+                .state,
+            BunkerState::Idle
         );
     }
 }

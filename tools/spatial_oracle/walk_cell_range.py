@@ -16,11 +16,23 @@ is supplied by `occupy_range` (default 5), independently of the weapon Range.
 The weapon and object fields are supplied. Infantry rows supply GetWeapon's
 slot; Building rows execute it. No range verdict, coordinate getter, map lookup,
 distance calculation or line-of-fire callable is substituted.
+
+--bunker writes/checks a separate corpus; the historical default payload and
+identity sidecar stay untouched. Set VERA20K_BUNKER_ASSETS to an extraction
+directory containing RULESMD.INI and MPBattleMD.ini, plus LANGRULE.INI if present.
+The final map-rule layer is explicitly empty. No map file, ART, SHP or sound assets are
+required. Its original readers provide LTNK/ATGUN/Cannon and Rules inputs,
+followed by Unit/Building range controls. No Rust numeric output is used as a
+native expected value. The empty layer is a retained-reader control, not a
+complete map replay; see tools/native_oracle.md for extraction requirements.
 """
 from pathlib import Path
+import argparse
+import hashlib
+import os
 import struct
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
-from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESP, UC_X86_REG_EIP, UC_X86_REG_FPCW
+from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_EBP, UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_EDX, UC_X86_REG_ESI, UC_X86_REG_ESP, UC_X86_REG_EIP, UC_X86_REG_FPCW
 from tools.native_oracle import load_image, run_checked, STACK_BASE, STACK_SIZE, SCRATCH, RET_MAGIC, finish_vectors, provenance
 from tools.spatial_oracle.map_queries import dwords, packed
 
@@ -30,6 +42,7 @@ MAP, TABLE, DUMMY = 0x87F7E8, 0xC00000, 0xABDC50
 TARGET_TYPE, OCCUPANT, OCCUPANT_TYPE, OCCUPANTS = [
     SCRATCH + offset for offset in (0x16000, 0x18000, 0x1A000, 0x1C000)]
 INFANTRY_VTABLE, BUILDING_VTABLE = 0x7EB058, 0x7E3EBC
+UNIT_VTABLE = 0x7F5C70
 
 
 def query(row):
@@ -48,16 +61,24 @@ def query(row):
         u.reg_write(UC_X86_REG_EIP, read32(sp))
         u.reg_write(UC_X86_REG_ESP, sp + cleanup + 4)
     building = row.get('building')
-    u.mem_write(VT, bytes(u.mem_read(BUILDING_VTABLE if building is not None else INFANTRY_VTABLE, 0x600)))
+    source_vtable = BUILDING_VTABLE if building is not None else (
+        UNIT_VTABLE if row.get('unit') else INFANTRY_VTABLE)
+    u.mem_write(VT, bytes(u.mem_read(source_vtable, 0x600)))
     u.mem_write(ACTOR, dwords(VT))
     u.mem_write(ACTOR + 0x6C0, dwords(TYPE))
+    if row.get('unit'):
+        u.mem_write(ACTOR + 0x6C4, dwords(TYPE))
     u.mem_write(ACTOR + 0x21C, dwords(HOUSE))
     u.mem_write(ACTOR + 0x9C, dwords(*row.get('source', [2624, 2624, 0])))
     u.mem_write(ACTOR + 0x74, bytes([int(row.get('marked', False))]))
     u.mem_write(ACTOR + 0x8C, bytes([int(row.get('on_bridge', False))]))
     # InRange 0x6F72C8: +0x82 (in an open-topped transport) adds Rules+0xF5C << 8.
     u.mem_write(ACTOR + 0x82, bytes([int(row.get('open_topped', False))]))
+    # 6F72A2..6F72C8 reads only the presence of +2E4 and the actor's RTTI;
+    # the pointed-to host is deliberately not given a substitute body.
+    u.mem_write(ACTOR + 0x2E4, dwords(OCCUPANTS if row.get('bunkered') else 0))
     u.mem_write(0x8871E0, dwords(RULES))
+    u.mem_write(RULES + 0xF54, dwords(row.get('bunker_bonus', 0)))
     u.mem_write(RULES + 0xF5C, dwords(row.get('open_topped_bonus', 2)))
     u.mem_write(RULES + 0xF48, dwords(row.get('occupy_range', 5)))
     u.mem_write(TYPE + 0x68C, dwords(row.get('air_range_bonus', 0)))
@@ -119,8 +140,9 @@ def query(row):
     u.mem_write(TABLE, bytes(table))
     target_object = row.get('target_object')
     if target_object is not None:
-        u.mem_write(TARGET, dwords(INFANTRY_VTABLE if building is not None else VT))
-        u.mem_write(TARGET + 0x6C0, dwords(TARGET_TYPE if building is not None else TYPE))
+        target_vtable = INFANTRY_VTABLE if building is not None or row.get('unit') else VT
+        u.mem_write(TARGET, dwords(target_vtable))
+        u.mem_write(TARGET + 0x6C0, dwords(TARGET_TYPE if building is not None or row.get('unit') else TYPE))
         u.mem_write(TARGET + 0x21C, dwords(HOUSE))
         u.mem_write(TARGET + 0x9C, dwords(*target_object['location']))
         u.mem_write(TARGET + 0x74, bytes([int(target_object.get('marked', True))]))
@@ -130,11 +152,17 @@ def query(row):
     geometry = None
     source_geometry = None
     bonuses = []
+    range_stages = []
     def observe(_u, address, _size, _data):
         nonlocal geometry, source_geometry
         sp = u.reg_read(UC_X86_REG_ESP)
         if building is not None and address == 0x6F77D6:
             source_geometry = xyz(u.reg_read(UC_X86_REG_EAX))
+        if row.get('trace_range_stages') and address in (0x6F72A2, 0x6F72C8, 0x6F72E3):
+            stage = {0x6F72A2: 'before_bunker', 0x6F72C8: 'after_bunker',
+                     0x6F72E3: 'after_open_topped'}[address]
+            value = struct.unpack('<i', dwords(u.reg_read(UC_X86_REG_EDI)))[0]
+            range_stages.append([stage, value])
         # Returns of the direct (0x6F72FF) and arcing (0x6F746B) bonus calls.
         if address in (0x6F7304, 0x6F7470):
             bonus = struct.unpack('<i', dwords(u.reg_read(UC_X86_REG_EAX)))[0]
@@ -167,6 +195,12 @@ def query(row):
     u.reg_write(UC_X86_REG_ESP, sp)
     u.reg_write(UC_X86_REG_ECX, ACTOR)
     required = [entry, 0x6F77B0, 0x6F7220]
+    if row.get('trace_range_stages') and row.get('range', 768) != -512:
+        required += [0x6F72A2, 0x6F72C8, 0x6F72E3]
+        if row.get('bunkered'):
+            required += [0x6F72B3]
+            if building is None:
+                required += [0x6F72C6]
     if building is not None:
         required += [0x447AC0, 0x4526F0]
         if row.get('range', 768) != -512:
@@ -178,6 +212,8 @@ def query(row):
         out.update(bonuses=bonuses)
     if building is not None:
         out.update(source_geometry=source_geometry)
+    if row.get('trace_range_stages'):
+        out.update(range_stages=range_stages)
     return out
 
 
@@ -344,7 +380,228 @@ def generate():
     return [query(row) for row in rows]
 
 
+def bunker_inputs():
+    """Original selected LTNK/ATGUN/Cannon and Rules reader inputs.
+
+    Reuse the established native INI-cache and Bullet/Weapon reader fixture.
+    Physical archive precedence and full Rules/Techno readers are not claimed.
+    """
+    from tools.projectile_oracle.bridge_render_inputs import BulletReader, lexical
+    from tools.spatial_oracle.building_body_rules import RULES as INI_COPY, SP
+    root = Path(os.environ['VERA20K_BUNKER_ASSETS'])
+    m = BulletReader({}, root)
+    u = m.u
+    for address in (0x887568, 0xA8EB00):
+        u.mem_write(address, dwords(0x7EB6D4, m.alloc(4096), 1024, 1, 0, 10))
+    techno = m.alloc(0xE00)
+    m.invoke(0x710AF0, techno, (m.cstring('LTNK'),))
+    rules = m.alloc(0x2000)
+    u.mem_write(0x8871E0, dwords(rules))
+
+    def construct_rules():
+        u.reg_write(UC_X86_REG_ESI, rules)
+        u.reg_write(UC_X86_REG_ESP, SP)
+        # ECX=2 dominates both original integer constructor stores.
+        run_checked(u, 0x666AC8, 0x666AE5,
+                    required_addresses=[0x666AD3, 0x666ADF])
+        run_checked(u, 0x6674D6, 0x6674E0)
+
+    def signed(pointer):
+        return struct.unpack('<i', u.mem_read(pointer, 4))[0]
+
+    def rules_state():
+        return dict(bunker_bonus=signed(rules + 0xF54),
+                    open_topped_bonus=signed(rules + 0xF5C),
+                    gravity=signed(rules + 0x16B8))
+
+    def rules_read(begin, end):
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ESI, rules)
+        u.reg_write(UC_X86_REG_EDI, INI_COPY)
+        run_checked(u, begin, end, required_addresses=[0x5276D0])
+        assert u.reg_read(UC_X86_REG_ESP) == SP
+
+    construct_rules()
+    constructor = rules_state()
+    layers = []
+    for filename in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', None):
+        if filename is None:
+            # An explicit no-overrides input. No local authored map file is
+            # needed to reproduce this cache/reader-retention control.
+            sections = {}
+            layer_identity = dict(input_kind='supplied_empty_map_rules', sections={})
+        else:
+            path = root / filename
+            if not path.exists():
+                assert filename == 'LANGRULE.INI', f'missing required retail layer: {filename}'
+                layers.append(dict(file=filename, absent=True))
+                continue
+            raw = path.read_bytes()
+            sections, _ = lexical(raw, {'LTNK', 'ATGUN', 'Cannon', 'CombatDamage', 'AudioVisual'})
+            layer_identity = dict(file=filename, sha256=hashlib.sha256(raw).hexdigest(),
+                                  bytes=len(raw))
+        m.rules_cache(sections)
+        m.reads = []
+        admitted = {section: bool(m.invoke(0x526810, INI_COPY, (m.cstring(section),)))
+                    for section in ('LTNK', 'CombatDamage', 'AudioVisual')}
+        # Same Primary/ElitePrimary block as the existing MTNK input owner;
+        # current constructor/previous-layer values supply reader defaults.
+        if admitted['LTNK']:
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.reg_write(UC_X86_REG_EBP, techno)
+            u.reg_write(UC_X86_REG_EBX, techno + 0x24)
+            u.reg_write(UC_X86_REG_ESI, INI_COPY)
+            run_checked(u, 0x7129AB, 0x712A1D, required_addresses=[0x528A10])
+            assert u.reg_read(UC_X86_REG_ESP) == SP
+        weapon = m.read32(techno + 0x898)
+        assert weapon, 'retail LTNK Primary reader did not bind a weapon'
+        weapon_read = bool(m.invoke(0x772080, weapon, (INI_COPY,)) & 255)
+        bullet = m.read32(weapon + 0xA0)
+        assert bullet, 'native weapon reader did not bind a projectile'
+        bullet_read = bool(m.invoke(0x46BEE0, bullet, (INI_COPY,)) & 255)
+        if admitted['CombatDamage']:
+            rules_read(0x66C723, 0x66C743)
+            rules_read(0x66C767, 0x66C787)
+        if admitted['AudioVisual']:
+            rules_read(0x66B3C4, 0x66B3E4)
+        state = dict(primary=m.string(weapon + 0x24),
+                     projectile=m.string(bullet + 0x24),
+                     range=signed(weapon + 0xB4), minimum=signed(weapon + 0xB8),
+                     cell_rangefinding=bool(u.mem_read(weapon + 0x134, 1)[0]),
+                     arcing=bool(u.mem_read(bullet + 0x29B, 1)[0]),
+                     subject_to_elevation=bool(u.mem_read(bullet + 0x297, 1)[0]),
+                     floater=bool(u.mem_read(bullet + 0x295, 1)[0]),
+                     **rules_state())
+        # Retain only the keys read by this bounded input chain, not a second
+        # copy of entire retail sections or unrelated reader event receipts.
+        used = {(r['section'], r['key']) for r in m.reads}
+        selected = {section: {key: value for key, value in keys.items()
+                             if (section, key) in used}
+                    for section, keys in sections.items()}
+        layers.append(dict(**layer_identity, keys=selected, weapon_read=weapon_read,
+                           bullet_read=bullet_read, section_admission=admitted, state=state))
+    retail = state
+    controls = []
+    for name, changes in [
+        ('missing_retains_constructor', [{}]),
+        ('explicit_zero', [{'BunkerWeaponRangeBonus': '0'}]),
+        ('negative', [{'BunkerWeaponRangeBonus': '-1'}]),
+        ('hexadecimal', [{'BunkerWeaponRangeBonus': '$10'}]),
+        ('invalid_integer_becomes_zero', [{'BunkerWeaponRangeBonus': 'invalid'}]),
+        ('wrong_key_case', [{'bunkerweaponrangebonus': '9'}]),
+        ('layer_retains_previous', [{'BunkerWeaponRangeBonus': '4'}, {}]),
+        ('layer_overrides_previous', [{'BunkerWeaponRangeBonus': '4'},
+                                     {'BunkerWeaponRangeBonus': '1'}]),
+    ]:
+        construct_rules()
+        values = []
+        for keys in changes:
+            m.rules_cache({'CombatDamage': keys})
+            rules_read(0x66C723, 0x66C743)
+            values.append(signed(rules + 0xF54))
+        controls.append(dict(name=name, layers=changes, values=values))
+    return dict(constructor=constructor, layers=layers,
+                bunker_reader_controls=controls, retail=retail)
+
+
+def generate_bunker():
+    inputs = bunker_inputs()
+    retail = inputs['retail']
+    base = {key: value for key, value in retail.items()
+            if key not in ('primary', 'projectile')}
+    base.update(unit=True, trace_range_stages=True, source=[2688, 2688, 0],
+                target_object={'location': [4352, 2688, 0], 'marked': False},
+                cells=[{'coord': [10, 10]}, {'coord': [17, 10]}])
+    rows = []
+    for arcing in (False, True):
+        kind = 'retail_cannon_arcing' if arcing else 'direct_control'
+        for installed in (False, True):
+            row = {**base, 'arcing': arcing, 'bunkered': installed}
+            # Discover the accepted/failing neighboring physical coordinates
+            # by executing native range verdicts; no hand-derived golden edge.
+            lo, hi = 0, 4096
+            while lo + 1 < hi:
+                middle = (lo + hi) // 2
+                probe = {**row, 'target_object': {
+                    'location': [2688 + middle, 2688, 0], 'marked': False}}
+                if query(probe)['result']:
+                    lo = middle
+                else:
+                    hi = middle
+            for label, distance in [('edge', lo), ('beyond', hi)]:
+                rows.append({**row, 'name': f'{kind}_{"installed" if installed else "empty"}_{label}',
+                             'target_object': {'location': [2688 + distance, 2688, 0], 'marked': False}})
+    rows += [
+        {**base, 'name': 'retail_installed_at_six_and_half_cells', 'bunkered': True},
+        {**base, 'name': 'retail_empty_at_six_and_half_cells', 'bunkered': False},
+        {**base, 'name': 'minimum_still_refuses', 'bunkered': True, 'minimum': 2000},
+        {**base, 'name': 'sentinel_precedes_all_bonuses', 'bunkered': True,
+         'range': -512, 'minimum': 2000, 'open_topped': True},
+        {**base, 'name': 'open_topped_after_bunker', 'bunkered': True,
+         'bunker_bonus': 1, 'open_topped': True, 'open_topped_bonus': 3},
+        {**base, 'name': 'negative_bunker_bonus', 'bunkered': True, 'bunker_bonus': -1},
+        {**base, 'name': 'zero_bunker_bonus', 'bunkered': True, 'bunker_bonus': 0},
+        {**base, 'name': 'shift_wraps_i32', 'bunkered': True, 'bunker_bonus': 0x1000002},
+        {**base, 'name': 'add_wraps_i32', 'bunkered': True, 'range': 0x7FFFFFF0},
+        {**base, 'name': 'air_bonus_before_bunker', 'bunkered': True, 'air_range_bonus': 768,
+         'target_object': {'location': [4352, 2688, 416], 'marked': True},
+         'cells': [{'coord': [10, 10]}, {'coord': [17, 10]}]},
+        # Installed-link bytes on a Building are a defensive RTTI control,
+        # not a claimed legal bunker occupancy state. Its existing occupied
+        # range replacement still executes before the class-6 exclusion.
+        {**base, 'name': 'building_rtti_excludes_bunker_bonus', 'unit': False,
+         'building': {'foundation_id': 3}, 'bunkered': True, 'bunker_bonus': 100},
+        {**base, 'name': 'empty_building_rtti_excludes_bunker_bonus', 'unit': False,
+         'building': {'foundation_id': 3, 'occupants': 0},
+         'bunkered': True, 'bunker_bonus': 100},
+    ]
+    return dict(schema_version=1, inputs=inputs, rows=[query(row) for row in rows])
+
+
+def bunker_metadata():
+    return dict(provenance(
+        scope='Original CanFireAt6F7970/6F77B0 -> InRange6F7220 Unit/Building bunker range stage; native LTNK Primary, ATGUN Weapon, Cannon Bullet and selected retained Rules readers.',
+        entry_points={'coordinate_cell_wrapper': 0x6F7970, 'range_source': 0x6F77B0,
+                      'range': 0x6F7220, 'bunker_stage': 0x6F72A2,
+                      'bunker_rules_ctor': 0x666AC8, 'bunker_rules_reader': 0x66C723,
+                      'integer_reader': 0x5276D0, 'techno_ctor': 0x710AF0,
+                      'primary_reader': 0x7129AB, 'weapon_reader': 0x772080,
+                      'bullet_reader': 0x46BEE0},
+        assumptions=[
+            'Rules inputs execute original constructor stores and complete selected read/store blocks. Original TechnoType constructor plus Primary block, full Weapon and Bullet readers consume lexical entries from RULESMD, optional LANGRULE and MPBattleMD. The final supplied_empty_map_rules layer is explicitly an empty cache input and tests retained values; no local custom map file is required or claimed as replayed. Physical INI/MIX/map loading, whole type registry/read order and full RulesClass/TechnoType readers are outside this bounded comparison.',
+            'Inherited BulletReader supplies original cached INI indexes, allocation/TLS and physical image-load boundary. No Rust-interpreted numeric values initialize native readers. Missing SHP images and empty sound registry are unrelated to compared scalar range/projectile fields; render/weapon damage behavior is not claimed.',
+            'Range queries supply retained actor/type/map fields and copied original Unit7F5C70/Building7E3EBC vtables. GetCoords and RTTI execute. +2E4 is supplied as null or nonnull; the host pointer is never dereferenced by the observed range stage. This does not establish bunker installation/lifecycle.',
+            'Retail LTNK/ATGUN/Cannon scalar inputs feed the arcing rows; direct rows deliberately override Arcing=false. Position, object-target marked/bridge bits, map levels and synthetic bonus/overflow/minimum/sentinel controls are declared inputs. Native execution discovers adjacent admitted/refused range edges.',
+            'Building +2E4 and simultaneous bunkered/open-topped inputs are defensive arithmetic/ordering controls, not claims that those combinations arise in retail play. AirRange, occupied replacement, bunker and open-topped stage order is observed via registers.',
+            'PC53/chop FPCW0E7F, independently established 104-height/416-bridge constants, flat map and default zero elevation increment. No GreatestThreat search-radius changes, acquisition/scoring, complete fire/flight, RNG or production game capture claimed.'],
+        substitutions=[
+            'Range-query GetWeapon+3F8 supplies one original-shaped weapon slot for Unit/Infantry sources, as in the existing query owner. Building sources execute GetWeapon. All range, minimum, arithmetic, coordinate, distance, elevation, ballistic and line-of-fire calls execute original instructions.',
+            'Native input-reader fixture inherits existing allocation/delete, CRT TLS and physical image-load transport hooks from BulletReader/Reader/Lists; no scalar parser result is substituted.']),
+        commands=['python -m tools.spatial_oracle.walk_cell_range --bunker --write',
+                  'python -m tools.spatial_oracle.walk_cell_range --bunker --check'],
+        required_assets=['supported gamemd.exe', 'RULESMD.INI', 'MPBattleMD.ini'],
+        optional_assets=['LANGRULE.INI when present in the selected installation'],
+        asset_environment='VERA20K_BUNKER_ASSETS names the extracted INI directory; VERA20K_GAMEMD_EXE selects the executable. No map, ART, SHP or sound file is required.')
+
+
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--bunker', action='store_true')
+    selected, remaining = parser.parse_known_args()
+    if selected.bunker:
+        finish_vectors(generate_bunker, Path(__file__).with_name('walk_cell_range_bunker.json'),
+                       provenance=bunker_metadata, argv=remaining,
+                       source_paths={
+                           'walk_cell_range': Path(__file__),
+                           'native_oracle': Path(__file__).parents[1] / 'native_oracle.py',
+                           'map_queries': Path(__file__).with_name('map_queries.py'),
+                           'bullet_reader': Path(__file__).parents[1] / 'projectile_oracle/bridge_render_inputs.py',
+                           'ini_reader': Path(__file__).parents[1] / 'rules_oracle/bridge_anim_inputs.py',
+                           'lists': Path(__file__).parents[1] / 'rules_oracle/bridge_anim_lists.py',
+                           'reader_fixture': Path(__file__).with_name('building_body_rules.py'),
+                           'ini_crc': Path(__file__).parents[1] / 'projectile_oracle/flat_art.py',
+                       })
+        raise SystemExit(0)
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: dict(provenance(
         scope='Original6F7970->6F77B0->6F7220 Infantry and occupied-Building Cell/object-target range and lookup ordering, including live Building GetCoords/GetWeapon/IsOccupied/HalfFoundation and the occupied range replacement; the +0x82 OpenToppedRangeBonus stage; the SubjectToElevation bonus (6F6F60 both arms, 6F70E0 arcing arm), the arcing arm\'s 2-D distance, its arc test (48AB90, 48ACF0, 48ABC0) under supplied Gravity/Floater and its bridge ceiling (6F74D7); explicit supplied object/weapon/map fields.',
         entry_points={'coordinate_cell_wrapper': 0x6F7970, 'range_source': 0x6F77B0, 'range': 0x6F7220, 'building_coords': 0x447AC0, 'building_get_weapon': 0x4526F0, 'is_occupied': 0x458DD0, 'half_foundation': 0x458E00, 'elevation_direct': 0x6F6F60, 'elevation_arcing': 0x6F70E0, 'cell_height': 0x487D50, 'map_cell_packed': 0x5657A0, 'cell_coords': 0x486840, 'cell_tile_gate': 0x4867E0, 'cell_ground': 0x47B3A0, 'map_ground': 0x578080, 'map_cell': 0x565730, 'line': 0x4CC310, 'launch_speed': 0x48AB90, 'floater_gravity': 0x48ACF0, 'can_reach': 0x48ABC0},

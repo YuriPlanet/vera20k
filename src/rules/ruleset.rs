@@ -2341,7 +2341,10 @@ pub struct GarrisonRules {
     /// divides a bunkered unit's reload by it when it is non-zero
     /// (`0x006FD1B1..0x006FD1EF`).
     pub bunker_rof_multiplier: f32,
-    /// Range bonus in cells for bunker passengers.
+    /// `[CombatDamage] BunkerWeaponRangeBonus=` cells, Rules+F54.
+    /// Constructor666AC8..666AD3 stores2; reader66C723..66C73D uses the
+    /// current signed value as its ReadInteger default, without a clamp.
+    /// Executed constructor/reader controls: walk_cell_range_bunker.json.
     pub bunker_weapon_range_bonus: i32,
     /// `[CombatDamage] OpenToppedDamageMultiplier=`, the single at
     /// `Rules+0xF58` (constructor 1.0f `0x00666AD9`; ReadDouble stored with
@@ -2363,7 +2366,7 @@ impl Default for GarrisonRules {
             occupy_weapon_range: 5,
             bunker_damage_multiplier: 1.0,
             bunker_rof_multiplier: 1.0,
-            bunker_weapon_range_bonus: 0,
+            bunker_weapon_range_bonus: 2,
             open_topped_damage_multiplier: 1.0,
             open_topped_range_bonus: 2,
         }
@@ -9726,6 +9729,82 @@ Projectile=Invisible
                 "{object}"
             );
         }
+    }
+
+    #[test]
+    fn bunker_range_default_and_layered_reads_match_original() {
+        use crate::rules::native_processing::RulesLayerKind;
+
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/walk_cell_range_bunker.json",
+        ))
+        .unwrap();
+        assert_eq!(
+            i64::from(GarrisonRules::default().bunker_weapon_range_bonus),
+            native["inputs"]["constructor"]["bunker_bonus"]
+                .as_i64()
+                .unwrap()
+        );
+        for row in native["inputs"]["bunker_reader_controls"]
+            .as_array()
+            .unwrap()
+        {
+            let mut layers = RulesLayerStack::new(IniFile::empty());
+            for (keys, expected) in row["layers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(row["values"].as_array().unwrap())
+            {
+                let mut text = String::from("[CombatDamage]\n");
+                for (key, value) in keys.as_object().unwrap() {
+                    text.push_str(&format!("{key}={}\n", value.as_str().unwrap()));
+                }
+                layers.push(RulesLayerKind::Scenario, IniFile::from_str(&text));
+                let rules = RuleSet::from_rules_layers(&layers).unwrap();
+                assert_eq!(
+                    i64::from(rules.garrison_rules.bunker_weapon_range_bonus),
+                    expected.as_i64().unwrap(),
+                    "{}",
+                    row["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn retail_lasher_range_inputs_match_original_readers() {
+        let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+            return;
+        };
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/walk_cell_range_bunker.json",
+        ))
+        .unwrap();
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        let tank = rules.object("LTNK").unwrap();
+        let primary = tank.primary().unwrap();
+        let weapon = rules.weapon(primary).unwrap();
+        let projectile_name = weapon.projectile.as_deref().unwrap();
+        let projectile = rules.projectile(projectile_name).unwrap();
+        // This check compares the same physical RULESMD pass. The joined
+        // Battle/map fixture separately covers production scenario loading.
+        assert_eq!(
+            serde_json::json!({
+                "primary": primary,
+                "projectile": projectile_name,
+                "range": weapon.range_leptons,
+                "minimum": weapon.minimum_range_leptons,
+                "cell_rangefinding": weapon.cell_rangefinding,
+                "arcing": projectile.arcing,
+                "subject_to_elevation": projectile.subject_to_elevation,
+                "floater": projectile.floater,
+                "gravity": rules.general.gravity,
+                "bunker_bonus": rules.garrison_rules.bunker_weapon_range_bonus,
+                "open_topped_bonus": rules.garrison_rules.open_topped_range_bonus,
+            }),
+            native["inputs"]["layers"][0]["state"],
+        );
     }
 
     /// Retail `[ElevationModel]` through the production reader: four levels a

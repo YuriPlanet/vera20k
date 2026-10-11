@@ -436,8 +436,13 @@ impl AnimObject {
         self.building_anim
     }
 
-    pub(crate) fn mark_building_anim(&mut self) {
+    /// Building45199B..4519A2 marks the slot animation and replaces its
+    /// constructor YSortAdjust with the building slot's retained value.
+    /// The Anim store touch invalidates the existing Ground key cache.
+    /// Native reader/store/sort evidence: building_slot_replacement.display.json.
+    pub(crate) fn mark_building_anim(&mut self, y_sort: i32) {
         self.building_anim = true;
+        self.display.y_sort_adjust = y_sort;
     }
 
     #[cfg(test)]

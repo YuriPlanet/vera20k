@@ -88,6 +88,333 @@ pub(crate) fn resolve_order_modifiers(ctrl: bool, shift: bool, alt: bool) -> Ord
     }
 }
 
+/// The result of the armed attack branch shared by cursor and click.
+/// Action0 is consumed; Action7 leaves the click to ordinary selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AttackAction {
+    None,
+    Select,
+    Attack,
+    NoMove,
+    Rally,
+}
+
+/// Techno70047A..70049A (Object), 7009F3..700A44 (Cell): an armed actor
+/// either has its virtual+A0 control capability or its selected weapon must
+/// reach the target. This asks no ROF, reload or GetFireError. See the original
+/// DetermineAction/Unit/Foot/Techno and Display action corpus in
+/// tools/spatial_oracle/bunker_attack_action.json.
+pub(crate) fn armed_attack_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor_id: u64,
+    target: &TargetKind,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+) -> AttackAction {
+    let Some(actor) = sim.entities().get(actor_id) else {
+        return AttackAction::None;
+    };
+    let Some(kind) = rules.object(sim.interner.resolve(actor.type_ref())) else {
+        return AttackAction::None;
+    };
+    let mut action = if sim.techno_player_controllable(actor_id, rules)
+        || resolved_unit_in_range(
+            sim,
+            actor_id,
+            target,
+            Some(rules),
+            sim.resolved_terrain.as_ref(),
+            overlay_registry,
+            Some(target),
+        ) {
+        AttackAction::Attack
+    // Techno700589..7005E3: an own selectable Object falls through to
+    // Action7; a different owner or a Cell falls through to Action0.
+    } else if let TargetKind::Entity(target_id) = *target
+        && let Some(object) = sim.entities().get(target_id)
+        && actor.owner() == object.owner()
+        && sim.object_is_selectable(target_id, Some(rules))
+        && !object.selected
+        && !object.is_warped_out()
+    {
+        AttackAction::Select
+    } else {
+        AttackAction::None
+    };
+    // Unit74077F..7407E5 /740389..7403E8: the fully deployed
+    // SimpleDeployer repeats SelectWeapon(NULL), then range. This returns
+    // Action2, unlike the Techno control/range Action0 branch above.
+    if action == AttackAction::Attack
+        && actor.category == EntityCategory::Unit
+        && kind.is_simple_deployer
+        && actor.is_fully_deployed()
+        && (!kind.deploy_fire
+            || !resolved_unit_in_range(
+                sim,
+                actor_id,
+                target,
+                Some(rules),
+                sim.resolved_terrain.as_ref(),
+                overlay_registry,
+                None,
+            ))
+    {
+        action = AttackAction::NoMove;
+    }
+    if actor.category == EntityCategory::Structure {
+        // Building447366..4473C7 /4476F3..447749 inspect GetWeapon(0),
+        // irrespective of SelectWeapon. These are class post-processing of
+        // Attack, not a replacement range owner.
+        if action == AttackAction::Attack
+            && let Some(weapon) = crate::sim::combat::combat_weapon::get_weapon(
+                actor,
+                kind,
+                0,
+                sim.entities(),
+                rules,
+                &sim.interner,
+            )
+            && (weapon
+                .projectile
+                .as_deref()
+                .and_then(|name| rules.projectile(name))
+                .is_some_and(|projectile| !projectile.ag)
+                || kind.emp_pulse_cannon
+                || actor.mission.current().known()
+                    == Some(crate::sim::mission::MissionType::Selling))
+        {
+            action = AttackAction::None;
+        }
+        if action == AttackAction::Attack
+            && let TargetKind::Entity(id) = *target
+            && sim
+                .entities()
+                .get(id)
+                .and_then(|target| rules.object(sim.interner.resolve(target.type_ref())))
+                .is_some_and(|target| target.immune)
+        {
+            // Object447512..447527; the Cell wrapper has no such target.
+            action = AttackAction::NoMove;
+        }
+        if action == AttackAction::None
+            && matches!(target, TargetKind::Cell(..))
+            && kind.has_rally_line()
+            && sim.house_is_human_player(actor.owner())
+        {
+            // Cell44774B..447768; existing factory destination owner commits it.
+            action = AttackAction::Rally;
+        }
+    }
+    action
+}
+
+/// The armed Ctrl branch. Unarmed receivers retain their existing ordinary
+/// action paths. Cell7008BD reads GetCurrentWeapon, which also resolves an
+/// occupied building's firing occupant; Object700468 asks virtual IsArmed.
+pub(crate) fn force_fire_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor_id: u64,
+    target: &TargetKind,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+) -> Option<AttackAction> {
+    let actor = sim.entities().get(actor_id)?;
+    let object = rules.object(sim.interner.resolve(actor.type_ref()))?;
+    let armed = match target {
+        TargetKind::Cell(..) => crate::sim::combat::combat_weapon::current_weapon(
+            actor,
+            object,
+            sim.entities(),
+            rules,
+            &sim.interner,
+        )
+        .is_some(),
+        TargetKind::Entity(_) => crate::sim::combat::combat_weapon::is_armed(actor, object),
+    };
+    armed.then(|| armed_attack_action(sim, rules, actor_id, target, overlay_registry))
+}
+
+/// Display4AB51B asks CanFireAtTarget6F7780: ONE SelectWeapon result, not
+/// either slot's longest range. The query domain is private to input, across
+/// target flight, fire source and InRange, so nested misses never stamp the
+/// simulation's canonical Dummy.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn resolved_unit_in_range(
+    sim: &crate::sim::world::Simulation,
+    actor_id: u64,
+    target: &TargetKind,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    selection_target: Option<&TargetKind>,
+) -> bool {
+    let Some(rules) = rules else {
+        return true;
+    };
+    if let Some(terrain) = terrain {
+        let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+        return crate::sim::combat::can_fire_at_target_in_query(
+            sim.entities(),
+            rules,
+            &sim.interner,
+            actor_id,
+            target,
+            &cells,
+            Some(&sim.house_alliances),
+            &crate::sim::combat::line_of_fire::LineOfFireInputs {
+                overlay_grid: sim.overlay_grid.as_ref(),
+                overlay_registry,
+                alliances: Some(&sim.house_alliances),
+            },
+            selection_target,
+        );
+    }
+    // Existing terrain-free test adapter; production maps take the native
+    // 3D owner above. No terrain-free parity is claimed.
+    let Some(actor) = sim.entities().get(actor_id) else {
+        return false;
+    };
+    let Some(object) = rules.object(sim.interner.resolve(actor.type_ref())) else {
+        return false;
+    };
+    let Some((index, _)) = crate::sim::combat::combat_weapon::select_weapon_against_in_query(
+        rules,
+        actor,
+        object,
+        &crate::sim::combat::combat_weapon::attacker_facts(actor, object),
+        selection_target,
+        sim.entities(),
+        &sim.interner,
+        None,
+        Some(&sim.house_alliances),
+    ) else {
+        return false;
+    };
+    let Some(weapon) = crate::sim::combat::combat_weapon::get_weapon(
+        actor,
+        object,
+        index,
+        sim.entities(),
+        rules,
+        &sim.interner,
+    ) else {
+        return false;
+    };
+    let (rx, ry, sub_x, sub_y) = match *target {
+        TargetKind::Entity(id) => {
+            let Some(target) = sim.entities().get(id) else {
+                return false;
+            };
+            (
+                target.position.rx,
+                target.position.ry,
+                target.position.sub_x,
+                target.position.sub_y,
+            )
+        }
+        TargetKind::Cell(rx, ry) => (
+            rx,
+            ry,
+            crate::util::fixed_math::SimFixed::from_num(128),
+            crate::util::fixed_math::SimFixed::from_num(128),
+        ),
+    };
+    let distance = crate::sim::combat::lepton_distance_sq_raw(
+        actor.position.rx,
+        actor.position.ry,
+        actor.position.sub_x,
+        actor.position.sub_y,
+        rx,
+        ry,
+        sub_x,
+        sub_y,
+    );
+    crate::sim::combat::is_within_range_leptons(distance, weapon.range)
+}
+
+/// Resolved attack receiver batch. These are ephemeral input decisions;
+/// source state and mutation authority remain with Simulation.
+struct AttackDispatch {
+    receivers: std::collections::BTreeSet<u64>,
+    commands: Vec<Command>,
+    consumed: bool,
+    select_fallback: bool,
+}
+
+fn attack_branch_orders(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected_ids: &[u64],
+    attack_target: TargetKind,
+    force_fire: bool,
+    overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+) -> AttackDispatch {
+    let mut consumed_attack_action = false;
+    let mut queued = Vec::new();
+    let mut attack_receivers = std::collections::BTreeSet::new();
+    let mut select_fallback = false;
+    for &id in selected_ids {
+        let is_structure = sim
+            .entities()
+            .get(id)
+            .is_some_and(|entity| entity.category == EntityCategory::Structure);
+        if !(force_fire || is_structure) {
+            continue;
+        }
+        if let TargetKind::Entity(target_id) = attack_target
+            && ivan_cannot_bomb(sim, rules, id, target_id)
+        {
+            attack_receivers.insert(id);
+            consumed_attack_action = true;
+            continue;
+        }
+        let Some(action) =
+            force_fire_action(sim, rules, id, &attack_target, Some(overlay_registry))
+        else {
+            continue;
+        };
+        if action == AttackAction::Rally {
+            continue;
+        }
+        attack_receivers.insert(id);
+        match action {
+            AttackAction::None | AttackAction::NoMove => consumed_attack_action = true,
+            AttackAction::Rally => unreachable!("rally remains with its existing receiver"),
+            AttackAction::Select => select_fallback = true,
+            AttackAction::Attack => {
+                consumed_attack_action = true;
+                let payload = match attack_target {
+                    TargetKind::Cell(target_rx, target_ry) => Command::ForceAttackCell {
+                        attacker_id: id,
+                        target_rx,
+                        target_ry,
+                    },
+                    TargetKind::Entity(target_id) if force_fire => Command::ForceAttack {
+                        attacker_id: id,
+                        target_id,
+                    },
+                    TargetKind::Entity(target_id) => {
+                        if click_attack_refused(sim, rules, overlay_registry, id, target_id) {
+                            continue;
+                        }
+                        Command::Attack {
+                            attacker_id: id,
+                            target_id,
+                        }
+                    }
+                };
+                queued.push(payload);
+            }
+        }
+    }
+    AttackDispatch {
+        receivers: attack_receivers,
+        commands: queued,
+        consumed: consumed_attack_action,
+        select_fallback,
+    }
+}
+
 /// INI voice key for the mission a command commits.
 ///
 /// `TechnoClass::Player_Send_Command` dispatches the order-ack line by mission
@@ -595,6 +922,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
     // `EVA_NewRallyPointEstablished` is spoken by the click handler itself,
     // after the sim borrow below ends.
     let mut rally_announce = false;
+    let mut consumed_attack_action = false;
 
     if let Some(rt) = state.match_state.sim_runtime.as_mut() {
         let resources = &rt.resources;
@@ -607,17 +935,12 @@ pub(crate) fn try_queue_context_order_at_screen_point(
 
         let mut selected_units: Vec<u64> = Vec::new();
         let mut selected_miner_ids: Vec<u64> = Vec::new();
-        let mut structure_selected = false;
-        let mut mobile_count: usize = 0;
 
         for &sid in &selected_ids {
             let Some(entity) = sim.entities().get(sid) else {
                 continue;
             };
-            if entity.category == EntityCategory::Structure {
-                structure_selected = true;
-            } else {
-                mobile_count += 1;
+            if entity.category != EntityCategory::Structure {
                 selected_units.push(sid);
                 if entity.miner.is_some() {
                     selected_miner_ids.push(sid);
@@ -672,6 +995,72 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             &state.match_state.match_presentation.height_map,
             crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
         );
+
+        // Attack-capable Ctrl receivers, including fixed/occupied buildings,
+        // resolve the same action as the cursor before the legacy rally/mobile
+        // split. Non-attack capabilities keep their existing handlers below.
+        let attack_target = hover
+            .as_ref()
+            .map_or(TargetKind::Cell(target_rx, target_ry), |target| {
+                TargetKind::Entity(target.stable_id)
+            });
+        let enemy_object = hover.as_ref().is_some_and(|target| {
+            matches!(
+                target.kind,
+                HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure
+            )
+        });
+        let cell_hidden = force_fire
+            && matches!(attack_target, TargetKind::Cell(..))
+            && !state.match_state.sandbox_full_visibility
+            && (!sim.fog.is_cell_revealed(owner_id, target_rx, target_ry)
+                || sim.fog.is_cell_gap_covered(owner_id, target_rx, target_ry));
+        let attack_dispatch =
+            if !cell_hidden && (force_fire || (enemy_object && context_actions_enabled)) {
+                attack_branch_orders(
+                    sim,
+                    &resources.rules,
+                    &selected_ids,
+                    attack_target,
+                    force_fire,
+                    &resources.overlay_registry,
+                )
+            } else {
+                AttackDispatch {
+                    receivers: std::collections::BTreeSet::new(),
+                    commands: Vec::new(),
+                    consumed: false,
+                    select_fallback: false,
+                }
+            };
+        consumed_attack_action |= attack_dispatch.consumed;
+        queued.extend(
+            attack_dispatch
+                .commands
+                .into_iter()
+                .map(|command| CommandEnvelope::new(owner_id, execute_tick, command)),
+        );
+        let attack_receivers = attack_dispatch.receivers;
+        let select_fallback = attack_dispatch.select_fallback;
+        // A blocked stationary actor cannot suppress another selected actor's
+        // accepted attack. If only Action7 remains, allow click-selection;
+        // Action0 instead consumes the click without issuing a move/attack.
+        let selected_ids: Vec<_> = selected_ids
+            .into_iter()
+            .filter(|id| !attack_receivers.contains(id))
+            .collect();
+        if selected_ids.is_empty() {
+            let sent = finish_order(state, queued, speaker_id);
+            return sent || (consumed_attack_action && !select_fallback);
+        }
+        selected_units.retain(|id| !attack_receivers.contains(id));
+        selected_miner_ids.retain(|id| !attack_receivers.contains(id));
+        let mobile_count = selected_units.len();
+        let structure_selected = selected_ids.iter().any(|&id| {
+            sim.entities()
+                .get(id)
+                .is_some_and(|entity| entity.category == EntityCategory::Structure)
+        });
 
         let only_miners_selected = mobile_count > 0 && selected_miner_ids.len() == mobile_count;
         let clicked_friendly_refinery_id = context_actions_enabled
@@ -1222,6 +1611,18 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                     continue;
                 }
                 let payload = if let Some(target_id) = attack_target {
+                    if !force_fire
+                        && armed_attack_action(
+                            sim,
+                            &resources.rules,
+                            stable_id,
+                            &TargetKind::Entity(target_id),
+                            Some(&resources.overlay_registry),
+                        ) != AttackAction::Attack
+                    {
+                        consumed_attack_action = true;
+                        continue;
+                    }
                     // Retail promotes the *committed* mission and keeps the
                     // object as the destination, so the attack-move goal is the
                     // object's own cell — routed through the same passable-cell
@@ -1244,56 +1645,24 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                         queue_mode,
                     )
                 } else if force_fire && !cell_is_shrouded {
-                    // Force-fire on empty terrain: per-unit dispatch matching
-                    // gamemd `TechnoClass::What_Action_OnCell @ 0x00700600` —
-                    // armed mobile units fire at the cell, unarmed
-                    // (Engineer/Harvester/MCV) fall through to plain Move. The
-                    // armed test is the inlined `TechnoClass::Is_Armed` at
-                    // `0x007008BD` (one weapon slot, via `GetCurrentWeapon`),
-                    // not `Primary=`/`Secondary=`: those keys are never parsed
-                    // for a `TurretCount>0` type, so the Prism Tank and the
-                    // Gattling Cannon were routed to Move instead of firing.
-                    let unit_armed = sim
-                        .entities()
-                        .get(stable_id)
-                        .and_then(|e| {
-                            let type_str = sim.interner.resolve(e.type_ref());
-                            Some(&resources.rules)
-                                .and_then(|r| r.object(type_str))
-                                .map(|obj| crate::sim::combat::combat_weapon::is_armed(e, obj))
-                        })
-                        .unwrap_or(false);
-                    let is_harvester = sim
-                        .entities()
-                        .get(stable_id)
-                        .is_some_and(|e| e.miner.is_some());
-
-                    if unit_armed && !is_harvester {
-                        Command::ForceAttackCell {
-                            attacker_id: stable_id,
-                            target_rx,
-                            target_ry,
-                        }
-                    } else {
-                        // Unarmed Cell-click fall-through resolves the original
-                        // clicked Cell before committing its Move event.
-                        let Some(goal) = crate::app::input::commands::ordinary_cell_move_goal(
-                            sim,
-                            &resources.rules,
-                            owner_id,
-                            stable_id,
-                            (target_rx, target_ry),
-                            ordinary_cell_receiver,
-                            queue_mode,
-                        ) else {
-                            continue;
-                        };
-                        Command::Move {
-                            entity_id: stable_id,
-                            target_rx: goal.cell.0,
-                            target_ry: goal.cell.1,
-                            queue: goal.queue,
-                        }
+                    // Unarmed Cell-click fall-through resolves the original
+                    // clicked Cell before committing its Move event.
+                    let Some(goal) = crate::app::input::commands::ordinary_cell_move_goal(
+                        sim,
+                        &resources.rules,
+                        owner_id,
+                        stable_id,
+                        (target_rx, target_ry),
+                        ordinary_cell_receiver,
+                        queue_mode,
+                    ) else {
+                        continue;
+                    };
+                    Command::Move {
+                        entity_id: stable_id,
+                        target_rx: goal.cell.0,
+                        target_ry: goal.cell.1,
+                        queue: goal.queue,
                     }
                 } else if modifier == OrderModifier::GuardArea {
                     // An accepted Guard cell action carries the clicked Cell
@@ -1377,7 +1746,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             crate::app::match_runtime::eva_producers::EVA_NEW_RALLY_POINT_ESTABLISHED,
         );
     }
-    finish_order(state, queued, speaker_id)
+    finish_order(state, queued, speaker_id) || consumed_attack_action
 }
 
 /// The data capability shared by self-click, self-hover and the deploy key.
@@ -3045,3 +3414,124 @@ mod retail_engineer_tests;
 #[cfg(test)]
 #[path = "context_order_retail_garrison_tests.rs"]
 mod retail_garrison_tests;
+
+#[cfg(test)]
+mod stationary_attack_dispatch_tests {
+    use super::*;
+    use crate::map::resolved_terrain::ResolvedTerrainGrid;
+    use crate::rules::overlay_types::OverlayTypeRegistry;
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+    use crate::sim::game_entity::BunkerLink;
+    use crate::sim::world::Simulation;
+
+    #[test]
+    fn bunker_attack_batch_preserves_mobile_order_and_select_fallback() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            r#"
+[VehicleTypes]
+0=TANK
+[TANK]
+Strength=300
+Primary=GUN
+Speed=6
+SpeedType=Track
+MovementZone=Normal
+Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}
+[GUN]
+Damage=60
+Range=5
+Projectile=SHOT
+Warhead=AP
+[SHOT]
+AG=yes
+Inviso=yes
+SubjectToElevation=no
+[Warheads]
+0=AP
+[AP]
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+"#,
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+        let stationary = sim
+            .spawn_object("TANK", "Americans", 2, 2, 0, &rules)
+            .unwrap();
+        let mobile = sim
+            .spawn_object("TANK", "Americans", 2, 4, 0, &rules)
+            .unwrap();
+        let friend = sim
+            .spawn_object("TANK", "Americans", 20, 2, 0, &rules)
+            .unwrap();
+        let enemy = sim
+            .spawn_object("TANK", "Soviets", 20, 4, 0, &rules)
+            .unwrap();
+        sim.session.game_mode_nonzero = true;
+        sim.session.current_house = Some(sim.entities().get(stationary).unwrap().owner());
+        sim.entities_mut().get_mut(stationary).unwrap().bunker_link = BunkerLink::Installed(99);
+        sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
+            32,
+            32,
+            (0..32)
+                .flat_map(|y| {
+                    (0..32).map(move |x| crate::map::resolved_terrain::test_flat_cell(x, y))
+                })
+                .collect(),
+        ));
+        let registry = OverlayTypeRegistry::empty();
+        let mixed = attack_branch_orders(
+            &sim,
+            &rules,
+            &[stationary, mobile],
+            TargetKind::Cell(20, 2),
+            true,
+            &registry,
+        );
+        assert!(mixed.consumed);
+        assert!(!mixed.select_fallback);
+        assert_eq!(mixed.receivers, [stationary, mobile].into_iter().collect());
+        assert_eq!(mixed.commands.len(), 1);
+        assert!(
+            matches!(mixed.commands[0], Command::ForceAttackCell { attacker_id, .. } if attacker_id==mobile)
+        );
+        let none = attack_branch_orders(
+            &sim,
+            &rules,
+            &[stationary],
+            TargetKind::Entity(enemy),
+            true,
+            &registry,
+        );
+        assert!(none.commands.is_empty());
+        assert!(
+            none.consumed && !none.select_fallback,
+            "Action0 consumes without selection or a hidden attack event"
+        );
+        let select = attack_branch_orders(
+            &sim,
+            &rules,
+            &[stationary],
+            TargetKind::Entity(friend),
+            true,
+            &registry,
+        );
+        assert!(select.commands.is_empty());
+        assert!(
+            !select.consumed && select.select_fallback,
+            "Action7 leaves the click for ordinary selection"
+        );
+        let near = attack_branch_orders(
+            &sim,
+            &rules,
+            &[stationary],
+            TargetKind::Cell(4, 2),
+            true,
+            &registry,
+        );
+        assert_eq!(near.commands.len(), 1);
+        assert!(
+            matches!(near.commands[0], Command::ForceAttackCell { attacker_id, .. } if attacker_id==stationary)
+        );
+    }
+}

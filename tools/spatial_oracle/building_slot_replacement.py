@@ -720,7 +720,133 @@ def expiry_metadata():
     return p
 
 
+
+
+def generate_display():
+    """Slot ART -> allocator stores -> independent Anim/Unit Display order.
+
+    The supplied objects/coordinates isolate the slot field transfer and
+    Display registration; this does not execute the full Anim constructor,
+    building placement or pixel rendering. Readers and stored sort arithmetic
+    execute original instructions, including zero slot values replacing the
+    deliberately unequal preexisting Anim fields.
+    """
+    import tempfile
+    from tools.projectile_oracle.bridge_render_inputs import lexical
+    from tools.rules_oracle.bridge_anim_inputs import Reader
+    from tools.spatial_oracle.building_body_rules import INI, SP as READER_SP
+    from tools.spatial_oracle.crate_speed_effect import fixture
+    from tools.spatial_oracle.crate_ground_membership import LAYERS, BUFFERS, LOCOMOTORS
+    from tools.native_oracle import RET_MAGIC
+
+    art_path = Path(os.environ.get('VERA20K_BUILDING_ANIM_ART', 'ini/ARTMD.INI'))
+    raw = art_path.read_bytes()
+    names = {'NATBNK', 'CAOILD', 'GAHPAD'}
+    sections, lines = lexical(raw, names)
+    # This original slot-reader slice never requests a SHP. Keep the Reader's
+    # asset boundary empty rather than feeding it unrelated checkout files.
+    with tempfile.TemporaryDirectory(prefix='building-anim-display-') as empty:
+        m = Reader(Path(empty), sections)
+    m.invoke(0x4E7CF0, 0)
+    rows = []
+    origin = [16384, 15360, 0]
+    unit_origin = [16640, 15616, 0]
+    for name in sorted(names):
+        pointer = m.alloc(0x2000)
+        m.invoke(0x45DD90, pointer, (m.cstring(name),))
+        m.u.mem_write(READER_SP, bytes(0x400))
+        m.u.mem_write(READER_SP + 0x36C, dwords(INI))
+        for register, value in ((UC_X86_REG_ESP, READER_SP), (UC_X86_REG_EBP, pointer),
+                                (UC_X86_REG_ESI, INI), (UC_X86_REG_EDI, pointer + 0x1F8)):
+            m.u.reg_write(register, value)
+        run_checked(m.u, *EXPIRY_SLOT_READER, count=2_000_000)
+        for slot in ([10, 11, 12, 13] if name == 'NATBNK' else [3]):
+            address = pointer + 0x44 * slot
+            scalar = lambda offset: struct.unpack('<i', m.u.mem_read(address + offset, 4))[0]
+            fields = dict(slot=slot, normal=m.string(address + 0xF4C),
+                          damaged=m.string(address + 0xF5C),
+                          garrisoned=m.string(address + 0xF6C),
+                          x=scalar(0xF7C), y=scalar(0xF80),
+                          z_adjust=scalar(0xF84), y_sort=scalar(0xF88))
+            building, anim = m.alloc(0x800), m.alloc(0x1C8)
+            m.u.mem_write(building + 0x520, dwords(pointer))
+            m.u.mem_write(anim, dwords(0x7E3354))
+            m.u.mem_write(anim + 0x9C, dwords(*origin))
+            m.u.mem_write(anim + 0x100, dwords(999, 888))
+            for register, value in ((UC_X86_REG_ESI, building),
+                                    (UC_X86_REG_EDI, 0x44 * slot), (UC_X86_REG_EBP, anim)):
+                m.u.reg_write(register, value)
+            run_checked(m.u, 0x45197B, 0x4519A8, count=100)
+            copied = dict(z_adjust=struct.unpack('<i', m.u.mem_read(anim + 0x100, 4))[0],
+                          y_sort=struct.unpack('<i', m.u.mem_read(anim + 0x104, 4))[0],
+                          building_anim=m.u.mem_read(anim + 0x118, 1)[0],
+                          sort_key=m.invoke(0x422BC0, anim))
+            rows.append(dict(building=name, slot=fields, copied=copied))
+    assert not m.asset_loaded
+
+    orders = []
+    for reversed_insertion in (False, True):
+        u, sp, actors, _ = fixture(dict(actors=[dict(kind='unit') for _ in range(3)]))
+        def invoke(address, receiver, args=()):
+            u.reg_write(UC_X86_REG_ECX, receiver)
+            u.reg_write(UC_X86_REG_ESP, sp)
+            u.mem_write(sp, dwords(RET_MAGIC, *args))
+            run_checked(u, address, RET_MAGIC, count=10_000)
+            assert u.reg_read(UC_X86_REG_ESP) == sp + 4 + 4 * len(args)
+            return u.reg_read(UC_X86_REG_EAX)
+        u.reg_write(UC_X86_REG_ESP, sp)
+        run_checked(u, 0x4A8630, 0x4A866D, count=100)
+        for layer in range(5):
+            u.mem_write(LAYERS + layer * 24 + 4, dwords(BUFFERS + layer * 0x100, 16))
+        for index, actor in enumerate(actors):
+            u.mem_write(actor + 0x74, b'\1')
+            u.mem_write(actor + 0x94, dwords(-1))
+            if index == 1:
+                u.mem_write(actor + 0x9C, dwords(*unit_origin))
+                loco = LOCOMOTORS + 0x100
+                invoke(0x4AF540, loco)
+                u.mem_write(loco + 0xC, dwords(actor))
+                u.mem_write(actor + 0x674, dwords(loco + 4))
+            else:
+                u.mem_write(actor, dwords(0x7E3354))
+                u.mem_write(actor + 0x9C, dwords(*origin))
+                config = actor + 0x800
+                u.mem_write(actor + 0xC8, dwords(config))
+                u.mem_write(config + 0x364, dwords(2))  # supplied retail Ground layer
+                source = next(row for row in rows if row['building'] == 'NATBNK'
+                              and row['slot']['slot'] == (10 if index == 2 else 11))
+                u.mem_write(actor + 0x104, dwords(source['copied']['y_sort']))
+        keys = [invoke(0x5F6BD0 if i == 1 else 0x422BC0, actor)
+                for i, actor in enumerate(actors)]
+        inserted = [2, 1, 0] if reversed_insertion else [0, 1, 2]
+        for index in inserted:
+            invoke(0x4A9720, 0x87F7E8, (actors[index],))
+        count = struct.unpack('<i', u.mem_read(LAYERS + 48 + 16, 4))[0]
+        pointers = struct.unpack('<' + 'I' * count, u.mem_read(BUFFERS + 0x200, count * 4))
+        orders.append(dict(inserted=inserted, keys=keys,
+                           order=[actors.index(pointer) for pointer in pointers]))
+    return dict(art=dict(file='ARTMD.INI', sha256=hashlib.sha256(raw).hexdigest(),
+                         physical_sections=sections, lines=lines),
+                origin=origin, unit_origin=unit_origin, rows=rows, orders=orders)
+
+
+def display_provenance():
+    return provenance(
+        entry_points=dict(building_type_constructor=0x45DD90, art_slots=0x4615CA,
+                          slot_instance_stores=0x45197B, anim_sort=0x422BC0,
+                          display_submit=0x4A9720, object_sort=0x5F6BD0),
+        assumptions=[
+            'Physical ARTMD lexical strings go through the existing native Reader. Original INI file loading and archive lookup are outside this comparison. Slot stores cover 45197B..4519A8 after a supplied Anim construction; full allocator/constructor not claimed.',
+            'Supplied stored world coordinates (16384,15360,0), Unit centre (16640,15616,0), null Anim owner and Ground layer. Registration uses actual Anim/Unit vtables and native Drive constructor with capacity16 display buffers.',
+            'Normal/damaged names are native slot-reader results; damaged variant admission, frame timers, lighting, GPU pixels and full game scene parity are not claimed.'
+        ], substitutions=[],
+        scope='Six retail building animation slot reader/store/sort rows plus two native back-wall, parked-Unit, front-wall Display insertion histories. CAOILD Active and GAHPAD Active offset controls share the same owner.')
+
 if __name__ == '__main__':
+    if '--display' in sys.argv:
+        sys.argv.remove('--display')
+        finish_vectors(generate_display, Path(__file__).with_name('building_slot_replacement.display.json'), provenance=display_provenance)
+        raise SystemExit(0)
     if '--expiry' in sys.argv:
         paths = ('tools/native_oracle.py', 'tools/native_slope.py',
                  'tools/spatial_oracle/building_slot_replacement.py',

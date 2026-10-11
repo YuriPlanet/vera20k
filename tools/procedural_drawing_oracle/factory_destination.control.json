@@ -1,0 +1,979 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": -1,
+        "kind": "control",
+        "profile": "factory"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 0,
+        "kind": "control",
+        "profile": "factory"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "building_command_admission",
+          "building_command_admission"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 10,
+        "kind": "control",
+        "profile": "factory"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": -1,
+        "kind": "control",
+        "profile": "barracks"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 0,
+        "kind": "control",
+        "profile": "barracks"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "building_command_admission",
+          "building_command_admission"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 10,
+        "kind": "control",
+        "profile": "barracks"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": -1,
+        "kind": "control",
+        "profile": "repair"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 0,
+        "kind": "control",
+        "profile": "repair"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "building_command_admission",
+          "building_command_admission"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 10,
+        "kind": "control",
+        "profile": "repair"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": -1,
+        "kind": "control",
+        "profile": "cloning"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 0,
+        "kind": "control",
+        "profile": "cloning"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "building_command_admission",
+          "building_command_admission"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 10,
+        "kind": "control",
+        "profile": "cloning"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": -1,
+        "kind": "control",
+        "profile": "construction_yard"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 0,
+        "kind": "control",
+        "profile": "construction_yard"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "building_command_admission",
+          "building_command_admission"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 10,
+        "kind": "control",
+        "profile": "construction_yard"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": -1,
+        "kind": "control",
+        "profile": "ordinary"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 0,
+        "kind": "control",
+        "profile": "ordinary"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "building_command_admission",
+          "building_command_admission"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 10,
+        "kind": "control",
+        "profile": "ordinary"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": -1,
+        "factory_value": 3,
+        "kind": "control",
+        "profile": "aircraft_factory"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 0,
+        "factory_value": 3,
+        "kind": "control",
+        "profile": "aircraft_factory"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "building_command_admission",
+          "building_command_admission"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 10,
+        "factory_value": 3,
+        "kind": "control",
+        "profile": "aircraft_factory"
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "human": false,
+        "kind": "control",
+        "mind_controlled": true,
+        "profile": "factory",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "human": false,
+        "kind": "control",
+        "mind_controlled": true,
+        "profile": "barracks",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "human": false,
+        "kind": "control",
+        "mind_controlled": true,
+        "profile": "repair",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "human": false,
+        "kind": "control",
+        "mind_controlled": true,
+        "profile": "cloning",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "human": false,
+        "kind": "control",
+        "mind_controlled": true,
+        "profile": "ordinary",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "factory_value": 3,
+        "human": false,
+        "kind": "control",
+        "mind_controlled": true,
+        "profile": "aircraft_factory",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "human": true,
+        "kind": "control",
+        "mcv_redeploy": true,
+        "mind_controlled": false,
+        "player_control": false,
+        "profile": "construction_yard",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "human": true,
+        "kind": "control",
+        "mcv_redeploy": true,
+        "mind_controlled": false,
+        "player_control": false,
+        "profile": "construction_yard",
+        "session_mode": 1,
+        "undeploy": false
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "human": true,
+        "kind": "control",
+        "mcv_redeploy": true,
+        "mind_controlled": false,
+        "player_control": false,
+        "profile": "construction_yard",
+        "session_mode": 0,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "human": false,
+        "kind": "control",
+        "mcv_redeploy": true,
+        "mind_controlled": false,
+        "player_control": false,
+        "profile": "construction_yard",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "human": false,
+        "kind": "control",
+        "mcv_redeploy": true,
+        "mind_controlled": false,
+        "player_control": true,
+        "profile": "construction_yard",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "human": true,
+        "kind": "control",
+        "mcv_redeploy": false,
+        "mind_controlled": false,
+        "player_control": false,
+        "profile": "construction_yard",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "human": true,
+        "kind": "control",
+        "mcv_redeploy": true,
+        "mind_controlled": true,
+        "player_control": false,
+        "profile": "construction_yard",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "building_command_admission",
+          "building_command_admission"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": 1,
+        "human": true,
+        "kind": "control",
+        "mcv_redeploy": true,
+        "mind_controlled": false,
+        "player_control": false,
+        "profile": "construction_yard",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": true,
+        "selection_admission": {
+          "false": true,
+          "true": false
+        },
+        "writes": []
+      },
+      "input": {
+        "emp": -1,
+        "human": true,
+        "kind": "control",
+        "mcv_redeploy": true,
+        "mind_controlled": false,
+        "player_control": false,
+        "profile": "construction_yard",
+        "session_mode": 1,
+        "undeploy": true
+      }
+    },
+    {
+      "expected": {
+        "archive": "old",
+        "calls": [
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point",
+          "building_command_admission",
+          "has_rally_point"
+        ],
+        "changed_actor_bytes": [],
+        "controllable": false,
+        "selection_admission": {
+          "false": true,
+          "true": true
+        },
+        "writes": []
+      },
+      "input": {
+        "human": false,
+        "kind": "control",
+        "mcv_redeploy": true,
+        "mind_controlled": false,
+        "player_control": true,
+        "profile": "construction_yard",
+        "session_mode": 0,
+        "undeploy": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,2320 @@
+{
+  "inputs": {
+    "bunker_reader_controls": [
+      {
+        "layers": [
+          {}
+        ],
+        "name": "missing_retains_constructor",
+        "values": [
+          2
+        ]
+      },
+      {
+        "layers": [
+          {
+            "BunkerWeaponRangeBonus": "0"
+          }
+        ],
+        "name": "explicit_zero",
+        "values": [
+          0
+        ]
+      },
+      {
+        "layers": [
+          {
+            "BunkerWeaponRangeBonus": "-1"
+          }
+        ],
+        "name": "negative",
+        "values": [
+          -1
+        ]
+      },
+      {
+        "layers": [
+          {
+            "BunkerWeaponRangeBonus": "$10"
+          }
+        ],
+        "name": "hexadecimal",
+        "values": [
+          16
+        ]
+      },
+      {
+        "layers": [
+          {
+            "BunkerWeaponRangeBonus": "invalid"
+          }
+        ],
+        "name": "invalid_integer_becomes_zero",
+        "values": [
+          0
+        ]
+      },
+      {
+        "layers": [
+          {
+            "bunkerweaponrangebonus": "9"
+          }
+        ],
+        "name": "wrong_key_case",
+        "values": [
+          2
+        ]
+      },
+      {
+        "layers": [
+          {
+            "BunkerWeaponRangeBonus": "4"
+          },
+          {}
+        ],
+        "name": "layer_retains_previous",
+        "values": [
+          4,
+          4
+        ]
+      },
+      {
+        "layers": [
+          {
+            "BunkerWeaponRangeBonus": "4"
+          },
+          {
+            "BunkerWeaponRangeBonus": "1"
+          }
+        ],
+        "name": "layer_overrides_previous",
+        "values": [
+          4,
+          1
+        ]
+      }
+    ],
+    "constructor": {
+      "bunker_bonus": 2,
+      "gravity": 3,
+      "open_topped_bonus": 2
+    },
+    "layers": [
+      {
+        "bullet_read": true,
+        "bytes": 743215,
+        "file": "RULESMD.INI",
+        "keys": {
+          "ATGUN": {
+            "Anim": "GUNFIRE",
+            "Bright": "yes",
+            "Damage": "65",
+            "Projectile": "Cannon",
+            "ROF": "60",
+            "Report": "LasherTankAttack",
+            "Speed": "60",
+            "Warhead": "AP"
+          },
+          "AudioVisual": {
+            "Gravity": "6"
+          },
+          "Cannon": {
+            "Arcing": "true",
+            "Image": "120MM",
+            "SubjectToCliffs": "yes",
+            "SubjectToElevation": "yes",
+            "SubjectToWalls": "yes"
+          },
+          "CombatDamage": {
+            "BunkerWeaponRangeBonus": "2",
+            "OpenToppedRangeBonus": "2"
+          },
+          "LTNK": {
+            "Primary": "ATGUN"
+          }
+        },
+        "section_admission": {
+          "AudioVisual": true,
+          "CombatDamage": true,
+          "LTNK": true
+        },
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+        "state": {
+          "arcing": true,
+          "bunker_bonus": 2,
+          "cell_rangefinding": false,
+          "floater": false,
+          "gravity": 6,
+          "minimum": 0,
+          "open_topped_bonus": 2,
+          "primary": "ATGUN",
+          "projectile": "Cannon",
+          "range": 1280,
+          "subject_to_elevation": true
+        },
+        "weapon_read": true
+      },
+      {
+        "absent": true,
+        "file": "LANGRULE.INI"
+      },
+      {
+        "bullet_read": false,
+        "bytes": 295,
+        "file": "MPBattleMD.ini",
+        "keys": {},
+        "section_admission": {
+          "AudioVisual": false,
+          "CombatDamage": false,
+          "LTNK": false
+        },
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+        "state": {
+          "arcing": true,
+          "bunker_bonus": 2,
+          "cell_rangefinding": false,
+          "floater": false,
+          "gravity": 6,
+          "minimum": 0,
+          "open_topped_bonus": 2,
+          "primary": "ATGUN",
+          "projectile": "Cannon",
+          "range": 1280,
+          "subject_to_elevation": true
+        },
+        "weapon_read": false
+      },
+      {
+        "bullet_read": false,
+        "input_kind": "supplied_empty_map_rules",
+        "keys": {},
+        "section_admission": {
+          "AudioVisual": false,
+          "CombatDamage": false,
+          "LTNK": false
+        },
+        "sections": {},
+        "state": {
+          "arcing": true,
+          "bunker_bonus": 2,
+          "cell_rangefinding": false,
+          "floater": false,
+          "gravity": 6,
+          "minimum": 0,
+          "open_topped_bonus": 2,
+          "primary": "ATGUN",
+          "projectile": "Cannon",
+          "range": 1280,
+          "subject_to_elevation": true
+        },
+        "weapon_read": false
+      }
+    ],
+    "retail": {
+      "arcing": true,
+      "bunker_bonus": 2,
+      "cell_rangefinding": false,
+      "floater": false,
+      "gravity": 6,
+      "minimum": 0,
+      "open_topped_bonus": 2,
+      "primary": "ATGUN",
+      "projectile": "Cannon",
+      "range": 1280,
+      "subject_to_elevation": true
+    }
+  },
+  "rows": [
+    {
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "0x565730",
+          [
+            2688,
+            2688,
+            0
+          ]
+        ],
+        [
+          "line",
+          [
+            2688,
+            2688,
+            0
+          ],
+          [
+            3969,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": false,
+        "bunker_bonus": 2,
+        "bunkered": false,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "direct_control_empty_edge",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            3969,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1280
+        ],
+        [
+          "after_open_topped",
+          1280
+        ]
+      ],
+      "result": true,
+      "target_geometry": [
+        3969,
+        2688,
+        0
+      ]
+    },
+    {
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": false,
+        "bunker_bonus": 2,
+        "bunkered": false,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "direct_control_empty_beyond",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            3970,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1280
+        ],
+        [
+          "after_open_topped",
+          1280
+        ]
+      ],
+      "result": false,
+      "target_geometry": [
+        3970,
+        2688,
+        0
+      ]
+    },
+    {
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "0x565730",
+          [
+            2688,
+            2688,
+            0
+          ]
+        ],
+        [
+          "line",
+          [
+            2688,
+            2688,
+            0
+          ],
+          [
+            4481,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": false,
+        "bunker_bonus": 2,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "direct_control_installed_edge",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4481,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1792
+        ],
+        [
+          "after_open_topped",
+          1792
+        ]
+      ],
+      "result": true,
+      "target_geometry": [
+        4481,
+        2688,
+        0
+      ]
+    },
+    {
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": false,
+        "bunker_bonus": 2,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "direct_control_installed_beyond",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4482,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1792
+        ],
+        [
+          "after_open_topped",
+          1792
+        ]
+      ],
+      "result": false,
+      "target_geometry": [
+        4482,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        15,
+        10
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "0x565730",
+          [
+            3969,
+            2688,
+            0
+          ]
+        ],
+        [
+          "line",
+          [
+            2688,
+            2688,
+            0
+          ],
+          [
+            3969,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 2,
+        "bunkered": false,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "retail_cannon_arcing_empty_edge",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            3969,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1280
+        ],
+        [
+          "after_open_topped",
+          1280
+        ]
+      ],
+      "result": true,
+      "target_geometry": [
+        3969,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 2,
+        "bunkered": false,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "retail_cannon_arcing_empty_beyond",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            3970,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1280
+        ],
+        [
+          "after_open_topped",
+          1280
+        ]
+      ],
+      "result": false,
+      "target_geometry": [
+        3970,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "0x565730",
+          [
+            4481,
+            2688,
+            0
+          ]
+        ],
+        [
+          "line",
+          [
+            2688,
+            2688,
+            0
+          ],
+          [
+            4481,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 2,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "retail_cannon_arcing_installed_edge",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4481,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1792
+        ],
+        [
+          "after_open_topped",
+          1792
+        ]
+      ],
+      "result": true,
+      "target_geometry": [
+        4481,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 2,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "retail_cannon_arcing_installed_beyond",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4482,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1792
+        ],
+        [
+          "after_open_topped",
+          1792
+        ]
+      ],
+      "result": false,
+      "target_geometry": [
+        4482,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "0x565730",
+          [
+            4352,
+            2688,
+            0
+          ]
+        ],
+        [
+          "line",
+          [
+            2688,
+            2688,
+            0
+          ],
+          [
+            4352,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 2,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "retail_installed_at_six_and_half_cells",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1792
+        ],
+        [
+          "after_open_topped",
+          1792
+        ]
+      ],
+      "result": true,
+      "target_geometry": [
+        4352,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 2,
+        "bunkered": false,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "retail_empty_at_six_and_half_cells",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1280
+        ],
+        [
+          "after_open_topped",
+          1280
+        ]
+      ],
+      "result": false,
+      "target_geometry": [
+        4352,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 2,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 2000,
+        "name": "minimum_still_refuses",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1792
+        ],
+        [
+          "after_open_topped",
+          1792
+        ]
+      ],
+      "result": false,
+      "target_geometry": [
+        4352,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 2,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 2000,
+        "name": "sentinel_precedes_all_bonuses",
+        "open_topped": true,
+        "open_topped_bonus": 2,
+        "range": -512,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [],
+      "result": true,
+      "target_geometry": null
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "0x565730",
+          [
+            4352,
+            2688,
+            0
+          ]
+        ],
+        [
+          "line",
+          [
+            2688,
+            2688,
+            0
+          ],
+          [
+            4352,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 1,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "open_topped_after_bunker",
+        "open_topped": true,
+        "open_topped_bonus": 3,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1536
+        ],
+        [
+          "after_open_topped",
+          2304
+        ]
+      ],
+      "result": true,
+      "target_geometry": [
+        4352,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": -1,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "negative_bunker_bonus",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1024
+        ],
+        [
+          "after_open_topped",
+          1024
+        ]
+      ],
+      "result": false,
+      "target_geometry": [
+        4352,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 0,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "zero_bunker_bonus",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1280
+        ],
+        [
+          "after_open_topped",
+          1280
+        ]
+      ],
+      "result": false,
+      "target_geometry": [
+        4352,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "0x565730",
+          [
+            4352,
+            2688,
+            0
+          ]
+        ],
+        [
+          "line",
+          [
+            2688,
+            2688,
+            0
+          ],
+          [
+            4352,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 16777218,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "shift_wraps_i32",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1792
+        ],
+        [
+          "after_open_topped",
+          1792
+        ]
+      ],
+      "result": true,
+      "target_geometry": [
+        4352,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "bunker_bonus": 2,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "add_wraps_i32",
+        "open_topped_bonus": 2,
+        "range": 2147483632,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          2147483632
+        ],
+        [
+          "after_bunker",
+          -2147483152
+        ],
+        [
+          "after_open_topped",
+          -2147483152
+        ]
+      ],
+      "result": false,
+      "target_geometry": [
+        4352,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2688,
+            2688,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "0x578080",
+          [
+            4352,
+            2688,
+            416
+          ]
+        ],
+        [
+          "0x47b3a0",
+          false,
+          [
+            17,
+            10
+          ]
+        ],
+        [
+          "0x578080",
+          [
+            4352,
+            2688,
+            416
+          ]
+        ],
+        [
+          "0x47b3a0",
+          false,
+          [
+            17,
+            10
+          ]
+        ],
+        [
+          "0x565730",
+          [
+            4352,
+            2688,
+            416
+          ]
+        ],
+        [
+          "line",
+          [
+            2688,
+            2688,
+            0
+          ],
+          [
+            4352,
+            2688,
+            416
+          ]
+        ]
+      ],
+      "input": {
+        "air_range_bonus": 768,
+        "arcing": true,
+        "bunker_bonus": 2,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "air_bonus_before_bunker",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            416
+          ],
+          "marked": true
+        },
+        "trace_range_stages": true,
+        "unit": true
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          2048
+        ],
+        [
+          "after_bunker",
+          2560
+        ],
+        [
+          "after_open_topped",
+          2560
+        ]
+      ],
+      "result": true,
+      "target_geometry": [
+        4352,
+        2688,
+        416
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2816,
+            2816,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "building": {
+          "foundation_id": 3
+        },
+        "bunker_bonus": 100,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "building_rtti_excludes_bunker_bonus",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": false
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1536
+        ],
+        [
+          "after_bunker",
+          1536
+        ],
+        [
+          "after_open_topped",
+          1536
+        ]
+      ],
+      "result": false,
+      "source_geometry": [
+        2816,
+        2816,
+        0
+      ],
+      "target_geometry": [
+        4352,
+        2688,
+        0
+      ]
+    },
+    {
+      "bonuses": [
+        [
+          "direct",
+          0
+        ],
+        [
+          "arcing",
+          0
+        ]
+      ],
+      "dummy_coord": [
+        99,
+        98
+      ],
+      "events": [
+        [
+          "weapon",
+          0
+        ],
+        [
+          "range",
+          [
+            2816,
+            2816,
+            0
+          ],
+          false,
+          [
+            0,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "arcing": true,
+        "building": {
+          "foundation_id": 3,
+          "occupants": 0
+        },
+        "bunker_bonus": 100,
+        "bunkered": true,
+        "cell_rangefinding": false,
+        "cells": [
+          {
+            "coord": [
+              10,
+              10
+            ]
+          },
+          {
+            "coord": [
+              17,
+              10
+            ]
+          }
+        ],
+        "floater": false,
+        "gravity": 6,
+        "minimum": 0,
+        "name": "empty_building_rtti_excludes_bunker_bonus",
+        "open_topped_bonus": 2,
+        "range": 1280,
+        "source": [
+          2688,
+          2688,
+          0
+        ],
+        "subject_to_elevation": true,
+        "target_object": {
+          "location": [
+            4352,
+            2688,
+            0
+          ],
+          "marked": false
+        },
+        "trace_range_stages": true,
+        "unit": false
+      },
+      "range_stages": [
+        [
+          "before_bunker",
+          1280
+        ],
+        [
+          "after_bunker",
+          1280
+        ],
+        [
+          "after_open_topped",
+          1280
+        ]
+      ],
+      "result": false,
+      "source_geometry": [
+        2816,
+        2816,
+        0
+      ],
+      "target_geometry": [
+        4352,
+        2688,
+        0
+      ]
+    }
+  ],
+  "schema_version": 1
+}

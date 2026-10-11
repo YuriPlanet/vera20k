@@ -2507,6 +2507,12 @@ impl SpriteAtlas {
         Self::new(pages, HashMap::new(), ShpPalettes::default())
     }
 
+    /// Metadata-only atlas for production emitter regressions. GPU tests
+    /// still provide actual pages through the existing device-backed owner.
+    pub(crate) fn from_test_entries(entries: HashMap<ShpSpriteKey, ShpSpriteEntry>) -> Self {
+        Self::new(Vec::new(), entries, ShpPalettes::default())
+    }
+
     /// A one-page atlas whose page holds `indices` resolved through
     /// `palette`, with the `source_palette` its instances carry.
     pub(crate) fn from_test_indexed_page(

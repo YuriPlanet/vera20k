@@ -327,7 +327,10 @@ impl Simulation {
         };
         // Original45199B stores Anim+118 independently of the later55C slot
         // installation. Clearing the reference never clears this native flag.
-        self.substrate.anims.get_mut(new_id)?.mark_building_anim();
+        self.substrate
+            .anims
+            .get_mut(new_id)?
+            .mark_building_anim(config.y_sort);
         let old = self.substrate.entities.get(id)?.building_anim_slots[usize::from(slot)];
         if let Some(frame) = old
             .and_then(|old_id| self.anim(old_id))
@@ -819,6 +822,109 @@ pub(crate) fn slot_test_fixture() -> (Simulation, RuleSet, u64) {
 #[cfg(test)]
 mod slot_tests {
     use super::*;
+
+    #[test]
+    fn bunker_and_active_slot_sort_adjustments_match_original_read_and_copy() {
+        use crate::rules::art_data::ArtRegistry;
+        use crate::rules::ini_parser::IniFile;
+        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_slot_replacement.display.json",
+        ))
+        .unwrap();
+        let mut art_text = String::new();
+        for (section, values) in golden["art"]["physical_sections"].as_object().unwrap() {
+            art_text.push_str(&format!("[{section}]\n"));
+            for (key, value) in values.as_object().unwrap() {
+                art_text.push_str(&format!("{key}={}\n", value.as_str().unwrap()));
+            }
+        }
+        // This regression isolates the slot field transfer; the supplied
+        // frame bounds make those retained Anim instances constructible.
+        // Their frame timing and pixels are not native goldens in this corpus.
+        let mut names = std::collections::BTreeSet::new();
+        for row in golden["rows"].as_array().unwrap() {
+            for variant in ["normal", "damaged", "garrisoned"] {
+                let name = row["slot"][variant].as_str().unwrap();
+                if !name.is_empty() {
+                    names.insert(name.to_string());
+                }
+            }
+        }
+        let mut registry = String::from(
+            "[BuildingTypes]\n0=NATBNK\n1=CAOILD\n2=GAHPAD\n\
+            [NATBNK]\nStrength=100\n[CAOILD]\nStrength=100\n[GAHPAD]\nStrength=100\n[Animations]\n",
+        );
+        for (index, name) in names.iter().enumerate() {
+            registry.push_str(&format!("{index}={name}\n"));
+            art_text.push_str(&format!("[{name}]\nLayer=ground\nLoopCount=-1\n"));
+        }
+        let art_ini = IniFile::from_str(&art_text);
+        let mut rules =
+            RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&registry), &art_ini)
+                .unwrap();
+        let mut art = ArtRegistry::from_ini(&art_ini);
+        for name in &names {
+            art.bind_anim_frame_count_for_test(name, 40);
+        }
+        rules.install_art_data(art);
+        for row in golden["rows"].as_array().unwrap() {
+            for damaged in [false, true] {
+                let mut sim = Simulation::new();
+                let name = row["building"].as_str().unwrap();
+                let id = sim.allocate_stable_id();
+                let mut building = GameEntity::test_default_of_category(
+                    id,
+                    name,
+                    "A",
+                    64,
+                    60,
+                    crate::map::entities::EntityCategory::Structure,
+                );
+                building.type_ref = sim.interner.intern(name);
+                building.owner = sim.interner.intern("A");
+                building.health.current = if damaged { 40 } else { 100 };
+                sim.substrate.entities.insert(building);
+                let slot = row["slot"]["slot"].as_u64().unwrap() as u8;
+                let anim_id = sim
+                    .set_building_anim_slot(id, slot, damaged, false, 0, &rules)
+                    .unwrap();
+                let anim = sim.anim(anim_id).unwrap();
+                let expected = &row["copied"];
+                assert!(anim.is_building_anim(), "{row}");
+                assert_eq!(
+                    anim.display.y_sort_adjust(),
+                    expected["y_sort"].as_i64().unwrap() as i32,
+                    "original4519A2 must replace the Anim type's sort adjustment: {row}, damaged={damaged}"
+                );
+                assert_eq!(anim.z_adjust, expected["z_adjust"].as_i64().unwrap() as i32);
+                assert_eq!(
+                    sim.interner.resolve(anim.type_id),
+                    row["slot"][if damaged { "damaged" } else { "normal" }]
+                        .as_str()
+                        .unwrap()
+                );
+                let key = crate::sim::anim_class::anim_own_sort_term(anim);
+                assert_eq!(
+                    key,
+                    anim.world_coord
+                        .x
+                        .wrapping_add(anim.world_coord.y)
+                        .wrapping_add(expected["y_sort"].as_i64().unwrap() as i32)
+                );
+                let config = rules
+                    .art()
+                    .get(name)
+                    .unwrap()
+                    .building_anims
+                    .iter()
+                    .find(|config| config.native_slot == slot)
+                    .unwrap();
+                assert_eq!(config.x, row["slot"]["x"].as_i64().unwrap() as i32);
+                assert_eq!(config.y, row["slot"]["y"].as_i64().unwrap() as i32);
+            }
+        }
+    }
+
     #[test]
     fn shared_bounds_apply_to_slot_create_replace_and_reveal_reposition() {
         use crate::sim::world::{

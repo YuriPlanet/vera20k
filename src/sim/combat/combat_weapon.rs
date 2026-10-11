@@ -33,7 +33,7 @@ use super::armor_index;
 use super::veterancy::RANK_ELITE_U16;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::{HouseAllianceMap, is_allied_with};
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::object_type::{ObjectType, WEAPON_SLOT_COUNT};
 use crate::rules::ruleset::RuleSet;
@@ -131,6 +131,12 @@ pub(crate) enum TargetFlight<'a> {
         rules: &'a RuleSet,
         interner: &'a StringInterner,
     },
+    InQuery {
+        entity: &'a GameEntity,
+        cells: &'a NativeCellQuery<'a>,
+        rules: &'a RuleSet,
+        interner: &'a StringInterner,
+    },
     #[cfg(test)]
     Supplied { high: bool },
 }
@@ -146,6 +152,16 @@ impl TargetFlight<'_> {
             } => crate::sim::movement::air_movement::is_high_flying(
                 entity,
                 terrain,
+                Some((rules, interner)),
+            ),
+            Self::InQuery {
+                entity,
+                cells,
+                rules,
+                interner,
+            } => crate::sim::movement::air_movement::is_high_flying_in_query(
+                entity,
+                cells,
                 Some((rules, interner)),
             ),
             #[cfg(test)]
@@ -1035,6 +1051,35 @@ pub(crate) fn select_weapon_against<'a>(
     terrain: Option<&ResolvedTerrainGrid>,
     alliances: Option<&HouseAllianceMap>,
 ) -> Option<(i32, Option<SelectedWeapon<'a>>)> {
+    let cells = terrain.map(NativeCellQuery::canonical);
+    select_weapon_against_in_query(
+        rules,
+        attacker_entity,
+        attacker_obj,
+        attacker,
+        target,
+        entities,
+        interner,
+        cells.as_ref(),
+        alliances,
+    )
+}
+
+/// The SelectWeapon owner with a caller-owned native query identity. Input
+/// probes pass an isolated identity; simulation retains the canonical Dummy.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn select_weapon_against_in_query<'a>(
+    rules: &'a RuleSet,
+    attacker_entity: &GameEntity,
+    attacker_obj: &'a ObjectType,
+    attacker: &AttackerFacts,
+    target: Option<&TargetKind>,
+    entities: &EntityStore,
+    interner: &StringInterner,
+    cells: Option<&NativeCellQuery<'_>>,
+    alliances: Option<&HouseAllianceMap>,
+) -> Option<(i32, Option<SelectedWeapon<'a>>)> {
+    let terrain = cells.map(NativeCellQuery::terrain);
     let target_facts = match target.copied() {
         Some(TargetKind::Entity(target_id)) => {
             let target_entity = entities.get(target_id)?;
@@ -1045,14 +1090,19 @@ pub(crate) fn select_weapon_against<'a>(
                 attacker_entity.owner(),
                 target_entity.owner(),
             );
-            Some(techno_target_facts(
-                target_entity,
-                target_obj,
-                terrain,
-                is_ally,
-                rules,
-                interner,
-            ))
+            let mut facts =
+                techno_target_facts(target_entity, target_obj, terrain, is_ally, rules, interner);
+            if let Some(cells) = cells
+                && let TargetFacts::Techno { flight, .. } = &mut facts
+            {
+                *flight = TargetFlight::InQuery {
+                    entity: target_entity,
+                    cells,
+                    rules,
+                    interner,
+                };
+            }
+            Some(facts)
         }
         Some(TargetKind::Cell(rx, ry)) => Some(cell_target_facts(rx, ry, terrain)),
         None => None,

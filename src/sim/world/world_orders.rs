@@ -71,6 +71,10 @@ pub(crate) struct EngineerEntryResult {
 #[path = "bridge_engineer_admission_tests.rs"]
 mod bridge_engineer_admission_tests;
 
+#[cfg(test)]
+#[path = "building_control_tests.rs"]
+mod building_control_tests;
+
 impl Simulation {
     pub(crate) fn house_is_human_player(&self, owner: InternedId) -> bool {
         // House50B6F0: nonzero session mode compares exactly to LocalPlayer;
@@ -86,8 +90,8 @@ impl Simulation {
         }
     }
 
-    /// Unit/Infantry/Aircraft virtual+A0, original Techno700C40 IsControllable. This is
-    /// producer-side control admission; Event/lifecycle admission is separate.
+    /// Virtual+A0: Building44F5C0 or Unit/Infantry/Aircraft Techno700C40.
+    /// This is producer-side control admission; Event/lifecycle admission is separate.
     /// House50B6F0, bunker link, Spawned, paralysis, warp, slave ownership and
     /// launched-missile count remain with their existing authoritative owners.
     ///
@@ -106,15 +110,31 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        if actor.category == EntityCategory::Structure
-            || !self.house_is_human_player(actor.owner())
-            || actor.bunker_link.installed_in().is_some()
-        {
-            return false;
-        }
         let Some(object) = self.object_type(actor.type_ref(), rules) else {
             return false;
         };
+        if actor.category == EntityCategory::Structure {
+            // Steam gamemd 3e81a617: Building44F5C0, complete original control
+            // vectors in procedural_drawing_oracle/factory_destination.py --control.
+            // EMP+504 still has no runtime producer; this is its ctor-zero subset.
+            // HasRallyPoint455DA0 bypasses the ConYard and House50B730 tests.
+            if object.has_rally_line() {
+                return true;
+            }
+            if object.construction_yard
+                && !(self.owner_is_human(actor.owner())
+                    && self.session.game_mode_nonzero
+                    && self.session.game_options.mcv_redeploy
+                    && actor.mind_control.controller().is_none())
+            {
+                return false;
+            }
+            return crate::sim::production::undeploy_target(rules, &object.id).is_some();
+        }
+        if !self.house_is_human_player(actor.owner()) || actor.bunker_link.installed_in().is_some()
+        {
+            return false;
+        }
         if object.spawned
             || actor.is_paralyzed(self.session.binary_frame)
             || actor.is_warped_out()

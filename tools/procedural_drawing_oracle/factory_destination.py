@@ -9,9 +9,9 @@ from itertools import product
 from pathlib import Path
 
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
-from unicorn.x86_const import UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP
+from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP
 
-from tools.native_oracle import finish_vectors, provenance, run_checked
+from tools.native_oracle import finish_vectors, provenance, run_checked, RET_MAGIC
 from tools.spatial_oracle.bridge_damage_admission import (
     base, call, words, read32, MEM, SP,
 )
@@ -48,12 +48,16 @@ def execute(case):
     u.mem_write(ACTOR + 0x418, bytes([case.get('tethered', False)]))
     u.mem_write(ACTOR + 0x504, words(case.get('emp', 0)))
     u.mem_write(ACTOR + 0x520, words(TYPE))
-    u.mem_write(TYPE + 0xEB8, words(profile.get('factory', -1)))
+    u.mem_write(TYPE + 0xEB8, words(case.get('factory_value', profile.get('factory', -1))))
     for offset, key in ((0x16A9, 'unit_repair'), (0x16AC, 'cloning'),
                         (0x16B9, 'construction_yard')):
         u.mem_write(TYPE + offset, bytes([profile.get(key, False)]))
-    u.mem_write(HOUSE + 0x1EC, b'\x01')
-    u.mem_write(0xA8B238, words(0))
+    u.mem_write(TYPE + 0x408, words(NEW if case.get('undeploy', False) else 0))
+    u.mem_write(ACTOR + 0x2C0, words(NEW if case.get('mind_controlled', False) else 0))
+    u.mem_write(HOUSE + 0x1EC, bytes([case.get('human', True)]))
+    u.mem_write(HOUSE + 0x1ED, bytes([case.get('player_control', False)]))
+    u.mem_write(0xA8B238, words(case.get('session_mode', 0)))
+    u.mem_write(0xA8B320, bytes([case.get('mcv_redeploy', False)]))
     u.mem_write(0xA83D4C, words(HOUSE))
     u.mem_write(0xA8ECBC, words(SELECTED))
     u.mem_write(0xA8ECC8, words(1))
@@ -78,7 +82,23 @@ def execute(case):
     u.hook_add(UC_HOOK_MEM_WRITE, written)
     kind = case['kind']
     result = {}
-    if kind == 'destination':
+    if kind == 'control':
+        result['controllable'] = bool(call(u, 0x44F5C0, ACTOR) & 255)
+        # Object Select's unchanged state-admission prefix uses the same
+        # Building+A0; stop before selection-vector/callback side effects.
+        u.mem_write(TYPE + 0x230, b'\x01')  # Selectable
+        u.mem_write(0xA8ED6B, b'\x00')  # ordinary user selection
+        result['selection_admission'] = {}
+        for mission_only in (False, True):
+            u.mem_write(ACTOR + 0x3D4, bytes([mission_only]))
+            u.mem_write(SP, words(RET_MAGIC))
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.reg_write(UC_X86_REG_ECX, ACTOR)
+            end = run_checked(u, 0x5F4520, (0x5F45A0, RET_MAGIC), count=20000,
+                              context=dict(case, mission_only=mission_only))
+            result['selection_admission'][str(mission_only).lower()] = end == 0x5F45A0
+        u.mem_write(ACTOR + 0x3D4, b'\x00')
+    elif kind == 'destination':
         call(u, 0x455D50, ACTOR, (TARGETS[case['requested']], case.get('mode', 1)))
     elif kind == 'stop_event':
         # Event6 actor/token resolution ends at4C74E8. Keep every following
@@ -139,6 +159,51 @@ def metadata():
                           stop_event_actor=0x4C74E8, stop_input=0x730EA0))
 
 
+
+def generate_control():
+    cases = [dict(kind='control', profile=profile, emp=emp)
+             for profile, emp in product(PROFILES, (-1, 0, 10))]
+    cases += [dict(kind='control', profile=profile, human=False,
+                   session_mode=1, undeploy=True, mind_controlled=True)
+              for profile in ('factory', 'barracks', 'repair', 'cloning',
+                              'ordinary', 'aircraft_factory')]
+    yard = dict(kind='control', profile='construction_yard', undeploy=True,
+                session_mode=1, human=True, player_control=False,
+                mcv_redeploy=True, mind_controlled=False)
+    cases.append(yard)
+    cases += [dict(yard, **change) for change in (
+        {'undeploy': False}, {'session_mode': 0}, {'human': False},
+        {'human': False, 'player_control': True}, {'mcv_redeploy': False},
+        {'mind_controlled': True}, {'emp': 1}, {'emp': -1},
+        {'session_mode': 0, 'human': False, 'player_control': True},
+    )]
+    for case in cases:
+        if case['profile'] == 'aircraft_factory':
+            case['factory_value'] = 3  # native AbstractType::AircraftType
+    return dict(cases=[execute(case) for case in cases])
+
+
+def control_metadata():
+    return provenance(
+        scope='Building44F5C0 virtual+A0 complete body with original HasRallyPoint455DA0 and House50B730.',
+        assumptions=[
+            'Prepared live Building/BuildingType/House fields with original vtables; no constructors, INI reads, action caller or command event are executed.',
+            'A resolved UndeploysInto pointer is nonnull fixture memory. The body tests its presence only and never dereferences the target.',
+            'Every HasRallyPoint arm, signed EMP -1/0/positive, ConstructionYard human/player-control/session/MCVRedeploy/mind-controller conditions execute. Control rows explicitly use AircraftType=3 rather than the legacy destination fixture label aircraft_factory whose stored input was2.',
+            'EMP is a raw native input only: VERA has no EMP504 lifecycle producer. Constructor-zero production behavior is the supported Rust subset.',
+            'For each row Object5F4520 executes its original selection-admission prefix with Selectable=true and MissionOnly false/true, stopping at5F45A0 before membership/waypoint checks and selection mutation, or at its real refusal return. No full selection commit or Building MissionOnly producer is claimed.',
+            'No RNG, timer write, detach or object mutation is expected; changed_actor_bytes and native function calls are recorded.',
+        ], substitutions=[], entry_points=dict(building_control=0x44F5C0,
+            has_rally_point=0x455DA0, house_controlled_by_human=0x50B730,
+            object_selection_admission=0x5F4520))
+
+
 if __name__ == '__main__':
-    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata,
+    import sys
+    control = '--control' in sys.argv
+    if control:
+        sys.argv.remove('--control')
+    finish_vectors(generate_control if control else generate,
+                   Path(__file__).with_suffix('.control.json' if control else '.json'),
+                   provenance=control_metadata if control else metadata,
                    source_paths={'oracle': Path(__file__)})

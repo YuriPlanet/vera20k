@@ -11,7 +11,7 @@ use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::docking::bunker_install::{BunkerRuntime, BunkerState, tick_bunker_install};
 use crate::sim::game_entity::BunkerLink;
-use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
+use crate::sim::movement::{DriveLocomotionRuntime, FacingClass, ShipLocomotionRuntime};
 use crate::util::fixed_math::SimFixed;
 use serde_json::{Value, json};
 use std::sync::OnceLock;
@@ -406,9 +406,10 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
         assert_raw_cells(&direct, case);
 
         // The actual building state machine chooses its selector, invokes
-        // Force, and explicitly sets applied speed. Diagonal approach fixtures
-        // supply the selected quadrant; the native capture starts AFTER that
-        // selection/GetCoords, so this is not facing-selection parity.
+        // Force, and explicitly sets applied speed. Supply Current16 for the
+        // requested selector: the native capture starts AFTER facing selection
+        // and GetCoords, so this comparison does not establish those producers.
+        // Their separate bounded caller corpus covers the full selection.
         let mut sim = fixture(case);
         let (x, y) = match selector {
             67 => (9, 11),
@@ -427,6 +428,14 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
             },
         );
         entity.bunker_link = BunkerLink::Approaching(2);
+        let current = match selector {
+            67 => 0x2000,
+            68 => 0x6000,
+            69 => 0xA000,
+            70 => 0xE000,
+            _ => unreachable!(),
+        };
+        entity.body_facing = FacingClass::new(current, 5);
         let before_owner = owner_state(entity, true);
         let mut building = GameEntity::test_default_of_category(
             2,

@@ -1453,3 +1453,81 @@ pub(crate) fn render_terrain_lighting_probe(
     };
     Gpu::new().render_sized(&[layer], [tile.width, tile.height])
 }
+
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn bunker_front_wall_interleaves_with_indexed_voxel_without_writing_z() {
+    use super::tactical_draw_plan::{RenderZPolicy, SpriteEncoding};
+    use crate::app::presentation::render::draw_plan_lowering::{
+        NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
+        lower_ground_object_instances,
+    };
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_slot_replacement.display.json",
+    ))
+    .unwrap();
+    let ids = [11, 20, 10]; // back wall, tank, front wall; deliberately not id order.
+    let ordered: Vec<_> = native["orders"][0]["order"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| ids[value.as_u64().unwrap() as usize])
+        .collect();
+    let order = NativeDisplayOrder::new(&ordered);
+    let gpu = Gpu::new();
+    // Synthetic texels and seed isolate the production GPU's read-only
+    // SHP/VXL compositing. These are not stock NATBNK/LTNK pixel goldens.
+    let back = Layer::solid(Shader::SpriteRead, RED, -12.0);
+    let tank = Layer::solid(Shader::Voxel, BLUE, -24.0);
+    let mut front = Layer::solid(Shader::SpriteRead, GREEN, -12.0);
+    for y in 0..SIDE / 2 {
+        for x in 0..SIDE {
+            front.hole(x, y);
+        }
+    }
+    let layers = [back, tank, front];
+    let planned: Vec<_> = [2usize, 0, 1]
+        .into_iter()
+        .map(|index| {
+            let encoding = if index == 1 {
+                SpriteEncoding::Voxel
+            } else {
+                SpriteEncoding::Plain
+            };
+            PlannedObjectInstance::object(
+                order.object_draw(ids[index], encoding).unwrap(),
+                vec![ObjectPieceInstance {
+                    target: if index == 1 {
+                        ObjectTexture::UnitAtlasPage(0)
+                    } else {
+                        ObjectTexture::ShpPage(index)
+                    },
+                    render_z: RenderZPolicy::ReadOnly,
+                    instance: layers[index].instance,
+                }],
+            )
+        })
+        .collect();
+    let lowered = lower_ground_object_instances(planned);
+    assert_eq!(lowered.owners, ordered);
+    let submitted: Vec<_> = lowered
+        .owners
+        .iter()
+        .map(|id| layers[ids.iter().position(|candidate| candidate == id).unwrap()].clone())
+        .collect();
+    let pixels = gpu.render(&submitted);
+    for y in 0..SIDE {
+        for x in 0..SIDE {
+            assert_eq!(
+                pixels[(y * SIDE + x) as usize],
+                if y < SIDE / 2 { BLUE } else { GREEN },
+                "wall must cover hull only where its source texel exists: ({x},{y})"
+            );
+        }
+    }
+    let wrong = gpu.render(&[layers[0].clone(), layers[2].clone(), layers[1].clone()]);
+    assert!(
+        wrong.iter().all(|pixel| *pixel == BLUE),
+        "negative control: submitting both walls before the tank reproduces the uncovered hull"
+    );
+}

@@ -199,21 +199,15 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         {
             return Some(kind);
         }
-        let best_is_armed = best_id.is_some_and(|id| {
-            sim.entities().get(id).is_some_and(|e| {
-                let type_str = sim.interner.resolve(e.type_ref());
-                state
-                    .rules()
-                    .and_then(|r| r.object(type_str))
-                    .is_some_and(|obj| crate::sim::combat::combat_weapon::is_armed(e, obj))
-            })
-        });
-        if best_is_armed {
-            // EnemyUnit is the standard attack-reticle cursor; reuse it for
-            // force-fire over allies/own/empty. (Exact mouse SHP frame for
-            // gamemd's distinct force-fire action is unverified — cosmetic-only
-            // follow-up; tracked in the design doc.)
-            return Some(CursorFeedbackKind::EnemyUnit);
+        let target = hover
+            .as_ref()
+            .map_or(combat::TargetKind::Cell(hover_rx, hover_ry), |hover| {
+                combat::TargetKind::Entity(hover.stable_id)
+            });
+        if let Some(feedback) = best_id.and_then(|id| {
+            force_fire_feedback(sim, id, &target, state.rules(), state.overlay_registry())
+        }) {
+            return feedback;
         }
     }
     if let Some(hover) = hover.as_ref() {
@@ -618,13 +612,30 @@ pub(super) fn capability_cursor_for_hover(
                     HoverTargetKind::FriendlyUnit | HoverTargetKind::FriendlyStructure
                 )
             {
-                let in_range = resolved_unit_in_range(
+                if let Some(rules) = rules {
+                    use super::context_order::AttackAction;
+                    match super::context_order::armed_attack_action(
+                        sim,
+                        rules,
+                        best_id,
+                        &combat::TargetKind::Entity(hover.stable_id),
+                        overlay_registry,
+                    ) {
+                        AttackAction::None => return CursorFeedbackKind::Default,
+                        AttackAction::NoMove => return CursorFeedbackKind::Invalid,
+                        AttackAction::Select => return CursorFeedbackKind::FriendlyUnit,
+                        AttackAction::Rally => return CursorFeedbackKind::Move,
+                        AttackAction::Attack => {}
+                    }
+                }
+                let in_range = super::context_order::resolved_unit_in_range(
                     sim,
                     best_id,
-                    hover.stable_id,
+                    &combat::TargetKind::Entity(hover.stable_id),
                     rules,
                     sim.resolved_terrain.as_ref(),
                     overlay_registry,
+                    Some(&combat::TargetKind::Entity(hover.stable_id)),
                 );
                 let kind = if in_range {
                     if hover.kind == HoverTargetKind::FriendlyUnit {
@@ -688,14 +699,31 @@ pub(super) fn capability_cursor_for_hover(
         HoverTargetKind::FriendlyUnit => CursorFeedbackKind::FriendlyUnit,
         HoverTargetKind::FriendlyStructure => CursorFeedbackKind::FriendlyStructure,
         HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure => {
+            if let (Some(rules), Some(id)) = (rules, best_id) {
+                use super::context_order::AttackAction;
+                match super::context_order::armed_attack_action(
+                    sim,
+                    rules,
+                    id,
+                    &combat::TargetKind::Entity(hover.stable_id),
+                    overlay_registry,
+                ) {
+                    AttackAction::None => return CursorFeedbackKind::Default,
+                    AttackAction::NoMove => return CursorFeedbackKind::Invalid,
+                    AttackAction::Select => return CursorFeedbackKind::FriendlyUnit,
+                    AttackAction::Rally => return CursorFeedbackKind::Move,
+                    AttackAction::Attack => {}
+                }
+            }
             let in_range = best_id.is_some_and(|id| {
-                resolved_unit_in_range(
+                super::context_order::resolved_unit_in_range(
                     sim,
                     id,
-                    hover.stable_id,
+                    &combat::TargetKind::Entity(hover.stable_id),
                     rules,
                     sim.resolved_terrain.as_ref(),
                     overlay_registry,
+                    Some(&combat::TargetKind::Entity(hover.stable_id)),
                 )
             });
             let kind = if in_range {
@@ -820,102 +848,43 @@ fn forced_bomb_feedback(
     })
 }
 
-/// Does the object that owns the cursor have a weapon that reaches the target?
-///
-/// gamemd shows the action of ONE resolved object, so the in-range split is a
-/// property of that object alone, not of any unit in the selection. Both weapon
-/// slots count, matching the all-slots weapon-range query the object resolver
-/// itself uses.
-///
-/// `primary`/`secondary` here are the native weapon-array slots 0 and 1
-/// (`TechnoTypeClass+0x898`/`+0x8B4`, filled by `Weapon1=`/`Weapon2=` for a
-/// `TurretCount>0` type — see `ObjectType::read_weapon_arrays`), not the raw
-/// `Primary=`/`Secondary=` INI keys. Reading the keys made this return `false`
-/// unconditionally for `[SREF]` and `[YAGGUN]`, showing the out-of-range attack
-/// cursor over every enemy at any distance.
-fn resolved_unit_in_range(
+/// Ctrl action feedback. Outer None retains an unarmed receiver's fallback;
+/// Some(None) is native Action0 and preserves the default arrow.
+fn force_fire_feedback(
     sim: &crate::sim::world::Simulation,
     actor_id: u64,
-    target_id: u64,
+    target: &combat::TargetKind,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-) -> bool {
-    let rules = match rules {
-        Some(r) => r,
-        None => return true,
-    };
-    let target_pos = match sim.entities().get(target_id) {
-        Some(t) => (
-            t.position.rx,
-            t.position.ry,
-            t.position.sub_x,
-            t.position.sub_y,
-        ),
-        None => return false,
-    };
-    let Some(entity) = sim.entities().get(actor_id) else {
-        return false;
-    };
-    let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
-        return false;
-    };
-    // Height predicates execute native map queries. Keep their shared fallback
-    // identity local to this input probe, across source/range and both slots.
-    let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
-    for slot in [obj.primary(), obj.secondary()] {
-        let weapon = match slot.and_then(|w| rules.weapon(w)) {
-            Some(w) => w,
-            None => continue,
-        };
-        if weapon.range <= crate::util::fixed_math::SIM_ZERO {
-            continue;
-        }
-        let in_range = if let Some(cells) = cells.as_ref() {
-            let entity_target = combat::TargetKind::Entity(target_id);
-            let Some(src) = combat::in_range::fire_source_coords_in_query(
-                entity,
-                &entity_target,
-                weapon,
-                sim.entities(),
-                cells,
-                (rules, &sim.interner),
-            ) else {
-                continue;
-            };
-            combat::in_range::compute_in_range_in_query(
-                entity,
-                src,
-                &entity_target,
-                weapon,
-                rules,
-                &sim.interner,
-                sim.entities(),
-                cells,
-                &combat::line_of_fire::LineOfFireInputs {
-                    overlay_grid: sim.overlay_grid.as_ref(),
-                    overlay_registry,
-                    alliances: Some(&sim.house_alliances),
+) -> Option<Option<CursorFeedbackKind>> {
+    use super::context_order::{AttackAction, force_fire_action, resolved_unit_in_range};
+    Some(
+        match force_fire_action(sim, rules?, actor_id, target, overlay_registry)? {
+            AttackAction::None => None,
+            AttackAction::NoMove => Some(CursorFeedbackKind::Invalid),
+            AttackAction::Rally => Some(CursorFeedbackKind::Move),
+            AttackAction::Select => Some(CursorFeedbackKind::FriendlyUnit),
+            AttackAction::Attack => Some(
+                if matches!(target, combat::TargetKind::Entity(_))
+                    && resolved_unit_in_range(
+                        sim,
+                        actor_id,
+                        target,
+                        rules,
+                        sim.resolved_terrain.as_ref(),
+                        overlay_registry,
+                        Some(target),
+                    )
+                {
+                    CursorFeedbackKind::EnemyUnit
+                } else {
+                    // Original Display4AB4EE: an empty Cell or an out-of-range
+                    // Object uses attack cursor row21; in-range Object uses row20.
+                    CursorFeedbackKind::EnemyOutOfRange
                 },
-            )
-        } else {
-            let dist_sq = combat::lepton_distance_sq_raw(
-                entity.position.rx,
-                entity.position.ry,
-                entity.position.sub_x,
-                entity.position.sub_y,
-                target_pos.0,
-                target_pos.1,
-                target_pos.2,
-                target_pos.3,
-            );
-            combat::is_within_range_leptons(dist_sq, weapon.range)
-        };
-        if in_range {
-            return true;
-        }
-    }
-    false
+            ),
+        },
+    )
 }
 
 /// What the object resolver measures its candidates' distance to.
@@ -1063,6 +1032,7 @@ pub(crate) fn select_best_for_action(
 /// Alias mappings live here: FriendlyUnit→Select, etc.
 pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorId> {
     match kind {
+        CursorFeedbackKind::Default => Some(CursorId::Default),
         CursorFeedbackKind::FriendlyUnit | CursorFeedbackKind::FriendlyStructure => {
             Some(CursorId::Select)
         }
@@ -1328,8 +1298,8 @@ pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionDistanceTarget, CellAction, capability_cursor_for_hover, select_best_for_action,
-        super_weapon_cursor_id, what_action_on_cell,
+        ActionDistanceTarget, CellAction, capability_cursor_for_hover, force_fire_feedback,
+        select_best_for_action, super_weapon_cursor_id, what_action_on_cell,
     };
     use crate::app::input::entity_pick::HoverTargetKindWithId;
     use crate::app::types::{CursorFeedbackKind, CursorId, HoverTargetKind};
@@ -1601,6 +1571,539 @@ mod tests {
             .spawn_object("MTNK", "Americans", 2, 2, 0, &rules)
             .expect("tank spawned");
         (sim, rules, tank)
+    }
+
+    // Native DetermineAction692610 -> Unit7404B0 / Techno700600, and
+    // Display4AAE90's ordinary dispatch: installed out-of-range Cell is
+    // action0/cursor0; ordinary mobile remains action5. This extraction calls
+    // the same production Ctrl feedback owner as current_cursor_feedback_kind.
+    #[test]
+    fn bunker_stationary_force_fire_out_of_range_uses_native_default_arrow() {
+        use crate::map::resolved_terrain::ResolvedTerrainGrid;
+        use crate::sim::combat::TargetKind;
+        use crate::sim::game_entity::BunkerLink;
+
+        let (mut sim, rules, tank) = sim_with_track_tank();
+        sim.session.game_mode_nonzero = true;
+        sim.session.current_house = Some(sim.entities().get(tank).unwrap().owner());
+        sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
+            32,
+            32,
+            (0..32)
+                .flat_map(|y| {
+                    (0..32).map(move |x| crate::map::resolved_terrain::test_flat_cell(x, y))
+                })
+                .collect(),
+        ));
+        sim.entities_mut().get_mut(tank).unwrap().bunker_link = BunkerLink::Installed(99);
+        assert_eq!(
+            force_fire_feedback(&sim, tank, &TargetKind::Cell(20, 2), Some(&rules), None),
+            Some(None),
+            "native Action0 must preserve the default arrow, not attack or NoMove"
+        );
+    }
+
+    fn stationary_attack_fixture() -> (Simulation, RuleSet, u64) {
+        stationary_attack_fixture_with_overrides("")
+    }
+
+    fn stationary_attack_fixture_with_overrides(extra: &str) -> (Simulation, RuleSet, u64) {
+        // Keep overrides in the same physical body. Appending a second
+        // [TANK] is not a rules layer and does not replace its first body.
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            &(r#"
+[InfantryTypes]
+0=GI
+[VehicleTypes]
+0=TANK
+[BuildingTypes]
+0=TOWER
+1=HOUSE
+[TANK]
+Strength=300
+Primary=GUN
+Secondary=LONG
+Speed=6
+SpeedType=Track
+MovementZone=Normal
+Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}
+[TOWER]
+Strength=500
+Primary=GUN
+Foundation=1x1
+[HOUSE]
+Strength=500
+CanBeOccupied=yes
+CanOccupyFire=yes
+MaxNumberOccupants=10
+Foundation=2x2
+[GI]
+Strength=100
+Speed=4
+SpeedType=Foot
+MovementZone=Normal
+Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}
+Primary=GUN
+OccupyWeapon=GUN
+Occupier=yes
+[GUN]
+Damage=60
+Range=5
+Projectile=SHOT
+Warhead=AP
+[LONG]
+Damage=60
+Range=30
+Projectile=SHOT
+Warhead=AP
+[SHOT]
+AG=yes
+AA=no
+Inviso=yes
+SubjectToElevation=no
+[Warheads]
+0=AP
+[AP]
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+"#
+            .replacen("[TANK]\n", &format!("[TANK]\n{extra}"), 1)),
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+        let tank = sim
+            .spawn_object("TANK", "Americans", 2, 2, 0, &rules)
+            .unwrap();
+        sim.session.game_mode_nonzero = true;
+        sim.session.current_house = Some(sim.entities().get(tank).unwrap().owner());
+        // Later test objects use ordinary constructor placement. Flat pixels
+        // alone are insufficient: test_flat_cell has no SpeedType costs and
+        // Foot's native admission therefore rejects those later spawns.
+        sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
+            32,
+            32,
+            |rx, ry| crate::map::resolved_terrain::ResolvedTerrainCell {
+                speed_costs: crate::map::resolved_terrain::TEST_OPEN_SPEED_COSTS,
+                base_speed_costs: crate::map::resolved_terrain::TEST_OPEN_SPEED_COSTS,
+                ..crate::map::resolved_terrain::test_clear_cell(rx, ry)
+            },
+        ));
+        (sim, rules, tank)
+    }
+
+    #[test]
+    fn bunker_attack_actions_follow_native_entry_and_display_corpus() {
+        use crate::app::input::context_order::{
+            AttackAction, armed_attack_action, force_fire_action,
+        };
+        use crate::sim::combat::TargetKind;
+        use crate::sim::game_entity::BunkerLink;
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/bunker_attack_action.json",
+        ))
+        .unwrap();
+        for row in corpus["rows"].as_array().unwrap() {
+            let case = &row["input"];
+            let (mut sim, rules, actor) = stationary_attack_fixture();
+            if case["installed"].as_bool().unwrap() {
+                sim.entities_mut().get_mut(actor).unwrap().bunker_link = BunkerLink::Installed(99);
+            }
+            // Active rearm never belongs to WhatAction's control/range gate.
+            sim.entities_mut().get_mut(actor).unwrap().rearm_timer =
+                crate::sim::timer::CdTimer::started(0, 999);
+            let x = if case["in_range"].as_bool().unwrap() {
+                4
+            } else {
+                20
+            };
+            let target = if case["route"] == "cell" {
+                TargetKind::Cell(x, 2)
+            } else {
+                let owner = if case["relation"] == "own" {
+                    "Americans"
+                } else {
+                    "Soviets"
+                };
+                TargetKind::Entity(sim.spawn_object("TANK", owner, x, 2, 0, &rules).unwrap())
+            };
+            let expected = match row["action"].as_u64().unwrap() {
+                0 => AttackAction::None,
+                5 => AttackAction::Attack,
+                7 => AttackAction::Select,
+                other => panic!("unsupported original action {other}"),
+            };
+            let action = if case["ctrl"] == false {
+                armed_attack_action(&sim, &rules, actor, &target, None)
+            } else {
+                force_fire_action(&sim, &rules, actor, &target, None).unwrap()
+            };
+            assert_eq!(action, expected, "native input {case}");
+            if case["ctrl"] != false {
+                let feedback =
+                    force_fire_feedback(&sim, actor, &target, Some(&rules), None).unwrap();
+                let cursor = feedback
+                    .and_then(super::cursor_id_for_feedback)
+                    .unwrap_or(CursorId::Default);
+                let expected_cursor = match row["cursor"]["output"]["cursor_row"].as_u64().unwrap()
+                {
+                    0 => CursorId::Default,
+                    17 => CursorId::Select,
+                    20 => CursorId::Attack,
+                    21 => CursorId::AttackOutOfRange,
+                    other => panic!("unsupported native cursor {other}"),
+                };
+                assert_eq!(cursor, expected_cursor, "native input {case}");
+            }
+        }
+    }
+
+    #[test]
+    fn bunker_fixed_and_occupied_buildings_share_selected_weapon_range_admission() {
+        use crate::app::input::context_order::{AttackAction, force_fire_action};
+        use crate::sim::combat::TargetKind;
+        let (mut sim, rules, tank) = stationary_attack_fixture();
+        let tower = sim
+            .spawn_object("TOWER", "Americans", 2, 6, 0, &rules)
+            .unwrap();
+        let house = sim
+            .spawn_object("HOUSE", "Americans", 2, 10, 0, &rules)
+            .unwrap();
+        let gi = sim
+            .spawn_object("GI", "Americans", 1, 10, 0, &rules)
+            .unwrap();
+        assert!(
+            sim.entities_mut()
+                .get_mut(house)
+                .unwrap()
+                .passenger_role
+                .cargo_mut()
+                .unwrap()
+                .board(gi, 1)
+        );
+        assert!(rules.object("HOUSE").unwrap().primary().is_none());
+        for (actor, y) in [(tower, 6), (house, 10)] {
+            assert_eq!(
+                force_fire_action(&sim, &rules, actor, &TargetKind::Cell(4, y), None),
+                Some(AttackAction::Attack)
+            );
+            assert_eq!(
+                force_fire_action(&sim, &rules, actor, &TargetKind::Cell(20, y), None),
+                Some(AttackAction::None)
+            );
+        }
+        assert_eq!(
+            force_fire_action(&sim, &rules, tank, &TargetKind::Cell(20, 2), None),
+            Some(AttackAction::Attack),
+            "ordinary mobile may close distance"
+        );
+    }
+
+    #[test]
+    fn bunker_attack_unit_postprocessing_matches_native_caller_controls() {
+        use crate::app::input::context_order::{AttackAction, force_fire_action};
+        use crate::sim::combat::TargetKind;
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/bunker_attack_action.json",
+        ))
+        .unwrap();
+        let rows = corpus["postprocess_rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 24);
+        for row in rows {
+            let case = &row["input"];
+            // Native wrapper fixture supplies slot0. Weapon selection itself
+            // has its own corpus; this makes that seam explicit in Rust.
+            let extra = format!(
+                "Harvester={}\nIsSimpleDeployer={}\nDeployFire={}\nDeployFireWeapon=0\n",
+                case["harvester"].as_bool().unwrap_or(false),
+                case["simple_deployer"].as_bool().unwrap_or(false),
+                case["deploy_fire"].as_bool().unwrap_or(false)
+            );
+            let (mut sim, rules, actor) = stationary_attack_fixture_with_overrides(&extra);
+            let kind = rules.object("TANK").unwrap();
+            assert_eq!(kind.harvester, case["harvester"].as_bool().unwrap_or(false));
+            assert_eq!(
+                kind.is_simple_deployer,
+                case["simple_deployer"].as_bool().unwrap_or(false)
+            );
+            assert_eq!(
+                kind.deploy_fire,
+                case["deploy_fire"].as_bool().unwrap_or(false)
+            );
+            sim.entities_mut()
+                .get_mut(actor)
+                .unwrap()
+                .set_unit_simple_deploy_for_test(
+                    case["deployed"].as_bool().unwrap_or(false),
+                    false,
+                    false,
+                );
+            assert_eq!(
+                sim.entities().get(actor).unwrap().is_fully_deployed(),
+                case["deployed"].as_bool().unwrap_or(false)
+            );
+            let x = if case["in_range"].as_bool().unwrap() {
+                4
+            } else {
+                20
+            };
+            if let Some(land_type) = case["land_type"].as_u64() {
+                // Native Cell+EC is retained as 0 (clear) or 5 (ore).
+                sim.resolved_terrain
+                    .as_mut()
+                    .unwrap()
+                    .cell_mut(x, 2)
+                    .unwrap()
+                    .yr_cell_land_type = u8::try_from(land_type).unwrap();
+            }
+            let target = if case["route"] == "cell" {
+                TargetKind::Cell(x, 2)
+            } else {
+                TargetKind::Entity(
+                    sim.spawn_object("TANK", "Soviets", x, 2, 0, &rules)
+                        .unwrap(),
+                )
+            };
+            let expected = match row["action"].as_u64().unwrap() {
+                2 => AttackAction::NoMove,
+                5 => AttackAction::Attack,
+                other => panic!("native action {other}"),
+            };
+            assert_eq!(
+                force_fire_action(&sim, &rules, actor, &target, None),
+                Some(expected),
+                "{case}"
+            );
+            let feedback = force_fire_feedback(&sim, actor, &target, Some(&rules), None).unwrap();
+            let cursor = feedback
+                .and_then(super::cursor_id_for_feedback)
+                .unwrap_or(CursorId::Default);
+            let expected_cursor = match row["cursor"]["output"]["cursor_row"].as_u64().unwrap() {
+                19 => super::cursor_id_for_feedback(CursorFeedbackKind::Invalid).unwrap(),
+                20 => CursorId::Attack,
+                21 => CursorId::AttackOutOfRange,
+                other => panic!("native cursor {other}"),
+            };
+            assert_eq!(cursor, expected_cursor, "{case}");
+        }
+    }
+
+    #[test]
+    fn bunker_selected_range_does_not_require_a_resolved_warhead() {
+        use crate::map::resolved_terrain::ResolvedTerrainGrid;
+        use crate::sim::combat::{TargetKind, line_of_fire::LineOfFireInputs};
+        let (mut sim, rules, actor) = sim_with_track_tank();
+        assert!(rules.weapon("105mm").unwrap().warhead.is_none());
+        sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
+            32,
+            32,
+            (0..32)
+                .flat_map(|y| {
+                    (0..32).map(move |x| crate::map::resolved_terrain::test_flat_cell(x, y))
+                })
+                .collect(),
+        ));
+        for (target, expected) in [
+            (TargetKind::Cell(4, 2), true),
+            (TargetKind::Cell(20, 2), false),
+        ] {
+            assert_eq!(
+                crate::sim::combat::can_fire_at_target(
+                    sim.entities(),
+                    &rules,
+                    &sim.interner,
+                    actor,
+                    &target,
+                    sim.resolved_terrain.as_ref().unwrap(),
+                    Some(&sim.house_alliances),
+                    &LineOfFireInputs {
+                        overlay_grid: None,
+                        overlay_registry: None,
+                        alliances: Some(&sim.house_alliances)
+                    }
+                ),
+                expected
+            );
+            assert_eq!(
+                crate::app::input::context_order::resolved_unit_in_range(
+                    &sim,
+                    actor,
+                    &target,
+                    Some(&rules),
+                    sim.resolved_terrain.as_ref(),
+                    None,
+                    Some(&target)
+                ),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn bunker_occupied_building_force_commands_reach_combat() {
+        use crate::app::input::context_order::{AttackAction, force_fire_action};
+        use crate::sim::combat::TargetKind;
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::passenger::PassengerRole;
+        for cell_route in [false, true] {
+            let (mut sim, rules, seed_tank) = stationary_attack_fixture();
+            sim.input_delay_ticks = 0;
+            // Techno6FA30C..6FA46C drops an allied target unless its house
+            // is human (House50B730). current_house alone is UI identity;
+            // register the real house before spawning its counted objects.
+            let owner = sim.entities().get(seed_tank).unwrap().owner();
+            sim.houses.insert(
+                owner,
+                crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
+            );
+            assert!(sim.owner_is_human(owner));
+            let house = sim
+                .spawn_object("HOUSE", "Americans", 2, 10, 0, &rules)
+                .unwrap();
+            // Prepare an already occupied building: this is a command-to-fire
+            // regression, not a native boarding-lifecycle golden. The occupant
+            // must not keep an independent map or Logic membership.
+            let gi = sim
+                .spawn_object_limbo_at_height("GI", "Americans", 2, 10, 0, 0, &rules)
+                .unwrap();
+            let target_id = sim
+                .spawn_object("TANK", "Americans", 4, 10, 0, &rules)
+                .unwrap();
+            assert!(
+                sim.entities_mut()
+                    .get_mut(house)
+                    .unwrap()
+                    .passenger_role
+                    .cargo_mut()
+                    .unwrap()
+                    .board(gi, 1)
+            );
+            sim.entities_mut().get_mut(gi).unwrap().passenger_role = PassengerRole::Inside {
+                transport_id: house,
+                open_topped: false,
+            };
+            let occupant = sim.entities().get(gi).unwrap();
+            assert!(occupant.lifecycle.in_limbo);
+            assert!(!occupant.lifecycle.cell_marked);
+            assert!(!occupant.in_logic_vector);
+            assert!(!sim.live_object_order_snapshot().contains(&gi));
+            assert!(matches!(occupant.passenger_role, PassengerRole::Inside {
+                transport_id, open_topped: false
+            } if transport_id == house));
+            let target = if cell_route {
+                TargetKind::Cell(4, 10)
+            } else {
+                TargetKind::Entity(target_id)
+            };
+            assert_eq!(
+                force_fire_action(&sim, &rules, house, &target, None),
+                Some(AttackAction::Attack)
+            );
+            let command = if cell_route {
+                Command::ForceAttackCell {
+                    attacker_id: house,
+                    target_rx: 4,
+                    target_ry: 10,
+                }
+            } else {
+                Command::ForceAttack {
+                    attacker_id: house,
+                    target_id,
+                }
+            };
+            assert_eq!(sim.entities().get(house).unwrap().owner(), owner);
+            sim.queue_command(CommandEnvelope::new(owner, sim.session.tick + 1, command));
+            let grid = crate::sim::pathfinding::PathGrid::test_all_passable(32, 32);
+            let state = |sim: &Simulation| {
+                let actor = sim.entities().get(house).unwrap();
+                format!(
+                    "frame={} mission={:?} target={:?} leaf={:?} body={:?}/{:?} \
+                     cargo={:?} rearm={:?} passive_timer={:?} passive={} \
+                     frozen={} alive={} limbo={} logic={} health={} operational={:?}",
+                    sim.session.binary_frame,
+                    actor.mission,
+                    actor.attack_target,
+                    actor.mission_leaf,
+                    actor.building_body_state(),
+                    actor.queued_building_body_state(),
+                    actor.passenger_role.cargo(),
+                    actor.rearm_timer,
+                    actor.passive_scan_timer,
+                    actor.passively_acquired_target,
+                    actor.ai_frozen(),
+                    actor.lifecycle.object_alive,
+                    actor.lifecycle.in_limbo,
+                    actor.in_logic_vector,
+                    actor.health.current,
+                    sim.building_operational_state(house, &rules),
+                )
+            };
+            let mut trace = vec![state(&sim)];
+            let mut fired = false;
+            for frame in 0..90 {
+                let pending = sim.take_due_commands();
+                sim.advance_tick(&pending, Some(&rules), Some(&grid), None, 100);
+                if frame < 8 || frame == 89 {
+                    trace.push(format!("commands={} {}", pending.len(), state(&sim)));
+                }
+                if sim
+                    .fire_events
+                    .iter()
+                    .any(|event| event.attacker_id == house && event.occupied_building)
+                {
+                    fired = true;
+                    break;
+                }
+            }
+            assert!(
+                fired,
+                "occupied building command must reach its occupant weapon: cell={cell_route}; \
+                 final GetFireError={:?}; occupant={:?}; target={:?}; trace={trace:#?}",
+                // Ask the live legality owner only after failure, so this
+                // diagnostic cannot change the exercised frame sequence.
+                sim.selected_weapon_fire_error(&rules, house, target, None),
+                sim.entities().get(gi),
+                sim.entities().get(target_id),
+            );
+        }
+    }
+
+    #[test]
+    fn bunker_force_attack_input_queries_preserve_dummy_for_cell_and_entity() {
+        use crate::app::input::context_order::force_fire_action;
+        use crate::map::resolved_terrain::ResolvedTerrainGrid;
+        use crate::sim::combat::TargetKind;
+        use crate::sim::game_entity::BunkerLink;
+        let (mut sim, rules, actor) = stationary_attack_fixture();
+        let target = sim
+            .spawn_object("TANK", "Soviets", 4, 2, 0, &rules)
+            .unwrap();
+        sim.entities_mut().get_mut(actor).unwrap().bunker_link = BunkerLink::Installed(99);
+        for id in [actor, target] {
+            let entity = sim.entities_mut().get_mut(id).unwrap();
+            entity.lifecycle.cell_marked = true;
+            entity.position.exact_z_leptons = Some(900);
+        }
+        let mut retained = crate::map::resolved_terrain::test_flat_cell(0, 0);
+        retained.bridge_facts.native_anchor =
+            Some(crate::map::cell_index::NativeCellIdentity::Dummy);
+        sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
+            1,
+            1,
+            vec![retained],
+        ));
+        let dummy = sim.effective_shared_cell_dummy();
+        dummy.stamp_coord(111, -222);
+        dummy.set_level_slope(2, 1);
+        let original = dummy.snapshot();
+        let hash = sim.state_hash();
+        for target in [TargetKind::Cell(20, 2), TargetKind::Entity(target)] {
+            for _ in 0..3 {
+                let _ = force_fire_action(&sim, &rules, actor, &target, None);
+                let _ = force_fire_feedback(&sim, actor, &target, Some(&rules), None);
+                assert_eq!(dummy.snapshot(), original);
+                assert_eq!(sim.state_hash(), hash);
+            }
+        }
     }
 
     #[test]
@@ -2184,6 +2687,10 @@ mod tests {
             let id = sim.interner.intern(house);
             sim.session.house_order.push(id);
         }
+        // This is a local player's selected actor. Techno700C40's virtual
+        // +A0 reaches House50B6F0; a house_order entry alone is not LocalPlayer.
+        sim.session.game_mode_nonzero = true;
+        sim.session.current_house = sim.interner.get("Americans");
         let mut spawn = |kind: &str, owner: &str, rx: u16| {
             sim.spawn_object(kind, owner, rx, 5, 0, &rules)
                 .expect("spawned")
@@ -2194,6 +2701,9 @@ mod tests {
         let enemy_tank = spawn("HTNK", "Soviets", 11);
         let enemy_ivan = spawn("IVAN", "Soviets", 20);
         let far_tank = spawn("HTNK", "Soviets", 22);
+
+        assert!(sim.techno_player_controllable(ivan, &rules));
+        assert!(sim.techno_player_controllable(engineer, &rules));
 
         use HoverTargetKind::{EnemyUnit, FriendlyUnit};
         assert_eq!(

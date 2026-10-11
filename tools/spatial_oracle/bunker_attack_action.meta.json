@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original action dispatch; range verdicts and environmental leaves supplied.\n\nNo game code is patched. Full DetermineAction -> Unit/Foot/Techno WhatAction\nentries execute; the final normal Display switch uses the existing oracle.\nThis establishes action control flow, not weapon/range arithmetic or UI capture.\n",
+  "assumptions": [
+    "One selected live normal Unit with an original vtable; supplied complete type/house pointers, positive weapon, Selectable/LegalTarget=true, idle death frame=-1, no transport capability. Normal rows have no deploy capability; postprocess rows supply the retained UnitType Harvester/IsSimpleDeployer/DeployFire and Unit+6E0 deployed fields. This is a bounded actor action fixture, not original construction/load or retail data validation.",
+    "Installed controls supply nonnull Techno+2E4. Native IsControllable reads it; install lifecycle and weapon range arithmetic belong to locomotor_force_track.bunker_install and walk_cell_range_bunker corpora.",
+    "Map lookup supplies one clear revealed playable flat Cell. Ctrl state supplied via original keyboard-call seam; four normal enemy Object controls have Ctrl=false.",
+    "Eight Harvester controls vary Harvester flag, clear/ore LandType0/5 and range verdict under Ctrl. Sixteen SimpleDeployer controls vary Cell/Object route, deployed byte, DeployFire and range. Both wrappers select weapon with NULL in the deployed tail; trace records this input. No native deployment lifecycle, INI or weapon-selection arithmetic is claimed.",
+    "The original display normal switch starts at4AB449 after its prologue; reads original selected Unit, optional Object target and cursor table bytes. Setter/frame/SHP output is excluded."
+  ],
+  "substitutions": [
+    "SelectBest5353D0 returns the only selected actor.",
+    "Keyboard54F5C0 answers the supplied Ctrl state; map lookups5657A0/565730 return supplied Cell; height578080=0, shroud586360/5865E0=false, playable578460=true and terrain-object74CD60=null.",
+    "SelectWeapon746CD0 supplies index0; damage6F3970 supplies60; CanFireAt6F77B0 and coordinate wrapper6F7970 supply the case range verdict. This establishes caller control flow, not selection or range arithmetic.",
+    "GetFireError virtual3C0 supplies OK; Display CanFireAtTarget6F7780 supplies the same range verdict. No reload/ROF/legality timing claim.",
+    "Display receiver virtual48 terminates at an observed sink; complete immutable text SHA checked before/after both runs."
+  ],
+  "entry_points": {
+    "determine_action": "0x00692610",
+    "unit_cell": "0x007404B0",
+    "foot_cell": "0x004DDDE0",
+    "techno_cell": "0x00700600",
+    "unit_object": "0x0073FD50",
+    "foot_object": "0x004DDED0",
+    "techno_object": "0x006FFEC0",
+    "is_controllable": "0x00700C40",
+    "display_normal_dispatch": "0x004AB449",
+    "cursor_table": "0x0082D028"
+  },
+  "source_normalized_lf_sha256": {
+    "harness": "c45911d06373d6a8bd4df0bf28791f052a849c7e8ad1ec5d8397f8ee526008dd",
+    "native_oracle": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb"
+  },
+  "payload_sha256": "96de24c9a796b74abb1e808876fb3641c6b129f1690b1b517937c500670547ac"
+}

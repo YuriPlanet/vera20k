@@ -4,7 +4,7 @@
 //!
 //! Replaces the 2D `lepton_distance_sq_raw` + `is_within_range_leptons` pair
 //! at the four targeting/cursor sites. Implements 3D distance, IsLowFlying
-//! ground-snap, AirRange bonus, the open-topped passenger's bonus, the
+//! ground-snap, AirRange bonus, bunker and open-topped range bonuses, the
 //! elevation bonus for a shot fired downhill (`0x006F6F60`, `0x006F70E0`), the
 //! arcing arm's 2-D distance, foundation bonus, the InRange bridge gate
 //! (0x006F75FB), the verified boundary semantics (<= max inclusive, < min
@@ -25,11 +25,10 @@
 //! `0x0048AB90`, `Ballistic_Can_Reach` `0x0048ABC0`, owned by
 //! `util::native_ballistics`) and the bridge ceiling (`0x006F74D7`).
 //!
-//! An occupied building's range is its reach instead of its weapon's
-//! (`IsOccupied`, `0x006F727E`). Still missing from the range value: the
-//! bunker arm (`0x006F72A2`). The arcing arm's launch speed comes from that
-//! range, so a bunkered cannon tank, short of its `BunkerWeaponRangeBonus=`
-//! (512 leptons in retail), is also refused uphill shots native allows.
+//! An occupied building's range replaces its weapon's range (`IsOccupied`,
+//! `0x006F727E`); a bunkered non-building then adds BunkerWeaponRangeBonus
+//! (`0x006F72A2`), before the open-topped stage and both distance arms. The
+//! resulting range also determines the arcing arm's launch speed.
 //!
 //! Depends on: rules (ObjectType, Weapon, ProjectileType, ElevationModel), map
 //! (terrain height + bridge), sim/combat/line_of_fire, sim/map/bridge_topology
@@ -84,8 +83,8 @@ fn cells_fixed_to_leptons(cells: SimFixed) -> i64 {
 /// caller adds the open-topped passenger bonus here for both abstract and
 /// retained Cell targets, and then the elevation bonus.
 ///
-/// The garrison arm that replaces it is [`occupied_range_leptons`]; the bunker
-/// arm (`0x006F72A2`) is not ported.
+/// The caller applies [`occupied_range_leptons`], then the bunker and
+/// open-topped stages, before either elevation arm.
 fn initial_range_leptons(
     attacker: &GameEntity,
     target: &TargetKind,
@@ -421,9 +420,25 @@ fn compute_range_target(
         // CellClass+54 is the false Abstract predicate; it has no map query.
         RangeTarget::Cell(_) => weapon_range_lep,
     };
-    let initial_range_lep = occupied_range_leptons(attacker, rules, interner)
-        .unwrap_or(initial_range_lep)
-        + open_topped_range_bonus_leptons(attacker, rules);
+    let mut initial_range_lep =
+        occupied_range_leptons(attacker, rules, interner).unwrap_or(initial_range_lep);
+    // Active-YR InRange6F72A2..6F72C8: +2E4 on a non-Building adds
+    // Rules+F54 cells before open-topped, MinimumRange and the arcing split.
+    // Both SHL and ADD operate on signed dword bits, including overflow.
+    // Steam executable controls: tools/spatial_oracle/walk_cell_range_bunker.json.
+    if attacker.category != EntityCategory::Structure
+        && attacker.bunker_link.installed_in().is_some()
+    {
+        initial_range_lep = i64::from(
+            (initial_range_lep as i32).wrapping_add(
+                rules
+                    .garrison_rules
+                    .bunker_weapon_range_bonus
+                    .wrapping_shl(8),
+            ),
+        );
+    }
+    let initial_range_lep = initial_range_lep + open_topped_range_bonus_leptons(attacker, rules);
 
     let projectile = weapon
         .projectile
@@ -1016,6 +1031,19 @@ mod tests {
             "tools/spatial_oracle/walk_cell_range.json",
         ))
         .unwrap();
+        assert_original_range_rows(&rows);
+    }
+
+    #[test]
+    fn bunker_range_matches_original_direct_arcing_and_class_controls() {
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/walk_cell_range_bunker.json",
+        ))
+        .unwrap();
+        assert_original_range_rows(&native["rows"]);
+    }
+
+    fn assert_original_range_rows(rows: &serde_json::Value) {
         // The projectile's Arcing=, SubjectToElevation= and Floater=
         // combinations, one bit each.
         let projectile_ini = |bits: usize| {
@@ -1059,7 +1087,19 @@ mod tests {
                     &IniFile::from_str(&format!("[ATKR]\nFoundation={}\n", foundation.name)),
                 ).unwrap()
             });
-            let rules = building_rules.as_mut().unwrap_or(&mut variants[bits]);
+            let mut mobile_rules = input.get("air_range_bonus").map(|bonus| {
+                rules_with_weapon(
+                    &projectile_ini(bits),
+                    &format!("AirRangeBonus={}\n", bonus.as_i64().unwrap() / 256),
+                    "",
+                )
+            });
+            let rules = building_rules
+                .as_mut()
+                .or(mobile_rules.as_mut())
+                .unwrap_or(&mut variants[bits]);
+            rules.garrison_rules.bunker_weapon_range_bonus =
+                input["bunker_bonus"].as_i64().unwrap_or(0) as i32;
             rules.general.gravity = input["gravity"].as_i64().unwrap_or(0) as i32;
             rules.garrison_rules.occupy_weapon_range =
                 input["occupy_range"].as_i64().unwrap_or(5) as i32;
@@ -1120,9 +1160,14 @@ mod tests {
                 }
                 actor.passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
                 EntityCategory::Structure
+            } else if input["unit"] == true {
+                EntityCategory::Unit
             } else {
                 EntityCategory::Infantry
             };
+            if input["bunkered"] == true {
+                actor.bunker_link = crate::sim::game_entity::BunkerLink::Installed(3);
+            }
             actor.position.sub_x = SimFixed::from_num(x % 256);
             actor.position.sub_y = SimFixed::from_num(y % 256);
             actor.position.exact_z_leptons = Some(z);

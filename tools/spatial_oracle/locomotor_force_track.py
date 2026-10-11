@@ -6,14 +6,21 @@ Apply_Track_Occupation_Mode, transform and Unit raw-mark leaves. Separate rows
 explicitly supply post-crate return/state at a stopped continuation boundary.
 Observation hooks never change machine state. Bunker rows begin at its already-
 selected call frame; Process rows stop before the owner current-speed getter.
+
+--bunker-install additionally executes the original installation's coordinate,
+facing and selector producers before its Force_Track call. This is a bounded
+two-state continuation, not full bunker admission or Drive Process execution.
 """
 from pathlib import Path
+import hashlib
 import struct
+import sys
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (
     UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX,
-    UC_X86_REG_EDI, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESP, UC_X86_REG_FPCW,
+    UC_X86_REG_EDI, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESI, UC_X86_REG_ESP,
+    UC_X86_REG_FPCW,
 )
 from tools.native_oracle import (
     RET_MAGIC, SCRATCH, STACK_BASE, STACK_SIZE, finish_vectors, load_image,
@@ -256,6 +263,223 @@ class OriginalForceTrack:
                                 next_call=f'{getter:08x}'))
 
 
+class OriginalBunkerInstall(OriginalForceTrack):
+    """Continue states 1 and 2 with real coordinate/facing/locomotor owners.
+
+    The caller already found its Unit and cleared the footprint. An explicit
+    global-frame advance lets the original Facing timer finish between states;
+    neither a desired facing nor a Force_Track destination is computed in Python.
+    """
+
+    BUILDING, TYPE, ARGUMENT = SCRATCH + 0x5000, SCRATCH + 0x3000, SCRATCH + 0x7000
+    FRAME, INITIAL_FRAME = 0xA8ED84, 100
+
+    def __init__(self, row):
+        super().__init__(row)
+        u = self.uc
+        self.install_trace = []
+        self.phase = 'setup'
+        self.original_text = bytes(u.mem_read(0x401000, 4063232))
+        u.mem_write(self.BUILDING, dwords(0x7E3EBC))
+        u.mem_write(self.BUILDING + 0x520, dwords(self.TYPE))
+        u.mem_write(self.BUILDING + 0x9C, dwords(*row['building_location']))
+        u.mem_write(self.TYPE, dwords(0x7E4570))
+        u.mem_write(self.TYPE + 0xEF0, dwords(row['foundation_index']))
+        u.mem_write(FOOT + 0x9C, dwords(*row['unit_location']))
+        u.mem_write(self.FRAME, dwords(self.INITIAL_FRAME))
+        # Actual Facing constructor, ROT setter and snap. Rates and starting
+        # facing are declared inputs; duration and completion are native outputs.
+        self.invoke(0x4C91C0, FOOT + 0x388)
+        self.invoke(0x4C9680, FOOT + 0x388, (row['rot'],))
+        u.mem_write(self.ARGUMENT, dwords(row['initial_facing']))
+        self.invoke(0x4C9300, FOOT + 0x388, (self.ARGUMENT,))
+        self.writes.clear()
+        self.before_owner = bytes(u.mem_read(FOOT, 0x800))
+        self.before = self.state()
+        u.hook_add(UC_HOOK_CODE, self.observe_install)
+
+    def invoke(self, address, receiver, args=()):
+        u = self.uc
+        u.mem_write(SP, dwords(RET_MAGIC, *args))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ECX, receiver)
+        run_checked(u, address, RET_MAGIC, count=100000)
+        assert u.reg_read(UC_X86_REG_ESP) == SP + 4 + len(args) * 4
+        return u.reg_read(UC_X86_REG_EAX)
+
+    def observe_install(self, u, address, _size, _data):
+        if address in (0x447AC0, 0x45EC90, 0x45ECA0, 0x5F65A0,
+                       0x4CAE30, 0x7C5F00, 0x4C9220, 0x4C9480, 0x4C93D0):
+            self.install_trace.append(dict(phase=self.phase, entry=f'{address:08X}'))
+        if address == 0x4590EA:
+            self.install_trace.append(dict(phase=self.phase, stage='set_desired',
+                facing=self.unsigned(self.unsigned(u.reg_read(UC_X86_REG_ESP))) & 0xFFFF))
+        if address == 0x459170:
+            self.install_trace.append(dict(phase=self.phase, stage='building_center_return',
+                coordinate=self.ints(u.reg_read(UC_X86_REG_EAX), 3)))
+        if address == 0x459124:
+            self.install_trace.append(dict(phase=self.phase, stage='current_facing_return',
+                facing=u.reg_read(UC_X86_REG_EAX) & 0xFFFF))
+        if address == 0x4591AF:
+            sp = u.reg_read(UC_X86_REG_ESP)
+            self.install_trace.append(dict(phase=self.phase, stage='force_track_arguments',
+                interface=self.unsigned(sp), selector=self.ints(sp + 4)[0],
+                coordinate=self.ints(sp + 8, 3)))
+
+    def run_block(self, begin, end, required):
+        u = self.uc
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_EBP, FOOT)
+        u.reg_write(UC_X86_REG_ESI, self.BUILDING)
+        run_checked(u, begin, end, count=100000, required_addresses=required)
+        assert u.reg_read(UC_X86_REG_ESP) == SP
+
+    def finish_install(self, row):
+        u = self.uc
+        self.phase = 'choose_desired'
+        self.run_block(0x459069, 0x4590F9,
+                       (0x5F65A0, 0x447AC0, 0x45EC90, 0x45ECA0,
+                        0x4CAE30, 0x7C5F00, 0x4C9220))
+        desired = self.unsigned(FOOT + 0x388) & 0xFFFF
+        duration = self.ints(FOOT + 0x398)[0]
+        start = self.ints(FOOT + 0x390)[0]
+        state_after_facing = self.ints(self.BUILDING + 0x718)[0]
+        if duration > 0:
+            self.phase = 'waiting_for_turn'
+            self.run_block(0x459101, 0x459374, (0x4C9480,))
+            assert self.state() == self.before
+        # Only clock progression is supplied. Current and IsRotating execute
+        # against the retained FacingClass; no caller-produced fields change.
+        completed_frame = max(self.INITIAL_FRAME, start + duration)
+        u.mem_write(self.FRAME, dwords(completed_frame))
+        self.phase = 'install_force_track'
+        self.run_block(0x459101, 0x4591CE,
+                       (0x4C9480, 0x4C93D0, 0x447AC0, 0x45EC90, 0x45ECA0,
+                        0x4591AF, FORCE, 0x4591BE, SPEED_SET))
+        current = next(event['facing'] for event in self.install_trace
+                       if event.get('stage') == 'current_facing_return')
+        center = next(event['coordinate'] for event in self.install_trace
+                      if event.get('stage') == 'building_center_return')
+        force = next(event for event in self.install_trace
+                     if event.get('stage') == 'force_track_arguments')
+        assert bytes(u.mem_read(0x401000, 4063232)) == self.original_text
+        assert current == desired
+        return dict(input=row, output=dict(
+            desired_facing=desired, current_facing=current, turn_start=start,
+            turn_duration=duration, completed_frame=completed_frame,
+            waited_for_turn=duration > 0, state_after_facing=state_after_facing,
+            state_after_force=self.ints(self.BUILDING + 0x718)[0],
+            building_center=center, selector=force['selector'],
+            force_coordinate=force['coordinate'], state=self.state(),
+            trace=self.install_trace, events=self.events,
+        ))
+
+
+def bunker_foundation_inputs():
+    """Run the existing INI-cache/type-reader owner on physical NATBNK ART.
+
+    Foundation is ART-only. The original caller reads Image then type section;
+    use identical names for the retail case and explicit synthetic controls.
+    """
+    from tools.spatial_oracle.engineer_bridge_cursor_caller import (
+        HutTypeReader, READER_INI, READER_SP,
+    )
+    from tools.rules_oracle.bridge_child_sound import sections
+
+    path = Path('ini/artmd.ini')
+    raw = path.read_bytes()
+    value = sections(raw)['NATBNK']['Foundation']
+    rows = []
+    for name, foundation in (('retail_natbnk', value), ('one_by_one', '1x1'),
+                             ('three_by_two', '3x2')):
+        m = HutTypeReader()
+        typ = m.construct('NATBNK')
+        default = m.read32(typ + 0xEF0)
+        # Image binding is supplied. The selected Foundation block is the
+        # original caller and reads the exact same section as this retail type.
+        m.u.mem_write(typ + 0x1F8, b'NATBNK\0')
+        m.make_ini({'NATBNK': {'Foundation': foundation}})
+        m.phase = 'bunker_foundation'
+        m.trace = []
+        m.u.mem_write(READER_SP, dwords(RET_MAGIC))
+        m.u.reg_write(UC_X86_REG_ESP, READER_SP)
+        m.u.reg_write(UC_X86_REG_EBP, typ)
+        m.u.reg_write(UC_X86_REG_EDI, typ + 0x1F8)
+        m.u.reg_write(UC_X86_REG_EBX, typ + 0x24)
+        m.u.reg_write(UC_X86_REG_ESI, READER_INI)
+        run_checked(m.u, 0x461225, 0x46125D, count=200000,
+                    required_addresses=(0x474DA0, 0x528A10))
+        assert m.u.reg_read(UC_X86_REG_ESP) == READER_SP
+        assert not any(event['kind'] == 'fixture_seam' for event in m.trace)
+        index = m.read32(typ + 0xEF0)
+        m.unchanged()
+        rows.append(dict(name=name, value=foundation, constructor_default=default,
+                         foundation_index=index, width=m.invoke(0x45EC90, typ),
+                         height=m.invoke(0x45ECA0, typ, (0,)), reads=m.trace))
+    return dict(physical=dict(file=path.as_posix(), sha256=hashlib.sha256(raw).hexdigest(),
+                             section='NATBNK', key='Foundation', value=value), rows=rows)
+
+
+def generate_bunker_install():
+    foundations = bunker_foundation_inputs()
+    base = dict(building_location=[2688, 2688, 312], rot=5, initial_facing=0,
+                foundation_index=foundations['rows'][0]['foundation_index'])
+    cases = []
+    # These are fixture coordinates, not expected centers or facings. Include
+    # all four corners of the 2x2 footprint and the same raw-cell case that
+    # used to bypass VERA's Force_Track path entirely.
+    for name, coordinate in (
+        ('same_raw_cell', [2688, 2688, 312]),
+        ('corner_east', [2944, 2688, 312]),
+        ('corner_south', [2944, 2944, 312]),
+        ('corner_west', [2688, 2944, 312]),
+        ('same_cell_subcell', [2707, 2771, 416]),
+        ('already_at_center', [2816, 2816, 312]),
+    ):
+        cases.append(dict(base, name=name, unit_location=coordinate))
+    for foundation in foundations['rows'][1:]:
+        cases.append(dict(base, name=foundation['name'],
+                          foundation_index=foundation['foundation_index'],
+                          unit_location=[2688, 2688, 312]))
+    # Native selector equality bands are much narrower than broad quadrants.
+    # Nearby physical coordinates make the original angle producer cross them.
+    for delta in (-4, -2, -1, 0, 1, 2, 4):
+        for quadrant, coordinate in enumerate((
+            [2688 + delta, 2688, 312], [2944 + delta, 2688, 312],
+            [2944 + delta, 2944, 312], [2688 + delta, 2944, 312],
+        )):
+            cases.append(dict(base, name=f'corner_boundary_{quadrant}_{delta}',
+                              unit_location=coordinate))
+    return dict(foundation_inputs=foundations,
+                rows=[OriginalBunkerInstall(row).finish_install(row) for row in cases])
+
+
+def bunker_install_metadata():
+    return provenance(
+        scope='Original bunker installation coordinate/facing/selector and Force_Track producers, bounded states1/2; native retail NATBNK Foundation reader',
+        assumptions=[
+            'Same physical supported gamemd image as this sidecar identity; original Building/BuildingType/Unit vtables, Drive/base and Facing constructors, Facing Set_ROT/Snap/Set/Current/IsRotating execute',
+            'State1 begins459069 after candidate lookup, radio/contact admission, footprint clearance and scatter; ESI Building and EBP Unit are supplied. State1 writes state2; state2 begins459101 with that retained object/facing state',
+            'Global frame100 is supplied, then advanced directly to original timer start+duration. Original waiting gate executes when duration is positive. Full frame scheduling, per-frame movement and intermediate turning are excluded',
+            'Original Building447AC0 computes Foundation center;459069..4590F9 computes desired16 through original atan2/ftol/Set;459101..4591CE reads Current16, selects track, calls GetCoords/Drive Force_Track and writes speed/state3',
+            'Physical ini/artmd.ini NATBNK Foundation string is extracted by the existing lexical owner and supplied to the existing INI cache. Original type constructor and461225..46125D Foundation caller/readers execute. NATBNK Image identity is supplied; complete type ReadINI, physical asset loading and Scenario rule layers are excluded',
+            'Control foundations1x1/3x2 are explicit synthetic ART strings parsed by the same original reader. Declared raw XYZ, initial facing and ROT inputs are fixtures; expected centers, desired/current facings, timer duration, selector and Force_Track coordinates come only from native execution',
+            'Reuses the existing32x32 level2/no-overlay map, Drive occupation and raw-put controls. Original instructions remain unchanged; read-only observers record input arguments and returned native values. Drive Process, final parking position, walls, reciprocal installation/deselection, screen picking and command delivery remain outside this corpus',
+        ],
+        substitutions=[
+            'Existing HutTypeReader supplies allocator/constructor CRT seams and INI caches; no such seam may occur during the Foundation reader block',
+            'Explicit initial state and the declared frame advance only; no patched instructions, custom vtables, substituted facing results or computed reference destinations',
+        ],
+        entry_points=dict(facing_block=0x459069, facing_end=0x4590F9,
+                          install_block=0x459101, install_end=0x4591CE,
+                          building_coords=0x447AC0, foundation_reader=0x461225,
+                          facing_constructor=0x4C91C0, facing_rot=0x4C9680,
+                          facing_snap=0x4C9300, facing_set=0x4C9220,
+                          facing_current=0x4C93D0, facing_turning=0x4C9480,
+                          force_track=FORCE, owner_speed_set=SPEED_SET),
+    )
+
+
 def generate():
     direct = []
     # All retail Drive TurnTrack selectors with both retained short choices.
@@ -380,4 +604,11 @@ def metadata():
 
 
 if __name__ == '__main__':
-    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata)
+    if '--bunker-install' in sys.argv:
+        args = [arg for arg in sys.argv[1:] if arg != '--bunker-install']
+        finish_vectors(generate_bunker_install,
+                       Path(__file__).with_suffix('.bunker_install.json'),
+                       provenance=bunker_install_metadata, argv=args,
+                       source_paths={'harness': Path(__file__)})
+    else:
+        finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata)

@@ -1,0 +1,619 @@
+{
+  "art": {
+    "file": "ARTMD.INI",
+    "lines": [
+      {
+        "key": "Remapable",
+        "line": 2017,
+        "section": "GAHPAD",
+        "value": "yes"
+      },
+      {
+        "key": "Cameo",
+        "line": 2018,
+        "section": "GAHPAD",
+        "value": "HELIICON"
+      },
+      {
+        "key": "Foundation",
+        "line": 2019,
+        "section": "GAHPAD",
+        "value": "2x2"
+      },
+      {
+        "key": "Height",
+        "line": 2020,
+        "section": "GAHPAD",
+        "value": "1"
+      },
+      {
+        "key": "Flat",
+        "line": 2021,
+        "section": "GAHPAD",
+        "value": "yes"
+      },
+      {
+        "key": "Buildup",
+        "line": 2022,
+        "section": "GAHPAD",
+        "value": "GAHPADMK"
+      },
+      {
+        "key": "BibShape",
+        "line": 2023,
+        "section": "GAHPAD",
+        "value": "GAHPADBB"
+      },
+      {
+        "key": "DemandLoadBuildup",
+        "line": 2024,
+        "section": "GAHPAD",
+        "value": "true"
+      },
+      {
+        "key": "FreeBuildup",
+        "line": 2025,
+        "section": "GAHPAD",
+        "value": "true"
+      },
+      {
+        "key": "NewTheater",
+        "line": 2026,
+        "section": "GAHPAD",
+        "value": "yes"
+      },
+      {
+        "key": "ActiveAnim",
+        "line": 2027,
+        "section": "GAHPAD",
+        "value": "GAHPAD_A"
+      },
+      {
+        "key": "ActiveAnimY",
+        "line": 2028,
+        "section": "GAHPAD",
+        "value": "-12"
+      },
+      {
+        "key": "ActiveAnimZAdjust",
+        "line": 2029,
+        "section": "GAHPAD",
+        "value": "-32"
+      },
+      {
+        "key": "ActiveAnimDamaged",
+        "line": 2030,
+        "section": "GAHPAD",
+        "value": "GAHPAD_AD"
+      },
+      {
+        "key": "Normalized",
+        "line": 3379,
+        "section": "CAOILD",
+        "value": "yes"
+      },
+      {
+        "key": "Remapable",
+        "line": 3380,
+        "section": "CAOILD",
+        "value": "no"
+      },
+      {
+        "key": "Foundation",
+        "line": 3381,
+        "section": "CAOILD",
+        "value": "2x2"
+      },
+      {
+        "key": "Height",
+        "line": 3382,
+        "section": "CAOILD",
+        "value": "5"
+      },
+      {
+        "key": "NewTheater",
+        "line": 3384,
+        "section": "CAOILD",
+        "value": "yes"
+      },
+      {
+        "key": "ActiveAnim",
+        "line": 3385,
+        "section": "CAOILD",
+        "value": "CAOILD_A"
+      },
+      {
+        "key": "ActiveAnimDamaged",
+        "line": 3386,
+        "section": "CAOILD",
+        "value": "CAOILD_AD"
+      },
+      {
+        "key": "ActiveAnimZAdjust",
+        "line": 3387,
+        "section": "CAOILD",
+        "value": "0"
+      },
+      {
+        "key": "ActiveAnimYSort",
+        "line": 3388,
+        "section": "CAOILD",
+        "value": "362"
+      },
+      {
+        "key": "ActiveAnimTwo",
+        "line": 3389,
+        "section": "CAOILD",
+        "value": "CAOILD_F"
+      },
+      {
+        "key": "ActiveAnimTwoZAdjust",
+        "line": 3390,
+        "section": "CAOILD",
+        "value": "-50"
+      },
+      {
+        "key": "ActiveAnimTwoYSort",
+        "line": 3391,
+        "section": "CAOILD",
+        "value": "362"
+      },
+      {
+        "key": "ActiveAnimTwoPowered",
+        "line": 3392,
+        "section": "CAOILD",
+        "value": "no"
+      },
+      {
+        "key": "DemandLoad",
+        "line": 3393,
+        "section": "CAOILD",
+        "value": "true"
+      },
+      {
+        "key": "CanHideThings",
+        "line": 3394,
+        "section": "CAOILD",
+        "value": "True"
+      },
+      {
+        "key": "CanBeHidden",
+        "line": 3395,
+        "section": "CAOILD",
+        "value": "False"
+      },
+      {
+        "key": "OccupyHeight",
+        "line": 3396,
+        "section": "CAOILD",
+        "value": "3"
+      },
+      {
+        "key": "DamageFireOffset0",
+        "line": 3397,
+        "section": "CAOILD",
+        "value": "-2,34"
+      },
+      {
+        "key": "DamageFireOffset1",
+        "line": 3398,
+        "section": "CAOILD",
+        "value": "7,-21"
+      },
+      {
+        "key": "DamageFireOffset2",
+        "line": 3399,
+        "section": "CAOILD",
+        "value": "29,10"
+      },
+      {
+        "key": "Cameo",
+        "line": 5020,
+        "section": "NATBNK",
+        "value": "TBNKICON"
+      },
+      {
+        "key": "Remapable",
+        "line": 5021,
+        "section": "NATBNK",
+        "value": "yes"
+      },
+      {
+        "key": "Foundation",
+        "line": 5022,
+        "section": "NATBNK",
+        "value": "2x2"
+      },
+      {
+        "key": "Height",
+        "line": 5023,
+        "section": "NATBNK",
+        "value": "3"
+      },
+      {
+        "key": "Buildup",
+        "line": 5024,
+        "section": "NATBNK",
+        "value": "NATBNKMK"
+      },
+      {
+        "key": "BibShape",
+        "line": 5025,
+        "section": "NATBNK",
+        "value": "NATBNKBB"
+      },
+      {
+        "key": "DemandLoadBuildup",
+        "line": 5026,
+        "section": "NATBNK",
+        "value": "true"
+      },
+      {
+        "key": "FreeBuildup",
+        "line": 5027,
+        "section": "NATBNK",
+        "value": "true"
+      },
+      {
+        "key": "NewTheater",
+        "line": 5028,
+        "section": "NATBNK",
+        "value": "yes"
+      },
+      {
+        "key": "Normalized",
+        "line": 5029,
+        "section": "NATBNK",
+        "value": "yes"
+      },
+      {
+        "key": "Flat",
+        "line": 5031,
+        "section": "NATBNK",
+        "value": "yes"
+      },
+      {
+        "key": "DockingOffset0",
+        "line": 5032,
+        "section": "NATBNK",
+        "value": "-1,-1,0"
+      },
+      {
+        "key": "CanHideThings",
+        "line": 5033,
+        "section": "NATBNK",
+        "value": "False"
+      },
+      {
+        "key": "CanBeHidden",
+        "line": 5034,
+        "section": "NATBNK",
+        "value": "False"
+      },
+      {
+        "key": "OccupyHeight",
+        "line": 5035,
+        "section": "NATBNK",
+        "value": "2"
+      },
+      {
+        "key": "SpecialAnim",
+        "line": 5038,
+        "section": "NATBNK",
+        "value": "NATBNK_A"
+      },
+      {
+        "key": "SpecialAnimDamaged",
+        "line": 5039,
+        "section": "NATBNK",
+        "value": "NATBNK_AD"
+      },
+      {
+        "key": "SpecialAnimZAdjust",
+        "line": 5040,
+        "section": "NATBNK",
+        "value": "10"
+      },
+      {
+        "key": "SpecialAnimYSort",
+        "line": 5041,
+        "section": "NATBNK",
+        "value": "750"
+      },
+      {
+        "key": "SpecialAnimTwo",
+        "line": 5043,
+        "section": "NATBNK",
+        "value": "NATBNK_B"
+      },
+      {
+        "key": "SpecialAnimTwoDamaged",
+        "line": 5044,
+        "section": "NATBNK",
+        "value": "NATBNK_BD"
+      },
+      {
+        "key": "SpecialAnimTwoZAdjust",
+        "line": 5045,
+        "section": "NATBNK",
+        "value": "-10"
+      },
+      {
+        "key": "SpecialAnimThree",
+        "line": 5047,
+        "section": "NATBNK",
+        "value": "NATBNK_A2"
+      },
+      {
+        "key": "SpecialAnimThreeDamaged",
+        "line": 5048,
+        "section": "NATBNK",
+        "value": "NATBNK_A2D"
+      },
+      {
+        "key": "SpecialAnimThreeZAdjust",
+        "line": 5049,
+        "section": "NATBNK",
+        "value": "-500"
+      },
+      {
+        "key": "SpecialAnimThreeYSort",
+        "line": 5050,
+        "section": "NATBNK",
+        "value": "750"
+      },
+      {
+        "key": "SpecialAnimFour",
+        "line": 5052,
+        "section": "NATBNK",
+        "value": "NATBNK_B2"
+      },
+      {
+        "key": "SpecialAnimFourDamaged",
+        "line": 5053,
+        "section": "NATBNK",
+        "value": "NATBNK_B2D"
+      },
+      {
+        "key": "SpecialAnimFourZAdjust",
+        "line": 5054,
+        "section": "NATBNK",
+        "value": "0"
+      }
+    ],
+    "physical_sections": {
+      "CAOILD": {
+        "ActiveAnim": "CAOILD_A",
+        "ActiveAnimDamaged": "CAOILD_AD",
+        "ActiveAnimTwo": "CAOILD_F",
+        "ActiveAnimTwoPowered": "no",
+        "ActiveAnimTwoYSort": "362",
+        "ActiveAnimTwoZAdjust": "-50",
+        "ActiveAnimYSort": "362",
+        "ActiveAnimZAdjust": "0",
+        "CanBeHidden": "False",
+        "CanHideThings": "True",
+        "DamageFireOffset0": "-2,34",
+        "DamageFireOffset1": "7,-21",
+        "DamageFireOffset2": "29,10",
+        "DemandLoad": "true",
+        "Foundation": "2x2",
+        "Height": "5",
+        "NewTheater": "yes",
+        "Normalized": "yes",
+        "OccupyHeight": "3",
+        "Remapable": "no"
+      },
+      "GAHPAD": {
+        "ActiveAnim": "GAHPAD_A",
+        "ActiveAnimDamaged": "GAHPAD_AD",
+        "ActiveAnimY": "-12",
+        "ActiveAnimZAdjust": "-32",
+        "BibShape": "GAHPADBB",
+        "Buildup": "GAHPADMK",
+        "Cameo": "HELIICON",
+        "DemandLoadBuildup": "true",
+        "Flat": "yes",
+        "Foundation": "2x2",
+        "FreeBuildup": "true",
+        "Height": "1",
+        "NewTheater": "yes",
+        "Remapable": "yes"
+      },
+      "NATBNK": {
+        "BibShape": "NATBNKBB",
+        "Buildup": "NATBNKMK",
+        "Cameo": "TBNKICON",
+        "CanBeHidden": "False",
+        "CanHideThings": "False",
+        "DemandLoadBuildup": "true",
+        "DockingOffset0": "-1,-1,0",
+        "Flat": "yes",
+        "Foundation": "2x2",
+        "FreeBuildup": "true",
+        "Height": "3",
+        "NewTheater": "yes",
+        "Normalized": "yes",
+        "OccupyHeight": "2",
+        "Remapable": "yes",
+        "SpecialAnim": "NATBNK_A",
+        "SpecialAnimDamaged": "NATBNK_AD",
+        "SpecialAnimFour": "NATBNK_B2",
+        "SpecialAnimFourDamaged": "NATBNK_B2D",
+        "SpecialAnimFourZAdjust": "0",
+        "SpecialAnimThree": "NATBNK_A2",
+        "SpecialAnimThreeDamaged": "NATBNK_A2D",
+        "SpecialAnimThreeYSort": "750",
+        "SpecialAnimThreeZAdjust": "-500",
+        "SpecialAnimTwo": "NATBNK_B",
+        "SpecialAnimTwoDamaged": "NATBNK_BD",
+        "SpecialAnimTwoZAdjust": "-10",
+        "SpecialAnimYSort": "750",
+        "SpecialAnimZAdjust": "10"
+      }
+    },
+    "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+  },
+  "orders": [
+    {
+      "inserted": [
+        0,
+        1,
+        2
+      ],
+      "keys": [
+        31744,
+        32256,
+        32494
+      ],
+      "order": [
+        0,
+        1,
+        2
+      ]
+    },
+    {
+      "inserted": [
+        2,
+        1,
+        0
+      ],
+      "keys": [
+        31744,
+        32256,
+        32494
+      ],
+      "order": [
+        0,
+        1,
+        2
+      ]
+    }
+  ],
+  "origin": [
+    16384,
+    15360,
+    0
+  ],
+  "rows": [
+    {
+      "building": "CAOILD",
+      "copied": {
+        "building_anim": 1,
+        "sort_key": 32106,
+        "y_sort": 362,
+        "z_adjust": 0
+      },
+      "slot": {
+        "damaged": "CAOILD_AD",
+        "garrisoned": "CAOILD_A",
+        "normal": "CAOILD_A",
+        "slot": 3,
+        "x": 0,
+        "y": 0,
+        "y_sort": 362,
+        "z_adjust": 0
+      }
+    },
+    {
+      "building": "GAHPAD",
+      "copied": {
+        "building_anim": 1,
+        "sort_key": 31744,
+        "y_sort": 0,
+        "z_adjust": -32
+      },
+      "slot": {
+        "damaged": "GAHPAD_AD",
+        "garrisoned": "GAHPAD_A",
+        "normal": "GAHPAD_A",
+        "slot": 3,
+        "x": 0,
+        "y": -12,
+        "y_sort": 0,
+        "z_adjust": -32
+      }
+    },
+    {
+      "building": "NATBNK",
+      "copied": {
+        "building_anim": 1,
+        "sort_key": 32494,
+        "y_sort": 750,
+        "z_adjust": 10
+      },
+      "slot": {
+        "damaged": "NATBNK_AD",
+        "garrisoned": "NATBNK_A",
+        "normal": "NATBNK_A",
+        "slot": 10,
+        "x": 0,
+        "y": 0,
+        "y_sort": 750,
+        "z_adjust": 10
+      }
+    },
+    {
+      "building": "NATBNK",
+      "copied": {
+        "building_anim": 1,
+        "sort_key": 31744,
+        "y_sort": 0,
+        "z_adjust": -10
+      },
+      "slot": {
+        "damaged": "NATBNK_BD",
+        "garrisoned": "NATBNK_B",
+        "normal": "NATBNK_B",
+        "slot": 11,
+        "x": 0,
+        "y": 0,
+        "y_sort": 0,
+        "z_adjust": -10
+      }
+    },
+    {
+      "building": "NATBNK",
+      "copied": {
+        "building_anim": 1,
+        "sort_key": 32494,
+        "y_sort": 750,
+        "z_adjust": -500
+      },
+      "slot": {
+        "damaged": "NATBNK_A2D",
+        "garrisoned": "NATBNK_A2",
+        "normal": "NATBNK_A2",
+        "slot": 12,
+        "x": 0,
+        "y": 0,
+        "y_sort": 750,
+        "z_adjust": -500
+      }
+    },
+    {
+      "building": "NATBNK",
+      "copied": {
+        "building_anim": 1,
+        "sort_key": 31744,
+        "y_sort": 0,
+        "z_adjust": 0
+      },
+      "slot": {
+        "damaged": "NATBNK_B2D",
+        "garrisoned": "NATBNK_B2",
+        "normal": "NATBNK_B2",
+        "slot": 13,
+        "x": 0,
+        "y": 0,
+        "y_sort": 0,
+        "z_adjust": 0
+      }
+    }
+  ],
+  "unit_origin": [
+    16640,
+    15616,
+    0
+  ]
+}

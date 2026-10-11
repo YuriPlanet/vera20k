@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Building44F5C0 virtual+A0 complete body with original HasRallyPoint455DA0 and House50B730.",
+  "assumptions": [
+    "Prepared live Building/BuildingType/House fields with original vtables; no constructors, INI reads, action caller or command event are executed.",
+    "A resolved UndeploysInto pointer is nonnull fixture memory. The body tests its presence only and never dereferences the target.",
+    "Every HasRallyPoint arm, signed EMP -1/0/positive, ConstructionYard human/player-control/session/MCVRedeploy/mind-controller conditions execute. Control rows explicitly use AircraftType=3 rather than the legacy destination fixture label aircraft_factory whose stored input was2.",
+    "EMP is a raw native input only: VERA has no EMP504 lifecycle producer. Constructor-zero production behavior is the supported Rust subset.",
+    "For each row Object5F4520 executes its original selection-admission prefix with Selectable=true and MissionOnly false/true, stopping at5F45A0 before membership/waypoint checks and selection mutation, or at its real refusal return. No full selection commit or Building MissionOnly producer is claimed.",
+    "No RNG, timer write, detach or object mutation is expected; changed_actor_bytes and native function calls are recorded."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "building_control": "0x0044F5C0",
+    "has_rally_point": "0x00455DA0",
+    "house_controlled_by_human": "0x0050B730",
+    "object_selection_admission": "0x005F4520"
+  },
+  "source_normalized_lf_sha256": {
+    "oracle": "27d8ccb729d1d774c084815cf1034ab2478606f814da5ef1fa217076ea93dfdf"
+  },
+  "payload_sha256": "546a82735d1ab99cd1989bf95e0b22e8afadc5acb1d3afa66104cd1d268c4031"
+}

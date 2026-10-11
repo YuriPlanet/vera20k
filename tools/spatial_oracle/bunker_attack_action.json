@@ -1,0 +1,3530 @@
+{
+  "postprocess_rows": [
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "harvester": false,
+        "in_range": false,
+        "installed": false,
+        "land_type": 0,
+        "name": "harvester",
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "harvester": false,
+        "in_range": true,
+        "installed": false,
+        "land_type": 0,
+        "name": "harvester",
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "harvester": false,
+        "in_range": false,
+        "installed": false,
+        "land_type": 5,
+        "name": "harvester",
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "harvester": false,
+        "in_range": true,
+        "installed": false,
+        "land_type": 5,
+        "name": "harvester",
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "harvester": true,
+        "in_range": false,
+        "installed": false,
+        "land_type": 0,
+        "name": "harvester",
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "harvester": true,
+        "in_range": true,
+        "installed": false,
+        "land_type": 0,
+        "name": "harvester",
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "harvester": true,
+        "in_range": false,
+        "installed": false,
+        "land_type": 5,
+        "name": "harvester",
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "harvester": true,
+        "in_range": true,
+        "installed": false,
+        "land_type": 5,
+        "name": "harvester",
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": false,
+        "deployed": false,
+        "in_range": false,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "none",
+        "route": "cell",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": false,
+        "deployed": false,
+        "in_range": true,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "none",
+        "route": "cell",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": true,
+        "deployed": false,
+        "in_range": false,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "none",
+        "route": "cell",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": true,
+        "deployed": false,
+        "in_range": true,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "none",
+        "route": "cell",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 2,
+      "cursor": {
+        "output": {
+          "cursor_row": 19,
+          "descriptor_dwords": [
+            41,
+            1,
+            0,
+            52,
+            1,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": false,
+        "deployed": true,
+        "in_range": false,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "none",
+        "route": "cell",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 2,
+      "cursor": {
+        "output": {
+          "cursor_row": 19,
+          "descriptor_dwords": [
+            41,
+            1,
+            0,
+            52,
+            1,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": false,
+        "deployed": true,
+        "in_range": true,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "none",
+        "route": "cell",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        }
+      ]
+    },
+    {
+      "action": 2,
+      "cursor": {
+        "output": {
+          "cursor_row": 19,
+          "descriptor_dwords": [
+            41,
+            1,
+            0,
+            52,
+            1,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": true,
+        "deployed": true,
+        "in_range": false,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "none",
+        "route": "cell",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "CellDeploySelectWeaponNULL",
+          "pc": "0x740793"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 0
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtCell",
+          "pc": "0x6f7970",
+          "target": 269479876,
+          "verdict": false,
+          "weapon_index": 0
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": true,
+        "deployed": true,
+        "in_range": true,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "none",
+        "route": "cell",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "CellDeploySelectWeaponNULL",
+          "pc": "0x740793"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 0
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtCell",
+          "pc": "0x6f7970",
+          "target": 269479876,
+          "verdict": true,
+          "weapon_index": 0
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": false,
+        "deployed": false,
+        "in_range": false,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "enemy",
+        "route": "object",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 20,
+          "descriptor_dwords": [
+            53,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": false,
+        "deployed": false,
+        "in_range": true,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "enemy",
+        "route": "object",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": true,
+        "deployed": false,
+        "in_range": false,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "enemy",
+        "route": "object",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 20,
+          "descriptor_dwords": [
+            53,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": true,
+        "deployed": false,
+        "in_range": true,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "enemy",
+        "route": "object",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
+        }
+      ]
+    },
+    {
+      "action": 2,
+      "cursor": {
+        "output": {
+          "cursor_row": 19,
+          "descriptor_dwords": [
+            41,
+            1,
+            0,
+            52,
+            1,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": false,
+        "deployed": true,
+        "in_range": false,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "enemy",
+        "route": "object",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        }
+      ]
+    },
+    {
+      "action": 2,
+      "cursor": {
+        "output": {
+          "cursor_row": 19,
+          "descriptor_dwords": [
+            41,
+            1,
+            0,
+            52,
+            1,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": false,
+        "deployed": true,
+        "in_range": true,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "enemy",
+        "route": "object",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        }
+      ]
+    },
+    {
+      "action": 2,
+      "cursor": {
+        "output": {
+          "cursor_row": 19,
+          "descriptor_dwords": [
+            41,
+            1,
+            0,
+            52,
+            1,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": true,
+        "deployed": true,
+        "in_range": false,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "enemy",
+        "route": "object",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectDeploySelectWeaponNULL",
+          "pc": "0x7403c7"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 0
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtObject",
+          "pc": "0x6f77b0",
+          "target": 536895488,
+          "verdict": false,
+          "weapon_index": 0
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 20,
+          "descriptor_dwords": [
+            53,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": true,
+        "deploy_fire": true,
+        "deployed": true,
+        "in_range": true,
+        "installed": false,
+        "name": "simple_deployer",
+        "relation": "enemy",
+        "route": "object",
+        "simple_deployer": true
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectDeploySelectWeaponNULL",
+          "pc": "0x7403c7"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 0
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtObject",
+          "pc": "0x6f77b0",
+          "target": 536895488,
+          "verdict": true,
+          "weapon_index": 0
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
+        }
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": false,
+        "installed": false,
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": true,
+        "installed": false,
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        }
+      ]
+    },
+    {
+      "action": 0,
+      "cursor": {
+        "output": {
+          "cursor_row": 0,
+          "descriptor_dwords": [
+            0,
+            1,
+            0,
+            1,
+            1,
+            0,
+            0
+          ],
+          "descriptor_hex": "00000000010000000000000001000000010000000000000000000000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": false,
+        "installed": true,
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtCell",
+          "pc": "0x6f7970",
+          "target": 269479776,
+          "verdict": false,
+          "weapon_index": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "NoneReturn",
+          "pc": "0x700c26"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": true,
+        "installed": true,
+        "relation": "none",
+        "route": "cell"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtCell",
+          "pc": "0x6f7970",
+          "target": 269479776,
+          "verdict": true,
+          "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": false,
+        "installed": false,
+        "relation": "enemy",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": false,
+        "installed": false,
+        "relation": "own",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 20,
+          "descriptor_dwords": [
+            53,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": true,
+        "installed": false,
+        "relation": "enemy",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 20,
+          "descriptor_dwords": [
+            53,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": true,
+        "installed": false,
+        "relation": "own",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
+        }
+      ]
+    },
+    {
+      "action": 0,
+      "cursor": {
+        "output": {
+          "cursor_row": 0,
+          "descriptor_dwords": [
+            0,
+            1,
+            0,
+            1,
+            1,
+            0,
+            0
+          ],
+          "descriptor_hex": "00000000010000000000000001000000010000000000000000000000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": false,
+        "installed": true,
+        "relation": "enemy",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtObject",
+          "pc": "0x6f77b0",
+          "target": 536895488,
+          "verdict": false,
+          "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ]
+    },
+    {
+      "action": 7,
+      "cursor": {
+        "output": {
+          "cursor_row": 17,
+          "descriptor_dwords": [
+            18,
+            13,
+            4,
+            -1,
+            -1,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "120000000d00000004000000ffffffffffffffff3930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": false,
+        "installed": true,
+        "relation": "own",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtObject",
+          "pc": "0x6f77b0",
+          "target": 536895488,
+          "verdict": false,
+          "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "SelectReturn",
+          "pc": "0x7005da"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 20,
+          "descriptor_dwords": [
+            53,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": true,
+        "installed": true,
+        "relation": "enemy",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtObject",
+          "pc": "0x6f77b0",
+          "target": 536895488,
+          "verdict": true,
+          "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 20,
+          "descriptor_dwords": [
+            53,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "in_range": true,
+        "installed": true,
+        "relation": "own",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtObject",
+          "pc": "0x6f77b0",
+          "target": 536895488,
+          "verdict": true,
+          "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 21,
+          "descriptor_dwords": [
+            58,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3a00000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": false,
+        "in_range": false,
+        "installed": false,
+        "relation": "enemy",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": false
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 20,
+          "descriptor_dwords": [
+            53,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": false,
+        "in_range": true,
+        "installed": false,
+        "relation": "enemy",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
+        }
+      ]
+    },
+    {
+      "action": 0,
+      "cursor": {
+        "output": {
+          "cursor_row": 0,
+          "descriptor_dwords": [
+            0,
+            1,
+            0,
+            1,
+            1,
+            0,
+            0
+          ],
+          "descriptor_hex": "00000000010000000000000001000000010000000000000000000000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": false,
+        "in_range": false,
+        "installed": true,
+        "relation": "enemy",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtObject",
+          "pc": "0x6f77b0",
+          "target": 536895488,
+          "verdict": false,
+          "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cursor": {
+        "output": {
+          "cursor_row": 20,
+          "descriptor_dwords": [
+            53,
+            5,
+            4,
+            63,
+            5,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "3500000005000000040000003f000000050000003930000039300000",
+          "entry": "004AB449"
+        }
+      },
+      "input": {
+        "ctrl": false,
+        "in_range": true,
+        "installed": true,
+        "relation": "enemy",
+        "route": "object"
+      },
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "seam",
+          "name": "CanFireAtObject",
+          "pc": "0x6f77b0",
+          "target": 536895488,
+          "verdict": true,
+          "weapon_index": 0
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "seam",
+          "name": "DisplayCanFireAtTarget",
+          "verdict": true
+        }
+      ]
+    }
+  ],
+  "schema": 1
+}

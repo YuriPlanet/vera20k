@@ -1,6 +1,6 @@
 //! SHP entity instance builders — per-frame SpriteInstance generation for buildings and infantry.
 //!
-//! Handles building animation overlays (Active/Idle/Special), bibs, build-up
+//! Handles independently ordered building animations, bibs, build-up
 //! animations, and infantry sprite frame resolution.
 //! Split from `presentation::instances` to keep files under the 600-line limit.
 //!
@@ -9,8 +9,8 @@
 
 use super::helpers::{
     ANIM_DRAW_DEPTH_BIAS_PX, apply_shape_z_adjust, compute_sprite_depth,
-    compute_sprite_depth_params_lifted, depth_axis, effective_anim_z_adjust, entity_draw_band,
-    ground_sort_row, in_view, lifted_z_adjust, tactical_entity_admission,
+    compute_sprite_depth_params_lifted, depth_axis, entity_draw_band, ground_sort_row, in_view,
+    lifted_z_adjust, tactical_entity_admission,
 };
 use crate::app::AppState;
 use crate::app::presentation::render::draw_plan_lowering::{
@@ -70,7 +70,7 @@ fn shp_body_tint(
 /// Iterate visible SHP sprite entities from EntityStore and build SpriteInstances.
 ///
 /// Build SpriteInstances for all SHP entities (buildings, infantry).
-/// Ground bodies, building bibs/anims, and building turret VXLs are emitted as
+/// Ground bodies, building bibs, and building turret VXLs are emitted as
 /// one parent-owned group so the native global order cannot split their display
 /// call at an atlas boundary.
 /// Air and Top bodies retain the same parent ownership in their own Display layers.
@@ -632,39 +632,6 @@ pub(crate) fn build_shp_instances(
                     colour_word,
                     draw_state,
                 );
-                // Building anims render in the same pass as building bodies so they
-                // can sort together via depth. Anims use the building's entity depth
-                // so they render at the same depth as the body — visible where the
-                // body has transparent pixels, covered where it's opaque.
-                let world_height: f32 = state
-                    .match_state
-                    .match_presentation
-                    .terrain_grid
-                    .as_ref()
-                    .map(|g| g.world_height)
-                    .unwrap_or(1.0);
-                emit_building_anims(
-                    &mut building_pieces,
-                    atlas,
-                    art,
-                    state.rules(),
-                    type_str,
-                    hc,
-                    sx,
-                    sy,
-                    depth,
-                    tint,
-                    selected_palette_light,
-                    state.match_state.match_presentation.lighting.grid(),
-                    &sim.session.lighting,
-                    (pos.rx, pos.ry),
-                    sim,
-                    entity,
-                    &|anim| anim_colour_word(state, sim, cells.as_ref(), &shrouded, anim),
-                    world_height,
-                    draw_state,
-                    lift_px,
-                );
             }
             // Building voxel guns remain inside their SHP hull's draw call.
             if let Some(rules_obj) = state.rules().and_then(|r| r.object(type_str)) {
@@ -942,21 +909,133 @@ fn emit_building_bib(
     });
 }
 
-/// Emit SpriteInstances for a building's animation overlays.
-///
-/// Each anim overlay (e.g., CAOILD_A for Oil Derrick's tower) is looked up
-/// in the sprite atlas and positioned at the building's cell center + the
-/// animation's (X, Y) pixel offset from art.ini.
+/// Building slot AnimClass objects retain their own Display membership.
+/// Native Tactical6D91D8 recognizes Anim+118 and dispatches that member's
+/// DrawIfVisible at6D916C; Building43D290 draws its body/bib, not these slots.
+/// This entry is independent of the parent's body admission and viewport:
+/// a slot offset can put an animation on screen while its parent is outside.
+/// The existing slot palette/frame/light owner is shared by every building.
+pub(super) fn build_building_anim_instances(
+    state: &AppState,
+    objects: &mut Vec<PlannedObjectInstance>,
+    order: &NativeDisplayOrder,
+) {
+    let (Some(runtime), Some(atlas), Some(rules)) = (
+        state.match_state.sim_runtime.as_ref(),
+        state.match_state.match_presentation.sprite_atlas.as_ref(),
+        state.rules(),
+    ) else {
+        return;
+    };
+    let sim = &runtime.simulation;
+    let grid = state.match_state.match_presentation.lighting.grid();
+    let terrain = runtime.view().resolved_terrain();
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner_id = local_owner
+        .as_deref()
+        .and_then(|name| sim.interner.get(name));
+    let cells = sim
+        .resolved_terrain
+        .as_ref()
+        .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    let shrouded = |cell| {
+        !state.match_state.sandbox_full_visibility
+            && local_owner_id
+                .zip(cells.as_ref())
+                .is_some_and(|(viewer, cells)| {
+                    crate::sim::vision::cell_is_shrouded(&sim.fog, cells, viewer, cell)
+                })
+    };
+    let axis = depth_axis(state);
+    let zoom = state.match_state.input.zoom_level;
+    let viewport = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+        state.render_width() as f32 / zoom,
+        state.render_height() as f32 / zoom,
+    ];
+    for building in sim.entities().values() {
+        if building.category != EntityCategory::Structure
+            || building.building_anim_slots.iter().all(Option::is_none)
+        {
+            continue;
+        }
+        let owner = sim.interner.resolve(building.owner());
+        let house_color = state
+            .match_state
+            .match_presentation
+            .house_color_map
+            .get(owner)
+            .copied()
+            .unwrap_or(crate::rules::house_colors::NO_REMAP);
+        let mut observer = super::helpers::observer_draw_context(
+            sim,
+            building,
+            local_owner.as_deref(),
+            local_owner_id,
+            Some(rules),
+        );
+        observer.drawn_voxel = Some(false);
+        // Preserve the existing slot material selector. The parent's
+        // lifecycle/viewport/body visibility is not this Anim's admission;
+        // its own retained Display member and hidden byte decide that.
+        let material = DrawState::for_entity(
+            building,
+            sim.session.binary_frame,
+            super::units::house_color_to_remap_row(house_color),
+            observer,
+        );
+        // Retain the preexisting material visibility policy while moving
+        // ordering. RESIDUAL: original Anim+178/199 visual-character producers
+        // are not all retained separately; cloaked/observer-dependent slots
+        // still borrow their building's material rather than native Anim state.
+        // This does not gate on body viewport, lifecycle or anchor shroud.
+        if !material.visible {
+            continue;
+        }
+        let draw_state = material.state;
+        let cell = (building.position.rx, building.position.ry);
+        let tint = grid.building_body_tint_at(cell);
+        let extra_light =
+            crate::app::presentation::lighting::body_extra_light(building, rules, sim, terrain);
+        let selected_palette = crate::app::presentation::lighting::body_palette_light(
+            grid,
+            &sim.session.lighting,
+            cell,
+            extra_light,
+        );
+        emit_building_anims(
+            objects,
+            order,
+            atlas,
+            rules.art(),
+            Some(rules),
+            sim.interner.resolve(building.type_ref()),
+            house_color,
+            tint,
+            selected_palette,
+            grid,
+            &sim.session.lighting,
+            cell,
+            sim,
+            building,
+            &|id| anim_colour_word(state, sim, cells.as_ref(), &shrouded, id),
+            axis.origin_y,
+            axis.world_height,
+            viewport,
+            draw_state,
+        );
+    }
+}
+
 fn emit_building_anims(
-    pieces: &mut Vec<PlannedBuildingPieceInstance>,
+    objects: &mut Vec<PlannedObjectInstance>,
+    order: &NativeDisplayOrder,
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
     art_reg: &crate::rules::art_data::ArtRegistry,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     building_type: &str,
     house_color: HouseColorIndex,
-    screen_x: f32,
-    screen_y: f32,
-    building_depth: f32,
     tint: [f32; 3],
     attached_palette: crate::render::palette_light::PaletteLight,
     light_grid: &crate::map::lighting::CellLightGrid,
@@ -965,9 +1044,10 @@ fn emit_building_anims(
     sim: &crate::sim::world::Simulation,
     building: &crate::sim::game_entity::GameEntity,
     anim_word: &dyn Fn(u64) -> u16,
+    origin_y: f32,
     world_height: f32,
+    viewport: [f32; 4],
     draw_state: DrawState,
-    lift_px: i32,
 ) {
     let rules_image: String = rules
         .and_then(|r| r.object(building_type))
@@ -982,6 +1062,9 @@ fn emit_building_anims(
             continue;
         };
         let Some(instance) = sim.anim(anim_id) else {
+            continue;
+        };
+        let Some(parent) = order.object_draw(anim_id, SpriteEncoding::Plain) else {
             continue;
         };
         // Building's retained slot reaches DrawIt422CA0..4238AF until physical
@@ -1025,27 +1108,37 @@ fn emit_building_anims(
             continue;
         };
 
-        // Position: cell center + anim X/Y offset from art.ini.
-        // Building anims use building positioning (building convention).
-        // The anim's own draw offset (XDrawOffset/YDrawOffset) is already baked
-        // into anim_entry.offset_x/y by the sprite atlas builder.
-        let ax: f32 = screen_x + anim.x as f32 + anim_entry.offset_x;
-        let ay: f32 = screen_y + anim.y as f32 + anim_entry.offset_y;
-
-        // Building anims start from the building body's depth (emitted in the
-        // same pass; on-top-of-own-body comes from instance order), then apply
-        // the native ZAdjust sort bias: the per-slot override from the
-        // building's art section (e.g. ActiveAnimZAdjust=) wins when nonzero,
-        // else the anim type's own ZAdjust= applies; anim SHP draws also carry
-        // a constant -2px bias. Negative = toward camera. This orders anims
-        // correctly against OTHER nearby objects.
-        let type_z_adjust: i32 = art_reg
-            .anim_runtime_config(anim_name)
-            .map(|c| c.z_adjust)
-            .unwrap_or(0);
-        let z_adjust_px: i32 =
-            effective_anim_z_adjust(anim.z_adjust, type_z_adjust) + ANIM_DRAW_DEPTH_BIAS_PX;
-        let anim_depth: f32 = apply_shape_z_adjust(building_depth, z_adjust_px, world_height);
+        // Slot construction/repositioning already converts art X/Y into
+        // this Anim's retained coordinate. Consume that owner rather than
+        // deriving a second coordinate from the current building body.
+        let Some(coord) = sim.anim_absolute_coord(anim_id) else {
+            continue;
+        };
+        let (screen_x, screen_y, _, _, _, lift_px) =
+            super::overlays::anim_world_render_coords(coord);
+        let ax = screen_x + anim_entry.offset_x;
+        let ay = screen_y + anim_entry.offset_y;
+        if !in_view(
+            ax,
+            ay,
+            anim_entry.pixel_size[0],
+            anim_entry.pixel_size[1],
+            viewport[0],
+            viewport[1],
+            viewport[2],
+            viewport[3],
+            200.0,
+        ) {
+            continue;
+        }
+        // Original451988 copies the slot's ZAdjust even when it is zero;
+        // the constructor's AnimType ZAdjust is not a zero-value fallback.
+        let z_adjust_px = instance.z_adjust + ANIM_DRAW_DEPTH_BIAS_PX;
+        let anim_depth = apply_shape_z_adjust(
+            compute_sprite_depth_params_lifted(origin_y, world_height, screen_y, lift_px),
+            z_adjust_px,
+            world_height,
+        );
 
         let config = art_reg.anim_runtime_config(anim_name);
         // Building mark 0043F9A6..0043FA68 supplies explicit selected Convert/top
@@ -1086,35 +1179,36 @@ fn emit_building_anims(
         // Native Z (`AnimClass__DrawIt @ 0x00422CA0`): an anim draw carries
         // 0x2800 with gradient entry 2 and `YDrawOffset + ZAdjust -
         // AdjustForZ - 2`; it tests Z per pixel and never writes.
-        pieces.push(PlannedBuildingPieceInstance {
-            kind: BuildingPieceKind::PoweredOrActiveOverlay,
-            z_bias: z_adjust_px,
-            policy,
-            target: ObjectTexture::ShpPage(anim_entry.page as usize),
-            instance: SpriteInstance {
-                position: [ax, ay],
-                size: anim_entry.pixel_size,
-                uv_origin: anim_entry.uv_origin,
-                uv_size: anim_entry.uv_size,
-                source_palette: anim_entry.source_palette,
-                depth: anim_depth,
-                tint: anim_tint,
-                palette_light,
-                alpha: 1.0,
-                draw_state,
-                // The anim's YDrawOffset is baked into the atlas offset, so it
-                // also rides the Z term (native `YDrawOffset + ZAdjust - 2`).
-                z_adjust: lifted_z_adjust(
-                    lift_px,
-                    z_adjust_px
-                        + art_reg
-                            .anim_runtime_config(anim_name)
-                            .map_or(0, |c| c.y_draw_offset),
-                ),
-                z_gradient: pack_z_gradient(ZGradient::Vertical, false),
-                ..Default::default()
-            },
-        });
+        objects.push(PlannedObjectInstance::object(
+            parent,
+            vec![ObjectPieceInstance {
+                render_z: policy.render_z,
+                target: ObjectTexture::ShpPage(anim_entry.page as usize),
+                instance: SpriteInstance {
+                    position: [ax, ay],
+                    size: anim_entry.pixel_size,
+                    uv_origin: anim_entry.uv_origin,
+                    uv_size: anim_entry.uv_size,
+                    source_palette: anim_entry.source_palette,
+                    depth: anim_depth,
+                    tint: anim_tint,
+                    palette_light,
+                    alpha: 1.0,
+                    draw_state,
+                    // The anim's YDrawOffset is baked into the atlas offset, so it
+                    // also rides the Z term (native `YDrawOffset + ZAdjust - 2`).
+                    z_adjust: lifted_z_adjust(
+                        lift_px,
+                        z_adjust_px
+                            + art_reg
+                                .anim_runtime_config(anim_name)
+                                .map_or(0, |c| c.y_draw_offset),
+                    ),
+                    z_gradient: pack_z_gradient(ZGradient::Vertical, false),
+                    ..Default::default()
+                },
+            }],
+        ));
     }
 }
 
@@ -1565,3 +1659,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "building_anim_tests.rs"]
+mod building_anim_tests;

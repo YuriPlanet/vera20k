@@ -1886,6 +1886,137 @@ mod tests {
     }
 
     #[test]
+    fn native_bunker_install_head_allows_tank_click_and_force_attack() {
+        use crate::sim::command::Command;
+        use crate::sim::game_entity::BunkerLink;
+        use crate::sim::world::Simulation;
+        use crate::util::fixed_math::SimFixed;
+
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/locomotor_force_track.bunker_install.json",
+        ))
+        .unwrap();
+        let row = native["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == "same_raw_cell")
+            .unwrap();
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        let tank_type = sim.interner.intern("LTNK");
+        let bunker_type = sim.interner.intern("NATBNK");
+        let mut at = |id, type_ref, category, coords: &serde_json::Value| {
+            let xyz: [i32; 3] = std::array::from_fn(|i| coords[i].as_i64().unwrap() as i32);
+            let mut entity = item83_entity(
+                id,
+                (xyz[0] / 256) as u16,
+                (xyz[1] / 256) as u16,
+                owner,
+                type_ref,
+                category,
+                false,
+            );
+            entity.position.sub_x = SimFixed::from_num(xyz[0] % 256);
+            entity.position.sub_y = SimFixed::from_num(xyz[1] % 256);
+            entity.position.exact_z_leptons = Some(xyz[2]);
+            entity.in_playfield = true;
+            sim.entities_mut().insert(entity);
+        };
+        at(
+            2,
+            bunker_type,
+            EntityCategory::Structure,
+            &row["input"]["building_location"],
+        );
+        at(
+            1,
+            tank_type,
+            EntityCategory::Unit,
+            &row["output"]["force_coordinate"],
+        );
+        at(
+            3,
+            tank_type,
+            EntityCategory::Unit,
+            &serde_json::json!([4352, 2816, 312]),
+        );
+        sim.entities_mut().get_mut(1).unwrap().bunker_link = BunkerLink::Installed(2);
+        sim.entities_mut().get_mut(2).unwrap().bunker_occupant = Some(1);
+        let heights = std::collections::BTreeMap::new();
+        let pick = |sim: &Simulation, point: (f32, f32)| {
+            pick_entity_at_point(
+                sim.entities(),
+                &[2, 1],
+                None,
+                Some("Americans"),
+                point.0,
+                point.1,
+                30.0,
+                Some(&retail.rules),
+                None,
+                &heights,
+                None,
+                Some(&sim.interner),
+            )
+        };
+        // Original6D461A registers buildings before mobile drawing6D465F;
+        // 6DA47C keeps the first equal score. Preserve that existing policy.
+        // The native ForceTrack head is supplied as a parked pose here; this
+        // checks its input consumers, not Drive Process completion/rendering.
+        let native_position = sim.entities().get(1).unwrap().position;
+        let point =
+            crate::render::locomotor_visual::screen_position(sim.entities().get(1).unwrap());
+        assert_eq!(pick(&sim, point), Some(1));
+        sim.entities_mut().get_mut(1).unwrap().position = sim.entities().get(2).unwrap().position;
+        let old_point =
+            crate::render::locomotor_visual::screen_position(sim.entities().get(1).unwrap());
+        assert_eq!(
+            pick(&sim, old_point),
+            Some(2),
+            "raw-location overlap reproduces the wrong pick"
+        );
+        sim.entities_mut().get_mut(1).unwrap().position = native_position;
+        let selection = compute_click_selection_snapshot_with_playfield(
+            sim.entities(),
+            &[2, 1],
+            &[],
+            None,
+            Some("Americans"),
+            point.0,
+            point.1,
+            30.0,
+            false,
+            Some(&retail.rules),
+            None,
+            &heights,
+            None,
+            Some(&sim.interner),
+            true,
+        )
+        .unwrap();
+        assert_eq!(selection.select, [1]);
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::ForceAttack {
+                attacker_id: selection.select[0],
+                target_id: 3,
+            },
+            Some(&retail.rules)
+        ));
+        let tank = sim.entities().get(1).unwrap();
+        assert_eq!(tank.bunker_link.installed_in(), Some(2));
+        assert_eq!(
+            tank.attack_target.as_ref().map(|attack| attack.target),
+            Some(crate::sim::combat::TargetKind::Entity(3))
+        );
+        assert_eq!(sim.entities().get(2).unwrap().bunker_occupant, Some(1));
+    }
+
+    #[test]
     fn item83_picker_uses_global_distance_ties_and_never_clicks_through_rejection() {
         let rules = item83_rules();
         let mut interner = StringInterner::new();

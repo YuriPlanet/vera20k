@@ -408,17 +408,6 @@ pub(crate) fn apply_shape_z_adjust(depth: f32, z_adjust_px: i32, world_height: f
     (depth + z_adjust_px as f32 / world_height.max(1.0)).clamp(0.001, 0.999)
 }
 
-/// Effective anim `ZAdjust`: a nonzero per-slot override (e.g. a building's
-/// `ActiveAnimZAdjust=`) wins; zero falls back to the anim type's own
-/// `ZAdjust=` from its art section.
-pub(crate) fn effective_anim_z_adjust(slot_z_adjust: i32, type_z_adjust: i32) -> i32 {
-    if slot_z_adjust != 0 {
-        slot_z_adjust
-    } else {
-        type_z_adjust
-    }
-}
-
 /// Where this entity is drawn, sub-cell offsets and height lift included.
 ///
 /// Thin wrapper over [`crate::render::locomotor_visual::screen_position`],

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original CanFireAt6F7970/6F77B0 -> InRange6F7220 Unit/Building bunker range stage; native LTNK Primary, ATGUN Weapon, Cannon Bullet and selected retained Rules readers.",
+  "assumptions": [
+    "Rules inputs execute original constructor stores and complete selected read/store blocks. Original TechnoType constructor plus Primary block, full Weapon and Bullet readers consume lexical entries from RULESMD, optional LANGRULE and MPBattleMD. The final supplied_empty_map_rules layer is explicitly an empty cache input and tests retained values; no local custom map file is required or claimed as replayed. Physical INI/MIX/map loading, whole type registry/read order and full RulesClass/TechnoType readers are outside this bounded comparison.",
+    "Inherited BulletReader supplies original cached INI indexes, allocation/TLS and physical image-load boundary. No Rust-interpreted numeric values initialize native readers. Missing SHP images and empty sound registry are unrelated to compared scalar range/projectile fields; render/weapon damage behavior is not claimed.",
+    "Range queries supply retained actor/type/map fields and copied original Unit7F5C70/Building7E3EBC vtables. GetCoords and RTTI execute. +2E4 is supplied as null or nonnull; the host pointer is never dereferenced by the observed range stage. This does not establish bunker installation/lifecycle.",
+    "Retail LTNK/ATGUN/Cannon scalar inputs feed the arcing rows; direct rows deliberately override Arcing=false. Position, object-target marked/bridge bits, map levels and synthetic bonus/overflow/minimum/sentinel controls are declared inputs. Native execution discovers adjacent admitted/refused range edges.",
+    "Building +2E4 and simultaneous bunkered/open-topped inputs are defensive arithmetic/ordering controls, not claims that those combinations arise in retail play. AirRange, occupied replacement, bunker and open-topped stage order is observed via registers.",
+    "PC53/chop FPCW0E7F, independently established 104-height/416-bridge constants, flat map and default zero elevation increment. No GreatestThreat search-radius changes, acquisition/scoring, complete fire/flight, RNG or production game capture claimed."
+  ],
+  "substitutions": [
+    "Range-query GetWeapon+3F8 supplies one original-shaped weapon slot for Unit/Infantry sources, as in the existing query owner. Building sources execute GetWeapon. All range, minimum, arithmetic, coordinate, distance, elevation, ballistic and line-of-fire calls execute original instructions.",
+    "Native input-reader fixture inherits existing allocation/delete, CRT TLS and physical image-load transport hooks from BulletReader/Reader/Lists; no scalar parser result is substituted."
+  ],
+  "entry_points": {
+    "coordinate_cell_wrapper": "0x006F7970",
+    "range_source": "0x006F77B0",
+    "range": "0x006F7220",
+    "bunker_stage": "0x006F72A2",
+    "bunker_rules_ctor": "0x00666AC8",
+    "bunker_rules_reader": "0x0066C723",
+    "integer_reader": "0x005276D0",
+    "techno_ctor": "0x00710AF0",
+    "primary_reader": "0x007129AB",
+    "weapon_reader": "0x00772080",
+    "bullet_reader": "0x0046BEE0"
+  },
+  "commands": [
+    "python -m tools.spatial_oracle.walk_cell_range --bunker --write",
+    "python -m tools.spatial_oracle.walk_cell_range --bunker --check"
+  ],
+  "required_assets": [
+    "supported gamemd.exe",
+    "RULESMD.INI",
+    "MPBattleMD.ini"
+  ],
+  "optional_assets": [
+    "LANGRULE.INI when present in the selected installation"
+  ],
+  "asset_environment": "VERA20K_BUNKER_ASSETS names the extracted INI directory; VERA20K_GAMEMD_EXE selects the executable. No map, ART, SHP or sound file is required.",
+  "source_normalized_lf_sha256": {
+    "walk_cell_range": "69ad7913959f12d4fc022b0a948d147f2a488eb782a6a2c610289cfe2c7fa92e",
+    "native_oracle": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb",
+    "map_queries": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
+    "bullet_reader": "2f05d2e7e917aef585553502830947ea8ca121eab2d886d2c9ba4df7c935727d",
+    "ini_reader": "fc0d267d9c8453ba3090bfacd056af5207f47cb1170651cce5b0c41c80e90a2e",
+    "lists": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
+    "reader_fixture": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
+    "ini_crc": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6"
+  },
+  "payload_sha256": "8b7a93c478453f1d00368b25c3aab9732c3bd49766f9e3c148ac86ca653ecdaf"
+}

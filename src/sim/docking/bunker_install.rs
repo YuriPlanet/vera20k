@@ -2,7 +2,7 @@
 //!
 //! Models the `Bunker=yes` mission helper: a facing-driven 6-state machine that,
 //! once a candidate unit is on the footprint, shoves blockers, turns the unit to
-//! face the building, force-tracks it onto the building cell, turns it South,
+//! face the building, force-tracks it onto the foundation centre, turns it South,
 //! plays entry anims, then installs (deselect + reciprocal link + up sound). The
 //! inter-state waits are turn/track completions — NOT frame-count timers.
 //!
@@ -13,14 +13,15 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::BunkerLink;
 use crate::sim::movement;
 use crate::sim::movement::ScatterFlags;
-use crate::sim::movement::facing_from_delta;
+use crate::sim::movement::ground_pose::object_get_coords;
 use crate::sim::occupancy::entity_occupancy_cells;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
+use crate::util::direction_tables::facing16_between;
 use serde::{Deserialize, Serialize};
 
 /// Desired body facing for an installed unit (South).
-const SOUTH_FACING: u8 = 0x80;
+const SOUTH_FACING: u16 = 0x8000;
 
 /// Install progress for a tank bunker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -34,9 +35,9 @@ pub enum BunkerState {
     ClearWait,
     /// Turning the unit to face the building.
     TurnToBuilding,
-    /// Force-track sub-cell step onto the building cell in progress.
+    /// Force-track sub-cell step onto the foundation centre in progress.
     TrackStep,
-    /// Turning the unit to South (desired body facing 0x80).
+    /// Turning the unit to South (desired body facing 0x8000).
     TurnSouth,
     /// Installed.
     Occupied,
@@ -132,7 +133,7 @@ fn step_install(
         }
         BunkerState::ClearWait => {
             if footprint_clear_of_others(sim, building_id, unit_id) {
-                if let Some(f) = facing_to_anchor(sim, building_id, unit_id) {
+                if let Some(f) = install_facing(sim, building_id, unit_id) {
                     turn_unit(sim, unit_id, f);
                 }
                 set_state(sim, building_id, BunkerState::TurnToBuilding, Some(unit_id));
@@ -143,20 +144,17 @@ fn step_install(
         }
         BunkerState::TurnToBuilding => {
             if !is_turning(sim, unit_id) {
-                if start_install_force_track(
+                start_install_force_track(
                     sim,
                     rules,
                     registry,
                     building_id,
                     unit_id,
                     frame_effects,
-                ) {
-                    set_state(sim, building_id, BunkerState::TrackStep, Some(unit_id));
-                } else {
-                    // Already on the install cell: skip the slide, turn South.
-                    turn_unit(sim, unit_id, SOUTH_FACING);
-                    set_state(sim, building_id, BunkerState::TurnSouth, Some(unit_id));
-                }
+                );
+                // Building4591AF..4591C4 ignores Force_Track's return and
+                // enters state3, including when both raw cells are equal.
+                set_state(sim, building_id, BunkerState::TrackStep, Some(unit_id));
             }
         }
         BunkerState::TrackStep => {
@@ -195,11 +193,11 @@ fn set_state(sim: &mut Simulation, building_id: u64, state: BunkerState, unit: O
     }
 }
 
-/// Turn the unit's body (`+0x388` `Set`) toward the 8-bit `facing`.
-fn turn_unit(sim: &mut Simulation, unit_id: u64, facing: u8) {
+/// Turn the unit's body (`+0x388` `Set`) toward the complete native facing word.
+fn turn_unit(sim: &mut Simulation, unit_id: u64, facing: u16) {
     let frame = sim.session.binary_frame;
     if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
-        u.body_facing.set(u16::from(facing) << 8, frame);
+        u.body_facing.set(facing, frame);
     }
 }
 
@@ -299,44 +297,23 @@ fn shove_footprint_blockers(
     }
 }
 
-/// Body facing from the candidate toward the building anchor; `None` when the
-/// candidate already sits on the anchor cell (no turn needed).
-fn facing_to_anchor(sim: &Simulation, building_id: u64, unit_id: u64) -> Option<u8> {
-    let (bx, by) = sim
-        .substrate
-        .entities
-        .get(building_id)
-        .map(|b| (b.position.rx, b.position.ry))?;
-    let (ux, uy) = sim
-        .substrate
-        .entities
-        .get(unit_id)
-        .map(|u| (u.position.rx, u.position.ry))?;
-    let dx = bx as i32 - ux as i32;
-    let dy = by as i32 - uy as i32;
-    if dx == 0 && dy == 0 {
-        None
-    } else {
-        Some(facing_from_delta(dx, dy))
-    }
+/// Building459069..4590F9 reads both virtual GetCoords, computes the full
+/// facing word and adds0x7FFF before Facing::Set. Steam gamemd SHA256
+/// 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600;
+/// executed controls: tools/spatial_oracle/locomotor_force_track.bunker_install.json.
+/// The shared coordinate and direction owners retain sub-cell/foundation
+/// offsets; matching raw cells (or matching coordinates) do not skip the turn.
+fn install_facing(sim: &Simulation, building_id: u64, unit_id: u64) -> Option<u16> {
+    let terrain = sim.resolved_terrain.as_ref();
+    let building = object_get_coords(sim.substrate.entities.get(building_id)?, terrain);
+    let unit = object_get_coords(sim.substrate.entities.get(unit_id)?, terrain);
+    Some(facing16_between([building.x, building.y], [unit.x, unit.y]).wrapping_add(0x7FFF))
 }
 
-/// Map an 8-bit body facing (toward the building) to one of the 4 diagonal
-/// install approach curves (0x43 NE / 0x44 SE / 0x45 SW / 0x46 NW). Exact octant
-/// boundaries are an in-game-verify item; state progression is unit-tested.
-fn octant_install_track(facing: u8) -> u8 {
-    match facing {
-        0x00..=0x3F => 0x43,
-        0x40..=0x7F => 0x44,
-        0x80..=0xBF => 0x45,
-        _ => 0x46,
-    }
-}
-
-/// Begin the sub-cell force-track that slides the candidate onto the install
-/// cell (the building anchor). Head offset = cell delta in leptons (no half-cell
-/// offset, unlike the refinery exit). Returns `false` when the candidate is
-/// already on the anchor cell (no slide needed).
+/// Building459101..4591C4 waits for Facing, chooses the track from Current16,
+/// and passes Building447AC0's foundation centre to Force_Track. The return
+/// value does not control progression to state3. The same native corpus above
+/// covers the diagonal boundaries, same-cell and exact-centre cases.
 fn start_install_force_track(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -344,54 +321,28 @@ fn start_install_force_track(
     building_id: u64,
     unit_id: u64,
     frame_effects: FrameEffects<'_>,
-) -> bool {
-    let Some((bx, by, building_sub_x, building_sub_y, building_z)) =
-        sim.substrate.entities.get(building_id).map(|b| {
-            (
-                b.position.rx,
-                b.position.ry,
-                b.position.sub_x.to_num::<i32>(),
-                b.position.sub_y.to_num::<i32>(),
-                movement::ground_pose::position_world_coord(&b.position).z,
-            )
-        })
-    else {
-        return false;
+) {
+    let Some(building) = sim.substrate.entities.get(building_id) else {
+        return;
     };
-    let Some((ux, uy)) = sim
-        .substrate
-        .entities
-        .get(unit_id)
-        .map(|u| (u.position.rx, u.position.ry))
-    else {
-        return false;
+    let head = object_get_coords(building, sim.resolved_terrain.as_ref());
+    let Some(unit) = sim.substrate.entities.get(unit_id) else {
+        return;
     };
-    let dcx = bx as i32 - ux as i32;
-    let dcy = by as i32 - uy as i32;
-    if dcx == 0 && dcy == 0 {
-        return false;
-    }
-    let facing = facing_from_delta(dcx, dcy);
-    let track = octant_install_track(facing);
-    let admitted = sim.force_track(
-        unit_id,
-        i32::from(track),
-        crate::sim::components::DriveCoord {
-            x: i32::from(bx) * 256 + building_sub_x,
-            y: i32::from(by) * 256 + building_sub_y,
-            z: building_z,
-        },
-        Some(rules),
-        registry,
-        frame_effects,
-    );
+    let current = unit.body_facing_current(sim.session.binary_frame);
+    let track = match ((u32::from(current) >> 7) + 1) & 0x1FE {
+        0x40 => 0x43,
+        0xC0 => 0x44,
+        0x1C0 => 0x46,
+        _ => 0x45,
+    };
+    sim.force_track(unit_id, track, head, Some(rules), registry, frame_effects);
     // Building4591AF calls Force_Track, then4591BE explicitly sets Foot's
     // applied fraction. The generic locomotor admission does not own speed.
     if let Some(unit) = sim.substrate.entities.get_mut(unit_id) {
         unit.foot_speed
             .set_speed_fraction(crate::util::fixed_math::SIM_ONE);
     }
-    admitted
 }
 
 #[cfg(test)]
@@ -403,12 +354,21 @@ mod tests {
     use crate::sim::world::RevealOutcome;
 
     fn rules() -> RuleSet {
-        RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-            "[VehicleTypes]\n0=TANK\n\n[InfantryTypes]\n\n[AircraftTypes]\n\n\
+        rules_with_foundation("1x1")
+    }
+
+    fn rules_with_foundation(foundation: &str) -> RuleSet {
+        RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=TANK\n\n[InfantryTypes]\n\n[AircraftTypes]\n\n\
              [BuildingTypes]\n0=NATBNK\n\n\
              [TANK]\nStrength=400\nArmor=heavy\nSpeed=6\nBunkerable=yes\nPrimary=120mm\n\n\
              [NATBNK]\nStrength=1000\nArmor=heavy\nBunker=yes\n",
-        ))
+            ),
+            &crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[NATBNK]\nFoundation={foundation}\n"
+            )),
+        )
         .expect("rules parse")
     }
 
@@ -472,11 +432,171 @@ mod tests {
     }
 
     #[test]
-    fn octant_track_maps_quadrants() {
-        assert_eq!(octant_install_track(0x00), 0x43);
-        assert_eq!(octant_install_track(0x40), 0x44);
-        assert_eq!(octant_install_track(0x80), 0x45);
-        assert_eq!(octant_install_track(0xC0), 0x46);
+    fn install_coordinates_facing_timer_and_selector_match_native_execution() {
+        use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+        use crate::sim::components::DriveCoord;
+        use crate::sim::movement::ground_pose::put_location;
+        use serde_json::Value;
+
+        // Bounded original states1/2: admission/footprint clearance are
+        // supplied. The native timer determines the next frame; Drive Process,
+        // final parking and screen picking are not claimed by this comparison.
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/locomotor_force_track.bunker_install.json",
+        ))
+        .unwrap();
+        let integer = |value: &Value| i32::try_from(value.as_i64().unwrap()).unwrap();
+        let coord = |value: &Value| DriveCoord {
+            x: integer(&value[0]),
+            y: integer(&value[1]),
+            z: integer(&value[2]),
+        };
+        let rows = corpus["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 36);
+        for row in rows {
+            let input = &row["input"];
+            let expected = &row["output"];
+            let name = input["name"].as_str().unwrap();
+            let foundation = corpus["foundation_inputs"]["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| entry["foundation_index"] == input["foundation_index"])
+                .unwrap();
+            let rules = rules_with_foundation(foundation["value"].as_str().unwrap());
+            let mut sim = Simulation::new();
+            let cells = (0..32)
+                .flat_map(|y| {
+                    (0..32).map(move |x| {
+                        let mut cell = test_flat_cell(x, y);
+                        cell.level = 2;
+                        cell
+                    })
+                })
+                .collect();
+            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(32, 32, cells));
+            sim.session.binary_frame = 100;
+            spawn_bunker(&mut sim, 2);
+            spawn_tank_on(&mut sim, 1, 10, 10);
+            let building = sim.substrate.entities.get_mut(2).unwrap();
+            building.foundation = rules.object("NATBNK").unwrap().foundation.clone();
+            put_location(&mut building.position, coord(&input["building_location"]));
+            let unit = sim.substrate.entities.get_mut(1).unwrap();
+            put_location(&mut unit.position, coord(&input["unit_location"]));
+            unit.body_facing = movement::FacingClass::new(
+                integer(&input["initial_facing"]) as u16,
+                integer(&input["rot"]),
+            );
+            unit.bunker_link = BunkerLink::Approaching(2);
+            assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
+            set_state(&mut sim, 2, BunkerState::ClearWait, Some(1));
+            step_install(&mut sim, &rules, None, 2, FrameEffects::default());
+            let unit = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(
+                unit.body_facing.destination(),
+                integer(&expected["desired_facing"]) as u16,
+                "{name}"
+            );
+            assert_eq!(
+                unit.body_facing.timer_start_frame(),
+                Some(integer(&expected["turn_start"]) as u32),
+                "{name}"
+            );
+            assert_eq!(
+                unit.body_facing.timer_duration(),
+                integer(&expected["turn_duration"]) as u16,
+                "{name}"
+            );
+            assert_eq!(rt(&sim, 2).state, BunkerState::TurnToBuilding, "{name}");
+            assert_eq!(expected["state_after_facing"], 2, "{name}");
+            if expected["waited_for_turn"].as_bool().unwrap() {
+                step_install(&mut sim, &rules, None, 2, FrameEffects::default());
+                assert_eq!(rt(&sim, 2).state, BunkerState::TurnToBuilding, "{name}");
+                assert!(
+                    movement::track_head::committed_track_head(
+                        sim.substrate.entities.get(1).unwrap()
+                    )
+                    .is_none(),
+                    "{name}"
+                );
+            }
+            sim.session.binary_frame = integer(&expected["completed_frame"]) as u32;
+            step_install(&mut sim, &rules, None, 2, FrameEffects::default());
+            let unit = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(
+                unit.body_facing_current(sim.session.binary_frame),
+                integer(&expected["current_facing"]) as u16,
+                "{name}"
+            );
+            let drive = unit
+                .locomotor
+                .as_ref()
+                .unwrap()
+                .selected_drive_runtime()
+                .unwrap()
+                .retained()
+                .unwrap();
+            assert_eq!(
+                drive.track().turn_index,
+                integer(&expected["selector"]),
+                "{name}"
+            );
+            assert_eq!(
+                drive.head_to(),
+                Some(coord(&expected["state"]["head"])),
+                "{name}"
+            );
+            assert_eq!(
+                drive.destination(),
+                Some(coord(&expected["state"]["destination"])),
+                "{name}"
+            );
+            assert_eq!(rt(&sim, 2).state, BunkerState::TrackStep, "{name}");
+            assert_eq!(expected["state_after_force"], 3, "{name}");
+        }
+    }
+
+    #[test]
+    fn retail_bunker_install_same_cell_still_tracks_to_foundation_center() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let mut sim = Simulation::new();
+        spawn_bunker(&mut sim, 2);
+        spawn_tank_on(&mut sim, 1, 10, 10);
+        sim.substrate.entities.get_mut(2).unwrap().foundation =
+            retail.rules.object("NATBNK").unwrap().foundation.clone();
+        assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
+        let building = sim.substrate.entities.get(2).unwrap();
+        // Steam459164 calls Building447AC0 even when both raw cells match.
+        // The existing coordinate owner distinguishes the foundation centre
+        // from Location, which the screen picker registers for the building.
+        let center = movement::ground_pose::object_get_coords(building, None);
+        let location = movement::ground_pose::object_location(building, None);
+        assert_ne!(
+            center, location,
+            "retail NATBNK has a multi-cell foundation"
+        );
+        start_install_force_track(
+            &mut sim,
+            &retail.rules,
+            None,
+            2,
+            1,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let drive = sim
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .and_then(|loco| loco.selected_drive_runtime())
+            .and_then(|runtime| runtime.retained())
+            .expect("installed Drive runtime");
+        assert_eq!(drive.head_to(), Some(center));
+        assert_eq!(drive.destination(), Some(center));
     }
 
     #[test]
@@ -492,14 +612,14 @@ mod tests {
         }
         assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
 
-        assert!(start_install_force_track(
+        start_install_force_track(
             &mut sim,
             &rules,
             None,
             2,
             1,
-            crate::sim::world::FrameEffects::default()
-        ));
+            crate::sim::world::FrameEffects::default(),
+        );
         let unit = sim.substrate.entities.get(1).unwrap();
         let exact_head = crate::sim::components::DriveCoord {
             x: 10 * 256 + 96,
@@ -540,7 +660,7 @@ mod tests {
     }
 
     #[test]
-    fn install_machine_walks_to_occupied() {
+    fn install_machine_reaches_occupied_with_supplied_track_completion() {
         let mut sim = Simulation::new();
         let rules = rules();
         spawn_bunker(&mut sim, 2);
@@ -558,7 +678,7 @@ mod tests {
         );
         assert_eq!(rt(&sim, 2).state, BunkerState::ClearWait);
 
-        // ClearWait -> TurnToBuilding (footprint clear; delta 0 => no facing turn).
+        // ClearWait -> TurnToBuilding, including matching raw coordinates.
         tick_bunker_install(
             &mut sim,
             &rules,
@@ -567,7 +687,30 @@ mod tests {
         );
         assert_eq!(rt(&sim, 2).state, BunkerState::TurnToBuilding);
 
-        // TurnToBuilding -> TurnSouth (delta 0 => force-track skipped; faces South).
+        // Let the facing owner finish, then enter TrackStep even at the centre.
+        sim.session.binary_frame += u32::from(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .body_facing
+                .timer_duration(),
+        );
+        tick_bunker_install(
+            &mut sim,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(rt(&sim, 2).state, BunkerState::TrackStep);
+
+        // This is a bounded state-machine test: supply track completion through
+        // its owner. It does not execute or claim the Drive Process chain.
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        let loco = unit.locomotor.as_mut().unwrap();
+        assert!(loco.store_track_head(movement::track_process::TrackFamily::Drive, None));
+        assert!(loco.store_track_destination(movement::track_process::TrackFamily::Drive, None));
+        unit.movement_target = None;
         tick_bunker_install(
             &mut sim,
             &rules,
@@ -582,7 +725,7 @@ mod tests {
                 .unwrap()
                 .body_facing
                 .destination(),
-            u16::from(SOUTH_FACING) << 8
+            SOUTH_FACING
         );
 
         // Let the South turn finish.
@@ -592,7 +735,7 @@ mod tests {
             .get_mut(1)
             .unwrap()
             .body_facing
-            .snap(u16::from(SOUTH_FACING) << 8, frame);
+            .snap(SOUTH_FACING, frame);
 
         // TurnSouth -> install.
         tick_bunker_install(

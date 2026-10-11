@@ -1110,45 +1110,75 @@ pub(crate) fn can_fire_at_target(
     alliances: Option<&HouseAllianceMap>,
     los: &line_of_fire::LineOfFireInputs<'_>,
 ) -> bool {
+    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+    can_fire_at_target_in_query(
+        entities,
+        rules,
+        interner,
+        attacker_id,
+        target,
+        &cells,
+        alliances,
+        los,
+        Some(target),
+    )
+}
+
+/// CanFireAtTarget6F7780 with an explicit native map-query identity. This is
+/// the same selected-weapon/source/InRange chain for simulation and input.
+/// Ordinary callers select against `Some(target)`; the deployed Unit action
+/// wrappers (740793/7403AA) explicitly select against NULL before measuring
+/// their original target. The range itself remains one owner.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn can_fire_at_target_in_query(
+    entities: &EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+    attacker_id: u64,
+    target: &TargetKind,
+    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    alliances: Option<&HouseAllianceMap>,
+    los: &line_of_fire::LineOfFireInputs<'_>,
+    selection_target: Option<&TargetKind>,
+) -> bool {
     let Some(attacker) = entities.get(attacker_id) else {
         return false;
     };
     let Some(attacker_obj) = rules.object(interner.resolve(attacker.type_ref())) else {
         return false;
     };
-    let Some((_, Some(selected))) = select_weapon_against(
+    let Some((index, _)) = combat_weapon::select_weapon_against_in_query(
         rules,
         attacker,
         attacker_obj,
         &combat_weapon::attacker_facts(attacker, attacker_obj),
-        Some(target),
+        selection_target,
         entities,
         interner,
-        Some(terrain),
+        Some(cells),
         alliances,
     ) else {
         return false;
     };
-    let Some(source) = in_range::fire_source_coords(
+    // CanFireAt6F77B0 reads GetWeapon(index), not a Warhead pointer. Keep
+    // selection's index even when the selected slot has no resolved warhead.
+    let Some(weapon) =
+        combat_weapon::get_weapon(attacker, attacker_obj, index, entities, rules, interner)
+    else {
+        return false;
+    };
+    let Some(source) = in_range::fire_source_coords_in_query(
         attacker,
         target,
-        selected.weapon,
+        weapon,
         entities,
-        terrain,
+        cells,
         (rules, interner),
     ) else {
         return false;
     };
-    in_range::compute_in_range(
-        attacker,
-        source,
-        target,
-        selected.weapon,
-        rules,
-        interner,
-        entities,
-        terrain,
-        los,
+    in_range::compute_in_range_in_query(
+        attacker, source, target, weapon, rules, interner, entities, cells, los,
     )
 }
 
