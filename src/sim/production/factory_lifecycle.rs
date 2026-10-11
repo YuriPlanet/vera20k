@@ -574,8 +574,12 @@ pub(in crate::sim) fn revalidate_and_step_factories(
     rules: &RuleSet,
     effects: FrameEffects<'_>,
 ) {
+    // UpdateFactoryQueue509140 -> FindFactory5F7900 -> CanBuild4F7870
+    // reads Factory::Get_Object4CA160 for the held-object build-limit
+    // exception (tools/can_build_oracle.json). Plan while that authoritative
+    // registry remains visible: its limbo head already counts as owned.
+    let reval_plan = sim.production.factories.plan_revalidation(sim, rules);
     let mut registry = std::mem::take(&mut sim.production.factories);
-    let reval_plan = registry.plan_revalidation(sim, rules);
     let lifecycle = registry.apply_revalidation(&reval_plan);
     for (owner, abandoned) in lifecycle.abandoned {
         settle_abandoned(sim, rules, owner, abandoned, effects);

@@ -48,6 +48,224 @@ fn world(seed: u64) -> (Simulation, RuleSet, InternedId) {
     (sim, rules, owner)
 }
 
+/// Use physical stock Battle rules through the scenario reader, including its
+/// mode/map passes. This is a production regression, not a native timing golden.
+#[test]
+fn retail_superweapon_construction_survives_revalidation() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    for (building, country, yard, tech, plant) in [
+        ("GACSPH", "Americans", "GACNST", "GATECH", "GAPOWR"),
+        ("GAWEAT", "Americans", "GACNST", "GATECH", "GAPOWR"),
+        ("NAIRON", "Russians", "NACNST", "NATECH", "NAPOWR"),
+        ("NAMISL", "Russians", "NACNST", "NATECH", "NAPOWR"),
+        ("YAGNTC", "YuriCountry", "YACNST", "YATECH", "YAPOWR"),
+        ("YAPPET", "YuriCountry", "YACNST", "YATECH", "YAPOWR"),
+    ] {
+        let mut sim = Simulation::new();
+        sim.install_resolved_terrain_for_new_map(
+            crate::map::resolved_terrain::test_flat_ground_grid(64),
+        );
+        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+            base: 0,
+            off_fc: -100,
+            off_100: -100,
+            off_104: 200,
+            off_108: 200,
+        });
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        sim.session.game_mode_nonzero = true;
+        let owner = sim.interner.intern(country);
+        sim.houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
+        );
+        for (index, name) in [yard, tech, plant, plant, plant].into_iter().enumerate() {
+            let id = index as u64 + 1;
+            spawn_structure(
+                &mut sim,
+                rules,
+                id,
+                country,
+                name,
+                10 + index as u16 * 5,
+                10,
+            );
+            sim.substrate.entities.get_mut(id).unwrap().health.current =
+                rules.object(name).unwrap().strength;
+            // The compact helper marks one cell. Install the stock foundation
+            // through the occupancy boundary before running whole-world ticks.
+            sim.remove_entity_occupancy(id);
+            super::tests::stamp_type_foundation(&mut sim, rules, id);
+            sim.add_entity_occupancy(id);
+        }
+        let object = rules.object(building).unwrap();
+        assert_eq!(object.build_limit, 1, "{building}: stock limit");
+        let category = super::category_for_object(object);
+        assert!(
+            super::build_options_for_owner(&sim, rules, country)
+                .iter()
+                .any(|option| sim.interner.resolve(option.type_id) == building && option.enabled),
+            "{building}: the stock prerequisites offer an enabled cameo"
+        );
+        let type_id = sim.interner.get(building).unwrap();
+        let command = crate::sim::command::CommandEnvelope::new(
+            owner,
+            1,
+            crate::sim::command::Command::QueueProduction { type_id },
+        );
+        sim.advance_tick(&[command], Some(rules), None, None, 67);
+        let head = held_id(&sim, owner, category);
+        for _ in 0..20_000 {
+            sim.advance_tick(&[], Some(rules), None, None, 67);
+            let view = sim
+                .production
+                .factories
+                .view(owner, category)
+                .unwrap_or_else(|| panic!("{building}: construction was cancelled"));
+            assert_eq!(view.object.unwrap().entity_id, Some(head));
+            if view.progress == super::PRODUCTION_STEPS {
+                break;
+            }
+        }
+        let view = sim.production.factories.view(owner, category).unwrap();
+        assert_eq!(
+            view.progress,
+            super::PRODUCTION_STEPS,
+            "{building}: reaches placement readiness"
+        );
+        assert!(sim.substrate.entities.get(head).unwrap().lifecycle.in_limbo);
+        assert!(
+            !enqueue_by_type(
+                &mut sim,
+                rules,
+                country,
+                building,
+                crate::sim::world::FrameEffects::default()
+            ),
+            "{building}: a second copy still exceeds the stock limit"
+        );
+        assert_eq!(held_id(&sim, owner, category), head);
+        let preview = super::placement_preview_for_owner_with_overlays(
+            &sim, rules, country, building, 10, 14, None,
+        )
+        .unwrap();
+        assert_eq!(
+            preview.reason, None,
+            "{building}: clear site beside its yard"
+        );
+        let place = crate::sim::command::CommandEnvelope::new(
+            owner,
+            sim.session.tick + 1,
+            crate::sim::command::Command::PlaceReadyBuilding {
+                type_id,
+                rx: 10,
+                ry: 14,
+            },
+        );
+        sim.advance_tick(&[place], Some(rules), None, None, 67);
+        assert!(
+            !sim.substrate.entities.get(head).unwrap().lifecycle.in_limbo,
+            "{building}: the completed object is placed without replacement"
+        );
+        assert!(sim.production.factories.view(owner, category).is_none());
+        assert!(
+            !enqueue_by_type(
+                &mut sim,
+                rules,
+                country,
+                building,
+                crate::sim::world::FrameEffects::default()
+            ),
+            "{building}: placement does not allow a second copy"
+        );
+    }
+}
+
+/// Positive limits use the shared CanBuild factory-held exception for all four
+/// classes; cancellation must still release tracking and lost producers cancel.
+#[test]
+fn limited_heads_survive_revalidation_without_bypassing_limits_or_cleanup() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Countries]\n0=Americans\n[InfantryTypes]\n0=I\n[VehicleTypes]\n0=T\n\
+         [AircraftTypes]\n0=A\n[BuildingTypes]\n0=B\n1=YARD\n2=BARRACKS\n3=WAR\n4=AIR\n\
+         [I]\nOwner=Americans\nTechLevel=1\nBuildLimit=1\nCost=200\nStrength=100\nSpeed=4\n\
+         [T]\nOwner=Americans\nTechLevel=1\nBuildLimit=1\nCost=500\nStrength=100\nSpeed=4\n\
+         [A]\nOwner=Americans\nTechLevel=1\nBuildLimit=1\nCost=500\nStrength=100\nSpeed=8\n\
+         [B]\nOwner=Americans\nTechLevel=1\nBuildLimit=1\nCost=500\nStrength=100\nFoundation=1x1\n\
+         [YARD]\nOwner=Americans\nFactory=BuildingType\n\
+         [BARRACKS]\nOwner=Americans\nFactory=InfantryType\n\
+         [WAR]\nOwner=Americans\nFactory=UnitType\n\
+         [AIR]\nOwner=Americans\nFactory=AircraftType\n",
+    ))
+    .unwrap();
+    for (name, producer) in [("B", "YARD"), ("I", "BARRACKS"), ("T", "WAR"), ("A", "AIR")] {
+        let mut sim = Simulation::new();
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.intern("Americans");
+        sim.houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
+        );
+        spawn_structure(&mut sim, &rules, 1, "Americans", producer, 10, 10);
+        let category = super::category_for_object(rules.object(name).unwrap());
+        assert!(enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            name,
+            crate::sim::world::FrameEffects::default()
+        ));
+        let head = held_id(&sim, owner, category);
+        super::revalidate_and_step_factories(
+            &mut sim,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(
+            held_id(&sim, owner, category),
+            head,
+            "{name}: own held object remains admissible"
+        );
+        assert!(!enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            name,
+            crate::sim::world::FrameEffects::default()
+        ));
+        assert!(cancel_by_type_for_owner(
+            &mut sim,
+            &rules,
+            "Americans",
+            name,
+            false,
+            crate::sim::world::FrameEffects::default()
+        ));
+        assert!(!sim.substrate.entities.contains(head));
+        assert!(enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            name,
+            crate::sim::world::FrameEffects::default()
+        ));
+        let replacement = held_id(&sim, owner, category);
+        sim.substrate.entities.remove(1);
+        super::revalidate_and_step_factories(
+            &mut sim,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert!(!sim.substrate.entities.contains(replacement));
+        assert!(sim.production.factories.view(owner, category).is_none());
+    }
+}
+
 pub(super) fn held_id(sim: &Simulation, owner: InternedId, category: ProductionCategory) -> u64 {
     sim.production
         .factories
