@@ -674,7 +674,7 @@
           "pc": "0x718254",
           "phase": "event_setters",
           "size": 1,
-          "value": 604133632
+          "value": 0
         },
         {
           "frame": 103,
@@ -683,7 +683,7 @@
           "pc": "0x718257",
           "phase": "event_setters",
           "size": 1,
-          "value": 604133632
+          "value": 0
         },
         {
           "frame": 103,
@@ -1514,7 +1514,7 @@
           "pc": "0x718254",
           "phase": "event_setters",
           "size": 1,
-          "value": 604133632
+          "value": 0
         },
         {
           "frame": 116,
@@ -1523,7 +1523,7 @@
           "pc": "0x718257",
           "phase": "event_setters",
           "size": 1,
-          "value": 604133632
+          "value": 0
         },
         {
           "frame": 116,
@@ -2354,7 +2354,7 @@
           "pc": "0x718254",
           "phase": "event_setters",
           "size": 1,
-          "value": 604133632
+          "value": 0
         },
         {
           "frame": 117,
@@ -2363,7 +2363,7 @@
           "pc": "0x718257",
           "phase": "event_setters",
           "size": 1,
-          "value": 604133632
+          "value": 0
         },
         {
           "frame": 117,
@@ -3122,7 +3122,7 @@
           "pc": "0x718254",
           "phase": "event_setters",
           "size": 1,
-          "value": 604133632
+          "value": 0
         },
         {
           "frame": 103,
@@ -3131,7 +3131,7 @@
           "pc": "0x718257",
           "phase": "event_setters",
           "size": 1,
-          "value": 604133632
+          "value": 0
         },
         {
           "frame": 103,
@@ -3800,7 +3800,7 @@
           "pc": "0x718254",
           "phase": "event_setters",
           "size": 1,
-          "value": 604133632
+          "value": 0
         },
         {
           "frame": 103,
@@ -3809,7 +3809,7 @@
           "pc": "0x718257",
           "phase": "event_setters",
           "size": 1,
-          "value": 604133632
+          "value": 0
         },
         {
           "frame": 103,

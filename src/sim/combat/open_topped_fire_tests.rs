@@ -816,11 +816,22 @@ fn retail_battle_fortress_permitted_stock_riders_emit_their_weapons() {
 }
 
 /// A freshly teleported rider must finish materializing inside, acquire and
-/// freeze a target outside the hull's range, then release on Stop or erase.
+/// freeze a target outside the hull's range. Native carrier Stop710550 clears
+/// TarCom but keeps a Guard rider's beam (not ordinary Attack->Idle->LetGo).
+/// Moving beyond OpenToppedWarpDistance releases it; otherwise it erases.
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
 fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
-    for stop_after_freeze in [true, false] {
+    let control: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/temporal_stop.open_topped_guard.json",
+    ))
+    .unwrap();
+    assert_eq!(
+        control["native_sha256"],
+        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+    );
+    let native_stop = &control["rows"][0]["output"]["after_stop"];
+    for release_by_moving in [true, false] {
         let mut fortress = retail_dustbowl_battle_fortress_boarded(0);
         let rider = board_infantry(&mut fortress, "CLEG");
         assert!(
@@ -860,13 +871,13 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
             .current;
         let mut frozen = false;
         let mut stop_issued = false;
+        let mut stop_observed = false;
+        let mut move_issued = false;
         let mut completed = false;
         let mut pending = None;
         for frame in 0..1000 {
-            // Observe the first release before another Guard scan can
-            // legitimately reacquire the enemy. Native Stop retains Attack
-            // until its scheduled Idle receiver reaches Temporal::LetGo.
-            if stop_issued
+            // Observe range-triggered release before another Guard scan.
+            if move_issued
                 && !fortress
                     .scenario
                     .sim()
@@ -877,6 +888,18 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
                     .temporal
                     .is_warping_someone()
             {
+                assert!(
+                    distance(&fortress, rider, target)
+                        > fortress
+                            .scenario
+                            .runtime
+                            .resources
+                            .rules
+                            .combat_damage
+                            .open_topped_warp_distance
+                            .wrapping_mul(256),
+                    "release must follow the production retail distance limit"
+                );
                 let victim = fortress
                     .scenario
                     .sim()
@@ -894,9 +917,11 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
             let actor = sim.substrate.entities.get(rider).unwrap();
             if actor.temporal.warp_target() == Some(target) {
                 assert!(!actor.is_warping_in());
-                assert!(sim.substrate.entities.get(target).unwrap().ai_frozen());
+                let victim = sim.substrate.entities.get(target).unwrap();
+                assert!(victim.ai_frozen());
+                assert_eq!(victim.health.current, original_health);
                 frozen = true;
-                if stop_after_freeze && !stop_issued {
+                if !stop_issued {
                     pending = Some(order(
                         &fortress,
                         Command::Stop {
@@ -905,6 +930,39 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
                     ));
                     stop_issued = true;
                 }
+                if stop_issued && actor.attack_target.is_none() && !stop_observed {
+                    assert_eq!(
+                        actor.attack_target.is_none(),
+                        native_stop["target_is_null"].as_bool().unwrap()
+                    );
+                    assert_eq!(
+                        i64::from(actor.mission.current().raw()),
+                        native_stop["mission"].as_i64().unwrap()
+                    );
+                    assert_eq!(
+                        actor.temporal.warp_target().is_some(),
+                        native_stop["temporal_target"].as_u64().unwrap() != 0
+                    );
+                    assert_eq!(
+                        victim.ai_frozen(),
+                        native_stop["victim_warped"].as_bool().unwrap()
+                    );
+                    stop_observed = true;
+                    if release_by_moving {
+                        // The fixture's two-cell western corridor is flat and
+                        // puts the carrier >7 cells from the stationary victim.
+                        pending = Some(order(
+                            &fortress,
+                            Command::Move {
+                                entity_id: fortress.bfrt,
+                                target_rx: x - 2,
+                                target_ry: y,
+                                queue: false,
+                            },
+                        ));
+                        move_issued = true;
+                    }
+                }
             }
             if sim
                 .substrate
@@ -912,17 +970,22 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
                 .get(target)
                 .is_none_or(|victim| !victim.lifecycle.object_alive)
             {
+                assert!(
+                    !release_by_moving,
+                    "the range-release scenario must preserve a living victim"
+                );
                 assert!(!actor.temporal.is_warping_someone());
                 completed = true;
                 break;
             }
             if matches!(frame, 120 | 300 | 999) {
                 println!(
-                    "chrono frame {frame}: warp={} mission={:?} queued={:?} target={:?} fraction={:?} doing={:?}",
+                    "chrono frame {frame}: warp={} mission={:?} queued={:?} target={:?} beam={:?} fraction={:?} doing={:?}",
                     actor.is_warping_in(),
                     actor.mission.current(),
                     actor.mission.queued(),
                     actor.attack_target,
+                    actor.temporal.warp_target(),
                     actor.foot_speed.applied_fraction(),
                     actor.mission_leaf.as_infantry().map(|leaf| leaf.doing())
                 );
@@ -930,8 +993,12 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
         }
         assert!(frozen, "rider freezes the target after hidden cooldown");
         assert!(
+            stop_observed,
+            "carrier Stop clears TarCom and retains the native Guard beam"
+        );
+        assert!(
             completed,
-            "Stop releases it, or its complete Temporal chain erases it"
+            "carrier distance releases it, or the complete Temporal chain erases it"
         );
     }
 }

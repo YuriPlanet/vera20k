@@ -1134,11 +1134,10 @@ impl Simulation {
     ///    runs its locomotor's Process an extra time (Unit
     ///    `0x007362A7..0x007362F5`, Infantry `0x0051BB7D..0x0051BBCB`,
     ///    Aircraft `0x00414C78..0x00414CC6`) and returns if that killed it.
-    ///    VERA runs that call only for the Chronosphere's warp while its
-    ///    Teleport is active (`movement::teleport_chrono`, whose residuals
-    ///    cover a Drive over it): the ordinary warp-in's twin is its
-    ///    TimerCheck (`0x00719322`), which the retained countdown stands in
-    ///    for (module residual);
+    ///    The active Chronosphere warp uses `movement::teleport_chrono`
+    ///    (its residuals cover a Drive over it). Ordinary Teleport warp-in
+    ///    uses the existing Process's early TimerCheck arm (`0x00719322`),
+    ///    including a hidden open-topped passenger;
     /// 3. a warped-out object ([`GameEntity::ai_frozen`]) drops its target
     ///    and NavCom and returns.
     ///
