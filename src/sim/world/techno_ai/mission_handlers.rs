@@ -249,33 +249,6 @@ pub(crate) fn dispatch_foot_mission(
         // Doing is the instance+6C4 action index; Type+6C4 is the separate
         // UndeployDelay. Shared522510 establishes Doing27..30 exactly.
         //
-        // RESIDUAL (GSI-07.06): the override's C4 arm remains outside this
-        // deployed/action-clock chain.
-        // - **This arm is FIRST in the override and is NOT AI-gated.** A
-        //   demolition infantryman — `InfantryType->C4` (`+0xEC2`, key `"C4"`
-        //   at `0x00825978`, store `0x00524559`) or `HasWeaponAbility(0xE)` —
-        //   holding a BuildingClass target takes
-        //   `Set_Destination(target, 1); Queue_Mission(0x11 Sabotage, 0);
-        //   return 1` with **no RNG draw** (`decompile_function 0x0051F3E0`,
-        //   `0x0051F400`-`0x0051F44A`). The two building-type gates are now
-        //   named: `+0x1577` is **`CanC4=`** (key `"CanC4"` at `0x0081ADFC`,
-        //   `BuildingTypeClass::ReadINI` store `0x0046005D`, constructor
-        //   default **1** at `0x0045E063`) and `+0x1701` is
-        //   **`InvisibleInGame=`** (key at `0x0081A8CC`, store `0x00460E01`) —
-        //   both already parsed here as `can_c4` and `invisible_in_game`, and
-        //   both already used by the player Sabotage order in
-        //   `world_commands.rs`. What is still missing is the *handler* arm:
-        //   VERA drives Sabotage from that order path's `c4_plant` goal state
-        //   and its own movement issue, and the Sabotage selector has no
-        //   dispatch arm, so queueing it from here would park the object on a
-        //   selector whose timer nothing re-arms. Trigger: a force-fire or
-        //   retarget onto a building by Tanya, a Navy SEAL, a Crazy Ivan or a
-        //   Psi-Corps Trooper. Player effect: VERA shoots the building where
-        //   retail walks in and plants. Frequency: low-to-moderate — the
-        //   ordinary right-click resolver issues the enter action directly.
-        //   It precedes the computer capture arm below, which no retail C4=
-        //   type (TANY, GHOST, PTROOP) takes.
-        //
         // RESIDUAL (GSI-07.06) — two further Foot-body steps are absent:
         // - Step 1, the `HoverAttack` re-anchor. When `TechnoType+0x390`
         //   (`HoverAttack`, NOT `DefaultToGuardArea` — the research corpus has
@@ -292,6 +265,13 @@ pub(crate) fn dispatch_foot_mission(
         //   after a non-null pick. The producer, consumer and team-coordinate
         //   reader remain one required Tesla charging chain; none has a Rust
         //   latch owner yet. This is unrelated to tank-bunker containment.
+        // `InfantryClass::Mission_Attack @ 0x0051F3E0` opens with its C4 arm,
+        // for every house.
+        (EntityCategory::Infantry, Some(MissionType::Attack))
+            if c4_sabotage_building(sim, id, rules).is_some() =>
+        {
+            infantry_attack_c4(sim, id, rules, ctx)
+        }
         // `InfantryClass::Mission_Attack @ 0x0051F3E0` and `Mission_Hunt @
         // 0x0051F540` share their computer capture arm.
         (EntityCategory::Infantry, Some(MissionType::Attack | MissionType::Hunt))
@@ -736,16 +716,18 @@ pub(crate) fn dispatch_foot_mission(
             evaluate_foot_rescue(sim, id, rules, ctx)
         }
         // `FootClass::Mission_Capture @ 0x004D4B20` (vt+0x214), which neither
-        // class overrides.
-        (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Capture)) => {
-            MissionHandlerEvaluation::cadence(crate::sim::mission::capture::mission_capture(
-                sim,
-                rules,
-                ctx.overlay_registry,
-                id,
-                ctx.effects,
-            ))
-        }
+        // class overrides. Sabotage dispatches to the same slot (jump table
+        // `0x005B34E8`, entries 8 and 17).
+        (
+            EntityCategory::Unit | EntityCategory::Infantry,
+            Some(MissionType::Capture | MissionType::Sabotage),
+        ) => MissionHandlerEvaluation::cadence(crate::sim::mission::capture::mission_capture(
+            sim,
+            rules,
+            ctx.overlay_registry,
+            id,
+            ctx.effects,
+        )),
         // SKIP/PROVE (GSI-07.09) — Mission 4 Retreat is a dead slot for foot
         // objects, and pass 1's reason was wrong. `FootClass::Mission_Retreat @
         // 0x004DA2C0` (slot `+0x230`, proven from the dispatch jump table at
@@ -1237,14 +1219,14 @@ pub(crate) fn foot_enter_idle_mode_selection(
 ///    of the map but not the far side of a river.
 /// 3. **The type arms**, taken only by an infantryman (`What_Am_I` 0xF,
 ///    `0x004D53A0..0x004D53B4`) whose scan came back with a target: the
-///    engineer's is [`hunt_engineer_capture`]; the other two are recorded
-///    below.
+///    engineer's and the C4 one are [`hunt_infantry_type_arm`]; the
+///    VehicleThief's is recorded below.
 /// 4. **No target**: a human-owned object runs the idle-action virtual
 ///    (`vt+0x478`, `0x004D557C`); an AI-owned one walks home to its base cell.
 /// 5. **The tail** at `0x004D5582`, reached from every arm:
 ///    `ftol(MissionControl[current].Rate * 900.0) + RandomRanged(0, 2)`;
-///    `0x005B3A00` indexes the current mission, Capture once the engineer arm
-///    has commenced it.
+///    `0x005B3A00` indexes the current mission, Capture or Sabotage once a
+///    type arm has commenced it.
 ///
 /// So the normal path draws the scenario RNG **twice** — once inside the
 /// scanner, once in the tail — and the `StupidHunt` path draws once. An earlier
@@ -1260,24 +1242,11 @@ pub(crate) fn foot_enter_idle_mode_selection(
 /// flagged passively-acquired — and the scanner above deliberately leaves the
 /// flag clear, as native does.
 ///
-/// RESIDUAL — **two of the three type arms are not committed.** Each ends in
-/// a `Set_Destination(Target, 1)`, a `Queue_Mission(_, 0)` and, when
-/// `Ready_To_Commence` (vt+0x200), a Commence (vt+0x1EC). Sabotage is driven
-/// by the order path's `c4_plant` goal state and its own movement issue and
-/// has no dispatch arm, so queueing it from here would park the object on a
-/// selector whose timer nothing re-arms.
-/// - `C4` or weapon ability 14, with a **BuildingClass** target
-///   (`0x004D53F9..0x004D5467`) → `Queue_Mission(Sabotage)`. Trigger: a
-///   berserked or hunting demolition infantryman holding a building, such as
-///   a computer's Tanya or Navy SEAL (retail `C4=`: TANY, GHOST, PTROOP)
-///   escaping a destroyed transport. Effect: it shoots its target where
-///   native walks in to plant.
-/// - `VehicleThief` (`+0xEC6`, `0x004D546C..0x004D54B9`) →
-///   `Queue_Mission(Capture)`. Frequency: **zero on stock data** — no retail
-///   section sets the key.
-///
-/// Downstream risk: closing the Sabotage arm means giving Sabotage a real
-/// handler arm, which is the terrorist mission work, not this row.
+/// RESIDUAL — **the VehicleThief type arm is not committed**
+/// (`+0xEC6`, `0x004D546C..0x004D54B9`): `Set_Destination(Target, 1)`,
+/// `Queue_Mission(Capture, 0)` and, when `Ready_To_Commence` (vt+0x200), a
+/// Commence (vt+0x1EC). Frequency: **zero on stock data** — no retail
+/// section sets the key.
 ///
 /// RESIDUAL — **the infantry no-flags arm's `Set_Destination(NULL, 1)`**
 /// (`0x004D54C6`) is not committed: it is a movement-owned write, and the
@@ -1313,10 +1282,11 @@ fn evaluate_foot_hunt(
         .and_then(|name| rules.object(name))
         .is_some_and(|obj| obj.stupid_hunt);
     if !stupid_hunt {
-        // The return value selects between the type arms (the engineer's
-        // committed, the others recorded above) and the idle / return-to-base
-        // arm (already covered elsewhere). The call itself is the mission: it
-        // is what installs the target the pursuit pass then closes on.
+        // The return value selects between the type arms (the engineer's and
+        // the C4 one committed, VehicleThief's recorded above) and the idle /
+        // return-to-base arm (already covered elsewhere). The call itself is
+        // the mission: it is what installs the target the pursuit pass then
+        // closes on.
         let acquired = super::target_scan::scan(
             sim,
             id,
@@ -1333,7 +1303,7 @@ fn evaluate_foot_hunt(
             .get(id)
             .is_some_and(|entity| entity.category == EntityCategory::Infantry);
         if acquired && infantry {
-            hunt_engineer_capture(sim, id, rules, ctx);
+            hunt_infantry_type_arm(sim, id, rules, ctx);
         } else if acquired {
             // `0x004D54DD`: a Unit approaches what the scan holds through its
             // head (`0x007414E0`), which takes only a Unit.
@@ -1354,14 +1324,19 @@ fn evaluate_foot_hunt(
     MissionHandlerEvaluation::cadence(sim.mission_rate_epilogue_for(rules, id, MissionType::Hunt))
 }
 
-/// Mission_Hunt's engineer arm (`0x004D53BA..0x004D53F4`, joining the
-/// VehicleThief arm's tail at `0x004D548F..0x004D54B9`): an `Engineer=`
-/// infantryman that is neither `C4=` nor holds weapon ability 14 (C4) takes
-/// the target its scan installed as its destination (vt+0x480(target, 1)),
-/// queues Capture (vt+0x1E8(Capture, 0)) and, when Ready_To_Commence
-/// (vt+0x200), commences it (vt+0x1EC). [`crate::sim::mission::capture`] then
-/// walks it in. No RNG.
-fn hunt_engineer_capture(
+/// Mission_Hunt's engineer and C4 arms, for the target its scan installed.
+/// Each takes that target as its destination (vt+0x480(target, 1)), queues
+/// its mission (vt+0x1E8(mission, 0)) and, when Ready_To_Commence
+/// (vt+0x200), commences it (vt+0x1EC); [`crate::sim::mission::capture`]
+/// then walks it in. No RNG.
+/// - An `Engineer=` infantryman that is neither `C4=` nor holds weapon
+///   ability 14 (C4) queues Capture (`0x004D53BA..0x004D53F4`, joining the
+///   VehicleThief arm's tail at `0x004D548F..0x004D54B9`).
+/// - Otherwise a `C4=` one, or one holding ability 14, whose target is a
+///   building queues Sabotage (`0x004D53F9..0x004D5467`). Unlike
+///   Mission_Attack's C4 arm it asks no `CanC4=`, and neither does the plant
+///   ([`Simulation::infantry_per_cell_c4`]).
+fn hunt_infantry_type_arm(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
@@ -1370,23 +1345,33 @@ fn hunt_engineer_capture(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    let engineer = sim
-        .object_type(entity.type_ref(), rules)
-        .is_some_and(|object| {
-            object.engineer
-                && !object.c4
-                && !crate::sim::combat::veterancy::has_weapon_ability(
-                    crate::sim::combat::veterancy::rank_from_u16(entity.veterancy()),
-                    object,
-                    crate::rules::object_type::Ability::C4,
-                )
-        });
+    let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+        return;
+    };
+    let c4 = object.c4
+        || crate::sim::combat::veterancy::has_weapon_ability(
+            crate::sim::combat::veterancy::rank_from_u16(entity.veterancy()),
+            object,
+            crate::rules::object_type::Ability::C4,
+        );
     let Some(target) = entity.attack_target.as_ref().map(|attack| attack.target) else {
         return;
     };
-    if !engineer {
+    let building_target = match target {
+        crate::sim::combat::TargetKind::Entity(target) => sim
+            .substrate
+            .entities
+            .get(target)
+            .is_some_and(|target| target.category == EntityCategory::Structure),
+        crate::sim::combat::TargetKind::Cell(..) => false,
+    };
+    let mission = if object.engineer && !c4 {
+        MissionType::Capture
+    } else if c4 && building_target {
+        MissionType::Sabotage
+    } else {
         return;
-    }
+    };
     let _ = sim.assign_destination_represented(
         id,
         Some(target.into()),
@@ -1397,7 +1382,7 @@ fn hunt_engineer_capture(
     let now = sim.session.binary_frame;
     let _ = sim.mission_queue_exact(
         id,
-        MissionId::from_known(MissionType::Capture),
+        MissionId::from_known(mission),
         0,
         now,
         &crate::sim::mission::authority::LiveReadyInputProvider { rules },
@@ -1405,6 +1390,60 @@ fn hunt_engineer_capture(
     if sim.mission_ready_to_commence(id, rules) {
         let _ = sim.mission_commence_exact(id, now);
     }
+}
+
+/// Infantry Mission_Attack's C4 arm (`0x0051F3E3..0x0051F455`): a
+/// demolition infantryman holding a building it may plant on heads for it
+/// (vt+0x480(target, 1)), queues Sabotage (vt+0x1E8(17, 0)) and returns 1,
+/// with no draw. The plant itself is the arrival's
+/// ([`Simulation::infantry_per_cell_c4`]).
+fn infantry_attack_c4(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    ctx: super::ObjectAiCtx<'_>,
+) -> MissionHandlerEvaluation {
+    if let Some(building) = c4_sabotage_building(sim, id, rules) {
+        let _ = sim.assign_destination_represented(
+            id,
+            Some(crate::sim::components::NavTargetRef::object(building)),
+            Some(rules),
+            ctx.overlay_registry,
+            ctx.effects,
+        );
+    }
+    MissionHandlerEvaluation::queue(1, MissionType::Sabotage)
+}
+
+/// The building the C4 arm takes: the Target (`+0x2B4`) of an infantryman
+/// whose type is `C4=` (`+0xEC2`) or whose rank holds weapon ability 14
+/// (`HasAbility @ 0x0070D0D0`), when it is a building whose type is
+/// `CanC4=` (`+0x1577`, constructor default yes) and not
+/// `InvisibleInGame=` (`+0x1701`). The arm asks no house. A stale Target
+/// ([`attack_target_is_stale`]) is one the native detach has already cleared.
+fn c4_sabotage_building(sim: &Simulation, id: u64, rules: &RuleSet) -> Option<u64> {
+    let entity = sim.substrate.entities.get(id)?;
+    let object = sim.object_type(entity.type_ref(), rules)?;
+    if !(object.c4
+        || crate::sim::combat::veterancy::has_weapon_ability(
+            crate::sim::combat::veterancy::rank_from_u16(entity.veterancy()),
+            object,
+            crate::rules::object_type::Ability::C4,
+        ))
+    {
+        return None;
+    }
+    let crate::sim::combat::TargetKind::Entity(building) = entity.attack_target.as_ref()?.target
+    else {
+        return None;
+    };
+    let target = sim.substrate.entities.get(building)?;
+    if target.category != EntityCategory::Structure || target.dying || !target.is_alive() {
+        return None;
+    }
+    sim.object_type(target.type_ref(), rules)
+        .is_some_and(|kind| kind.can_c4 && !kind.invisible_in_game)
+        .then_some(building)
 }
 
 /// The computer capture arm `InfantryClass::Mission_Attack`

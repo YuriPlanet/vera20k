@@ -250,7 +250,7 @@ fn the_launch_matches_native() {
                 } if *by == owner && *kind == sw_type && (*rx, *ry) == cell => {
                     Some("launched".to_string())
                 }
-                SimSoundEvent::SuperWeaponRadarEvent { radar } => Some(format!(
+                SimSoundEvent::RadarEvent { radar } => Some(format!(
                     "radar {} {},{}",
                     radar.event_type as i32, radar.rx, radar.ry
                 )),

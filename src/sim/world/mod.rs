@@ -706,12 +706,14 @@ pub enum SimSoundEvent {
         rx: u16,
         ry: u16,
     },
-    /// `CreateRadarEvent(13, cell)` from `SuperClass::Launch` case 1
-    /// (`0x006CCF2F`), case 4 (`0x006CC4BE` at the Chronosphere's source,
-    /// `0x006CC4D2` at its target), case 7 (`0x006CCDD7`), a storm's start
-    /// (`0x00539F89`) or a `NUKE` warhead's impact (`BulletClass::AI`,
-    /// `0x00467EA7`), on every client: each admits it on its own radar.
-    SuperWeaponRadarEvent { radar: RadarEventRequest },
+    /// A `CreateRadarEvent` with no local-player test and no sound, on every
+    /// client: each admits it on its own radar. Type 13 from
+    /// `SuperClass::Launch` case 1 (`0x006CCF2F`), case 4 (`0x006CC4BE` at
+    /// the Chronosphere's source, `0x006CC4D2` at its target), case 7
+    /// (`0x006CCDD7`), a storm's start (`0x00539F89`) or a `NUKE` warhead's
+    /// impact (`BulletClass::AI`, `0x00467EA7`); type 12 from a computer
+    /// house's `RevealToAll=` building opening (`0x004468A8`).
+    RadarEvent { radar: RadarEventRequest },
     /// A Lightning Storm started (`LightningStorm::Start @ 0x00539EB0`'s
     /// undeferred half) under `[General] LightningPrintText=` (`0x0053A014`;
     /// without it nothing is pushed): every client plays `StormSound` centred
@@ -760,10 +762,6 @@ pub enum SimSoundEvent {
     /// plays `[AudioVisual] ChuteSound=` at the plane's Location,
     /// `0x00415E21`): the plane's cell.
     ChuteSound { rx: u16, ry: u16 },
-    /// A C4-capable infantry claimed a plant on a CanC4 building.
-    /// Played at the attacker's position. App resolves to
-    /// `[SealPlaceBomb]` in soundmd.ini.
-    C4Planted { rx: u16, ry: u16 },
     /// An engineer entered a `BridgeRepairHut` and triggered bridge repair.
     /// Played at the BUILDING's cell, NOT the engineer's. `owner` is the
     /// engineer's house. App layer plays the spatial `[BridgeRepaired]` sound
@@ -4863,6 +4861,9 @@ impl Simulation {
         if category == EntityCategory::Structure {
             //448260: gap removal precedes ordinary sight release and owner
             //swap. This order differs from Techno Limbo's sight-then-gap.
+            // `ReReveal(0, 0, 0, 0)` (`0x00448BD9`) releases the old owner's
+            // sight only: what a `RevealToAll=` opening showed the current
+            // house stays.
             self.remove_building_gap_before_limbo(stable_id);
             self.fog.release_entity_sight(stable_id);
             // Original4483A6 clears PrimaryFactory before the old-house
@@ -6662,21 +6663,11 @@ impl Simulation {
             // Units also committed Facing_Update after paid movement. This
             // tail hosts the remaining classes;
             // tick_turret_rotation excludes Units whose facing is already owned.
-            // tick_c4_plants hosts the pending C4 detonation. Its damage
-            // is applied here so combat-pre conditions (invulnerability, dying)
-            // are honored before tick_combat runs.
             // PRODUCES: damage, deaths, bridge damage, fire events. Ordered
             // ReceiveDamage retaliation is committed inline.
-            // Engineer repair, capture and consumption occur synchronously
-            // at Walk's completed step in the object pass.
-            let c4_outcome = self.tick_c4_plants_with_overlay_registry(
-                rules,
-                overlay_registry,
-                &tube_turn_owned_ids,
-                effects,
-            );
-            destroyed_structure |= c4_outcome.destroyed_structure;
-            bridge_state_changed |= c4_outcome.bridge_state_changed;
+            // Engineer repair, capture and consumption, and a C4 plant, occur
+            // synchronously at Walk's completed step in the object pass; a
+            // charge goes off in its building's own Update visit.
             self.tick_order_intents_pre_combat(rules, overlay_registry, &tube_turn_owned_ids);
             // The compatibility pursuit host excludes native Unit Cell
             // Approach. Its remaining consumers retain their existing order

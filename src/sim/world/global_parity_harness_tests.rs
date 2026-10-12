@@ -587,7 +587,10 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // definition/live-instance/registration/attachment/dispatch state. This fixture
 // has no authored Tags; per-frame replay, combat/mining and all three RNG gates
 // precede this structural Rust hash pin and remain unchanged.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x8E8D_412E_A279_9F51;
+// Snapshot332 drops the C4 walk-up intent, whose empty value every entity's
+// fold hashed. This fixture has no C4 infantry; per-frame replay, combat/mining
+// and all three RNG gates remain unchanged.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x0D69_4099_AD39_5D63;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a

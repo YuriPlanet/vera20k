@@ -130,6 +130,7 @@ impl Simulation {
         };
         let first_opening = !entity.building_actually_placed;
         let owner = entity.owner();
+        let cell = (entity.position.rx, entity.position.ry);
         let refinery = object.refinery;
         let powered = object.powered;
         let damaged = requested_damage_state(
@@ -180,6 +181,25 @@ impl Simulation {
         //operational-edge restoration. New constructors therefore pause here.
         if powered {
             self.apply_building_anim_power(id, false, rules);
+        }
+        // 0x004467E7..0x004468A8: a computer house's `RevealToAll=` building
+        // shows the current house its sight as it opens from construction
+        // (0x00446816..0x00446829), and raises radar event 12 at its cell
+        // (Location `+0x9C` / 256) on a capture too. The fog border redraw
+        // around it (`0x00567DA0`, radius + 3) is presentation: the shroud
+        // renderer rebuilds from the vision owner.
+        if object.reveal_to_all && !self.house_is_human_player(owner) {
+            if !captured {
+                self.reveal_sight_to_current_house(id, rules);
+            }
+            self.sound_events
+                .push(crate::sim::world::SimSoundEvent::RadarEvent {
+                    radar: crate::sim::radar::RadarEventRequest::new(
+                        crate::sim::radar::RadarEventType::ConstructionComplete,
+                        cell.0,
+                        cell.1,
+                    ),
+                });
         }
         //446A77 invalidates retained House power and radar on every reached
         //opening (including capture), before publishing placement at446A84.

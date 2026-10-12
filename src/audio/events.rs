@@ -238,15 +238,6 @@ pub enum GameSoundEvent {
         source: Option<SoundSource>,
     },
 
-    /// Positional SFX from `[SealPlaceBomb]` — plays at the attacker's screen
-    /// position when a C4-capable infantry claims a plant on a CanC4 building.
-    C4Planted {
-        /// sound.ini ID for the SFX (resolves "SealPlaceBomb" → file).
-        sound_id: String,
-        /// Screen position for spatial audio.
-        source: Option<SoundSource>,
-    },
-
     /// Positional SFX for tank-bunker walls raising (install) or falling
     /// (exit/teardown). The up/down choice — and thus which rules key resolves
     /// `sound_id` — is made when the event is built; plays at the bunker's
@@ -368,7 +359,6 @@ impl GameSoundEvent {
             | Self::CreditTick { sound_id }
             | Self::BaseUnderAttackSfx { sound_id }
             | Self::BuildingGarrisonedSfx { sound_id, .. }
-            | Self::C4Planted { sound_id, .. }
             | Self::BunkerWalls { sound_id, .. }
             | Self::ChuteSound { sound_id, .. }
             | Self::BridgeRepaired { sound_id, .. }
@@ -403,7 +393,6 @@ impl GameSoundEvent {
             | Self::WallCrushed { source, .. }
             | Self::VocAt { source, .. }
             | Self::BuildingGarrisonedSfx { source, .. }
-            | Self::C4Planted { source, .. }
             | Self::BunkerWalls { source, .. }
             | Self::ChuteSound { source, .. }
             | Self::BridgeRepaired { source, .. }

@@ -91,6 +91,7 @@ fn building_voxel_parts_follow_native_frames_order_and_translation() {
             DrawState::default(),
             3,
             -60,
+            0,
             &mut pieces,
         );
         assert_eq!(pieces.len(), draws.len(), "case {case_index}: {case}");
@@ -117,5 +118,107 @@ fn building_voxel_parts_follow_native_frames_order_and_translation() {
             );
             assert_eq!(piece.policy, BlitPolicy::z_read(SpriteEncoding::Voxel));
         }
+    }
+}
+
+/// Building vtable `0x7E3EBC+0x2EC` (`0x43E900`) returns
+/// `TurretAnimZAdjust - AdjustForZ` for a voxel turret, and the voxel blits pass
+/// it as their Z seed. DrawBody's SHP leaves never call that slot, so the term
+/// belongs to the guns alone; without it a gun loses the depth test to the base
+/// it stands on.
+#[test]
+fn building_voxel_guns_seed_their_blit_z_with_turret_anim_z_adjust() {
+    let mut entries = HashMap::new();
+    entries.insert(
+        UnitSpriteKey {
+            type_id: "BUILDING".into(),
+            turret_index: 0,
+            facing: canonical_turret_facing(0),
+            layer: VxlLayer::Turret,
+            frame: 0,
+            slope_type: 0,
+            barrel_pitch: 0,
+        },
+        UnitSpriteEntry {
+            uv_origin: [0.0; 2],
+            uv_size: [1.0; 2],
+            pixel_size: [40.0, 32.0],
+            offset_x: 0.0,
+            offset_y: 0.0,
+            native_draw_bounds: Some([0, 0, 40, 32]),
+            page: 0,
+        },
+    );
+    let mut atlas = UnitAtlas::from_test_entries(entries);
+    atlas
+        .frame_counts
+        .insert(("BUILDING".into(), VxlLayer::Turret, 0), 1);
+    for (anim_z_adjust, lift_px) in [(0, 0), (-60, 0), (-60, 7), (0, 7)] {
+        let mut pieces = Vec::new();
+        emit_building_turret_vxl(
+            &atlas,
+            &mut BarrelImagePitches::default(),
+            "BUILDING",
+            0,
+            0x4000,
+            0,
+            ([0.0; 2], false),
+            0,
+            100.0,
+            200.0,
+            lift_px,
+            0.5,
+            [1.0; 3],
+            crate::render::palette_light::PaletteLight::default(),
+            0,
+            DrawState::default(),
+            3,
+            28,
+            anim_z_adjust,
+            &mut pieces,
+        );
+        assert_eq!(pieces.len(), 1, "z_adjust {anim_z_adjust} lift {lift_px}");
+        assert_eq!(
+            pieces[0].instance.z_adjust,
+            (anim_z_adjust - lift_px) as f32,
+            "z_adjust {anim_z_adjust} lift {lift_px}"
+        );
+        assert_eq!(
+            pieces[0].instance.depth, 0.5,
+            "the adjustment is a blit Z term, not a sort bias"
+        );
+    }
+}
+
+/// The retail types the adjustment reaches, read through the production rules
+/// owner rather than restated here. `TESLA`/`ATESLA` set the key without a voxel
+/// turret, so `0x43E900`'s `TurretAnimIsVoxel` gate leaves their value unused.
+#[test]
+fn retail_voxel_turret_buildings_supply_the_z_adjustment_the_blit_seeds_from() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    for (type_id, z_adjust) in [
+        ("NASAM", -20),
+        ("NALASR", -20),
+        ("NAFLAK", -40),
+        ("YAGGUN", -40),
+        ("YAREFN", -50),
+        ("GTGCAN", -60),
+        ("CAOUTP", -140),
+        ("CAEAST02", -150),
+    ] {
+        let object = rules.object(type_id).expect("retail building type");
+        assert!(
+            object.turret_anim_is_voxel,
+            "{type_id} draws its turret as a VXL"
+        );
+        assert_eq!(object.turret_anim_z_adjust, z_adjust, "{type_id}");
+    }
+    for type_id in ["TESLA", "ATESLA"] {
+        let object = rules.object(type_id).expect("retail building type");
+        assert!(!object.turret_anim_is_voxel, "{type_id}");
+        assert_eq!(object.turret_anim_z_adjust, -100, "{type_id}");
     }
 }

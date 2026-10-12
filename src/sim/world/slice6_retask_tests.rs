@@ -322,7 +322,10 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // definition/live-instance/registration/attachment/dispatch state. This fixture
 // has no authored Tags; replay, retasking and all three RNG gates precede this
 // structural Rust hash pin and remain unchanged.
-const SLICE6_BASELINE_HASH: u64 = 0xFB3D_5699_26A8_EF08;
+// Snapshot332 drops the C4 walk-up intent, whose empty value every entity's
+// fold hashed. This fixture orders no C4; replay, retasking and all three RNG
+// gates remain unchanged.
+const SLICE6_BASELINE_HASH: u64 = 0xA7A3_2912_D867_127F;
 
 #[test]
 fn replay_hash_stable_through_slice6() {

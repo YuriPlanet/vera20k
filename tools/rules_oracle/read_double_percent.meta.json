@@ -7,12 +7,13 @@
     1,
     33621247
   ],
-  "scope": "Original ReadDouble percent product and the InfantryClass::ReceiveDamage prone head",
+  "scope": "Original ReadDouble percent product, the InfantryClass::ReceiveDamage prone head and the C4 plant's flash and fuse",
   "assumptions": [
     "ReadDouble 0x005283D0 executes whole after the CRT floating-scanner initializer 0x007C8F5E. Every row asserts one sscanf assignment, the percent arm (0x0052857A) exactly when the string holds a percent sign, no control-word load inside the call and an unchanged FPCW.",
     "FPCW 0x0E7F is the game word: WinMain selects chop at 0x006BBFC1 and caches the word at 0x006BBFC9; Math__ftol 0x007C5F00 loads [0x00822D80] and never restores it. Rows under 0x027F are a rounding-mode control, not a game state.",
     "Retail tokens come from a lexical scan of retail rulesmd.ini and serve only as inputs; the native body produces every recorded value.",
-    "The prone head runs from the real entry 0x00517FA0 to 0x00518016 with a zeroed InfantryClass (prone byte +0x6DB supplied) and a zeroed WarheadTypeClass (+0xF8 from the native reader, InfDeath +0x120 zero). FootClass::ReceiveDamage and everything after it are not executed."
+    "The prone head runs from the real entry 0x00517FA0 to 0x00518016 with a zeroed InfantryClass (prone byte +0x6DB supplied) and a zeroed WarheadTypeClass (+0xF8 from the native reader, InfDeath +0x120 zero). FootClass::ReceiveDamage and everything after it are not executed.",
+    "The C4 rows run InfantryClass::Per_Cell_Process 0x0051A5A7..0x0051A5CD and 0x0051A5D6..0x0051A60B with a zeroed building in EDI, a planter pointer in ESI, Frame 1234 and a zeroed RulesClass whose +0x1750 holds the native reader result or the constructor stores 0x006675F0..0x00667604. The Flash call (vt+0x148) between them, the gates of the arm before 0x0051A5A7 and the stop, rearm and Scatter of the planter after 0x0051A60B are not executed."
   ],
   "substitutions": [
     "building_body_rules.Fixture supplies the cached INI section, index and entry objects; no physical INI load.",
@@ -23,7 +24,10 @@
     "crt_float_init": "0x007C8F5E",
     "ini_crc": "0x004A1DE0",
     "infantry_receive_damage": "0x00517FA0",
-    "math_ftol": "0x007C5F00"
+    "math_ftol": "0x007C5F00",
+    "c4_plant": "0x0051A5A7",
+    "rules_ctor_c4_delay": "0x006675F0"
   },
-  "payload_sha256": "dab57b2c84cf81b738613529130505058c3586b995cb985c1133a5f859cee93d"
+  "replay_command": "python -m tools.rules_oracle.read_double_percent",
+  "payload_sha256": "f17d3780f1dd75c6b288b265eb1b74eaa3c427c209a5935c84ef271de4b8e27c"
 }

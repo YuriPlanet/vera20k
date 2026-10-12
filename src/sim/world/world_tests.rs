@@ -2662,9 +2662,6 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
         } else {
             entity.attack_target = Some(AttackTarget::for_cell(0, 0));
             entity.passively_acquired_target = true;
-            entity.c4_plant = Some(crate::sim::components::C4PlantState {
-                target_building_id: 2,
-            });
         }
         entity.locomotor = Some(LocomotorState::for_test_kind(match category {
             EntityCategory::Unit => LocomotorKind::Drive,
@@ -2782,10 +2779,9 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
                     Some(crate::sim::components::NavTargetRef::building(2)),
                     "Tube final retains the authoritative building destination"
                 );
-                assert!(entity.c4_plant.is_some());
                 assert!(
                     entity.movement_target.is_none(),
-                    "Tube final skips C4 Mission_Enter, which would move into the adjacent building"
+                    "Tube final does not walk into the adjacent building"
                 );
                 assert_eq!(
                     sim.substrate.entities.get(2).map(|building| building.owner),

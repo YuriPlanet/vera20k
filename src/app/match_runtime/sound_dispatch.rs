@@ -425,13 +425,14 @@ pub(super) fn dispatch_sim_sound_events(
                 };
                 activated
             }
-            SimSoundEvent::SuperWeaponRadarEvent { radar } => {
+            SimSoundEvent::RadarEvent { radar } => {
                 // A type-13 event from `SuperClass::Launch` case 1
                 // (`0x006CCF2F`), case 4 (`0x006CC4BE`, `0x006CC4D2`: the
                 // source cell, then the target's), case 7 (`0x006CCDD7`) and
                 // case 9 (`0x006CD8E0`), a storm's start (`0x00539F89`) or a
-                // `NUKE` warhead's impact (`0x00467EA7`), with no local-player
-                // test; it plays nothing.
+                // `NUKE` warhead's impact (`0x00467EA7`), or a type-12 one
+                // from a `RevealToAll=` building's opening (`0x004468A8`),
+                // with no local-player test; it plays nothing.
                 let _ = admit_radar(radar);
                 continue;
             }
@@ -580,10 +581,6 @@ pub(super) fn dispatch_sim_sound_events(
                     source: Some(sound_source_at_cell(rx, ry)),
                 }
             }
-            SimSoundEvent::C4Planted { rx, ry } => GameSoundEvent::C4Planted {
-                sound_id: "SealPlaceBomb".to_string(),
-                source: Some(sound_source_at_cell(rx, ry)),
-            },
             SimSoundEvent::BunkerWallsUp { rx, ry } => {
                 // Walls-up cue on install; skip when the rules key is empty.
                 let sound_id =
@@ -1771,7 +1768,7 @@ mod tests {
             rx: 40,
             ry: 40,
         };
-        let radar = |rx, ry| SimSoundEvent::SuperWeaponRadarEvent {
+        let radar = |rx, ry| SimSoundEvent::RadarEvent {
             radar: RadarEventRequest::new(RadarEventType::ImpactSilent, rx, ry),
         };
         let mut admitted = Vec::new();

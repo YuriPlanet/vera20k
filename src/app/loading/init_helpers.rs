@@ -932,8 +932,8 @@ mod tests {
             map,
         );
         let rules = RuleSet::from_rules_layers(&layers).expect("ordered rules parse");
-        // C4Delay is minutes: ticks = minutes * 60 * 15 => .06 -> 54.
-        assert_eq!(rules.c4_delay_ticks, 54);
+        // The map's C4Delay=.06 overrides the base: ftol(.06 * 900) is 53.
+        assert_eq!(rules.c4_delay_frames(), 53);
         // BuildSpeed: the map's 1 overrides the base .7.
         assert_eq!(
             rules.production.build_speed,
@@ -952,7 +952,7 @@ mod tests {
         );
         let a = RuleSet::from_rules_layers(&with_map).expect("parse");
         let b = RuleSet::from_ini(&IniFile::from_str(RULES_BASE)).expect("parse");
-        assert_eq!(a.c4_delay_ticks, b.c4_delay_ticks);
+        assert_eq!(a.c4_delay_frames(), b.c4_delay_frames());
         assert_eq!(a.production.build_speed, b.production.build_speed);
         assert_eq!(
             a.object("E1").map(|o| o.strength),
@@ -1180,8 +1180,8 @@ mod tests {
             "BuildSpeed 1.0"
         );
 
-        // [CombatDamage] C4Delay .03 min -> 27 ticks.
-        assert_eq!(rules.c4_delay_ticks, 27, "C4Delay .03 min -> 27 ticks");
+        // [CombatDamage] C4Delay .03 min -> a 26-frame fuse.
+        assert_eq!(rules.c4_delay_frames(), 26, "C4Delay .03 min");
     }
 
     /// The processed-rules component of the diagnostic/snapshot compatibility

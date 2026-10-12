@@ -271,7 +271,7 @@ pub(crate) fn start(
         return;
     }
 
-    sim.sound_events.push(SimSoundEvent::SuperWeaponRadarEvent {
+    sim.sound_events.push(SimSoundEvent::RadarEvent {
         radar: RadarEventRequest::new(RadarEventType::ImpactSilent, cell.0 as u16, cell.1 as u16),
     });
     let frame = sim.session.binary_frame;

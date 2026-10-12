@@ -701,7 +701,6 @@ impl Simulation {
                     // destination setter. Its changed-null path6FCF5B also
                     // resets retained burst state; dropping Target alone cannot.
                     e.order_intent = None;
-                    e.c4_plant = None;
                 }
                 // Snapshot speed, locomotor, and rules data in one lookup.
                 let Some(info) = self.resolve_move_info(*entity_id, rules) else {
@@ -830,7 +829,6 @@ impl Simulation {
                 self.assign_null_destination(*entity_id, rules, overlay_registry, frame_effects);
                 if let Some(e) = self.substrate.entities.get_mut(*entity_id) {
                     e.order_intent = None;
-                    e.c4_plant = None;
                 }
                 // Event Stop4C75F8 invokes virtual+3C8 AFTER its null
                 // destination4C75ED, including the Infantry class effects.
@@ -1814,8 +1812,9 @@ impl Simulation {
                     return false;
                 }
                 // Validate target is a CanC4, non-invisible enemy building, not iron-curtained.
-                // TODO(parity): also reject selling-in-progress buildings (Mission==0x13);
-                // requires building Mission state which isn't modeled yet.
+                // These gates stand in for the cursor's (What_Action), which
+                // is unread for a building being sold (Mission 0x13); the
+                // arrival plants nothing on one (`sim::c4_plant`).
                 let target_info = self
                     .substrate
                     .entities
@@ -1877,7 +1876,6 @@ impl Simulation {
                     Some(rules),
                     frame_effects,
                 );
-                // Clear conflicting state and set c4_plant.
                 // Event4C7467 dispatches the class target setter before Dest.
                 let _ = self.assign_target_represented(
                     *attacker_id,
@@ -1888,13 +1886,11 @@ impl Simulation {
                 );
                 if let Some(e) = self.substrate.entities.get_mut(*attacker_id) {
                     e.order_intent = None;
-                    e.c4_plant = Some(crate::sim::components::C4PlantState {
-                        target_building_id: *target_building_id,
-                    });
                 }
                 // Event4C747C: Set_Destination(target building, 1). The building is
                 // the NavCom, so the Infantry +1AC admits its footprint cells to a
-                // Sabotage C4 carrier (`0x0051C2D3..`) and the walk ends inside.
+                // Sabotage C4 carrier (`0x0051C2D3..`); the walk ends inside, where
+                // the arrival plants the charge (`sim::c4_plant`).
                 let info = self.resolve_move_info(*attacker_id, Some(rules));
                 let speed = info
                     .as_ref()
@@ -2109,7 +2105,6 @@ impl Simulation {
                         );
                         if let Some(e) = sim.substrate.entities.get_mut(unit_id) {
                             e.order_intent = None;
-                            e.c4_plant = None;
                         }
                     },
                 )

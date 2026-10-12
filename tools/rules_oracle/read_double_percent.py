@@ -1,4 +1,4 @@
-"""Original CCINIClass::ReadDouble percent product and InfantryClass's prone head.
+"""Original CCINIClass::ReadDouble percent product and its chopped consumers.
 
 A, `reader`: ReadDouble 0x005283D0 executes whole on a cached INI value. The
 building_body_rules fixture supplies the section, index and entry objects with
@@ -16,12 +16,20 @@ B, `prone`: InfantryClass::ReceiveDamage 0x00517FA0 executes from its entry
 through the prone head (0x00517FC1..0x00517FEF) and the InfDeath test to
 0x00518016, before FootClass::ReceiveDamage (0x00518042). The warhead's +0xF8
 double is group A's native result for the same string. InfDeath is 0.
+
+C, `c4`: InfantryClass::Per_Cell_Process's C4 plant on a zeroed building, from
+0x0051A5A7 to the Flash call's push (EAX of ftol(C4Delay * 900.0 * 0.5) at
+0x0051A5CD; the vt+0x148 call is not executed), then 0x0051A5D6..0x0051A60B, the
+C4Timer store (Frame [0x00A8ED84], TimeLeft ftol(C4Delay * 900.0)) and
+C4AppliedBy. Rules+0x1750 holds group A's native result for the string, or what
+the constructor's stores at 0x006675F0 leave there when the key is absent.
 """
 import struct
 from pathlib import Path
 
 from unicorn import UC_HOOK_CODE, Uc, UC_ARCH_X86, UC_MODE_32
-from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESP, UC_X86_REG_FPCW
+from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_ESI,
+                               UC_X86_REG_ESP, UC_X86_REG_FPCW)
 
 from tools.native_oracle import (NATIVE_SHA256, RET_MAGIC, SCRATCH, STACK_BASE, STACK_SIZE,
                                  call, finish_vectors, load_image, provenance, run_checked)
@@ -53,6 +61,13 @@ INF = SCRATCH + 0x8000
 WH = SCRATCH + 0x9000
 DMG = SCRATCH + 0xA000
 PRONE_SP = STACK_BASE + 0x80000
+# None is the absent key. The others are modded inputs around retail `.03`.
+C4_DELAYS = [None, '.03', '0.03', '.02', '.06', '0.1', '.5', '1', '2.5', '0', '-.03']
+RULES = SCRATCH + 0xB000
+BUILDING = SCRATCH + 0xD000
+PLANTER = SCRATCH + 0xE000
+C4_SP = STACK_BASE + 0x90000
+C4_FRAME = 1234
 
 
 def bits_hex(value):
@@ -118,13 +133,18 @@ class Reader(Fixture):
         return result
 
 
+def emulator():
+    u = Uc(UC_ARCH_X86, UC_MODE_32)
+    load_image(u)
+    u.mem_map(SCRATCH, 0x10000)
+    u.mem_map(STACK_BASE, STACK_SIZE)
+    u.mem_map(RET_MAGIC, 0x1000)
+    return u
+
+
 class ProneHead:
     def __init__(self):
-        u = self.u = Uc(UC_ARCH_X86, UC_MODE_32)
-        load_image(u)
-        u.mem_map(SCRATCH, 0x10000)
-        u.mem_map(STACK_BASE, STACK_SIZE)
-        u.mem_map(RET_MAGIC, 0x1000)
+        self.u = emulator()
 
     def run(self, damage, multiplier_bits, prone=True, ignore_defenses=False):
         u = self.u
@@ -145,6 +165,40 @@ class ProneHead:
                     required_addresses=(0x517FC1, 0x517FF9) + ((0x517FDD, 0x517FE8) if scaled else ()))
         assert u.reg_read(UC_X86_REG_FPCW) == GAME_FPCW
         return struct.unpack('<i', u.mem_read(DMG, 4))[0]
+
+
+class C4Plant:
+    def __init__(self):
+        self.u = emulator()
+
+    def constructor_default(self):
+        """C4Delay as RulesClass's constructor stores it (0x006675F0, 0x006675FA)."""
+        u = self.u
+        u.mem_write(RULES, bytes(0x2000))
+        u.reg_write(UC_X86_REG_ESI, RULES)
+        run_checked(u, 0x6675F0, 0x667604, count=10)
+        return struct.unpack('<Q', u.mem_read(RULES + 0x1750, 8))[0]
+
+    def run(self, delay_bits):
+        """Returns the Flash argument and the C4Timer's TimeLeft."""
+        u = self.u
+        u.mem_write(RULES, bytes(0x2000))
+        u.mem_write(RULES + 0x1750, struct.pack('<Q', delay_bits))
+        u.mem_write(0x8871E0, struct.pack('<I', RULES))
+        u.mem_write(0xA8ED84, struct.pack('<i', C4_FRAME))
+        u.mem_write(BUILDING, bytes(0x800))
+        u.reg_write(UC_X86_REG_EDI, BUILDING)
+        u.reg_write(UC_X86_REG_ESI, PLANTER)
+        u.reg_write(UC_X86_REG_ESP, C4_SP)
+        u.reg_write(UC_X86_REG_FPCW, GAME_FPCW)
+        run_checked(u, 0x51A5A7, 0x51A5CD, count=100, required_addresses=(0x51A5C8,))
+        flash = struct.unpack('<i', struct.pack('<I', u.reg_read(UC_X86_REG_EAX)))[0]
+        run_checked(u, 0x51A5D6, 0x51A60B, count=100, required_addresses=(0x51A5EE, 0x51A608))
+        start, _clock, fuse = struct.unpack('<iIi', u.mem_read(BUILDING + 0x528, 12))
+        applied_by = struct.unpack('<I', u.mem_read(BUILDING + 0x540, 4))[0]
+        assert (start, applied_by, u.mem_read(BUILDING + 0x6DF, 1)[0]) == (C4_FRAME, PLANTER, 1)
+        assert u.reg_read(UC_X86_REG_FPCW) == GAME_FPCW
+        return flash, fuse
 
 
 def reader_rows(reader):
@@ -175,24 +229,37 @@ def prone_rows(reader):
     return {'damages': PRONE_DAMAGES, 'rows': rows, 'extremes': extremes, 'gates': gates}
 
 
+def c4_rows(reader):
+    plant = C4Plant()
+    rows = []
+    for raw in C4_DELAYS:
+        bits = plant.constructor_default() if raw is None else reader.read(raw, key_name='C4Delay')
+        flash, fuse = plant.run(bits)
+        rows.append({'raw': raw, 'bits': bits_hex(bits), 'flash': flash, 'fuse': fuse})
+    return rows
+
+
 def generate():
     reader = Reader()
-    return {'native_sha256': NATIVE_SHA256, 'reader': reader_rows(reader), 'prone': prone_rows(reader)}
+    return {'native_sha256': NATIVE_SHA256, 'reader': reader_rows(reader), 'prone': prone_rows(reader),
+            'c4': c4_rows(reader)}
 
 
 def metadata():
     return provenance(
-        scope='Original ReadDouble percent product and the InfantryClass::ReceiveDamage prone head',
+        scope='Original ReadDouble percent product, the InfantryClass::ReceiveDamage prone head and the C4 plant\'s flash and fuse',
         assumptions=[
             'ReadDouble 0x005283D0 executes whole after the CRT floating-scanner initializer 0x007C8F5E. Every row asserts one sscanf assignment, the percent arm (0x0052857A) exactly when the string holds a percent sign, no control-word load inside the call and an unchanged FPCW.',
             'FPCW 0x0E7F is the game word: WinMain selects chop at 0x006BBFC1 and caches the word at 0x006BBFC9; Math__ftol 0x007C5F00 loads [0x00822D80] and never restores it. Rows under 0x027F are a rounding-mode control, not a game state.',
             'Retail tokens come from a lexical scan of retail rulesmd.ini and serve only as inputs; the native body produces every recorded value.',
-            'The prone head runs from the real entry 0x00517FA0 to 0x00518016 with a zeroed InfantryClass (prone byte +0x6DB supplied) and a zeroed WarheadTypeClass (+0xF8 from the native reader, InfDeath +0x120 zero). FootClass::ReceiveDamage and everything after it are not executed.'],
+            'The prone head runs from the real entry 0x00517FA0 to 0x00518016 with a zeroed InfantryClass (prone byte +0x6DB supplied) and a zeroed WarheadTypeClass (+0xF8 from the native reader, InfDeath +0x120 zero). FootClass::ReceiveDamage and everything after it are not executed.',
+            'The C4 rows run InfantryClass::Per_Cell_Process 0x0051A5A7..0x0051A5CD and 0x0051A5D6..0x0051A60B with a zeroed building in EDI, a planter pointer in ESI, Frame 1234 and a zeroed RulesClass whose +0x1750 holds the native reader result or the constructor stores 0x006675F0..0x00667604. The Flash call (vt+0x148) between them, the gates of the arm before 0x0051A5A7 and the stop, rearm and Scatter of the planter after 0x0051A60B are not executed.'],
         substitutions=[
             'building_body_rules.Fixture supplies the cached INI section, index and entry objects; no physical INI load.',
             'An FSTP qword stub at the return address stores ReadDouble\'s ST0 result.'],
         entry_points={'read_double': 0x5283D0, 'crt_float_init': 0x7C8F5E, 'ini_crc': 0x4A1DE0,
-                      'infantry_receive_damage': 0x517FA0, 'math_ftol': 0x7C5F00})
+                      'infantry_receive_damage': 0x517FA0, 'math_ftol': 0x7C5F00,
+                      'c4_plant': 0x51A5A7, 'rules_ctor_c4_delay': 0x6675F0})
 
 
 if __name__ == '__main__':

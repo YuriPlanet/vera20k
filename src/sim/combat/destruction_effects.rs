@@ -17,9 +17,11 @@
 //! Bouncer launch draws remain ordered per piece.
 //!
 //! DestructionEffects steps ported here: 1 (`0x004415F9`, the eight damage
-//! fire anims are UnInit), 7 (`0x0044177E`, the centre scorch/crater mark),
-//! 8 (`0x004418EC`, one `Explosion=` anim per foundation cell) and 13
-//! (`0x00441CAC`, one `DestroyAnim=` anim at the origin cell's corner).
+//! fire anims are UnInit), 5 (`0x00441702`, a computer house's
+//! `RevealToAll=` building releases the sight it showed the current house), 7
+//! (`0x0044177E`, the centre scorch/crater mark), 8 (`0x004418EC`, one
+//! `Explosion=` anim per foundation cell) and 13 (`0x00441CAC`, one
+//! `DestroyAnim=` anim at the origin cell's corner).
 //!
 //! Original constructor/Logic-before-crew execution:
 //! `tools/spatial_oracle/building_death_anims.py` (joined fatal lifecycle),
@@ -52,11 +54,6 @@
 //!   - The `DeathFrames=` completion (`0x00736381`), dead on stock.
 //! - DestroyAnim's palette (TechnoType `+0xDF0`/`+0xDD0` -> anim
 //!   `+0xD4`/`+0xDC`) is presentation and not carried.
-//! - Step 5 (`RevealToAll=`, stock NAIRON, GACSPH, GADUMY, GAWEAT, NAMISL,
-//!   YAGNTC, YAPPET): a building the local player does not own reveals its
-//!   stored sight record to that player as it dies (`vt+0x48C` =
-//!   `0x0070B1D0`). VERA does not parse `RevealToAll=`. Effect: shroud only,
-//!   no draws. Frequency: every such building death.
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
 //!   3 and 4 (CloakGenerator, LaserFencePost), 9 (FIRE3 on each cardinal
 //!   neighbour of an `Explodes=` building whose cell holds an overlay with
@@ -353,6 +350,14 @@ impl Simulation {
         };
         let (rx, ry, z) = (entity.position.rx, entity.position.ry, entity.position.z);
         let location = position_world_coord(&entity.position);
+        let owner = entity.owner();
+
+        // 5. `0x00441702..0x0044172F`: a computer house's `RevealToAll=`
+        // building releases the sight its opening showed the current house
+        // (`ReReveal(0, 0, 1, PlayerPtr)`).
+        if object.reveal_to_all && !self.house_is_human_player(owner) {
+            self.fog.release_alternate_sight(building_id);
+        }
 
         // 7. `0x0044177E..0x004418E7`.
         commit_smudge(

@@ -2537,6 +2537,116 @@ mod retail_construction_tests {
         assert!(sim.power_states[&soviet].blackout_remaining(sim.session.binary_frame) > 0);
     }
 
+    /// A Normal American house's Tanya (retail `[TANY]`: `C4=yes`,
+    /// `Secondary=Sapper`) handed a Soviet Tesla Reactor eight cells away
+    /// with Attack, as a team's action 46 does. Mission_Attack's C4 arm heads
+    /// her in on Sabotage, she plants on the first reactor cell she reaches,
+    /// and retail `C4Delay=.03` sets the charge off 26 frames later. The
+    /// reactor dies; she lives.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_computer_tanya_plants_c4_on_a_tesla_reactor() {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::mission::{MissionId, MissionType};
+        use crate::sim::world::FrameEffects;
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) = retail_battle(
+            |session| {
+                session.local.country = LaunchCountry::Russia;
+                session.options.unit_count = 0;
+            },
+            &[(LaunchCountry::America, AiDifficulty::Normal)],
+        );
+        let runtime = &mut scenario.runtime;
+        let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
+        let soviet = house_of(sim, "Russians");
+        let america = house_of(sim, "Americans");
+        let at = |sim: &Simulation, id| {
+            let entity = sim.entities().get(id).expect("spawned");
+            (i32::from(entity.position.rx), i32::from(entity.position.ry))
+        };
+        let mcv_of = |sim: &Simulation, house| {
+            sim.substrate
+                .entities
+                .iter_sorted()
+                .find(|(_, entity)| entity.owner() == house)
+                .map(|(id, _)| id)
+                .expect("the house's MCV")
+        };
+        let (mx, my) = at(sim, mcv_of(sim, soviet));
+        let reactor = spawn_on_free_cells(
+            sim,
+            rules,
+            soviet,
+            cells_nearest((mx + 5, my + 5)),
+            &["NAPOWR"],
+        )[0];
+        let (rx, ry) = at(sim, reactor);
+        // Out towards the American MCV: some nearer cells the other way lie
+        // in no zone (see the spy team's test).
+        let (ax, ay) = at(sim, mcv_of(sim, america));
+        let reach = (ax - rx).abs().max((ay - ry).abs()).max(1);
+        let toward = (rx + (ax - rx) * 8 / reach, ry + (ay - ry) * 8 / reach);
+        let cells = cells_nearest(toward)
+            .into_iter()
+            .filter(|&(x, y)| (x - rx).abs().max((y - ry).abs()) >= 6);
+        let tanya = spawn_on_free_cells(sim, rules, america, cells, &["TANY"])[0];
+        let now = sim.session.binary_frame;
+        sim.mission_assign_exact(tanya, MissionId::from_known(MissionType::Attack), now)
+            .unwrap();
+        sim.assign_target_represented(
+            tanya,
+            Some(TargetKind::Entity(reactor)),
+            Some(rules),
+            None,
+            FrameEffects::default(),
+        )
+        .unwrap();
+        let (mut sabotage, mut planted, mut died) = (None, None, None);
+        for frame in 1..=1_500u32 {
+            tick_with_due_commands(&mut scenario);
+            let sim = scenario.sim();
+            if sabotage.is_none()
+                && sim.entities().get(tanya).is_some_and(|tanya| {
+                    tanya.mission.current().known() == Some(MissionType::Sabotage)
+                })
+            {
+                sabotage = Some(frame);
+            }
+            if planted.is_none()
+                && let Some(pending) = sim
+                    .entities()
+                    .get(reactor)
+                    .and_then(|reactor| reactor.pending_c4_detonation)
+            {
+                planted = Some((frame, pending));
+            }
+            if sim
+                .entities()
+                .get(reactor)
+                .is_none_or(|reactor| reactor.dying)
+            {
+                died = Some(frame);
+                break;
+            }
+        }
+        eprintln!("TANY: Sabotage at {sabotage:?}, planted {planted:?}, reactor died {died:?}");
+        assert!(sabotage.is_some(), "Tanya never took Sabotage");
+        let (plant_frame, pending) = planted.expect("Tanya planted no charge");
+        assert_eq!(pending.source_entity_id, Some(tanya));
+        assert_eq!(pending.timer.duration(), 26);
+        assert_eq!(died, Some(plant_frame + 26));
+        assert!(
+            scenario
+                .sim()
+                .entities()
+                .get(tanya)
+                .is_some_and(|tanya| !tanya.dying),
+            "Tanya died"
+        );
+    }
+
     /// A Normal Soviet house's War Miner out on the ore with a load, brought
     /// to half strength and shot by a Grizzly: its refinery answers its HELLO
     /// and it queues Enter (`combat::unit_damage_response`), then docks.

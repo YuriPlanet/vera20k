@@ -350,7 +350,7 @@ fn retail_chrono_warp_moves_the_source_block() {
         .sound_events
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::SuperWeaponRadarEvent { radar } => Some((radar.rx, radar.ry)),
+            SimSoundEvent::RadarEvent { radar } => Some((radar.rx, radar.ry)),
             _ => None,
         })
         .collect();

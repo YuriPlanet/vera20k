@@ -17,28 +17,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement;
 use crate::sim::movement::locomotor::MovementLayer;
-use crate::util::direction_tables::CELL_DELTAS;
 use crate::util::fixed_math::ra2_speed_to_leptons_per_second;
-
-/// Result of one `apply_c4_damage_to_building` call.
-#[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct C4DamageOutcome {
-    /// HP reached 0; building marked dying this tick.
-    pub killed_building: bool,
-    /// The C4 hit a BridgeRepairHut, the hut survived, and the connected
-    /// bridge collapsed. The app needs to rebuild PathGrid.
-    pub bridge_state_changed: bool,
-    /// The target's pending C4 marker should be cleared even though the
-    /// building entity survived. Used by BridgeRepairHut dispatch.
-    pub consumed_pending_marker: bool,
-}
-
-/// Result of `tick_c4_plants` across all per-tick plants + detonations.
-#[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct C4TickOutcome {
-    pub destroyed_structure: bool,
-    pub bridge_state_changed: bool,
-}
 
 /// Interior PerCell519948..519B58 result, before Engineer/hut type checks.
 /// The one-cell Undeploy target enters a separate conversion receiver.
@@ -921,7 +900,8 @@ impl Simulation {
     /// `0x006E53A0`). The receiver gives the building's Tag event 1 ("entered
     /// by", `0x00519B3E..0x00519B53`) before its Engineer test, and an
     /// `Agent=` spy's own Tag event 0x30 after the infiltration
-    /// (`0x0051A010..0x0051A025`); VERA attaches no Tags to objects. Trigger:
+    /// (`0x0051A010..0x0051A025`); the live Tag dispatcher
+    /// (`sim::trigger_runtime`) has no producer in Per_Cell_Process. Trigger:
     /// a map Tag on the building or on the spy. Effect: its trigger does not
     /// spring. A building or spy a house builds has no Tag.
     fn infantry_per_cell_infiltrator_entry(
@@ -959,10 +939,8 @@ impl Simulation {
     /// How PerCell2 turns an infantryman away from a building: the occupier
     /// arm (`0x005196DD..0x00519700`) and the building receiver
     /// (`0x00519EBB`, `0x00519EFC`, `0x00519FB9`, `0x0051A03E..0x0051A061`).
-    /// SetDestination(NULL, 1) (vt+0x480), then Scatter from the building's
-    /// real GetCoords (vt+0x174(coord, 1, 1)), which does not Process. The
-    /// Scatter's heading away from the building draws one Scenario
-    /// `RandomRanged(0, 4)` (`0x0051D258..0x0051D2D4`).
+    /// SetDestination(NULL, 1) (vt+0x480), then
+    /// [`Self::scatter_from_building`].
     pub(crate) fn turn_away_from_building(
         &mut self,
         infantry_id: u64,
@@ -972,6 +950,20 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), super::FrameAdvanceError> {
         self.assign_null_destination(infantry_id, Some(rules), registry, frame_effects);
+        self.scatter_from_building(infantry_id, building_id, rules, registry, frame_effects)
+    }
+
+    /// PerCell2's Scatter from a building's real GetCoords (vt+0x174(coord,
+    /// 1, 1)), which does not Process. Its heading away from the building
+    /// draws one Scenario `RandomRanged(0, 4)` (`0x0051D258..0x0051D2D4`).
+    pub(crate) fn scatter_from_building(
+        &mut self,
+        infantry_id: u64,
+        building_id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<(), super::FrameAdvanceError> {
         let Some(coord) = self.substrate.entities.get(building_id).map(|building| {
             crate::sim::movement::ground_pose::object_get_coords(
                 building,
@@ -998,266 +990,60 @@ impl Simulation {
         })
     }
 
-    /// Tick C4 plant orders.
+    /// BuildingClass::Update's shared C4/PostMortem expiry tail
+    /// (`0x004401D2..0x00440358`). Called from the current Structure
+    /// LogicVector visit, so the forced receiver and any nested DeathWeapon
+    /// complete before the next live object is visited. Once the C4Timer
+    /// runs out:
+    /// - A bridge repair hut (`0x00440213..0x00440331`) collapses its bridge
+    ///   (`0x00574000`, or the wooden `0x00574C20`; `bridge_orchestrator`)
+    ///   and lets its charge go (`+0x6DF`, C4AppliedBy `+0x540`). The hut
+    ///   takes no damage.
+    /// - Any other building takes its own health as `C4Warhead=` damage
+    ///   from C4AppliedBy, ignoring defenses (`0x00440333..0x00440358`), and
+    ///   keeps the charge.
     ///
-    /// Phase 1 (walk-up): for each entity with `c4_plant`, check if it's
-    /// Chebyshev-≤-1 adjacent to the target building's anchor cell; if so
-    /// and the building doesn't already have a `pending_c4_detonation`
-    /// claimed by another attacker, claim it. Second attackers on an
-    /// already-claimed target hover (no-op) — matches gamemd's `+0x6df`
-    /// marker check.
-    ///
-    /// Phase 2 (detonation): for each building with `pending_c4_detonation`,
-    /// if the wrapping native-frame elapsed count reaches
-    /// `rules.c4_delay_ticks`, apply C4Warhead
-    /// damage equal to the building's current HP. For normal buildings the
-    /// pending state is not cleared if damage is nullified by IronCurtain, so
-    /// it fires again next frame. When the building dies, the entity despawns
-    /// and the pending state goes with it. BridgeRepairHut dispatch clears
-    /// the pending marker after the bridge path runs because the hut survives.
-    ///
-    /// Returns the per-tick C4 outcome: `destroyed_structure` is true if any
-    /// building died, and `bridge_state_changed` is true if any C4 detonation
-    /// on a `BridgeRepairHut` collapsed a bridge.
-    pub(crate) fn tick_c4_plants_with_overlay_registry(
-        &mut self,
-        rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        turn_suppressed: &BTreeSet<u64>,
-        frame_effects: FrameEffects<'_>,
-    ) -> C4TickOutcome {
-        use crate::sim::components::PendingC4Detonation;
-        let mut destroyed_structure = false;
-        let mut bridge_state_changed = false;
-
-        // ---- Phase 1: walk-up + plant claim ----
-        // Snapshot attackers with c4_plant. Deterministic sorted order via
-        // keys_sorted then look up c4_plant.
-        let mut walkup: Vec<(u64, u64)> = Vec::new();
-        for sid in self.substrate.entities.keys_sorted() {
-            if turn_suppressed.contains(&sid) {
-                continue;
-            }
-            if let Some(e) = self.substrate.entities.get(sid)
-                && let Some(plant) = e.c4_plant
-            {
-                // A warped planter's mission does not run (`ai_frozen`).
-                if !e.dying && !e.ai_frozen() {
-                    walkup.push((sid, plant.target_building_id));
-                }
-            }
-        }
-
-        for (attacker_id, target_id) in walkup {
-            // Target gone or dying? Clear c4_plant.
-            let target_alive = self
-                .substrate
-                .entities
-                .get(target_id)
-                .is_some_and(|b| b.category == EntityCategory::Structure && !b.dying);
-            if !target_alive {
-                if let Some(e) = self.substrate.entities.get_mut(attacker_id) {
-                    e.c4_plant = None;
-                }
-                continue;
-            }
-
-            // gamemd claims only when the infantry's current cell resolves
-            // to the target building. The walk reaches it because the building
-            // is the NavCom, which the Infantry +1AC admits (`0x0051C2D3..`).
-            let attacker_cell = self
-                .substrate
-                .entities
-                .get(attacker_id)
-                .map(|e| (e.position.rx, e.position.ry));
-            let target_footprint = self.building_entry_target_footprint(target_id, rules);
-            let (Some(attacker_cell), Some(target_footprint)) = (attacker_cell, target_footprint)
-            else {
-                continue;
-            };
-
-            // Already claimed by another attacker?
-            let already_claimed = self
-                .substrate
-                .entities
-                .get(target_id)
-                .is_some_and(|b| b.pending_c4_detonation.is_some());
-            if already_claimed {
-                // Second SEAL — hover, no-op. Matches gamemd's marker-set early-return.
-                continue;
-            }
-
-            if !target_footprint.contains(&attacker_cell) {
-                continue; // walk-up still in progress
-            }
-
-            // Claim the plant.
-            // RESIDUAL: native's planter then re-arms (`GameEntity::rearm_timer`)
-            // with `GetROF(1)` (`InfantryClass::PerCellProcess
-            // 0x0051A60B..0x0051A65F`), and so does a second planter entering an
-            // already charged building (`0x0051A546..0x0051A5A0`), which VERA's
-            // walk-up leaves hovering outside. Outside FireAt the burst index is
-            // below `Burst=`, so `combat::rof::get_rof` takes its mid-burst arm:
-            // one Scenario `RandomRanged(3, 5)` (an empty slot 1 returns 1
-            // without a draw, `0x006FCFD4`). Trigger: every C4 plant. Effect: the
-            // planter can fire up to 5 frames early, and one draw per plant is
-            // missing. Belongs to the C4 plant mechanism.
-            if let Some(b) = self.substrate.entities.get_mut(target_id) {
-                b.pending_c4_detonation = Some(PendingC4Detonation {
-                    timer: crate::sim::timer::CdTimer::started(
-                        self.session.binary_frame as i32,
-                        rules.c4_delay_ticks as i32,
-                    ),
-                    source_entity_id: Some(attacker_id),
-                });
-            }
-
-            // Native PerCell51A60D does not request Attack Doing4; its
-            // 0x004DF0D0 only zeroes NavCom and its auxiliary slot, so Walk
-            // keeps its destination and head and its Process runs on.
-            // RESIDUAL: the arm's Uncloak, ROF and forced Scatter
-            // (0x0051D0D0) tail is its own mechanism. Infantry presentation
-            // reads the retained Doing owner.
-            if let Some(a) = self.substrate.entities.get_mut(attacker_id) {
-                movement::foot_stop_moving(a);
-                a.movement_target = None;
-            }
-
-            // SealPlaceBomb spatial sound. App-side dispatcher resolves to
-            // `[SealPlaceBomb]` from soundmd.ini.
-            if let Some(a) = self.substrate.entities.get(attacker_id) {
-                self.sound_events
-                    .push(crate::sim::world::SimSoundEvent::C4Planted {
-                        rx: a.position.rx,
-                        ry: a.position.ry,
-                    });
-            }
-        }
-
-        // ---- Phase 2: detonation ----
-        let mut det_keys: Vec<u64> = Vec::new();
-        for sid in self.substrate.entities.keys_sorted() {
-            if let Some(e) = self.substrate.entities.get(sid) {
-                let bridge_hut = rules
-                    .object(self.interner.resolve(e.type_ref()))
-                    .is_some_and(|object| object.bridge_repair_hut);
-                if e.pending_c4_detonation.is_some() && !e.dying && bridge_hut {
-                    det_keys.push(sid);
-                }
-            }
-        }
-        // Early-out returns before rule-handle resolution so pre-feature
-        // fixtures never intern warhead names they do not exercise. They do not
-        // call it; guarding here keeps them passing.
-        if det_keys.is_empty() {
-            return C4TickOutcome {
-                destroyed_structure,
-                bridge_state_changed,
-            };
-        }
-
-        let c4_warhead_id = self.rule_handles().c4;
-        for building_id in det_keys {
-            let pending = self
-                .substrate
-                .entities
-                .get(building_id)
-                .and_then(|e| e.pending_c4_detonation);
-            let Some(pending) = pending else { continue };
-
-            if !pending.timer.expired(self.session.binary_frame as i32) {
-                continue;
-            }
-
-            // Timer elapsed — apply C4Warhead damage. Damage value = current_hp
-            // for guaranteed one-shot kill (matches gamemd's
-            // `&iStack_28 = this->Health` argument to TakeDamage).
-            // Normal-building pending state is only cleared by despawn;
-            // BridgeRepairHut returns consumed_pending_marker below.
-            let dmg: i32 = self
-                .substrate
-                .entities
-                .get(building_id)
-                .map(|b| b.health.current)
-                .unwrap_or(0);
-            if dmg <= 0 {
-                continue;
-            }
-
-            // Resolve kill-credit. Attacker may have despawned — fall back to None.
-            let attacker_for_credit = pending
-                .source_entity_id
-                .filter(|&source_id| self.substrate.entities.get(source_id).is_some());
-
-            let outcome = self.apply_c4_damage_to_building(
-                building_id,
-                dmg,
-                c4_warhead_id,
-                attacker_for_credit,
-                rules,
-                overlay_registry,
-                frame_effects,
-            );
-            bridge_state_changed |= outcome.bridge_state_changed;
-            if outcome.killed_building {
-                destroyed_structure = true;
-                // pending_c4_detonation goes away with the entity via despawn path.
-                // Trigger scatter walk-away for any attacker on this cell with
-                // c4_plant pointing at this building. Matches gamemd
-                // Mission_Enter post-detonation block.
-                self.queue_c4_post_detonation_scatter(building_id);
-            } else if outcome.consumed_pending_marker {
-                if let Some(building) = self.substrate.entities.get_mut(building_id) {
-                    building.pending_c4_detonation = None;
-                }
-                if let Some(attacker_id) = pending.source_entity_id
-                    && let Some(attacker) = self.substrate.entities.get_mut(attacker_id)
-                    && attacker
-                        .c4_plant
-                        .is_some_and(|plant| plant.target_building_id == building_id)
-                {
-                    attacker.c4_plant = None;
-                }
-            }
-        }
-
-        C4TickOutcome {
-            destroyed_structure,
-            bridge_state_changed,
-        }
-    }
-
-    /// BuildingClass::Update's shared C4/PostMortem expiry tail. Called from
-    /// the current Structure LogicVector visit, so the forced receiver and any
-    /// nested DeathWeapon complete before the next live object is visited.
+    /// Answers whether a bridge changed.
     pub(crate) fn tick_pending_building_detonation(
         &mut self,
         building_id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
-    ) {
-        let Some((pending, health, bridge_hut)) = self
+    ) -> bool {
+        let Some((pending, health, bridge_hut, cell)) = self
             .substrate
             .entities
             .get(building_id)
             .and_then(|building| {
                 let pending = building.pending_c4_detonation?;
                 let object = rules.object(self.interner.resolve(building.type_ref()))?;
-                Some((pending, building.health.current, object.bridge_repair_hut))
+                Some((
+                    pending,
+                    building.health.current,
+                    object.bridge_repair_hut,
+                    (building.position.rx, building.position.ry),
+                ))
             })
         else {
-            return;
+            return false;
         };
         if !pending.timer.expired(self.session.binary_frame as i32) || health <= 0 {
-            return;
+            return false;
         }
 
         if bridge_hut {
-            // Preserve the existing bridge-specific Phase-5 consumer outside
-            // this damage slice. It owns collapse, attacker cleanup, and the
-            // result flag that invalidates bridge navigation for the caller.
-            return;
+            let changed = crate::sim::world::bridge_orchestrator::dispatch_bridge_collapse_from_hut_with_overlay_registry(
+                self,
+                rules,
+                cell,
+                overlay_registry,
+                frame_effects,
+            );
+            if let Some(hut) = self.substrate.entities.get_mut(building_id) {
+                hut.pending_c4_detonation = None;
+            }
+            return changed;
         }
 
         let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
@@ -1275,167 +1061,7 @@ impl Simulation {
             },
         );
         self.commit_noncombat_aoe_hits(rules, overlay_registry, &[event], frame_effects);
-    }
-
-    fn building_entry_target_footprint(
-        &self,
-        target_id: u64,
-        rules: &RuleSet,
-    ) -> Option<Vec<(u16, u16)>> {
-        let target = self.substrate.entities.get(target_id)?;
-        let obj = self.object_type(target.type_ref(), rules)?;
-        // Infantry building-entry resolves through normal building cell lookup.
-        // AddOccupy/RemoveOccupy only affect hidden occupancy counters.
-        Some(c4_base_foundation_cells(
-            target.position.rx,
-            target.position.ry,
-            obj.foundation.as_str(),
-        ))
-    }
-
-    /// Post-detonation: any attacker that was on the destroyed building's
-    /// cell with `c4_plant` targeting this building scatters one cell in a
-    /// deterministic direction derived from the current tick. Matches gamemd
-    /// `Mission_Enter` post-detonation block:
-    /// `uVar13 = (tick >> 12 + 1) >> 1 & 7` → 1 of 8 directions via
-    /// the direction-delta tables.
-    ///
-    /// Also clears each attacker's `c4_plant`.
-    fn queue_c4_post_detonation_scatter(&mut self, dead_building_id: u64) {
-        // Mirror the native-frame bit-twiddle: `(frame >> 12 + 1) >> 1 & 7`.
-        // C operator precedence: `>>` is left-to-right at same level, so
-        // this evaluates as `(((frame >> 12) + 1) >> 1) & 7`.
-        let dir: usize = ((((self.session.binary_frame >> 12) + 1) >> 1) & 7) as usize;
-        let (dx, dy) = CELL_DELTAS[dir];
-        let (dx, dy) = (dx as i16, dy as i16);
-
-        let bld_cell = self
-            .substrate
-            .entities
-            .get(dead_building_id)
-            .map(|b| (b.position.rx, b.position.ry));
-        let Some((brx, bry)) = bld_cell else { return };
-
-        // Collect attackers on this cell with c4_plant on this building.
-        let mut scatterers: Vec<u64> = Vec::new();
-        for sid in self.substrate.entities.keys_sorted() {
-            if let Some(e) = self.substrate.entities.get(sid)
-                && !e.dying
-                && e.position.rx == brx
-                && e.position.ry == bry
-                && e.c4_plant
-                    .is_some_and(|p| p.target_building_id == dead_building_id)
-            {
-                scatterers.push(sid);
-            }
-        }
-
-        for sid in scatterers {
-            let target_rx = (brx as i16 + dx).max(0) as u16;
-            let target_ry = (bry as i16 + dy).max(0) as u16;
-            if let Some(e) = self.substrate.entities.get_mut(sid) {
-                e.c4_plant = None;
-            }
-            // Queue a Move command for the next tick. Simpler than
-            // reimplementing the pathfind call; 1-tick delay is below the
-            // human-observable threshold.
-            if let Some(owner) = self.substrate.entities.get(sid).map(|e| e.owner()) {
-                self.queue_command(crate::sim::command::CommandEnvelope::new(
-                    owner,
-                    self.session.tick + 1,
-                    crate::sim::command::Command::Move {
-                        entity_id: sid,
-                        target_rx,
-                        target_ry,
-                        queue: false,
-                    },
-                ));
-            }
-        }
-    }
-
-    /// Apply one C4Warhead damage instance to a building entity. Returns
-    /// `C4DamageOutcome` reporting whether the building died and whether a
-    /// connected bridge collapsed (for `BridgeRepairHut` targets). Non-hut
-    /// targets honor IronCurtain via the standard invulnerability check.
-    /// Used by `tick_c4_plants` Phase 2.
-    fn apply_c4_damage_to_building(
-        &mut self,
-        building_id: u64,
-        damage: i32,
-        warhead_id: crate::sim::intern::InternedId,
-        attacker_id: Option<u64>,
-        rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) -> C4DamageOutcome {
-        // BridgeRepairHut target: reroute the explosion into the bridge
-        // collapse cascade and leave the hut at full HP. The hut never
-        // takes C4 / demo-truck damage — destruction is the linked bridge
-        // segment's, not the hut's. Also the right entry point for a
-        // future demo-truck damage path.
-        let target_bridge_hut = self
-            .substrate
-            .entities
-            .get(building_id)
-            .and_then(|b| {
-                rules
-                    .object(self.interner.resolve(b.type_ref()))
-                    .map(|t| t.bridge_repair_hut)
-            })
-            .unwrap_or(false);
-        if target_bridge_hut {
-            let bld_center = self
-                .substrate
-                .entities
-                .get(building_id)
-                .map(|b| (b.position.rx, b.position.ry));
-            let bridge_state_changed = match bld_center {
-                Some(center) => {
-                    crate::sim::world::bridge_orchestrator::dispatch_bridge_collapse_from_hut_with_overlay_registry(
-                        self,
-                        rules,
-                        center,
-                        overlay_registry,
-                     frame_effects,)
-                }
-                None => false,
-            };
-            let _ = attacker_id; // the hut survives: nothing is credited
-            return C4DamageOutcome {
-                killed_building: false,
-                bridge_state_changed,
-                consumed_pending_marker: true,
-            };
-        }
-
-        let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
-            building_id,
-            damage,
-            0,
-            attacker_id.unwrap_or(crate::sim::combat::RAD_NO_ATTACKER),
-            None,
-            warhead_id,
-            crate::sim::combat::ReceiverCallFlags {
-                ignore_defenses: true,
-                arg6: false,
-            },
-        );
-        self.commit_noncombat_aoe_hits(rules, overlay_registry, &[event], frame_effects);
-        if self
-            .substrate
-            .entities
-            .get(building_id)
-            .is_none_or(|b| b.dying)
-        {
-            C4DamageOutcome {
-                killed_building: true,
-                bridge_state_changed: false,
-                consumed_pending_marker: false,
-            }
-        } else {
-            C4DamageOutcome::default()
-        }
+        false
     }
 
     /// Pre-combat: entities with an `attack_target` that's out of weapon
@@ -1800,23 +1426,6 @@ impl Simulation {
             }
         }
     }
-}
-
-fn c4_base_foundation_cells(origin_rx: u16, origin_ry: u16, foundation: &str) -> Vec<(u16, u16)> {
-    let (w, h) = crate::rules::foundation::foundation_dimensions(foundation);
-    let mut cells = Vec::with_capacity(w as usize * h as usize);
-
-    for dx in 0..w {
-        for dy in 0..h {
-            let rx = origin_rx as i32 + dx as i32;
-            let ry = origin_ry as i32 + dy as i32;
-            if rx >= 0 && rx <= u16::MAX as i32 && ry >= 0 && ry <= u16::MAX as i32 {
-                cells.push((rx as u16, ry as u16));
-            }
-        }
-    }
-
-    cells
 }
 
 #[cfg(test)]

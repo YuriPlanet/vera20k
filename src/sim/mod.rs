@@ -34,6 +34,7 @@ pub(crate) mod building_construction;
 pub(crate) mod base_plan;
 pub(crate) mod base_plan_generation;
 pub mod bomb;
+pub(crate) mod c4_plant;
 pub mod capture_manager;
 pub mod cloak_disguise;
 pub mod command;

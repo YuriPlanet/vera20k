@@ -244,7 +244,7 @@ fn impact_effects_match_native() {
             .sound_events
             .iter()
             .filter_map(|event| match event {
-                SimSoundEvent::SuperWeaponRadarEvent { radar } => Some(*radar),
+                SimSoundEvent::RadarEvent { radar } => Some(*radar),
                 _ => None,
             })
             .collect();
@@ -887,7 +887,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
     assert_eq!(lighting.target_ambient, 200, "the nuke's ambient");
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::SuperWeaponRadarEvent { radar }
+        SimSoundEvent::RadarEvent { radar }
             if radar.event_type == RadarEventType::ImpactSilent
                 && (radar.rx, radar.ry) == TARGET
     )));

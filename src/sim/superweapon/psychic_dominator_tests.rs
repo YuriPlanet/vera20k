@@ -616,7 +616,7 @@ fn retail_dominator_strike_captures_the_block() {
     assert_eq!(sim.session.lighting.target_ambient, dominator_ambient);
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::SuperWeaponRadarEvent { radar } if (radar.rx, radar.ry) == TARGET
+        SimSoundEvent::RadarEvent { radar } if (radar.rx, radar.ry) == TARGET
     )));
 
     // The strike.

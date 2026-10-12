@@ -1,4 +1,4 @@
-# ReadDouble percent product and the prone damage head
+# ReadDouble percent product, the prone damage head and the C4 fuse
 
 `read_double_percent.py` executes original gamemd.exe SHA-256
 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
@@ -56,6 +56,15 @@ so it also clamps to 1.
 Neither ReadDouble nor the prone head draws RNG, writes a timer or detaches
 anything (instruction reading).
 
+`RulesClass` reads `[CombatDamage] C4Delay=` through ReadDouble into the
+double at `Rules+0x1750` (`0x0066CDA2`); its constructor stores 0.03 there
+(`0x006675F0`). A C4 plant (`InfantryClass::Per_Cell_Process`) flashes the
+building for `ftol(C4Delay * 900.0 * 0.5)` (`0x0051A5B6..0x0051A5C8`) and
+starts its C4Timer for `ftol(C4Delay * 900.0)` (`0x0051A5E2..0x0051A608`).
+Under the chop word, retail `.03` (0.029999999329447746) gives a fuse of 26
+and a flash of 13. The constructor's 0.03 gives the same, because its chopped
+product is 26.999999999999996. Rounding to nearest would give 27 for both.
+
 ## Coverage
 
 **Reader rows:**
@@ -69,6 +78,9 @@ anything (instruction reading).
   1..200 plus 250, 500, 1000, 11000, 65535 and 1,000,000;
 - nine out-of-range products, one of them infinite (`1e39%`);
 - five gate controls.
+
+**C4 rows:** the absent key, retail `.03` and `0.03`, and modded `.02`,
+`.06`, `0.1`, `.5`, `1`, `2.5`, `0` and `-.03`.
 
 A failed scan leaves stale stack bits in native, which this oracle does not
 cover. `IniSection::read_double` documents VERA's choice for that case.
@@ -90,6 +102,9 @@ cover. `IniSection::read_double` documents VERA's choice for that case.
   check found `[KTSTLEXP]`, the elite Kirov bomb's warhead, read as all
   defaults: the name is also an Animation, and the Rules projection let the
   AnimType's empty body replace the warhead's.
+- `RuleSet::c4_delay_frames` and `RuleSet::c4_flash_frames` own the fuse and
+  flash, on `MaskedX87Chop53`. `rules/read_double_percent_tests.rs` replays
+  every C4 row through `RuleSet::from_ini`.
 
 ## Not covered
 
@@ -98,6 +113,9 @@ cover. `IniSection::read_double` documents VERA's choice for that case.
   change the reads; a hardware breakpoint there would close this gap.
 - Nothing after FootClass::ReceiveDamage is executed. That includes Verses,
   distance falloff and the Techno receiver.
+- The C4 rows execute only `0x0051A5A7..0x0051A5CD` and
+  `0x0051A5D6..0x0051A60B`: not the Flash call between them, the arm's gates
+  before them, or the planter's rearm and Scatter after them.
 
 ## Reproduce
 

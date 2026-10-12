@@ -407,6 +407,12 @@ pub struct FogState {
     pub by_owner: BTreeMap<InternedId, OwnerVisibility>,
     pub alliances: HouseAllianceMap,
     pub(crate) sight_admissions: BTreeMap<(u64, InternedId), SightAdmission>,
+    /// Admissions `TechnoClass::UpdateReveal @ 0x0070AF50` makes for an
+    /// alternate house (`RevealToAll=`; [`admit_alternate_entity_sight`]),
+    /// keyed like `sight_admissions`. Kept apart so the source's own
+    /// reconciliation never releases them, and a viewer that also shares the
+    /// source's ordinary sight holds both contributions, as native does.
+    pub(crate) alternate_sight_admissions: BTreeMap<(u64, InternedId), SightAdmission>,
     /// Native local House+240: whole-map reveal guard, distinct from the
     /// checksum's map-clear byte+241 and SpySatActive+577A. TAction17 at
     ///6E0FE0 reads this guard without writing it; Map577D90 and gap writers
@@ -463,9 +469,7 @@ impl FogState {
     pub(crate) fn release_entity_sight(&mut self, stable_id: u64) {
         let keys: Vec<_> = self
             .sight_admissions
-            .range(
-                (stable_id, InternedId::default())..=(stable_id, InternedId::from_index(u32::MAX)),
-            )
+            .range(source_keys(stable_id))
             .map(|(&key, _)| key)
             .collect();
         for key in keys {
@@ -473,11 +477,42 @@ impl FogState {
         }
     }
 
+    /// `TechnoClass::ReReveal @ 0x0070B1D0` with an alternate house: the
+    /// footprint [`admit_alternate_entity_sight`] admitted for it leaves
+    /// (`0x0070B24E..0x0070B26C`), at a computer house's building death
+    /// (`0x0044172F`) or at Limbo (`0x006F6B06`).
+    ///
+    /// RESIDUAL: VERA releases each admission once. Native's Limbo releases
+    /// the stored footprint for the current house in place of the owner's, a
+    /// death has already released it once, and a capture keeps it
+    /// (`ReReveal(0, 0, 0, 0)`, `0x00448BD9`). On the current house's map
+    /// the native cell counter therefore ends one step higher after a
+    /// non-allied computer house's building dies, and one step lower after an
+    /// `AllyReveal=` ally's building is sold or a captured one is removed.
+    /// Only a hostile Gap Generator reads the difference
+    /// (`ShroudKnowledge::leave` caps the counter at its gap count): a cell
+    /// one step higher can be re-shrouded while one of the current house's
+    /// sources still sees it, and one lower stays open.
+    pub(crate) fn release_alternate_sight(&mut self, stable_id: u64) {
+        let keys: Vec<_> = self
+            .alternate_sight_admissions
+            .range(source_keys(stable_id))
+            .map(|(&key, _)| key)
+            .collect();
+        for key in keys {
+            let admission = self.alternate_sight_admissions.remove(&key).unwrap();
+            self.withdraw_sight(key.1, &admission);
+        }
+    }
+
     fn release_sight_for_viewer(&mut self, key: (u64, InternedId)) {
-        let Some(admission) = self.sight_admissions.remove(&key) else {
-            return;
-        };
-        let viewer = key.1;
+        if let Some(admission) = self.sight_admissions.remove(&key) {
+            self.withdraw_sight(key.1, &admission);
+        }
+    }
+
+    /// The leave of one retained admission on `viewer`'s map.
+    fn withdraw_sight(&mut self, viewer: InternedId, admission: &SightAdmission) {
         if let Some(vis) = self.by_owner.get_mut(&viewer) {
             for &(x, y) in &admission.cells {
                 let Some(index) = vis.index(x, y) else {
@@ -498,6 +533,33 @@ impl FogState {
         }
     }
 
+    /// Mark one admission's footprint as current sight on `viewer`'s map,
+    /// revealing and counting it as `apply` says.
+    fn apply_sight(&mut self, viewer: InternedId, admission: &SightAdmission, apply: SightApply) {
+        let vis = self
+            .by_owner
+            .entry(viewer)
+            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
+        for &(x, y) in &admission.cells {
+            let index = vis.index(x, y).expect("admitted source cell");
+            // The sight cache is not a source of knowledge events.
+            vis.mark_sight(x, y);
+            if apply != SightApply::Mark {
+                let state = &mut vis.shroud_knowledge[index];
+                state.reveal();
+                if apply == SightApply::Admit {
+                    let count = if viewer == admission.owner {
+                        &mut state.local_sources
+                    } else {
+                        &mut state.allied_sources
+                    };
+                    *count = count.wrapping_add(1);
+                }
+            }
+            vis.publish_knowledge(index);
+        }
+    }
+
     fn reconcile_sight_admission(
         &mut self,
         stable_id: u64,
@@ -510,26 +572,12 @@ impl FogState {
         if changed {
             self.release_sight_for_viewer(key);
         }
-        let vis = self
-            .by_owner
-            .entry(viewer)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
-        for &(x, y) in &admission.cells {
-            let index = vis.index(x, y).expect("admitted source cell");
-            // The sight cache is not a source of knowledge events.
-            vis.mark_sight(x, y);
-            if changed {
-                let state = &mut vis.shroud_knowledge[index];
-                state.reveal();
-                let count = if viewer == admission.owner {
-                    &mut state.local_sources
-                } else {
-                    &mut state.allied_sources
-                };
-                *count = count.wrapping_add(1);
-            }
-            vis.publish_knowledge(index);
-        }
+        let apply = if changed {
+            SightApply::Admit
+        } else {
+            SightApply::Mark
+        };
+        self.apply_sight(viewer, &admission, apply);
         if changed {
             self.sight_admissions.insert(key, admission);
         }
@@ -1341,6 +1389,7 @@ pub fn recompute_owner_visibility_in_place(
         fog.by_owner.clear();
         fog.gap_sources.clear();
         fog.sight_admissions.clear();
+        fog.alternate_sight_admissions.clear();
         fog.whole_map_revealed_owners.clear();
         fog.fogged_object_cells.clear();
         fog.fogged_objects.clear();
@@ -1499,10 +1548,105 @@ fn update_entity_sight_admission(
     only_viewer: Option<InternedId>,
     radius_override: Option<u16>,
 ) {
+    let Some(admission) = entity_sight_admission(
+        fog,
+        entity,
+        entity.owner(),
+        config,
+        height_grid,
+        sight_ability,
+        radius_override,
+    ) else {
+        return;
+    };
+    let viewers = match only_viewer {
+        // A viewer the caller picked still passes the reveal's house gate.
+        Some(viewer) => reveal_admits(fog, entity.owner(), viewer, config, interner)
+            .then_some(viewer)
+            .into_iter()
+            .collect(),
+        None => direct_reveal_viewers(fog, entity.owner(), config, interner),
+    };
+    if only_viewer.is_none() {
+        let removed: Vec<_> = fog
+            .sight_admissions
+            // Source-prefix range: never rescan all S*V admissions per entity.
+            .range(source_keys(entity.stable_id()))
+            .map(|(&key, _)| key)
+            .filter(|key| !viewers.contains(&key.1))
+            .collect();
+        for key in removed {
+            fog.release_sight_for_viewer(key);
+        }
+    }
+    for viewer in viewers {
+        fog.reconcile_sight_admission(entity.stable_id(), viewer, admission.clone(), force_refresh);
+    }
+}
+
+/// `TechnoClass::UpdateReveal @ 0x0070AF50` with an alternate house (its third
+/// and fourth arguments), as a computer house's `RevealToAll=` building opens
+/// (`0x00446816..0x00446829`): the entity's sight, computed as the ordinary
+/// writer computes it, goes to `MapClass::RevealArea @ 0x005678E0` for
+/// `recipient` rather than the owner (`0x0070B17E..0x0070B1C2`; the source
+/// already holds its own admission), unless it is zero (`0x0070B186`). It
+/// writes the maps a reveal by `recipient` writes, counted as `recipient`'s
+/// own sight, until [`FogState::release_alternate_sight`].
+///
+/// A source keeps one alternate admission: native counts each call, but no
+/// building opens twice from construction (`grand_opening`'s placed guard,
+/// native `+0x6E4`), so releasing an earlier admission first only keeps the
+/// store balanced.
+///
+/// RESIDUAL: a source without its own admission yet (`+0x250` clear) would
+/// natively store this footprint as its own and leave its owner without sight
+/// (`0x0070B0BF..0x0070B131`); VERA's owner sight comes from the per-frame
+/// reconciliation regardless. No caller reaches it before the source's
+/// Unlimbo reveal (`0x006F6D27`, ahead of the opening at `0x00440E76`).
+pub(crate) fn admit_alternate_entity_sight(
+    fog: &mut FogState,
+    entity: &crate::sim::game_entity::GameEntity,
+    config: &VisionConfig,
+    height_grid: Option<&[u8]>,
+    sight_ability: bool,
+    interner: &StringInterner,
+    recipient: InternedId,
+) {
+    let Some(admission) = entity_sight_admission(
+        fog,
+        entity,
+        recipient,
+        config,
+        height_grid,
+        sight_ability,
+        None,
+    )
+    .filter(|admission| admission.radius != 0) else {
+        return;
+    };
+    fog.release_alternate_sight(entity.stable_id());
+    for viewer in direct_reveal_viewers(fog, recipient, config, interner) {
+        fog.apply_sight(viewer, &admission, SightApply::Admit);
+        fog.alternate_sight_admissions
+            .insert((entity.stable_id(), viewer), admission.clone());
+    }
+}
+
+/// The footprint `TechnoClass::UpdateReveal @ 0x0070AF50` reveals for
+/// `entity`, recorded as a reveal by `revealer`; `None` without a fog plane.
+fn entity_sight_admission(
+    fog: &FogState,
+    entity: &crate::sim::game_entity::GameEntity,
+    revealer: InternedId,
+    config: &VisionConfig,
+    height_grid: Option<&[u8]>,
+    sight_ability: bool,
+    radius_override: Option<u16>,
+) -> Option<SightAdmission> {
     let width = fog.width;
     let height = fog.height;
     if width == 0 || height == 0 {
-        return;
+        return None;
     }
     let height_leptons: i32 = entity_height_leptons(entity);
 
@@ -1538,38 +1682,29 @@ fn update_entity_sight_admission(
         (width, height),
         config.map_size,
     );
-    let viewers = match only_viewer {
-        // A viewer the caller picked still passes the reveal's house gate.
-        Some(viewer) => reveal_admits(fog, entity.owner(), viewer, config, interner)
-            .then_some(viewer)
-            .into_iter()
-            .collect(),
-        None => direct_reveal_viewers(fog, entity.owner(), config, interner),
-    };
-    if only_viewer.is_none() {
-        let removed: Vec<_> = fog
-            .sight_admissions
-            // Source-prefix range: never rescan all S*V admissions per entity.
-            .range(
-                (entity.stable_id(), InternedId::default())
-                    ..=(entity.stable_id(), InternedId::from_index(u32::MAX)),
-            )
-            .map(|(&key, _)| key)
-            .filter(|key| !viewers.contains(&key.1))
-            .collect();
-        for key in removed {
-            fog.release_sight_for_viewer(key);
-        }
-    }
-    let admission = SightAdmission {
-        owner: entity.owner(),
+    Some(SightAdmission {
+        owner: revealer,
         origin: (entity.position.rx, entity.position.ry, height_leptons),
         radius: effective,
         cells,
-    };
-    for viewer in viewers {
-        fog.reconcile_sight_admission(entity.stable_id(), viewer, admission.clone(), force_refresh);
-    }
+    })
+}
+
+/// Every admission key of one source, by its stable id.
+fn source_keys(stable_id: u64) -> std::ops::RangeInclusive<(u64, InternedId)> {
+    (stable_id, InternedId::default())..=(stable_id, InternedId::from_index(u32::MAX))
+}
+
+/// What [`FogState::apply_sight`] does with an admission's footprint.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SightApply {
+    /// An unchanged retained admission: current sight only.
+    Mark,
+    /// A retained admission whose cell counters a bulk store overwrote: they
+    /// reveal again, and the source counts already hold it.
+    Rereveal,
+    /// A new admission: the counters reveal and it counts as a source.
+    Admit,
 }
 
 fn resolve_bounds(entities: &EntityStore, path_grid: Option<&PathGrid>) -> (u16, u16) {

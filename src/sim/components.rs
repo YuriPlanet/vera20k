@@ -795,18 +795,6 @@ pub struct BunkerWallAnimEvent {
     pub damaged: bool,
 }
 
-/// Per-attacker walk-up intent for the C4 plant mission.
-///
-/// Mirrors gamemd's SEAL/Tanya/PTROOP behavior: while this is `Some`, the
-/// unit pathfinds toward the target building. On arrival at the target's
-/// cell, `tick_c4_plants` claims the plant by setting
-/// `PendingC4Detonation` on the building. This state is cleared when the
-/// player retasks the unit (Move/Stop) or when the target is lost.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct C4PlantState {
-    pub target_building_id: u64,
-}
-
 /// Body rocking state for voxel-bodied units.
 ///
 /// Tracks spring-damped roll/pitch angles driven by weapon impacts and EMP
@@ -1003,11 +991,9 @@ mod tests {
     #[test]
     fn c4_state_types_are_send_sync_copy() {
         fn assert_send_sync<T: Send + Sync>() {}
-        assert_send_sync::<C4PlantState>();
         assert_send_sync::<PendingC4Detonation>();
         // Compile-time Copy assertion via fn-bound:
         fn _assert_copy<T: Copy>() {}
-        _assert_copy::<C4PlantState>();
         _assert_copy::<PendingC4Detonation>();
     }
 

@@ -2899,7 +2899,10 @@ impl Simulation {
         {
             //6F6B16 ordinary sight release precedes TypeCD1 gap removal at
             //6F6B6A; both precede Object Limbo. Repeated Limbo emits neither.
+            // A `RevealToAll=` type's branch (`0x006F6AEF..0x006F6B06`)
+            // releases the sight its opening showed the current house.
             self.fog.release_entity_sight(stable_id);
+            self.fog.release_alternate_sight(stable_id);
             self.remove_building_gap_before_limbo(stable_id);
             // Steam gamemd3e81a617, TechnoLimbo6F6B98..6F6BA0 clears an
             // OpenTopped hull's own rider targets before HouseRemoved6F6BD1.
@@ -3438,10 +3441,6 @@ impl Simulation {
                 .nav_queue
                 .iter()
                 .any(|target| Self::nav_ref_targets_expired(target, expired_id))
-            || listener
-                .c4_plant
-                .as_ref()
-                .is_some_and(|plant| plant.target_building_id == expired_id)
             || listener.pending_entry() == Some(expired_id)
             || listener.spawn_owner_id == Some(expired_id)
             || listener
@@ -3926,10 +3925,6 @@ impl Simulation {
             .iter()
             .any(|target| Self::nav_ref_targets_expired(target, expired_id));
 
-        let clear_c4_plant = listener
-            .c4_plant
-            .as_ref()
-            .is_some_and(|plant| plant.target_building_id == expired_id);
         // Techno707AE7..707AF5 clears private pending+500 only on control1.
         // Non-destructive DetachAll(false) retains this independent entry;
         // radio contact expiry owns the admitted visit.
@@ -3966,7 +3961,6 @@ impl Simulation {
             || clear_suspended_nav_com
             || clear_nav_com
             || prune_nav_queue
-            || clear_c4_plant
             || clear_dock
             || clear_airfield
             || clear_refinery
@@ -3999,9 +3993,6 @@ impl Simulation {
                 .navigation
                 .nav_queue
                 .retain(|target| !Self::nav_ref_targets_expired(target, expired_id));
-        }
-        if clear_c4_plant {
-            listener.c4_plant = None;
         }
         if clear_dock {
             crate::sim::docking::building_dock::expire_reference(listener, expired_id);

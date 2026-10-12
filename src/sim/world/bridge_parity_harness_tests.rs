@@ -332,7 +332,10 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // definition/live-instance/registration/attachment/dispatch state. This fixture
 // has no authored Tags; route, per-frame replay and all three RNG gates precede
 // this structural Rust hash pin and remain unchanged.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x8800_B430_026B_6F17;
+// Snapshot332 drops the C4 walk-up intent, whose empty value every entity's
+// fold hashed. This fixture orders no C4; route, per-frame replay and all
+// three RNG gates remain unchanged.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x38EB_6DC4_C87D_4E43;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so

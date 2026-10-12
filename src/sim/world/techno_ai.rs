@@ -862,7 +862,12 @@ fn techno_ai_shell(
             // its late tail. Keep the forced receiver inline in this object's
             // LogicVector visit so nested death effects precede the next slot.
             if let Some(rules) = rules {
-                sim.tick_pending_building_detonation(id, rules, ctx.overlay_registry, ctx.effects);
+                outcome.bridge_state_changed |= sim.tick_pending_building_detonation(
+                    id,
+                    rules,
+                    ctx.overlay_registry,
+                    ctx.effects,
+                );
                 // The range drop that ends the Update (`0x00440378`).
                 building_missions::range_drop(sim, id, rules, ctx);
             }

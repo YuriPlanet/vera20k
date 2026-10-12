@@ -298,7 +298,7 @@ fn the_launch_matches_native() {
                 } if *by == owner && *kind == sw_type && (*rx, *ry) == cell => {
                     Some("eva EVA_IronCurtainActivated".to_string())
                 }
-                SimSoundEvent::SuperWeaponRadarEvent { radar } => Some(format!(
+                SimSoundEvent::RadarEvent { radar } => Some(format!(
                     "radar {} {},{}",
                     radar.event_type as i32, radar.rx, radar.ry
                 )),
@@ -603,7 +603,7 @@ fn curtained_infantry_die_and_announce_each_loss() {
             .expect("the event was pushed")
     };
     let launched = position(|event| matches!(event, SimSoundEvent::SuperWeaponLaunched { .. }));
-    let radar = position(|event| matches!(event, SimSoundEvent::SuperWeaponRadarEvent { .. }));
+    let radar = position(|event| matches!(event, SimSoundEvent::RadarEvent { .. }));
     let first_loss = position(|event| matches!(event, SimSoundEvent::UnitLost { .. }));
     assert!(launched < radar && radar < first_loss);
     for id in [first, second] {
@@ -646,8 +646,7 @@ fn retail_iron_curtain_through_production_frames() {
         .filter(|event| {
             matches!(
                 event,
-                SimSoundEvent::SuperWeaponLaunched { .. }
-                    | SimSoundEvent::SuperWeaponRadarEvent { .. }
+                SimSoundEvent::SuperWeaponLaunched { .. } | SimSoundEvent::RadarEvent { .. }
             )
         })
         .collect();
@@ -655,7 +654,7 @@ fn retail_iron_curtain_through_production_frames() {
         launch.as_slice(),
         [
             SimSoundEvent::SuperWeaponLaunched { owner, sw_type: kind, rx: 40, ry: 40 },
-            SimSoundEvent::SuperWeaponRadarEvent { radar },
+            SimSoundEvent::RadarEvent { radar },
         ] if *owner == russians
             && *kind == sw_type
             && radar.event_type == crate::sim::radar::RadarEventType::ImpactSilent

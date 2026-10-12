@@ -318,6 +318,6 @@ mod tests {
         let napowr = rules.object("NAPOWR").expect("retail NAPOWR");
         assert_eq!(napowr.strength, 750);
         assert!(napowr.can_c4);
-        assert_eq!(rules.c4_delay_ticks, 27);
+        assert_eq!(rules.c4_delay_frames(), 26);
     }
 }

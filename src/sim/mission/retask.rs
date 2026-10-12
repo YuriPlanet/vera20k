@@ -6,7 +6,7 @@
 //! (`EventClass` execute, Queue callsite `0x004C73B9=dynamic/0`); the
 //! per-object AI host promotes it via Ready→Commence on its next update. The
 //! legacy `Option<T>` machines stay the behavior drivers; the per-site field
-//! clears (`attack_target`/`order_intent`/`c4_plant`) stay inline at the call
+//! clears (`attack_target`/`order_intent`) stay inline at the call
 //! site — the sites cancel different field subsets, so they cannot be folded
 //! into a fixed teardown without diverging.
 

@@ -1,8 +1,5 @@
-//! Integration tests for the C4 plant lifecycle (walk-up, claim,
-//! detonation, scatter). Covers the parity-critical behaviors from the
-//! design doc: happy path, attacker death, Iron Curtain, two attackers,
-//! target death, Stop cancellation, rejection of CanC4=no targets,
-//! rejection of non-C4 attackers, plus a determinism regression test.
+//! A planted C4 charge's expiry (BuildingClass::Update's C4 tail) and the
+//! player Sabotage order's refusals. The plant itself is `sim::c4_plant`'s.
 
 use super::*;
 use crate::map::entities::EntityCategory;
@@ -10,8 +7,9 @@ use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{Command, CommandEnvelope};
-use crate::sim::components::{C4PlantState, Health, PendingC4Detonation};
+use crate::sim::components::{Health, PendingC4Detonation};
 use crate::sim::game_entity::GameEntity;
+use crate::sim::mission::MissionType;
 use crate::sim::timer::CdTimer;
 
 fn c4_test_rules() -> RuleSet {
@@ -66,7 +64,7 @@ fn c4_damage_state_rules() -> RuleSet {
 fn build_sim_with_c4_rules() -> (Simulation, RuleSet) {
     let mut sim = Simulation::new();
     let rules = c4_test_rules();
-    // Required: tick_c4_plants calls rules.c4_warhead_id() which panics
+    // Required: the expiry reads the C4Warhead handle, which panics
     // unless this resolver has run.
     sim.resolve_type_handles(&rules);
     (sim, rules)
@@ -134,8 +132,6 @@ fn step(sim: &mut Simulation, rules: &RuleSet) {
     sim.advance_tick(&due, Some(rules), None, None, 67);
 }
 
-// ---------- Test 1: happy path ----------
-
 /// `seal`'s C4 charge on `target`, planted this frame.
 fn plant_c4(sim: &mut Simulation, rules: &RuleSet, target: u64, seal: u64) {
     sim.substrate
@@ -143,73 +139,9 @@ fn plant_c4(sim: &mut Simulation, rules: &RuleSet, target: u64, seal: u64) {
         .get_mut(target)
         .unwrap()
         .pending_c4_detonation = Some(PendingC4Detonation {
-        timer: CdTimer::started(sim.session.binary_frame as i32, rules.c4_delay_ticks as i32),
+        timer: CdTimer::started(sim.session.binary_frame as i32, rules.c4_delay_frames()),
         source_entity_id: Some(seal),
     });
-}
-
-#[test]
-fn c4_plant_happy_path_kills_building_and_seal_survives() {
-    let (mut sim, rules) = build_sim_with_c4_rules();
-    // Spawn SEAL adjacent (Chebyshev-1) to the building so the plant claims
-    // on the first tick — skips the pathfinding walk-up which is tested
-    // elsewhere. tick_c4_plants Phase 1's adjacency check is what we're
-    // verifying here.
-    let seal = spawn_infantry(&mut sim, "GHOST", "Americans", 10, 11);
-    let bld = spawn_building(&mut sim, "GAPILE", "Soviets", 10, 10);
-
-    let owner = sim.interner.intern("Americans");
-    sim.queue_command(CommandEnvelope::new(
-        owner,
-        sim.session.tick + 1,
-        Command::PlantC4 {
-            attacker_id: seal,
-            target_building_id: bld,
-        },
-    ));
-
-    // First advance: the EventClass tail sets c4_plant after the object walk.
-    step(&mut sim, &rules);
-    assert!(
-        sim.substrate.entities.get(seal).unwrap().c4_plant.is_some(),
-        "the command tail must arm the plant intent"
-    );
-    // The next object walk sees adjacency and claims the plant.
-    step(&mut sim, &rules);
-    let pending = sim
-        .substrate
-        .entities
-        .get(bld)
-        .unwrap()
-        .pending_c4_detonation
-        .expect("plant must be claimed on adjacency");
-    let plant_start = pending.timer.start_frame() as u64;
-
-    // Advance until detonation tick fires. Phase 2 fires when
-    // `sim.session.tick - plant_start >= delay`. The current sim.session.tick is already
-    // past plant_start by 1 (advance_tick increments at the end), so
-    // `delay + 1` more advances are enough.
-    let delay = rules.c4_delay_ticks as u64;
-    for _ in 0..(delay + 1) {
-        step(&mut sim, &rules);
-    }
-
-    assert!(
-        sim.substrate
-            .entities
-            .get(bld)
-            .is_none_or(|b| b.dying || b.health.current == 0),
-        "building must be destroyed at plant_start + c4_delay (plant_start={plant_start}, sim.session.tick={})",
-        sim.session.tick
-    );
-    assert!(
-        sim.substrate.entities.get(seal).is_some(),
-        "SEAL must survive the plant"
-    );
-    assert!(
-        !sim.substrate.entities.get(seal).unwrap().dying,
-        "SEAL must not be dying"
-    );
 }
 
 #[test]
@@ -219,7 +151,7 @@ fn c4_expiry_ignore_defenses_bypasses_verses_and_kills_building() {
     let bld = spawn_building(&mut sim, "GAPILE", "Soviets", 10, 10);
     plant_c4(&mut sim, &rules, bld, seal);
 
-    let delay = rules.c4_delay_ticks as u64;
+    let delay = rules.c4_delay_frames() as u64;
     for _ in 0..(delay + 2) {
         step(&mut sim, &rules);
         if sim.substrate.entities.get(bld).is_none() {
@@ -233,63 +165,6 @@ fn c4_expiry_ignore_defenses_bypasses_verses_and_kills_building() {
             .get(bld)
             .is_none_or(|building| building.dying || building.health.current == 0),
         "the expiry receiver's ignore_defenses flag must bypass the C4Warhead's 50% Verses"
-    );
-}
-
-#[test]
-fn c4_does_not_claim_from_add_occupy_only_cell() {
-    let (mut sim, rules) = build_sim_with_c4_rules();
-    let seal = spawn_infantry(&mut sim, "GHOST", "Americans", 9, 10);
-    let refinery = spawn_building(&mut sim, "GAREFN", "Soviets", 10, 10);
-
-    sim.substrate.entities.get_mut(seal).unwrap().c4_plant = Some(C4PlantState {
-        target_building_id: refinery,
-    });
-
-    step(&mut sim, &rules);
-
-    // The walk-up to the building NavCom is covered on a map by
-    // `c4_on_cabhut_collapses_bridge_and_hut_survives`; this fixture has no
-    // path grid, so only the claim rule is exercised here.
-    assert!(
-        sim.substrate
-            .entities
-            .get(refinery)
-            .unwrap()
-            .pending_c4_detonation
-            .is_none(),
-        "C4 must not claim from GAREFN AddOccupy-only cell (origin-1, origin)"
-    );
-}
-
-#[test]
-fn c4_claims_from_remove_occupy_foundation_cell() {
-    let (mut sim, rules) = build_sim_with_c4_rules();
-    let seal = spawn_infantry(&mut sim, "GHOST", "Americans", 13, 11);
-    let refinery = spawn_building(&mut sim, "GAREFN", "Soviets", 10, 10);
-
-    sim.substrate.entities.get_mut(seal).unwrap().c4_plant = Some(C4PlantState {
-        target_building_id: refinery,
-    });
-
-    step(&mut sim, &rules);
-
-    let pending = sim
-        .substrate
-        .entities
-        .get(refinery)
-        .unwrap()
-        .pending_c4_detonation
-        .expect("C4 must claim from base foundation cell removed from hidden occupancy");
-    assert_eq!(pending.source_entity_id, Some(seal));
-    assert!(
-        sim.substrate
-            .entities
-            .get(seal)
-            .unwrap()
-            .movement_target
-            .is_none(),
-        "the claim stops the planter"
     );
 }
 
@@ -316,7 +191,7 @@ fn c4_attacker_death_does_not_abort_detonation() {
 
     // Advance through C4Delay. Building MUST still die — the +0x6df marker
     // is never cleared in the C4 path, so detonation fires regardless.
-    let delay = rules.c4_delay_ticks as u64;
+    let delay = rules.c4_delay_frames() as u64;
     for _ in 0..(delay + 2) {
         step(&mut sim, &rules);
     }
@@ -359,7 +234,7 @@ fn c4_iron_curtain_application_cancels_pending_detonation() {
 
     // Advance beyond both C4Delay and the protection duration. Cancellation is
     // permanent; there is no expired-latch retry after Iron Curtain wears off.
-    let delay = rules.c4_delay_ticks as u64;
+    let delay = rules.c4_delay_frames() as u64;
     for _ in 0..(delay + 42) {
         step(&mut sim, &rules);
     }
@@ -372,126 +247,24 @@ fn c4_iron_curtain_application_cancels_pending_detonation() {
     assert_eq!(building.health.current, 600);
 }
 
-// ---------- Test 4: second SEAL on already-claimed target ----------
+// ---------- Test 6: a planted charge survives its planter's Stop ----------
 
 #[test]
-fn second_c4_attacker_does_not_overwrite_plant() {
-    let (mut sim, rules) = build_sim_with_c4_rules();
-    // Both adjacent to the building. seal_a gets the lower stable_id (sorted
-    // iteration order in tick_c4_plants makes them deterministic).
-    let seal_a = spawn_infantry(&mut sim, "GHOST", "Americans", 10, 11);
-    let seal_b = spawn_infantry(&mut sim, "TANY", "Americans", 11, 10);
-    let bld = spawn_building(&mut sim, "GAPILE", "Soviets", 10, 10);
-
-    sim.substrate.entities.get_mut(seal_a).unwrap().c4_plant = Some(C4PlantState {
-        target_building_id: bld,
-    });
-    sim.substrate.entities.get_mut(seal_b).unwrap().c4_plant = Some(C4PlantState {
-        target_building_id: bld,
-    });
-
-    // First tick: A claims (lower stable_id, sorted order). B sees the claim and hovers.
-    step(&mut sim, &rules);
-    let pending = sim
-        .substrate
-        .entities
-        .get(bld)
-        .unwrap()
-        .pending_c4_detonation
-        .expect("first attacker claims");
-    assert_eq!(
-        pending.source_entity_id,
-        Some(seal_a),
-        "first attacker (lower stable_id) wins the claim — deterministic by sorted iteration"
-    );
-
-    // Another tick: pending must NOT have been overwritten by B.
-    step(&mut sim, &rules);
-    let pending_after = sim
-        .substrate
-        .entities
-        .get(bld)
-        .unwrap()
-        .pending_c4_detonation
-        .unwrap();
-    assert_eq!(
-        pending_after.timer.start_frame(),
-        pending.timer.start_frame(),
-        "pending plant_start_tick must not be overwritten by second attacker"
-    );
-    assert_eq!(
-        pending_after.source_entity_id,
-        Some(seal_a),
-        "pending attacker must not be overwritten by second attacker"
-    );
-}
-
-// ---------- Test 5: target death clears c4_plant ----------
-
-#[test]
-fn target_death_clears_c4_plant_on_attacker() {
-    let (mut sim, rules) = build_sim_with_c4_rules();
-    let seal = spawn_infantry(&mut sim, "GHOST", "Americans", 5, 5);
-    let bld = spawn_building(&mut sim, "GAPILE", "Soviets", 10, 10);
-
-    sim.substrate.entities.get_mut(seal).unwrap().c4_plant = Some(C4PlantState {
-        target_building_id: bld,
-    });
-
-    // Kill the building via direct mutation (simulate another weapon).
-    sim.substrate.entities.get_mut(bld).unwrap().health.current = 0;
-    sim.substrate.entities.get_mut(bld).unwrap().dying = true;
-
-    step(&mut sim, &rules);
-
-    assert!(
-        sim.substrate.entities.get(seal).unwrap().c4_plant.is_none(),
-        "c4_plant must clear when target dies"
-    );
-}
-
-// ---------- Test 6: Stop cancels walk-up but not already-claimed plant ----------
-
-#[test]
-fn stop_cancels_walkup_but_not_already_claimed_plant() {
+fn a_planted_charge_survives_its_planters_stop() {
     let (mut sim, rules) = build_sim_with_c4_rules();
     let seal = spawn_infantry(&mut sim, "GHOST", "Americans", 5, 5);
     let bld = spawn_building(&mut sim, "GAPILE", "Soviets", 10, 10);
 
     let owner = sim.interner.intern("Americans");
 
-    // Case A: Stop during walk-up clears c4_plant.
-    sim.substrate.entities.get_mut(seal).unwrap().c4_plant = Some(C4PlantState {
-        target_building_id: bld,
-    });
-    sim.queue_command(CommandEnvelope::new(
-        owner,
-        sim.session.tick + 1,
-        Command::Stop { entity_id: seal },
-    ));
-    step(&mut sim, &rules);
-    assert!(
-        sim.substrate.entities.get(seal).unwrap().c4_plant.is_none(),
-        "Stop must clear c4_plant during walk-up"
-    );
-    assert!(
-        sim.substrate
-            .entities
-            .get(bld)
-            .unwrap()
-            .pending_c4_detonation
-            .is_none(),
-        "no plant was claimed, building stays clean"
-    );
-
-    // Case B: Stop AFTER plant is claimed does NOT clear pending_c4_detonation.
+    // Stop on the planter does not clear the building's charge.
     let plant_start = sim.session.tick;
     sim.substrate
         .entities
         .get_mut(bld)
         .unwrap()
         .pending_c4_detonation = Some(PendingC4Detonation {
-        timer: CdTimer::started(plant_start as i32, rules.c4_delay_ticks as i32),
+        timer: CdTimer::started(plant_start as i32, rules.c4_delay_frames()),
         source_entity_id: Some(seal),
     });
     sim.queue_command(CommandEnvelope::new(
@@ -511,7 +284,7 @@ fn stop_cancels_walkup_but_not_already_claimed_plant() {
     );
 
     // And the building still detonates on schedule.
-    let delay = rules.c4_delay_ticks as u64;
+    let delay = rules.c4_delay_frames() as u64;
     for _ in 0..(delay + 2) {
         step(&mut sim, &rules);
     }
@@ -542,8 +315,10 @@ fn cannot_c4_building_rejects_plant_command() {
         },
     ));
     step(&mut sim, &rules);
+    let seal = sim.substrate.entities.get(seal).unwrap();
     assert!(
-        sim.substrate.entities.get(seal).unwrap().c4_plant.is_none(),
+        seal.mission.effective().known() != Some(MissionType::Sabotage)
+            && seal.navigation.nav_com.is_none(),
         "PlantC4 must be silently rejected for CanC4=no buildings"
     );
     assert!(
@@ -575,8 +350,10 @@ fn non_c4_unit_rejects_plant_command() {
         },
     ));
     step(&mut sim, &rules);
+    let gi = sim.substrate.entities.get(gi).unwrap();
     assert!(
-        sim.substrate.entities.get(gi).unwrap().c4_plant.is_none(),
+        gi.mission.effective().known() != Some(MissionType::Sabotage)
+            && gi.navigation.nav_com.is_none(),
         "PlantC4 must be silently rejected for non-C4 attackers"
     );
     assert!(
@@ -588,34 +365,4 @@ fn non_c4_unit_rejects_plant_command() {
             .is_none(),
         "rejected PlantC4 must not set pending_c4_detonation on the target"
     );
-}
-
-// ---------- Task 14: Determinism / replay regression ----------
-
-#[test]
-fn c4_lifecycle_is_deterministic() {
-    fn run() -> Vec<u64> {
-        let (mut sim, rules) = build_sim_with_c4_rules();
-        let seal = spawn_infantry(&mut sim, "GHOST", "Americans", 10, 11);
-        let bld = spawn_building(&mut sim, "GAPILE", "Soviets", 10, 10);
-        let owner = sim.interner.intern("Americans");
-        sim.queue_command(CommandEnvelope::new(
-            owner,
-            sim.session.tick + 1,
-            Command::PlantC4 {
-                attacker_id: seal,
-                target_building_id: bld,
-            },
-        ));
-        let mut hashes = Vec::new();
-        for _ in 0..100 {
-            step(&mut sim, &rules);
-            hashes.push(sim.state_hash());
-        }
-        hashes
-    }
-
-    let h1 = run();
-    let h2 = run();
-    assert_eq!(h1, h2, "C4 lifecycle must be deterministic across runs");
 }

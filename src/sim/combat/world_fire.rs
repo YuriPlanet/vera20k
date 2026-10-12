@@ -943,6 +943,27 @@ fn fireat_get_rof(
     rof_weapon: Option<&WeaponType>,
     next_index: i32,
 ) -> i32 {
+    let live = super::rof::LiveParticles {
+        spark: weapon.use_spark_particles,
+        fire: weapon.use_fire_particles,
+        railgun: weapon.is_railgun,
+    };
+    snapshot_get_rof(world, rules, snap, obj, rof_weapon, live, next_index)
+}
+
+/// `TechnoClass::GetROF` (vt+0x318) of the object `snap` describes, for
+/// `rof_weapon` at `burst_index` with the `live` particle systems it holds:
+/// FireAt's shot ([`fireat_get_rof`]) and the C4 plant's `GetROF(1)`
+/// (`sim::c4_plant`).
+pub(crate) fn snapshot_get_rof(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    snap: &AttackerSnapshot,
+    obj: &ObjectType,
+    rof_weapon: Option<&WeaponType>,
+    live: super::rof::LiveParticles,
+    burst_index: i32,
+) -> i32 {
     let firer = world.substrate.entities.get(snap.stable_id);
     super::rof::get_rof(
         &super::rof::RofQuery {
@@ -950,12 +971,8 @@ fn fireat_get_rof(
             // no retail building sets `Ammo=`.
             building_ammo: None,
             weapon: rof_weapon,
-            live: super::rof::LiveParticles {
-                spark: weapon.use_spark_particles,
-                fire: weapon.use_fire_particles,
-                railgun: weapon.is_railgun,
-            },
-            burst_index: next_index,
+            live,
+            burst_index,
             unit_burst_delays: (snap.category == EntityCategory::Unit).then_some(obj.burst_delays),
             house_rof: world
                 .houses

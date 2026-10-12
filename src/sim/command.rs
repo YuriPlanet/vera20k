@@ -629,13 +629,13 @@ pub enum Command {
         engineer_id: u64,
         target_building_id: u64,
     },
-    /// Order a C4-capable infantry (SEAL / Tanya / Psi-Corp Trooper) to plant
-    /// on an enemy building. The unit walks to the building's cell; on arrival
-    /// the building's `pending_c4_detonation` is set; after `C4Delay` ticks the
-    /// building takes full-HP damage with C4Warhead and dies. The attacker
-    /// survives and scatters one cell. Gating happens in `world_commands` —
-    /// attacker must have `C4=yes`, target must be a `CanC4=yes` building, not
-    /// invisible-in-game, not iron-curtained, not in fog.
+    /// Order a C4 infantryman (Navy SEAL, Tanya, Psi-Corps Trooper) to
+    /// sabotage an enemy building: Sabotage, with the building as its
+    /// destination. On arrival `InfantryClass::Per_Cell_Process` plants the
+    /// charge (`sim::c4_plant`), and `C4Delay` later the building takes its
+    /// full health as `C4Warhead=` damage. Gating happens in `world_commands`:
+    /// the attacker must be `C4=yes`, and the target a `CanC4=yes` building
+    /// that is not invisible in game, Iron Curtained or fogged.
     PlantC4 {
         attacker_id: u64,
         target_building_id: u64,

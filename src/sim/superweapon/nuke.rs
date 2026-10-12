@@ -103,7 +103,7 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
         .start_nuke_flash(sim.session.binary_frame as i32);
     sim.publish_global_lighting();
     let cell = |leptons: i32| (leptons / 256) as i16 as u16;
-    sim.sound_events.push(SimSoundEvent::SuperWeaponRadarEvent {
+    sim.sound_events.push(SimSoundEvent::RadarEvent {
         radar: RadarEventRequest::new(
             RadarEventType::ImpactSilent,
             cell(location.x),

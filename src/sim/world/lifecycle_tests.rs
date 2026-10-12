@@ -12,7 +12,7 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::terrain_rules::{SpeedCostProfile, TerrainClass};
 use crate::sim::anim_class::{AnimObject, AnimRuntime, AnimWorldCoord};
 use crate::sim::combat::{AttackTarget, TargetKind};
-use crate::sim::components::{C4PlantState, DriveOccupationFootprint, Health, NavTargetRef};
+use crate::sim::components::{DriveOccupationFootprint, Health, NavTargetRef};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::state::MissionTestFixture;
@@ -3461,10 +3461,6 @@ fn pointer_expiry_clears_live_target_and_navigation_refs() {
         NavTargetRef::Cell { rx: 7, ry: 8 },
         NavTargetRef::Object { id: 2 },
     ];
-    listener.c4_plant = Some(C4PlantState {
-        target_building_id: 2,
-    });
-
     sim.uninit(2);
 
     let listener = sim.substrate.entities.get(1).unwrap();
@@ -3477,7 +3473,6 @@ fn pointer_expiry_clears_live_target_and_navigation_refs() {
         listener.navigation.nav_queue,
         vec![NavTargetRef::Cell { rx: 7, ry: 8 }]
     );
-    assert!(listener.c4_plant.is_none());
 }
 
 #[test]

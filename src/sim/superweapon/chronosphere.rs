@@ -193,7 +193,7 @@ pub(super) fn launch_warp(
         return;
     };
     for (rx, ry) in [source, target] {
-        sim.sound_events.push(SimSoundEvent::SuperWeaponRadarEvent {
+        sim.sound_events.push(SimSoundEvent::RadarEvent {
             radar: RadarEventRequest::new(RadarEventType::ImpactSilent, rx, ry),
         });
     }

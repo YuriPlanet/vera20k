@@ -3660,10 +3660,11 @@ pub struct RuleSet {
     /// warheads. Read by the spawn manager to classify a spawn child and by the
     /// missile detonation path.
     pub missile_spawn: crate::rules::missile_spawn::MissileSpawnRules,
-    /// `[CombatDamage] C4Delay=`. Default `0.03` minutes = 27 ticks @ 15 fps.
-    /// Time between SEAL plant claim and detonation. Stored as integer ticks
-    /// (not minutes) so the per-tick comparison stays integer/lockstep-safe.
-    pub c4_delay_ticks: u32,
+    /// `[CombatDamage] C4Delay=` (`Rules+0x1750`), minutes: ReadDouble
+    /// (`0x0066CDA2`) with the field as its default, which the constructor
+    /// sets to 0.03 (`0x006675F0`). Only the C4 plant reads it
+    /// ([`Self::c4_delay_frames`], [`Self::c4_flash_frames`]).
+    pub c4_delay: f64,
     /// Particle types in registry order. Index = `ParticleTypeId.0`.
     particle_types: Vec<ParticleType>,
     /// Particle system types in registry order. Index = `ParticleSystemTypeId.0`.
@@ -4384,15 +4385,9 @@ impl RuleSet {
         // per-pass result replaces this in `from_processed_rules`.
         let missile_spawn = crate::rules::missile_spawn::MissileSpawnRules::from_ini(ini);
 
-        // [CombatDamage] C4Delay = minutes (double). Default 0.03 = 27 ticks @ 15 fps.
-        // Stored as integer ticks for lockstep-safe per-tick comparison.
-        const SIM_TICKS_PER_SECOND: u32 = crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND;
-        let c4_delay_ticks: u32 = (ini
+        let c4_delay = ini
             .section_or_empty("CombatDamage")
-            .read_double("C4Delay", 0.03)
-            * 60.0
-            * SIM_TICKS_PER_SECOND as f64)
-            .round() as u32; // 0.03 × 60 × 15 = 27
+            .read_double("C4Delay", 0.03);
 
         // Per-mission behaviour table from the [<MissionName>] sections.
         let mission_control = MissionControl::from_ini(ini);
@@ -4539,7 +4534,7 @@ impl RuleSet {
             bridge_warheads,
             mind_control,
             missile_spawn,
-            c4_delay_ticks,
+            c4_delay,
             particle_types,
             particle_system_types,
             particle_system_types_by_name,
@@ -4587,6 +4582,28 @@ impl RuleSet {
             map.iter()
                 .find_map(|(key, value)| key.eq_ignore_ascii_case(id).then_some(value))
         })
+    }
+
+    /// The C4 charge's fuse, `ftol(C4Delay * 900.0)`, which the plant starts
+    /// the building's C4Timer with (`InfantryClass::Per_Cell_Process
+    /// 0x0051A5E2..0x0051A608`). Under the process's chop control word retail
+    /// `.03`, scanned through `float`, gives 26.
+    pub fn c4_delay_frames(&self) -> i32 {
+        native_minutes_to_frames(self.c4_delay)
+    }
+
+    /// The building's flash at a C4 plant, `ftol(C4Delay * 900.0 * 0.5)`
+    /// (`0x0051A5B6..0x0051A5D0`): the 900.0 product stays on the x87 stack
+    /// for the halving. Retail gives 13.
+    pub fn c4_flash_frames(&self) -> i32 {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
+        X87::ftol_i32_low_masked(X87::mul(
+            X87::mul(
+                X87::load_f64(NativeF64Bits::from_bits(self.c4_delay.to_bits())),
+                X87::load_i32(900),
+            ),
+            X87::load_f64(NativeF64Bits::HALF),
+        ))
     }
 
     /// Resolve a type name to its handle, case-insensitively (engine parity).
@@ -8959,29 +8976,6 @@ Projectile=Invisible
     }
 
     #[test]
-    fn c4_delay_defaults_to_27_ticks() {
-        let ini = IniFile::from_str("");
-        let rules = RuleSet::from_ini(&ini).expect("parse");
-        assert_eq!(rules.c4_delay_ticks, 27);
-    }
-
-    #[test]
-    fn c4_delay_parses_double_minutes_to_ticks() {
-        let ini = IniFile::from_str("[CombatDamage]\nC4Delay=0.1\n");
-        let rules = RuleSet::from_ini(&ini).expect("parse");
-        // 0.1 minutes × 60 × 15 = 90 ticks
-        assert_eq!(rules.c4_delay_ticks, 90);
-    }
-
-    #[test]
-    fn c4_delay_retail_default_value() {
-        let ini = IniFile::from_str("[CombatDamage]\nC4Delay=0.03\n");
-        let rules = RuleSet::from_ini(&ini).expect("parse");
-        // 0.03 × 60 × 15 = 27 (.round())
-        assert_eq!(rules.c4_delay_ticks, 27);
-    }
-
-    #[test]
     fn retail_rulesmd_c4_flags_parse_correctly() {
         let ini = IniFile::from_str(
             "[CombatDamage]\nC4Delay=0.03\n\
@@ -9041,8 +9035,8 @@ Projectile=Invisible
             }
         }
 
-        // C4Delay must match the retail value (0.03 minutes = 27 ticks).
-        assert_eq!(rules.c4_delay_ticks, 27, "C4Delay must parse to 27 ticks");
+        // Retail C4Delay=.03 is a 26-frame fuse.
+        assert_eq!(rules.c4_delay_frames(), 26);
     }
 
     #[test]

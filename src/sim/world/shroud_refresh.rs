@@ -11,6 +11,10 @@ use crate::sim::{pathfinding::PathGrid, vision};
 mod tests;
 
 #[cfg(test)]
+#[path = "reveal_to_all_tests.rs"]
+mod reveal_to_all_tests;
+
+#[cfg(test)]
 #[derive(Default)]
 struct RevealCalls {
     walks: Vec<Vec<(u16, u16)>>,
@@ -315,9 +319,9 @@ impl Simulation {
             //4ADEE0/4ADCD0 do not release allied mobile sight. The represented
             //multiplayer known-own branch and stock AllyReveal=yes directional
             //allied Building arm select callbacks; untouched admissions survive
-            //the bulk counter overwrite. Independent41B discovery, campaign
-            //Human and the RevealToAll alternate-recipient branch remain caller
-            //residuals.
+            //the bulk counter overwrite, and the fog re-reveals the RevealToAll
+            //alternate sight of the rest. Independent41B discovery and campaign
+            //Human remain caller residuals.
             let sources: std::collections::BTreeSet<u64> = self
                 .substrate
                 .entities
@@ -370,6 +374,47 @@ impl Simulation {
             self.map_size_diamond(),
             self.playfield_bounds.is_some(),
         )
+    }
+
+    /// `TechnoClass::UpdateReveal(0, 0, 1, PlayerPtr, 0)` (`0x0070AF50`) for
+    /// a source that already holds its own sight: its gates (the stored
+    /// playfield byte `+0x3D5`, a `MultiplayPassive=` owner), then
+    /// [`vision::admit_alternate_entity_sight`] for the current house.
+    ///
+    /// RESIDUAL: in a network game each client passes its own `PlayerPtr`, so
+    /// every human player but the owner gets the sight; VERA gives it to the
+    /// session's current house, as `house_is_human_player` reads it. Skirmish
+    /// has one human.
+    pub(crate) fn reveal_sight_to_current_house(&mut self, stable_id: u64, rules: &RuleSet) {
+        let Some(current) = self.session.current_house else {
+            return;
+        };
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
+            return;
+        };
+        let passive = self
+            .houses
+            .get(&entity.owner())
+            .is_some_and(|house| house.multiplay_passive);
+        if !entity.in_playfield || passive {
+            return;
+        }
+        let config = self.sight_reveal_config(Some(rules));
+        let height_grid = if config.reveal_by_height() {
+            self.path_grid().map(PathGrid::ground_height_grid)
+        } else {
+            None
+        };
+        let ability = vision::entity_has_sight_ability(entity, &self.interner, Some(rules));
+        vision::admit_alternate_entity_sight(
+            &mut self.fog,
+            entity,
+            &config,
+            height_grid.as_deref(),
+            ability,
+            &self.interner,
+            current,
+        );
     }
 
     pub(super) fn refresh_high_flying_sight_before_process(

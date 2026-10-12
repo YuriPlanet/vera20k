@@ -144,7 +144,7 @@ pub(super) fn launch(
     if !super::is_charged(sim, owner, sw_type) {
         return false;
     }
-    sim.sound_events.push(SimSoundEvent::SuperWeaponRadarEvent {
+    sim.sound_events.push(SimSoundEvent::RadarEvent {
         radar: RadarEventRequest::new(RadarEventType::ImpactSilent, rx, ry),
     });
     start(sim, rules, owner, (rx as i16, ry as i16));

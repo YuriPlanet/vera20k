@@ -21,8 +21,8 @@ use crate::sim::cloak_disguise::{CloakRuntime, DisguiseRuntime};
 use crate::sim::combat::combat_weapon::WeaponSlot;
 use crate::sim::combat::{AttackTarget, TargetKind};
 use crate::sim::components::{
-    C4PlantState, HarvestOverlay, Health, MovementTarget, NavigationState, OrderIntent,
-    PendingC4Detonation, Position, RockingState, VoxelAnimation,
+    HarvestOverlay, Health, MovementTarget, NavigationState, OrderIntent, PendingC4Detonation,
+    Position, RockingState, VoxelAnimation,
 };
 use crate::sim::debug_event_log::{DebugEventKind, DebugEventLog};
 use crate::sim::docking::aircraft_dock::AircraftAmmo;
@@ -478,8 +478,9 @@ pub struct GameEntity {
     #[serde(default = "veterancy_rank_cache_default")]
     pub veterancy_rank_cache: i8,
     /// Signed native flash dword `TechnoClass+0xF0`, seeded with
-    /// `[AudioVisual] EliteFlashTimer=` at `0x006FA0DC` on the elite crossing
-    /// or the script50 operand at6E9D0A. Preserve all bits of either writer.
+    /// `[AudioVisual] EliteFlashTimer=` at `0x006FA0DC` on the elite crossing,
+    /// the script50 operand at6E9D0A, or a building's C4 plant
+    /// ([`Self::flash_building`]). Preserve all bits of each writer.
     /// The shared late TechnoAI countdown owns updates; presentation reads
     /// the native phase bit from this same counter. No separate flash clock.
     #[serde(default)]
@@ -755,10 +756,10 @@ pub struct GameEntity {
     /// - A Prism support beam starts the supporter's downtime,
     ///   {Frame, `PrismSupportDelay=`} (`0x0044ACD0..0x0044ACDC`). Ported
     ///   (`building_missions::process_delayed_fire`).
+    /// - A C4 plant arms the planter with `GetROF(1)`
+    ///   (`InfantryClass::Per_Cell_Process 0x0051A564`/`0x0051A624`). Ported
+    ///   (`sim::c4_plant`).
     /// - RESIDUAL, with their mechanisms:
-    ///   - the C4 plant arms the planter with `GetROF(1)`
-    ///     (`InfantryClass::PerCellProcess 0x0051A564`/`0x0051A624`; see
-    ///     `tick_c4_plants`);
     ///   - `UnitClass::ReceiveGunner`/`RemoveGunner` read a running rearm
     ///     (`0x0074643A`, `0x00746502`) and hand it over (`0x0074646E`,
     ///     `0x0074655C`; see `temporal.rs`);
@@ -1032,16 +1033,12 @@ pub struct GameEntity {
     /// native InfantryType array index. Building consumers are diagnostics;
     /// the Unit hijacker lifecycle is a separate mechanism.
     capture_infantry_type_index: i32,
-    /// Active C4 plant intent on this attacker. Set by `Command::PlantC4`,
-    /// cleared on arrival (after the building's pending detonation is set),
-    /// when the player retasks the unit, or when the target is lost.
-    /// `None` for non-C4 attackers or attackers not currently planting.
-    #[serde(default)]
-    pub c4_plant: Option<C4PlantState>,
-    /// Shared Building C4/PostMortem detonation latch. Infantry planting owns
-    /// one producer; qualifying delayed-death receiver results own the other.
-    /// The Building LogicVector visit consumes expiry synchronously.
-    /// Never cleared in the C4 path — matches gamemd marker semantics.
+    /// Shared Building C4/PostMortem detonation latch: the marker `+0x6DF`
+    /// with its C4Timer (`+0x528`) and C4AppliedBy (`+0x540`). The C4 plant
+    /// (`sim::c4_plant`) owns one producer; qualifying delayed-death receiver
+    /// results own the other. The Building LogicVector visit consumes expiry
+    /// synchronously (`Simulation::tick_pending_building_detonation`) and
+    /// keeps the marker, except a bridge repair hut's, which clears it.
     /// IronCurtain/ForceShield entry cancels it; `None` means no shared latch.
     #[serde(default)]
     pub pending_c4_detonation: Option<PendingC4Detonation>,
@@ -1552,6 +1549,23 @@ impl GameEntity {
         true
     }
 
+    /// `BuildingClass::Flash` (vt+0x148, `0x00456E00`) for `frames`. Its
+    /// Techno body (`0x006F9DD0`) starts the flash countdown (`+0xF0`) unless
+    /// the object is disguised to the player: a building's IsDisguisedTo
+    /// (vt+0xC8, `0x0041C020`) answers its own disguise flag (`+0x1D8`) and
+    /// its GetDisguiseHouse (vt+0xD0, `0x0041BE70`) none. The redraw flag
+    /// (`+0x80`) and the relit slot anims are presentation, which the draws
+    /// derive from the countdown (`app::presentation::lighting`).
+    pub(crate) fn flash_building(&mut self, frames: i32) {
+        if !self
+            .disguise
+            .as_ref()
+            .is_some_and(|disguise| disguise.is_disguised())
+        {
+            self.elite_flash_frames = frames;
+        }
+    }
+
     /// Apply the native `SetFromPercent @ 0x007500E0` to the single raw
     /// accumulator. Like the explicit rank setters, it leaves the cached
     /// rank alone until the next Techno AI sample.
@@ -1801,7 +1815,6 @@ impl GameEntity {
             passenger_role: PassengerRole::None,
             display_type_override: None,
             capture_infantry_type_index: -1,
-            c4_plant: None,
             pending_c4_detonation: None,
             has_been_captured: false,
             bunker_occupant: None,

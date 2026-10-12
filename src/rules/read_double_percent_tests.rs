@@ -1,8 +1,10 @@
-//! Original ReadDouble (`0x005283D0`) against the shared reader. Native rows:
-//! tools/rules_oracle/read_double_percent.{py,json,meta.json}, group A.
+//! Original ReadDouble (`0x005283D0`) against the shared reader, and the C4
+//! plant's chopped fuse and flash against the Rules owner. Native rows:
+//! tools/rules_oracle/read_double_percent.{py,json,meta.json}, groups A and C.
 
 use super::ini_parser::IniFile;
 use super::ini_value::parse_read_double;
+use super::ruleset::RuleSet;
 use serde_json::Value;
 
 fn bits(value: &Value) -> u64 {
@@ -53,6 +55,30 @@ fn read_double_percent_product_matches_original() {
             bits(&row["bits"]),
             "read_double {}",
             row["raw"]
+        );
+    }
+}
+
+#[test]
+fn c4_fuse_and_flash_match_the_original_plant() {
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/read_double_percent.json",
+    ))
+    .unwrap();
+    let rows = native["c4"].as_array().unwrap();
+    assert_eq!(rows.len(), 11);
+    for row in rows {
+        let text = match row["raw"].as_str() {
+            Some(raw) => format!("[CombatDamage]\nC4Delay={raw}\n"),
+            None => String::new(),
+        };
+        let rules = RuleSet::from_ini(&IniFile::from_str(&text)).expect("parse");
+        let native_frames = |key: &str| i32::try_from(row[key].as_i64().unwrap()).unwrap();
+        assert_eq!(rules.c4_delay.to_bits(), bits(&row["bits"]), "{text:?}");
+        assert_eq!(
+            (rules.c4_delay_frames(), rules.c4_flash_frames()),
+            (native_frames("fuse"), native_frames("flash")),
+            "{text:?}"
         );
     }
 }

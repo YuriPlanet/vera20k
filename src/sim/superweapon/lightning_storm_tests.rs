@@ -306,7 +306,7 @@ impl Calls {
             .sound_events
             .iter()
             .filter_map(|event| match event {
-                SimSoundEvent::SuperWeaponRadarEvent { radar } => Some(Sound::Radar(
+                SimSoundEvent::RadarEvent { radar } => Some(Sound::Radar(
                     radar.event_type as i32,
                     (radar.rx as i16, radar.ry as i16),
                 )),

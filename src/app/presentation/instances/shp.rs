@@ -681,6 +681,7 @@ pub(crate) fn build_shp_instances(
                     draw_state,
                     rules_obj.turret_anim_x,
                     rules_obj.turret_anim_y,
+                    rules_obj.turret_anim_z_adjust,
                     &mut building_pieces,
                 );
             }
@@ -702,16 +703,27 @@ pub(crate) fn build_shp_instances(
 /// The same cache key owns both parts, except during either part's recoil.
 /// Executed controls: tools/voxel_oracle/building_barrel.json.
 ///
-/// The turret carries the building's own sort depth verbatim. `TurretAnimZAdjust=`
-/// is deliberately not folded in: gamemd's ground-layer sort key for a building
-/// reads only `TurretAnimIsVoxel` (+32 leptons) and `Gate` (−16 leptons), while
-/// `TurretAnimZAdjust` is read by a different virtual that composes the
-/// building's *draw* Z. Using it as a sort bias here would pull the turret
-/// toward the camera and put it over units standing in front of the building —
-/// by 1.3 to 4 iso rows on the defences a player actually fights around
-/// (SAM Site and Sentry Gun −20, Flak and Gattling Cannon −40, Slave Miner −50,
-/// Grand Cannon −60), more on a couple of civilian map props. The set is small
-/// and does not include Prism Tower, whose turret is not a voxel.
+/// The blit Z seed is Building vtable `0x7E3EBC+0x2EC` (`0x43E900`): it returns
+/// `-AdjustForZ(this+0xA4)` plus `TurretAnimZAdjust` (`type+0x11E8`) when
+/// `TurretAnimIsVoxel` (`type+0x16C5`) admits the voxel arm. The voxel blits pass
+/// it as their Z argument: `0x707206`/`0x7073F1` (uncached `0x707280`) and
+/// `0x707706` (cached `0x707480`), plus the unit draws `0x73B33D`/`0x73B3B2`/
+/// `0x73B412`, `0x73C772` and `0x73D236`. Shared `Techno` draw `0x705E00` reaches
+/// the slot only on its `GetType()` 2 and 15 arms; Building is type 6 (`0x459EC0`)
+/// and jumps past it, so a building's own SHP draw never takes the adjustment:
+/// Without it a gun loses the depth test to its own body and is clipped by the
+/// base it stands on. Retail voxel-turret values: `NASAM`/`NALASR` `-20`,
+/// `NAFLAK`/`YAGGUN` `-40`, `YAREFN` `-50`, `GTGCAN` `-60`, `CAOUTP` `-140`,
+/// `CAEAST02` `-150`; `TESLA`/`ATESLA` set `-100` with no `TurretAnimIsVoxel`.
+///
+/// RESIDUAL: the gun blit carries no BUILDNGZ z-shape, while the cached native
+/// route reaches `0x437A10`, whose second-shape arm subtracts a per-pixel z byte.
+/// Pre-existing; the adjustment now rides on top of it.
+///
+/// It is not a ground-layer sort bias: the building's cell sort key reads only
+/// `TurretAnimIsVoxel` (+32 leptons) and `Gate` (-16 leptons), so the turret
+/// keeps the building's own sort depth. Folding the adjustment into the sort key
+/// instead would pull the turret over units standing in front of the building.
 fn emit_building_turret_vxl(
     unit_atlas: &crate::render::unit_atlas::UnitAtlas,
     barrel_image_pitches: &mut crate::render::unit_atlas::BarrelImagePitches,
@@ -731,6 +743,7 @@ fn emit_building_turret_vxl(
     draw_state: DrawState,
     anim_x: i32,
     anim_y: i32,
+    anim_z_adjust: i32,
     pieces: &mut Vec<PlannedBuildingPieceInstance>,
 ) {
     let frame_count = |layer| {
@@ -811,8 +824,9 @@ fn emit_building_turret_vxl(
                 }),
                 alpha: 1.0,
                 draw_state,
-                // VXL blit: gradient entry2, lift cancelled, no DrawSHP -2.
-                z_adjust: lifted_z_adjust(lift_px, 0),
+                // VXL blit: gradient entry2, TurretAnimZAdjust as the class
+                // term, lift cancelled, no DrawSHP -2.
+                z_adjust: lifted_z_adjust(lift_px, anim_z_adjust),
                 z_gradient: pack_z_gradient(ZGradient::Vertical, false),
                 ..Default::default()
             },

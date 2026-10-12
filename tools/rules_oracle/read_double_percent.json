@@ -1,4 +1,72 @@
 {
+  "c4": [
+    {
+      "bits": "3f9eb851eb851eb8",
+      "flash": 13,
+      "fuse": 26,
+      "raw": null
+    },
+    {
+      "bits": "3f9eb851e0000000",
+      "flash": 13,
+      "fuse": 26,
+      "raw": ".03"
+    },
+    {
+      "bits": "3f9eb851e0000000",
+      "flash": 13,
+      "fuse": 26,
+      "raw": "0.03"
+    },
+    {
+      "bits": "3f947ae140000000",
+      "flash": 8,
+      "fuse": 17,
+      "raw": ".02"
+    },
+    {
+      "bits": "3faeb851e0000000",
+      "flash": 26,
+      "fuse": 53,
+      "raw": ".06"
+    },
+    {
+      "bits": "3fb99999a0000000",
+      "flash": 45,
+      "fuse": 90,
+      "raw": "0.1"
+    },
+    {
+      "bits": "3fe0000000000000",
+      "flash": 225,
+      "fuse": 450,
+      "raw": ".5"
+    },
+    {
+      "bits": "3ff0000000000000",
+      "flash": 450,
+      "fuse": 900,
+      "raw": "1"
+    },
+    {
+      "bits": "4004000000000000",
+      "flash": 1125,
+      "fuse": 2250,
+      "raw": "2.5"
+    },
+    {
+      "bits": "0000000000000000",
+      "flash": 0,
+      "fuse": 0,
+      "raw": "0"
+    },
+    {
+      "bits": "bf9eb851e0000000",
+      "flash": -13,
+      "fuse": -26,
+      "raw": "-.03"
+    }
+  ],
   "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "prone": {
     "damages": [
