@@ -31,7 +31,9 @@
 //!    everything and sends everyone hunting.
 //! 5. In a nonzero game mode, a house outside state three with no live
 //!    building whose type has `Factory=` sells everything and sends everyone
-//!    hunting as well (`0x004FD879..0x004FD904`), after Check_Build_Need.
+//!    hunting as well (`0x004FD879..0x004FD904`); then a house that must
+//!    rebuild its economy (Check_Build_Need, asked first) runs
+//!    Manage_Build_Queue (`sim::ai_build_need`).
 //!
 //! Evidence: `tools/ai_strategy_oracle.py` runs the Update block, whole
 //! Strategy with the original UpdateAngerNodes, Fire_Sale and All_To_Hunt;
@@ -42,11 +44,6 @@
 //! kill's random draws, anims and detach run as for any other damage.
 //!
 //! RESIDUALS:
-//! - Check_Build_Need (`0x004FD9A0`) and Manage_Build_Queue (`0x004FDD10`),
-//!   the economic recovery, are not ported. Trigger: a skirmish computer
-//!   house whose refinery or harvesters are gone (`0x004F6540`); natively it
-//!   sells, abandons and rechooses production to rebuild them, drawing in
-//!   AI_Choose_Building; VERA's keeps its queue.
 //! - All_To_Hunt's release of an occupied building with Hunt
 //!   (`0x00457DE0(1, 0)`, whose occupants also leave their teams at
 //!   `0x0045812B`) is not ported: no VERA computer house garrisons a
@@ -141,15 +138,28 @@ fn building_strategy(
         sell_off_and_hunt(sim, rules, owner, "state four", registry, frame_effects);
     }
 
-    // `0x004FD848..0x004FD911`: urgency slot 0 is the missing factory; slot
-    // 1, Check_Build_Need and its Manage_Build_Queue level, is a residual.
+    // `0x004FD848..0x004FD911`: urgency slot 0 is the missing factory (4),
+    // slot 1 Check_Build_Need's answer (0 or 1), both asked before either
+    // acts; from level 4 down, slot 0's sells off and hunts and slot 1's
+    // runs Manage_Build_Queue.
     if sim.session.game_mode_nonzero {
         let suppressed = sim
             .houses
             .get(&owner)
             .is_none_or(|house| house.strategy_emergency.mode == 3);
-        if !suppressed && !has_live_factory(sim, rules, owner) {
+        let no_factory = !suppressed && !has_live_factory(sim, rules, owner);
+        let build_need = crate::sim::ai_build_need::check_build_need(sim, rules, owner);
+        if no_factory {
             sell_off_and_hunt(sim, rules, owner, "no factory", registry, frame_effects);
+        }
+        if build_need {
+            crate::sim::ai_build_need::manage_build_queue(
+                sim,
+                rules,
+                owner,
+                registry,
+                frame_effects,
+            );
         }
     }
 

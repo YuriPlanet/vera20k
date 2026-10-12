@@ -6669,9 +6669,10 @@ impl Simulation {
             // synchronously at Walk's completed step in the object pass; a
             // charge goes off in its building's own Update visit.
             self.tick_order_intents_pre_combat(rules, overlay_registry, &tube_turn_owned_ids);
-            // The compatibility pursuit host excludes native Unit Cell
-            // Approach. Its remaining consumers retain their existing order
-            // before the remaining combat hosts.
+            // The compatibility pursuit host excludes every mover whose
+            // mission's Approach carries it (`mission_owns_approach`). Its
+            // remaining consumers retain their existing order before the
+            // remaining combat hosts.
             self.tick_attack_pursuit_with_overlay_registry(
                 rules,
                 overlay_registry,

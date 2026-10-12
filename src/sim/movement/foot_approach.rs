@@ -1,5 +1,6 @@
-//! Foot4D5690, reached through Unit7414E0 by Cell Attack, and Infantry522340
-//! by ordinary Teleport infantry object Attack. Native execution:
+//! Foot4D5690, reached through Unit7414E0 by a Drive, Ship or Hover unit's
+//! Approach (Attack, Hunt, AreaGuard, Rescue), and Infantry522340 by ordinary
+//! Teleport infantry ([`Simulation::approach_target`]). Native execution:
 //! tools/spatial_oracle/fv_cell_attack. The shared range,
 //! Cell admission, zone-cost, target and destination owners retain their work.
 //!
@@ -37,6 +38,10 @@ mod tests;
 #[cfg(test)]
 #[path = "approach_crush_tests.rs"]
 mod approach_crush_tests;
+
+#[cfg(test)]
+#[path = "vehicle_approach_tests.rs"]
+mod vehicle_approach_tests;
 
 /// What the crush arms of `UnitClass::Approach_Target @ 0x007414E0` (vt+0x53C)
 /// ask of a Unit and the object it targets. Either arm takes the Target as the
@@ -214,11 +219,14 @@ impl Simulation {
     /// (`per_cell::per_cell_range_stop`) ends it.
     ///
     /// RESIDUAL: VERA counts that drive as the crush's only while the Target
-    /// stays within the computer arm's reach. Trigger: the Target moves out of
-    /// `Crush=` mid-charge, as a victim walking away does. Effect: the pursuit
-    /// pass takes the unit back and, with the Target in weapon range, halts it
-    /// at once, where native drives on until its next cell's range stop: the
-    /// unit stops up to a cell short. No draw, timer or ownership differs.
+    /// stays within the computer arm's reach. A Drive, Ship or Hover unit's
+    /// approach stays its mission's anyway ([`Self::owns_foot_approach`]),
+    /// which leaves no armed stock crusher outside it. Trigger: the Target
+    /// moves out of `Crush=` mid-charge, as a victim walking away does.
+    /// Effect: the pursuit pass takes any other crusher back and, with the
+    /// Target in weapon range, halts it at once, where native drives on until
+    /// its next cell's range stop: the unit stops up to a cell short. No draw,
+    /// timer or ownership differs.
     pub(crate) fn crush_owns_approach(&self, id: u64, rules: &RuleSet) -> bool {
         let Some((facts, target)) = self.approach_crush(id, rules) else {
             return false;
@@ -275,12 +283,32 @@ impl Simulation {
     }
 
     /// Approach (vt+0x53C) with no-move 0, as Mission_Attack (`0x004D4E6A`),
-    /// Mission_Hunt (`0x004D54DD`), Mission_AreaGuard (`0x004D6F2D`) and
-    /// Mission_Rescue (`0x004DDFEB`) call it, through its Unit head
+    /// Mission_Hunt (`0x004D54E3`), Mission_AreaGuard (`0x004D6F32`) and
+    /// Mission_Rescue (`0x004DDFEB`) call it: a Unit's head
+    /// ([`Self::approach_unit_head`]), then the Foot body
+    /// ([`Self::approach_foot_target`]; Unit `0x00741689`, Infantry
+    /// `0x0052236E`) for a mover [`Self::owns_foot_approach`] represents.
+    /// The pursuit pass stands in for the rest of Approach for any other
+    /// mover ([`Self::mission_owns_approach`]).
+    pub(crate) fn approach_target(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        if self.approach_unit_head(id, rules, registry, frame_effects)
+            || !self.owns_foot_approach(id, rules)
+        {
+            return;
+        }
+        self.approach_foot_target(id, rules, registry, frame_effects)
+            .expect("ordinary Foot approach requires valid live map/navigation state");
+    }
+
+    /// The head of Approach ([`Self::approach_target`]) for a Unit
     /// ([`Self::unit_approach_head`]): the destination the head answers is set
-    /// (vt+0x480 with 1). Answers whether the head took the call; otherwise
-    /// Mission_Attack's Cell approach or the pursuit pass stands in for the
-    /// rest of Approach.
+    /// (vt+0x480 with 1). Answers whether the head took the call.
     pub(crate) fn approach_unit_head(
         &mut self,
         id: u64,
@@ -301,30 +329,28 @@ impl Simulation {
         true
     }
 
-    /// Whether the current mission's own Approach takes `id`'s approach, so the
-    /// pursuit pass (`tick_attack_pursuit`) leaves it alone: Mission_Attack's
-    /// common Foot approach ([`Self::owns_foot_approach`]), or the Unit head
-    /// on each mission that calls [`Self::approach_unit_head`] (Attack, Hunt,
-    /// AreaGuard and Rescue): its BalloonHover arm or a crush arm
-    /// ([`Self::crush_owns_approach`]). Keep it in step with those calls.
+    /// Whether the current mission's own Approach ([`Self::approach_target`])
+    /// takes `id`'s approach, so the pursuit pass (`tick_attack_pursuit`)
+    /// leaves it alone: on a mission that calls Approach (Attack, Hunt,
+    /// AreaGuard and Rescue), the Foot body ([`Self::owns_foot_approach`]),
+    /// the head's BalloonHover arm or a crush arm
+    /// ([`Self::crush_owns_approach`]). A hunting infantryman takes
+    /// Mission_Hunt's infantry arms (`0x004D53BA..0x004D54D8`) instead, which
+    /// VERA ports without their Approach (`evaluate_foot_hunt`). Keep it in
+    /// step with those calls.
     pub(crate) fn mission_owns_approach(&self, id: u64, rules: &RuleSet) -> bool {
-        let Some(mission) = self
-            .substrate
-            .entities
-            .get(id)
-            .and_then(|actor| actor.mission.current().known())
-        else {
+        let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        (mission == MissionType::Attack && self.owns_foot_approach(id, rules))
-            || (matches!(
-                mission,
-                MissionType::Attack
-                    | MissionType::Hunt
-                    | MissionType::AreaGuard
-                    | MissionType::Rescue
-            ) && (self.balloon_hover_approach(id, rules).is_some()
-                || self.crush_owns_approach(id, rules)))
+        let calls_approach = match actor.mission.current().known() {
+            Some(MissionType::Attack | MissionType::AreaGuard | MissionType::Rescue) => true,
+            Some(MissionType::Hunt) => actor.category != EntityCategory::Infantry,
+            _ => false,
+        };
+        calls_approach
+            && (self.owns_foot_approach(id, rules)
+                || self.balloon_hover_approach(id, rules).is_some()
+                || self.crush_owns_approach(id, rules))
     }
 
     /// Ownership boundary for the absorbed common Unit/Infantry approach. CloseRange,
@@ -342,11 +368,23 @@ impl Simulation {
         let Some(target) = actor.attack_target.as_ref().map(|a| a.target) else {
             return false;
         };
+        // A unit on the ground or water: Drive, Ship or Hover, each of whose
+        // Process runs Per_Cell_Process(2) on entering a cell.
+        let ground_mover = |actor: &crate::sim::game_entity::GameEntity| {
+            actor.locomotor.as_ref().is_some_and(|l| {
+                matches!(
+                    l.active_kind(),
+                    LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover
+                )
+            })
+        };
         let represented = match (actor.category, target) {
             (EntityCategory::Unit, TargetKind::Cell(rx, ry)) => {
-                actor.locomotor.as_ref().is_some_and(|l| {
-                    matches!(l.active_kind(), LocomotorKind::Drive | LocomotorKind::Ship)
-                }) && !terrain.is_destroyable_cliff(rx, ry)
+                ground_mover(actor) && !terrain.is_destroyable_cliff(rx, ry)
+            }
+            // Unit741689's ordinary tail: a vehicle or ship chasing an object.
+            (EntityCategory::Unit, TargetKind::Entity(target)) => {
+                ground_mover(actor) && self.substrate.entities.contains(target)
             }
             (EntityCategory::Infantry, TargetKind::Entity(target)) => {
                 // Infantry522340's ordinary tail calls Foot4D5690(false).
@@ -392,28 +430,8 @@ impl Simulation {
         let Some(target) = actor.attack_target.as_ref().map(|a| a.target) else {
             return Ok(None);
         };
-        if actor
-            .navigation
-            .nav_com
-            .is_some_and(|nav| match (nav, target) {
-                (NavTargetRef::Cell { rx, ry }, TargetKind::Cell(x, y)) => (rx, ry) == (x, y),
-                (
-                    NavTargetRef::Entity { id }
-                    | NavTargetRef::Object { id }
-                    | NavTargetRef::Building { id },
-                    TargetKind::Entity(target),
-                ) => id == target,
-                _ => false,
-            })
-        {
-            // A NavCom identical to TarCom takes the NavCom return below
-            // (4D5912..5A18) with nothing changed for this one caller,
-            // Mission_Attack: its Target clear spares Attack, the reset
-            // measures 0 to that NavCom, and no admitted mover is in the air.
-            // Native's first test, 4D56A1..56B1, returns on a LocomotorTarget
-            // (+2AC) identical to TarCom, a Magnetron's hold VERA does not port.
-            return Ok(None);
-        }
+        // Native's first test, 4D56A1..56B1, returns on a LocomotorTarget
+        // (+2AC) identical to TarCom, a Magnetron's hold VERA does not port.
         let Some(selected) = combat::pursuit_selection(
             actor,
             &target,

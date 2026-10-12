@@ -290,6 +290,38 @@ pub(super) fn settle_abandoned(
     }
 }
 
+/// `HouseClass::AI_Manage_Build_Queue`'s factory loop (`0x004FE04F..
+/// 0x004FE098`): from the last factory in FactoryClass::Array to the first,
+/// each that house `owner` owns (`+0x6C`) is held (`Suspend(1) @
+/// 0x004C9E60`, whose writes the delete drops), abandoned and deleted
+/// ([`abandon_production`]; the destructor's own AbandonProduction finds no
+/// object left).
+pub(crate) fn abandon_house_factories(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    effects: FrameEffects<'_>,
+) {
+    for holder in sim.production.factories.owner_holders_last_first(owner) {
+        abandon_production(sim, rules, holder, owner, effects);
+    }
+}
+
+/// `FactoryClass::AbandonProduction @ 0x004C9FF0` and the delete (`vt+0x20`)
+/// of `holder`'s factory, whose house (`+0x6C`) is `owner`: the object it
+/// holds is settled ([`settle_abandoned`]).
+pub(super) fn abandon_production(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    holder: FactoryHolder,
+    owner: InternedId,
+    effects: FrameEffects<'_>,
+) {
+    if let Some(abandoned) = sim.production.factories.abandon_factory(holder) {
+        settle_abandoned(sim, rules, owner, abandoned, effects);
+    }
+}
+
 /// The AbandonProduction refund: the object's Cost_Of for its owner now, less the
 /// Balance it still owed (`0x004CA029..0x004CA043`), through `HouseClass::Add_Credits
 /// @ 0x004F9950` (`0x004CA046`). A FactoryPlant gained or lost during the build

@@ -123,6 +123,11 @@ impl HouseAiUnitChoices {
     pub(crate) fn clear(&mut self, kind: UnitChoiceKind) {
         *self.slot_mut(kind) = -1;
     }
+
+    /// `AI_Manage_Build_Queue`'s harvester choice (`0x004FE113`).
+    pub(crate) fn set(&mut self, kind: UnitChoiceKind, index: i32) {
+        *self.slot_mut(kind) = index;
+    }
 }
 
 /// The chooser of `kind` for house `owner`, when its choice is -1.

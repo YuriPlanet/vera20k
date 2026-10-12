@@ -310,12 +310,7 @@ pub(crate) fn dispatch_foot_mission(
             // MissionAttack4D4E6A calls Approach before its Scenario cadence
             // draw. The accepted destination is visible to this object's
             // subsequent Drive Process, and is retained while it fires.
-            if !sim.approach_unit_head(id, rules, ctx.overlay_registry, ctx.effects)
-                && sim.owns_foot_approach(id, rules)
-            {
-                sim.approach_foot_target(id, rules, ctx.overlay_registry, ctx.effects)
-                    .expect("ordinary Foot approach requires valid live map/navigation state");
-            }
+            sim.approach_target(id, rules, ctx.overlay_registry, ctx.effects);
             // Foot tests TarCom before calling Approach. Only a null target
             // at entry takes the idle exit; an Approach that clears the target
             // does not retroactively enter this branch. Destruction, detach or
@@ -1233,14 +1228,16 @@ pub(crate) fn foot_enter_idle_mode_selection(
 /// note on this arm said "BOTH exits draw `RandomRanged(0, 2)`", counting one
 /// draw; that was the tail only.
 ///
-/// The approach itself is `vt+0x53C` (`FootClass::Greatest_Threat_Scan @
-/// 0x004D5690`), which the handler calls for a non-infantry object at
-/// `0x004D54E3` and for an infantryman with none of the three type flags at
-/// `0x004D54D2`. That routine is the "walk to somewhere I can shoot my target
-/// from" search and ends in `Set_Destination` (`vt+0x480`); VERA's equivalent
-/// is the pursuit pass, which runs for any object holding a target that is not
-/// flagged passively-acquired — and the scanner above deliberately leaves the
-/// flag clear, as native does.
+/// The approach itself is Approach (`vt+0x53C`, whose Foot body is
+/// `FootClass::Approach_Target @ 0x004D5690`), which the handler calls for a
+/// non-infantry object at `0x004D54E3` and for an infantryman with none of the
+/// three type flags at `0x004D54D2`. That routine is the "drive to somewhere I
+/// can shoot my target from" search and ends in `Set_Destination`
+/// (`vt+0x480`). VERA runs it for the non-infantry object
+/// ([`Simulation::approach_target`]); for the infantryman, and for a mover
+/// Approach does not represent, the pursuit pass stands in, which runs for any
+/// object holding a target that is not flagged passively-acquired — and the
+/// scanner above deliberately leaves the flag clear, as native does.
 ///
 /// RESIDUAL — **the VehicleThief type arm is not committed**
 /// (`+0xEC6`, `0x004D546C..0x004D54B9`): `Set_Destination(Target, 1)`,
@@ -1305,9 +1302,9 @@ fn evaluate_foot_hunt(
         if acquired && infantry {
             hunt_infantry_type_arm(sim, id, rules, ctx);
         } else if acquired {
-            // `0x004D54DD`: a Unit approaches what the scan holds through its
-            // head (`0x007414E0`), which takes only a Unit.
-            sim.approach_unit_head(id, rules, ctx.overlay_registry, ctx.effects);
+            // `0x004D54DD..0x004D54E3`: any other mover approaches what the
+            // scan holds.
+            sim.approach_target(id, rules, ctx.overlay_registry, ctx.effects);
         }
     }
     //4D54EE..4D5576: the human no-target arm invokes the class idle
@@ -1562,8 +1559,8 @@ fn scaled_area_guard_leash(range: i32) -> i32 {
 /// then clear the archive before the current-mission cadence draw. Status1
 /// without NavCom queues AreaGuard and calls Commence directly.
 /// Native execution: foot_missions Rescue rows and house_base_return.
-/// The target-present Approach_Target4D5690 dependency is still required;
-/// its sole existing Rust port belongs to PR#798 and must be integrated there.
+/// With a Target in state 0 it approaches through
+/// [`Simulation::approach_target`] (`0x004DDFEB`).
 fn evaluate_foot_rescue(
     sim: &mut Simulation,
     id: u64,
@@ -1677,7 +1674,7 @@ fn evaluate_foot_rescue(
             .set_archive_target(None);
     } else if state == 0 {
         // `0x004DDFDB..0x004DDFEB`: with a Target, approach it.
-        sim.approach_unit_head(id, rules, ctx.overlay_registry, ctx.effects);
+        sim.approach_target(id, rules, ctx.overlay_registry, ctx.effects);
     }
     let mission = sim
         .substrate
@@ -1704,8 +1701,9 @@ const AREA_GUARD_CADENCE_JITTER_MAX: u32 = 5;
 /// post/leash, scan-point and retail idle controls.
 ///
 /// The head (tank bunker, then [`foot_building_entry_head`]) precedes it.
-/// Required larger chains: target-present Approach_Target4D5690 (sole port in
-/// PR#798), Tesla ElectricAssault adjacency4D6F44 (+68E, Overpowerable), the
+/// With a Target and a post it approaches through
+/// [`Simulation::approach_target`] (`0x004D6F32`). Required larger chains:
+/// Tesla ElectricAssault adjacency4D6F44 (+68E, Overpowerable), the
 /// AI C4/Sabotage arm4D6DDA and the early waypoint/harvester arms.
 /// They retain their existing boundaries; these controls do not certify them.
 pub(super) fn evaluate_foot_area_guard(
@@ -1797,7 +1795,7 @@ pub(super) fn evaluate_foot_area_guard(
     // `0x004D6ED1..0x004D6F32`: with a Target the body approaches it instead
     // of scanning; without a post it does neither (`0x004D6E66`).
     if !needs_target && archive.is_some() {
-        sim.approach_unit_head(id, rules, ctx.overlay_registry, ctx.effects);
+        sim.approach_target(id, rules, ctx.overlay_registry, ctx.effects);
     }
     let timer_due = sim
         .substrate
@@ -1864,8 +1862,6 @@ pub(super) fn evaluate_foot_area_guard(
     // the ALREADY-JITTERED value (`IMUL 0x2AAAAAAB` plus the sign fixup at
     // `0x004D714A` is a signed divide by 6). The draw is never skipped — the
     // band only scales what it produced.
-    //
-    // Target-present Approach_Target remains required.
     let delay = if foot_dispatch_in_cadence_band(sim, rules, id) {
         jittered / 6
     } else {

@@ -62,7 +62,7 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
 use super::factory::{FactoryHolder, PRODUCTION_STEPS};
-use super::factory_lifecycle::{record_last_built, settle_abandoned, start_active_production};
+use super::factory_lifecycle::{abandon_production, record_last_built, start_active_production};
 use super::production_queue::exit_produced_object;
 use super::production_tech::production_category_for_object;
 
@@ -160,7 +160,13 @@ fn exit_finished_object(
             if naval_building && let Some(house) = sim.houses.get_mut(&owner) {
                 house.ai_production.forbid_naval();
             }
-            abandon(sim, rules, building, owner, effects);
+            abandon_production(
+                sim,
+                rules,
+                FactoryHolder::Building(building),
+                owner,
+                effects,
+            );
         }
     }
 }
@@ -185,7 +191,13 @@ fn abandon_stopped_factory(
             factory.step_rate_frames == 0 || factory.suspended || factory.manual
         });
     if stopped {
-        abandon(sim, rules, building, owner, effects);
+        abandon_production(
+            sim,
+            rules,
+            FactoryHolder::Building(building),
+            owner,
+            effects,
+        );
     }
 }
 
@@ -252,20 +264,6 @@ fn placement_wait_over(sim: &Simulation, building: u64) -> bool {
         .is_some_and(|entity| entity.ai_placement_timer.expired(frame))
 }
 
-/// AbandonProduction and the delete of building `building`'s factory, whose
-/// owner is `owner` (the factory's house, `+0x6C`).
-fn abandon(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    building: u64,
-    owner: InternedId,
-    effects: FrameEffects<'_>,
-) {
-    if let Some(abandoned) = sim.production.factories.abandon_building_factory(building) {
-        settle_abandoned(sim, rules, owner, abandoned, effects);
-    }
-}
-
 /// `BuildingClass::Detach_All(1) @ 0x0044EBF0`'s factory arm
 /// (`0x0044EC01..0x0044EC21`) and `BuildingClass::ChangeOwner`'s
 /// (`0x004486DF..0x00448701`): the building's factory is abandoned, its
@@ -282,12 +280,18 @@ pub(crate) fn detach_all(
     };
     let owner = factory.owner;
     match rules {
-        Some(rules) => abandon(sim, rules, building, owner, effects),
+        Some(rules) => abandon_production(
+            sim,
+            rules,
+            FactoryHolder::Building(building),
+            owner,
+            effects,
+        ),
         None => {
             let object = sim
                 .production
                 .factories
-                .abandon_building_factory(building)
+                .abandon_factory(FactoryHolder::Building(building))
                 .and_then(|abandoned| abandoned.entity_id);
             if let Some(object) = object {
                 let _ = sim.discard_constructed_limbo(object, rules, effects);

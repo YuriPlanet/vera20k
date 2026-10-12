@@ -26,19 +26,11 @@
 //! `ai_base_building_tests.rs`), whose chooser rows run the walls and answer
 //! the defense choice with failure.
 //!
+//! The strategy tick's economic recovery (`AI_Manage_Build_Queue @
+//! 0x004FDD10`, `sim::ai_build_need`) also writes the mode, clears the
+//! choices, sells and splices nodes and makes the building choice.
+//!
 //! RESIDUALS:
-//! - `AI_Manage_Build_Queue @ 0x004FDD10`, which the strategy tick
-//!   (`sim::house_strategy`) calls when `Check_Build_Need @ 0x004FD9A0` asks
-//!   for it, is not ported. It writes the mode (2 at `0x004FE109`, 1 at
-//!   `0x004FE3AB`), clears the four choices, abandons every factory of the
-//!   house when its planned buildings cost more than its budget, splices
-//!   refinery and war factory nodes and calls `AI_Choose_Building` directly.
-//!   Trigger: a strategy tick of a skirmish computer house whose refinery or
-//!   harvesters are gone (the economy check `0x004F6540`). Effect: the mode
-//!   changes only at exits, a computer short of money never cancels its
-//!   production, it rebuilds a lost refinery or war factory only when its
-//!   original node is replanned, and those draws are missing from the
-//!   Scenario RNG sequence.
 //! - Native reads VERA defines: the wall percent is read unchecked at the
 //!   House difficulty (VERA takes 0, no walls, past the vector's end, which
 //!   retail's three values never reach).
@@ -114,7 +106,6 @@ impl HouseAiProduction {
         self.mode
     }
 
-    #[cfg(test)]
     pub(crate) const fn building_choice(&self) -> i32 {
         self.building_choice
     }
@@ -128,6 +119,12 @@ impl HouseAiProduction {
     /// `BuildingClass::Factory_AI`'s refused naval building (`0x00450220`).
     pub(crate) fn forbid_naval(&mut self) {
         self.naval_allowed = false;
+    }
+
+    /// `AI_Manage_Build_Queue`'s mode: 2 for a harvester (`0x004FE109`), 1
+    /// for a building (`0x004FE3AB`).
+    pub(crate) fn set_mode(&mut self, mode: i32) {
+        self.mode = mode;
     }
 
     #[cfg(test)]
@@ -314,7 +311,7 @@ fn unit_choice_is_harvester(sim: &Simulation, rules: &RuleSet, owner: InternedId
 }
 
 /// `HouseClass::AI_Choose_Building @ 0x004FE3E0`.
-fn choose_building(
+pub(crate) fn choose_building(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
@@ -797,7 +794,7 @@ pub(crate) fn find_node(
 
 /// `BaseClass @ 0x0042E780`: the node's building stands ([`node_building`]),
 /// or a wall node's cell holds its wall overlay or any building.
-fn node_satisfied(
+pub(crate) fn node_satisfied(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
@@ -836,7 +833,11 @@ fn node_satisfied(
 /// `BaseClass @ 0x0042E820`: the house's building of the node's type whose
 /// top-left cell is the node's cell. The `PowersUpBuilding=` arm is dormant
 /// (module residual).
-fn node_building(sim: &Simulation, owner: InternedId, node: &BasePlanNode) -> Option<u64> {
+pub(crate) fn node_building(
+    sim: &Simulation,
+    owner: InternedId,
+    node: &BasePlanNode,
+) -> Option<u64> {
     if node.packed_cell == 0 || node.type_or_control < 0 {
         return None;
     }

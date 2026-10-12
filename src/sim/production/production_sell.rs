@@ -115,6 +115,23 @@ pub(crate) fn type_refund(
     }
 }
 
+/// `TechnoClass::GetRefund @ 0x0070ADA0` (vt+0x2BC) for object `id`: its
+/// type's [`type_refund`] to its owner (`+0x21C`), `full` clear. None when
+/// the object, its type or its house is gone.
+pub(crate) fn techno_refund(sim: &Simulation, rules: &RuleSet, id: u64) -> Option<i32> {
+    let entity = sim.substrate.entities.get(id)?;
+    let object = sim.object_type(entity.type_ref(), rules)?;
+    let owner = entity.owner();
+    Some(type_refund(
+        rules,
+        object,
+        sim.houses.get(&owner)?,
+        &sim.house_cost_factors(owner)?,
+        sim.session.game_mode_nonzero,
+        false,
+    ))
+}
+
 /// Who orders a sale; `BuildingClass::Sell_Back @ 0x00447110` reads its
 /// control argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -525,18 +542,7 @@ pub(crate) fn sell_complete(
         sim.finish_undeploy(id, rules, registry, frame_effects);
         return true;
     }
-    let refund = sim.substrate.entities.get(id).and_then(|entity| {
-        let object = sim.object_type(entity.type_ref(), rules)?;
-        let house = sim.houses.get(&owner)?;
-        Some(type_refund(
-            rules,
-            object,
-            house,
-            &sim.house_cost_factors(owner)?,
-            sim.session.game_mode_nonzero,
-            false,
-        ))
-    });
+    let refund = techno_refund(sim, rules, id);
     sim.set_building_light_active(id, false);
     if let Some(refund) = refund {
         // Add_Credits (`0x0044A222`).

@@ -401,7 +401,12 @@ impl Simulation {
         );
     }
 
-    fn sell_wall_at_cell(
+    /// `HouseClass::Sell_Building_At_Cell @ 0x004FCE80` for house
+    /// `command_owner` at cell `(x, y)`: the player's wall sale and the
+    /// computer's in `AI_Manage_Build_Queue` (`sim::ai_build_need`). It sells
+    /// only a wall whose owner a human controls, and refunds nothing.
+    /// Returns whether a wall went.
+    pub(crate) fn sell_wall_at_cell(
         &mut self,
         command_owner: &str,
         x: i16,

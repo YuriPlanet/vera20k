@@ -413,16 +413,27 @@ operand 0), and their decompiles show direct calls with correct stack pops:
 Each function's plate lists its overrides; the evidence is in the same research folder.
 Other virtual calls keep the decompiler's guess that they pop nothing, unless they carry
 Ghidra's per-call signature override, which the decompiler reads before its stack
-analysis. Since 2026-10-12, 209 virtual and COM calls in 103 of the functions porting
-sessions decompiled have one: the calls after which the frame check found stack reads
-placed wrong. Each pops what the native code pops (the frame check's walker), as
-`__thiscall` when the object is in ECX and `__stdcall` when it is pushed last (COM),
-with the slot implementation's types where the decompile shows the object's class. An
-override is a label in the function's `override` namespace beside a function definition
-in `/auto_proto`. GhidraMCP's `create_label` writes only global labels, so they are
-written by an `analyzeHeadless` script (`SetCallOverride.java`) while the shared server
-is stopped. Calls whose pops the walker cannot solve one by one (two unknown calls
-between known depths) have none yet.
+analysis. Since 2026-10-12, 2,502 virtual and COM calls in 281 of the functions porting
+sessions decompiled have one. Each pops what the native code pops: what the frame
+check's walker solves, or, for a call it cannot solve one by one (two unknown calls
+between known depths), what the virtual-call map's targets, the import, the receiver's
+class and its RTTI subclasses, the IUnknown slot or a typed pointer give, none of which
+disagrees with the walker on the calls it solves. Each is `__thiscall` when the object is
+in ECX and `__stdcall` when it is pushed last (COM), with the slot implementation's or
+the targets' types where they are known. An override is a label in the function's
+`override` namespace beside a function definition in `/auto_proto`. GhidraMCP's
+`create_label` writes only global labels, so they are written by an `analyzeHeadless`
+script (`SetCallOverride.java`) while the shared server is stopped. A call none of these
+settle still pops nothing in the decompile, and a stack read after it can show as a
+saved register (`unaff_`).
+
+Overriding some calls of a function can cost its other calls their prototypes. A typed
+function pointer (IStream::Read through an `IStreamVtbl` member) or a call the decompiler
+resolves to a constant target reaches its call only when the decompiler restarts its
+analysis, and overrides on other calls can remove what triggered the restart; the call
+then pops nothing again (BuildingClass__Load 0x453E20 and MPGameOptions__SelectScenario
+0x5E7BF0 in the 2026-10-12 rehearsals). Override those calls too, with the prototype the
+decompile showed, along with the function's other calls whose pops are known.
 
 ## Class layouts
 

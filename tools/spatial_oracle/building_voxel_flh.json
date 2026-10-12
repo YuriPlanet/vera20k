@@ -1,0 +1,717 @@
+{
+  "source": "unicorn/gamemd.exe",
+  "voxel_flh": [
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 0,
+        "heading": 8192,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "gtgcan_burst0",
+        "primary_dual": 0,
+        "primary_flh": [
+          250,
+          0,
+          230
+        ],
+        "primary_pixel_offset": [
+          65535,
+          65535
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": 3,
+        "turret_anim_y": 28,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3499,
+        3122,
+        230
+      ]
+    },
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 1,
+        "heading": 8192,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "gtgcan_burst1",
+        "primary_dual": 0,
+        "primary_flh": [
+          250,
+          0,
+          230
+        ],
+        "primary_pixel_offset": [
+          65535,
+          65535
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": 3,
+        "turret_anim_y": 28,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3499,
+        3122,
+        230
+      ]
+    },
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 0,
+        "heading": 16384,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "gtgcan_heading_0x4000",
+        "primary_dual": 0,
+        "primary_flh": [
+          250,
+          0,
+          230
+        ],
+        "primary_pixel_offset": [
+          65535,
+          65535
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": 3,
+        "turret_anim_y": 28,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3573,
+        3298,
+        230
+      ]
+    },
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 0,
+        "heading": 49152,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "gtgcan_heading_0xc000",
+        "primary_dual": 0,
+        "primary_flh": [
+          250,
+          0,
+          230
+        ],
+        "primary_pixel_offset": [
+          65535,
+          65535
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": 3,
+        "turret_anim_y": 28,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3074,
+        3298,
+        230
+      ]
+    },
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 0,
+        "heading": 8192,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "yaggun_burst0",
+        "primary_dual": 0,
+        "primary_flh": [
+          150,
+          60,
+          200
+        ],
+        "primary_pixel_offset": [
+          65535,
+          65535
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": 0,
+        "turret_anim_y": 15,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3263,
+        3052,
+        200
+      ]
+    },
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 1,
+        "heading": 8192,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "yaggun_burst1",
+        "primary_dual": 0,
+        "primary_flh": [
+          150,
+          60,
+          200
+        ],
+        "primary_pixel_offset": [
+          65535,
+          65535
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": 0,
+        "turret_anim_y": 15,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3348,
+        3137,
+        200
+      ]
+    },
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 0,
+        "heading": 16384,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "yaggun_heading_0x4000",
+        "primary_dual": 0,
+        "primary_flh": [
+          150,
+          60,
+          200
+        ],
+        "primary_pixel_offset": [
+          65535,
+          65535
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": 0,
+        "turret_anim_y": 15,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3350,
+        3140,
+        200
+      ]
+    },
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 0,
+        "heading": 8192,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "voxel_disabled",
+        "primary_dual": 0,
+        "primary_flh": [
+          250,
+          0,
+          230
+        ],
+        "primary_pixel_offset": [
+          65535,
+          65535
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 0,
+        "turret_anim_x": 3,
+        "turret_anim_y": 28,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3248,
+        2896,
+        230
+      ]
+    },
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 0,
+        "heading": 8192,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "zero_pixels",
+        "primary_dual": 0,
+        "primary_flh": [
+          250,
+          0,
+          230
+        ],
+        "primary_pixel_offset": [
+          65535,
+          65535
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": 0,
+        "turret_anim_y": 0,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3248,
+        2896,
+        230
+      ]
+    },
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 0,
+        "heading": 8192,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "negative_pixels",
+        "primary_dual": 0,
+        "primary_flh": [
+          250,
+          0,
+          230
+        ],
+        "primary_pixel_offset": [
+          65535,
+          65535
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": -25,
+        "turret_anim_y": 15,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3269,
+        3130,
+        230
+      ]
+    },
+    {
+      "getters": [
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 0,
+        "heading": 8192,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "primary_pixel_precedence",
+        "primary_dual": 0,
+        "primary_flh": [
+          250,
+          0,
+          230
+        ],
+        "primary_pixel_offset": [
+          6,
+          -4
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": 3,
+        "turret_anim_y": 28,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3064,
+        3013,
+        0
+      ]
+    },
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 0,
+        "heading": 8192,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "primary_pixel_dual_precedence",
+        "primary_dual": 1,
+        "primary_flh": [
+          250,
+          0,
+          230
+        ],
+        "primary_pixel_offset": [
+          6,
+          -4
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": 3,
+        "turret_anim_y": 28,
+        "weapon_index": 0
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3240,
+        2837,
+        230
+      ]
+    },
+    {
+      "getters": [
+        "0x445e50",
+        "0x453840",
+        "0x459ef0",
+        "0x6d2070",
+        "0x6f3ad0"
+      ],
+      "input": {
+        "barrel_anim_is_voxel": 0,
+        "base": [
+          0,
+          0,
+          0
+        ],
+        "burst": 0,
+        "heading": 8192,
+        "location": [
+          3200,
+          3200,
+          0
+        ],
+        "name": "gtgcan_weapon1",
+        "primary_dual": 0,
+        "primary_flh": [
+          250,
+          0,
+          230
+        ],
+        "primary_pixel_offset": [
+          65535,
+          65535
+        ],
+        "secondary_flh": [
+          0,
+          0,
+          0
+        ],
+        "turret_anim_is_voxel": 1,
+        "turret_anim_x": 3,
+        "turret_anim_y": 28,
+        "weapon_index": 1
+      },
+      "object_coordinate": [
+        3072,
+        3072,
+        0
+      ],
+      "rng_unchanged": true,
+      "source": [
+        3323,
+        3298,
+        0
+      ]
+    }
+  ]
+}

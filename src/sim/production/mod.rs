@@ -66,7 +66,7 @@ pub(crate) use self::production_sell::sell_back;
 pub(crate) use self::production_sell::sell_building_now_for_test;
 pub use self::production_sell::{SellOrder, can_sell_building};
 pub(crate) use self::production_sell::{
-    archive_less_sale, sell_complete, sell_stage_one, sell_stage_zero, type_refund,
+    archive_less_sale, sell_complete, sell_stage_one, sell_stage_zero, techno_refund, type_refund,
     undeploy_target,
 };
 pub(crate) use self::production_tech::all_build_options_for_owner;
@@ -89,7 +89,7 @@ pub(in crate::sim) use self::factory_lifecycle::construct_active_factory_fixture
 #[cfg(test)]
 pub(in crate::sim) use self::factory_lifecycle::release_delivered_mobile;
 pub(in crate::sim) use self::factory_lifecycle::{
-    refresh_factory_rates_for_house, revalidate_and_step_factories,
+    abandon_house_factories, refresh_factory_rates_for_house, revalidate_and_step_factories,
 };
 #[cfg(test)]
 pub(in crate::sim) use self::production_queue::exit_produced_object;

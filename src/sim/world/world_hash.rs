@@ -957,6 +957,11 @@ impl Simulation {
                 b"house-factory-counters-v1".hash(hasher);
                 factories.hash(hasher);
             }
+            let war_factories = house.tracking.war_factories();
+            if war_factories != 0 {
+                b"house-war-factories-v1".hash(hasher);
+                war_factories.hash(hasher);
+            }
             if house.strategy_timer != crate::sim::house_state::strategy_timer_at_construction() {
                 b"house-strategy-timer-v1".hash(hasher);
                 house.strategy_timer.hash(hasher);

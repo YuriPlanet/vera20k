@@ -2733,4 +2733,152 @@ mod retail_construction_tests {
         assert!(entered.is_some(), "the miner never headed for its refinery");
         assert!(docked.is_some(), "the miner never docked");
     }
+
+    /// A Normal Soviet house on XMP03T4 whose refineries and War Miners are
+    /// gone needs no rebuild a credit above a refinery's price, and does a
+    /// credit below it (`sim::ai_build_need`). There, the strategy tick's
+    /// Manage_Build_Queue sells the last sellable building of its base plan,
+    /// which pays, and chooses a refinery. The yard stands, nothing is sent
+    /// to hunt, and the yard builds the refinery, which brings a War Miner
+    /// back.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_broke_computer_house_sells_to_rebuild_its_refinery() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::ai_build_need::MANAGE_CALLS;
+        use crate::sim::mission::{MissionId, MissionType};
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) =
+            retail_battle(|_| {}, &[(LaunchCountry::Russia, AiDifficulty::Normal)]);
+        let soviet = house_of(scenario.sim(), "Russians");
+        // The house's live objects of type `name`, on the map or, with
+        // `limbo`, in limbo too (a factory's product).
+        let of_type = |sim: &Simulation, name: &str, limbo: bool| -> Vec<u64> {
+            sim.entities()
+                .values()
+                .filter(|entity| {
+                    !entity.dying
+                        && (limbo || !entity.lifecycle.in_limbo)
+                        && entity.owner() == soviet
+                        && sim.interner.resolve(entity.type_ref()) == name
+                })
+                .map(crate::sim::game_entity::GameEntity::stable_id)
+                .collect()
+        };
+        let mut standing = None;
+        for frame in 1..=9000u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            let economy = ["NAREFN", "HARV"]
+                .iter()
+                .all(|name| of_type(sim, name, true).len() == of_type(sim, name, false).len());
+            if economy
+                && ["NAREFN", "NAWEAP", "HARV"]
+                    .iter()
+                    .all(|name| !of_type(sim, name, false).is_empty())
+            {
+                standing = Some(frame);
+                break;
+            }
+        }
+        assert!(
+            standing.is_some(),
+            "the base never stood with a refinery, a war factory and a miner"
+        );
+        let runtime = &mut scenario.runtime;
+        let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
+        let lost: Vec<u64> = ["NAREFN", "HARV"]
+            .iter()
+            .flat_map(|name| of_type(&*sim, name, false))
+            .collect();
+        for id in lost {
+            sim.uninit_with_rules(id, rules);
+        }
+        let price = sim.cost_of(
+            soviet,
+            rules.object("NAREFN").expect("retail NAREFN"),
+            rules,
+        );
+        // A yard's house can make money above the refinery's price, and must
+        // rebuild below it.
+        for (credits, need) in [(price + 1, false), (price - 1, true)] {
+            sim.houses
+                .get_mut(&soviet)
+                .unwrap()
+                .economy
+                .set_credits_for_test(credits);
+            assert_eq!(
+                crate::sim::ai_build_need::check_build_need(sim, rules, soviet),
+                need,
+                "{credits} credits"
+            );
+        }
+        let refinery = rules.building_type_index("NAREFN").expect("retail NAREFN");
+        let (selling, construction) = (
+            MissionId::from_known(MissionType::Selling),
+            MissionId::from_known(MissionType::Construction),
+        );
+        MANAGE_CALLS.set(Some(0));
+        let (mut managed, mut chosen, mut rebuilt, mut mined) = (None, None, None, None);
+        let mut sold = std::collections::BTreeMap::new();
+        for frame in 1..=9000u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            if managed.is_none() && MANAGE_CALLS.get().is_some_and(|calls| calls > 0) {
+                managed = Some(frame);
+            }
+            for entity in sim.entities().values() {
+                if entity.owner() == soviet
+                    && entity.category == EntityCategory::Structure
+                    && entity.mission.current() == selling
+                {
+                    sold.entry(entity.stable_id()).or_insert_with(|| {
+                        (frame, sim.interner.resolve(entity.type_ref()).to_string())
+                    });
+                }
+            }
+            if chosen.is_none()
+                && managed.is_some()
+                && sim.houses[&soviet].ai_production.building_choice() == refinery
+            {
+                chosen = Some(frame);
+            }
+            if rebuilt.is_none()
+                && of_type(sim, "NAREFN", false).iter().any(|&id| {
+                    sim.entities()
+                        .get(id)
+                        .is_some_and(|building| building.mission.current() != construction)
+                })
+            {
+                rebuilt = Some(frame);
+            }
+            if mined.is_none() && !of_type(sim, "HARV", false).is_empty() {
+                mined = Some(frame);
+            }
+            if rebuilt.is_some() && mined.is_some() {
+                break;
+            }
+        }
+        let calls = MANAGE_CALLS.take().unwrap_or(0);
+        let sim = scenario.sim();
+        let hunting = sim.houses[&soviet].strategy_emergency.all_to_hunt_bias;
+        let yards = of_type(sim, "NACNST", false).len();
+        eprintln!(
+            "base standing at {standing:?}; Manage_Build_Queue first at {managed:?} ({calls} \
+             calls), refinery chosen at {chosen:?}, standing at {rebuilt:?}, miner back at \
+             {mined:?}; {yards} yards, hunting {hunting}; sold (frame, type) {:?}",
+            sold.values().collect::<Vec<_>>()
+        );
+        assert!(managed.is_some(), "Manage_Build_Queue never ran");
+        assert!(!sold.is_empty(), "the house sold nothing");
+        assert!(
+            sold.values().all(|(_, name)| name != "NACNST") && yards > 0,
+            "the house sold its yard"
+        );
+        assert!(!hunting, "the house sent everything to hunt");
+        assert!(chosen.is_some(), "the house never chose a refinery");
+        assert!(rebuilt.is_some(), "no refinery was rebuilt");
+        assert!(mined.is_some(), "no War Miner came back");
+    }
 }

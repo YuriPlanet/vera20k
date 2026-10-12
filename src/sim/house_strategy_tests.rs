@@ -2,10 +2,13 @@
 //! Strategy owner, then unit tests of the anger nodes.
 //!
 //! The AI_TryFireSW call is compared (its body has its own replay,
-//! `superweapon/ai_fire_tests.rs`). Not compared, as residuals (module doc):
-//! the Check_Build_Need and Manage_Build_Queue calls, All_To_Hunt's team
-//! removal and its garrison release. The money queries read the credits;
-//! every cell the search looks up is compared as the house's base origin.
+//! `superweapon/ai_fire_tests.rs`). The oracle stubs Check_Build_Need with
+//! each row's answer and Manage_Build_Queue; the replay gives the house the
+//! economy that answers the same (`sim::ai_build_need`, whose bodies have
+//! their own tests) and compares the Manage_Build_Queue calls. Not compared,
+//! as residuals (module doc): All_To_Hunt's team removal and its garrison
+//! release. The money queries read the credits; every cell the search looks
+//! up is compared as the house's base origin.
 
 use super::*;
 use std::collections::BTreeSet;
@@ -241,6 +244,14 @@ fn the_strategy_matches_native() {
         }
         let house = sim.houses.get_mut(&owner).unwrap();
         house.tracking.set_buildings_for_test(counted);
+        // The rows answer Check_Build_Need with `need`. A refinery and a
+        // gatherer make VERA's answer 0, as for -1, which the urgency loop
+        // never matches; without them it is 1, and Manage_Build_Queue,
+        // whose rows only record the call, finds no economy type in these
+        // rules to rebuild.
+        if !(1..=4).contains(&int(&row["need"])) {
+            house.tracking.set_economy_for_test(1, 1, 0);
+        }
         sim.session.binary_frame = int(&row["frame"]) as u32;
         let draws = events(row, "draw");
         assert_eq!(draws.len(), 1, "{label}");
@@ -253,8 +264,10 @@ fn the_strategy_matches_native() {
         let mut expected = sim.scenario_rng.clone();
         expected.next_range_i32_inclusive(1, 7);
 
+        use crate::sim::ai_build_need::MANAGE_CALLS;
         use crate::sim::superweapon::ai_fire::{AI_FIRE_LOG, AiFireEvent};
         AI_FIRE_LOG.set(Some(Vec::new()));
+        MANAGE_CALLS.set(Some(0));
         let delay = building_strategy(
             &mut sim,
             &rules,
@@ -272,6 +285,11 @@ fn the_strategy_matches_native() {
             tried,
             events(row, "try_fire_sw").len(),
             "{label}: AI_TryFireSW"
+        );
+        assert_eq!(
+            MANAGE_CALLS.take().unwrap() as usize,
+            events(row, "manage").len(),
+            "{label}: Manage_Build_Queue"
         );
 
         let house = &sim.houses[&owner];

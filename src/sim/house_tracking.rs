@@ -37,7 +37,11 @@
 //! `ResourceDestination=` (`+0x15C`, `0x00502AAF..0x00502AB9` and
 //! `0x00502620..0x0050262A`). The computer reads the first when it decides
 //! whether a lost refinery node may be rebuilt (`sim::ai_base_building`) and
-//! both when it chooses a harvester (`sim::ai_unit_choice`).
+//! both when it chooses a harvester (`sim::ai_unit_choice`). Their building
+//! arms, again with no DontScore test, count the buildings whose type is a
+//! `WeaponsFactory=` (`+0x16BD`) and not `Naval=` (`+0xCCE`) in `+0x160`
+//! (`0x00502B28..0x00502B42`, `0x005027D4..0x005027EE`); the computer's
+//! economy check reads all three (`sim::ai_build_need`).
 //!
 //! Their Aircraft, Infantry and Unit arms first add, and subtract, the
 //! object's value, its type's `Cost_Of` (`vt+0x84`, `0x00711F00`) for this
@@ -140,6 +144,9 @@ pub struct TrackingFacts {
     /// `TechnoType+0x5ED`, `ResourceDestination=` (ReadINI `0x007143FE`).
     #[serde(default)]
     resource_destination: bool,
+    /// A building whose type is a `WeaponsFactory=` and not `Naval=`.
+    #[serde(default)]
+    war_factory: bool,
     /// The value arm of the on-map writers; none for a building.
     #[serde(default)]
     force_value: Option<ForceValueFacts>,
@@ -175,6 +182,7 @@ impl TrackingFacts {
             unit_like_building,
             resource_gatherer: ty.resource_gatherer,
             resource_destination: ty.resource_destination,
+            war_factory: category == EntityCategory::Structure && ty.weapons_factory && !ty.naval,
             force_value: ForceValueFacts::of(category, ty),
             factory: (category == EntityCategory::Structure)
                 .then(|| ty.factory.map(|factory| FactorySlot::of(factory, ty.naval)))
@@ -319,6 +327,10 @@ pub struct HouseTracking {
     /// `ResourceDestination=`.
     #[serde(default)]
     resource_destinations: i32,
+    /// `HouseClass+0x160`, the on-map buildings whose type is a land
+    /// `WeaponsFactory=`.
+    #[serde(default)]
+    war_factories: i32,
     /// The value totals of the house's forces on the map.
     #[serde(default)]
     force_values: ForceValues,
@@ -521,6 +533,11 @@ impl HouseTracking {
         self.resource_destinations
     }
 
+    /// `HouseClass+0x160`.
+    pub(crate) const fn war_factories(&self) -> i32 {
+        self.war_factories
+    }
+
     /// `HouseClass+0x160A8`, `+0x160AC` and `+0x160B0`.
     pub(crate) const fn force_values(&self) -> ForceValues {
         self.force_values
@@ -559,6 +576,9 @@ impl HouseTracking {
         if entity.tracking_facts.resource_destination {
             self.resource_destinations = self.resource_destinations.wrapping_add(1);
         }
+        if entity.tracking_facts.war_factory {
+            self.war_factories = self.war_factories.wrapping_add(1);
+        }
         if let Some(value) = entity.tracking_facts.force_value {
             let total = self.force_values.total(value.kind);
             *total = total.wrapping_add(factors.adjust(value.cost, value.factor_slot.into()));
@@ -584,6 +604,9 @@ impl HouseTracking {
         }
         if entity.tracking_facts.resource_destination {
             self.resource_destinations = self.resource_destinations.wrapping_sub(1);
+        }
+        if entity.tracking_facts.war_factory {
+            self.war_factories = self.war_factories.wrapping_sub(1);
         }
         if let Some(value) = entity.tracking_facts.force_value {
             let total = self.force_values.total(value.kind);
@@ -649,6 +672,19 @@ impl HouseTracking {
     /// Stand in for tracked buildings a fixture places without the lifecycle.
     pub(crate) fn set_buildings_for_test(&mut self, buildings: i32) {
         self.buildings = buildings;
+    }
+
+    /// Stand in for the on-map gatherers, destinations and war factories
+    /// (`+0x158`, `+0x15C`, `+0x160`) a fixture places without the lifecycle.
+    pub(crate) fn set_economy_for_test(
+        &mut self,
+        gatherers: i32,
+        destinations: i32,
+        war_factories: i32,
+    ) {
+        self.resource_gatherers = gatherers;
+        self.resource_destinations = destinations;
+        self.war_factories = war_factories;
     }
 
     /// The tracked Units of every type.

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BuildingClass::GetFLH 0x00453840's voxel-turret arm (0x00453A12..0x00453A4C): TechnoClass::GetFLH 0x006F3AD0 plus TacticalClass::IsometricPixelToWorld 0x006D2070 of the BuildingType's +0x11E0/+0x11E4 for a +0x16C5 type, its +0x11E0/+0x11E4/+0x16C5/+0xE44/+0x1764/+0x89C/+0x8B8 inputs, the +0x16C6-gated alternative arm's unreached state, the building's own GetCoords 0x00459EF0, and the FacingClass 0x4C91E0/0x4C9300 heading the FLH turns by.",
+  "assumptions": [
+    "the building_prism LaserScene fixture building is the firer: the building_construction fixture BuildingClass (vtable 0x7E3EBC) whose type is the slave_manager type; the TacticalClass singleton at 0x887324 has its native matrix initializer run",
+    "each row states every input the fixture writes: the type's TurretAnimIsVoxel/TurretAnimX/TurretAnimY (+0x16C5/+0x11E0/+0x11E4), PrimaryFirePixelOffset/PrimaryFireDualOffset (+0xE44/+0x1764, the stock constructor state being 0xFFFF/0xFFFF and 0), the primary and secondary FLH (+0x89C/+0x8B8) and the building Location",
+    "the stock rows use the retail-authored values the comparison rests on: GTGCAN 3/28 with PrimaryFireFLH 250,0,230 and YAGGUN 0/15 with Weapon1FLH 150,60,200. A later layer could override them; the production reader owns that selection",
+    "the facing slot +0x388 is constructed at rate 0 and snapped to the row heading; +0x3B8 is the row burst index",
+    "the weapon index selects the type's GetWeapon slot natively (0x006F3B23), so the row FLH values are read exactly as the ART reader merged them",
+    "FPCW 0x0E7F; the fixture is one building, one shot per row"
+  ],
+  "substitutions": [
+    "the building fixture's unrelated hooks (SelectWeapon, PlayAnim, Is_Operational and the other LaserScene boundaries) stay installed but are not reached by GetFLH",
+    "no GetFLH, TechnoClass::GetFLH, IsometricPixelToWorld or GetCoords output is substituted: all four execute natively"
+  ],
+  "entry_points": {
+    "building_get_flh": "0x00453840",
+    "techno_get_flh": "0x006F3AD0",
+    "isometric_pixel_to_world": "0x006D2070",
+    "building_get_coords": "0x00459EF0",
+    "facing_rate_ctor": "0x004C91E0",
+    "facing_set_current": "0x004C9300"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_voxel_flh",
+  "payload_sha256": "3f737d59f8e520a96282d74074e3659c6f409af465d3628a33a751c373d45a1f"
+}

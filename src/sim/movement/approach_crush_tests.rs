@@ -148,7 +148,8 @@ fn computer_crusher_heads_for_a_crushable_target_within_reach() {
 /// A Battle Fortress (`OmniCrusher=`) takes infantry it targets as its
 /// destination at any range, also a human's; a human's spares a GI its own
 /// scan picked up, a computer's does not, and neither drives onto a building.
-/// On Hunt, the pursuit pass leaves the Fortress's approach to that arm.
+/// On Hunt, the pursuit pass leaves the Fortress's approach to its mission:
+/// that arm for the GI, the Foot body for the building.
 #[test]
 fn battle_fortress_heads_for_infantry_it_targets() {
     let Some(rules) = retail_rules() else {
@@ -180,12 +181,11 @@ fn battle_fortress_heads_for_infantry_it_targets() {
         sim.mission_owns_approach(fortress, &rules)
     };
     assert!(hunt_owned("E1"));
-    assert!(!hunt_owned("NAPOWR"));
+    assert!(hunt_owned("NAPOWR"));
 }
 
-/// The pursuit pass leaves a computer Rhino's charge alone: on Attack, in range
-/// of the GI it heads for, it keeps the GI as its NavCom where the pass would
-/// halt any other unit (`crush_owns_approach`).
+/// The pursuit pass leaves a computer Rhino's charge to its mission: on
+/// Attack, in range of the GI it heads for, it keeps the GI as its NavCom.
 #[test]
 fn the_pursuit_pass_leaves_a_crush_charge_alone() {
     let Some(rules) = retail_rules() else {
@@ -221,10 +221,10 @@ fn the_pursuit_pass_leaves_a_crush_charge_alone() {
     );
 }
 
-/// The charge stays the crush arm's, out of the pursuit pass's hands, while
-/// its NavCom is the Target within `Crush=`: not with the NavCom elsewhere,
-/// nor at a Target out of reach (the lapsed-charge residual on
-/// `crush_owns_approach`).
+/// The charge stays the crush arm's while its NavCom is the Target within
+/// `Crush=`: not with the NavCom elsewhere, nor at a Target out of reach (the
+/// lapsed-charge residual on `crush_owns_approach`). A Drive unit's approach
+/// stays its mission's either way, through the Foot body.
 #[test]
 fn crush_owns_a_charge_while_its_target_stays_within_reach() {
     let Some(rules) = retail_rules() else {
@@ -242,7 +242,8 @@ fn crush_owns_a_charge_while_its_target_stays_within_reach() {
             NavTargetRef::cell(4, 4)
         };
         set_nav_com(&mut sim, rhino, nav);
-        sim.crush_owns_approach(rhino, &rules) && sim.mission_owns_approach(rhino, &rules)
+        assert!(sim.mission_owns_approach(rhino, &rules));
+        sim.crush_owns_approach(rhino, &rules)
     };
     assert!(owns((11, 10), true));
     assert!(!owns((11, 10), false));
@@ -252,8 +253,7 @@ fn crush_owns_a_charge_while_its_target_stays_within_reach() {
 /// A computer's Rhino whose charge at a GI the crush arm carries takes the
 /// per-cell range stop on arriving in the cell before the GI's
 /// (`0x004D882F..0x004D896E`), the GI in weapon range: its NavCom is dropped,
-/// and its next Attack tick charges again. The pursuit pass, which stands in
-/// for that stop for other units, leaves this one alone.
+/// and its next Attack tick charges again.
 #[test]
 fn a_crush_charge_takes_the_per_cell_range_stop() {
     let Some(rules) = retail_rules() else {

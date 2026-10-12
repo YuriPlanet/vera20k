@@ -863,14 +863,26 @@ impl FactoryRegistry {
     }
 
     /// `FactoryClass::AbandonProduction @ 0x004C9FF0`, then the delete, for
-    /// building `building`'s factory: `0x0045022C`, `0x004502D1`,
-    /// `BuildingClass::Detach_All(1)` (`0x0044EC0B`) and
-    /// `BuildingClass::ChangeOwner` (`0x004486EB`). Returns the object to
-    /// refund and destroy.
-    pub(super) fn abandon_building_factory(&mut self, building: u64) -> Option<AbandonedObject> {
-        self.factories
-            .remove(&FactoryHolder::Building(building))?
-            .abandon_production()
+    /// the factory `holder` holds: a building's at `0x0045022C`,
+    /// `0x004502D1`, `BuildingClass::Detach_All(1)` (`0x0044EC0B`) and
+    /// `BuildingClass::ChangeOwner` (`0x004486EB`); any of a house's in
+    /// `AI_Manage_Build_Queue` (`0x004FE06C..0x004FE08F`). Returns the object
+    /// to refund and destroy.
+    pub(super) fn abandon_factory(&mut self, holder: FactoryHolder) -> Option<AbandonedObject> {
+        self.factories.remove(&holder)?.abandon_production()
+    }
+
+    /// The holders of the factories house `owner` owns (`Factory+0x6C`),
+    /// from the last in construction order to the first.
+    pub(super) fn owner_holders_last_first(&self, owner: InternedId) -> Vec<FactoryHolder> {
+        let mut holders: Vec<FactoryHolder> = self
+            .holders_insertion_ordered()
+            .into_iter()
+            .filter(|(_, factory)| factory.owner == owner)
+            .map(|(holder, _)| holder)
+            .collect();
+        holders.reverse();
+        holders
     }
 
     /// Test-only mutable access to the first factory in sweep order (the `factories`
@@ -892,6 +904,12 @@ impl FactoryRegistry {
     ) -> Option<&mut Factory> {
         self.factories
             .get_mut(&FactoryHolder::House(owner, category))
+    }
+
+    /// Test-only mutable access to building `building`'s factory.
+    #[cfg(test)]
+    pub(crate) fn test_building_factory_mut(&mut self, building: u64) -> Option<&mut Factory> {
+        self.factories.get_mut(&FactoryHolder::Building(building))
     }
 
     /// Test-only: force a (owner, category) factory to the completed-and-held state

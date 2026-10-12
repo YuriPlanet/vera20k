@@ -1368,16 +1368,18 @@ impl Simulation {
                     // SetDestination(NULL, 1), so a vehicle that stops to fire
                     // holds no NavCom. GetFireError's NavCom tests (U7..U10)
                     // would otherwise keep refusing a spark, flame, drain or
-                    // temporal weapon. Infantry and open-topped units take
-                    // the per-cell owner's stop (`movement/per_cell.rs`).
-                    // RESIDUAL: the native stop runs from Per_Cell_Process,
-                    // at cell entry; this pass runs it on the frame the
-                    // target comes in range, wherever the vehicle is in its
-                    // cell (other native stop paths unchecked). It then
-                    // brakes into its head from there, and a turretless one
-                    // turns to fire only once stopped (`0x00736FE1`), so its
-                    // first shot comes an unmeasured number of frames off
-                    // native. Every in-range stop of a pursuing vehicle.
+                    // temporal weapon. Infantry, open-topped units and the
+                    // Drive, Ship and Hover units whose mission's Approach
+                    // carries them take the per-cell owner's stop
+                    // (`movement/per_cell.rs`).
+                    // RESIDUAL: for any other unit on these missions but a
+                    // Jumpjet (a Teleport mover or a `CloseRange=` type; no
+                    // armed stock unit), the native stop runs from
+                    // Per_Cell_Process, at cell entry; this pass runs it on
+                    // the frame the target comes in range, wherever the unit
+                    // is in its cell. It then brakes into its head from
+                    // there, and a turretless one turns to fire only once
+                    // stopped (`0x00736FE1`).
                     // A cruising Jumpjet takes no such stop: Jumpjet calls
                     // Per_Cell_Process only from its descent (`0x0054C8F0`),
                     // and Foot's approach (`0x004D5690`) instead sends it to a
