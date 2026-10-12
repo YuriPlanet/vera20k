@@ -1,7 +1,7 @@
 //! Teleport (chrono) locomotor — instant relocation with chrono delay.
 //!
 //! Implements the Teleport state machine for chrono-style movement:
-//! Relocate (instant, one frame) → ChronoDelay (being_warped countdown) → Idle.
+//! Relocate (instant, one frame) → ChronoDelay (global-frame timer) → Idle.
 //!
 //! Self-teleport relocates the unit in a single frame (Phase 0), then the unit
 //! sits at the destination 50% translucent for `chrono_delay` frames until fully
@@ -110,15 +110,15 @@ impl crate::sim::world::Simulation {
 /// Phase within the teleport state machine.
 ///
 /// Phase 0 relocates instantly in one frame, then the chrono delay timer
-/// counts down while the unit is semi-transparent at the destination.
+/// runs against global frames while the unit materializes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum TeleportPhase {
     /// Instant relocation between the owner's Mark(UP) and Mark(DOWN). Executes in
     /// one frame, then transitions to ChronoDelay.
     Relocate,
     /// Post-warp chrono delay: unit sits at destination 50% translucent,
-    /// `being_warped_ticks` counts down each frame. When it reaches 0 the
-    /// teleport is complete and the base locomotor is restored.
+    /// The global-frame timer expires even while the owner is hidden in
+    /// cargo; its first restored Process retires warp-in.
     ChronoDelay,
 }
 
@@ -137,15 +137,17 @@ pub enum SpecialMovementOutcome {
 /// State for an in-progress teleport.
 ///
 /// Set by `teleport_move_to()` and cleared when the chrono delay
-/// expires. The render system reads `being_warped_ticks` to apply 50%
-/// translucency while the unit materializes.
+/// expires. Presentation reads the owned warp-in flag to apply translucency.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TeleportState {
     phase: TeleportPhase,
     /// Armed XYZ (+1C in the complete native object), independently nullable
     /// from the retained resolver coordinate. No cell-centre mirror is stored.
     destination: Option<DriveCoord>,
-    being_warped_ticks: u32,
+    /// Teleport+3C's global-frame timer. Hidden cargo keeps this epoch;
+    /// it does not pause merely because the infantry has no active AI turn.
+    /// Native7194B1..719573 starts it;719BF0 checks globalFrame-start.
+    delay_timer: crate::sim::timer::CdTimer,
 }
 
 impl TeleportState {
@@ -153,8 +155,9 @@ impl TeleportState {
         self.phase
     }
 
-    pub fn being_warped_ticks(&self) -> u32 {
-        self.being_warped_ticks
+    #[cfg(test)]
+    pub(crate) fn chrono_delay_ticks(&self) -> u32 {
+        self.delay_timer.duration().max(0) as u32
     }
 
     #[cfg(test)]
@@ -173,7 +176,7 @@ impl TeleportState {
         Self {
             phase,
             destination: Some(DriveCoord::cell(rx, ry, 0)),
-            being_warped_ticks: ticks,
+            delay_timer: crate::sim::timer::CdTimer::started(0, ticks as i32),
         }
     }
 
@@ -189,14 +192,15 @@ impl TeleportState {
 
     #[cfg(test)]
     pub(crate) fn set_ticks_for_test(&mut self, ticks: u32) {
-        self.being_warped_ticks = ticks;
+        self.delay_timer =
+            crate::sim::timer::CdTimer::from_raw(self.delay_timer.start_frame(), ticks as i32);
     }
 
     /// The warp-in byte (`TechnoClass+0x271`) of the ordinary teleport:
     /// written 1 by the arrival (`0x00719579`), cleared by TimerCheck
     /// (`0x00719BF0`). The ordinary teleport never writes `+0x270`.
     pub fn warp_in_active(&self) -> bool {
-        self.phase == TeleportPhase::ChronoDelay && self.being_warped_ticks > 0
+        self.phase == TeleportPhase::ChronoDelay && self.delay_timer.duration() > 0
     }
 
     /// The relocation frame is removed from normal targeting before its cell
@@ -474,8 +478,9 @@ pub fn compute_chrono_delay(rules: &GeneralRules, distance_leptons: i32) -> u32 
 /// and is released before the next selection. Original controls live in
 /// infantry_scatter_destination --teleport-cell.
 ///
-/// The legacy Unit Cell resolver and Infantry object/FNPC branches remain
-/// bounded adapters. EMP/death admission, full Process and chrono timing are
+/// The legacy Unit Cell resolver and the Infantry object/FNPC fallback remain
+/// bounded adapters. Object placement priority is executed separately against
+/// the original transport_rows. EMP/death admission and chrono timing are
 /// separate residuals; this entry does not certify them. A warped-out or
 /// warping-in owner (vt+0x1D4/+0x1D8, `0x0071812E..0x0071814E`) refuses the
 /// request and loses its NavCom (`0x0071820F`).
@@ -483,7 +488,7 @@ impl crate::sim::world::Simulation {
     pub(crate) fn teleport_move_to(
         &mut self,
         id: u64,
-        target: (u16, u16),
+        requested: DriveCoord,
         rules: &crate::rules::ruleset::RuleSet,
         is_harvester: bool,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -495,6 +500,7 @@ impl crate::sim::world::Simulation {
         use crate::sim::movement::locomotor::MovementLayer;
         use crate::sim::occupancy::RawCellKey;
 
+        let target = ((requested.x / 256) as u16, (requested.y / 256) as u16);
         let actor = self
             .substrate
             .entities
@@ -566,21 +572,29 @@ impl crate::sim::world::Simulation {
         if infantry
             && !self.infantry_destination_inputs_available(
                 id,
-                crate::sim::components::NavTargetRef::cell(target.0, target.1),
+                actor.navigation.nav_com.unwrap_or_else(|| {
+                    crate::sim::components::NavTargetRef::cell(target.0, target.1)
+                }),
                 rules,
                 registry,
             )
         {
             return Err("Teleport Infantry resolution requires available class inputs".into());
         }
-        let input = super::navcom::target_cell_coord(
-            target.0,
-            target.1,
-            self.resolved_terrain
-                .as_ref()
-                .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
-                .as_ref(),
-        );
+        // Unit's historical resolver remains a Cell adapter; the Infantry
+        // class passes the destination receiver's actual +4C XYZ.
+        let input = if infantry {
+            requested
+        } else {
+            super::navcom::target_cell_coord(
+                target.0,
+                target.1,
+                self.resolved_terrain
+                    .as_ref()
+                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+                    .as_ref(),
+            )
+        };
         let destination = if infantry {
             // Dependency availability belongs to the destination transaction.
             // A direct call also refuses missing map inputs before its first write.
@@ -613,8 +627,49 @@ impl crate::sim::world::Simulation {
                     self.mission_commence_exact(id, self.session.binary_frame)
                         .map_err(|error| format!("Teleport resolver Commence: {error}"))?;
                 }
-                // Pure Cell NavCom has no object RTTI receiver, so the original
-                // Enter/Eaten/Capture/Patrol priority corridor leaves priority0.
+                // 718CA0..718DE3: Enter/Eaten/Capture/Patrol permit preferred
+                // placement into their live object target. Pure Cell NavCom
+                // has no RTTI receiver and keeps priority0. Original executed
+                // object controls: infantry_teleport_destination transport_rows.
+                let priority = self.substrate.entities.get(id).is_some_and(|actor| {
+                    if !matches!(
+                        actor.mission.effective().known(),
+                        Some(
+                            crate::sim::mission::MissionType::Enter
+                                | crate::sim::mission::MissionType::Eaten
+                                | crate::sim::mission::MissionType::Capture
+                                | crate::sim::mission::MissionType::Patrol
+                        )
+                    ) {
+                        return false;
+                    }
+                    let Some(reference) = actor.navigation.nav_com else {
+                        return false;
+                    };
+                    let target_id = match reference {
+                        crate::sim::components::NavTargetRef::Entity { id }
+                        | crate::sim::components::NavTargetRef::Object { id }
+                        | crate::sim::components::NavTargetRef::Building { id } => id,
+                        crate::sim::components::NavTargetRef::Cell { .. } => return false,
+                    };
+                    let Some(target) = self.substrate.entities.get(target_id) else {
+                        return false;
+                    };
+                    let cell = ((input.x / 256) as u16, (input.y / 256) as u16);
+                    match target.category {
+                        EntityCategory::Unit | EntityCategory::Aircraft => {
+                            (target.position.rx, target.position.ry) == cell
+                        }
+                        EntityCategory::Structure => {
+                            self.substrate.occupancy.first_building_on_layer(
+                                cell.0,
+                                cell.1,
+                                MovementLayer::Ground,
+                            ) == Some(target_id)
+                        }
+                        EntityCategory::Infantry => false,
+                    }
+                });
                 let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref().unwrap());
                 let packed = cells.coord(cell);
                 let ground_raw = self
@@ -636,7 +691,7 @@ impl crate::sim::world::Simulation {
                     key,
                     layer,
                     input,
-                    false,
+                    priority,
                     gate_open,
                     &mut self.scenario_rng,
                 );
@@ -814,7 +869,12 @@ fn arm_teleport(
     let teleport_state = TeleportState {
         phase: TeleportPhase::Relocate,
         destination: Some(destination),
-        being_warped_ticks: chrono_ticks,
+        // Duration is prepared here; native Process starts the timer on the
+        // actual relocation frame, before reaching its PerCell callback.
+        delay_timer: crate::sim::timer::CdTimer::from_raw(
+            crate::sim::timer::PAUSED_START_FRAME,
+            chrono_ticks as i32,
+        ),
     };
     let Some(runtime) = entity
         .locomotor
@@ -863,129 +923,230 @@ pub(crate) fn release_incoming_target_locks(entities: &mut EntityStore, teleport
     }
 }
 
-/// Teleport Process (`0x007192F0`)'s own state for one owner, which the
-/// object turn admits with Teleport as its active locomotor: Relocate moves
-/// the owner in one frame (`0x00719631..0x007196B2`); ChronoDelay then counts
-/// `being_warped_ticks` down each frame until the teleport completes. `None`
-/// when the owner has no warp armed or warping in.
-pub fn process_teleport(
-    entities: &mut EntityStore,
-    id: u64,
-    sim_tick: u64,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-) -> Option<SpecialMovementOutcome> {
-    let reached = entities
-        .get(id)
-        .is_some_and(|entity| warp_destination_reached(entity, terrain));
-    let entity = entities.get_mut(id)?;
-    // Temporarily take the same owned warp while committing Object coordinates.
-    // The persistent resolver coordinate remains in the complete payload.
-    let mut teleport = entity
-        .locomotor
-        .as_mut()?
-        .teleport_runtime_mut()?
-        .warp
-        .take()?;
-    let mut finished = false;
-    let outcome;
-
-    // Track phase before processing to detect transitions.
-    let phase_before = teleport.phase;
-
-    match teleport.phase {
-        // 0x007197AF: Stop_Moving only; the caller runs the NULL assign.
-        TeleportPhase::Relocate if reached => {
-            finished = true;
-            outcome = SpecialMovementOutcome::Abort;
+impl crate::sim::world::Simulation {
+    /// The single port of `TeleportLocomotionClass::TimerCheck @ 0x00719BF0`.
+    /// Native719C15 clears warp-in before the no-target scan/idle callbacks;
+    /// positive Chronosphere state advances only after those callbacks.
+    /// Ordinary CLEG epoch/flag controls are in infantry_teleport_destination;
+    /// superweapon_oracle's chrono_process controls pin callback order with
+    /// their explicitly recorded scan/acquisition/idle seams.
+    ///
+    /// Rules-free component callers cover timer/flag retirement only: they do
+    /// not supply the retail inputs required by passive acquisition or idle.
+    pub(crate) fn teleport_timer_check(
+        &mut self,
+        id: u64,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        ctx: crate::sim::world::ObjectAiCtx<'_>,
+    ) -> bool {
+        let frame = self.session.binary_frame as i32;
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let (timer, chrono) = if let Some(warp) = entity.chrono_warp() {
+            (warp.timer(), true)
+        } else {
+            let Some(warp) = entity
+                .locomotor
+                .as_ref()
+                .and_then(|locomotor| locomotor.teleport_runtime())
+                .and_then(|runtime| runtime.warp.as_ref())
+                .filter(|warp| warp.phase == TeleportPhase::ChronoDelay)
+            else {
+                return false;
+            };
+            (warp.delay_timer, false)
+        };
+        if !timer.expired(frame) {
+            return false;
         }
-        TeleportPhase::Relocate => {
-            // Instant relocation in one frame.
-            let destination = teleport
-                .destination
-                .expect("armed Teleport has destination XYZ");
-            super::ground_pose::set_position_world_xy(
-                &mut entity.position,
-                [destination.x, destination.y],
-            );
-            // Process719631..7196B2: SetCoords, resolve destination bridge,
-            // then Object+1CC/5F5FA0 SetHeight(0). An old split altitude
-            // must not reappear in the arrival XYZ.
-            // RESIDUAL: native sets the Location through
-            // FootClass::SetLocation (vt+0x1B4, 0x00719637 and again at
-            // 0x00719684); the retained Process adapter applies SetHeight(0)
-            // after its XY write and skips the OpenTopped rider tail. Trigger:
-            // a loaded OpenTopped transport (retail: the Drive BFRT) warped
-            // by a superweapon, whose SuperClass code gives any Foot a
-            // Teleport locomotor (0x006CC989..0x006CC999); VERA ports no such
-            // warp yet. Effect: the riders stay at the departure point.
-            if let Some(terrain) = terrain {
-                let cell = terrain.native_cell_identity((
-                    (destination.x / 256) as i16,
-                    (destination.y / 256) as i16,
-                ));
-                entity.on_bridge = terrain.native_cell_flags(cell) & 0x100 != 0;
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            if chrono {
+                if let Some(warp) = entity
+                    .locomotor
+                    .as_mut()
+                    .and_then(|locomotor| locomotor.warp_teleport_mut())
+                    .and_then(|runtime| runtime.chrono_mut())
+                {
+                    warp.set_warping_in(false);
+                }
+            } else {
+                if let Some(runtime) = entity
+                    .locomotor
+                    .as_mut()
+                    .and_then(|locomotor| locomotor.teleport_runtime_mut())
+                {
+                    // The ordinary adapter's lifetime ends when its native
+                    // warp-in flag clears. Resolved +28/request stay owned.
+                    runtime.warp = None;
+                }
+                entity.push_debug_event(frame as u32, DebugEventKind::SpecialMovementEnd);
             }
-            super::ground_pose::set_height(
-                &mut entity.position,
-                entity.on_bridge,
-                0,
-                terrain,
-                None,
-            );
-            // The path layer follows the destination's OnBridge. The cell
-            // lists move through the caller's Mark pair around this
-            // relocation (`0x007195D4` UP, `0x007196B8` DOWN).
-            if let Some(locomotor) = entity.locomotor.as_mut() {
-                locomotor.layer = if entity.on_bridge {
-                    crate::sim::movement::locomotor::MovementLayer::Bridge
+        }
+        if let Some(rules) = rules
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.attack_target.is_none())
+        {
+            self.shorten_passive_scan_timer(id);
+            if !crate::sim::world::passive_target_acquire(self, id, rules, ctx) {
+                crate::sim::world::enter_idle_mode(self, id, rules, None, ctx.effects);
+            }
+        }
+        if chrono
+            && let Some(warp) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|entity| entity.locomotor.as_mut())
+                .and_then(|locomotor| locomotor.warp_teleport_mut())
+                .and_then(|runtime| runtime.chrono_mut())
+            && warp.state() > 0
+        {
+            warp.set_state(warp.state() + 1);
+        }
+        true
+    }
+
+    /// Teleport Process (`0x007192F0`)'s own state for one owner, which the
+    /// object turn admits with Teleport as its active locomotor: Relocate moves
+    /// the owner in one frame (`0x00719631..0x007196B2`); ChronoDelay then checks
+    /// its global-frame epoch until the teleport completes. `None`
+    /// when the owner has no warp armed or warping in.
+    pub(crate) fn process_teleport(
+        &mut self,
+        id: u64,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        ctx: crate::sim::world::ObjectAiCtx<'_>,
+    ) -> Option<SpecialMovementOutcome> {
+        let phase = self
+            .substrate
+            .entities
+            .get(id)?
+            .locomotor
+            .as_ref()?
+            .teleport_runtime()?
+            .warp
+            .as_ref()?
+            .phase;
+        if phase == TeleportPhase::ChronoDelay {
+            return Some(if self.teleport_timer_check(id, rules, ctx) {
+                SpecialMovementOutcome::Complete
+            } else {
+                SpecialMovementOutcome::Continue
+            });
+        }
+        let frame = self.session.binary_frame as i32;
+        let terrain = self.resolved_terrain.as_ref();
+        let reached = self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| warp_destination_reached(entity, terrain));
+        let entity = self.substrate.entities.get_mut(id)?;
+        // Temporarily take the same owned warp while committing Object coordinates.
+        // The persistent resolver coordinate remains in the complete payload.
+        let mut teleport = entity
+            .locomotor
+            .as_mut()?
+            .teleport_runtime_mut()?
+            .warp
+            .take()?;
+        let mut finished = false;
+        let outcome;
+
+        // Track phase before processing to detect transitions.
+        let phase_before = teleport.phase;
+
+        match teleport.phase {
+            // 0x007197AF: Stop_Moving only; the caller runs the NULL assign.
+            TeleportPhase::Relocate if reached => {
+                finished = true;
+                outcome = SpecialMovementOutcome::Abort;
+            }
+            TeleportPhase::Relocate => {
+                teleport
+                    .delay_timer
+                    .start(frame, teleport.delay_timer.duration());
+                // Instant relocation in one frame.
+                let destination = teleport
+                    .destination
+                    .expect("armed Teleport has destination XYZ");
+                super::ground_pose::set_position_world_xy(
+                    &mut entity.position,
+                    [destination.x, destination.y],
+                );
+                // Process719631..7196B2: SetCoords, resolve destination bridge,
+                // then Object+1CC/5F5FA0 SetHeight(0). An old split altitude
+                // must not reappear in the arrival XYZ.
+                // RESIDUAL: native sets the Location through
+                // FootClass::SetLocation (vt+0x1B4, 0x00719637 and again at
+                // 0x00719684); the retained Process adapter applies SetHeight(0)
+                // after its XY write and skips the OpenTopped rider tail. Trigger:
+                // a loaded OpenTopped transport (retail: the Drive BFRT) warped
+                // by a superweapon, whose SuperClass code gives any Foot a
+                // Teleport locomotor (0x006CC989..0x006CC999); VERA ports no such
+                // warp yet. Effect: the riders stay at the departure point.
+                if let Some(terrain) = terrain {
+                    let cell = terrain.native_cell_identity((
+                        (destination.x / 256) as i16,
+                        (destination.y / 256) as i16,
+                    ));
+                    entity.on_bridge = terrain.native_cell_flags(cell) & 0x100 != 0;
+                }
+                super::ground_pose::set_height(
+                    &mut entity.position,
+                    entity.on_bridge,
+                    0,
+                    terrain,
+                    None,
+                );
+                // The path layer follows the destination's OnBridge. The cell
+                // lists move through the caller's Mark pair around this
+                // relocation (`0x007195D4` UP, `0x007196B8` DOWN).
+                if let Some(locomotor) = entity.locomotor.as_mut() {
+                    locomotor.layer = if entity.on_bridge {
+                        crate::sim::movement::locomotor::MovementLayer::Bridge
+                    } else {
+                        crate::sim::movement::locomotor::MovementLayer::Ground
+                    };
+                }
+                // Harvester instant-warp: when chrono delay is 0, finish in one
+                // frame (cleanup runs at end of this frame) — no post-warp lock.
+                if teleport.delay_timer.duration() == 0 {
+                    finished = true;
+                    outcome = SpecialMovementOutcome::Complete;
                 } else {
-                    crate::sim::movement::locomotor::MovementLayer::Ground
-                };
+                    teleport.phase = TeleportPhase::ChronoDelay;
+                    outcome = SpecialMovementOutcome::Continue;
+                }
             }
-            // Harvester instant-warp: when chrono delay is 0, finish in one
-            // frame (cleanup runs at end of this frame) — no post-warp lock.
-            if teleport.being_warped_ticks == 0 {
-                finished = true;
-                outcome = SpecialMovementOutcome::Complete;
-            } else {
-                teleport.phase = TeleportPhase::ChronoDelay;
-                outcome = SpecialMovementOutcome::Continue;
-            }
+            TeleportPhase::ChronoDelay => unreachable!("delay handled by the shared TimerCheck"),
         }
-        TeleportPhase::ChronoDelay => {
-            // Count down chrono delay frames. Unit remains 50% translucent until 0.
-            if teleport.being_warped_ticks > 0 {
-                teleport.being_warped_ticks -= 1;
-            }
-            if teleport.being_warped_ticks == 0 {
-                finished = true;
-                outcome = SpecialMovementOutcome::Complete;
-            } else {
-                outcome = SpecialMovementOutcome::Continue;
-            }
-        }
-    }
 
-    // Log phase transition if it changed.
-    let phase_after = teleport.phase;
-    if phase_after != phase_before {
-        let phase_name = format!("{:?}", phase_after);
-        entity.push_debug_event(
-            sim_tick as u32,
-            DebugEventKind::SpecialMovementPhase { phase: phase_name },
-        );
+        // Log phase transition if it changed.
+        let phase_after = teleport.phase;
+        if phase_after != phase_before {
+            let phase_name = format!("{:?}", phase_after);
+            entity.push_debug_event(
+                frame as u32,
+                DebugEventKind::SpecialMovementPhase { phase: phase_name },
+            );
+        }
+        if finished {
+            entity.push_debug_event(frame as u32, DebugEventKind::SpecialMovementEnd);
+        }
+        let runtime = entity.locomotor.as_mut()?.teleport_runtime_mut()?;
+        if phase_before == TeleportPhase::Relocate {
+            // The represented relocation's Stop/request retirement; full native
+            // Process scheduling and Chronosphere remain explicitly separate.
+            runtime.requested = false;
+        }
+        runtime.warp = (!finished).then_some(teleport);
+        Some(outcome)
     }
-    if finished {
-        entity.push_debug_event(sim_tick as u32, DebugEventKind::SpecialMovementEnd);
-    }
-    let runtime = entity.locomotor.as_mut()?.teleport_runtime_mut()?;
-    if phase_before == TeleportPhase::Relocate {
-        // The represented relocation's Stop/request retirement; full native
-        // Process scheduling and Chronosphere remain explicitly separate.
-        runtime.requested = false;
-    }
-    runtime.warp = (!finished).then_some(teleport);
-    Some(outcome)
 }
 
 #[cfg(test)]
@@ -997,7 +1158,6 @@ mod tests {
     use super::*;
 
     use crate::rules::locomotor_type::LocomotorKind;
-    use crate::sim::entity_store::EntityStore;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotor::LocomotorState;
 
@@ -1014,10 +1174,12 @@ mod tests {
 
     #[test]
     fn stop_moving_drops_an_armed_warp_but_not_a_warp_in() {
-        let mut entities = EntityStore::new();
-        entities.insert(teleport_owner(1, "CLEG", 5, 5));
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.substrate
+            .entities
+            .insert(teleport_owner(1, "CLEG", 5, 5));
         let rules = default_rules();
-        let owner = entities.get_mut(1).unwrap();
+        let owner = sim.substrate.entities.get_mut(1).unwrap();
         assert!(arm_teleport(
             owner,
             DriveCoord::cell(20, 20, 0),
@@ -1035,8 +1197,8 @@ mod tests {
             &rules,
             false
         ));
-        process_teleport(&mut entities, 1, 0, None);
-        let owner = entities.get_mut(1).unwrap();
+        sim.process_teleport(1, None, crate::sim::world::ObjectAiCtx::default());
+        let owner = sim.substrate.entities.get_mut(1).unwrap();
         assert!(owner.is_warping_in());
         teleport_stop_moving(owner);
         assert!(owner.is_warping_in());
@@ -1044,31 +1206,31 @@ mod tests {
 
     #[test]
     fn test_teleport_issues_and_completes() {
-        let mut entities = EntityStore::new();
+        let mut sim = crate::sim::world::Simulation::new();
         let mut e = teleport_owner(1, "CLEG", 5, 5);
         e.position.z = 0;
-        entities.insert(e);
+        sim.substrate.entities.insert(e);
         let rules = default_rules();
 
         assert!(arm_teleport(
-            entities.get_mut(1).unwrap(),
+            sim.substrate.entities.get_mut(1).unwrap(),
             DriveCoord::cell(20, 20, 0),
             None,
             &rules,
             false
         ));
-        let entity = entities.get(1).expect("should exist");
+        let entity = sim.substrate.entities.get(1).expect("should exist");
         let ts = entity.teleport_state().expect("should have TeleportState");
         assert_eq!(ts.phase(), TeleportPhase::Relocate);
         assert!(
-            ts.being_warped_ticks() >= 16,
+            ts.chrono_delay_ticks() >= 16,
             "should have at least minimum delay"
         );
 
         // One admitted frame relocates instantly.
-        process_teleport(&mut entities, 1, 0, None);
+        sim.process_teleport(1, None, crate::sim::world::ObjectAiCtx::default());
 
-        let entity = entities.get(1).expect("should exist");
+        let entity = sim.substrate.entities.get(1).expect("should exist");
         assert_eq!(entity.position.rx, 20, "Should have relocated to target");
         assert_eq!(entity.position.ry, 20);
         let ts = entity.teleport_state().expect("still warping");
@@ -1079,13 +1241,14 @@ mod tests {
         );
 
         // Advance through the ChronoDelay countdown.
-        let delay = ts.being_warped_ticks();
-        for _ in 0..delay + 5 {
-            process_teleport(&mut entities, 1, 0, None);
+        let delay = ts.chrono_delay_ticks();
+        for frame in 1..=delay + 5 {
+            sim.session.binary_frame = frame;
+            sim.process_teleport(1, None, crate::sim::world::ObjectAiCtx::default());
         }
 
         // TeleportState should be removed after completion.
-        let entity = entities.get(1).expect("should exist");
+        let entity = sim.substrate.entities.get(1).expect("should exist");
         assert!(
             entity.teleport_state().is_none(),
             "TeleportState should be removed after completion"
@@ -1145,7 +1308,7 @@ mod tests {
                 false
             ));
             assert_eq!(
-                i64::from(entity.teleport_state().unwrap().being_warped_ticks()),
+                i64::from(entity.teleport_state().unwrap().chrono_delay_ticks()),
                 row["expected"].as_i64().unwrap(),
                 "{}",
                 row["name"]
@@ -1158,25 +1321,27 @@ mod tests {
     /// the lock duration is 0 regardless of distance.
     #[test]
     fn test_harvester_skips_chrono_delay() {
-        let mut entities = EntityStore::new();
+        let mut sim = crate::sim::world::Simulation::new();
         let e = teleport_owner(1, "CMIN", 5, 5);
-        entities.insert(e);
+        sim.substrate.entities.insert(e);
         let rules = default_rules();
 
         // Long distance (~80 cells diagonal) — non-harvester computes ~604 frames delay.
         assert!(arm_teleport(
-            entities.get_mut(1).unwrap(),
+            sim.substrate.entities.get_mut(1).unwrap(),
             DriveCoord::cell(90, 90, 0),
             None,
             &rules,
             true
         ));
-        let ts = entities
+        let ts = sim
+            .substrate
+            .entities
             .get(1)
             .and_then(|e| e.teleport_state())
             .expect("should have TeleportState");
         assert_eq!(
-            ts.being_warped_ticks(),
+            ts.chrono_delay_ticks(),
             0,
             "harvester instant-warp must zero the chrono lock"
         );
@@ -1186,22 +1351,24 @@ mod tests {
     /// tick (skipping ChronoDelay).
     #[test]
     fn test_harvester_relocate_cleans_up_in_one_tick() {
-        let mut entities = EntityStore::new();
-        entities.insert(teleport_owner(1, "CMIN", 5, 5));
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.substrate
+            .entities
+            .insert(teleport_owner(1, "CMIN", 5, 5));
         let rules = default_rules();
 
         assert!(arm_teleport(
-            entities.get_mut(1).unwrap(),
+            sim.substrate.entities.get_mut(1).unwrap(),
             DriveCoord::cell(20, 20, 0),
             None,
             &rules,
             true
         ));
 
-        // Single frame: position snaps, then cleanup runs because being_warped_ticks==0.
-        process_teleport(&mut entities, 1, 0, None);
+        // Single frame: position snaps, then cleanup runs because the configured delay is zero.
+        sim.process_teleport(1, None, crate::sim::world::ObjectAiCtx::default());
 
-        let entity = entities.get(1).expect("should exist");
+        let entity = sim.substrate.entities.get(1).expect("should exist");
         assert_eq!(entity.position.rx, 20);
         assert_eq!(entity.position.ry, 20);
         assert!(
@@ -1214,22 +1381,24 @@ mod tests {
     /// full Relocate → ChronoDelay countdown.
     #[test]
     fn test_non_harvester_uses_full_chrono_delay() {
-        let mut entities = EntityStore::new();
+        let mut sim = crate::sim::world::Simulation::new();
         let e = teleport_owner(1, "CLEG", 5, 5);
-        entities.insert(e);
+        sim.substrate.entities.insert(e);
         let rules = default_rules();
 
         assert!(arm_teleport(
-            entities.get_mut(1).unwrap(),
+            sim.substrate.entities.get_mut(1).unwrap(),
             DriveCoord::cell(20, 20, 0),
             None,
             &rules,
             false
         ));
-        let initial_ticks = entities
+        let initial_ticks = sim
+            .substrate
+            .entities
             .get(1)
             .and_then(|e| e.teleport_state())
-            .map(|t| t.being_warped_ticks())
+            .map(|t| t.chrono_delay_ticks())
             .expect("teleport_state");
         assert!(
             initial_ticks > 0,
@@ -1237,13 +1406,15 @@ mod tests {
         );
 
         // Frame 1: Relocate snaps position and transitions to ChronoDelay (NOT cleanup).
-        process_teleport(&mut entities, 1, 0, None);
-        let ts = entities
+        sim.process_teleport(1, None, crate::sim::world::ObjectAiCtx::default());
+        let ts = sim
+            .substrate
+            .entities
             .get(1)
             .and_then(|e| e.teleport_state())
             .expect("still warping after Relocate");
         assert_eq!(ts.phase(), TeleportPhase::ChronoDelay);
-        assert_eq!(ts.being_warped_ticks(), initial_ticks);
+        assert_eq!(ts.chrono_delay_ticks(), initial_ticks);
     }
 
     #[test]

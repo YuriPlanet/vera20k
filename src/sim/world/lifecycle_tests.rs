@@ -3204,6 +3204,135 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
 }
 
 #[test]
+fn nested_transport_uninit_keeps_inner_cargo_until_its_recursive_transaction() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    insert_entity(&mut sim, 3, EntityCategory::Infantry);
+    let _ = sim.reveal(1);
+    let mut outer = PassengerCargo::new(12, 6);
+    outer.board_forced(2, 3);
+    sim.substrate.entities.get_mut(1).unwrap().passenger_role =
+        PassengerRole::Transport { cargo: outer };
+    let mut inner = PassengerCargo::new(5, 2);
+    inner.board_forced(3, 1);
+    let entity = sim.substrate.entities.get_mut(2).unwrap();
+    entity.passenger_role = PassengerRole::Transport { cargo: inner };
+    entity.passenger_role.set_inside_transport(1, false);
+    sim.substrate
+        .entities
+        .get_mut(3)
+        .unwrap()
+        .passenger_role
+        .set_inside_transport(2, true);
+
+    sim.uninit(1);
+    // The recursive owner reaches the inner rider before either hull; clearing
+    // the inner carrier link must not erase its own CargoClass first.
+    assert_eq!(sim.substrate.pending_delete.object_ids(), vec![3, 2, 1]);
+    for id in [1, 2, 3] {
+        let entity = sim.substrate.entities.get(id).unwrap();
+        assert!(!entity.lifecycle.object_alive);
+        assert_eq!(entity.passenger_role.inside_transport_id(), None);
+    }
+    for id in [1, 2] {
+        assert!(
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .passenger_role
+                .cargo()
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
+    let rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(""))
+            .unwrap();
+    // Steam gamemd3e81a617, TechnoPointerExpired7078B2..7078DB compares
+    // Object+90, exact Health==0 and ScenarioInit, independently of control.
+    // These are controlled receiver priors, not a full transport fixture.
+    for (alive, health, placement_scope, retain_inside) in [
+        (true, 1, false, true),
+        (true, -1, false, true),
+        (true, 0, false, false),
+        (false, 1, false, false),
+        (true, 1, true, false),
+    ] {
+        for (inside, conceal_control) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let mut sim = Simulation::new();
+            insert_entity(&mut sim, 1, EntityCategory::Unit);
+            insert_entity(&mut sim, 2, EntityCategory::Unit);
+            insert_entity(&mut sim, 3, EntityCategory::Infantry);
+            let _ = sim.reveal(1);
+            let _ = sim.reveal(2);
+            let parent = sim.substrate.entities.get_mut(1).unwrap();
+            parent.lifecycle.object_alive = alive;
+            parent.health.current = health;
+            let mut cargo = PassengerCargo::new(5, 2);
+            cargo.board_forced(3, 1);
+            let entity = sim.substrate.entities.get_mut(2).unwrap();
+            entity.passenger_role = PassengerRole::Transport { cargo };
+            if inside {
+                entity.passenger_role.set_inside_transport(1, false);
+            } else {
+                assert!(entity.passenger_role.set_boarding(1));
+            }
+            sim.substrate
+                .entities
+                .get_mut(3)
+                .unwrap()
+                .passenger_role
+                .set_inside_transport(2, true);
+
+            let announce_expiry = |sim: &mut Simulation| {
+                if conceal_control {
+                    // ObjectConceal5F4D5D..61 transmits literal control1 while
+                    // retaining the expired object's Alive and Health fields.
+                    sim.object_conceal(1);
+                } else {
+                    sim.detach_all_pointer_expired(1, &rules, None, super::FrameEffects::default());
+                }
+            };
+            if placement_scope {
+                sim.with_object_placement_scope(announce_expiry);
+            } else {
+                announce_expiry(&mut sim);
+            }
+            let role = &sim.substrate.entities.get(2).unwrap().passenger_role;
+            assert_eq!(role.boarding_transport_id(), None);
+            assert_eq!(
+                role.inside_transport(),
+                if inside && retain_inside {
+                    Some((1, false))
+                } else {
+                    None
+                },
+                "inside={inside}, control1={conceal_control}, alive={alive}, health={health}, scope={placement_scope}"
+            );
+            assert_eq!(role.cargo().unwrap().passengers, [3]);
+            assert_eq!(role.cargo().unwrap().total_size, 1);
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(3)
+                    .unwrap()
+                    .passenger_role
+                    .inside_transport(),
+                Some((2, true))
+            );
+        }
+    }
+}
+
+#[test]
 fn uninit_pointer_expiry_walks_global_object_order_before_break_and_conceal() {
     let mut sim = Simulation::new();
     insert_entity(&mut sim, 1, EntityCategory::Unit);

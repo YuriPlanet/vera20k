@@ -77,19 +77,14 @@ pub(crate) fn dispatch_foot_mission(
                 mission,
                 Some(MissionType::Enter) | Some(MissionType::Unload)
             )
-            && !matches!(
-                entity.passenger_role,
-                crate::sim::passenger::PassengerRole::Boarding { .. }
-            )
+            && entity.passenger_role.boarding_transport_id().is_none()
             && sim
                 .substrate
                 .entities
                 .get(id)
                 .is_some_and(crate::sim::game_entity::GameEntity::is_harvester);
-        let entry_adapter = matches!(
-            entity.passenger_role,
-            crate::sim::passenger::PassengerRole::Boarding { .. }
-        ) || entity.bunker_link.approaching().is_some();
+        let entry_adapter = entity.passenger_role.boarding_transport_id().is_some()
+            || entity.bunker_link.approaching().is_some();
         // `FootClass::Mission_Move @ 0x004D4200` keeps its cadence while the
         // NavCom is set (`0x004D4203`) or the locomotor's `Is_Moving` holds
         // (`0x004D422A`); the order itself is not an input.

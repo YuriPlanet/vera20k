@@ -9,10 +9,15 @@ StopDriver51DAF0, DoAction51D6F0 and the destructive raw receivers5217C0/521850.
 PYTHONPATH=. python -m tools.spatial_oracle.infantry_scatter_destination --teleport-cell --check
 ```
 
-`infantry_teleport_destination.json` records 26 cases and 54 command boundaries
-before Process. Its sidecar records the original binary, body spans, startup,
-fixture boundaries and source bindings. The binary SHA256 is
+`infantry_teleport_destination.json` retains the original 26 Cell/overlay cases
+and 54 command boundaries, and adds 14 independent Unit NavCom resolver cases
+(40 pre-Process cases and 68 boundaries), plus two bounded refusal-tail cases
+(46 cases and 74 boundaries total, including four direct timer controls). Its sidecar records the original binary, body spans, startup,
+fixture boundaries and source bindings. The historical Cell payload retains binary identity
 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+The additive controls execute the supported Steam binary
+`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`;
+the sidecar and `transport_native_identity` identify the actual replay input.
 The existing Walk18, default-motion54, CMIN50 and Jumpjet531 corpora retain their
 original values.
 
@@ -77,10 +82,12 @@ active class and keep the effect in a suspended instance, rather than replacing
 the class whose original body the fixture compares.
 
 Coverage remains bounded. Unit/CMIN keeps its prior centre-resolver adapter;
-object/FNPC destinations and Chronosphere need their separate class admission,
-reservation and cleanup chains. The existing Relocate/ChronoDelay Process and
-cell-distance timing adapter remains, including its prior timer policy; this
-corpus executes no7192F0 Process and cannot certify that complete lifetime or
+the historical Cell controls exclude object/FNPC destinations and Chronosphere
+class admission, reservation and cleanup. The retained Relocate Process still
+uses its cell-distance delay adapter; ChronoDelay now samples a global-frame
+epoch through the shared719BF0 TimerCheck owner, as bounded by the additive
+timer controls below. This historical Cell corpus executes no7192F0 Process
+and cannot certify that complete lifetime or
 the unrepresented secondary Process byte. OpenTopped rider relocation and
 incoming-bullet detach remain documented at that owner. Those triggers affect
 superweapon warps or in-flight attacks, rather than the selected pre-Process
@@ -194,3 +201,112 @@ CDA10AEE6EA0AE46 hash. All601 complete rows match after removing only
 independent strict row check. Main1025 subsequently changes only Ghidra
 exporter tools/docs;45 tool tests pass and every Rust file plus all other
 frozen Python files remain exact. No native coverage is extended by that merge.
+
+
+## Unit NavCom transport resolver controls
+
+The additive `transport_rows` invoke the same original resolver718B70 with a
+supplied Unit NavCom and declared Enter7 or Guard5 mission. They execute the
+untouched Unit vtable7F5C70: +2C746E20 returns RTTI1, +1B841BEA0 returns
+GetMapCoords, and +4C4DBDF0 returns navigation XYZ through an original
+Walk75AA90 constructor and Link55A710 with an inactive head. The Unit coordinates,
+health1, active flag, same-House pointer and optional Cell content-list head
+(+E4 ground or +E8 bridge, following the supplied target OnBridge) are
+explicit fixture inputs. The CLEG prerequisites still come from the existing
+original type constructor and physical layered reader; the inherited sparse
+asset manifest remains unchanged.
+
+For Enter7 with matching NavCom/request Cell and the target in its content
+list, original718CE9..718DE3 selects priority1. Cell481180 skips occupation
+selection and its centre-row RNG draw, but still snaps XY to the **preferred
+subcell**. It samples ground at the original incoming point through578080,
+then adds the original deck rise when applicable. Priority does not preserve
+an arbitrary incoming XYZ. Executed controls include:
+
+| Supplied request | Native resolved XYZ | Context |
+| --- | --- | --- |
+| `[3200,2688,0]` | `[3200,2688,0]` | Centre; target vehicle20 |
+| `[3264,2752,0]` | `[3264,2752,0]` | Canonical noncentral subcell; vehicle20 |
+| `[3234,2703,99]` | `[3200,2688,0]` | Arbitrary point in centre sector |
+| `[3324,2773,99]` | `[3264,2752,0]` | Arbitrary point in outer sector |
+| `[3234,2703,999]` | `[3200,2688,208]` | Cell level2; incoming Z discarded |
+| `[3324,2773,208]` | `[3264,2752,223]` | Level2/slope8; incoming-point ground |
+| `[3324,2773,624]` | `[3264,2752,624]` | Level2 structural bridge; deck208+416 |
+
+These priority1 successes preserve all three complete seeded1012-byte RNG
+objects. A requested point in a different Cell selects priority0 and draws
+ScenarioRandom once: `[3456,2688,0]` resolves to `[3520,2752,0]`, with its native
+indices changing from `[0,103]` to `[1,104]`. Guard5 with the same target and
+vehicle20 selects priority0 and resolves NULL. Queued Enter7 is promoted by
+original Ready/Commence before priority selection. A target omitted from
+Cell content still selects priority1, but actual InfantryCanEnter returns2
+and resolution becomes NULL. The raw3C control demonstrates preferred-slot
+placement despite all supplied infantry slots and the vehicle bit being set.
+
+The additive Rust-facing payload retains each fixture input and full prestate,
+resolved XYZ/current mission, all three full before/after RNG states, the native
+Unit coordinate-reader outputs, and compact placement/height/CanEnter calls and
+returns. Per-call repeated snapshots, startup/type copies and other unconsumed
+diagnostics stay out of the committed projection; the existing controller still
+executes and observes those original calls. Every pre-existing Cell/overlay
+payload key remains exact. This is bounded
+native resolver execution, not complete transport boarding parity: Unit and
+Infantry construction, the object class-setter admission, radio negotiation,
+passenger attachment and Teleport Process are outside these controls. The
+original object setter and per-cell entry chain need their separate static
+and played evidence; no radio or passenger return is substituted here.
+
+Reproduction also requires the two flat sparse roots from
+[`anytown_damage/retail_manifest.json`](anytown_damage/retail_manifest.json):
+`VERA20K_SHRAPNEL_INPUTS` for the reader bootstrap and
+`VERA20K_ANYTOWN_INPUTS` for the selected AnyTown map/TMP/SHP inputs. The
+existing `tools.sidebar_oracle.stock.mix/mix_hash` owner can extract the named
+retail bytes; each file must match the manifest size and SHA256. Adding all
+retail SHPs to the sparse bootstrap would change its declared asset boundary.
+
+## Declared-refusal mobile Enter tail
+
+`refused_enter_rows` starts at original `51A488`, after a declared negative
+RadioCanEnter condition. It supplies the original `519630` saved-register/local
+frame, ESI=passenger, EDI=transport, other saved registers and locals zero, reason2
+and a RET4 sentinel. The preceding Radio call and complete PerCell dispatcher
+are outside this boundary; no Radio answer is replaced.
+
+Two explicitly supplied warp-in arrival states run the original class NULL
+setter, QueueMission(Guard5,0), Scatter(NULL,1,1), FNPC56DC20, MoveTo718100,
+Process7192F0 and TimerCheck719BF0 through the actual tail RET4. Warp-in is true,
+frame100 and the timer is start100/pad0/duration30. These are arrival inputs,
+not a native construction or full timer-lifetime claim. The separate direct
+timer controls below establish expiry from the global epoch; these refusal
+controls never reach expiry.
+
+Both controls retain current Enter7 and queued Guard5, clear NavCom and armed/
+resolved XYZ, preserve warp-in, and write movement/blocked timers `[100,0]` and
+`[100,22]`. The blocked duration22 is the declared fixture Rules value. The
+real FNPC candidate cannot become a new destination while warp-in remains set.
+Seed31 at `[3200,2688,0]` makes one RandomRanged call and one basic Scenario draw;
+seed42 at `[3264,2752,0]` makes one RandomRanged call but two basic draws because
+of rejection sampling. All three complete before/after RNG states and compact
+original call/return order are retained. The non-warp control reaches an
+unclosed animation/CRT prerequisite and is excluded. These controls establish
+the bounded refusal tail, not whole passenger/radio or post-unload parity.
+
+## Teleport elapsed-frame timer controls
+
+Four `chrono_timer_rows` execute original719BF0 through RET4 with supplied
+warp-in1/request0/timer-state0, a complete epoch/pad/duration and current frame.
+The actor's target+2B4 points to the live declared Unit; this suppresses the
+no-target passive-acquisition callback without replacing its answer.
+
+Epoch100/duration30 preserves warp-in at frame129 and clears it at frame130 and
+131, without intervening Process calls. Epoch-16/frame14 demonstrates the
+32-bit frame-counter wrap at elapsed30. Timer bytes and all three complete RNG
+objects stay unchanged. These direct controls establish elapsed-frame expiry;
+they exclude construction, Unlimbo scheduling, nonzero timer-state progression
+and no-target expiry callbacks.
+
+Instruction reading separately establishes Process publication: its interface
+pointer is primary+4;7194AC selects primary+3C,7194B1 reads globalFrame,7194BE
+writes the epoch, and7194C7 initializes duration0. Rules/distance branches write
+the chosen duration and epoch before719579 publishes warp-in. Those arithmetic
+branches are not executed by the direct TimerCheck controls.

@@ -92,9 +92,14 @@ fn spawn_and_board(sim: &mut Simulation, rules: &RuleSet, passenger_type: &str) 
         entity(sim, passenger).passenger_role,
         PassengerRole::Boarding { target_transport_id } if target_transport_id == ifv
     ));
-    // Adjacent admission runs the same boarding owner as advance_tick, before
-    // any shot could accidentally supply the selected weapon to presentation.
-    tick_passenger_system(sim, rules, None, crate::sim::world::FrameEffects::default());
+    // Walk to the occupied transport cell through the production entry path.
+    let grid = sim.path_grid_snapshot().unwrap();
+    for _ in 0..240 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
+        if entity(sim, passenger).passenger_role.is_inside_transport() {
+            break;
+        }
+    }
     assert_boarded(sim, ifv, passenger);
     (ifv, passenger)
 }
@@ -114,6 +119,10 @@ fn assert_boarded(sim: &Simulation, ifv: u64, passenger: u64) {
 }
 
 fn unload_at_clear_exit(sim: &mut Simulation, rules: &RuleSet, ifv: u64, passenger: u64) {
+    let exit = (
+        entity(sim, ifv).position.rx,
+        entity(sim, ifv).position.ry + 1,
+    );
     assert_eq!(
         depart_cargo_head(
             sim,
@@ -131,8 +140,8 @@ fn unload_at_clear_exit(sim: &mut Simulation, rules: &RuleSet, ifv: u64, passeng
                     rules,
                     ifv,
                     departing,
-                    16,
-                    17,
+                    exit.0,
+                    exit.1,
                     0,
                     crate::sim::world::FrameEffects::default(),
                 )
@@ -150,7 +159,7 @@ fn unload_at_clear_exit(sim: &mut Simulation, rules: &RuleSet, ifv: u64, passeng
     let pax = entity(sim, passenger);
     assert!(matches!(pax.passenger_role, PassengerRole::None));
     assert!(!pax.lifecycle.in_limbo);
-    assert_eq!((pax.position.rx, pax.position.ry), (16, 17));
+    assert_eq!((pax.position.rx, pax.position.ry), exit);
     assert_eq!(
         sim.live_object_order_snapshot()
             .iter()
@@ -194,6 +203,315 @@ fn retail_infantry_enter_keeps_the_transport_destination_reference() {
         Some(transport_coord),
         "the class setter samples the transport's shared +4C coordinate"
     );
+}
+
+/// Infantry PerCellProcess 51A3C0..51A3D4 compares the passenger and
+/// transport map coordinates for equality before its CanEnter radio message.
+#[test]
+fn retail_infantry_transport_boarding_waits_for_transport_cell() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, grid) = arena(rules);
+    let ifv = sim.spawn_object("FV", OWNER, 16, 16, 64, rules).unwrap();
+    let passenger = sim.spawn_object("E1", OWNER, 16, 15, 64, rules).unwrap();
+    assert!(sim.apply_command(
+        OWNER,
+        &Command::EnterTransport {
+            passenger_id: passenger,
+            transport_id: ifv,
+        },
+        Some(rules)
+    ));
+    tick_passenger_system(
+        &mut sim,
+        rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(
+        matches!(
+            entity(&sim, passenger).passenger_role,
+            PassengerRole::Boarding { .. }
+        ),
+        "an adjacent passenger must remain visible until it reaches the vehicle cell"
+    );
+    assert!(entity(&sim, ifv).passenger_role.cargo().unwrap().is_empty());
+    for _ in 0..180 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
+        if entity(&sim, passenger).passenger_role.is_inside_transport() {
+            assert_boarded(&sim, ifv, passenger);
+            return;
+        }
+    }
+    panic!("ordinary Enter must carry a walking infantryman into the occupied vehicle cell");
+}
+
+#[test]
+fn retail_chrono_remote_transport_enter_keeps_object_and_boards() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, grid) = arena(rules);
+    let ifv = sim.spawn_object("FV", OWNER, 24, 16, 64, rules).unwrap();
+    let passenger = sim.spawn_object("CLEG", OWNER, 8, 16, 64, rules).unwrap();
+    assert!(sim.apply_command(
+        OWNER,
+        &Command::EnterTransport {
+            passenger_id: passenger,
+            transport_id: ifv,
+        },
+        Some(rules)
+    ));
+    assert_eq!(
+        entity(&sim, passenger).navigation.nav_com,
+        Some(crate::sim::components::NavTargetRef::object(ifv)),
+        "a Chrono Enter must retain the transport object through the destination setter"
+    );
+    for _ in 0..180 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
+        if entity(&sim, passenger).passenger_role.is_inside_transport() {
+            assert_boarded(&sim, ifv, passenger);
+            assert_current_weapon(&sim, rules, ifv, "CRNeutronRifle");
+            // The self-warp epoch continues while cargo is concealed. Its
+            // first restored Process observes elapsed global frames rather
+            // than restarting a materialization countdown after unloading.
+            let delay = entity(&sim, passenger)
+                .teleport_state()
+                .unwrap()
+                .chrono_delay_ticks();
+            for _ in 0..=delay {
+                sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
+                assert_boarded(&sim, ifv, passenger);
+            }
+            unload_at_clear_exit(&mut sim, rules, ifv, passenger);
+            sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
+            assert!(
+                !entity(&sim, passenger).is_warping_in(),
+                "hidden global time must retire warp-in at the first restored turn"
+            );
+            assert!(sim.apply_command(
+                OWNER,
+                &Command::Move {
+                    entity_id: passenger,
+                    target_rx: 12,
+                    target_ry: 16,
+                    queue: false,
+                },
+                Some(rules)
+            ));
+            assert_eq!(
+                entity(&sim, passenger).navigation.nav_com,
+                Some(crate::sim::components::NavTargetRef::cell(12, 16)),
+                "after unloading, the Legionnaire accepts a new teleport destination"
+            );
+            return;
+        }
+    }
+    panic!("one remote Enter order must teleport the Legionnaire and finish boarding");
+}
+
+#[test]
+fn retail_vehicle_enter_keeps_live_transport_target() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    for passenger_type in ["MTNK", "CMIN", "FV"] {
+        let (mut sim, grid) = arena(rules);
+        let transport = sim.spawn_object("LCRF", OWNER, 16, 16, 64, rules).unwrap();
+        let passenger = sim
+            .spawn_object(passenger_type, OWNER, 16, 14, 64, rules)
+            .unwrap();
+        assert!(crate::sim::passenger::can_enter_transport(
+            &sim, rules, passenger, transport
+        ));
+        assert!(sim.apply_command(
+            OWNER,
+            &Command::EnterTransport {
+                passenger_id: passenger,
+                transport_id: transport,
+            },
+            Some(rules),
+        ));
+        assert_eq!(
+            entity(&sim, passenger).navigation.nav_com,
+            Some(crate::sim::components::NavTargetRef::object(transport)),
+            "{passenger_type}: Unit boarding must retain its live transport"
+        );
+        for _ in 0..600 {
+            sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+            if entity(&sim, passenger).passenger_role.is_inside_transport() {
+                break;
+            }
+        }
+        let cargo = entity(&sim, transport).passenger_role.cargo().unwrap();
+        let size = rules.object(passenger_type).unwrap().size;
+        assert_eq!(cargo.passengers, [passenger], "{passenger_type}: cargo");
+        assert_eq!(cargo.passenger_sizes, [size]);
+        assert_eq!(cargo.total_size, size);
+        assert!(entity(&sim, passenger).lifecycle.in_limbo);
+        assert!(!sim.live_object_order_snapshot().contains(&passenger));
+    }
+}
+
+#[test]
+fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, grid) = arena(rules);
+    let (ifv, engineer) = spawn_and_board(&mut sim, rules, "ENGINEER");
+    let initial_cargo =
+        serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap();
+    let boat = sim.spawn_object("LCRF", OWNER, 16, 19, 64, rules).unwrap();
+    assert!(crate::sim::passenger::can_enter_transport(
+        &sim, rules, ifv, boat
+    ));
+    assert!(sim.apply_command(
+        OWNER,
+        &Command::EnterTransport {
+            passenger_id: ifv,
+            transport_id: boat
+        },
+        Some(rules)
+    ));
+    for _ in 0..600 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+        if entity(&sim, ifv).passenger_role.is_inside_transport() {
+            break;
+        }
+    }
+    assert_eq!(
+        entity(&sim, ifv).passenger_role.inside_transport_id(),
+        Some(boat)
+    );
+    assert_boarded(&sim, ifv, engineer);
+    assert_selection(&sim, ifv, (1, 2));
+    let outer_cargo = entity(&sim, boat).passenger_role.cargo().unwrap();
+    assert_eq!(outer_cargo.passengers, [ifv]);
+    assert_eq!(outer_cargo.total_size, rules.object("FV").unwrap().size);
+
+    let terrain_template = sim.resolved_terrain.as_ref().unwrap().clone();
+    let bytes = GameSnapshot::save(&sim, 0, 0, "nested repair IFV", 0);
+    let mut dangling = GameSnapshot::load(&bytes).unwrap().sim;
+    dangling
+        .entities_mut()
+        .get_mut(ifv)
+        .unwrap()
+        .passenger_role
+        .set_inside_transport(u64::MAX, false);
+    let error = dangling.restore_after_snapshot_load().unwrap_err();
+    assert!(format!("{error:?}").contains("passenger_role.inside"));
+    let mut sim = GameSnapshot::load(&bytes)
+        .expect("nested cargo snapshot")
+        .sim;
+    sim.restore_after_snapshot_load()
+        .expect("both parent and own cargo resolve");
+    sim.resolve_type_handles(rules);
+    sim.install_resolved_terrain_for_new_map(terrain_template);
+    assert!(sim.rebuild_dynamic_navigation(rules));
+    assert_eq!(
+        entity(&sim, ifv).passenger_role.inside_transport_id(),
+        Some(boat)
+    );
+    assert_boarded(&sim, ifv, engineer);
+    assert_current_weapon(&sim, rules, ifv, "RepairBullet");
+
+    assert_eq!(
+        depart_cargo_head(
+            &mut sim,
+            rules,
+            None,
+            boat,
+            DepartureRoute::Vehicle,
+            |sim, departing| {
+                assert_eq!(departing, ifv);
+                reveal_unloaded_passenger(
+                    sim,
+                    rules,
+                    boat,
+                    departing,
+                    16,
+                    20,
+                    0,
+                    crate::sim::world::FrameEffects::default(),
+                )
+            },
+            crate::sim::world::FrameEffects::default()
+        ),
+        Ok(())
+    );
+    assert_eq!(entity(&sim, ifv).passenger_role.inside_transport_id(), None);
+    assert!(!entity(&sim, ifv).lifecycle.in_limbo);
+    assert_eq!(
+        serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap(),
+        initial_cargo
+    );
+    assert_boarded(&sim, ifv, engineer);
+    assert_current_weapon(&sim, rules, ifv, "RepairBullet");
+    unload_at_clear_exit(&mut sim, rules, ifv, engineer);
+    assert!(sim.apply_command(
+        OWNER,
+        &Command::EnterTransport {
+            passenger_id: engineer,
+            transport_id: ifv
+        },
+        Some(rules)
+    ));
+    let grid = sim.path_grid_snapshot().unwrap();
+    for _ in 0..240 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+        if entity(&sim, engineer).passenger_role.is_inside_transport() {
+            break;
+        }
+    }
+    assert_boarded(&sim, ifv, engineer);
+    assert_current_weapon(&sim, rules, ifv, "RepairBullet");
+}
+
+#[test]
+fn retail_replacement_move_cancels_pending_vehicle_boarding() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, grid) = arena(rules);
+    let ifv = sim.spawn_object("FV", OWNER, 16, 16, 64, rules).unwrap();
+    let passenger = sim.spawn_object("E1", OWNER, 16, 15, 64, rules).unwrap();
+    assert!(sim.apply_command(
+        OWNER,
+        &Command::EnterTransport {
+            passenger_id: passenger,
+            transport_id: ifv,
+        },
+        Some(rules)
+    ));
+    assert!(sim.apply_command(
+        OWNER,
+        &Command::Move {
+            entity_id: passenger,
+            target_rx: 16,
+            target_ry: 17,
+            queue: false,
+        },
+        Some(rules)
+    ));
+    for _ in 0..180 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
+    }
+    assert!(
+        entity(&sim, ifv).passenger_role.cargo().unwrap().is_empty(),
+        "crossing the old destination cannot board after Move replaced NavCom"
+    );
+    assert!(matches!(
+        entity(&sim, passenger).passenger_role,
+        PassengerRole::None
+    ));
+    assert!(!entity(&sim, passenger).lifecycle.in_limbo);
 }
 
 #[test]

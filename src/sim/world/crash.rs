@@ -497,13 +497,9 @@ impl Simulation {
             // order).
             self.leave_team(passenger, false, Some(rules), frame_effects);
             if let Some(entity) = self.substrate.entities.get_mut(passenger)
-                && matches!(
-                    entity.passenger_role,
-                    crate::sim::passenger::PassengerRole::Inside { transport_id, .. }
-                        if transport_id == transport
-                )
+                && entity.passenger_role.inside_transport_id() == Some(transport)
             {
-                entity.passenger_role = crate::sim::passenger::PassengerRole::None;
+                entity.passenger_role.clear_carrier_relation();
             }
             self.kill_passengers(passenger, Some(passenger), rules, registry, frame_effects);
             self.record_kill_and_uninit(passenger, attacker, rules, registry, frame_effects);

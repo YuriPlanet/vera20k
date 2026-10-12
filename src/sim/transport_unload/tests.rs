@@ -397,20 +397,34 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
             .cached_spatial_threat(),
         Some(7)
     );
-    fx.sim
-        .substrate
-        .entities
-        .get_mut(passenger)
-        .unwrap()
-        .passenger_role = PassengerRole::Boarding {
-        target_transport_id: transport,
-    };
-    crate::sim::passenger::tick_passenger_system(
-        &mut fx.sim,
-        &fx.rules,
+    // This component comparison supplies physical arrival after the native
+    // Enter order. Mobile infantry attaches at PerCellProcess519630; the
+    // later passenger frame phase is no longer an arrival substitute.
+    let arrival = crate::sim::movement::ground_pose::position_world_coord(
+        &fx.sim.substrate.entities.get(transport).unwrap().position,
+    );
+    fx.sim.foot_set_location_marked(
+        passenger,
+        arrival,
+        Some(&fx.rules),
         None,
         crate::sim::world::FrameEffects::default(),
     );
+    let entity = fx.sim.substrate.entities.get_mut(passenger).unwrap();
+    entity.navigation.nav_com = Some(crate::sim::components::NavTargetRef::object(transport));
+    entity
+        .mission
+        .set_current_for_test(MissionId::from_known(MissionType::Enter), 0);
+    crate::sim::passenger::begin_boarding(entity, transport);
+    fx.sim
+        .per_cell_process(
+            passenger,
+            crate::sim::movement::PerCellReason::Arrival,
+            Some(&fx.rules),
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
     assert_eq!(fx.cargo_ids(transport), vec![passenger]);
     assert!(!fx.revealed(passenger));
     assert_eq!(

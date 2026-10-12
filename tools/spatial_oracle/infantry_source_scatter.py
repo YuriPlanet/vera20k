@@ -16,7 +16,7 @@ import struct
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
 from unicorn.x86_const import (
     UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESP,
-    UC_X86_REG_FPCW,
+    UC_X86_REG_FPCW, UC_X86_REG_ESI, UC_X86_REG_EBP, UC_X86_REG_EDI, UC_X86_REG_EBX,
 )
 from tools.native_oracle import (
     load_image, run_checked, finish_vectors, provenance,
@@ -153,6 +153,12 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
                            {tuple(command['cell']) for command in case.get('commands', [])
                             if 'cell' in command})
 
+    if case.get('transport'):
+        tracked_cells = sorted(set(tracked_cells) |
+                               {tuple(value // 256 for value in command['coords'][:2])
+                                for command in case['commands'] if 'coords' in command} |
+                               {tuple(value // 256 for value in case['transport']['coords'][:2])})
+
     def cell_snapshot(coord):
         ptr = cell_pointer(coord)
         state = dict(coord=list(coord), pointer=hex(ptr),
@@ -161,6 +167,9 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
                      structural_flags=read32(ptr + 0x140),
                      level=u.mem_read(ptr + 0x11B, 1)[0],
                      slope=u.mem_read(ptr + 0x11C, 1)[0], land=read32(ptr + 0xEC))
+        if case.get('transport'):
+            state['content_head'] = hex(read32(ptr + 0xE4))
+            state['deck_content_head'] = hex(read32(ptr + 0xE8))
         if case.get('overlays'):
             state.update(overlay_id=struct.unpack('<i', u.mem_read(ptr + 0x44, 4))[0],
                          overlay_data=u.mem_read(ptr + 0x11E, 1)[0],
@@ -169,7 +178,10 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
 
     def teleport_snapshot():
         nav = read32(ACTOR + 0x5A4)
-        return dict(
+        navcell = (list(struct.unpack('<2h', u.mem_read(nav + 0x24, 4))) if nav else None)
+        if nav and case.get('transport') and nav == SCRATCH + 0x92000:
+            navcell = [value // 256 for value in case['transport']['coords'][:2]]
+        state = dict(
             actor=dict(coords=list(struct.unpack('<3i', u.mem_read(ACTOR + 0x9C, 12))),
                        mission=struct.unpack('<i', u.mem_read(ACTOR + 0xAC, 4))[0],
                        queued_mission=struct.unpack('<i', u.mem_read(ACTOR + 0xB4, 4))[0],
@@ -180,7 +192,7 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
                               for offset in (0xF8, 0xFC, 0x100, 0x108, 0x10C, 0x110)],
                        on_bridge=u.mem_read(ACTOR + 0x8C, 1)[0],
                        prone=u.mem_read(ACTOR + 0x6DB, 1)[0],
-                       navcom=hex(nav), navcell=list(struct.unpack('<2h', u.mem_read(nav + 0x24, 4))) if nav else None,
+                       navcom=hex(nav), navcell=navcell,
                        aux=read32(ACTOR + 0x5A0), path=list(struct.unpack('<4i', u.mem_read(ACTOR + 0x5E0, 16))),
                        reference=list(struct.unpack('<2h', u.mem_read(ACTOR + 0x558, 4))),
                        movement_timer=[struct.unpack('<i', u.mem_read(ACTOR + x, 4))[0] for x in (0x640, 0x648)],
@@ -192,6 +204,13 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
                            secondary_byte=u.mem_read(LOCO + 0x36, 1)[0],
                            powered=u.mem_read(LOCO + 0x10, 1)[0], reference_count=read32(LOCO + 0x14)),
             cells=[cell_snapshot(coord) for coord in tracked_cells], rng_indices=rng_indices())
+        if case.get('refused_enter') or case.get('chrono_timer'):
+            state['actor']['warping_in'] = bool(u.mem_read(ACTOR + 0x271, 1)[0])
+            state['actor']['target'] = hex(read32(ACTOR + 0x2B4))
+            state['locomotor']['timer_state'] = struct.unpack('<i', u.mem_read(LOCO + 0x38, 4))[0]
+            state['locomotor']['timer'] = [struct.unpack('<i', u.mem_read(LOCO + x, 4))[0]
+                                         for x in (0x3C, 0x40, 0x44)]
+        return state
 
     # Observations only: none of these original gameplay bodies are replaced.
     # Argument counts also pin the actual callee stack cleanup at each return.
@@ -207,6 +226,16 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
         0x5B3570: ('commence', 0), 0x521B60: ('ready', 0),
         0x50B730: ('is_human', 0),
     }
+    if case.get('transport'):
+        teleport_points.update({0x746E20: ('unit_rtti', 0),
+                                0x41BEA0: ('object_mapcoords', 1),
+                                0x4DBDF0: ('foot_navigation_coord', 2),
+                                0x578080: ('ground_height', 1)})
+    if case.get('chrono_timer'):
+        teleport_points[0x719BF0] = ('timer_check', 1)
+    if case.get('refused_enter'):
+        teleport_points.update({0x51D0D0: ('scatter', 3), 0x56DC20: ('fnpc', 15),
+                                0x7192F0: ('process', 1), 0x719BF0: ('timer_check', 1)})
     if case.get('overlays'):
         teleport_points.update({0x701120: ('is_armed', 0), 0x70E140: ('get_weapon', 1),
                                 0x70E1A0: ('get_primary', 0), 0x772AC0: ('weapon_can_destroy_wall', 0)})
@@ -216,11 +245,18 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
             pending = pending_native[index]
             if address == pending['return_pc'] and sp == pending['return_sp']:
                 pending_native.pop(index)
-                native_trace.append(dict(kind='return', call=pending['call'], pc=hex(address),
-                                         name=pending['name'], eax=u.reg_read(UC_X86_REG_EAX),
-                                         state=teleport_snapshot()))
+                returned = dict(kind='return', call=pending['call'], pc=hex(address),
+                                name=pending['name'], eax=u.reg_read(UC_X86_REG_EAX),
+                                state=teleport_snapshot())
+                if case.get('transport') and pending['name'] == 'place_in_cell':
+                    returned['output_xyz'] = list(struct.unpack(
+                        '<3i', u.mem_read(u.reg_read(UC_X86_REG_EAX), 12)))
+                if case.get('refused_enter') and pending['name'] == 'fnpc':
+                    returned['result_cell'] = list(struct.unpack(
+                        '<2h', u.mem_read(u.reg_read(UC_X86_REG_EAX), 4)))
+                native_trace.append(returned)
                 break
-        if address in (0x56DC20, 0x7192F0):
+        if address in (0x56DC20, 0x7192F0) and not case.get('refused_enter'):
             raise AssertionError(('selected Cell request reached excluded native body', hex(address), phase))
         if address in (0x51B1DE, 0x7181F6, 0x719283, 0x718259):
             native_returns.append(dict(pc=hex(address), phase=phase, esp=hex(sp), eax=u.reg_read(UC_X86_REG_EAX)))
@@ -235,7 +271,7 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
         row = dict(kind='call', call=len(native_trace), name=name, pc=hex(address), phase=phase,
                    this=hex(u.reg_read(UC_X86_REG_ECX)), args=args,
                    return_pc=hex(read32(sp)), state=teleport_snapshot())
-        if name in ('raw_put', 'raw_remove', 'resolve'):
+        if name in ('raw_put', 'raw_remove', 'resolve', 'ground_height'):
             row['xyz'] = list(struct.unpack('<3i', u.mem_read(args[0], 12)))
         elif name == 'place_in_cell':
             row['requested_xyz'] = list(struct.unpack('<3i', u.mem_read(args[1], 12)))
@@ -243,6 +279,8 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
             row['priority'] = args[2] & 255
             row['deck'] = args[3] & 255
             row['use_cell_coords'] = args[4] & 255
+        elif case.get('refused_enter') and name == 'fnpc':
+            row['seed_cell'] = list(struct.unpack('<2h', u.mem_read(args[1], 4)))
         elif name == 'can_enter':
             row['cell'] = list(struct.unpack('<2h', u.mem_read(args[0] + 0x24, 4)))
         native_trace.append(row)
@@ -450,6 +488,54 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
         call(0x4C9300, ACTOR + 0x388, [SOURCE + 0x100])
         if 'navcell' in case:
             u.mem_write(ACTOR + 0x5A4, dwords(cell_pointer(case['navcell'])))
+        if case.get('transport'):
+            # Declared live NavCom object fields, not a Unit constructor or
+            # radio/transport lifecycle. Every virtual dispatch retains the
+            # image's Unit vtable; GetMapCoords executes its original body.
+            transport = SCRATCH + 0x92000
+            u.mem_write(transport, dwords(0x7F5C70))
+            assert read32(0x7F5C70 + 0x2C) == 0x746E20
+            u.mem_write(transport + 0x9C, dwords(*case['transport']['coords']))
+            u.mem_write(transport + 0x6C, dwords(case['transport']['health']))
+            u.mem_write(transport + 0x74, b'\1')
+            u.mem_write(transport + 0x8C, bytes([case['transport'].get('on_bridge', False)]))
+            u.mem_write(transport + 0x684, b'\xff')
+            transport_loco = SCRATCH + 0x96000
+            call(0x75AA90, transport_loco, [])
+            call(0x55A710, 0, [transport_loco + 4, transport])
+            u.mem_write(transport_loco + 0x14, dwords(1))
+            u.mem_write(transport + 0x674, dwords(transport_loco + 4))
+            u.mem_write(transport + 0x21C, dwords(HOUSE))
+            u.mem_write(ACTOR + 0x5A4, dwords(transport))
+            if case['transport'].get('cell_content'):
+                coords = case['transport']['coords']
+                u.mem_write(cell_pointer([coords[0] // 256, coords[1] // 256]) +
+                            (0xE8 if case['transport'].get('on_bridge') else 0xE4),
+                            dwords(transport))
+        transport_input = None
+        if case.get('transport'):
+            phase = 'transport_coordinates'
+            transport_rng_before = rng()
+            rtti = call(read32(0x7F5C70 + 0x2C), transport, [])
+            call(read32(0x7F5C70 + 0x1B8), transport, [SOURCE + 0x300])
+            mapcoords = list(struct.unpack('<2h', u.mem_read(SOURCE + 0x300, 4)))
+            call(read32(0x7F5C70 + 0x4C), transport, [SOURCE + 0x310, 0])
+            navcoords = list(struct.unpack('<3i', u.mem_read(SOURCE + 0x310, 12)))
+            transport_input = dict(rtti=rtti, mapcoords=mapcoords, navcoords=navcoords,
+                                   vtable=hex(read32(transport)), health=read32(transport + 0x6C),
+                                   active=u.mem_read(transport + 0x74, 1)[0],
+                                   cell_content=bool(case['transport'].get('cell_content')),
+                                   rng_before=transport_rng_before, rng_after=rng(),
+                                   limits='Supplied live Unit/House/coordinates and Cell content; original Walk constructor/link and Unit virtual coordinate bodies execute. Unit construction, type read, radio, passenger attach and Teleport Process are excluded.')
+            assert rtti == 1
+            assert navcoords == case['transport']['coords']
+            assert transport_rng_before == rng()
+        if case.get('refused_enter') or case.get('chrono_timer'):
+            u.mem_write(ACTOR + 0x271, bytes([case.get('warping_in', False)]))
+            u.mem_write(LOCO + 0x3C, dwords(*case.get('teleport_timer', [100, 0, 30])))
+        if case.get('chrono_timer'):
+            u.mem_write(ACTOR + 0x2B4, dwords(SCRATCH + 0x92000))
+            u.mem_write(LOCO + 0x38, dwords(case.get('timer_state', 0)))
         phase = 'initial_mark'
         mark_before = teleport_snapshot()
         mark_trace_start = len(native_trace)
@@ -474,6 +560,30 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
                 eax = call(0x718230, 0, [LOCO + 4])
             elif command['kind'] == 'queue_mission':
                 eax = call(0x5B35E0, ACTOR, [command['mission'], command.get('start', 0)])
+            elif command['kind'] == 'timer_check':
+                eax = call(0x719BF0, 0, [LOCO])
+            elif command['kind'] == 'refused_enter':
+                # Supplied branch-entry frame and denied condition, not a
+                # substituted RadioCanEnter result or whole PerCell fixture.
+                outer_sp = STACK_BASE + STACK_SIZE - 0x1000
+                frame_sp = outer_sp - 0x50
+                u.mem_write(frame_sp, bytes(0x50) + dwords(RET_MAGIC, 2))
+                u.reg_write(UC_X86_REG_ESP, frame_sp)
+                u.reg_write(UC_X86_REG_ESI, ACTOR)
+                u.reg_write(UC_X86_REG_EBP, 0)
+                u.reg_write(UC_X86_REG_EDI, SCRATCH + 0x92000)
+                u.reg_write(UC_X86_REG_EBX, 0)
+                run_checked(u, 0x51A488, RET_MAGIC, count=300000, required_addresses=[0x51A488],
+                            context=dict(owner='infantry_source_scatter', phase=phase, case=case))
+                observe_teleport(RET_MAGIC, u.reg_read(UC_X86_REG_ESP))
+                assert u.reg_read(UC_X86_REG_ESP) == outer_sp + 8
+                eax = u.reg_read(UC_X86_REG_EAX)
+            elif command['kind'] == 'resolve':
+                # The requested coordinate and NavCom are independent native
+                # inputs. This probes the numeric resolver before Process,
+                # without supplying a RadioCanEnter or passenger result.
+                u.mem_write(SOURCE + 0x200, dwords(*command['coords']))
+                eax = call(0x718B70, LOCO, [SOURCE + 0x200])
             else:
                 raise AssertionError(('unknown native Cell command', command))
             assert not pending_native, pending_native
@@ -511,6 +621,8 @@ def query(case, *, teleport_records=None, teleport_type_inputs=None, teleport_ov
                                            weapon=teleport_overlay_inputs['weapon'],
                                            rookiestate=read32(ACTOR + 0x138),
                                            registry=hex(read32(0xA83D84)))
+        if transport_input is not None:
+            result['transport_input'] = transport_input
         return result
     if 'facing' in case:
         # Original Facing constructor and Set_Current; the null arm reads

@@ -78,7 +78,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
         stable_id: castle,
     };
     for &gi in &gis {
-        assert!(crate::sim::passenger::can_entity_enter_garrison(
+        assert!(crate::sim::passenger::can_enter_transport(
             &runtime.simulation,
             rules,
             gi,

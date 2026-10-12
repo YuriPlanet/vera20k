@@ -1777,6 +1777,20 @@ impl Simulation {
                         passenger_size.hash(hasher);
                     }
                     cargo.total_size.hash(hasher);
+                    // A Foot can own cargo while boarding/riding another
+                    // transport (Unit PerCell 0x0073A730..0x0073A77C).
+                    // Only append a live parent relation, preserving ordinary
+                    // outside-cargo hash controls.
+                    if let Some(parent) = entity.passenger_role.boarding_transport_id() {
+                        2u8.hash(hasher);
+                        parent.hash(hasher);
+                    } else if let Some((parent, open_topped)) =
+                        entity.passenger_role.inside_transport()
+                    {
+                        3u8.hash(hasher);
+                        parent.hash(hasher);
+                        open_topped.hash(hasher);
+                    }
                     // `UnitClass+0x6E4` keep-count, written only by a
                     // transport's own Unload state 0. Folded only when set so
                     // objects that never unloaded (every pinned harness
@@ -2155,7 +2169,7 @@ mod teleport_hash_tests {
             destination.y += 256;
             state.set_destination_for_test(destination);
         });
-        assert_teleport_change(|state| state.set_ticks_for_test(state.being_warped_ticks() + 1));
+        assert_teleport_change(|state| state.set_ticks_for_test(state.chrono_delay_ticks() + 1));
     }
 }
 
@@ -4284,6 +4298,53 @@ mod passenger_cargo_hash_tests {
         let b = sim_with_sizes(3, 1);
 
         assert_ne!(a.state_hash(), b.state_hash());
+    }
+
+    #[test]
+    fn cargo_owner_parent_relation_changes_hash_without_erasing_cargo() {
+        let mut sim = sim_with_sizes(1, 3);
+        let outside = sim.state_hash();
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .passenger_role
+            .set_boarding(20);
+        let boarding = sim.state_hash();
+        assert_ne!(boarding, outside);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .passenger_role
+            .set_inside_transport(20, false);
+        let inside = sim.state_hash();
+        assert_ne!(inside, boarding);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .passenger_role
+            .set_inside_transport(21, false);
+        assert_ne!(sim.state_hash(), inside);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .passenger_role
+            .clear_carrier_relation();
+        assert_eq!(sim.state_hash(), outside);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .passenger_role
+                .cargo()
+                .unwrap()
+                .passengers,
+            [11, 10]
+        );
     }
 }
 

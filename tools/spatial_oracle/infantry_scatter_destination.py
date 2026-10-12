@@ -4,7 +4,7 @@ import hashlib
 import os
 import struct
 import sys
-from tools.native_oracle import finish_vectors, provenance, image_bytes, file_span, NATIVE_SHA256
+from tools.native_oracle import finish_vectors, provenance, image_bytes, image_sha256, file_span, NATIVE_SHA256
 from tools.spatial_oracle.infantry_source_scatter import query
 
 
@@ -97,6 +97,101 @@ def teleport_overlay_cases():
     return guards + [dict(row, name=name, queued_mission=2)
                      for row, name in zip(guards, ('queued_move_resource_overlay_two_cells',
                                                   'queued_move_wall_overlay_refuses_then_clear'))]
+
+
+def teleport_transport_cases():
+    """Independent original object-NavCom resolver controls, before Process.
+
+    Unit class/coordinate virtuals and Cell481180/Infantry51BF90 execute.
+    The supplied live Unit and its Cell content are explicit prestates; no
+    radio or passenger result is provided or claimed.
+    """
+    common = {'teleport_destination': True,
+     'live_entry': True,
+     'live_setter': True,
+     'actor': [2752, 2752, 0],
+     'doing': 3,
+     'seed': 31,
+     'human': True,
+     'frame': 100,
+     'game_speed': 1}
+    rows = [{'name': 'enter_transport_center_vehicle20',
+      'mission': 7,
+      'transport': {'coords': [3200, 2688, 0], 'cell_content': True, 'health': 1},
+      'raw': [[12, 10, 32, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3200, 2688, 0]}]},
+     {'name': 'enter_transport_offset_vehicle20',
+      'mission': 7,
+      'transport': {'coords': [3264, 2752, 0], 'cell_content': True, 'health': 1},
+      'raw': [[12, 10, 32, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3264, 2752, 0]}]},
+     {'name': 'enter_transport_offset_requested_center',
+      'mission': 7,
+      'transport': {'coords': [3264, 2752, 0], 'cell_content': True, 'health': 1},
+      'raw': [[12, 10, 32, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3200, 2688, 0]}]},
+     {'name': 'enter_transport_other_requested_cell',
+      'mission': 7,
+      'transport': {'coords': [3200, 2688, 0], 'cell_content': True, 'health': 1},
+      'raw': [[12, 10, 32, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3456, 2688, 0]}]},
+     {'name': 'guard_transport_center_vehicle20',
+      'mission': 5,
+      'transport': {'coords': [3200, 2688, 0], 'cell_content': True, 'health': 1},
+      'raw': [[12, 10, 32, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3200, 2688, 0]}]},
+     {'name': 'guard_queued_enter_transport_center_vehicle20',
+      'mission': 5,
+      'queued_mission': 7,
+      'transport': {'coords': [3200, 2688, 0], 'cell_content': True, 'health': 1},
+      'raw': [[12, 10, 32, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3200, 2688, 0]}]},
+     {'name': 'enter_transport_center_clear_raw',
+      'mission': 7,
+      'transport': {'coords': [3200, 2688, 0], 'cell_content': True, 'health': 1},
+      'commands': [{'kind': 'resolve', 'coords': [3200, 2688, 0]}]},
+     {'name': 'enter_transport_center_missing_content',
+      'mission': 7,
+      'transport': {'coords': [3200, 2688, 0], 'cell_content': False, 'health': 1},
+      'raw': [[12, 10, 32, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3200, 2688, 0]}]},
+     {'name': 'enter_transport_offset_all_slots_and_vehicle',
+      'mission': 7,
+      'transport': {'coords': [3264, 2752, 0], 'cell_content': True, 'health': 1},
+      'raw': [[12, 10, 60, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3264, 2752, 0]}]},
+     {'mission': 7,
+      'name': 'enter_transport_non_subcell_center_sector_z99',
+      'transport': {'coords': [3234, 2703, 99], 'cell_content': True, 'health': 1},
+      'raw': [[12, 10, 32, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3234, 2703, 99]}]},
+     {'mission': 7,
+      'name': 'enter_transport_non_subcell_outer_sector',
+      'transport': {'coords': [3324, 2773, 99], 'cell_content': True, 'health': 1},
+      'raw': [[12, 10, 32, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3324, 2773, 99]}]},
+     {'mission': 7,
+      'name': 'enter_transport_level2_incoming_z999',
+      'transport': {'coords': [3234, 2703, 999], 'cell_content': True, 'health': 1},
+      'cells': [[12, 10, 2, 0]],
+      'raw': [[12, 10, 32, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3234, 2703, 999]}]},
+     {'mission': 7,
+      'name': 'enter_transport_level2_slope8',
+      'transport': {'coords': [3324, 2773, 208], 'cell_content': True, 'health': 1},
+      'cells': [[12, 10, 2, 0]],
+      'slopes': [[12, 10, 8]],
+      'raw': [[12, 10, 32, 0]],
+      'commands': [{'kind': 'resolve', 'coords': [3324, 2773, 208]}]},
+     {'actor': [2752, 2752, 624],
+      'mission': 7,
+      'name': 'enter_transport_bridge_deck',
+      'on_bridge': True,
+      'transport': {'coords': [3324, 2773, 624], 'cell_content': True, 'on_bridge': True, 'health': 1},
+      'cells': [[10, 10, 2, 256], [12, 10, 2, 256]],
+      'raw': [[12, 10, 0, 32]],
+      'commands': [{'kind': 'resolve', 'coords': [3324, 2773, 624]}]}]
+    return [{**common, **row} for row in rows]
 
 
 def teleport_type_inputs(records, *, include_overlays=False):
@@ -312,6 +407,77 @@ def teleport_type_inputs(records, *, include_overlays=False):
     return dict(type_inputs=result, overlay_inputs=overlay_inputs)
 
 
+def teleport_refused_enter_cases():
+    """Execute the original denial tail from a declared warp-in arrival state.
+
+    This is not a RadioCanEnter substitution: execution starts after refusal
+    at 51A488 with the original PerCell saved-register/local frame supplied.
+    """
+    common = dict(teleport_destination=True, live_entry=True, live_setter=True,
+                  refused_enter=True, warping_in=True, teleport_timer=[100, 0, 30],
+                  doing=3, human=True, frame=100, game_speed=1, mission=7,
+                  transport=dict(coords=[3200, 2688, 0], cell_content=True, health=1),
+                  raw=[[12, 10, 0x20, 0]], commands=[dict(kind='refused_enter')])
+    return [dict(common, name='refused_transport_warp_in_seed31',
+                 actor=[3200, 2688, 0], seed=31),
+            dict(common, name='refused_transport_warp_in_seed42',
+                 actor=[3264, 2752, 0], seed=42)]
+
+
+def chrono_timer_cases():
+    """Direct TimerCheck uses the supplied epoch, not a process-call counter."""
+    common = dict(teleport_destination=True, live_entry=True, live_setter=True,
+                  chrono_timer=True, warping_in=True, teleport_timer=[100, 0, 30],
+                  timer_state=0, actor=[3200, 2688, 0], doing=3, seed=31,
+                  human=True, game_speed=1, mission=7,
+                  transport=dict(coords=[3200, 2688, 0], cell_content=True, health=1),
+                  raw=[[12, 10, 0x20, 0]], commands=[dict(kind='timer_check')])
+    return [dict(common, name=f'chrono_timer_epoch100_frame{frame}', frame=frame)
+            for frame in (129, 130, 131)] + [
+                dict(common, name='chrono_timer_frame_wrap_expired', frame=14,
+                     teleport_timer=[-16, 0, 30])]
+
+
+def teleport_refused_enter_reference(result):
+    """Retain only boundary inputs, native outputs and compact call order."""
+    trace_fields = {'kind', 'call', 'pc', 'name', 'eax', 'args', 'xyz', 'cell',
+                    'seed_cell', 'result_cell', 'requested_xyz', 'output_xyz',
+                    'priority', 'deck', 'use_cell_coords'}
+    return dict(input=result['input'], before=result['before'],
+                human_input=result['human_input'], after=result['after'],
+                rng_before=result['rng_before'], rng_after=result['rng_after'],
+                transport_input={key: result['transport_input'][key]
+                                 for key in ('rtti', 'mapcoords', 'navcoords')},
+                code_unchanged=result['code_unchanged'],
+                boundaries=[dict(input=boundary['input'], eax=boundary['eax'],
+                                 trace=[{key: value for key, value in row.items()
+                                         if key in trace_fields} for row in boundary['trace']])
+                            for boundary in result['boundaries']])
+
+
+def teleport_transport_reference(result):
+    """Keep the new Rust-facing inputs/goldens, without repeated diagnostics.
+
+    The existing controller still executes and observes every original call.
+    Historical Cell/overlay rows retain their full schema unchanged.
+    """
+    trace_fields = {'kind', 'call', 'pc', 'name', 'eax', 'xyz', 'cell',
+                    'requested_xyz', 'output_xyz', 'priority', 'deck', 'use_cell_coords'}
+    selected_calls = {'place_in_cell', 'ground_height', 'can_enter'}
+    return dict(
+        input=result['input'], before=result['before'], human_input=result['human_input'],
+        after=dict(actor=dict(mission=result['after']['actor']['mission']),
+                   locomotor=dict(resolved_xyz=result['after']['locomotor']['resolved_xyz'])),
+        rng_before=result['rng_before'], rng_after=result['rng_after'],
+        transport_input={key: result['transport_input'][key]
+                         for key in ('rtti', 'mapcoords', 'navcoords')},
+        code_unchanged=result['code_unchanged'],
+        boundaries=[dict(input=boundary['input'], eax=boundary['eax'],
+                         trace=[{key: value for key, value in row.items() if key in trace_fields}
+                                for row in boundary['trace'] if row['name'] in selected_calls])
+                    for boundary in result['boundaries']])
+
+
 def generate_teleport(cases=None):
     from tools.spatial_oracle.jumpjet_infantry_actions import default_motion_records
     records, receipts, read = default_motion_records()
@@ -334,6 +500,27 @@ def generate_teleport(cases=None):
                 type_inputs=type_inputs, native_identity=identity,
                 rows=[query(case, teleport_records=records, teleport_type_inputs=type_inputs)
                       for case in (teleport_cases() if cases is None else cases)],
+                transport_native_identity=dict(native_sha256=image_sha256(image),
+                    spans=[dict(address=hex(address), bytes=length,
+                                sha256=hashlib.sha256(file_span(image, address, length)[1]).hexdigest())
+                           for address, length in ((0x746E20, 6), (0x41BEA0, 0x3D),
+                                                   (0x4DBDF0, 0x13C), (0x75AA90, 0x120),
+                                                   (0x7F5C70, 0x1BC))]),
+                transport_rows=[teleport_transport_reference(query(
+                                    case, teleport_records=records, teleport_type_inputs=type_inputs))
+                                for case in teleport_transport_cases()],
+                refused_enter_native_identity=dict(native_sha256=image_sha256(image),
+                    spans=[dict(address=hex(address), bytes=length,
+                                sha256=hashlib.sha256(file_span(image, address, length)[1]).hexdigest())
+                           for address, length in ((0x51A488, 0x35), (0x51D0D0, 0xBD4),
+                                                   (0x56DC20, 0x958), (0x7192F0, 0x8ED),
+                                                   (0x719BF0, 0x83))]),
+                chrono_timer_rows=[teleport_refused_enter_reference(query(
+                                       case, teleport_records=records, teleport_type_inputs=type_inputs))
+                                   for case in chrono_timer_cases()],
+                refused_enter_rows=[teleport_refused_enter_reference(query(
+                                        case, teleport_records=records, teleport_type_inputs=type_inputs))
+                                    for case in teleport_refused_enter_cases()],
                 overlay_inputs=overlay_inputs,
                 overlay_rows=[query(case, teleport_records=records, teleport_type_inputs=type_inputs,
                                     teleport_overlay_inputs=overlay_inputs)
@@ -342,7 +529,7 @@ def generate_teleport(cases=None):
 
 def teleport_metadata():
     return provenance(
-        scope='Original active ordinary CLEG Cell SetDestination51AA40 through Teleport resolver718B70, actual Cell481180/Infantry51BF90/raw receivers; repeated requests and Stop before Process.',
+        scope='Original active ordinary CLEG Cell SetDestination51AA40 and separate Unit NavCom resolver718B70 controls through actual Cell481180/Infantry51BF90/raw receivers; repeated requests, Stop and declared Enter7/Guard5 inputs before Process; separate declared-refusal mobile PerCell51A488 tail controls during warp-in.',
         entry_points=dict(infantry_destination=0x51AA40, foot_destination=0x4D94B0,
                           teleport_constructor=0x718000, link=0x55A710,
                           teleport_is_moving=0x718080, teleport_move_to=0x718100,
@@ -353,14 +540,21 @@ def teleport_metadata():
                           infantry_type_constructor=0x5236A0, infantry_type_reader=0x5240A0,
                           human_predicate=0x50B730, infantry_ready=0x521B60, commence=0x5B3570,
                           megamission_queue=0x4C73B9, queue_mission=0x5B35E0,
-                          subcell_startup=0x48E480, teleport_height_startup=0x717EC0),
+                          subcell_startup=0x48E480, teleport_height_startup=0x717EC0,
+                          unit_rtti=0x746E20, object_mapcoords=0x41BEA0,
+                          foot_navigation_coord=0x4DBDF0, mobile_enter_refusal_tail=0x51A488,
+                          infantry_scatter=0x51D0D0, fnpc=0x56DC20,
+                          teleport_process=0x7192F0, teleport_timer_check=0x719BF0),
         assumptions=[
             'Single infantry_source_scatter command controller: original Infantry/Cell/ILocomotion vtables, Teleport constructor718000 and Link55A710, valid refcount1 and42 ClegSequence records. Independent original InfantryType5236A0 and whole5240A0 execute through the existing Mission reader/controller on physical RULESMD, absent LANGRULE, Battle and AnyTown CLEG sections, with fixed ARTMD. Actual JumpJet+D94 byte0 and MovementZone+5B4 Infantry7 initialize the already-live command fixture with the other retained scalar fields; its record bank must equal the existing original523D00 owner exactly. The corpus retains full inherited reader setup/asset inputs. Whole Infantry/House/scenario construction is outside the command boundary.',
             'Human House fields are explicit supplied inputs: index0, +1EC1, +1ED0 and image-default GameMode0. Original50B730 executes and saves its actual return and complete RNG before/after, including the per-command predicates. This establishes the predicate from these declared fields; it does not claim the full House-loading lifecycle.',
             'The command fixture explicitly supplies blocked-delay Rules+1768=22 through global8871E0, with frame100 and game speed1. This is a test input, not a physical retail GeneralRules result; Mission.setup/GeneralRules is excluded from the type prerequisite. Saved blocked-timer writes consume this supplied value.',
             '32x32 original Cells with widened supplied playfield, empty content/overlay lists, per-row declared raw occupation, flat level0 and nonzero land0/zero land1 speed-table fixture inputs. Original Cell/Infantry/Teleport CRT tables and subcell48E480 producer execute; cold geometry values are not supplied. Current vehicle20 inputs retain original Infantry initial-mark writes, and full-slot/vehicle destination refusals execute recursive classNULL without FNPC.',
             'Class51AA40 calls reach their real RET8. Original CanEnter51BF90, StopDriver51DAF0, DoAction51D6F0, MoveTo718100, resolver718B70, Cell481180 and5217C0/521850 execute. Full three1012-byte seeded RNG objects, callback/preflight/return order, raw planes, armed+1C and retained+28 XYZ are saved.',
-            'Commands are direct original class calls at frame100, before any Process. Resolver Ready521B60/Commence5B3570 execute in original order, including queuedAttack continuation. Pure Cell NavCom selects priority0; instruction-defined priority gates for Eaten8/Capture9/Enter7/Patrol25 object destinations remain outside executable coverage. Complete EventClass/command batch, FNPC/object destinations, Chronosphere and the whole Process/request lifetime are outside this corpus. Any FNPC56DC20 or TeleportProcess7192F0 visit fails these controls.',
+            'Commands are direct original class calls at frame100, before any Process. Resolver Ready521B60/Commence5B3570 execute in original order, including queuedAttack continuation. Pure Cell NavCom selects priority0. Separate transport_rows execute the Unit NavCom Enter7 gate; Eaten8/Capture9/Patrol25 and other object classes remain outside executable coverage. Complete EventClass/command batch, FNPC/object destinations, Chronosphere and the whole Process/request lifetime are outside this corpus. Any FNPC56DC20 or TeleportProcess7192F0 visit fails these controls.',
+            'Separate fourteen transport_rows directly invoke resolver718B70 with supplied NavCom pointing to a live Unit object using untouched7F5C70 vtable. Original746E20 returns RTTI1;41BEA0 computes its map coordinates and4DBDF0 returns its navigation XYZ through an original Walk constructor75AA90/Link55A710 with inactive head. Fields +9C coordinates, +6C health1, +74 active, +21C House, +684=-1, optional current Cell +E4 ground or +E8 bridge list head and raw occupation are explicit inputs. Unit/Infantry/House constructor lifecycles, Unit type loading, class51AA40 object admission, radio negotiation, actual passenger attachment and Teleport Process remain excluded. Original Ready/Commence still execute, including queuedEnter promotion. Cases compare Enter against Guard, matching against distinct requested Cells, center against noncenter XYZ, raw20 and3C, absent Cell content, arbitrary non-subcell points, nonzero incoming Z, level2/slope8 and structural bridge deck. No selected original gameplay return is supplied. Full three RNG objects and placement priority are saved.',
+            'Four separate chrono_timer_rows directly execute original719BF0 through RET4 on supplied warp-in1, request0, timer-state0, complete timer epoch/pad/duration, frame and a nonnull actor target+2B4 pointing to the live fixture Unit. The target suppresses the no-target passive-acquisition callback branch without replacing a callable answer. Epoch100/duration30 at frames129,130,131 establishes expiry at frame130, including elapsed hidden frames without intervening Process calls. Signed epoch-16/frame14 checks the32-bit frame-counter wrap. All three full RNG objects and original timer/warp flag states are retained. Timer construction, Unlimbo/limbo scheduling, nonzero timer-state progression and the no-target expiry callback are excluded; Process7194AC..719579 timer publication is instruction evidence, not executed by these direct controls.',
+            'Two separate refused_enter_rows start at original51A488 after an explicitly declared negative RadioCanEnter condition; the preceding Radio call and whole519630 PerCell are not executed or claimed. The original519630 saved-register/local frame is supplied with this=actor in ESI, target in EDI, other saved registers/locals zero, reason2 and a RET4 sentinel. Original classNULL, QueueGuard5(start0), Scatter51D0D0(NULL,1,1), FNPC56DC20, TeleportMoveTo718100, Process7192F0 and TimerCheck719BF0 execute untouched through the actual tail RET4. Arrival prestates explicitly supply actor warp-in+271=1 and locomotor timer start100/pad0/duration30 at frame100; they do not establish timer construction or absolute-versus-relative lifetime equivalence. Both controls preserve Enter7, queue Guard5, clear NavCom/armed/resolved XYZ, retain warp-in and write movement/blocked timers from the fixture Rules22. Scenario seed31 centre performs one range call and one basic draw; seed42 noncentral performs one range call with two basic draws due to rejection. Complete three RNG objects and call order are retained. Non-warp refusal reaches an unclosed animation/CRT prerequisite and is excluded; no non-warp/full lifecycle parity is claimed.',
             'Separate overlay_rows add only TIB01 resource and GASAND wall contexts to this pre-Process Cell chain. Current Cell10,10 carries TIB01 in each row; Cell12,10 carries TIB01 or GASAND, Cell13,10 remains clear. Cell overlay data0 and owner-1 are supplied. Original250-name OverlayTypes enumeration/constructors and full selected5FE770 readers establish registry IDs and flags across physical rules layers with fixed ART. The retained CLEG normal primary/warhead is physically read through original772080/75D3A0 for actual IsArmed701120/CanDestroyWall772AC0; no overlay or weapon gameplay result is substituted. Historical22 rows retain their original no-overlay/partial weapon context unchanged.',
             'Two additional queued_move overlay rows supply currentGuard5/queuedMove2 before the first class setter. Original Event4C73B9 calls Infantry Queue5B35E0(request,0) before target4C7467 and destination4C747C; flag0 writes queued+B4 without current+AC promotion. The selected resolver Ready/Commence promotes queuedMove itself. The second setter sees the retained current/queued result; same-currentMove with queuedNone is an idempotent Queue input5B3601..12. These are already-queued class boundaries, not whole EventClass execution. The original two Guard overlay rows remain unchanged.',
         ],

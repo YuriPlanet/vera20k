@@ -479,7 +479,8 @@ fn spin_rules() -> crate::rules::ruleset::RuleSet {
     }
     text.push_str(
         "[POST]\nStrength=30000\nArmor=heavy\n\
-         [HOVR]\nStrength=300\nArmor=light\nSpeed=6\nPassengers=5\nSizeLimit=6\n",
+         [HOVR]\nStrength=300\nArmor=light\nSpeed=6\nPassengers=5\nSizeLimit=6\n\
+         Locomotor={4A582742-9839-11D1-B709-00A024DDAFD1}\n",
     );
     for slot in 0..6 {
         text.push_str(&format!(
@@ -702,18 +703,33 @@ fn a_gattling_tank_winds_down_without_a_target() {
 /// (`0x0073A6FC..0x0073A70F`), and Limbo releases its loop.
 #[test]
 fn a_gattling_tank_boards_with_its_spin_reset() {
-    use crate::sim::passenger::PassengerRole;
     let mut spin = Spin::new();
     let hover = spin
         .sim
         .spawn_object("HOVR", "YuriCountry", 11, 10, 0, &spin.rules)
         .expect("spawn HOVR");
+    // Supplied already-arrived component boundary, after Enter has retained
+    // the live transport reference. Unit73A692 requires the same physical
+    // cell; adjacency and a Boarding adapter alone are not native arrival.
+    let arrival = crate::sim::movement::ground_pose::position_world_coord(
+        &spin.sim.substrate.entities.get(hover).unwrap().position,
+    );
+    spin.sim.foot_set_location_marked(
+        spin.tank,
+        arrival,
+        Some(&spin.rules),
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
     {
         let tank = spin.sim.substrate.entities.get_mut(spin.tank).unwrap();
         tank.gattling = GattlingState::from_fields(2, 600, true);
-        tank.passenger_role = PassengerRole::Boarding {
-            target_transport_id: hover,
-        };
+        tank.navigation.nav_com = Some(crate::sim::components::NavTargetRef::object(hover));
+        tank.mission.set_current_for_test(
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Enter),
+            0,
+        );
+        crate::sim::passenger::begin_boarding(tank, hover);
     }
     spin.sim.sound_events.clear();
     crate::sim::passenger::tick_passenger_system(

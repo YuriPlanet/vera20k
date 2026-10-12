@@ -7,7 +7,7 @@
 //! One call of the Process runs one state:
 //! - 0: BeingWarpedOut (`+0x270`) and a 60-frame timer; -> 1
 //!   (`0x007197D0..0x007197F4`).
-//! - 1 and 6: [TimerCheck](Simulation::chrono_timer_check); its expiry
+//! - 1 and 6: [TimerCheck](Simulation::teleport_timer_check); its expiry
 //!   advances the state.
 //! - 2: `[General] WarpOut=` at the Location, Mark(UP), ChronoOut, WarpingIn
 //!   (`+0x271`) up, the latch, BeingWarpedOut and OnBridge (`+0x8C`) down,
@@ -160,7 +160,9 @@ impl Simulation {
                     warp.set_state(1);
                 }
             }
-            1 | 6 => self.chrono_timer_check(id, rules, ctx),
+            1 | 6 => {
+                self.teleport_timer_check(id, Some(rules), ctx);
+            }
             2 => {
                 self.teleport_warp_out(id, rules);
                 self.foot_mark_remove(id, Some(rules), registry, ctx.effects);
@@ -318,39 +320,6 @@ impl Simulation {
         ) && let Some(entity) = self.substrate.entities.get_mut(id)
         {
             entity.in_playfield = false;
-        }
-    }
-
-    /// `TeleportLocomotionClass::TimerCheck @ 0x00719BF0`: once the timer has
-    /// run out, WarpingIn drops (`0x00719C15`); an owner holding no target
-    /// (`+0x2B4`) shortens its passive scan timer (`0x0070F770`) and scans
-    /// ([`passive_target_acquire`](crate::sim::world::passive_target_acquire),
-    /// `0x00709480`), entering idle mode (vt+0x484(0, 1)) when that finds
-    /// nothing; then a positive state advances (`0x00719C49..0x00719C51`).
-    fn chrono_timer_check(&mut self, id: u64, rules: &RuleSet, ctx: ObjectAiCtx<'_>) {
-        let frame = self.session.binary_frame as i32;
-        let Some(warp) = self.chrono_warp_mut(id) else {
-            return;
-        };
-        if !warp.timer().expired(frame) {
-            return;
-        }
-        warp.set_warping_in(false);
-        if self
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|entity| entity.attack_target.is_none())
-        {
-            self.shorten_passive_scan_timer(id);
-            if !crate::sim::world::passive_target_acquire(self, id, rules, ctx) {
-                crate::sim::world::enter_idle_mode(self, id, rules, None, ctx.effects);
-            }
-        }
-        if let Some(warp) = self.chrono_warp_mut(id)
-            && warp.state() > 0
-        {
-            warp.set_state(warp.state() + 1);
         }
     }
 

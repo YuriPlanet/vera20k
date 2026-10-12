@@ -97,6 +97,7 @@ Passengers=5
 Strength=300
 Speed=4
 Passengers=5
+SizeLimit=2
 [MindControl]
 Damage=1
 ROF=200
@@ -1696,20 +1697,7 @@ fn a_unit_transport_refuses_captives_and_their_controllers() {
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
     let own = spawn(&mut sim, &rules, "E1", "YuriCountry", 12, 12);
     let admits = |sim: &Simulation, pax: u64| {
-        let passenger = sim.substrate.entities.get(pax).unwrap();
-        let carrier = sim.substrate.entities.get(transport).unwrap();
-        crate::sim::passenger::can_enter_transport(
-            passenger,
-            carrier,
-            rules
-                .object(sim.interner.resolve(passenger.type_ref()))
-                .unwrap(),
-            rules.object("TRNS").unwrap(),
-            carrier.passenger_role.cargo().unwrap(),
-            &rules,
-            &sim.houses,
-            None,
-        )
+        crate::sim::passenger::can_enter_transport(sim, &rules, pax, transport)
     };
     assert!(admits(&sim, own));
     assert!(admits(&sim, yuri));

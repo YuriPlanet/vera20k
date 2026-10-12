@@ -577,7 +577,7 @@ impl Simulation {
             // The dying building's expiry broadcast already cleared the
             // passenger's transporter link; the cargo list still held it.
             if let Some(entity) = sim.substrate.entities.get_mut(passenger) {
-                entity.passenger_role = crate::sim::passenger::PassengerRole::None;
+                entity.passenger_role.clear_carrier_relation();
                 entity.on_bridge = on_bridge;
                 entity.sub_cell = sub_cell;
             }
@@ -788,11 +788,8 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(passenger) else {
             return;
         };
-        if matches!(
-            entity.passenger_role,
-            crate::sim::passenger::PassengerRole::Inside { transport_id, .. } if transport_id == unit_id
-        ) {
-            entity.passenger_role = crate::sim::passenger::PassengerRole::None;
+        if entity.passenger_role.inside_transport_id() == Some(unit_id) {
+            entity.passenger_role.clear_carrier_relation();
         }
         let infantry = entity.category == EntityCategory::Infantry;
         let passenger_owner = entity.owner();

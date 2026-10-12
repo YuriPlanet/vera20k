@@ -2901,6 +2901,18 @@ impl Simulation {
             //6F6B6A; both precede Object Limbo. Repeated Limbo emits neither.
             self.fog.release_entity_sight(stable_id);
             self.remove_building_gap_before_limbo(stable_id);
+            // Steam gamemd3e81a617, TechnoLimbo6F6B98..6F6BA0 clears an
+            // OpenTopped hull's own rider targets before HouseRemoved6F6BD1.
+            // Cargo, each rider's +82 and Logic membership survive this call.
+            if let Some(rules) = context.rules() {
+                self.open_topped_passengers_take_target(
+                    stable_id,
+                    None,
+                    rules,
+                    context.registry(),
+                    context.effects(),
+                );
+            }
             // 6F6BD1: Removed_From_Game, also only on the first Limbo.
             self.update_house_presence(stable_id, false);
             // BuildingClass::Limbo 0x00445946..0x00445988: an opened
@@ -3361,11 +3373,8 @@ impl Simulation {
                 continue;
             }
             if let Some(passenger) = self.substrate.entities.get_mut(passenger_id) {
-                if matches!(
-                    passenger.passenger_role,
-                    PassengerRole::Inside { transport_id, .. } if transport_id == carrier_id
-                ) {
-                    passenger.passenger_role = PassengerRole::None;
+                if passenger.passenger_role.inside_transport_id() == Some(carrier_id) {
+                    passenger.passenger_role.clear_carrier_relation();
                 }
                 passenger.health.current = 0;
             }
@@ -3416,15 +3425,12 @@ impl Simulation {
             || names(listener.suspended_attack_target)
             || names(listener.archive_target())
             || listener.has_live_contact_with(expired_id)
-            || match &listener.passenger_role {
-                PassengerRole::Transport { cargo } => cargo.passengers.contains(&expired_id),
-                PassengerRole::Boarding {
-                    target_transport_id,
-                    ..
-                } => *target_transport_id == expired_id,
-                PassengerRole::Inside { transport_id, .. } => *transport_id == expired_id,
-                PassengerRole::None => false,
-            }
+            || listener
+                .passenger_role
+                .cargo()
+                .is_some_and(|cargo| cargo.passengers.contains(&expired_id))
+            || listener.passenger_role.boarding_transport_id() == Some(expired_id)
+            || listener.passenger_role.inside_transport_id() == Some(expired_id)
             || nav_names(listener.navigation.suspended_nav_com.as_ref())
             || nav_names(listener.navigation.nav_com.as_ref())
             || listener
@@ -3940,15 +3946,17 @@ impl Simulation {
             .as_ref()
             .is_some_and(|miner| miner.reserved_refinery == Some(expired_id));
 
-        let clear_passenger_role = match &listener.passenger_role {
-            PassengerRole::Transport { .. } => false,
-            PassengerRole::Boarding {
-                target_transport_id,
-                ..
-            } => *target_transport_id == expired_id,
-            PassengerRole::Inside { transport_id, .. } => *transport_id == expired_id,
-            PassengerRole::None => false,
-        };
+        // Steam gamemd3e81a617, TechnoPointerExpired7078B2..7078DB:
+        // Transporter+11C survives a live hull's ordinary Limbo announcement,
+        // for either control. Clear only on Object+90==0, exact Health==0 or
+        // ScenarioInit(A8E7AC)!=0. Negative live HP is not this zero test.
+        // The boarding adapter follows NavCom expiry independently.
+        let clear_passenger_role = listener.passenger_role.boarding_transport_id()
+            == Some(expired_id)
+            || (listener.passenger_role.inside_transport_id() == Some(expired_id)
+                && (!expired_object_alive
+                    || expired_health == 0
+                    || self.object_placement_scope_active()));
         let clear_c4_source = listener
             .pending_c4_detonation
             .as_ref()
@@ -4005,7 +4013,7 @@ impl Simulation {
             miner.reserved_refinery = None;
         }
         if clear_passenger_role {
-            listener.passenger_role = PassengerRole::None;
+            listener.passenger_role.clear_carrier_relation();
         }
         if clear_c4_source && let Some(pending) = listener.pending_c4_detonation.as_mut() {
             pending.source_entity_id = None;

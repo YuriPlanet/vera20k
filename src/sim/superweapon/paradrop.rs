@@ -324,10 +324,7 @@ fn board_passengers(
             continue;
         };
         if let Some(rider) = sim.substrate.entities.get_mut(passenger) {
-            rider.passenger_role = PassengerRole::Inside {
-                transport_id: plane,
-                open_topped: false,
-            };
+            rider.passenger_role.set_inside_transport(plane, false);
         }
         let Some(entity) = sim.substrate.entities.get_mut(plane) else {
             return;

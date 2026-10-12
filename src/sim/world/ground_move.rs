@@ -75,13 +75,15 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        if let Some(accepted) = self.teleport_destination(
-            order.entity_id,
-            order.target,
-            rules,
-            registry,
-            frame_effects,
-        ) {
+        if order.object_destination.is_none()
+            && let Some(accepted) = self.teleport_destination(
+                order.entity_id,
+                order.target,
+                rules,
+                registry,
+                frame_effects,
+            )
+        {
             return accepted;
         }
         // An object order names its object: each class setter below asks it
@@ -91,13 +93,19 @@ impl Simulation {
             |(reference, _)| reference,
         );
         if let Some(rules) = rules {
-            if self.drive_unit_setter_receiver(order.entity_id) {
+            if self.drive_unit_setter_receiver(order.entity_id)
+                || (order.object_destination.is_some()
+                    && self.unit_setter_receiver(order.entity_id, Some(rules)))
+            {
                 // Event4C747C dispatches the void Unit741970(target,1),
                 // including its unchanged-NavCom return741A80..741A9C.
                 // The represented dispatcher preserves that return contract
                 // and re-reads an object's live +4C through the class owner.
                 // Native boundary controls: track_destination.json, Drive
-                // Unit rows. Ship's naval-rally caller still prewrites NavCom;
+                // Unit rows. Object Enter also reaches this existing owner
+                // for the represented Teleporter/Hover/Walk families; a
+                // Cell adapter would lose the transport identity. Ship's
+                // naval-rally caller still prewrites NavCom;
                 // its class/caller migration requires legal naval execution
                 // (remaining #687/#689), so it keeps the adapter below.
                 return self
@@ -209,10 +217,8 @@ impl Simulation {
     ///   dock; the others on Teleport are CMON and SMON (`UnloadingClass=`
     ///   harvesters) and the Chrono Warp's.
     ///
-    /// RESIDUAL: the order's queue flag and object destination are not
-    /// carried: a queued waypoint replaces the order, and an object order
-    /// warps to the object's cell. Trigger: a queued or object order to a
-    /// Chrono unit. Frequency: uncommon.
+    /// Object orders use the represented class setter above, retaining their
+    /// NavCom and +4C. RESIDUAL: a queued Cell waypoint still replaces the order.
     pub(crate) fn teleport_destination(
         &mut self,
         id: u64,

@@ -74,11 +74,13 @@ Primary=Gun
 Strength=300
 Speed=4
 Passengers=5
+SizeLimit=2
 OpenTopped=yes
 [FV]
 Strength=200
 Speed=4
 Passengers=1
+SizeLimit=1
 Gunner=yes
 [GAPOWR]
 Strength=750
@@ -1871,20 +1873,7 @@ fn a_warped_transport_admits_no_one() {
         }
     }
     let admits = |sim: &Simulation, carrier: u64| {
-        let passenger = sim.substrate.entities.get(gi).unwrap();
-        let transport = sim.substrate.entities.get(carrier).unwrap();
-        crate::sim::passenger::can_enter_transport(
-            passenger,
-            transport,
-            rules.object("E1").unwrap(),
-            rules
-                .object(sim.interner.resolve(transport.type_ref()))
-                .unwrap(),
-            transport.passenger_role.cargo().unwrap(),
-            &rules,
-            &sim.houses,
-            None,
-        )
+        crate::sim::passenger::can_enter_transport(sim, &rules, gi, carrier)
     };
     assert!(admits(&sim, fortress));
     assert!(admits(&sim, reactor));

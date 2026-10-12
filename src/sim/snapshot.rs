@@ -949,7 +949,9 @@ use crate::sim::world::Simulation;
 // 330 -> 331: objects keep the custom sound trigger action 99 assigns
 // (ObjectClass+0x64), and each type-7 trigger action its resolved sound
 // (+0x90). Version 330 records lack these fields.
-const SNAPSHOT_VERSION: u32 = 331;
+// 331 -> 332: ordinary Teleport delay uses a global-frame CdTimer, and
+// a cargo owner retains its independent boarding/inside carrier relation.
+const SNAPSHOT_VERSION: u32 = 332;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -2005,16 +2007,16 @@ fn restore_object_references(
             }
         }
 
-        let passenger_partner = match &entity.passenger_role {
-            PassengerRole::Boarding {
-                target_transport_id,
-                ..
-            } => Some((*target_transport_id, "passenger_role.boarding")),
-            PassengerRole::Inside { transport_id, .. } => {
-                Some((*transport_id, "passenger_role.inside"))
-            }
-            PassengerRole::None | PassengerRole::Transport { .. } => None,
-        };
+        let passenger_partner = entity
+            .passenger_role
+            .boarding_transport_id()
+            .map(|id| (id, "passenger_role.boarding"))
+            .or_else(|| {
+                entity
+                    .passenger_role
+                    .inside_transport_id()
+                    .map(|id| (id, "passenger_role.inside"))
+            });
         if let Some((target_id, field)) = passenger_partner {
             require_resolved_reference(
                 entity_ids.contains(&target_id),
@@ -4095,7 +4097,8 @@ mod tests {
         // 328 -> 329: each house's spy gains (+0x2BC..+0x2C0).
         // 329 -> 330: the move-order adapter keeps no goal (#689).
         // 330 -> 331: object custom sounds and type-7 action sounds.
-        assert_eq!(super::SNAPSHOT_VERSION, 331);
+        // 331 -> 332: global Teleport delay and independent carrier relation.
+        assert_eq!(super::SNAPSHOT_VERSION, 332);
     }
 
     #[test]

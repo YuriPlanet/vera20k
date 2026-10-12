@@ -1266,7 +1266,8 @@ impl Simulation {
                     let coord = coord.expect("accepted Move_To captures target +4C");
                     let cell =
                         requested_cell.unwrap_or(((coord.x / 256) as u16, (coord.y / 256) as u16));
-                    self.teleport_move_to(id, cell, rules, info.is_harvester, None, frame_effects)
+                    let point = super::navcom::target_cell_coord(cell.0, cell.1, None);
+                    self.teleport_move_to(id, point, rules, info.is_harvester, None, frame_effects)
                         .unwrap_or_else(|error| {
                             log::debug!("Unit Teleport MoveTo {id}: {error}");
                             false

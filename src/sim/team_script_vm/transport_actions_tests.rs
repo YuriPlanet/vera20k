@@ -29,6 +29,7 @@ Strength=300
 Speed=6
 ROT=5
 Passengers=2
+SizeLimit=2
 Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}
 [GAPOWR]
 Strength=750
@@ -252,6 +253,9 @@ fn the_passengers_are_sent_aboard_one_per_update_and_leave_the_team() {
     let apc = f.spawn("APC", 16, 10);
     let first = f.spawn("E1", 12, 10);
     let second = f.spawn("E1", 12, 12);
+    assert!(crate::sim::passenger::can_enter_transport(
+        &f.sim, &f.rules, first, apc,
+    ));
     let team = f.team(&[apc, first, second]);
     assert_eq!(f.members(team), [apc, first, second]);
 

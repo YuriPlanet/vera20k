@@ -7,7 +7,6 @@
 //! AddPassenger @ 0x004733A0. Route-specific compatibility policies below preserve
 //! the existing Rust branches; they do not claim uniform native retry semantics.
 
-use super::PassengerRole;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::{
     FrameEffects, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation,
@@ -131,10 +130,9 @@ fn restore_departure(
                     if matches!(failure, DepartureFailure::ParachuteReveal(_)) {
                         passenger.parachute_state = None;
                     }
-                    passenger.passenger_role = PassengerRole::Inside {
-                        transport_id,
-                        open_topped,
-                    };
+                    passenger
+                        .passenger_role
+                        .set_inside_transport(transport_id, open_topped);
                 }
             }
             DepartureFailure::NoCargo | DepartureFailure::GroundReveal(_) => {
@@ -155,10 +153,9 @@ fn restore_departure(
                 "invalid ground departure phase"
             );
             if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
-                passenger.passenger_role = PassengerRole::Inside {
-                    transport_id,
-                    open_topped,
-                };
+                passenger
+                    .passenger_role
+                    .set_inside_transport(transport_id, open_topped);
             }
         }
     }
@@ -204,14 +201,11 @@ pub(crate) fn reveal_unloaded_passenger(
         .and_then(|passenger| passenger.sub_cell);
     let (sub_x, sub_y) = lepton::subcell_lepton_offset(sub_cell);
     if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
-        debug_assert!(matches!(
-            passenger.passenger_role,
-            PassengerRole::Inside {
-                transport_id: current_transport,
-                ..
-            } if current_transport == transport_id
-        ));
-        passenger.passenger_role = PassengerRole::None;
+        debug_assert_eq!(
+            passenger.passenger_role.inside_transport_id(),
+            Some(transport_id)
+        );
+        passenger.passenger_role.clear_carrier_relation();
     }
     let outcome = sim.try_reveal_entity_with_context(
         passenger_id,

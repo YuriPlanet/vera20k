@@ -703,12 +703,7 @@ pub(super) fn capability_cursor_for_hover(
         //    garrisonable — only show Enter for those, not actual enemy-player buildings.
         if is_infantry
             && let Some(rules) = rules
-            && crate::sim::passenger::can_entity_enter_garrison(
-                sim,
-                rules,
-                best_id,
-                hover.stable_id,
-            )
+            && crate::sim::passenger::can_enter_transport(sim, rules, best_id, hover.stable_id)
         {
             return CursorFeedbackKind::Enter;
         }

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded Unit737430 Receive_Radio0F from supplied live transport/passenger state; integer cargo Size accumulation and capacity/SizeLimit comparisons execute.",
+  "assumptions": [
+    "Reuses refinery_dock actual Drive/Cell/scenario fixture and unchanged Unit/Infantry vtables. House indexes/one-way alliance, live sender flags, cargo links and integer Size/Passengers/SizeLimit fields are supplied, not retail-reader receipts. Constructor/read/physical arrival/radio transmit and passenger attachment lifecycles are excluded.",
+    "Actual Unit receiver0F, alliance/warp/GetCell/building/mind-control/controller/type queries and cargo linked-list sum/ftol execute without supplied query replies. Fractional/NaN/overflow Size values are excluded; these rows bound the integer Rust representation. Scenario RNG and original text remain unchanged."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "unit_receive": "0x00737430",
+    "is_ally_by_object": "0x004F9A90",
+    "ground_cell_building": "0x0047C520",
+    "is_mind_controlled": "0x007105E0",
+    "is_controlling": "0x004722C0",
+    "cargo_total_size": "0x00473460",
+    "ftol": "0x007C5F00"
+  },
+  "replay_command": "python -m tools.spatial_oracle.unit_transport_can_enter",
+  "payload_sha256": "8f2a6df966b5e5d3cbb4926e075e3f038a67d5843346f7c0bc235f5b046d59cb"
+}

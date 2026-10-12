@@ -693,13 +693,87 @@ fn unit_receive(
             unit_run_away(sim, unit, rules, effects);
             foot_receive(sim, unit, sender, msg, payload, rules, effects)
         }
-        // 7, 0xE, 0xF and 0x15: the transport/service arms have no
+        RadioMessage::CanEnter => rules.map_or(RadioResponse::None, |rules| {
+            unit_can_enter_radio(sim, unit, sender, rules)
+        }),
+        // 7, 0xE and 0x15: the transport/service arms have no
         // represented sender.
-        RadioMessage::DockingComplete
-        | RadioMessage::CanDock
-        | RadioMessage::CanEnter
-        | RadioMessage::DockNow => RadioResponse::None,
+        RadioMessage::DockingComplete | RadioMessage::CanDock | RadioMessage::DockNow => {
+            RadioResponse::None
+        }
         _ => foot_receive(sim, unit, sender, msg, payload, rules, effects),
+    }
+}
+
+/// Unit737430 message0F, 73758A..7376AA: the mobile transport's admission
+/// query. Both the UI adapter and the real arrival radio use this one owner.
+/// Native controls: unit_transport_can_enter.py. It reads the receiver's
+/// one-way alliance, the ground Cell building list, and total cargo Size,
+/// not the passenger count. Size/SizeLimit are native doubles represented as
+/// integers here; the saved controls cover integer retail values only.
+pub(crate) fn unit_can_enter_radio(
+    sim: &Simulation,
+    unit: u64,
+    sender: Option<u64>,
+    rules: &RuleSet,
+) -> RadioResponse {
+    let Some((transport, passenger)) = sender.and_then(|sender| {
+        sim.substrate
+            .entities
+            .get(unit)
+            .zip(sim.substrate.entities.get(sender))
+    }) else {
+        return RadioResponse::None;
+    };
+    let Some((transport_type, passenger_type)) = sim
+        .object_type(transport.type_ref(), rules)
+        .zip(sim.object_type(passenger.type_ref(), rules))
+    else {
+        return RadioResponse::None;
+    };
+    if transport_type.passengers == 0
+        || !crate::sim::combat::combat_weapon::is_ally_by_object(
+            Some(&sim.fog.alliances),
+            &sim.interner,
+            transport.owner(),
+            passenger.owner(),
+        )
+        || transport.is_warped_out()
+    {
+        return RadioResponse::None;
+    }
+    // GetCell+1BC -> ground CellClass::Look_up_building_in_cell47C520.
+    let [x, y] = crate::sim::movement::ground_pose::object_center_xy(transport);
+    if u16::try_from(x / 256)
+        .ok()
+        .zip(u16::try_from(y / 256).ok())
+        .and_then(|(rx, ry)| {
+            sim.substrate.occupancy.first_building_on_layer(
+                rx,
+                ry,
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+            )
+        })
+        .is_some()
+        || passenger.mind_control.is_mind_controlled()
+        || passenger.parasite_eating_me.is_some()
+        || passenger
+            .capture_manager
+            .as_ref()
+            .is_some_and(|manager| manager.has_any())
+    {
+        return RadioResponse::None;
+    }
+    let occupied = transport
+        .passenger_role
+        .cargo()
+        .map_or(0, |cargo| cargo.total_size);
+    if i64::from(occupied) + i64::from(passenger_type.size) > i64::from(transport_type.passengers)
+        || passenger_type.size > transport_type.size_limit
+    {
+        RadioResponse::Negatory
+    } else {
+        RadioResponse::Roger
     }
 }
 
@@ -2601,6 +2675,135 @@ mod tests {
                 .radio_contacts
                 .is_empty()
         );
+    }
+
+    /// Replays original Unit737430 message0F with the same supplied integer
+    /// Size/cargo/alliance and refusal states. Original query execution, not
+    /// full construction/boarding or fractional Size parity.
+    #[test]
+    fn unit_transport_can_enter_matches_original_radio_controls() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::capture_manager::{CaptureManagerState, MindControlLink};
+        use crate::sim::passenger::{PassengerCargo, PassengerRole};
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/unit_transport_can_enter.json",
+        ))
+        .unwrap();
+        for row in corpus["rows"].as_array().unwrap() {
+            let input = &row["input"];
+            let capacity = input["capacity"].as_i64().unwrap();
+            let limit = input["size_limit"].as_u64().unwrap();
+            let size = input["passenger_size"].as_u64().unwrap();
+            let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=TRAN\n[TRAN]\nStrength=100\nPassengers={capacity}\nSizeLimit={limit}\n\
+                 [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nSize={size}\n"
+            )))
+            .unwrap();
+            let mut sim = Simulation::with_seed(31);
+            let own = sim.intern("Americans");
+            let other = sim.intern("Russians");
+            if input["allied"].as_bool().unwrap_or(false) {
+                sim.fog
+                    .alliances
+                    .insert("AMERICANS".into(), ["RUSSIANS".into()].into());
+            }
+            if input["reverse_allied"].as_bool().unwrap_or(false) {
+                sim.fog
+                    .alliances
+                    .insert("RUSSIANS".into(), ["AMERICANS".into()].into());
+            }
+            let carrier_type = sim.intern("TRAN");
+            let mut carrier = GameEntity::new_at_frame_zero_for_test(
+                1,
+                10,
+                10,
+                128,
+                128,
+                own,
+                Health { current: 100 },
+                carrier_type,
+                EntityCategory::Unit,
+                0,
+                5,
+                false,
+            );
+            let mut cargo = PassengerCargo::new(capacity.max(0) as u32, limit as u32);
+            for (index, entry) in input["cargo_sizes"].as_array().unwrap().iter().enumerate() {
+                cargo.board_forced(10 + index as u64, entry.as_u64().unwrap() as u32);
+            }
+            carrier.passenger_role = PassengerRole::Transport { cargo };
+            if input["warped"].as_bool().unwrap_or(false) {
+                carrier.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(99);
+            }
+            sim.substrate.entities.insert(carrier);
+            let passenger_type = sim.intern("E1");
+            let mut passenger = GameEntity::new_at_frame_zero_for_test(
+                2,
+                10,
+                10,
+                128,
+                128,
+                if input["other_house"].as_bool().unwrap_or(false) {
+                    other
+                } else {
+                    own
+                },
+                Health { current: 100 },
+                passenger_type,
+                EntityCategory::Infantry,
+                0,
+                5,
+                false,
+            );
+            if input["controlled"].as_bool().unwrap_or(false) {
+                passenger.mind_control = MindControlLink::controlled_by_for_test(99);
+            }
+            if input["parasite"].as_bool().unwrap_or(false) {
+                passenger.parasite_eating_me = Some(99);
+            }
+            if input["controlling"].as_bool().unwrap_or(false)
+                || input["empty_controller"].as_bool().unwrap_or(false)
+            {
+                passenger.capture_manager = Some(CaptureManagerState::with_victims_for_test(
+                    1,
+                    false,
+                    if input["controlling"].as_bool().unwrap_or(false) {
+                        &[99]
+                    } else {
+                        &[]
+                    },
+                ));
+            }
+            sim.substrate.entities.insert(passenger);
+            if input["building"].as_bool().unwrap_or(false) {
+                sim.substrate.occupancy.add(
+                    10,
+                    10,
+                    99,
+                    crate::sim::movement::locomotor::MovementLayer::Ground,
+                    None,
+                    crate::sim::occupancy::CellListInsertion::AppendBuilding,
+                );
+            }
+            let before = sim.rng_state();
+            let sender = (!input["no_sender"].as_bool().unwrap_or(false)).then_some(2);
+            let response = super::receive_radio(
+                &mut sim,
+                1,
+                sender,
+                RadioMessage::CanEnter,
+                RadioPayload::default(),
+                Some(&rules),
+                crate::sim::world::FrameEffects::default(),
+            );
+            assert_eq!(
+                u64::from(response.code()),
+                row["reply"].as_u64().unwrap(),
+                "{}",
+                input["name"]
+            );
+            assert_eq!(sim.rng_state(), before, "{}", input["name"]);
+        }
     }
 
     /// The aircraft receiver's transport arms need `Carryall=` (`+0xDFC`) or

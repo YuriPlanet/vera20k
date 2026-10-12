@@ -7,6 +7,7 @@
 //! (`reconcile_civilian_garrison_owner_for_building`) and a building's Unload
 //! mission (`techno_ai::building_missions`).
 
+#[cfg(test)]
 use super::PassengerRole;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;
@@ -110,7 +111,7 @@ fn uninit_garrison_passenger_without_exit(
 ) {
     if let Some(pax) = sim.substrate.entities.get_mut(passenger_id) {
         pax.health.current = 0;
-        pax.passenger_role = PassengerRole::None;
+        pax.passenger_role.clear_carrier_relation();
     }
     sim.uninit_with_context(passenger_id, context);
 }
@@ -192,7 +193,7 @@ fn place_garrison_passenger_at_cell(
         return false;
     };
     if let Some(pax) = sim.substrate.entities.get_mut(passenger_id) {
-        pax.passenger_role = PassengerRole::None;
+        pax.passenger_role.clear_carrier_relation();
     }
     let (sub_x, sub_y) = lepton::subcell_lepton_offset(pax_sub_cell);
     // SellBuilding4580xx's virtual FootUnlimbo reaches the full Techno6F6CA0
@@ -609,10 +610,7 @@ pub(crate) mod tests {
         pax.sub_cell = sub_cell;
         pax.owner = sim.interner.intern(owner);
         pax.type_ref = sim.interner.intern("E1");
-        pax.passenger_role = PassengerRole::Inside {
-            transport_id,
-            open_topped: false,
-        };
+        pax.passenger_role.set_inside_transport(transport_id, false);
         sim.substrate.entities.insert(pax);
         stable_id
     }

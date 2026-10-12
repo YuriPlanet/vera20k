@@ -769,22 +769,8 @@ fn an_infected_unit_cannot_load_bunker_or_deploy() {
     let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
     let transport = arena.spawn(&rules, "TRAN", "Americans", (13, 10));
     let mcv = arena.spawn(&rules, "MCV", "Americans", (11, 14));
-    let can_load = |sim: &Simulation| {
-        let (passenger, carrier) = (
-            sim.substrate.entities.get(tank).unwrap(),
-            sim.substrate.entities.get(transport).unwrap(),
-        );
-        crate::sim::passenger::can_enter_transport(
-            passenger,
-            carrier,
-            rules.object("MTNK").unwrap(),
-            rules.object("TRAN").unwrap(),
-            &crate::sim::passenger::PassengerCargo::new(3, 100),
-            &rules,
-            &sim.houses,
-            None,
-        )
-    };
+    let can_load =
+        |sim: &Simulation| crate::sim::passenger::can_enter_transport(sim, &rules, tank, transport);
     assert!(can_load(&arena.sim));
     assert!(crate::sim::docking::bunker_link::can_auto_deploy_here(
         &arena.sim, tank, &rules

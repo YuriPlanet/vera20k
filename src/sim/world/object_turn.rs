@@ -65,13 +65,6 @@ pub(crate) struct GroundLocomotorOutcome {
     per_cell_ran: bool,
 }
 
-impl GroundLocomotorOutcome {
-    /// Whether the Process changed bridge state.
-    pub(crate) fn bridge_state_changed(&self) -> bool {
-        self.bridge_state_changed
-    }
-}
-
 #[derive(Default)]
 pub(super) struct ObjectTurnOutcome {
     movement: movement::MovementTickStats,
@@ -83,7 +76,7 @@ pub(super) struct ObjectTurnOutcome {
 
 /// What one object's locomotor Process did this turn.
 #[derive(Default)]
-struct LocomotorProcess {
+pub(crate) struct LocomotorProcess {
     /// FootClass::AI admitted the Process (`0x004DA806..0x004DA877`).
     admitted: bool,
     movement: movement::MovementTickStats,
@@ -97,6 +90,9 @@ struct LocomotorProcess {
 }
 
 impl LocomotorProcess {
+    pub(crate) fn bridge_state_changed(&self) -> bool {
+        self.bridge_state_changed
+    }
     fn from_ground(ground: GroundLocomotorOutcome) -> Self {
         Self {
             admitted: true,
@@ -219,7 +215,7 @@ impl Simulation {
     /// - The active class picks the one Process: the ground corridor for
     ///   Drive, Ship and Walk, the air pass for Fly and Jumpjet, and Hover's,
     ///   Teleport's and Rocket's own.
-    fn process_active_locomotor(
+    pub(crate) fn process_active_locomotor(
         &mut self,
         stable_id: u64,
         rules: Option<&RuleSet>,
@@ -434,12 +430,7 @@ impl Simulation {
                 sim.teleport_warp_sound(stable_id, teleport_movement::WarpSound::Out, rules);
             }
         }
-        teleport_movement::process_teleport(
-            &mut sim.substrate.entities,
-            stable_id,
-            sim.session.tick,
-            sim.resolved_terrain.as_ref(),
-        );
+        sim.process_teleport(stable_id, rules, ctx);
         if teleport_relocating {
             sim.foot_mark_put(stable_id, rules, overlay_registry, ctx.effects);
         }

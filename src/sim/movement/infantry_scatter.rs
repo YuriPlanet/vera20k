@@ -19,7 +19,7 @@ use crate::util::fixed_math::SimFixed;
 fn represented_infantry_destination(
     actor: &crate::sim::game_entity::GameEntity,
     object: &crate::rules::object_type::ObjectType,
-    requested: NavTargetRef,
+    _requested: NavTargetRef,
 ) -> bool {
     use crate::rules::locomotor_type::LocomotorKind;
     actor.category == crate::map::entities::EntityCategory::Infantry
@@ -27,11 +27,7 @@ fn represented_infantry_destination(
         && actor
             .locomotor
             .as_ref()
-            .is_some_and(|loco| match loco.kind {
-                LocomotorKind::Walk => true,
-                LocomotorKind::Teleport => matches!(requested, NavTargetRef::Cell { .. }),
-                _ => false,
-            })
+            .is_some_and(|loco| matches!(loco.kind, LocomotorKind::Walk | LocomotorKind::Teleport))
 }
 
 /// The Doing values of the deploy family, as Scatter (`0x0051D0E3..0x0051D0F5`)
@@ -350,11 +346,10 @@ impl Simulation {
     /// `process_now` runs the locomotor's Process at once, as the found-cell
     /// arm does (`0x0051D478`).
     ///
-    /// RESIDUAL: only a Walk man's immediate Process runs here. A Jumpjet or
-    /// Teleport man advances at its ordinary object turn instead, one frame
+    /// RESIDUAL: a Jumpjet man advances at its ordinary object turn, one frame
     /// later. Trigger: such a man scattered into a found cell. Effect: its
-    /// first step comes one frame later. Frequency: rare; stock Jumpjet and
-    /// Teleport infantry are few.
+    /// first step comes one frame later. Frequency: rare; stock Jumpjet
+    /// infantry are few. Walk and Teleport use the shared immediate Process.
     fn infantry_scatter_destination(
         &mut self,
         id: u64,
@@ -379,16 +374,15 @@ impl Simulation {
             }
             return Ok(false);
         }
-        if !self.assign_infantry_walk_destination(
+        self.assign_infantry_walk_destination(
             id,
             NavTargetRef::cell(cell.0, cell.1),
             speed,
             rules,
             registry,
             frame_effects,
-        )? || !process_now
-            || kind != Some(LocomotorKind::Walk)
-        {
+        )?;
+        if !process_now || !matches!(kind, Some(LocomotorKind::Walk | LocomotorKind::Teleport)) {
             return Ok(false);
         }
         // 0x0051D478 is an immediate locomotor invocation, without another
@@ -398,11 +392,19 @@ impl Simulation {
         if answered_process::answer(id) {
             return Ok(false);
         }
-        if self.path_grid().is_none() {
+        if kind == Some(LocomotorKind::Walk) && self.path_grid().is_none() {
             return Err(String::from("Scatter Process requires navigation"));
         }
         let outcome = self
-            .process_ground_locomotor_one(id, Some(rules), registry, frame_effects)
+            .process_active_locomotor(
+                id,
+                Some(rules),
+                crate::sim::world::ObjectAiCtx {
+                    overlay_registry: registry,
+                    effects: frame_effects,
+                    ..Default::default()
+                },
+            )
             .map_err(|error| format!("Scatter Process failed: {error:?}"))?;
         Ok(outcome.bridge_state_changed())
     }
@@ -510,19 +512,26 @@ impl Simulation {
             return false;
         }
         let loco = actor.locomotor.as_ref().expect("represented receiver");
-        // Every represented Teleport Cell request reaches its native resolver,
+        // Every represented Teleport request reaches its native resolver,
         // including the first request before IsMoving becomes true.
         if loco.active_kind() == LocomotorKind::Teleport {
             let Some(terrain) = self.resolved_terrain.as_ref() else {
                 return false;
             };
-            let NavTargetRef::Cell { rx, ry } = requested else {
+            let Ok(point) = super::navcom::nav_target_coordinate(
+                requested,
+                Some(id),
+                &self.substrate.entities,
+                self.resolved_terrain.as_ref(),
+                Some((rules, &self.interner)),
+            ) else {
                 return false;
             };
+            let (rx, ry) = ((point.x / 256) as i16, (point.y / 256) as i16);
             //718B70 reaches51BF90 at the selected target, or at NULL XYZ
             //after slot refusal. Check only retained input availability here;
             //canonical Dummy lookup, admission and RNG keep their native order.
-            for (x, y) in [(rx as i16, ry as i16), (0, 0)] {
+            for (x, y) in [(rx, ry), (0, 0)] {
                 let cell = terrain
                     .native_fixed_cell_index(x, y)
                     .map_or(NativeCellIdentity::Dummy, NativeCellIdentity::Real);
@@ -627,13 +636,6 @@ impl Simulation {
         if !jumpjet && !represented_infantry_destination(actor, object, requested) {
             return Ok(false);
         }
-        // The retained Teleport Move_To port still takes a Cell. Ordinary
-        // Walk executes non-cell +4C below; do not snap an unported Teleport
-        // object destination to that object's physical cell.
-        let teleport_cell = match requested {
-            NavTargetRef::Cell { rx, ry } => Some((rx, ry)),
-            _ => None,
-        };
         if self.infantry_setter_refuses(actor) {
             return Ok(true);
         }
@@ -689,14 +691,19 @@ impl Simulation {
             let frame = self.session.binary_frame;
             let actor = self.substrate.entities.get_mut(id).unwrap();
             super::navcom::publish_nav_com(actor, requested);
-            let accepted = self.teleport_move_to(
-                id,
-                teleport_cell.expect("represented Teleport target is a Cell"),
-                rules,
-                false,
-                registry,
-                frame_effects,
+            // Infantry51AA40 -> Foot4D94B0 samples destination +4C before
+            // Teleport718100. An Enter carries the vehicle, not a Cell alias.
+            // Original object coordinate/resolver controls:
+            // infantry_teleport_destination.json transport_rows.
+            let point = super::navcom::nav_target_coordinate(
+                requested,
+                Some(id),
+                &self.substrate.entities,
+                self.resolved_terrain.as_ref(),
+                Some((rules, &self.interner)),
             )?;
+            let accepted =
+                self.teleport_move_to(id, point, rules, false, registry, frame_effects)?;
             let actor = self.substrate.entities.get_mut(id).unwrap();
             super::DestinationTiming::from_rules(frame, Some(rules)).accept(actor);
             return Ok(accepted);

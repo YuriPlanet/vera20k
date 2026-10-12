@@ -457,12 +457,7 @@ fn tick_miners_n(sim: &mut Simulation, rules: &RuleSet, n: usize) {
                 .get(id)
                 .is_some_and(teleport_movement::teleport_process_active)
             {
-                teleport_movement::process_teleport(
-                    &mut sim.substrate.entities,
-                    id,
-                    sim.session.tick,
-                    None,
-                );
+                sim.process_teleport(id, Some(rules), crate::sim::world::ObjectAiCtx::default());
             }
         }
         super::miner_system::tick_miners(sim, rules, &config);

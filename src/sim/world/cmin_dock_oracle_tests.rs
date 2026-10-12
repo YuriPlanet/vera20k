@@ -18,8 +18,14 @@
 //! Not compared: the Teleport destination's occupy-bit reservation and COM
 //! reference counts (residuals on `teleport_move_to`), and the
 //! Enter_Idle_Mode a non-harvester's warp-in expiry runs (`0x00719BF0`; a
-//! harvester never reaches it). Rows whose prestate or path has no Rust
-//! owner are listed in [`UNREPRESENTED`].
+//! harvester never reaches it). The legacy native producer records
+//! `enter_idle_mode(0,1)` then returns without executing Unit738970
+//! (`refinery_dock::observe_dock`, native_idle=false). Only on those expiry
+//! rows, current/queued missions are outside the native comparison boundary;
+//! Guard is asserted separately as a Rust integration result. All other
+//! observed fields and other rows' mission comparisons remain bounded by
+//! their original controls. Rows whose prestate or path has no Rust owner
+//! are listed in [`UNREPRESENTED`].
 
 use super::refinery_dock_oracle_tests::{
     RULES, Scene, cell, compare_delay, oracle_sends, scene_with, sends,
@@ -257,7 +263,7 @@ fn kind_name(kind: LocomotorKind) -> &'static str {
 }
 
 /// The CMIN state every row compares (`state` is the oracle's final state).
-fn compare_cmin(s: &Scene, state: &Value, context: &str) {
+fn compare_cmin(s: &Scene, state: &Value, context: &str, mission_body_executed: bool) {
     let entity = s.sim.substrate.entities.get(s.miner).unwrap();
     let nav = match entity.navigation.nav_com {
         Some(NavTargetRef::Cell { rx, ry }) => serde_json::json!([rx, ry]),
@@ -316,16 +322,18 @@ fn compare_cmin(s: &Scene, state: &Value, context: &str) {
             "{context}: Teleport destination"
         );
     }
-    assert_eq!(
-        entity.mission.current().raw() as i64,
-        state["mission"].as_i64().unwrap(),
-        "{context}: mission"
-    );
-    assert_eq!(
-        entity.mission.queued().raw() as i64,
-        state["queued"].as_i64().unwrap(),
-        "{context}: queued mission"
-    );
+    if mission_body_executed {
+        assert_eq!(
+            entity.mission.current().raw() as i64,
+            state["mission"].as_i64().unwrap(),
+            "{context}: mission"
+        );
+        assert_eq!(
+            entity.mission.queued().raw() as i64,
+            state["queued"].as_i64().unwrap(),
+            "{context}: queued mission"
+        );
+    }
     assert_eq!(
         entity
             .radio_contacts
@@ -435,7 +443,7 @@ fn unit_setter_teleporter_arm_matches_the_original_assign_destination() {
             }
         }
         compare_swap(before, &s, row["events"].as_array().unwrap(), &context);
-        compare_cmin(&s, &row["state"], &context);
+        compare_cmin(&s, &row["state"], &context, true);
         if input["latch_27c"] == true {
             // The latched resolver's raw PUTs: Marked as it stood (the null
             // coordinate's cell) and Location.
@@ -465,7 +473,11 @@ fn teleport_move_to_guards_match_the_original_refusals() {
             !s.sim
                 .teleport_move_to(
                     s.miner,
-                    cell(&input["dest"]),
+                    crate::sim::movement::target_cell_coord(
+                        cell(&input["dest"]).0,
+                        cell(&input["dest"]).1,
+                        None
+                    ),
                     &s.rules,
                     true,
                     None,
@@ -483,7 +495,7 @@ fn teleport_move_to_guards_match_the_original_refusals() {
                 .unwrap()
                 .install_teleport_state_for_test(None);
         }
-        compare_cmin(&s, &row["state"], &context);
+        compare_cmin(&s, &row["state"], &context, true);
     }
 }
 
@@ -501,7 +513,7 @@ fn teleport_warp_matches_the_original_process() {
             s.sim
                 .teleport_move_to(
                     s.miner,
-                    dest,
+                    crate::sim::movement::target_cell_coord(dest.0, dest.1, None),
                     &s.rules,
                     harvester,
                     None,
@@ -591,8 +603,25 @@ fn teleport_warp_matches_the_original_process() {
                 }
             }
             let state = &tick["state"];
-            compare_cmin(&s, state, &context);
+            let mission_body_executed = !events.iter().any(|event| {
+                event[0] == "enter_idle_mode"
+                    && event[1].as_u64() == Some(0)
+                    && event[2].as_u64() == Some(1)
+            });
+            compare_cmin(&s, state, &context, mission_body_executed);
             let entity = s.sim.substrate.entities.get(s.miner).unwrap();
+            if !mission_body_executed {
+                // Rust integration, not a native golden: the legacy native
+                // callback is a recorded no-effect seam, while production
+                // executes the existing Unit idle owner after TimerCheck.
+                assert_eq!(
+                    entity.mission.current(),
+                    crate::sim::mission::MissionId::from_known(
+                        crate::sim::mission::MissionType::Guard,
+                    ),
+                    "{context}: Rust idle enters Guard"
+                );
+            }
             assert_eq!(
                 u64::from(entity.is_warping_in()),
                 state["warp"][1].as_u64().unwrap(),
@@ -685,7 +714,7 @@ fn mission_harvest_teleporter_arms_match_the_original_dispatch() {
         );
         compare_delay(&s, row, delay, &mut stream, &context);
         compare_swap(before, &s, row["events"].as_array().unwrap(), &context);
-        compare_cmin(&s, &row["state"], &context);
+        compare_cmin(&s, &row["state"], &context, true);
     }
 }
 
@@ -719,7 +748,7 @@ fn mission_enter_teleporter_arms_match_the_original_dispatch() {
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         compare_delay(&s, row, delay, &mut stream, &context);
         compare_swap(before, &s, row["events"].as_array().unwrap(), &context);
-        compare_cmin(&s, &row["state"], &context);
+        compare_cmin(&s, &row["state"], &context, true);
         if let Some(queue) = input["nav_queue"].as_array() {
             let entity = s.sim.substrate.entities.get(s.miner).unwrap();
             assert_eq!(
@@ -748,7 +777,7 @@ fn mission_unload_turns_a_teleporter_like_the_original() {
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         compare_delay(&s, row, delay, &mut stream, &context);
-        compare_cmin(&s, &row["state"], &context);
+        compare_cmin(&s, &row["state"], &context, true);
     }
 }
 
@@ -767,7 +796,7 @@ fn per_cell_dock_now_waits_for_the_tether_after_a_warp() {
             crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
-        compare_cmin(&s, &row["state"], &context);
+        compare_cmin(&s, &row["state"], &context, true);
     }
 }
 

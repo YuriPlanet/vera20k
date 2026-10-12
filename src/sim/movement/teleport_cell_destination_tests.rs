@@ -6,9 +6,11 @@
 //! ordered retail readers supply CLEG's type and fixed ART records. Every
 //! command boundary compares retained state and all three complete RNGs;
 //! there is no supplied gameplay return or second selection implementation.
-//! Full Infantry/House construction, warp Process, object destinations and
-//! native piggyback/save-load execution are outside this corpus. The separate
-//! persistence and command tests below are Rust integration regressions.
+//! Fourteen supplied Unit-object destinations, two warp-in refusal tails and
+//! four TimerCheck boundaries extend the comparison below. Full Infantry/House
+//! construction, warp Process, native radio/piggyback/save-load execution are
+//! outside this corpus; separate ports own those prerequisites. Persistence
+//! and production command tests are Rust integration regressions.
 
 use crate::map::entities::EntityCategory;
 use crate::map::playfield::PlayfieldBounds;
@@ -96,6 +98,9 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
         off_104: 64,
         off_108: 64,
     });
+    // Executed FNPC56DC20 reads Map+F4=16 and retained Map+F8=0,
+    // giving radius cap16. The allocated32x32 cell table is independent.
+    sim.playfield_size_height = Some(0);
     let mut cells: Vec<_> = (0..32)
         .flat_map(|y| {
             (0..32).map(move |x| {
@@ -221,6 +226,59 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
                 true,
             );
         }
+    }
+    if let Some(transport) = input.get("transport") {
+        let target = sim
+            .construct_object_limbo_at_height("FV", "Americans", 12, 10, 0, 0, rules)
+            .unwrap();
+        let supplied = coord(&transport["coords"]);
+        let vehicle = sim.substrate.entities.get_mut(target).unwrap();
+        vehicle.lifecycle.in_limbo = false;
+        vehicle.lifecycle.cell_marked = true;
+        super::super::ground_pose::put_location(&mut vehicle.position, supplied);
+        vehicle.health.current = signed(&transport["health"]);
+        vehicle.on_bridge = transport
+            .get("on_bridge")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let layer = if vehicle.on_bridge {
+            MovementLayer::Bridge
+        } else {
+            MovementLayer::Ground
+        };
+        let cell = (vehicle.position.rx, vehicle.position.ry);
+        if transport["cell_content"].as_bool().unwrap() {
+            sim.substrate.occupancy.add(
+                cell.0,
+                cell.1,
+                target,
+                layer,
+                None,
+                crate::sim::occupancy::CellListInsertion::from_category(EntityCategory::Unit),
+            );
+        }
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .navigation
+            .nav_com = Some(NavTargetRef::object(target));
+        if input.get("chrono_timer").and_then(Value::as_bool) == Some(true) {
+            // The native TimerCheck fixture supplies a nonnull TarCom+2B4,
+            // deliberately excluding passive-acquisition/idle callbacks.
+            assert_ne!(before["actor"]["target"], "0x0");
+            sim.substrate.entities.get_mut(id).unwrap().attack_target =
+                Some(crate::sim::combat::AttackTarget::new(target));
+        }
+        assert_eq!((cell.0, cell.1), pair(&row["transport_input"]["mapcoords"]));
+        assert_eq!(
+            sim.foot_navigation_coordinate(target).unwrap(),
+            coord(&row["transport_input"]["navcoords"])
+        );
+        assert_eq!(
+            row["transport_input"]["rtti"], 1,
+            "original Unit target receiver"
+        );
     }
     import_rng(&mut sim, &row["rng_before"]);
     (sim, id, owner)
@@ -475,6 +533,198 @@ fn command_fixture_rules() -> Option<RuleSet> {
     let mut rules = retail_battle_rules_for_map("XMP03T4.MAP")?.rules;
     rules.general.blockage_path_delay_ticks = 22;
     Some(rules)
+}
+
+/// Executed original718B70 transport controls; excludes passenger radio,
+/// attachment and Process. MoveTo's timer/arming writes are not resolver goldens.
+#[test]
+fn object_enter_resolution_matches_original_transport_controls() {
+    let Some(rules) = command_fixture_rules() else {
+        return;
+    };
+    let data = corpus();
+    let rows = data["transport_rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 14);
+    for row in rows {
+        let name = row["input"]["name"].as_str().unwrap();
+        let (mut sim, id, _) = fixture(row, &rules);
+        let input = coord(&row["input"]["commands"][0]["coords"]);
+        let expected = nullable_coord(&row["after"]["locomotor"]["resolved_xyz"]);
+        let accepted = sim
+            .teleport_move_to(
+                id,
+                input,
+                &rules,
+                false,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            accepted,
+            row["boundaries"][0]["eax"] == 1,
+            "{name}: resolver acceptance"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .locomotor
+                .as_ref()
+                .unwrap()
+                .teleport_runtime()
+                .unwrap()
+                .resolved_destination(),
+            expected,
+            "{name}: resolved XYZ"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .mission
+                .current()
+                .raw(),
+            signed(&row["after"]["actor"]["mission"]),
+            "{name}: Commence before placement"
+        );
+        assert_rng(&sim, &row["rng_after"], name);
+    }
+}
+
+/// Compose the original refusal tail with the separately executed Unit0F
+/// receiver. Native rows begin after a declared refusal, not at whole PerCell.
+/// Compare RNG, navigation and path timers; absolute warp-timer lifetime is
+/// outside these two same-frame controls.
+#[test]
+fn full_transport_arrival_replays_original_warp_in_refusal_tail() {
+    let Some(rules) = command_fixture_rules() else {
+        return;
+    };
+    let data = corpus();
+    let rows = data["refused_enter_rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        let name = row["input"]["name"].as_str().unwrap();
+        let (mut sim, id, _) = fixture(row, &rules);
+        let transport = match sim.substrate.entities.get(id).unwrap().navigation.nav_com {
+            Some(NavTargetRef::Object { id }) => id,
+            other => panic!("{name}: missing transport {other:?}"),
+        };
+        let occupant = sim
+            .construct_object_limbo_at_height("E1", "Americans", 12, 10, 0, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(transport)
+            .unwrap()
+            .passenger_role
+            .cargo_mut()
+            .unwrap()
+            .board_forced(occupant, rules.object("E1").unwrap().size);
+        crate::sim::passenger::begin_boarding(
+            sim.substrate.entities.get_mut(id).unwrap(),
+            transport,
+        );
+        let runtime = sim
+            .substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .teleport_runtime_mut()
+            .unwrap();
+        runtime.warp = Some(super::TeleportState {
+            phase: super::TeleportPhase::ChronoDelay,
+            destination: nullable_coord(&row["before"]["locomotor"]["armed_xyz"]),
+            delay_timer: crate::sim::timer::CdTimer::started(
+                signed(&row["input"]["teleport_timer"][0]),
+                signed(&row["input"]["teleport_timer"][2]),
+            ),
+        });
+        // Fixture construction is not part of the executed native tail.
+        import_rng(&mut sim, &row["rng_before"]);
+        sim.per_cell_process(
+            id,
+            super::super::PerCellReason::Arrival,
+            Some(&rules),
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        assert_state(
+            &sim,
+            id,
+            sim.interner.get("Americans").unwrap(),
+            &row["after"],
+            name,
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .mission
+                .queued()
+                .raw(),
+            signed(&row["after"]["actor"]["queued_mission"]),
+            "{name}: queued Guard"
+        );
+        assert!(
+            sim.substrate.entities.get(id).unwrap().is_warping_in(),
+            "{name}: warp-in retained"
+        );
+        assert!(
+            matches!(
+                sim.substrate.entities.get(id).unwrap().passenger_role,
+                crate::sim::passenger::PassengerRole::None
+            ),
+            "{name}: rejected passenger stays outside"
+        );
+        assert_rng(&sim, &row["rng_after"], name);
+    }
+}
+
+/// Actual719BF0 controls compare before/at/after expiry and frame wrap. The
+/// native fixture retains a target, excluding passive-acquisition callbacks.
+#[test]
+fn chrono_epoch_expiry_matches_original_timer_check() {
+    let Some(rules) = command_fixture_rules() else {
+        return;
+    };
+    let data = corpus();
+    let rows = data["chrono_timer_rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 4);
+    for row in rows {
+        let name = row["input"]["name"].as_str().unwrap();
+        let (mut sim, id, _) = fixture(row, &rules);
+        let timer = &row["before"]["locomotor"]["timer"];
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .teleport_runtime_mut()
+            .unwrap()
+            .warp = Some(super::TeleportState {
+            phase: super::TeleportPhase::ChronoDelay,
+            destination: None,
+            delay_timer: crate::sim::timer::CdTimer::from_raw(signed(&timer[0]), signed(&timer[2])),
+        });
+        sim.process_teleport(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
+        assert_eq!(
+            sim.substrate.entities.get(id).unwrap().is_warping_in(),
+            row["after"]["actor"]["warping_in"].as_bool().unwrap(),
+            "{name}: warp-in flag"
+        );
+        assert_rng(&sim, &row["rng_after"], name);
+    }
 }
 
 #[test]

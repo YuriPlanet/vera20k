@@ -137,6 +137,7 @@ mod tests {
              [BuildingTypes]\n0=DEPOT\n1=ENEMY\n2=BUNKER\n\
              [TANK]\nStrength=200\nSpeed=6\nPrimary=Gun\nTurret=yes\n\
              [APC]\nStrength=200\nPassengers=5\nSizeLimit=2\n\
+             Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
              [TANY]\nStrength=100\nSpeed=4\nC4=yes\nPrimary=Gun\n\
              [ENGINEER]\nStrength=100\nSpeed=4\nEngineer=yes\n\
              [DEPOT]\nStrength=1000\nUnitRepair=yes\n\
@@ -212,7 +213,10 @@ mod tests {
                 assert!(actor.passively_acquired_target, "{command:?}");
                 assert_eq!(actor.weapon_burst.index(), 1, "{command:?}");
 
-                assert!(sim.apply_command("Americans", &command, Some(&rules)));
+                assert!(
+                    sim.apply_command("Americans", &command, Some(&rules)),
+                    "{command:?}"
+                );
                 let actor = sim.substrate.entities.get_mut(id).unwrap();
                 assert!(actor.attack_target.is_none(), "{command:?}");
                 assert!(!actor.passively_acquired_target, "{command:?}");

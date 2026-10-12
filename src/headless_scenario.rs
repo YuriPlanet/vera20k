@@ -1145,7 +1145,6 @@ mod retail_construction_tests {
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
     fn retail_transport_teams_load_and_unload() {
         use crate::sim::command::{Command, CommandEnvelope};
-        use crate::sim::passenger::PassengerRole;
         use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
 
         for (local, opponent, country, team_type, types) in [
@@ -1249,10 +1248,7 @@ mod retail_construction_tests {
                 let team = sim.team_script_vm.team(team_id);
                 let aboard = infantry.iter().all(|&id| {
                     sim.entities().get(id).is_some_and(|entity| {
-                        matches!(
-                            entity.passenger_role,
-                            PassengerRole::Inside { transport_id, .. } if transport_id == transport
-                        )
+                        entity.passenger_role.inside_transport_id() == Some(transport)
                     })
                 });
                 if loaded.is_none() && aboard {
@@ -1301,10 +1297,12 @@ mod retail_construction_tests {
                                     None => "out",
                                 },
                                 entity.navigation.nav_com,
-                                match entity.passenger_role {
-                                    PassengerRole::Inside { .. } => " aboard",
-                                    PassengerRole::Boarding { .. } => " boarding",
-                                    _ => "",
+                                if entity.passenger_role.is_inside_transport() {
+                                    " aboard"
+                                } else if entity.passenger_role.boarding_transport_id().is_some() {
+                                    " boarding"
+                                } else {
+                                    ""
                                 },
                             )
                         })

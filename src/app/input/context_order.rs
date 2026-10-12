@@ -1521,7 +1521,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                         .copied()
                         .filter(|&sid| {
                             Some(&resources.rules).is_some_and(|rules| {
-                                crate::sim::passenger::can_entity_enter_garrison(
+                                crate::sim::passenger::can_enter_transport(
                                     sim,
                                     rules,
                                     sid,

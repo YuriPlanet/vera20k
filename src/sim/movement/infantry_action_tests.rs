@@ -505,7 +505,7 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
             assert!(
                 sim.teleport_move_to(
                     id,
-                    (12, 10),
+                    crate::sim::movement::target_cell_coord(12, 10, None),
                     &rules,
                     false,
                     None,

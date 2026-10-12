@@ -74,7 +74,9 @@ use crate::sim::movement::infantry_entry::InfantryEntryArgs;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::movement::parachute_descent::begin_parachute_descent;
 use crate::sim::movement::{ground_pose, walk_head};
-use crate::sim::passenger::{DepartureFailure, DepartureRoute, PassengerRole, depart_cargo_head};
+#[cfg(test)]
+use crate::sim::passenger::PassengerRole;
+use crate::sim::passenger::{DepartureFailure, DepartureRoute, depart_cargo_head};
 use crate::sim::world::{
     FrameEffects, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, SimSoundEvent,
     Simulation, UninitContext,
@@ -443,7 +445,7 @@ fn paradrop(
         .get_mut(passenger)
         .is_some_and(|rider| {
             rider.sub_cell = (rider.category == EntityCategory::Infantry).then_some(spot);
-            rider.passenger_role = PassengerRole::None;
+            rider.passenger_role.clear_carrier_relation();
             rider.on_bridge
         });
     if !begin_parachute_descent(&mut sim.substrate.entities, passenger, landing.z) {
