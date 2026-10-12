@@ -583,7 +583,115 @@ def teleport_source_paths():
     return paths
 
 
-if __name__ == '__main__' and '--teleport-cell' in sys.argv:
+def generate_teleport_prologue():
+    """Original ordinary warp-in Process arm, including a hidden rider.
+
+    Reuse OriginalCursor's image/CPU mapping rather than introduce a second
+    emulator owner. This fragment needs no map, pathfinder or asset inputs.
+    Actual Teleport construction executes; owner/link/timer state is supplied.
+    """
+    from unicorn import UC_HOOK_CODE
+    from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESP
+    from tools.native_oracle import RET_MAGIC, run_checked
+    from tools.spatial_oracle.locomotor_track_cursor import OriginalCursor, LOCO, FOOT, SP
+    from tools.spatial_oracle.map_queries import dwords
+
+    rows = []
+    for hidden in (False, True):
+        for frame, epoch in ((129, 100), (130, 100), (131, 100), (14, -16)):
+            machine = OriginalCursor('drive')
+            u = machine.uc
+            machine.seed(-1, -1, False, 0)
+            u.mem_write(LOCO, bytes(0x200))
+            u.mem_write(FOOT, bytes(0x800))
+            u.mem_write(FOOT, dwords(0x7EB058))
+            u.mem_write(FOOT + 0x81, bytes([hidden]))
+            u.mem_write(FOOT + 0x82, bytes([hidden]))
+            u.mem_write(FOOT + 0x90, b'\x01')
+            u.mem_write(FOOT + 0x271, b'\x01')
+            # A nonnull target suppresses the real no-target scan/idle arm.
+            # No callback answer or selected gameplay return is substituted.
+            u.mem_write(FOOT + 0x2B4, dwords(FOOT + 0x900))
+            u.mem_write(FOOT + 0x280, dwords(0))
+            u.mem_write(0xA8ED84, dwords(frame))
+            u.reg_write(UC_X86_REG_ECX, LOCO)
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.mem_write(SP, dwords(RET_MAGIC))
+            run_checked(u, 0x718000, RET_MAGIC, count=2000)
+            assert u.reg_read(UC_X86_REG_ESP) == SP + 4
+            assert struct.unpack('<II', u.mem_read(LOCO, 8)) == (0x7F50CC, 0x7F5000)
+            assert bytes(u.mem_read(0x7F50CC + 0x28, 4)) == dwords(0x719BF0)
+            assert bytes(u.mem_read(0x7F5000 + 0x40, 4)) == dwords(0x7192F0)
+            # Process receives the ILocomotion subobject (+4), while TimerCheck
+            # receives the complete Teleport object. The link is full +0xC.
+            u.mem_write(LOCO + 0xC, dwords(FOOT))
+            u.mem_write(LOCO + 0x38, dwords(0))
+            u.mem_write(LOCO + 0x3C, dwords(epoch, 0, 30))
+            trace = []
+
+            def observe(_u, pc, _size, _data):
+                if pc in (0x7192F0, 0x719322, 0x719BF0, 0x719C15, 0x719C43):
+                    trace.append(f'0x{pc:08X}')
+                if pc in (0x65C780, 0x65C7E0):
+                    raise AssertionError('target-present timer controls consume no RNG')
+
+            u.hook_add(UC_HOOK_CODE, observe)
+            spans = ((0x7192F0, 0x41), (0x719BF0, 0x83))
+            original = [bytes(u.mem_read(start, size)) for start, size in spans]
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.mem_write(SP, dwords(RET_MAGIC, LOCO + 4))
+            run_checked(u, 0x7192F0, RET_MAGIC, count=2000,
+                        required_addresses=(0x7192F0, 0x719322, 0x719BF0))
+            assert u.reg_read(UC_X86_REG_ESP) == SP + 8
+            assert original == [bytes(u.mem_read(start, size)) for start, size in spans]
+            rows.append(dict(
+                input=dict(in_limbo=hidden, in_open_transport=hidden, frame=frame,
+                           timer_start=epoch, timer_duration=30, state=0,
+                           pending_state=0, target_present=True),
+                output=dict(warping_in=bool(u.mem_read(FOOT + 0x271, 1)[0]),
+                            process_return_al=u.reg_read(UC_X86_REG_EAX) & 255,
+                            state=struct.unpack('<i', u.mem_read(LOCO + 0x38, 4))[0],
+                            timer=list(struct.unpack('<iii', u.mem_read(LOCO + 0x3C, 12))),
+                            original_code_unchanged=True, trace=trace)))
+    return dict(schema_version=1, native_sha256=image_sha256(), rows=rows)
+
+
+def teleport_prologue_metadata():
+    return provenance(
+        scope='Eight original ordinary Teleport Process warp-in controls, including '
+              'hidden open-topped state, with actual TimerCheck and constructor',
+        entry_points=dict(teleport_constructor=0x718000, teleport_process=0x7192F0,
+                          process_timer_call=0x719322, timer_check=0x719BF0,
+                          clear_warping_in=0x719C15),
+        assumptions=[
+            'OriginalCursor owns the mapped original image, isolated scratch/stack '
+            'and supplied x87 control word. Its generic mapping is reused; no '
+            'Drive construction or movement is claimed.',
+            'Actual Teleport718000 construction installs original primary and '
+            'ILocomotion vtables. Prepared owner link, alive flag, +271, state0, '
+            'pending-state0, nonnull target and timer epoch/duration are supplied '
+            'independently of real Infantry/House/BFRT construction.',
+            'Original Process receives the interface pointer (object+4), takes '
+            'its early +271/state0/pending0 arm, calls whole719BF0 and returns '
+            'false. Hidden +81 and open-topped +82 contrast with outside state; '
+            'original Infantry51BBC0 scheduling is instruction evidence, not '
+            'executed by these component controls.',
+            'Nonnull TarCom suppresses no-target scan/idle callbacks without '
+            'substituting their answers. Epoch100/duration30 at129/130/131 and '
+            'epoch-16/frame14 establish expiry and 32-bit frame wrap. Timer '
+            'publication, zero-target callbacks, nonzero-state progression, '
+            'relocation, boarding and full firing/Temporal effects are excluded.',
+        ],
+        substitutions=['Prepared caller/object state only; no original gameplay '
+                       'callable answer, instruction or vtable is replaced.'])
+
+
+if __name__ == '__main__' and '--teleport-prologue' in sys.argv:
+    args = [arg for arg in sys.argv[1:] if arg != '--teleport-prologue']
+    finish_vectors(generate_teleport_prologue,
+                   Path(__file__).with_name('infantry_teleport_prologue.json'),
+                   provenance=teleport_prologue_metadata, argv=args)
+elif __name__ == '__main__' and '--teleport-cell' in sys.argv:
     args = [arg for arg in sys.argv[1:] if arg != '--teleport-cell']
     finish_vectors(generate_teleport, Path(__file__).with_name('infantry_teleport_destination.json'),
                    provenance=teleport_metadata, source_paths=teleport_source_paths(), argv=args)

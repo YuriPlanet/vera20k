@@ -73,12 +73,6 @@
 //!   its Chronosphere warp-out (60 frames). Effect: VERA keeps the object
 //!   frozen until the chain lets go; native thaws it once its warp-in ends,
 //!   or when the chain lets go before the warp.
-//! - The ordinary teleport's warp-in (`+0x271`) also takes the prologue's
-//!   extra Process, whose Teleport Process runs TimerCheck (`0x00719322`):
-//!   its expiry scans for a target or enters idle mode. VERA's retained
-//!   countdown ends the warp-in without either. Trigger: a Chrono
-//!   Legionnaire or Chrono Ivan materializing with no target. Effect: no
-//!   scan or idle mode at the end of the delay.
 //! - `Mark(2)` at warp start and release (vtable `+0x124`) and the building's
 //!   paused animation slots (`0x004521C0`/`0x00452210` pause and resume the 21
 //!   slots) are presentation; the online latch they share is
@@ -1184,14 +1178,25 @@ impl Simulation {
         }
         if category != EntityCategory::Structure
             && self.substrate.entities.get(id).is_some_and(|entity| {
-                entity.active_chrono_warp().is_some()
-                    && (entity.is_warping_in()
-                        || (entity.is_warped_out() && entity.chrono_warp_latch()))
+                entity.is_warping_in() || (entity.is_warped_out() && entity.chrono_warp_latch())
             })
         {
-            match self.process_chrono_warp(id, rules, ctx) {
-                Ok(changed) => *bridge_state_changed |= changed,
-                Err(error) => log::warn!("chrono warp {id} prologue Process: {}", error.cause),
+            if self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.active_chrono_warp().is_some())
+            {
+                match self.process_chrono_warp(id, rules, ctx) {
+                    Ok(changed) => *bridge_state_changed |= changed,
+                    Err(error) => log::warn!("chrono warp {id} prologue Process: {}", error.cause),
+                }
+            } else {
+                // Infantry51BB81..51BBC0 runs the ordinary Teleport's extra
+                // Process even in Limbo. Its71930C..719322 early arm calls the
+                // existing TimerCheck owner; FootAI's later Limbo gate remains.
+                // Native execution: infantry_teleport_prologue.json (Steam3e81a617).
+                self.process_teleport(id, Some(rules), ctx);
             }
             if self
                 .substrate

@@ -1,0 +1,356 @@
+[
+  {
+    "input": {
+      "path_head": -1,
+      "requested_bits": "0000000000000000"
+    },
+    "output": {
+      "after_bits": "0000000000000000",
+      "before_bits": "0000000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": true,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE29",
+        "0x0075BE2B",
+        "0x0075BE2D",
+        "0x0075BE2F",
+        "0x004D3710",
+        "0x004D3714",
+        "0x004D371A",
+        "0x004D371C",
+        "0x004D371F",
+        "0x004D3738",
+        "0x004D373C",
+        "0x004D3742",
+        "0x004D3744",
+        "0x004D3747",
+        "0x004D3749",
+        "0x004D3753",
+        "0x004D375D",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": [
+        {
+          "offset": 1400,
+          "pc": "0x004D3749",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "offset": 1404,
+          "pc": "0x004D3753",
+          "size": 4,
+          "value": 0
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "path_head": -1,
+      "requested_bits": "3fe0000000000000"
+    },
+    "output": {
+      "after_bits": "0000000000000000",
+      "before_bits": "3fe0000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": true,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE29",
+        "0x0075BE2B",
+        "0x0075BE2D",
+        "0x0075BE2F",
+        "0x004D3710",
+        "0x004D3714",
+        "0x004D371A",
+        "0x004D371C",
+        "0x004D371F",
+        "0x004D3738",
+        "0x004D373C",
+        "0x004D3742",
+        "0x004D3744",
+        "0x004D3747",
+        "0x004D3749",
+        "0x004D3753",
+        "0x004D375D",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": [
+        {
+          "offset": 1400,
+          "pc": "0x004D3749",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "offset": 1404,
+          "pc": "0x004D3753",
+          "size": 4,
+          "value": 0
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "path_head": -1,
+      "requested_bits": "3ff0000000000000"
+    },
+    "output": {
+      "after_bits": "0000000000000000",
+      "before_bits": "3ff0000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": true,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE29",
+        "0x0075BE2B",
+        "0x0075BE2D",
+        "0x0075BE2F",
+        "0x004D3710",
+        "0x004D3714",
+        "0x004D371A",
+        "0x004D371C",
+        "0x004D371F",
+        "0x004D3738",
+        "0x004D373C",
+        "0x004D3742",
+        "0x004D3744",
+        "0x004D3747",
+        "0x004D3749",
+        "0x004D3753",
+        "0x004D375D",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": [
+        {
+          "offset": 1400,
+          "pc": "0x004D3749",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "offset": 1404,
+          "pc": "0x004D3753",
+          "size": 4,
+          "value": 0
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "path_head": 0,
+      "requested_bits": "0000000000000000"
+    },
+    "output": {
+      "after_bits": "0000000000000000",
+      "before_bits": "0000000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": false,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": []
+    }
+  },
+  {
+    "input": {
+      "path_head": 0,
+      "requested_bits": "3fe0000000000000"
+    },
+    "output": {
+      "after_bits": "3fe0000000000000",
+      "before_bits": "3fe0000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": false,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": []
+    }
+  },
+  {
+    "input": {
+      "path_head": 0,
+      "requested_bits": "3ff0000000000000"
+    },
+    "output": {
+      "after_bits": "3ff0000000000000",
+      "before_bits": "3ff0000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": false,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": []
+    }
+  },
+  {
+    "input": {
+      "path_head": 2,
+      "requested_bits": "0000000000000000"
+    },
+    "output": {
+      "after_bits": "0000000000000000",
+      "before_bits": "0000000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": false,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": []
+    }
+  },
+  {
+    "input": {
+      "path_head": 2,
+      "requested_bits": "3fe0000000000000"
+    },
+    "output": {
+      "after_bits": "3fe0000000000000",
+      "before_bits": "3fe0000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": false,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": []
+    }
+  },
+  {
+    "input": {
+      "path_head": 2,
+      "requested_bits": "3ff0000000000000"
+    },
+    "output": {
+      "after_bits": "3ff0000000000000",
+      "before_bits": "3ff0000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": false,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": []
+    }
+  },
+  {
+    "input": {
+      "path_head": -2,
+      "requested_bits": "0000000000000000"
+    },
+    "output": {
+      "after_bits": "0000000000000000",
+      "before_bits": "0000000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": false,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": []
+    }
+  },
+  {
+    "input": {
+      "path_head": -2,
+      "requested_bits": "3fe0000000000000"
+    },
+    "output": {
+      "after_bits": "3fe0000000000000",
+      "before_bits": "3fe0000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": false,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": []
+    }
+  },
+  {
+    "input": {
+      "path_head": -2,
+      "requested_bits": "3ff0000000000000"
+    },
+    "output": {
+      "after_bits": "3ff0000000000000",
+      "before_bits": "3ff0000000000000",
+      "original_code_unchanged": true,
+      "per_cell_reason": 2,
+      "setter_called": false,
+      "stop_before": "0x0075BE3C",
+      "trace": [
+        "0x0075BE20",
+        "0x0075BE27",
+        "0x0075BE35",
+        "0x0075BE38",
+        "0x0075BE3A"
+      ],
+      "writes": []
+    }
+  }
+]

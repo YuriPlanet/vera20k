@@ -203,6 +203,14 @@ impl Simulation {
             self.resolved_terrain.as_ref(),
             self.path_grid.as_deref(),
         );
+        //75BE20..75BE2F calls Foot4D3710(0.0) for the -1 path head BEFORE
+        //PerCell can conceal a boarding passenger and skip the finish suffix.
+        //An intermediate head retains its fraction. Native execution controls:
+        //tools/spatial_oracle/foot_speed_owner.walk_arrival.json (Steam3e81a617).
+        if e.navigation.path_replay.remaining_directions().is_empty() {
+            e.foot_speed
+                .set_speed_fraction(crate::util::fixed_math::SIM_ZERO);
+        }
         //75BE3C: Per_Cell_Process(2); 75BE42..75BE69 then leaves at 75C1F1
         //for a dead, limboed or falling owner.
         let changed = self.per_cell_process(

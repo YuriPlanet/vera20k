@@ -1311,9 +1311,10 @@ pub struct ObjectType {
     /// `OpenTransportWeapon=` from rules.ini. Slot selector when this infantry
     /// is riding inside an open-topped transport that is NOT `Gunner=yes`:
     /// `0` fires the passenger's Primary, `1` fires the passenger's Secondary,
-    /// `-1` (default) means no override — the transport doesn't fire on the
-    /// passenger's behalf. Distinct from IFVMode, which only applies to Gunner
-    /// transports that swap their own weapon based on the passenger's slot.
+    /// `-1` (default) keeps the passenger's normal weapon-selection ladder.
+    /// The passenger fires from the carrier. Distinct from IFVMode, which
+    /// applies to Gunner transports that swap their own weapon based on the
+    /// passenger's slot.
     pub open_transport_weapon: i32,
 
     /// Whether this infantry can toggle into a deploy-fire stance (DeployFire=yes

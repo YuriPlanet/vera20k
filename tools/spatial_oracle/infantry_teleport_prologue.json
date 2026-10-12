@@ -1,0 +1,236 @@
+{
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "rows": [
+    {
+      "input": {
+        "frame": 129,
+        "in_limbo": false,
+        "in_open_transport": false,
+        "pending_state": 0,
+        "state": 0,
+        "target_present": true,
+        "timer_duration": 30,
+        "timer_start": 100
+      },
+      "output": {
+        "original_code_unchanged": true,
+        "process_return_al": 0,
+        "state": 0,
+        "timer": [
+          100,
+          0,
+          30
+        ],
+        "trace": [
+          "0x007192F0",
+          "0x00719322",
+          "0x00719BF0"
+        ],
+        "warping_in": true
+      }
+    },
+    {
+      "input": {
+        "frame": 130,
+        "in_limbo": false,
+        "in_open_transport": false,
+        "pending_state": 0,
+        "state": 0,
+        "target_present": true,
+        "timer_duration": 30,
+        "timer_start": 100
+      },
+      "output": {
+        "original_code_unchanged": true,
+        "process_return_al": 0,
+        "state": 0,
+        "timer": [
+          100,
+          0,
+          30
+        ],
+        "trace": [
+          "0x007192F0",
+          "0x00719322",
+          "0x00719BF0",
+          "0x00719C15"
+        ],
+        "warping_in": false
+      }
+    },
+    {
+      "input": {
+        "frame": 131,
+        "in_limbo": false,
+        "in_open_transport": false,
+        "pending_state": 0,
+        "state": 0,
+        "target_present": true,
+        "timer_duration": 30,
+        "timer_start": 100
+      },
+      "output": {
+        "original_code_unchanged": true,
+        "process_return_al": 0,
+        "state": 0,
+        "timer": [
+          100,
+          0,
+          30
+        ],
+        "trace": [
+          "0x007192F0",
+          "0x00719322",
+          "0x00719BF0",
+          "0x00719C15"
+        ],
+        "warping_in": false
+      }
+    },
+    {
+      "input": {
+        "frame": 14,
+        "in_limbo": false,
+        "in_open_transport": false,
+        "pending_state": 0,
+        "state": 0,
+        "target_present": true,
+        "timer_duration": 30,
+        "timer_start": -16
+      },
+      "output": {
+        "original_code_unchanged": true,
+        "process_return_al": 0,
+        "state": 0,
+        "timer": [
+          -16,
+          0,
+          30
+        ],
+        "trace": [
+          "0x007192F0",
+          "0x00719322",
+          "0x00719BF0",
+          "0x00719C15"
+        ],
+        "warping_in": false
+      }
+    },
+    {
+      "input": {
+        "frame": 129,
+        "in_limbo": true,
+        "in_open_transport": true,
+        "pending_state": 0,
+        "state": 0,
+        "target_present": true,
+        "timer_duration": 30,
+        "timer_start": 100
+      },
+      "output": {
+        "original_code_unchanged": true,
+        "process_return_al": 0,
+        "state": 0,
+        "timer": [
+          100,
+          0,
+          30
+        ],
+        "trace": [
+          "0x007192F0",
+          "0x00719322",
+          "0x00719BF0"
+        ],
+        "warping_in": true
+      }
+    },
+    {
+      "input": {
+        "frame": 130,
+        "in_limbo": true,
+        "in_open_transport": true,
+        "pending_state": 0,
+        "state": 0,
+        "target_present": true,
+        "timer_duration": 30,
+        "timer_start": 100
+      },
+      "output": {
+        "original_code_unchanged": true,
+        "process_return_al": 0,
+        "state": 0,
+        "timer": [
+          100,
+          0,
+          30
+        ],
+        "trace": [
+          "0x007192F0",
+          "0x00719322",
+          "0x00719BF0",
+          "0x00719C15"
+        ],
+        "warping_in": false
+      }
+    },
+    {
+      "input": {
+        "frame": 131,
+        "in_limbo": true,
+        "in_open_transport": true,
+        "pending_state": 0,
+        "state": 0,
+        "target_present": true,
+        "timer_duration": 30,
+        "timer_start": 100
+      },
+      "output": {
+        "original_code_unchanged": true,
+        "process_return_al": 0,
+        "state": 0,
+        "timer": [
+          100,
+          0,
+          30
+        ],
+        "trace": [
+          "0x007192F0",
+          "0x00719322",
+          "0x00719BF0",
+          "0x00719C15"
+        ],
+        "warping_in": false
+      }
+    },
+    {
+      "input": {
+        "frame": 14,
+        "in_limbo": true,
+        "in_open_transport": true,
+        "pending_state": 0,
+        "state": 0,
+        "target_present": true,
+        "timer_duration": 30,
+        "timer_start": -16
+      },
+      "output": {
+        "original_code_unchanged": true,
+        "process_return_al": 0,
+        "state": 0,
+        "timer": [
+          -16,
+          0,
+          30
+        ],
+        "trace": [
+          "0x007192F0",
+          "0x00719322",
+          "0x00719BF0",
+          "0x00719C15"
+        ],
+        "warping_in": false
+      }
+    }
+  ],
+  "schema_version": 1
+}

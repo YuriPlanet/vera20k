@@ -118,7 +118,7 @@ pub enum TeleportPhase {
     Relocate,
     /// Post-warp chrono delay: unit sits at destination 50% translucent,
     /// The global-frame timer expires even while the owner is hidden in
-    /// cargo; its first restored Process retires warp-in.
+    /// cargo; the class AI prologue's extra Process retires warp-in.
     ChronoDelay,
 }
 
@@ -1170,6 +1170,70 @@ mod tests {
 
     fn default_rules() -> GeneralRules {
         GeneralRules::default()
+    }
+
+    #[test]
+    fn class_ai_prologue_retires_hidden_teleport_on_the_original_epoch() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/infantry_teleport_prologue.json",
+        ))
+        .unwrap();
+        let rows = corpus["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 8);
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[InfantryTypes]\n0=CLEG\n[CLEG]\nStrength=125\n",
+            ))
+            .unwrap();
+        for row in rows {
+            let input = &row["input"];
+            let mut sim = crate::sim::world::Simulation::new();
+            let mut actor = teleport_owner(1, "CLEG", 5, 5);
+            actor.category = crate::map::entities::EntityCategory::Infantry;
+            actor.lifecycle.in_limbo = input["in_limbo"].as_bool().unwrap();
+            if input["in_open_transport"].as_bool().unwrap() {
+                actor.passenger_role = crate::sim::passenger::PassengerRole::Inside {
+                    transport_id: 3,
+                    open_topped: true,
+                };
+            }
+            // Like the native control, a non-null TarCom avoids the separate
+            // scan/idle callback path. Production boarding tests cover it.
+            actor.attack_target = Some(crate::sim::combat::AttackTarget::new(2));
+            actor.install_teleport_state_for_test(Some(TeleportState {
+                phase: TeleportPhase::ChronoDelay,
+                destination: Some(DriveCoord::cell(5, 5, 0)),
+                delay_timer: crate::sim::timer::CdTimer::started(
+                    input["timer_start"].as_i64().unwrap() as i32,
+                    input["timer_duration"].as_i64().unwrap() as i32,
+                ),
+            }));
+            sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+            sim.substrate.entities.insert(actor);
+            let mut bridge_changed = false;
+            assert!(!sim.temporal_ai_prologue(
+                1,
+                &rules,
+                crate::sim::world::ObjectAiCtx::default(),
+                &mut bridge_changed,
+            ));
+            let actor = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(
+                actor.is_warping_in(),
+                row["output"]["warping_in"].as_bool().unwrap(),
+                "{row}"
+            );
+            assert_eq!(
+                actor.attack_target.as_ref().unwrap().target,
+                crate::sim::combat::TargetKind::Entity(2)
+            );
+            assert_eq!((actor.position.rx, actor.position.ry), (5, 5));
+            assert_eq!(
+                actor.lifecycle.in_limbo,
+                input["in_limbo"].as_bool().unwrap()
+            );
+            assert!(!bridge_changed);
+        }
     }
 
     #[test]

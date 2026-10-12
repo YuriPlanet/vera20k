@@ -15,6 +15,86 @@ use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
 use serde_json::Value;
 
+/// The original fragment stops BEFORE PerCell, so compare the complete Rust
+/// caller with a still-distant destination: its post-PerCell suffix must not
+/// overwrite the head-dependent result. Real boarding tests cover concealment.
+#[test]
+fn completed_path_head_speed_matches_original_pre_percell_gate() {
+    let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_speed_owner.walk_arrival.json",
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 12);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[E1]\nStrength=125\nSpeed=4\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .unwrap();
+    let mut compared = 0;
+    for row in rows {
+        let path_head = row["input"]["path_head"].as_i64().unwrap();
+        // -2 is a native corrupt-head diagnostic, not a valid Rust direction.
+        if path_head == -2 {
+            assert_eq!(row["output"]["setter_called"], false);
+            continue;
+        }
+        let fraction = |value: &Value| {
+            SimFixed::from_num(f64::from_bits(
+                u64::from_str_radix(value.as_str().unwrap(), 16).unwrap(),
+            ))
+        };
+        let mut sim = Simulation::new();
+        sim.install_resolved_terrain_for_new_map(
+            crate::map::resolved_terrain::test_flat_ground_grid(16),
+        );
+        let id = sim
+            .spawn_object("E1", "Americans", 6, 5, 0, &rules)
+            .unwrap();
+        let head = DriveCoord {
+            x: 6 * 256 + 192,
+            y: 5 * 256 + 64,
+            z: 0,
+        };
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        actor.navigation.nav_com = Some(NavTargetRef::cell(10, 10));
+        actor.navigation.path_replay = FootPathQueue {
+            directions: if path_head == -1 {
+                vec![2]
+            } else {
+                vec![2, path_head as u8]
+            },
+            cursor: 0,
+            reference_cell: Some((5, 5)),
+        };
+        actor
+            .foot_speed
+            .set_speed_fraction(fraction(&row["input"]["requested_bits"]));
+        let loco = actor.locomotor.as_mut().unwrap();
+        loco.set_walk_destination(Some(DriveCoord::cell(10, 10, 0)));
+        loco.set_step_head(Some(head));
+        sim.run_completed_walk_step(
+            id,
+            head,
+            Some(&rules),
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .foot_speed
+                .applied_fraction(),
+            fraction(&row["output"]["after_bits"]),
+            "native head {path_head}: {row}"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 9);
+}
+
 #[test]
 fn completed_corner_keeps_heading_until_next_head_is_accepted() {
     use crate::sim::components::MovementTarget;

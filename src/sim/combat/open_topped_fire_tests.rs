@@ -97,38 +97,62 @@ fn retail_dustbowl_battle_fortress_boarded(riders: u16) -> Fortress {
             .or_default()
             .insert(ally.to_string());
     }
-    let gis: Vec<u64> = (0..riders)
-        .map(|i| {
-            let id = sim
-                .spawn_object_with_overlay_registry(
-                    "E1",
-                    "Americans",
-                    x - 1 + i % 3,
-                    if i < 3 { y + 1 } else { y - 1 },
-                    0,
-                    rules,
-                    &resources.overlay_registry,
-                )
-                .expect("GI spawns");
-            sim.substrate.entities.get_mut(id).unwrap().passenger_role = PassengerRole::Boarding {
-                target_transport_id: bfrt,
-            };
-            id
-        })
-        .collect();
     sim.resolve_type_handles(rules);
-    crate::sim::passenger::tick_passenger_system(
-        sim,
-        rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    Fortress {
+    let mut fortress = Fortress {
         scenario,
         bfrt,
-        gis,
+        gis: Vec::new(),
         cell: (x, y),
+    };
+    for _ in 0..riders {
+        let rider = board_infantry(&mut fortress, "E1");
+        fortress.gis.push(rider);
     }
+    fortress
+}
+
+/// Exercise the player's EnterTransport, class setter, Walk/Teleport arrival
+/// and OpenTopped registration, rather than fabricating a Boarding role.
+fn board_infantry(fortress: &mut Fortress, kind: &str) -> u64 {
+    let (x, y) = fortress.cell;
+    let crate::sim::runtime::SimRuntime {
+        simulation: sim,
+        resources,
+    } = &mut fortress.scenario.runtime;
+    let rider = sim
+        .spawn_object_with_overlay_registry(
+            kind,
+            "Americans",
+            x - 2,
+            y + 2,
+            0,
+            &resources.rules,
+            &resources.overlay_registry,
+        )
+        .unwrap_or_else(|| panic!("{kind} spawns"));
+    sim.resolve_type_handles(&resources.rules);
+    let enter = order(
+        fortress,
+        Command::EnterTransport {
+            passenger_id: rider,
+            transport_id: fortress.bfrt,
+        },
+    );
+    retail_frame(&mut fortress.scenario, vec![enter]);
+    for _ in 0..300 {
+        if fortress
+            .scenario
+            .sim()
+            .substrate
+            .entities
+            .get(rider)
+            .is_some_and(|entity| entity.passenger_role.open_transport_id() == Some(fortress.bfrt))
+        {
+            return rider;
+        }
+        retail_frame(&mut fortress.scenario, Vec::new());
+    }
+    panic!("{kind} must finish player-ordered boarding");
 }
 
 /// One production frame of the retail runtime.
@@ -180,9 +204,9 @@ fn distance(fortress: &Fortress, a: u64, b: u64) -> i32 {
 /// Fortress's own 5.5-cell 20mm but inside the riders' Para
 /// (`OpenTransportWeapon=1`, `Range=5`) plus `OpenToppedRangeBonus=2`.
 ///
-/// - Boarding runs `SetInOpenTransport 0x00710470`: each GI holds `+0x82`,
-///   takes Guard (`ResetOrdersToGuard 0x0070F850`) and the Fortress's
-///   coordinate (`0x007104F0`).
+/// - Boarding runs `SetInOpenTransport 0x00710470`: each GI holds `+0x82`
+///   and takes Guard (`ResetOrdersToGuard 0x0070F850`). Native51A441 keeps
+///   its arrival subcell; carrier SetLocation later publishes7104F0.
 /// - The riders acquire the GI from their Guard scan and fire Para; the
 ///   Fortress does not fire. Each shot leaves from its rider's port,
 ///   `AlternateFLH` of the rider's 1-based cargo index from the head
@@ -217,20 +241,12 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
             assert!(gi.lifecycle.in_limbo);
             assert_eq!(gi.mission.current().known(), Some(MissionType::Guard));
             assert!(gi.attack_target.is_none());
+            // Native51A441..51A46E preserves the arrival subcell; a later
+            // carrier SetLocation copies its coordinate through4DB88A/7104F0.
             assert_eq!(
-                (
-                    gi.position.rx,
-                    gi.position.ry,
-                    gi.position.sub_x,
-                    gi.position.sub_y
-                ),
-                (
-                    transport.position.rx,
-                    transport.position.ry,
-                    transport.position.sub_x,
-                    transport.position.sub_y
-                ),
-                "GI {id} rides at the Fortress's coordinate"
+                (gi.position.rx, gi.position.ry),
+                (transport.position.rx, transport.position.ry),
+                "GI {id} boards in the Fortress's cell"
             );
         }
     }
@@ -294,8 +310,7 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
         "ftol(25 * 1.2f) a shot at SSA 100%"
     );
     let sim = fortress.scenario.sim();
-    let first_frame = shots.first().map(|&(frame, ..)| frame);
-    let mut first_ports = std::collections::BTreeSet::new();
+    let mut firing_ports = std::collections::BTreeSet::new();
     for &(frame, rider, coord) in &shots {
         let cargo = sim
             .substrate
@@ -306,9 +321,9 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
             .cargo()
             .unwrap();
         let port = cargo.passengers.iter().position(|&id| id == rider).unwrap();
-        if Some(frame) == first_frame {
-            first_ports.insert(port);
-        }
+        // Real sequential boarding retains each rider's own scan/animation
+        // cadence; it does not synchronize their first shots into one frame.
+        firing_ports.insert(port);
         let flh = ports[port];
         let gi = sim.substrate.entities.get(rider).unwrap();
         let own = crate::sim::movement::ground_pose::position_world_coord(&gi.position);
@@ -321,9 +336,9 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
         );
     }
     assert_eq!(
-        first_ports,
+        firing_ports,
         (0..5).collect(),
-        "the first volley leaves from all five ports"
+        "all five boarded riders fire from their own ports"
     );
     assert!(
         sim.substrate
@@ -590,6 +605,16 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
         frames += 1;
     }
     println!("boarded after {frames} frames");
+    let arrival = position_world_coord(
+        &fortress
+            .scenario
+            .sim()
+            .substrate
+            .entities
+            .get(gi)
+            .unwrap()
+            .position,
+    );
     for frame in 0..60 {
         retail_frame(&mut fortress.scenario, Vec::new());
         let sim = fortress.scenario.sim();
@@ -599,8 +624,12 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
         assert!(rider.lifecycle.in_limbo, "frame {frame}: in limbo");
         assert_eq!(
             position_world_coord(&rider.position),
-            position_world_coord(&transport.position),
-            "frame {frame}: the rider holds the Fortress's coordinate"
+            arrival,
+            "frame {frame}: a stationary carrier retains the arrival subcell"
+        );
+        assert_eq!(
+            rider.passenger_role.open_transport_id(),
+            Some(transport.stable_id())
         );
         for cx in x - 3..=x + 1 {
             for cy in y - 1..=y + 3 {
@@ -616,4 +645,321 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
             }
         }
     }
+}
+
+/// Original Walk75BE20..75BE3C stops the last path step before PerCell can
+/// conceal an open-topped rider. Native Infantry fire admission reads that
+/// speed fraction; being hidden must not strand a moving-speed fire refusal.
+#[test]
+#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+fn retail_battle_fortress_player_boarding_retires_walking_speed() {
+    for kind in ["E1", "GGI", "GHOST", "CLEG"] {
+        let mut fortress = retail_dustbowl_battle_fortress_boarded(0);
+        let rider = board_infantry(&mut fortress, kind);
+        let actor = fortress
+            .scenario
+            .sim()
+            .substrate
+            .entities
+            .get(rider)
+            .unwrap();
+        println!(
+            "{kind} speed={:?} nav={:?} doing={:?}",
+            actor.foot_speed.applied_fraction(),
+            actor.navigation.nav_com,
+            actor.mission_leaf.as_infantry().map(|leaf| leaf.doing())
+        );
+        assert_eq!(
+            actor.foot_speed.applied_fraction(),
+            crate::util::fixed_math::SIM_ZERO,
+            "{kind} must stop before boarding conceals its ordinary movement tail"
+        );
+    }
+}
+
+/// Stock passenger weapon choices and permissions were checked with original
+/// Infantry/Techno selection (521917/6F3330), GetFireError's FireInTransport
+/// gate6FC363 and retail RULESMD. Values come through the production reader.
+/// Every armed, non-balloon, Size<=2 stock Infantry family with a permitted
+/// undeployed weapon is exercised, including campaign/civilian aliases.
+#[test]
+#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+fn retail_battle_fortress_permitted_stock_riders_emit_their_weapons() {
+    let cases = [
+        ("E1", "Para"),
+        ("E2", "M1Carbine"),
+        ("SHK", "ElectricBolt"),
+        ("GHOST", "MP5"),
+        ("YURI", "MindControl"),
+        ("DESO", "RadBeamWeapon"),
+        ("CTECH", "Pistola"),
+        ("WEEDGUY", "NukeCarrier"),
+        ("CLEG", "NeutronRifle"),
+        ("CCOMAND", "ChronoMP5"),
+        ("PTROOP", "MindControl"),
+        ("YURIPR", "SuperPsiWave"),
+        ("SNIPE", "AWP"),
+        ("ALL", "AlligatorBite"),
+        ("TANY", "DoublePistols"),
+        ("FLAKT", "FlakGuyGun"),
+        ("VLADIMIR", "Pistola"),
+        ("PENTGEN", "Pistola"),
+        ("SSRV", "Pistola"),
+        ("CIVA", "Pistola"),
+        ("CIVB", "Pistola"),
+        ("CIVC", "Pistola"),
+        ("POLARB", "BearBite"),
+        ("JOSH", "ChimpBite"),
+        ("GGI", "MissileLauncher"),
+        ("INIT", "PsychicJab"),
+        ("BORIS", "AKM"),
+        ("VIRUS", "Virusgun"),
+        ("CLNT", "CLINTGUN"),
+        ("ARND", "TERMIGUN"),
+        ("STLN", "STALGUN"),
+        ("SLAV", "SHOVEL"),
+        ("MUMY", "Mummysmash"),
+    ];
+    for (kind, expected_weapon) in cases {
+        let mut fortress = retail_dustbowl_battle_fortress_boarded(0);
+        let rider = board_infantry(&mut fortress, kind);
+        let (x, y) = fortress.cell;
+        let target = if kind == "YURIPR" {
+            // Native I8: AreaFire uses the firer's own cell. This is PsiWave,
+            // not Yuri Prime's outside-transport SuperMindControl.
+            TargetKind::Cell(x, y)
+        } else {
+            let enemy = spawn_enemy(
+                &mut fortress,
+                if matches!(kind, "YURI" | "PTROOP" | "CLEG" | "MUMY") {
+                    "MTNK"
+                } else {
+                    "E2"
+                },
+                (
+                    x + if matches!(kind, "YURI" | "PTROOP" | "CLEG") {
+                        6
+                    } else {
+                        1
+                    },
+                    y,
+                ),
+            );
+            TargetKind::Entity(enemy)
+        };
+        let command = match target {
+            TargetKind::Entity(target_id) => Command::Attack {
+                attacker_id: fortress.bfrt,
+                target_id,
+            },
+            TargetKind::Cell(rx, ry) => Command::ForceAttackCell {
+                attacker_id: fortress.bfrt,
+                target_rx: rx,
+                target_ry: ry,
+            },
+        };
+        let envelope = order(&fortress, command);
+        let mut output = retail_frame(&mut fortress.scenario, vec![envelope]);
+        let mut fired = None;
+        for _ in 0..180 {
+            if let Some(event) = output
+                .fire_events
+                .iter()
+                .find(|event| event.attacker_id == rider)
+            {
+                fired = Some(
+                    fortress
+                        .scenario
+                        .sim()
+                        .interner
+                        .resolve(event.weapon_id)
+                        .to_string(),
+                );
+                break;
+            }
+            output = retail_frame(&mut fortress.scenario, Vec::new());
+        }
+        assert_eq!(
+            fired.as_deref(),
+            Some(expected_weapon),
+            "{kind} must fire its own weapon from BFRT"
+        );
+        if let TargetKind::Entity(target_id) = target {
+            if matches!(kind, "YURI" | "PTROOP") {
+                for _ in 0..20 {
+                    if fortress
+                        .scenario
+                        .sim()
+                        .substrate
+                        .entities
+                        .get(target_id)
+                        .is_some_and(|victim| victim.mind_control.controller() == Some(rider))
+                    {
+                        break;
+                    }
+                    retail_frame(&mut fortress.scenario, Vec::new());
+                }
+                let sim = fortress.scenario.sim();
+                let victim = sim.substrate.entities.get(target_id).unwrap();
+                assert_eq!(
+                    victim.mind_control.controller(),
+                    Some(rider),
+                    "{kind} captures through its own manager"
+                );
+                assert_eq!(
+                    victim.owner(),
+                    sim.substrate.entities.get(rider).unwrap().owner()
+                );
+            }
+        }
+    }
+}
+
+/// A freshly teleported rider must finish materializing inside, acquire and
+/// freeze a target outside the hull's range, then release on Stop or erase.
+#[test]
+#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
+    for stop_after_freeze in [true, false] {
+        let mut fortress = retail_dustbowl_battle_fortress_boarded(0);
+        let rider = board_infantry(&mut fortress, "CLEG");
+        assert!(
+            fortress
+                .scenario
+                .sim()
+                .substrate
+                .entities
+                .get(rider)
+                .unwrap()
+                .is_warping_in()
+        );
+        let (x, y) = fortress.cell;
+        let target = spawn_enemy(&mut fortress, "MTNK", (x + 5, y + 3));
+        assert!((1408..1792).contains(&distance(&fortress, fortress.bfrt, target)));
+        fortress
+            .scenario
+            .runtime
+            .simulation
+            .substrate
+            .entities
+            .get_mut(target)
+            .unwrap()
+            .mission
+            .set_current_for_test(
+                crate::sim::mission::MissionId::from_known(MissionType::Sleep),
+                0,
+            );
+        let original_health = fortress
+            .scenario
+            .sim()
+            .substrate
+            .entities
+            .get(target)
+            .unwrap()
+            .health
+            .current;
+        let mut frozen = false;
+        let mut stop_issued = false;
+        let mut completed = false;
+        let mut pending = None;
+        for frame in 0..1000 {
+            // Observe the first release before another Guard scan can
+            // legitimately reacquire the enemy. Native Stop retains Attack
+            // until its scheduled Idle receiver reaches Temporal::LetGo.
+            if stop_issued
+                && !fortress
+                    .scenario
+                    .sim()
+                    .substrate
+                    .entities
+                    .get(rider)
+                    .unwrap()
+                    .temporal
+                    .is_warping_someone()
+            {
+                let victim = fortress
+                    .scenario
+                    .sim()
+                    .substrate
+                    .entities
+                    .get(target)
+                    .unwrap();
+                assert!(!victim.ai_frozen());
+                assert_eq!(victim.health.current, original_health);
+                completed = true;
+                break;
+            }
+            retail_frame(&mut fortress.scenario, pending.take().into_iter().collect());
+            let sim = fortress.scenario.sim();
+            let actor = sim.substrate.entities.get(rider).unwrap();
+            if actor.temporal.warp_target() == Some(target) {
+                assert!(!actor.is_warping_in());
+                assert!(sim.substrate.entities.get(target).unwrap().ai_frozen());
+                frozen = true;
+                if stop_after_freeze && !stop_issued {
+                    pending = Some(order(
+                        &fortress,
+                        Command::Stop {
+                            entity_id: fortress.bfrt,
+                        },
+                    ));
+                    stop_issued = true;
+                }
+            }
+            if sim
+                .substrate
+                .entities
+                .get(target)
+                .is_none_or(|victim| !victim.lifecycle.object_alive)
+            {
+                assert!(!actor.temporal.is_warping_someone());
+                completed = true;
+                break;
+            }
+            if matches!(frame, 120 | 300 | 999) {
+                println!(
+                    "chrono frame {frame}: warp={} mission={:?} queued={:?} target={:?} fraction={:?} doing={:?}",
+                    actor.is_warping_in(),
+                    actor.mission.current(),
+                    actor.mission.queued(),
+                    actor.attack_target,
+                    actor.foot_speed.applied_fraction(),
+                    actor.mission_leaf.as_infantry().map(|leaf| leaf.doing())
+                );
+            }
+        }
+        assert!(frozen, "rider freezes the target after hidden cooldown");
+        assert!(
+            completed,
+            "Stop releases it, or its complete Temporal chain erases it"
+        );
+    }
+}
+
+#[test]
+fn retail_battle_fortress_forbidden_weapons_do_not_gain_transport_permission() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    for weapon in [
+        "DefuseKit",
+        "MakeupKit",
+        "BadTeeth",
+        "GoodTeeth",
+        "Punch",
+        "Smash",
+        "TerrorBomb",
+        "IvanBomber",
+        "Mummypunch",
+    ] {
+        assert!(
+            !retail.rules.weapon(weapon).unwrap().fire_in_transport,
+            "{weapon}"
+        );
+    }
+    // Native NeverUse selection excludes the scanner. Permission alone must
+    // not turn an Engineer into a repair gunner in an OpenTopped carrier.
+    let scanner = retail.rules.weapon("VirtualScanner").unwrap();
+    assert!(scanner.fire_in_transport);
+    assert!(scanner.never_use);
 }
