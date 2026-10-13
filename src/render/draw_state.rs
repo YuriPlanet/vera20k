@@ -223,6 +223,19 @@ impl DrawState {
         }
     }
 
+    /// A draw outside the Techno resolver whose own blitter flags select 50%
+    /// translucency: a `Translucent=` `[VoxelAnims]` type's body
+    /// (`VoxelAnimClass::DrawIt`, `0x2804` at `0x00749E00`).
+    pub(crate) fn translucent(remap_row: u32) -> Self {
+        let mut state = Self {
+            remap_row,
+            ..Self::default()
+        };
+        state.fx_params[0] = opacity_for_selector_bits(TRANSLUCENCY_50);
+        state.fx_params[1] = f32::from(TRANSLUCENCY_50);
+        state
+    }
+
     /// Adapt simulation-owned producers without inventing missing native fields.
     pub fn for_entity(
         entity: &GameEntity,

@@ -1317,6 +1317,33 @@ impl UnitModel {
         )
     }
 
+    /// A `VoxelAnimClass` piece at its bounce matrix: the body, drawn without
+    /// an HVA and lit diffusely, and its ground shadow stencil
+    /// (`VoxelAnimClass::DrawIt @ 0x00749B70`). DrawIt draws only the type's
+    /// `VoxelIndex=` section; this draws a single-section model at index zero
+    /// and nothing otherwise. Every stock `[VoxelAnims]` image (`TIRE`,
+    /// `PIECE`, `GASTANK`, `MTRS`, `MTRB`) is a single-section model, and no
+    /// stock type authors `VoxelIndex=`.
+    pub(crate) fn render_tumble(
+        &self,
+        section: i32,
+        matrix: glam::Mat4,
+        vpl: Option<&VplFile>,
+    ) -> Option<(VxlSprite, Option<VxlSprite>)> {
+        let body = self.body.as_ref()?;
+        if section != 0 || body.vxl.limbs.len() != 1 {
+            return None;
+        }
+        let params = VxlRenderParams {
+            body_tilt: Some(vxl_raster::BodyTilt::Tumble(matrix)),
+            ..VxlRenderParams::default()
+        };
+        Some((
+            vxl_raster::render_vxl(&body.vxl, None, &params, vpl),
+            vxl_raster::shadow::render_matrix(&body.vxl, matrix),
+        ))
+    }
+
     /// Metadata follows the requested VXL, not the union-sized texture canvas
     /// used to store each separate layer. Composite keys retain their actual
     /// body/turret/barrel bake order; live independently facing parts are united

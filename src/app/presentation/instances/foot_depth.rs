@@ -13,6 +13,17 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::util::native_x87::adjust_for_z_standard;
 
+/// Cell578080's floor height at a world X/Y and the selected Cell's raw
+/// `+0x140 & 0x100` bridge flag, without its shared dummy-coordinate write.
+/// Rendering must not change a retained DummyCell target or future
+/// gameplay/RNG state.
+pub(super) fn floor_probe(terrain: &ResolvedTerrainGrid, x: i32, y: i32) -> (i32, bool) {
+    let cell = depth_cell(terrain, None, None, [(x / 256) as i16, (y / 256) as i16]);
+    let ground = crate::util::lepton::ground_height_leptons(cell.level as u8, cell.ramp, x, y)
+        .expect("an object draw requires a supported native Cell slope");
+    (ground, cell.flags & 0x100 != 0)
+}
+
 /// Exact fixed-slot aliases and fallback values, without GetCell's simulation
 /// dummy stamp. The pure evaluator retains dummy identity/coordinates locally.
 pub(crate) fn depth_cell(

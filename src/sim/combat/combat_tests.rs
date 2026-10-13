@@ -192,7 +192,12 @@ fn building_damage_state_aoe_rules() -> RuleSet {
 }
 
 fn infantry_fire_frame_rules() -> RuleSet {
-    let rules_ini: IniFile = IniFile::from_str(
+    infantry_fire_frame_rules_with("")
+}
+
+/// [`infantry_fire_frame_rules`] with `patch` loaded over its rules INI.
+fn infantry_fire_frame_rules_with(patch: &str) -> RuleSet {
+    let mut rules_ini: IniFile = IniFile::from_str(
         "\
 [InfantryTypes]\n0=E1\n1=E2\n\n\
 [VehicleTypes]\n0=MTNK\n\n\
@@ -206,6 +211,7 @@ fn infantry_fire_frame_rules() -> RuleSet {
 [SA]\nVerses=100%,100%,100%,90%,70%,0%,100%,25%,25%,0%,0%\n\n\
 [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
     );
+    rules_ini.merge(&IniFile::from_str(patch));
     let mut rules = RuleSet::from_ini(&rules_ini).expect("infantry rules should parse");
     // Supplied reader-built records make native action admission explicit.
     // SecondaryFire/SecondaryProne are authored controls, not stock GI ART.
@@ -6183,6 +6189,94 @@ fn infantry_standing_fire_waits_for_fire_frame() {
     );
 }
 
+/// `InfantryClass::Fire_At_Target`'s tail (`0x00520A57..0x00520AC7`): on the
+/// fire frame, a weapon 0 slower than `[CombatDamage] Incoming=` scatters the
+/// target's cell away from the shooter. ReadSpeed makes `Incoming=10` 25 and
+/// `Speed=5` 12, so a computer tank three cells east of the GI heads further
+/// east with a queued Move; at `Speed=10` (25, not below) it stays put,
+/// though the GI fires all the same. A shot refused on the fire frame (here
+/// by a running rearm) takes the tail too (`0x005209FD..0x00520A51`).
+#[test]
+fn a_slow_infantry_shot_scatters_its_targets_cell_away_from_the_shooter() {
+    use crate::sim::combat::world_fire::FireVisit;
+    use crate::sim::components::NavTargetRef;
+    for (speed, refused, scatters) in [(5, false, true), (5, true, true), (10, false, false)] {
+        let rules = infantry_fire_frame_rules_with(&format!(
+            "[CombatDamage]\nIncoming=10\n[M60]\nSpeed={speed}\n\
+             [MTNK]\nArmor=light\nLocomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\n"
+        ));
+        assert_eq!(rules.combat_damage.incoming, 25);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        let gi = sim
+            .spawn_object("E1", "Americans", 5, 5, 0, &rules)
+            .unwrap();
+        let tank = sim
+            .spawn_object("MTNK", "Russians", 8, 5, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(tank)
+            .unwrap()
+            .mission
+            .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
+        assert!(install_entity_attack_target_for_test(
+            &mut sim.substrate.entities,
+            gi,
+            tank
+        ));
+        let fire = |sim: &mut Simulation| {
+            sim.commit_fire_visit(
+                FireVisit::InfantryTarget(gi),
+                &rules,
+                None,
+                crate::sim::world::FrameEffects::empty(),
+            );
+        };
+        fire(&mut sim);
+        assert!(
+            sim.substrate
+                .entities
+                .get(tank)
+                .unwrap()
+                .navigation
+                .nav_com
+                .is_none(),
+            "not the fire frame"
+        );
+        let rearm = crate::sim::timer::CdTimer::started(0, 40);
+        let shooter = sim.substrate.entities.get_mut(gi).unwrap();
+        if refused {
+            shooter.rearm_timer = rearm;
+        }
+        shooter.set_native_stage_value(2);
+        fire(&mut sim);
+        let rearm_after = sim.substrate.entities.get(gi).unwrap().rearm_timer;
+        if refused {
+            assert_eq!(rearm_after, rearm, "Speed={speed}: the shot is refused");
+        } else {
+            assert!(rearm_after.duration() > 0, "Speed={speed}: the GI fired");
+        }
+        let tank = sim.substrate.entities.get(tank).unwrap();
+        if scatters {
+            assert!(
+                matches!(
+                    tank.navigation.nav_com,
+                    Some(NavTargetRef::Cell { rx: 9, .. })
+                ),
+                "{:?}",
+                tank.navigation.nav_com
+            );
+            assert_eq!(
+                tank.mission.queued(),
+                MissionId::from_known(MissionType::Move)
+            );
+        } else {
+            assert_eq!(tank.navigation.nav_com, None);
+            assert_eq!(tank.mission.queued(), MissionId::NONE);
+        }
+    }
+}
+
 #[test]
 fn prone_infantry_uses_prone_fire_sequence_and_frame() {
     let rules = infantry_fire_frame_rules();
@@ -7893,8 +7987,20 @@ fn a_buildings_death_weapon_detonates_at_its_foundation_centre() {
 }
 
 fn inviso_weapon_rules(inviso: bool, with_anim: bool) -> RuleSet {
-    let anim_list = if with_anim { "AnimList=PIFF\n" } else { "" };
-    let ini = IniFile::from_str(&format!(
+    shooter_rules(
+        if inviso {
+            "Inviso=yes\n"
+        } else {
+            "Inviso=no\n"
+        },
+        if with_anim { "AnimList=PIFF\n" } else { "" },
+    )
+}
+
+/// A SHOOTER whose `Range=10` GUN fires TESTPROJ, with `projectile` and
+/// `warhead` keys, at a TARGET.
+fn shooter_rules(projectile: &str, warhead: &str) -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&format!(
         "\
 [InfantryTypes]\n\n\
 [VehicleTypes]\n0=SHOOTER\n1=TARGET\n\n\
@@ -7903,13 +8009,11 @@ fn inviso_weapon_rules(inviso: bool, with_anim: bool) -> RuleSet {
 [SHOOTER]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=GUN\n\n\
 [TARGET]\nStrength=500\nArmor=heavy\nSpeed=6\n\n\
 [GUN]\nDamage=10\nROF=20\nRange=10\nProjectile=TESTPROJ\nWarhead=TESTWH\n\n\
-[TESTPROJ]\nInviso={}\n\n\
-[TESTWH]\n{}\
-Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        if inviso { "yes" } else { "no" },
-        anim_list,
-    ));
-    RuleSet::from_ini(&ini).expect("Inviso test rules should parse")
+[TESTPROJ]\n{projectile}\n\
+[TESTWH]\n{warhead}\
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+    )))
+    .expect("shooter test rules should parse")
 }
 
 fn persistent_projectile_rules() -> RuleSet {
@@ -8224,6 +8328,82 @@ fn inviso_scatter_uses_scenario_rng_only_for_effect_and_paired_smudge() {
     );
 }
 
+/// Stock `[FlakProj]` (`Inviso=`, `FlakScatter=`, `Inaccurate=`, `Ranged=`)
+/// fired at an aircraft. `BulletClass::Fire` moves the burst off its target
+/// by two Scenario draws ahead of GetROF's jitter (`0x00468734..0x004688A5`)
+/// and hands the moved coordinate to `ProximityDetector::Setup`
+/// (`0x00468A80..0x00468A93`), so the fuse measures from there and the burst
+/// goes off at its first AI however far it moved. The impact ladder keeps an
+/// `Inaccurate=` bullet's Location (`0x00468D80`), so the detonation scatters
+/// from the placement. `BallisticScatter=` is raised so the burst can land
+/// more than `0x200` out, where a fuse measured from the target would not
+/// fire. The shooter fires from its centre.
+#[test]
+fn a_flak_burst_goes_off_where_fire_moved_it() {
+    let mut rules = shooter_rules(
+        "Inviso=yes\nAA=yes\nAG=no\nRanged=yes\nInaccurate=yes\nFlakScatter=yes\n",
+        "AnimList=PIFF\n",
+    );
+    rules.combat_damage.ballistic_scatter = 0x400;
+    initialize_fixture_anim_types(&mut rules);
+    let altitude = 1_177;
+    let mut store = EntityStore::new();
+    store.insert(make_entity(1, "SHOOTER", 5, 5, 300));
+    let mut aircraft = make_entity(2, "TARGET", 8, 5, 500);
+    aircraft.position.exact_z_leptons = Some(altitude);
+    store.insert(aircraft);
+    let mut interner = test_interner();
+    install_entity_attack_target_for_test(&mut store, 1, 2);
+    let centre = |cell: i32| cell * 256 + 128;
+    let target = ProjectileCoord::new(centre(8), centre(5), altitude);
+    let place = |rng: &mut SimRng| {
+        crate::sim::projectile::launch::bullet_fire_flak_placement(
+            ProjectileCoord::new(centre(5), centre(5), 0),
+            target,
+            rules.combat_damage.ballistic_scatter,
+            rules.weapon("GUN").unwrap().range_leptons,
+            rng,
+        )
+    };
+    let seed = (1..)
+        .find(|&seed| {
+            crate::sim::projectile::coord_distance(place(&mut SimRng::new(seed)), target) >= 0x240
+        })
+        .unwrap();
+
+    let mut scenario_rng = SimRng::new(seed);
+    let mut expected_rng = scenario_rng.clone();
+    let placement = place(&mut expected_rng);
+    expected_rng.next_range_u32_inclusive(0, 2);
+    let expected_effect = inviso_detonation_draws(
+        &mut expected_rng,
+        (
+            placement.x.div_euclid(256) as u16,
+            placement.y.div_euclid(256) as u16,
+            SimFixed::from_num(placement.x.rem_euclid(256)),
+            SimFixed::from_num(placement.y.rem_euclid(256)),
+        ),
+    );
+    align_attackers_to_targets(&mut store);
+    let result = tick_combat(
+        &mut store,
+        &mut OccupancyGrid::new(),
+        &rules,
+        &mut interner,
+        0,
+        100,
+        0,
+        &mut scenario_rng,
+    );
+
+    assert_eq!(scenario_rng.logical_state(), expected_rng.logical_state());
+    assert_eq!(result.fixture_anims.len(), 1);
+    assert_eq!(
+        constructed_anim_coord(&result.fixture_anims[0]),
+        expected_effect
+    );
+}
+
 #[test]
 fn inviso_empty_animlist_still_consumes_one_draw() {
     let rules = inviso_weapon_rules(true, false);
@@ -8384,20 +8564,7 @@ fn two_inviso_attackers_fire_in_live_order_and_the_second_bullet_waits_a_frame()
 
 /// `inviso_weapon_rules(true, true)` with one special warhead key added.
 fn inviso_special_rules(special_key: &str) -> RuleSet {
-    RuleSet::from_ini(&IniFile::from_str(&format!(
-        "\
-[InfantryTypes]\n\n\
-[VehicleTypes]\n0=SHOOTER\n1=TARGET\n\n\
-[AircraftTypes]\n\n\
-[BuildingTypes]\n\n\
-[SHOOTER]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=GUN\n\n\
-[TARGET]\nStrength=500\nArmor=heavy\nSpeed=6\n\n\
-[GUN]\nDamage=10\nROF=20\nRange=10\nProjectile=TESTPROJ\nWarhead=TESTWH\n\n\
-[TESTPROJ]\nInviso=yes\n\n\
-[TESTWH]\nAnimList=PIFF\n{special_key}\n\
-Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
-    )))
-    .expect("special Inviso test rules should parse")
+    shooter_rules("Inviso=yes\n", &format!("AnimList=PIFF\n{special_key}\n"))
 }
 
 /// `BulletClass::DetonateAtCoord @ 0x004690B0`: every special arm, its own
@@ -11279,10 +11446,6 @@ fn gsi_08_06_homing_launch_uses_one_lepton_and_stores_speed_as_the_ceiling() {
         "effective weapon Speed is the ceiling"
     );
     assert_eq!(guidance.acceleration, 3, "BulletTypeClass ctor default");
-    assert_eq!(
-        guidance.fuse_reference, spawn.initial_target_position,
-        "the ProximityDetector reference is frozen on the launch-time target"
-    );
     // This fixture checks the shot's facing, not an idealized unit vector:
     // native Bullet::Fire renormalizes using its approximate square root.
     // Full launch bits are compared with execution in projectile::launch.

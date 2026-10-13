@@ -1032,3 +1032,70 @@ fn original_unit_move_deployment_guards_match_mission_dispatch() {
         assert_rng(&sim, &row["rng_pair"], "after_hex", name);
     }
 }
+
+/// ClearBib449540 with a busy exit: the head's occupant takes the null
+/// Scatter, then each object beside the head scatters away from the head
+/// Cell's centre (`0x004495AD..0x0044968F`). The track sits in the head's
+/// north-east corner, where the octants to the neighbours would turn, so for
+/// every jitter draw a computer tank east of the head heads further east and
+/// one north of it further north, each with a queued Move.
+#[test]
+fn a_busy_factory_exit_pushes_its_neighbours_away_from_the_head() {
+    use crate::sim::mission::MissionType;
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=200\nSpeed=6\nSpeedType=Track\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .unwrap();
+    for seed in 0..16 {
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+        let spawn = |sim: &mut Simulation, x, y| {
+            let id = sim
+                .spawn_object("MTNK", "Russians", x, y, 0, &rules)
+                .unwrap();
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .mission
+                .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
+            id
+        };
+        spawn(&mut sim, 15, 15);
+        let east = spawn(&mut sim, 16, 15);
+        let north = spawn(&mut sim, 15, 14);
+        let producer = sim.substrate.next_stable_object_id;
+        let track = DriveCoord {
+            x: 15 * 256 + 255,
+            y: 15 * 256 + 1,
+            z: 0,
+        };
+        assert!(super::clear_factory_exit_bib(
+            &mut sim,
+            producer,
+            track,
+            &rules,
+            ObjectAiCtx::default(),
+        ));
+        let cell = |id: u64| match sim.substrate.entities.get(id).unwrap().navigation.nav_com {
+            Some(NavTargetRef::Cell { rx, ry }) => (rx, ry),
+            other => panic!("seed {seed}: tank {id} took no cell: {other:?}"),
+        };
+        assert_eq!(
+            cell(east).0,
+            17,
+            "seed {seed}: east of the head, further east"
+        );
+        assert_eq!(
+            cell(north).1,
+            13,
+            "seed {seed}: north of the head, further north"
+        );
+        for id in [east, north] {
+            assert_eq!(
+                sim.substrate.entities.get(id).unwrap().mission.queued(),
+                MissionId::from_known(MissionType::Move)
+            );
+        }
+    }
+}

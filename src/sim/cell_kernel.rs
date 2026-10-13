@@ -56,6 +56,28 @@ pub struct CellQueryPoint {
 }
 
 impl crate::sim::world::Simulation {
+    /// `MapClass::operator[](CoordStruct)` (`0x00565730`) for a world XY,
+    /// which truncates toward zero and wraps by row: the real cell, or `None`
+    /// for the shared dummy cell off the map, which holds no object. Without
+    /// resolved terrain, the truncated cell.
+    pub(crate) fn map_coord_cell(&self, x: i32, y: i32) -> Option<(u16, u16)> {
+        let (rx, ry) = match self.resolved_terrain.as_ref() {
+            Some(terrain) => {
+                let cells = NativeCellQuery::canonical(terrain);
+                let cell = cells.lookup_world(x, y);
+                let NativeCellIdentity::Real(_) = cell else {
+                    return None;
+                };
+                cells.coord(cell)
+            }
+            None => (
+                crate::util::lepton::lepton_to_cell_packed(x),
+                crate::util::lepton::lepton_to_cell_packed(y),
+            ),
+        };
+        Some((u16::try_from(rx).ok()?, u16::try_from(ry).ok()?))
+    }
+
     /// `CellClass::Find_Nearest_Object 0x47C3D0` with the (0,0) sub-point over
     /// `layer`'s list of `cell`: ranked by each object's vt+0x48 coordinate (a
     /// building's centre), the first in list order on a tie.

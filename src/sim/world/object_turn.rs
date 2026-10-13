@@ -195,8 +195,9 @@ impl Simulation {
                 return Ok(false);
             }
         }
-        self.scatter_null(
+        self.scatter(
             stable_id,
+            None,
             ScatterFlags::new(true, true),
             rules,
             registry,

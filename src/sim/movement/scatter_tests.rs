@@ -87,8 +87,9 @@ fn unit_refusals_match_native_and_leave_orders_and_rng_untouched() {
             sim.substrate.entities.insert(actor);
             let rng = sim.scenario_rng.state();
             assert!(
-                !sim.scatter_null(
+                !sim.scatter(
                     1,
+                    None,
                     flags,
                     &rules,
                     None,
@@ -251,8 +252,9 @@ fn building_receiver_is_the_object_no_op() {
     sim.substrate.entities.insert(building);
     let rng = sim.scenario_rng.state();
     assert!(
-        !sim.scatter_null(
+        !sim.scatter(
             1,
+            None,
             ScatterFlags::new(true, true),
             &no_rules(),
             None,
@@ -507,8 +509,9 @@ fn unit_null_arm_moves_hover_and_jumpjet_units() {
     let flags = ScatterFlags::new(true, true);
     let cell = sim.scatter_nearby_cell(hover, &rules).unwrap();
     assert!(
-        !sim.scatter_null(
+        !sim.scatter(
             hover,
+            None,
             flags,
             &rules,
             None,
@@ -525,8 +528,9 @@ fn unit_null_arm_moves_hover_and_jumpjet_units() {
     assert_eq!((unit.position.rx, unit.position.ry), (10, 10));
     let cell = sim.scatter_nearby_cell(jumpjet, &rules).unwrap();
     assert!(
-        !sim.scatter_null(
+        !sim.scatter(
             jumpjet,
+            None,
             flags,
             &rules,
             None,
@@ -605,8 +609,9 @@ fn unit_null_arm_matches_original_execution() {
         let before = serde_json::to_value(sim.substrate.entities.get(unit).unwrap()).unwrap();
         let rng = sim.scenario_rng.state();
         assert!(
-            !sim.scatter_null(
+            !sim.scatter(
                 unit,
+                None,
                 flags,
                 &rules,
                 None,
@@ -744,4 +749,163 @@ fn receive_damage_scatter_gates_match_original_execution() {
         checked += 1;
     }
     assert_eq!(checked, 263);
+}
+
+/// The Unit coordinate arm (tools/spatial_oracle/unit_source_scatter): every
+/// executed row through the production receiver on a Drive tank at (10, 10)
+/// of a flat 32x32 map. Each candidate's `Can_Enter_Cell` answers the code
+/// the original recorded for it (the live rows' codes come from the original
+/// Unit73F0A0, which the unit_entry corpora pin); the gates, both Scenario
+/// draws, the heading, the navigation seed, the walk and the queued Move with
+/// its destination are VERA's own.
+#[test]
+fn unit_source_arm_matches_original_execution() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::combat::AttackTarget;
+    use crate::sim::movement::fresh_oracle_seam::{self, FreshCallRecord};
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_source_scatter.json",
+    ))
+    .unwrap();
+    let mut checked = 0;
+    for row in rows.as_array().unwrap() {
+        let input = &row["input"];
+        let flag = |key: &str| input[key].as_bool().unwrap_or(false);
+        let coord = |key: &str, default: [i32; 3]| {
+            input[key].as_array().map_or(default, |v| {
+                std::array::from_fn(|i| v[i].as_i64().unwrap() as i32)
+            })
+        };
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=200\nSpeed=6\nSpeedType=Track\n\
+             Locomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\n\
+             [Guard]\nScatter={}\nParalyzed={}\n",
+            input["mission_scatter"].as_bool().unwrap_or(true),
+            flag("paralyzed"),
+        )))
+        .unwrap();
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        for cell in input["cells"].as_array().into_iter().flatten() {
+            let at = |i: usize| cell[i].as_u64().unwrap();
+            let out = sim
+                .resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut(at(0) as u16, at(1) as u16)
+                .unwrap();
+            out.level = at(2) as u8;
+            out.bridge_facts.raw_flags = at(3) as u32;
+        }
+        assert_eq!(coord("actor", [2688, 2688, 0]), [2688, 2688, 0]);
+        let unit = sim
+            .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let actor = with_mission(
+            sim.substrate.entities.get(unit).unwrap(),
+            MissionType::Guard,
+        );
+        *sim.substrate.entities.get_mut(unit).unwrap() = actor;
+        let actor = sim.substrate.entities.get_mut(unit).unwrap();
+        if flag("nav") {
+            actor.navigation.nav_com = Some(NavTargetRef::cell(8, 8));
+        }
+        if flag("target") {
+            actor.attack_target = Some(AttackTarget::for_cell(5, 5));
+        }
+        actor.turret_rotation_latch = flag("turret_latch");
+        if flag("unload_active") {
+            let mut miner = crate::sim::miner::Miner::new(
+                crate::sim::miner::MinerKind::War,
+                &crate::sim::miner::MinerConfig::default(),
+                0,
+            );
+            miner.unload_active = true;
+            actor.miner = Some(miner);
+        }
+        let head = coord("head", [0, 0, 0]);
+        if head != [0, 0, 0] {
+            let head = DriveCoord {
+                x: head[0],
+                y: head[1],
+                z: head[2],
+            };
+            assert!(
+                actor
+                    .locomotor
+                    .as_mut()
+                    .unwrap()
+                    .install_drive_state_for_test(Some(
+                        crate::sim::movement::DriveLocomotionRuntime::default()
+                            .with_head_to_for_test(Some(head))
+                    ))
+            );
+        }
+        let nav_before = actor.navigation.nav_com;
+        sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        let checks = row["checks"].as_array().unwrap();
+        fresh_oracle_seam::install(
+            checks
+                .iter()
+                .map(|c| c[3].as_u64().unwrap() as u8)
+                .collect(),
+            Vec::new(),
+        );
+        let [x, y, z] = coord("source", [1000, 2688, 0]);
+        let flags = ScatterFlags::new(input["force"].as_bool().unwrap_or(true), flag("second"));
+        assert!(
+            !sim.scatter(
+                unit,
+                Some(DriveCoord { x, y, z }),
+                flags,
+                &rules,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap()
+        );
+        let (records, unused) = fresh_oracle_seam::finish();
+        assert_eq!(unused, 0, "{input}");
+        let expected: Vec<_> = checks
+            .iter()
+            .map(|c| FreshCallRecord::CanEnter {
+                cell: (
+                    c[0][0].as_i64().unwrap() as i16,
+                    c[0][1].as_i64().unwrap() as i16,
+                ),
+                direction: c[1].as_i64().unwrap() as i32,
+                height: c[2].as_i64().unwrap() as i32,
+                code: c[3].as_u64().unwrap() as u8,
+            })
+            .collect();
+        assert_eq!(records, expected, "candidate order: {input}");
+        let unit = sim.substrate.entities.get(unit).unwrap();
+        match row["destination"].as_array() {
+            Some(cell) => {
+                let at = |i: usize| cell[i].as_u64().unwrap() as u16;
+                assert_eq!(
+                    unit.navigation.nav_com,
+                    Some(NavTargetRef::cell(at(0), at(1))),
+                    "{input}"
+                );
+                assert_eq!(
+                    unit.mission.queued(),
+                    MissionId::from_known(MissionType::Move),
+                    "{input}"
+                );
+            }
+            None => {
+                assert_eq!(unit.navigation.nav_com, nav_before, "{input}");
+                assert_eq!(unit.mission.queued(), MissionId::NONE, "{input}");
+            }
+        }
+        let state = sim.scenario_rng.logical_state();
+        assert_eq!(
+            serde_json::json!([state.index_a, state.index_b]),
+            row["random_indices"],
+            "{input}"
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 58);
 }

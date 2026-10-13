@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "24 VoxelAnimClass::DrawIt voxel draws of generated single-section art: the no-HVA shadow quad, crop and stencil, and the 753C80-lit body raster and crop, at 24 native bounce drawing matrices from bounce_tumble.json",
+  "assumptions": [
+    "original x87 0E7F and Init_Game startup camera, light and shadow translation (0x0052BDDD..0x0052BE0A)",
+    "section zero is drawn; DrawIt passes VoxelIndex, zero for every stock type",
+    "no shadow mask: DrawIt passes a null surface to 753F90"
+  ],
+  "substitutions": [
+    "immutable file vtable IO",
+    "operator new mapped heap allocation"
+  ],
+  "entry_points": {
+    "diffuse_lighting": "0x00753C80",
+    "shadow_quad": "0x00753F90",
+    "section_draw": "0x007540F0",
+    "crop": "0x00754510"
+  },
+  "replay_command": "python -m tools.voxel_oracle.tumble_fixtures",
+  "payload_sha256": "2088464dfe00edd476a380c7533b0e2dd3d91cb8a3da275b6d302d71e4bc9dbd"
+}

@@ -1240,6 +1240,7 @@ impl Simulation {
             } else {
                 MovementLayer::Ground
             },
+            None,
             super::ScatterFlags::new(true, no_kidding),
             rules,
             registry,

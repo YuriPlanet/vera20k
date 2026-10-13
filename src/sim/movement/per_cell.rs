@@ -458,8 +458,9 @@ impl Simulation {
             }
             //73AAC8..73AADB: no QueueMission, Process or EnterIdle. Unit's
             // null Scatter receiver cannot produce the Infantry error path.
-            let _ = self.scatter_null(
+            let _ = self.scatter(
                 id,
+                None,
                 super::scatter::ScatterFlags::new(true, false),
                 rules,
                 registry,

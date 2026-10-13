@@ -4,6 +4,9 @@ Executes, case by case:
 - TechnoClass::FireAt's launch scatter, 0x006FE663..0x006FE8EE, both arms
   (flak: FlakScatter and not Inviso; plain). Sqrt_Approx 0x004CAC40,
   Math::sin 0x004CACB0, Math::cos 0x004CAD00 and ftol 0x007C5F00 run.
+- BulletClass::Fire's flak placement, 0x0046874E..0x004688A9, which a
+  FlakScatter and Inviso bullet takes before its Inviso arm. The same
+  helpers run.
 - BulletClass::SpawnShrapnel's child velocity, from the zeroed velocity to the
   child's launch call: the hostile-object branch 0x0046A5B2..0x0046A875 and
   the random-cell branch 0x0046AA66..0x0046AD29. Math::atan2 0x004CAE30,
@@ -27,7 +30,8 @@ DetonateAtCoord is recorded (its coordinate argument) and returns at once,
 leaving the bullet's +0x90 flag set.
 
 Rust consumers: src/sim/projectile/launch.rs (fireat_launch_scatter,
-shrapnel_launch_velocity) and src/sim/combat/inviso_scatter.rs
+bullet_fire_flak_placement, shrapnel_launch_velocity) and
+src/sim/combat/inviso_scatter.rs
 (random_direction_coord_for_byte).
 """
 import struct
@@ -49,6 +53,8 @@ BULLET_TYPE, FRAME = SCRATCH + 0x5000, SCRATCH + 0x5800
 PARENT, TARGET, TARGET_VT = SCRATCH + 0x6000, SCRATCH + 0x6400, SCRATCH + 0x6800
 CHILD, CHILD_VT, WEAPON = SCRATCH + 0x7000, SCRATCH + 0x7400, SCRATCH + 0x7800
 STUB = SCRATCH + 0x9000                     # one address per supplied call
+FIRE_BULLET, FIRE_TYPE = SCRATCH + 0xD000, SCRATCH + 0xD400
+FIRE_WEAPON, FIRE_LAUNCH = SCRATCH + 0xD800, SCRATCH + 0xDC00
 RANGE_STUB, COORDS_STUB = STUB, STUB + 0x10
 SP = STACK_BASE + STACK_SIZE - 0x4000
 
@@ -116,6 +122,42 @@ def scatter(case):
     assert uc.reg_read(UC_X86_REG_ESP) == SP
     return dict(input=case, calls=calls,
                 result=[read32(uc, SP + 0x94), read32(uc, SP + 0x98), read32(uc, SP + 0x9C)])
+
+
+def bullet_fire_flak(case):
+    """Fire 0x0046874E..0x004688A9: the launch at [EDI], the target in
+    ECX/EAX/EDX and at [ESP+0x44]; the placement is left at [ESP+0x44]."""
+    uc = machine()
+    target = case["target"]
+    uc.mem_write(RULES + 0x1734, u32(case["scatter"]))
+    uc.mem_write(FIRE_BULLET + 0xAC, u32(FIRE_TYPE))
+    uc.mem_write(FIRE_BULLET + 0x130, u32(FIRE_WEAPON))
+    uc.mem_write(FIRE_WEAPON + 0xB4, u32(case["range"]))
+    for offset in (0x2A3, 0x29E):
+        uc.mem_write(FIRE_TYPE + offset, bytes([1]))
+    uc.mem_write(FIRE_LAUNCH, struct.pack("<iii", *case["launch"]))
+    for offset, value in zip((0x44, 0x48, 0x4C), target):
+        uc.mem_write(SP + offset, u32(value))
+    for register, value in ((UC_X86_REG_ESP, SP), (UC_X86_REG_EBX, FIRE_BULLET),
+                            (UC_X86_REG_EDI, FIRE_LAUNCH), (UC_X86_REG_ECX, target[0]),
+                            (UC_X86_REG_EAX, target[1]), (UC_X86_REG_EDX, target[2])):
+        uc.reg_write(register, value & 0xFFFFFFFF)
+    draws = list(case["draws"])
+    calls = []
+
+    def hook(_uc, address, _size, _data):
+        sp = uc.reg_read(UC_X86_REG_ESP)
+        if address == RANDOM_RANGED:
+            calls.append(["random_ranged", read32(uc, sp + 4), read32(uc, sp + 8)])
+            returns(uc, draws.pop(0), 8)
+
+    uc.hook_add(UC_HOOK_CODE, hook)
+    run_checked(uc, 0x46874E, 0x4688A9, count=200_000,
+                required_addresses=[0x4CAC40, 0x4CACB0, 0x4CAD00])
+    assert not draws, "every supplied draw is consumed"
+    assert uc.reg_read(UC_X86_REG_ESP) == SP
+    return dict(input=case, calls=calls,
+                result=[read32(uc, SP + 0x44), read32(uc, SP + 0x48), read32(uc, SP + 0x4C)])
 
 
 def shrapnel(case):
@@ -243,6 +285,31 @@ def scatter_cases():
     return rows
 
 
+def bullet_fire_flak_cases():
+    rows = []
+    launch = [30 * 256 + 128, 40 * 256 + 128, 0]
+    # Target minus launch: aircraft at stock flak ranges and heights, a ground
+    # case, no distance, one-lepton steps and a target below the launch.
+    offsets = [(1792, 0, 1500), (0, -2304, 1500), (-1100, 900, 1500), (2900, 1450, 1500),
+               (300, -200, 0), (0, 0, 0), (-1, 1, 1), (2048, 2048, -104)]
+    raws = [0, 1, 0x1FFFFFFF, 0x2AAAAAAA, 0x3FFFFFFF, 0x40000000, 0x55555555, 0x6D0A2C11,
+            0x12345678, 0x7FFFFFFE]
+    for index, (dx, dy, dz) in enumerate(offsets):
+        target = [launch[0] + dx, launch[1] + dy, launch[2] + dz]
+        for step, raw in enumerate(raws):
+            # Stock BallisticScatter=1.0: the magnitude draw's ceiling is 512.
+            roll = [512, 257, 1, 0][(index + step) % 4]
+            rows.append(dict(launch=launch, target=target, scatter=256,
+                             range=[3072, 2560, 2048][index % 3], draws=[roll, raw]))
+    # No BallisticScatter, and 1.5 cells.
+    for scatter_value in (0, 384):
+        for raw in (0x12345678, 0x55555555):
+            rows.append(dict(launch=launch, target=[launch[0] + 2900, launch[1] + 1450, 1500],
+                             scatter=scatter_value, range=2560,
+                             draws=[scatter_value * 2, raw]))
+    return rows
+
+
 def shrapnel_cases():
     rows = []
     origin = [20 * 256 + 128, 30 * 256 + 128, 0]
@@ -271,6 +338,7 @@ def direction_cases():
 
 def generate():
     return dict(scatter=[scatter(row) for row in scatter_cases()],
+                bullet_fire_flak=[bullet_fire_flak(row) for row in bullet_fire_flak_cases()],
                 shrapnel=[shrapnel(row) for row in shrapnel_cases()],
                 direction=[direction(row) for row in direction_cases()],
                 cluster_loop=[cluster_loop(row) for row in cluster_cases()])
@@ -278,7 +346,8 @@ def generate():
 
 if __name__ == "__main__":
     finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=lambda: provenance(
-        scope="FireAt launch scatter 0x006FE663..0x006FE8EE (both arms), SpawnShrapnel child "
+        scope="FireAt launch scatter 0x006FE663..0x006FE8EE (both arms), BulletClass::Fire's flak "
+              "placement 0x0046874E..0x004688A9, SpawnShrapnel child "
               "velocity (object branch 0x0046A5B2..0x0046A875, cell branch 0x0046AA66..0x0046AD29), "
               "the random-direction helper 0x0049F420 at cluster distances, and the cluster loop "
               "0x00469008..0x00469091",
@@ -293,6 +362,7 @@ if __name__ == "__main__":
                        "the child's launch call (vt+0x1F0) is observed, not run",
                        "in the cluster loop, DetonateAtCoord 0x004690B0 records its coordinate "
                        "argument and returns"],
-        entry_points=dict(scatter=0x6FE663, shrapnel_object=0x46A5B2,
+        entry_points=dict(scatter=0x6FE663, bullet_fire_flak=0x46874E,
+                          shrapnel_object=0x46A5B2,
                           shrapnel_cell=0x46AA66, direction=0x49F420,
                           cluster_loop=0x469008)))

@@ -4,7 +4,8 @@
 //! explicit native fixture boundaries in tools/projectile_oracle/bridge_render.md.
 //! The expected trajectory/draw values come only from the executed native corpus.
 
-use super::{geometry, ground_probe, projection_admitted};
+use super::super::foot_depth::floor_probe;
+use super::{geometry, projection_admitted};
 use crate::map::resolved_terrain::test_flat_ground_grid;
 use crate::rules::{art_data::ArtRegistry, ruleset::RuleSet};
 use crate::sim::projectile::{
@@ -256,7 +257,8 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
         terrain.shared_cell_dummy().stamp_coord(123, -44);
         let state_before = sim.state_hash();
         let dummy_before = terrain.shared_cell_dummy().snapshot();
-        let (ground, structural) = ground_probe(terrain, projectile.position);
+        let (ground, structural) =
+            floor_probe(terrain, projectile.position.x, projectile.position.y);
         assert_eq!(
             structural,
             flags & 0x100 != 0,

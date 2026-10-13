@@ -372,6 +372,48 @@ impl crate::sim::world::Simulation {
             ),
             None => RawCellKey::Real((point.x / 256) as u16, (point.y / 256) as u16),
         };
+        self.place_infantry_in_ground_key(rules, key, point)
+    }
+
+    /// PlaceInfantryInCell with useCellCoords (`0x00481212`) on `cell`, the
+    /// two Approach calls (`0x004D5EC6`, `0x004D60E4`): `request` picks the
+    /// spot as [`Self::place_infantry_in_ground_cell`] does, the spot's XY is
+    /// the cell's own origin (its `vt+0x48` centre, low byte cleared) plus the
+    /// spot's offset, and its Z the ground at `request` (`0x00578080` at
+    /// `0x0048146E`). `None` is the empty coordinate.
+    pub(crate) fn place_infantry_spot_in_cell(
+        &mut self,
+        rules: &crate::rules::ruleset::RuleSet,
+        cell: crate::map::cell_index::NativeCellIdentity,
+        request: DriveCoord,
+    ) -> Result<Option<DriveCoord>, String> {
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("PlaceInfantryInCell requires map cells")?;
+        let key = crate::sim::occupancy::RawCellKey::from_native(terrain, cell);
+        let Some(slot) = self.place_infantry_in_ground_key(rules, key, request) else {
+            return Ok(None);
+        };
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
+            self.resolved_terrain.as_ref().unwrap(),
+        );
+        let [x, y] = cell_kernel::native_cell_own_xy(cell, &cells);
+        let z = super::ground_pose::query_ground_height(&cells, request)?;
+        Ok(Some(super::walk_head::selected_head(
+            DriveCoord { x, y, z },
+            slot,
+            z,
+            false,
+        )))
+    }
+
+    fn place_infantry_in_ground_key(
+        &mut self,
+        rules: &crate::rules::ruleset::RuleSet,
+        key: crate::sim::occupancy::RawCellKey,
+        request: DriveCoord,
+    ) -> Option<u8> {
         let gate_open = native_ground_gate_open(
             &self.substrate.raw_cell_occupation,
             &self.substrate.occupancy,
@@ -385,7 +427,7 @@ impl crate::sim::world::Simulation {
             &self.substrate.raw_cell_occupation,
             key,
             MovementLayer::Ground,
-            point,
+            request,
             false,
             gate_open,
             &mut self.scenario_rng,
@@ -394,15 +436,14 @@ impl crate::sim::world::Simulation {
 }
 
 /// The older cell-list approximation of [`place_infantry_in_cell`], still
-/// used by the walk FindSubCellDest pre-allocation (`movement_step`), the tube
-/// exit and the landed-aircraft unload.
+/// used by the tube exit and the landed-aircraft unload.
 ///
 /// RESIDUAL: unlike `CellClass::PlaceInfantryInCell @ 0x00481180` it refuses
 /// a building occupant (native ignores bit 0x80) and returns before the
 /// centre-row `RandomRanged(0, 3)` draw on a cell already holding three
-/// infantry (native draws first). Trigger: infantry walking or unloading into
-/// a crowded cell. Effect: one Scenario draw fewer per such placement.
-/// Moving the walk and tube callers to the native byte read needs the
+/// infantry (native draws first). Trigger: infantry leaving a tube or
+/// unloading into a crowded cell. Effect: one Scenario draw fewer per such
+/// placement. Moving the tube caller to the native byte read needs the
 /// movement pass's raw occupation to be current at the crossing, which the
 /// movement ledger owns. The landed-aircraft unload (`0x00415B10`) reaches
 /// PlaceInfantryInCell through `InfantryClass::Unlimbo @ 0x0051DFF0`, whose

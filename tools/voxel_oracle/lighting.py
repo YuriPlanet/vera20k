@@ -9,6 +9,11 @@ All addresses were checked against the original executable on 2026-09-09.
 This fixture executes the lighting initializer, including both inverse matrices,
 the VXL normals-mode lookup, Sqrt_Approx, and the complete native normal loop.
 It does not emulate object dispatch, rasterization, palette conversion or the GPU.
+
+`diffuse_cases` execute the initializer VoxelAnimClass::DrawIt calls instead
+(749D97 -> 753C80 -> 758670: the bounce matrix's rigid inverse carries the
+light into model space, then a diffuse-only loop) on bounce matrices the
+original Quaternion_ToMatrix 646980 builds from FromAxisAngle 646480.
 """
 
 from pathlib import Path
@@ -85,6 +90,30 @@ def native_pages(draw_matrix, light, mode):
                                          0x7586F0, 0x4CAC40, 0x758850])
 
 
+def native_diffuse_pages(draw_matrix, light, mode):
+    # DrawIt passes section zero (EDX 0) and the light; the same minimal VXL
+    # header/tailer selects the normals mode.
+    vxl = bytearray(24)
+    struct.pack_into("<II", vxl, 16, SCRATCH + 0x100, SCRATCH + 0x200)
+    tailer = bytearray(0xA4)
+    tailer[0xA3] = mode
+    return dump_call(0x753C80, 0xB45990, 256, ecx=SCRATCH, edx=0,
+                     stack_args=[0, SCRATCH + 0x400, 0x887470],
+                     writes={SCRATCH: bytes(vxl), SCRATCH + 0x100: bytes(12),
+                             SCRATCH + 0x200: bytes(tailer),
+                             SCRATCH + 0x400: draw_matrix, 0x887470: light},
+                     required_addresses=[0x5AFC20, 0x5AF4D0, 0x7564B0, 0x758670])
+
+
+def bounce_matrices():
+    from tools.spatial_oracle.bounce_tumble import f32, from_axis_angle, to_matrix, unit
+    rotations = [([0, 0, 0], 0.0), (unit(1, 0, 0), 0.7), (unit(0, 1, 0), -1.9),
+                 (unit(0, 0, 1), 2.6), (unit(1, 1, 1), 1.2), (unit(-3, 2, -7), 3.0),
+                 (unit(0.25, -0.5, 0.125), -0.45), (unit(5, -1, 2), 5.5)]
+    return [struct.pack("<12I", *to_matrix(from_axis_angle(axis, f32(angle))))
+            for axis, angle in rotations]
+
+
 def generate():
     # Init_Game 52BDEE reads this exact float from 7E1E68, then calls 754C00.
     light = dump_call(0x754C00, 0x887470, 12, stack_args=[0x3F490E56])
@@ -96,14 +125,20 @@ def generate():
             cases.append({"step": step, "mode": mode,
                           "draw_matrix_bits": list(struct.unpack("<12I", matrix)),
                           "pages": native_pages(matrix, light, mode).hex()})
+    diffuse_cases = [{"mode": mode, "draw_matrix_bits": list(struct.unpack("<12I", matrix)),
+                      "pages": native_diffuse_pages(matrix, light, mode).hex()}
+                     for matrix in bounce_matrices() for mode in (2, 4)]
     return {"source": "unicorn/gamemd.exe", "light_bits": list(struct.unpack("<3I", light)),
-            "camera_bits": list(struct.unpack("<12I", camera)), "cases": cases}
+            "camera_bits": list(struct.unpack("<12I", camera)), "cases": cases,
+            "diffuse_cases": diffuse_cases}
 
 
 if __name__ == "__main__":
     finish_vectors(generate, Path(__file__).with_suffix(".json"),
                    provenance=lambda: provenance(
-                       scope="All 32 flat ordinary-unit facing steps, normals modes 2 and 4; entire 256-byte LUT",
+                       scope=("All 32 flat ordinary-unit facing steps, normals modes 2 and 4; entire "
+                              "256-byte LUT. Diffuse: eight native bounce matrices (identity and "
+                              "seven tumbles), modes 2 and 4, through VoxelAnimClass's initializer."),
                        assumptions=[
                            "x87 0x0E7F: WinMain 6BBFB7..6BBFC9 selects chop and startup precision; original instructions and tables",
                            "startup setters and camera/facing native blocks execute without substitutions",
@@ -113,4 +148,6 @@ if __name__ == "__main__":
                        ], substitutions=[], entry_points={
                            "light_setup": 0x754C00, "camera_block": 0x7558CE,
                            "facing_block": 0x55A760, "matrix_product": 0x5AF980,
-                           "lighting_initializer": 0x753D00, "lighting_loop": 0x7586F0}))
+                           "lighting_initializer": 0x753D00, "lighting_loop": 0x7586F0,
+                           "diffuse_initializer": 0x753C80, "diffuse_loop": 0x758670,
+                           "from_axis_angle": 0x646480, "to_matrix": 0x646980}))

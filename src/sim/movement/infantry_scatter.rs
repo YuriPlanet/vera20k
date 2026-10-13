@@ -1,10 +1,9 @@
 //! `InfantryClass::Scatter @ 0x0051D0D0`: the gates every call shares, the
-//! null-coordinate arm, and the away-from-a-coordinate selection the damage
-//! receiver, DeploySlaves and the garrison eject use. Class entry and
-//! navigation keep their owners.
+//! null-coordinate arm and the away-from-a-coordinate arm. The walk both arms
+//! end in is the shared Foot one (`scatter_cell`); class entry and navigation
+//! keep their owners.
 use super::bump_crush::scatter_movement_speed;
 use super::infantry_action::DO_UNDEPLOY;
-use super::infantry_entry::InfantryEntryArgs;
 use super::scatter::{ScatterFlags, mission_permits_scatter};
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::locomotor_type::LocomotorKind;
@@ -204,7 +203,7 @@ impl Simulation {
                 frame_effects,
             );
         }
-        let Some(destination) = self.infantry_scatter_neighbor(id, start, rules, registry)? else {
+        let Some(destination) = self.foot_scatter_neighbor(id, start, rules, registry)? else {
             return Ok(false);
         };
         if let Some(infantry) = self.substrate.entities.get_mut(id) {
@@ -223,7 +222,8 @@ impl Simulation {
     /// locomotor Process runs on this arm. DeploySlaves passes the owner's
     /// centre with (1,1) (`0x006B0667`); the garrison eject passes the
     /// building's centre; the Infantry damage receiver passes its source's
-    /// Location with (0,0) (`0x00518C56`).
+    /// Location with (0,0) (`0x00518C56`); `Scatter_Objects` passes its
+    /// caller's coordinate through [`Self::scatter`].
     pub(crate) fn infantry_scatter_from(
         &mut self,
         id: u64,
@@ -253,8 +253,8 @@ impl Simulation {
 
     /// The away-from-a-coordinate direction of `InfantryClass::Scatter`
     /// (`0x0051D258..0x0051D2D4`): the heading away from `source` rounded to
-    /// an octant plus `RandomRanged(0, 4) - 2`, then the eight-neighbour
-    /// search.
+    /// an octant plus `RandomRanged(0, 4) - 2`, then the shared Foot walk
+    /// ([`Self::foot_scatter_neighbor`]).
     fn select_infantry_scatter_away_from(
         &mut self,
         id: u64,
@@ -269,76 +269,10 @@ impl Simulation {
         let start = super::scatter_cell::source_start_direction(
             (current.x, current.y),
             source,
+            super::scatter_cell::OctantJitter::Infantry,
             &mut self.scenario_rng,
         );
-        self.infantry_scatter_neighbor(id, start, rules, registry)
-    }
-
-    /// The eight-neighbour search both Scatter arms share
-    /// (`0x0051D487..0x0051D6BA`), from the navigation cell: only numeric entry
-    /// zero is legal, and a soft obstruction is not a passable destination.
-    /// Evidence: tools/spatial_oracle/infantry_scatter_entry.{py,json,meta.json}.
-    ///
-    /// Missing map state keeps headless fixtures compatible: no cell is found.
-    fn infantry_scatter_neighbor(
-        &mut self,
-        id: u64,
-        start: i32,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-    ) -> Result<Option<(u16, u16)>, String> {
-        let Some(infantry) = self.substrate.entities.get(id) else {
-            return Ok(None);
-        };
-        let current = super::foot_coordinate::current_coordinate(infantry);
-        let Some(terrain) = self.resolved_terrain.as_ref() else {
-            return Ok(None);
-        };
-        let Some(bounds) = self.playfield_bounds else {
-            return Ok(None);
-        };
-        let navigation = super::foot_coordinate::navigation_coordinate(infantry, Some(terrain))?;
-        let seed = ((navigation.x / 256) as i16, (navigation.y / 256) as i16);
-        let on_bridge = infantry.on_bridge;
-        let destination =
-            super::scatter_cell::select_neighbor(seed, start, |candidate, direction| {
-                let terrain = self.resolved_terrain.as_ref().expect("retained map cells");
-                let cells = NativeCellQuery::canonical(terrain);
-                // Preserve the retained Cell identity across the height-aware
-                // playfield lookup and Object5F5F00's current-cell lookup. A dummy
-                // identity is shared and can change its coordinate between reads.
-                let cell = cells.lookup(candidate);
-                if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
-                    (i32::from(candidate.0), i32::from(candidate.1)),
-                    Some(bounds),
-                    Some(terrain),
-                ) {
-                    return Ok(None);
-                }
-                let height =
-                    super::ground_pose::query_object_cell_height(&cells, current, on_bridge);
-                if self
-                    .infantry_can_enter(
-                        id,
-                        cell,
-                        InfantryEntryArgs {
-                            direction,
-                            height,
-                            previous_cell: None,
-                        },
-                        rules,
-                        registry,
-                    )?
-                    .is_nonzero()
-                {
-                    return Ok(None);
-                }
-                Ok::<_, String>(Some(super::scatter_cell::preferred_surface(
-                    self.resolved_terrain.as_ref().expect("retained map cells"),
-                    candidate,
-                )))
-            })?;
-        Ok(destination.map(|destination| (destination.0 as u16, destination.1 as u16)))
+        self.foot_scatter_neighbor(id, start, rules, registry)
     }
 
     /// Scatter's `SetDestination(cell, 1)` (`vt+0x480`): the Infantry setter

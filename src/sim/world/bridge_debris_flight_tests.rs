@@ -362,14 +362,20 @@ fn compare_body(body: &BounceState, native: &str, terminal: bool, context: &str)
             assert_eq!(actual, expected, "{context}: velocity{axis}");
         }
     }
-    // SHP DBRIS has zero spin and its draw path does not consume quaternions.
-    // BounceState does not represent native quaternion bytes; no comparison of
-    // that unrepresented display-only state is claimed here.
-    assert_eq!(
-        body.spin_angle.bits(),
-        0,
-        "{context}: zero-spin fixture boundary"
-    );
+    // SHP DBRIS spins by a zero angle, so only the signs of the quaternions'
+    // zeros move, through each bounce's negation and the per-tick product.
+    for i in 0..4 {
+        assert_eq!(
+            body.orientation[i].bits(),
+            dword(0x30 + i * 4),
+            "{context}: orientation{i}"
+        );
+        assert_eq!(
+            body.rotation[i].bits(),
+            dword(0x40 + i * 4),
+            "{context}: rotation{i}"
+        );
+    }
 }
 
 #[test]

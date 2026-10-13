@@ -21,8 +21,13 @@ def pack(*values):
     return struct.pack('<' + 'I' * len(values), *values)
 
 
-def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix):
-    """Unmirrored native Render core, preserving all submitted sections."""
+def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix, diffuse=False):
+    """Unmirrored native Render core, preserving all submitted sections.
+
+    `diffuse` lights the draw as VoxelAnimClass::DrawIt does, through 753C80
+    with section zero and the world light (0x00749D97..0x00749DA3), instead of
+    TechnoClass's 753D00.
+    """
     u = Uc(UC_ARCH_X86, UC_MODE_32)
     oracle.load_image(u)
     u.mem_map(oracle.STACK_BASE, oracle.STACK_SIZE)
@@ -149,7 +154,11 @@ def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix):
     u.reg_write(UC_X86_REG_ESP, oracle.STACK_BASE + oracle.STACK_SIZE - 0x1000)
     oracle.run_checked(u, 0x52bddd, 0x52be0a, required_addresses=(0x5ae860, 0x754c00))
     write(INPUT, draw_matrix)
-    invoke(0x753d00, ecx=VXL, args=(0, INPUT, 0x887430, 0x887470, 0x40400000), required=(0x7586f0,))
+    if diffuse:
+        invoke(0x753c80, ecx=VXL, args=(0, INPUT, 0x887470), required=(0x758670,))
+    else:
+        invoke(0x753d00, ecx=VXL, args=(0, INPUT, 0x887430, 0x887470, 0x40400000),
+               required=(0x7586f0,))
     invoke(0x753e00)
     section_matrices = []
     for section in range(section_count):

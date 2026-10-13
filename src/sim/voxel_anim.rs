@@ -11,32 +11,11 @@
 //!
 //! The store IS wired: `world::substrate.voxel_anims` owns it, the LogicVector
 //! owns AI order through `ObjectKind::VoxelAnim`, and it folds into the state
-//! hash and the snapshot (`SNAPSHOT_VERSION` 120).
-//!
-//! RESIDUAL (GSI-05.14) — the pieces are simulated but not DRAWN. The unit
-//! voxel renderer is keyed by entity type, house remap and facing, and a
-//! `VoxelAnimClass` has none of those; its draw orientation is the quaternion
-//! tumble ([`crate::sim::bounce::BounceState`]), which is not ported, so a
-//! renderer added now would have to invent a facing. That missing draw path is
-//! the whole blocker — the sine table it needs is readable, see the tumble
-//! residual on `BounceState` — and no harness or replay fixture exercises this
-//! module at all, so nothing red catches a regression here.
-//! - Trigger: a death whose type authors `DebrisTypes=`.
-//! - Player effect: the tyres a dying harvester throws are invisible; the SHP
-//!   half of the same block does draw, so the death is not silent.
-//! - Frequency: 36 stock sections author `DebrisTypes=`, of which 32 reach the
-//!   block in gamemd — the Chrono Miner, the War Miner, the Slave Miner, the
-//!   demolitions truck, the fire truck and the civilian traffic. Against them,
-//!   324 sections take a visible SHP arm: of the 439 that author `MaxDebris=`
-//!   in gamemd's own spelling, 83 author `MaxDebris=0` and throw nothing at
-//!   all, leaving 356 that throw — 166 with their own `DebrisAnims=`, 158
-//!   falling back to `[General] MetallicDebris=`, and the 32 voxel ones.
-//!   VERA reads the key case-exactly and lands on these same figures; see
-//!   [`throw_death_debris`] for the 17 sections that mis-spell it and
-//!   therefore throw nothing.
-//! - Downstream risk: none to the stream — the pieces already consume their
-//!   draws, hash, and expire on schedule, so adding the draw later moves no
-//!   state.
+//! hash and the snapshot. `VoxelAnimClass::DrawIt @ 0x00749B70` draws each
+//! piece from the Air layer through
+//! `app::presentation::instances::voxel_anims`, which reads the store through
+//! [`Simulation::voxel_anims`](crate::sim::world::Simulation::voxel_anims) and
+//! the tumble through [`BounceState::drawing_matrix`].
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on rules/, map/, util/ and the rest of sim/.
@@ -138,6 +117,13 @@ impl VoxelAnimStore {
     #[cfg(test)]
     pub(crate) fn ids(&self) -> Vec<u64> {
         self.0.keys().copied().collect()
+    }
+}
+
+impl crate::sim::world::Simulation {
+    /// Read-only access for presentation.
+    pub fn voxel_anims(&self) -> &VoxelAnimStore {
+        &self.substrate.voxel_anims
     }
 }
 
@@ -912,10 +898,18 @@ mod tests {
         // MinAngularVelocity end whatever the draw. Reading the keys as degrees
         // would give a divisor of 13 and a spin band that actually varies.
         let _ = d1;
-        assert_eq!(
-            f64::from_bits(piece.bounce.spin_angle.bits()),
-            f64::from_bits(voxel_type.min_angular_velocity.bits())
-        );
+        let at_min = BounceState::init(
+            IVec3::new(0, 0, LAUNCH_Z_OFFSET_LEPTONS),
+            voxel_type.elasticity,
+            DEBRIS_GRAVITY,
+            NativeF64Bits::POSITIVE_ZERO,
+            piece.bounce.velocity,
+            voxel_type.min_angular_velocity,
+            &mut expected,
+        )
+        .expect("in domain");
+        assert_eq!(piece.bounce, at_min);
+        assert_eq!(rng.logical_view(), expected.logical_view());
         assert_eq!(piece.duration, 150);
         assert_eq!(piece.stable_id, 7);
     }

@@ -64,7 +64,12 @@ fn source_selection_matches_original_execution() {
                     let facing = input["facing"].as_u64().unwrap() as u16;
                     null_start_direction((actor[0], actor[1]), facing, &mut rng)
                 } else {
-                    source_start_direction((actor[0], actor[1]), (source[0], source[1]), &mut rng)
+                    source_start_direction(
+                        (actor[0], actor[1]),
+                        (source[0], source[1]),
+                        OctantJitter::Infantry,
+                        &mut rng,
+                    )
                 };
                 assert_eq!(
                     start & 7,

@@ -376,6 +376,12 @@ pub enum BodyTilt {
     /// `RocketLocomotionClass::Draw_Matrix` (`0x00663470`): CurrentPitch in
     /// radians above the horizon.
     Rocket(f32),
+    /// `VoxelAnimClass::DrawIt @ 0x00749B70`: the bounce body's drawing
+    /// matrix (`BounceClass::GetDrawingMatrix @ 0x004399E0`), which DrawIt
+    /// multiplies only by the identity viewer at `0x00887430` (`0x00749DB1`):
+    /// no camera and no facing. It is lit diffusely
+    /// ([`super::vxl_normals::diffuse_pages`]) and drawn without an HVA.
+    Tumble(Mat4),
 }
 
 /// The draw matrix of one body draw: a tilt arm when one is present, else the
@@ -394,6 +400,8 @@ fn voxel_params_draw_rotation(params: &VxlRenderParams, step: u8) -> Mat4 {
             voxel_rocket_locomotor_matrix(step, pitch),
         )
         .expect("finite voxel rotation"),
+        // The section transform applies the identity viewer itself.
+        Some(BodyTilt::Tumble(matrix)) => matrix,
         None if params.barrel_pitch != 0 => voxel_pitched_draw_rotation(
             params.slope_type,
             params.slope_blend,

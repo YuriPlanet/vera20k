@@ -102,8 +102,14 @@ pub(crate) fn mission_capture(
                 .is_some()
         });
         if on_building
-            && let Err(cause) =
-                sim.scatter_null(id, ScatterFlags::new(true, false), rules, registry, effects)
+            && let Err(cause) = sim.scatter(
+                id,
+                None,
+                ScatterFlags::new(true, false),
+                rules,
+                registry,
+                effects,
+            )
         {
             log::debug!("capturer {id} did not scatter off its building: {cause}");
         }

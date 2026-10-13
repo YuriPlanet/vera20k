@@ -161,7 +161,10 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
     // normalizing that id reproduced the old F1AD17BB92AA72D9 fingerprint,
     // and the Scenario fingerprint remains unchanged. The Main fingerprint
     // includes the newly modeled electric phase draw before the death sound.
-    assert_eq!(debris_fingerprint(&sim, ids[0]), 1748609705070689488);
+    // Re-captured again when the body began keeping its native orientation
+    // and rotation quaternions in place of the axis and angle; both RNG
+    // states above were unchanged.
+    assert_eq!(debris_fingerprint(&sim, ids[0]), 13227534854384985671);
     let next_id = sim.allocate_stable_id();
     assert_eq!(next_id, ids[2] + 1);
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
@@ -263,10 +266,11 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
     assert!(sim.particle_systems().is_empty());
     // Rust regression from the real Bullet AI, re-captured when the debris and
     // Explosion= draws moved to the Scenario stream; only the death sound
-    // stays on the main stream.
+    // stays on the main stream. The fingerprint was re-captured when the body
+    // began keeping its native quaternions; the RNG states were unchanged.
     assert_eq!(sim.scenario_rng.state(), 2066545679410230777);
     assert_eq!(sim.main_rng.state(), 6706932826526710953);
-    assert_eq!(debris_fingerprint(&sim, ids[0]), 8120097345519581533);
+    assert_eq!(debris_fingerprint(&sim, ids[0]), 17321112424619809687);
     // Retired objects remain physically resolvable until the shared drain.
     // Visiting again must not deliver another death transaction.
     let _ = sim.object_ai_visit_one(projectile, Some(&rules), ObjectAiCtx::default());

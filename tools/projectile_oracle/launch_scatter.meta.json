@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "FireAt launch scatter 0x006FE663..0x006FE8EE (both arms), SpawnShrapnel child velocity (object branch 0x0046A5B2..0x0046A875, cell branch 0x0046AA66..0x0046AD29), the random-direction helper 0x0049F420 at cluster distances, and the cluster loop 0x00469008..0x00469091",
+  "scope": "FireAt launch scatter 0x006FE663..0x006FE8EE (both arms), BulletClass::Fire's flak placement 0x0046874E..0x004688A9, SpawnShrapnel child velocity (object branch 0x0046A5B2..0x0046A875, cell branch 0x0046AA66..0x0046AD29), the random-direction helper 0x0049F420 at cluster distances, and the cluster loop 0x00469008..0x00469091",
   "assumptions": [
     "x87 control word 0x0E7F (53-bit, chop) as WinMain sets it",
     "the retail sine, atan and Sqrt_Approx tables are the image's initialised data",
@@ -22,10 +22,12 @@
   ],
   "entry_points": {
     "scatter": "0x006FE663",
+    "bullet_fire_flak": "0x0046874E",
     "shrapnel_object": "0x0046A5B2",
     "shrapnel_cell": "0x0046AA66",
     "direction": "0x0049F420",
     "cluster_loop": "0x00469008"
   },
-  "payload_sha256": "769d6aa1aea0c142c0c6c03359799e6905a52eccd2b319e1f9bd9c36d63b80cb"
+  "replay_command": "python -m tools.projectile_oracle.launch_scatter",
+  "payload_sha256": "84de093196a35fc79917e6909a232817aa057e28977a9039f9bc5a5d2269dadc"
 }

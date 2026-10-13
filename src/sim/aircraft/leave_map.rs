@@ -87,7 +87,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        let target = super::attack_mission::aircraft_target_present(
+        let target = crate::sim::combat::target_present(
             entity.attack_target.as_ref(),
             &self.substrate.entities,
         );

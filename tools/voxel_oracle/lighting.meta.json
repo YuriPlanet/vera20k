@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "All 32 flat ordinary-unit facing steps, normals modes 2 and 4; entire 256-byte LUT",
+  "scope": "All 32 flat ordinary-unit facing steps, normals modes 2 and 4; entire 256-byte LUT. Diffuse: eight native bounce matrices (identity and seven tumbles), modes 2 and 4, through VoxelAnimClass's initializer.",
   "assumptions": [
     "x87 0x0E7F: WinMain 6BBFB7..6BBFC9 selects chop and startup precision; original instructions and tables",
     "startup setters and camera/facing native blocks execute without substitutions",
@@ -22,7 +22,12 @@
     "facing_block": "0x0055A760",
     "matrix_product": "0x005AF980",
     "lighting_initializer": "0x00753D00",
-    "lighting_loop": "0x007586F0"
+    "lighting_loop": "0x007586F0",
+    "diffuse_initializer": "0x00753C80",
+    "diffuse_loop": "0x00758670",
+    "from_axis_angle": "0x00646480",
+    "to_matrix": "0x00646980"
   },
-  "payload_sha256": "3dda9b3fcb5b502db13e944b0a8e1dcedd9ceb1ede5f5e0101d02fa51f80aa52"
+  "replay_command": "python -m tools.voxel_oracle.lighting",
+  "payload_sha256": "0b408730dfd483265613b7c1bdf040617b8391ddbd7a4f4b92342792e8f208be"
 }

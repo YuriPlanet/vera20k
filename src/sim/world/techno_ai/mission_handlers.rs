@@ -1339,13 +1339,9 @@ fn evaluate_foot_hunt(
 /// `0x004D54C6`) and approaches the target (`0x004D54D2`), so he picks his
 /// approach cell afresh on every dispatch.
 ///
-/// RESIDUAL: for a man Approach does not represent (a `CloseRange=` one out
-/// of a deploy action, [`Simulation::owns_foot_approach`]), neither call
-/// runs; the pursuit pass stands in for both. Effect: such a man keeps a
-/// destination he already had, where retail drops it on every dispatch and
-/// approaches afresh; a Brute already walking somewhere walks on until he
-/// arrives, since the pass leaves a Walk man holding a NavCom alone.
-/// Frequency: a Brute put on Hunt while on the move.
+/// Neither call runs for a man out of a deploy action whom the Foot body does
+/// not represent ([`Simulation::owns_foot_approach`]): his Target has left
+/// the store, or he stands on no map.
 fn hunt_infantry_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: super::ObjectAiCtx<'_>) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;

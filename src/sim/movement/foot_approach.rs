@@ -209,49 +209,6 @@ impl Simulation {
             .map(|(_, target)| NavTargetRef::object(target))
     }
 
-    /// Whether the head's crush arms carry `id`'s approach. The OmniCrusher
-    /// arm takes every call. The computer arm takes the call while no NavCom
-    /// is set. Once its destination, the Target, stands, the head falls to the
-    /// Foot body, whose CanRecalcApproachTarget reset measures 0 from that
-    /// NavCom to the Target and keeps it, and whose ground unit then returns
-    /// on the NavCom (`0x004D5912..0x004D5A18`). So the drive at the Target
-    /// runs on until the crush or the per-cell range stop
-    /// (`per_cell::per_cell_range_stop`) ends it.
-    ///
-    /// RESIDUAL: VERA counts that drive as the crush's only while the Target
-    /// stays within the computer arm's reach. Any other unit's approach stays
-    /// its mission's anyway ([`Self::owns_foot_approach`]) unless its type is
-    /// `CloseRange=`, which no armed stock crusher is. Trigger: the Target
-    /// moves out of `Crush=` mid-charge, as a victim walking away does.
-    /// Effect: the pursuit pass takes any other crusher back and, with the
-    /// Target in weapon range, halts it at once, where native drives on until
-    /// its next cell's range stop: the unit stops up to a cell short. No draw,
-    /// timer or ownership differs.
-    pub(crate) fn crush_owns_approach(&self, id: u64, rules: &RuleSet) -> bool {
-        let Some((facts, target)) = self.approach_crush(id, rules) else {
-            return false;
-        };
-        let on_target = self.substrate.entities.get(id).is_some_and(|actor| {
-            actor.navigation.nav_com.is_none_or(|nav| {
-                super::navcom::nav_targets_same_receiver(Some(nav), NavTargetRef::object(target))
-            })
-        });
-        let crushable = || self.approach_crushable(id, target, rules);
-        facts.omni_arm(crushable)
-            || on_target
-                && ApproachCrush {
-                    nav_com: false,
-                    ..facts
-                }
-                .computer_arm(
-                    || {
-                        self.object_distance_to(id, TargetKind::Entity(target))
-                            .unwrap_or(i32::MAX)
-                    },
-                    crushable,
-                )
-    }
-
     /// Unit 0x7414E0's BalloonHover arm (0x741599..0x741600), as the Foot
     /// missions call Approach (vt+0x53C) with no-move 0
     /// ([`Self::approach_unit_head`]). A `BalloonHover=` type (+0xD6A) whose GetWeapon(SelectWeapon(Target))
@@ -393,9 +350,10 @@ impl Simulation {
     /// Whether the current mission's own Approach ([`Self::approach_target`])
     /// takes `id`'s approach, so the pursuit pass (`tick_attack_pursuit`)
     /// leaves it alone: on a mission that calls Approach (Attack, Hunt,
-    /// AreaGuard and Rescue), the Foot body ([`Self::owns_foot_approach`]),
-    /// the head's BalloonHover arm or a crush arm
-    /// ([`Self::crush_owns_approach`]). A hunting infantryman calls Approach
+    /// AreaGuard and Rescue), the Foot body ([`Self::owns_foot_approach`]) or
+    /// the head's BalloonHover arm. A unit the head's crush arms carry
+    /// ([`Self::unit_approach_head`]) holds a live Techno Target, so the Foot
+    /// body's boundary covers it too. A hunting infantryman calls Approach
     /// from Mission_Hunt's no-flag arm (`0x004D54D2`); its Engineer and C4
     /// arms set the destination themselves (`0x004D53BA..0x004D5467`), so the
     /// mission decides his movement either way (`evaluate_foot_hunt`). Its
@@ -417,13 +375,12 @@ impl Simulation {
         };
         calls_approach
             && (self.owns_foot_approach(id, rules)
-                || self.balloon_hover_approach(id, rules).is_some()
-                || self.crush_owns_approach(id, rules))
+                || self.balloon_hover_approach(id, rules).is_some())
     }
 
-    /// Ownership boundary for the absorbed common Unit/Infantry approach. CloseRange,
-    /// the BalloonHover arm ([`Self::balloon_hover_approach`]), non-Cell
-    /// queued receivers and DestroyableCliffs redirect have separate native
+    /// Ownership boundary for the absorbed common Unit/Infantry approach. The
+    /// BalloonHover arm ([`Self::balloon_hover_approach`]), non-Cell queued
+    /// receivers and DestroyableCliffs redirect have separate native
     /// branches; their old adapter remains explicit.
     /// A mapless fixture cannot execute native cell/zone queries.
     pub(crate) fn owns_foot_approach(&self, id: u64, rules: &RuleSet) -> bool {
@@ -449,15 +406,9 @@ impl Simulation {
                 TargetKind::Cell(rx, ry) => !terrain.is_destroyable_cliff(rx, ry),
                 TargetKind::Entity(target) => self.substrate.entities.contains(target),
             };
-        // RESIDUAL: a CloseRange= man (Brute, Mummy, Dinosaur) stays with the
-        // pursuit pass and walks at the Target's own cell; retail takes the
-        // body's CloseRange arms (4D5D14.., 4D60A5.., 4D623F.., 4D62C0..,
-        // 4D6563..), not ported. Frequency: every Brute attack.
         represented
             && self.zone_grid.is_some()
-            && self
-                .object_type(actor.type_ref(), rules)
-                .is_some_and(|t| !t.close_range)
+            && self.object_type(actor.type_ref(), rules).is_some()
             && self.balloon_hover_approach(id, rules).is_none()
             && actor
                 .navigation
@@ -467,8 +418,9 @@ impl Simulation {
     }
 
     /// Common Foot4D5690 body (Unit741689 and Infantry52236C pass false).
-    /// No RNG belongs
-    /// to Approach itself; MissionAttack draws its cadence after this returns.
+    /// Its only RNG is PlaceInfantryInCell's centre-row draw on a CloseRange
+    /// infantryman's spot requests (the pre-search arm and each ring
+    /// candidate); MissionAttack draws its cadence after this returns.
     pub(crate) fn approach_foot_target(
         &mut self,
         id: u64,
@@ -667,21 +619,7 @@ impl Simulation {
                 target.category != EntityCategory::Structure && target.on_bridge
             }),
         };
-        //4D5F6F target+50 may resample ground and flags before any candidate.
-        let _ = if let Some(identity) = identity {
-            in_range::native_cell_range_coords(identity, &cells)
-        } else {
-            in_range::resolve_target_coords_3d(
-                &target,
-                &self.substrate.entities,
-                rules,
-                &self.interner,
-                &cells,
-            )
-        }
-        .ok_or("Approach target surface failed")?;
-        let mut retained_candidate = target_cell;
-        let mut chosen = None;
+        let category = actor.category;
         //4D5909..590D: a mover whose locomotor is Jumpjet flies there, so
         // it takes the first admitted candidate without either path-cost
         // test (4D6764 -> 4D689A). 4D5873 sets the same flag for an
@@ -696,48 +634,86 @@ impl Simulation {
             .locomotor
             .as_ref()
             .is_some_and(|loco| loco.active_kind() == LocomotorKind::Jumpjet);
-        'rings: while radius > 204 {
+        let close_range = object.close_range;
+        //4D5CFE..5D2F: a CloseRange= infantryman's radius under 332.8
+        // (0x7E9248) becomes 332.
+        if category == EntityCategory::Infantry && close_range {
+            radius = radius.max(332);
+        }
+        let forced = close_range
+            && self.approach_close_range_spot(id, target, own, rules, registry, frame_effects)?;
+        let terrain = self.resolved_terrain.as_ref().unwrap();
+        let cells = NativeCellQuery::canonical(terrain);
+        //4D5F6F target+50 may resample ground and flags before any candidate.
+        let _ = if let Some(identity) = identity {
+            in_range::native_cell_range_coords(identity, &cells)
+        } else {
+            in_range::resolve_target_coords_3d(
+                &target,
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+                &cells,
+            )
+        }
+        .ok_or("Approach target surface failed")?;
+        let mut retained_candidate = target_cell;
+        //4D5FE0: after the CloseRange= arm's spot the destination is the
+        // Target's own cell, without the search (4D6892 -> 4D689A).
+        let mut chosen = forced.then_some(target_cell);
+        //4D6093..60F9: a CloseRange= infantryman's candidate is the spot
+        // PlaceInfantryInCell picks in the radial cell for the Target's
+        // coordinate; anyone else's is the cell centre (4D60FB..613A).
+        let spots = category == EntityCategory::Infantry && close_range;
+        'rings: while chosen.is_none() && radius > 204 {
             for offset in OFFSETS {
                 let direction = (i16::from(facing_byte).wrapping_add(offset) as u16) << 8;
                 let [x, y] = facing_step_world_xy([own.x, own.y], direction, radius);
                 let radial = ((x / 256) as i16, (y / 256) as i16);
-                let mut point = cell_centre(radial);
+                let mut point = if spots {
+                    let cell = NativeCellQuery::canonical(self.resolved_terrain.as_ref().unwrap())
+                        .lookup_world(x, y);
+                    // The empty coordinate is the origin.
+                    self.place_infantry_spot_in_cell(rules, cell, own)?
+                        .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 })
+                } else {
+                    cell_centre(radial)
+                };
+                let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref().unwrap());
                 point.z = in_range::native_ground_target_z(point.x, point.y, &cells)
                     .ok_or("Approach candidate surface failed")? as i32;
-                let in_range = |point: DriveCoord| {
-                    in_range::compute_in_range_in_query(
-                        actor,
-                        (i64::from(point.x), i64::from(point.y), i64::from(point.z)),
-                        &target,
-                        selected.weapon,
-                        rules,
-                        &self.interner,
-                        &self.substrate.entities,
-                        &cells,
-                        &combat::line_of_fire::LineOfFireInputs {
-                            overlay_grid: self.overlay_grid.as_ref(),
-                            overlay_registry: registry,
-                            alliances: Some(&self.fog.alliances),
-                        },
-                    )
-                };
-                if !in_range(point) {
+                if !self.approach_accepts(
+                    id,
+                    point,
+                    &target,
+                    selected.weapon,
+                    close_range.then_some(own),
+                    rules,
+                    registry,
+                )? {
                     continue;
                 }
                 retained_candidate = radial;
                 if !cell_rect::cell_is_in_playfield_height_aware_in_query(
                     (i32::from(radial.0), i32::from(radial.1)),
                     self.playfield_bounds,
-                    Some(terrain),
+                    Some(cells.terrain()),
                     Some(&cells),
                 ) {
                     continue;
                 }
                 let mut candidate = radial;
-                let mut admitted = self.approach_cell_is_clear(id, candidate, rules, &cells)?;
+                let mut admitted = self.approach_admits(
+                    id,
+                    candidate,
+                    close_range,
+                    rules,
+                    registry,
+                    frame_effects,
+                )?;
                 //4D642D..6437: an infantryman goes on to the next candidate
                 // without the neighbour walk.
-                if !admitted && actor.category != EntityCategory::Infantry {
+                if !admitted && category != EntityCategory::Infantry {
                     for direction in 0..8 {
                         let (dx, dy) = cell_delta_unchecked(direction);
                         candidate = (
@@ -746,9 +722,22 @@ impl Simulation {
                         );
                         //4D643D..671E: cumulative neighbors, Z0, no new bounds
                         // or ground lookup. Destination setting resolves Z later.
-                        if in_range(cell_centre(candidate))
-                            && self.approach_cell_is_clear(id, candidate, rules, &cells)?
-                        {
+                        if self.approach_accepts(
+                            id,
+                            cell_centre(candidate),
+                            &target,
+                            selected.weapon,
+                            close_range.then_some(own),
+                            rules,
+                            registry,
+                        )? && self.approach_admits(
+                            id,
+                            candidate,
+                            close_range,
+                            rules,
+                            registry,
+                            frame_effects,
+                        )? {
                             admitted = true;
                             retained_candidate = candidate;
                             break;
@@ -762,6 +751,12 @@ impl Simulation {
                     chosen = Some(candidate);
                     break 'rings;
                 }
+                let actor = self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .ok_or("Approach actor retired")?;
+                let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref().unwrap());
                 let candidate_bridge = cells.flags(cells.lookup(candidate)) & 0x100 != 0;
                 if self.estimate_zone_cost(
                     id,
@@ -819,10 +814,7 @@ impl Simulation {
         // the Target itself as its destination (4D6A71, vt+0x480(TarCom, 1))
         // and returns it; the answer here is the cell under it. Neither key is
         // set in retail.
-        let object = self.object_type(actor.type_ref(), rules).unwrap();
-        if object.hunter_seeker
-            || actor.category == EntityCategory::Infantry && object.vehicle_thief
-        {
+        if object.hunter_seeker || category == EntityCategory::Infantry && object.vehicle_thief {
             self.assign_destination_represented(
                 id,
                 Some(target_reference),
@@ -833,6 +825,7 @@ impl Simulation {
             .map_err(|e| format!("Approach Target destination: {e}"))?;
             return Ok(Some((target_cell.0 as u16, target_cell.1 as u16)));
         }
+        let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref().unwrap());
         let fallback = self.approach_fallback(id, retained_candidate, rules, &cells)?;
         self.assign_target_represented(id, None, Some(rules), registry, frame_effects)
             .map_err(|e| format!("Approach exhausted target clear: {e}"))?;
@@ -882,6 +875,164 @@ impl Simulation {
             entity,
             Some(cells.terrain()),
         ))
+    }
+
+    /// The CloseRange= arm ahead of the search (`0x004D5D37..0x004D5F62`).
+    /// When the mover's cell centre lies at most 384 (`0x007E9240`) from the
+    /// Target's cell centre (the same cell or a neighbour), it asks for the
+    /// spot in its own cell that the Target's coordinate `target_center`
+    /// prefers ([`Self::place_infantry_spot_in_cell`]). A spot strictly nearer
+    /// the Target's cell centre becomes its Locomotor's immediate destination
+    /// ([`Self::foot_force_immediate_destination`]; both callers pass no-move
+    /// false), and the body then sends it to the Target's cell. Answers
+    /// whether it did.
+    fn approach_close_range_spot(
+        &mut self,
+        id: u64,
+        target: TargetKind,
+        target_center: DriveCoord,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<bool, String> {
+        use super::ground_pose::{position_world_coord, query_object_cell};
+        use crate::sim::cell_kernel::{native_cell_own_xy, native_xy_distance};
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("Approach requires map cells")?;
+        let cells = NativeCellQuery::canonical(terrain);
+        let location = position_world_coord(
+            &self
+                .substrate
+                .entities
+                .get(id)
+                .ok_or("Approach actor retired")?
+                .position,
+        );
+        //4D5D4F..5DEB: the centre (vt+0x48) of this->GetCell() (vt+0x1BC),
+        // then of a Techno Target's GetCell(), or of a Cell Target itself.
+        let own_centre = native_cell_own_xy(query_object_cell(&cells, location), &cells);
+        let target_centre = match target {
+            TargetKind::Entity(target) => {
+                let target = self
+                    .substrate
+                    .entities
+                    .get(target)
+                    .ok_or("Approach Target retired")?;
+                native_cell_own_xy(
+                    query_object_cell(&cells, position_world_coord(&target.position)),
+                    &cells,
+                )
+            }
+            TargetKind::Cell(..) => native_cell_own_xy(
+                target
+                    .cell_identity(terrain)
+                    .ok_or("Approach Cell Target")?,
+                &cells,
+            ),
+        };
+        //4D5DF2..5E80: each centre's Cell again (Map 565730), then the XY
+        // distance between their centres through Sqrt_Approx and ftol.
+        let [ax, ay] = native_cell_own_xy(cells.lookup_world(own_centre[0], own_centre[1]), &cells);
+        let [bx, by] = native_cell_own_xy(
+            cells.lookup_world(target_centre[0], target_centre[1]),
+            &cells,
+        );
+        let reach = native_xy_distance(ax - bx, ay - by);
+        //4D5E84..5E93: FCOMP 384.0, TEST AH,0x41 admits equality.
+        if reach > 384 {
+            return Ok(false);
+        }
+        //4D5E99..5EC6: PlaceInfantryInCell(out, Target->Center, 0, 0, 1) on
+        // this->GetCell().
+        let cell = query_object_cell(&cells, location);
+        let spot = self.place_infantry_spot_in_cell(rules, cell, target_center)?;
+        //4D5ECB..5F25: the spot's distance to the Target's cell centre, the
+        // empty coordinate's from the origin.
+        let [x, y] = spot.map_or([0, 0], |spot| [spot.x, spot.y]);
+        if native_xy_distance(x - target_centre[0], y - target_centre[1]) >= reach {
+            return Ok(false);
+        }
+        //4D5F2E..5F5F: Locomotor (+0x674) vt+0x78.
+        self.foot_force_immediate_destination(id, spot, Some(rules), registry, frame_effects)?;
+        Ok(true)
+    }
+
+    /// Whether an Approach candidate point will do: In_Range of it
+    /// (`TechnoClass::In_Range @ 0x006F7220`, at `0x004D622C` and
+    /// `0x004D6550`) or, for a CloseRange= mover (`close_range_target`, the
+    /// Target's coordinate), an XY distance to the Target under 307.2
+    /// (`0x007E9230`; `0x004D61A4..0x004D625C`, `0x004D64C0..0x004D6580`).
+    fn approach_accepts(
+        &self,
+        id: u64,
+        point: DriveCoord,
+        target: &TargetKind,
+        weapon: &crate::rules::weapon_type::WeaponType,
+        close_range_target: Option<DriveCoord>,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> Result<bool, String> {
+        let actor = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("Approach actor retired")?;
+        let cells = NativeCellQuery::canonical(
+            self.resolved_terrain
+                .as_ref()
+                .ok_or("Approach requires map cells")?,
+        );
+        let in_range = in_range::compute_in_range_in_query(
+            actor,
+            (i64::from(point.x), i64::from(point.y), i64::from(point.z)),
+            target,
+            weapon,
+            rules,
+            &self.interner,
+            &self.substrate.entities,
+            &cells,
+            &combat::line_of_fire::LineOfFireInputs {
+                overlay_grid: self.overlay_grid.as_ref(),
+                overlay_registry: registry,
+                alliances: Some(&self.fog.alliances),
+            },
+        );
+        // The ftol'd distance is an integer: under 307.2 is at most 307.
+        Ok(in_range
+            || close_range_target.is_some_and(|target| {
+                crate::sim::cell_kernel::native_xy_distance(point.x - target.x, point.y - target.y)
+                    <= 307
+            }))
+    }
+
+    /// [`Self::approach_cell_is_clear`] for an Approach candidate. A
+    /// CloseRange= mover is picked up around it: Mark(UP) and Mark(DOWN)
+    /// (vt+0x124(0) and vt+0x124(1), `0x004D62C0..0x004D637D` and
+    /// `0x004D6586..0x004D664D`).
+    fn approach_admits(
+        &mut self,
+        id: u64,
+        candidate: (i16, i16),
+        close_range: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<bool, String> {
+        if close_range {
+            self.foot_mark_remove(id, Some(rules), registry, frame_effects);
+        }
+        let cells = NativeCellQuery::canonical(
+            self.resolved_terrain
+                .as_ref()
+                .ok_or("Approach requires map cells")?,
+        );
+        let clear = self.approach_cell_is_clear(id, candidate, rules, &cells);
+        if close_range {
+            self.foot_mark_put(id, Some(rules), registry, frame_effects);
+        }
+        clear
     }
 
     fn approach_cell_is_clear(

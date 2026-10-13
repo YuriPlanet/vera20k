@@ -14,7 +14,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::rules::ini_parser::IniSection;
-use crate::util::native_x87::NativeF64Bits;
+use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
 /// Index into `RuleSet`'s voxel-anim type table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -31,9 +31,13 @@ pub const DEGREES_TO_RADIANS: NativeF64Bits = NativeF64Bits::from_bits(0x3f91_df
 /// types that omit the key — `[TIRE]` omits `Damage`, every stock type omits
 /// `VoxelIndex`.
 const DEFAULT_DURATION: i32 = 30;
-const DEFAULT_ELASTICITY: f64 = 0.8;
-const DEFAULT_MIN_ANGULAR_VELOCITY_DEGREES: f64 = 0.0;
-const DEFAULT_MAX_ANGULAR_VELOCITY_DEGREES: f64 = 10.0;
+/// `(double)0.8f`, stored as `0x3FE99999_A0000000` (`0x0074ADB4`, `0x0074ADF1`).
+const DEFAULT_ELASTICITY: NativeF64Bits = NativeF64Bits::from_bits(0x3fe9_9999_a000_0000);
+/// Zero (`0x0074ADBE`, `0x0074ADFB`).
+const DEFAULT_MIN_ANGULAR_VELOCITY: NativeF64Bits = NativeF64Bits::POSITIVE_ZERO;
+/// `0x3FC656ED_1CE64946` (`0x0074ADC4`, `0x0074AE01`): 10 * 3.1415 / 180
+/// folded by the compiler, not 10 degrees through the `0x007F65E8` factor.
+const DEFAULT_MAX_ANGULAR_VELOCITY: NativeF64Bits = NativeF64Bits::from_bits(0x3fc6_56ed_1ce6_4946);
 const DEFAULT_MIN_Z_VEL: f64 = 3.5;
 const DEFAULT_MAX_Z_VEL: f64 = 5.0;
 const DEFAULT_MAX_XY_VEL: f64 = 15.0;
@@ -47,6 +51,12 @@ const DEFAULT_MAX_XY_VEL: f64 = 15.0;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoxelAnimType {
     pub name: String,
+    /// `ImageFile` (`+0x1F8`): the type's ID until `ObjectTypeClass::ReadINI`
+    /// reads `Image=` over it (`0x005F92F8..0x005F933B`, 25 bytes, the current
+    /// value as default). `ReadINI` loads the model from it, `%s.VXL` with no
+    /// HVA (`0x0074B56C..0x0074B5DB`); the `Share*Data=` arms copy another
+    /// type's model instead.
+    pub image: String,
     /// `+0x294`. Normalise voxel colours on draw.
     pub normalized: bool,
     /// `+0x295`. Draw with alpha blending.
@@ -107,15 +117,16 @@ impl VoxelAnimType {
     pub fn with_defaults(name: &str) -> Self {
         Self {
             name: name.to_string(),
+            image: name.to_string(),
             normalized: false,
             translucent: false,
             is_tiberium: false,
             is_meteor: false,
             voxel_index: 0,
             duration: DEFAULT_DURATION,
-            elasticity: NativeF64Bits::from_bits(DEFAULT_ELASTICITY.to_bits()),
-            min_angular_velocity: radians_from_degrees(DEFAULT_MIN_ANGULAR_VELOCITY_DEGREES),
-            max_angular_velocity: radians_from_degrees(DEFAULT_MAX_ANGULAR_VELOCITY_DEGREES),
+            elasticity: DEFAULT_ELASTICITY,
+            min_angular_velocity: DEFAULT_MIN_ANGULAR_VELOCITY,
+            max_angular_velocity: DEFAULT_MAX_ANGULAR_VELOCITY,
             min_z_vel: NativeF64Bits::from_bits(DEFAULT_MIN_Z_VEL.to_bits()),
             max_z_vel: NativeF64Bits::from_bits(DEFAULT_MAX_Z_VEL.to_bits()),
             max_xy_vel: NativeF64Bits::from_bits(DEFAULT_MAX_XY_VEL.to_bits()),
@@ -137,9 +148,11 @@ impl VoxelAnimType {
         }
     }
 
-    /// `VoxelAnimTypeClass::ReadINI @ 0x0074B050`.
+    /// `VoxelAnimTypeClass::ReadINI @ 0x0074B050`, after the base
+    /// `ObjectTypeClass::ReadINI` (`0x0074B06E`).
     pub fn from_ini_section(name: &str, section: &IniSection) -> Self {
         let mut out = Self::with_defaults(name);
+        out.image = section.read_string("Image", &out.image, 25);
         out.normalized = section.read_bool("Normalized", out.normalized);
         out.translucent = section.read_bool("Translucent", out.translucent);
         out.is_tiberium = section.read_bool("IsTiberium", out.is_tiberium);
@@ -191,8 +204,10 @@ impl VoxelAnimType {
         out
     }
 
-    /// `+0x296`, which the constructor computes rather than reads.
-    #[cfg(test)]
+    /// `+0x296`, which ReadINI computes (`0x0074B48A..0x0074B4AD`) rather
+    /// than reads. When set, ReadINI takes the `ShareSource=` type's model, or
+    /// none when that type is missing (`0x0074B555`), and never loads
+    /// `%s.VXL`.
     pub fn shares_data(&self) -> bool {
         self.share_body_data || self.share_turret_data || self.share_barrel_data
     }
@@ -217,8 +232,15 @@ fn read_angular_velocity(section: &IniSection, key: &str, default: NativeF64Bits
     radians_from_degrees(raw)
 }
 
+/// `FMUL qword [0x007F65E8]` / `FSTP qword` under the process's chop mode.
 fn radians_from_degrees(degrees: f64) -> NativeF64Bits {
-    NativeF64Bits::from_bits((degrees * f64::from_bits(DEGREES_TO_RADIANS.bits())).to_bits())
+    let degrees = X87Chop53::load_f64(NativeF64Bits::from_bits(degrees.to_bits()))
+        .expect("ReadDouble returns a finite double");
+    X87Chop53::store_f64(X87Chop53::mul(
+        degrees,
+        X87Chop53::load_f64(DEGREES_TO_RADIANS).expect("pi/180 is finite"),
+    ))
+    .expect("an INI angle in degrees stays finite in radians")
 }
 
 #[cfg(test)]
@@ -234,15 +256,18 @@ mod tests {
     fn defaults_match_the_constructor() {
         let vat = VoxelAnimType::with_defaults("EMPTY");
         assert_eq!(vat.duration, 30);
-        assert_eq!(f64::from_bits(vat.elasticity.bits()), 0.8);
+        assert_eq!(f64::from_bits(vat.elasticity.bits()), f64::from(0.8f32));
         assert_eq!(f64::from_bits(vat.min_z_vel.bits()), 3.5);
         assert_eq!(f64::from_bits(vat.max_z_vel.bits()), 5.0);
         assert_eq!(f64::from_bits(vat.max_xy_vel.bits()), 15.0);
         assert!(!vat.is_meteor && !vat.is_tiberium);
         assert_eq!(vat.spawn_count, 0);
-        // 10 degrees, converted with the stored pi/180.
-        let expected = 10.0 * f64::from_bits(DEGREES_TO_RADIANS.bits());
-        assert_eq!(f64::from_bits(vat.max_angular_velocity.bits()), expected);
+        // The constructor's own constant, not 10 degrees through pi/180.
+        assert_eq!(vat.max_angular_velocity.bits(), 0x3fc6_56ed_1ce6_4946);
+        assert_ne!(
+            f64::from_bits(vat.max_angular_velocity.bits()),
+            10.0 * f64::from_bits(DEGREES_TO_RADIANS.bits())
+        );
     }
 
     #[test]
@@ -269,6 +294,22 @@ mod tests {
             5.0 * f64::from_bits(DEGREES_TO_RADIANS.bits())
         );
         assert!(vat.bounce_anim.is_none() && vat.spawns.is_none());
+        // No `Image=`: the model is named by the ID.
+        assert_eq!(vat.image, "PIECE");
+    }
+
+    #[test]
+    fn retail_images_name_the_model_files() {
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let image =
+            |name: &str| VoxelAnimType::from_ini_section(name, ini.section(name).unwrap()).image;
+        // The thrown tyre keeps its ID; the meteors and crystals borrow models.
+        assert_eq!(image("TIRE"), "TIRE");
+        assert_eq!(image("METEOR01"), "MTRS");
+        assert_eq!(image("PEBBLE"), "MTRB");
+        assert_eq!(image("CRYSTAL02"), "GASTANK");
     }
 
     #[test]
@@ -286,10 +327,7 @@ mod tests {
         let ini = section("[ZEROSPIN]\nMinAngularVelocity=0\nMaxAngularVelocity=0\n");
         let vat = VoxelAnimType::from_ini_section("ZEROSPIN", ini.section("ZEROSPIN").unwrap());
         assert_eq!(f64::from_bits(vat.min_angular_velocity.bits()), 0.0);
-        assert_eq!(
-            f64::from_bits(vat.max_angular_velocity.bits()),
-            10.0 * f64::from_bits(DEGREES_TO_RADIANS.bits())
-        );
+        assert_eq!(vat.max_angular_velocity, DEFAULT_MAX_ANGULAR_VELOCITY);
     }
 
     #[test]

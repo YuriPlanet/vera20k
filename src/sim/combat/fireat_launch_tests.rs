@@ -949,8 +949,8 @@ fn a_homing_missile_fuses_on_the_unled_target() {
         if !moving {
             continue;
         }
-        let guidance = missile.guidance.expect("HoverMissile homes (ROT=60)");
-        assert_eq!(guidance.fuse_reference, missile.launch_target);
+        assert!(missile.guidance.is_some(), "HoverMissile homes (ROT=60)");
+        assert_eq!(missile.proximity_reference, missile.launch_target);
         return;
     }
     panic!(

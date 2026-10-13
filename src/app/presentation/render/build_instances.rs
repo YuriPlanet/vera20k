@@ -238,6 +238,7 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         .borrow_mut()
         .begin_frame();
     instances::build_unit_instances(state, &mut planned_objects, &display_order);
+    instances::build_voxel_anim_instances(state, &mut planned_objects, &display_order);
     state
         .renderer
         .vxl_pose_frame_cache

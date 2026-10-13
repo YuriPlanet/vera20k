@@ -148,6 +148,8 @@ def generate():
             dict(blocked_terrain=NEIGHBORS), dict(raw=[[11, 10, 0x20, 0]]),
             dict(cells=[[x, y, 0, 0x100] for x, y in NEIGHBORS])]
     cases += [dict(case, live_entry=True) for case in live]
+    # A Target draws only when the call is unforced, whatever no_kidding says.
+    cases += [dict(target=True), dict(target=True, force=False, second=True)]
     return [query(case) for case in cases]
 
 

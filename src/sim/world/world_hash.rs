@@ -705,6 +705,7 @@ impl Simulation {
             projectile.arm_timer.hash(hasher);
             projectile.fuse_frames_remaining.hash(hasher);
             projectile.ranged_fuse.hash(hasher);
+            projectile.proximity_reference.hash(hasher);
             projectile.last_distance_half.hash(hasher);
             projectile.tracks_target.hash(hasher);
             projectile.target_expiry.hash(hasher);

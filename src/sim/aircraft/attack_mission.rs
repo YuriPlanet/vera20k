@@ -19,17 +19,11 @@
 //! IsClose combination, plus the state-9 delay and state 10 in full;
 //! `tests::original_attack_state_rows` replays every combination it covers.
 //!
-//! RESIDUAL: the Cell `Scatter_Objects` (`0x00481670`, source = the
-//! aircraft's coordinates, `1, 0, 0`), once after state 4's whole burst
-//! (`0x004184BD`) and after each shot of states 5..9, is asked at its native
-//! point and does nothing yet; its recipients' Scatter (`vt+0x174`) belongs
-//! to the source-scatter owner. Trigger: every aircraft shot. Effect: units
-//! in the bombed cell stay put instead of scattering. Frequency: every
-//! bombing pass and missile release.
+//! The Cell `Scatter_Objects` (`0x00481670`, source = the aircraft's
+//! Location, `1, 0, 0`) runs once after state 4's whole burst (`0x004184BD`)
+//! and after each shot of states 5..9.
 
 use crate::sim::combat::fire_error::FireError;
-use crate::sim::combat::{AttackTarget, TargetKind};
-use crate::sim::entity_store::EntityStore;
 
 #[cfg(test)]
 #[path = "approach_range_tests.rs"]
@@ -38,22 +32,6 @@ mod approach_range_tests;
 #[cfg(test)]
 #[path = "attack_mission_tests.rs"]
 mod tests;
-
-/// The native Target pointer (`+0x2B4`) is non-NULL: a cell, or an object
-/// not yet dead. Every state of Mission_Attack and the idle decision read it
-/// through this. Natively the killing hit's Destroy = `Detach_All(1)`
-/// (`ObjectClass::ReceiveDamage 0x005F5765..0x005F57AF`) announces the expiry,
-/// so no Target names a dying object; VERA can keep a dying infantryman's id
-/// until its death sequence ends.
-pub(crate) fn aircraft_target_present(at: Option<&AttackTarget>, entities: &EntityStore) -> bool {
-    match at.map(|attack| attack.target) {
-        None => false,
-        Some(TargetKind::Cell(..)) => true,
-        Some(TargetKind::Entity(id)) => entities
-            .get(id)
-            .is_some_and(|target| !target.dying && target.health.current > 0),
-    }
-}
 
 /// Native Mission_Attack entry prefixes418006/418031/4180A1/418BEC.
 /// The readiness latch+6D2 already belongs to MissionLeafState; Ammo+2FC and
@@ -126,7 +104,7 @@ pub(crate) trait StrikeHost {
     fn release(&mut self);
     /// `vt+0x3CC FireAt(Target, SelectWeapon(Target))`, once.
     fn fire_at(&mut self);
-    /// `CellClass::Scatter_Objects(&Coords, 1, 0, 0)` on the target's cell.
+    /// `CellClass::Scatter_Objects(&Location, 1, 0, 0)` on the target's cell.
     fn scatter(&mut self);
     /// `vt+0x480 Assign_Destination(Target, 1)`.
     fn assign_target_destination(&mut self);

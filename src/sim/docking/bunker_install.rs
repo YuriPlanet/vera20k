@@ -250,12 +250,15 @@ fn footprint_clear_of_others(sim: &Simulation, building_id: u64, unit_id: u64) -
 /// Asks every live vehicle/infantry (other than the installer) standing on the
 /// bunker footprint to scatter, so the install cell clears; the machine waits
 /// in `ClearWait` until the footprint is physically clear. Each blocker takes
-/// `TechnoClass::Scatter(null, 1, 1)` ([`Simulation::scatter_null`]).
-/// RESIDUAL: this state machine is VERA's model; the native install's
-/// clearing call is not traced, so the flags keep the forced routing the
-/// former adapter gave it. Trigger: a unit or man on a bunker footprint while
-/// a tank installs. Effect: which receivers admit follows those flags.
-/// Frequency: occasional. A receiver error is logged and leaves that blocker.
+/// `Scatter(GetCoords(), 1, 0)` ([`Simulation::scatter`]) away from the
+/// building's centre, as `BuildingClass::UpdateBunker @ 0x00458E50` state 0
+/// calls it (`0x00458F7E..0x00458F93`).
+/// RESIDUAL: this state machine is VERA's model of UpdateBunker. Native asks
+/// only each occupy-list cell's `Find_Nearest_Object` (`0x00458F6F`, point
+/// `(0x80, 0x80)`, the building excluded) other than the installer. Trigger:
+/// two objects on one footprint cell while a tank installs. Effect: both
+/// scatter where native moves one. Frequency: rare. A receiver error is
+/// logged and leaves that blocker.
 fn shove_footprint_blockers(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -268,6 +271,7 @@ fn shove_footprint_blockers(
         return;
     };
     let footprint = entity_occupancy_cells(building);
+    let centre = object_get_coords(building, sim.resolved_terrain.as_ref());
     let blockers: Vec<u64> = sim
         .substrate
         .entities
@@ -284,9 +288,10 @@ fn shove_footprint_blockers(
         .map(|(id, _)| id)
         .collect();
     for blocker_id in blockers {
-        if let Err(cause) = sim.scatter_null(
+        if let Err(cause) = sim.scatter(
             blocker_id,
-            ScatterFlags::new(true, true),
+            Some(centre),
+            ScatterFlags::new(true, false),
             rules,
             registry,
             frame_effects,

@@ -35,11 +35,6 @@ pub(crate) fn render(
         return None;
     }
     let limb = vxl.limbs.first()?;
-    let nx = usize::from(limb.size_x);
-    let ny = usize::from(limb.size_y);
-    if nx == 0 || ny == 0 {
-        return None;
-    }
     let draw =
         super::voxel_draw_rotation_for_state(0, None, super::voxel_facing_step(params.facing));
     let matrix = if let Some(hva) = hva {
@@ -51,6 +46,22 @@ pub(crate) fn render(
     } else {
         draw
     };
+    render_matrix(vxl, matrix)
+}
+
+/// The stencil of a single-section VXL at a supplied matrix.
+/// `VoxelAnimClass::DrawIt` passes 753F90 the bounce body's drawing matrix
+/// directly, with the identity viewer and no HVA (`0x00749CE8`).
+pub(crate) fn render_matrix(vxl: &VxlFile, matrix: super::Mat4) -> Option<VxlSprite> {
+    if vxl.limbs.len() != 1 || vxl.limbs[0].native_spans.is_none() {
+        return None;
+    }
+    let limb = &vxl.limbs[0];
+    let nx = usize::from(limb.size_x);
+    let ny = usize::from(limb.size_y);
+    if nx == 0 || ny == 0 {
+        return None;
+    }
     let [lx, ly, lz, hx, hy, _hz] = limb.bounds;
     let mut corners = [Vec3::ZERO; 4];
     let mut lo = Vec3::splat(10000.0);

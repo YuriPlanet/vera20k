@@ -150,7 +150,7 @@ impl HuntHost for WorldHunt<'_> {
 
     fn target(&mut self) -> bool {
         let entity = self.sim.substrate.entities.get(self.id).unwrap();
-        super::attack_mission::aircraft_target_present(
+        crate::sim::combat::target_present(
             entity.attack_target.as_ref(),
             &self.sim.substrate.entities,
         )

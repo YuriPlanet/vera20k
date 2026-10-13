@@ -795,3 +795,251 @@ fn a_computers_deployed_gi_undeploys_to_approach_a_target_out_of_reach() {
         }
     }
 }
+
+/// The spot an infantryman stands on in his cell, in leptons from its origin.
+fn spot(sim: &Simulation, id: u64) -> (i32, i32) {
+    let at = position_world_coord(&sim.substrate.entities.get(id).unwrap().position);
+    (at.x.rem_euclid(256), at.y.rem_euclid(256))
+}
+
+/// A Brute beside a tank he cannot yet reach (`CloseRange=`, Smash's 1.1
+/// cells) takes the one free spot in his own cell, which lies nearer the
+/// tank's cell centre than his cell centre does (`0x004D5D37..0x004D5F62`):
+/// his Walk head is that spot (Force_Immediate_Destination, `0x0075AE30`),
+/// his NavCom the tank's own cell without a search (`0x004D689A`), and the
+/// arm's one draw is PlaceInfantryInCell's centre row (`0x00481180`), the
+/// tank standing at its cell centre.
+#[test]
+fn a_brute_beside_a_tank_takes_the_spot_in_his_cell_nearer_it() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let mut sim = arena(&rules);
+    let gi = spawn(&mut sim, &rules, "E1", "Americans", (10, 10));
+    let brute = spawn(&mut sim, &rules, "BRUTE", "Americans", (10, 10));
+    let taken = [spot(&sim, gi), spot(&sim, brute)];
+    let free = [(192, 64), (64, 192), (192, 192)]
+        .into_iter()
+        .find(|spot| !taken.contains(spot))
+        .unwrap();
+    // The neighbour that spot is nearer and the Brute is out of reach of,
+    // wherever the spawn put him.
+    let tank_cell = match free {
+        (192, 64) => (10, 9),
+        (64, 192) => (9, 10),
+        _ => (11, 11),
+    };
+    let tank = spawn(&mut sim, &rules, "MTNK", "Russians", tank_cell);
+    target(&mut sim, brute, tank);
+    start_mission(&mut sim, brute, MissionType::Attack);
+    assert!(frame(&sim, brute, tank).distance > range(&rules, "Smash"));
+    assert!(sim.mission_owns_approach(brute, &rules));
+    let mut one_draw = sim.scenario_rng.clone();
+    one_draw.next_range_u32(4);
+    sim.approach_target(
+        brute,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(sim.scenario_rng.logical_state(), one_draw.logical_state());
+    let entity = sim.substrate.entities.get(brute).unwrap();
+    let head = entity.locomotor.as_ref().unwrap().step_head();
+    assert_eq!(
+        head.map(|head| (head.x, head.y)),
+        Some((10 * 256 + free.0, 10 * 256 + free.1))
+    );
+    assert_eq!(
+        entity.navigation.nav_com,
+        Some(NavTargetRef::cell(tank_cell.0, tank_cell.1))
+    );
+    // Through the frame he steps onto that spot and smashes the tank from it.
+    let strength = sim.substrate.entities.get(tank).unwrap().health.current;
+    for _ in 0..120 {
+        step(&mut sim, &rules);
+        if sim.substrate.entities.get(tank).unwrap().health.current < strength {
+            assert_eq!(frame(&sim, brute, tank).cell(), (10, 10));
+            assert_eq!(spot(&sim, brute), free);
+            return;
+        }
+    }
+    panic!("the Brute never smashed the tank");
+}
+
+/// Each candidate of a Brute's search is the spot PlaceInfantryInCell picks
+/// in the candidate's cell for the tank's coordinate
+/// (`0x004D6093..0x004D60F9`): one Scenario draw each, the tank standing at
+/// its cell centre, whether the candidate is taken or not. Here none is. In
+/// the cell beside the tank towards the Brute every spot lies beyond Smash's
+/// reach and 307.2 leptons of the tank (the spot nearest it, (64, 64), is no
+/// infantryman's), and a GI stands in each other cell his ring reaches. All
+/// 25 candidates draw.
+#[test]
+fn a_brutes_search_draws_once_for_each_candidate() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let mut sim = arena(&rules);
+    let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (16, 16));
+    for cell in [(17, 16), (16, 17), (17, 15), (15, 17)] {
+        spawn(&mut sim, &rules, "E1", "Americans", cell);
+    }
+    let brute = spawn(&mut sim, &rules, "BRUTE", "Americans", (21, 21));
+    target(&mut sim, brute, tank);
+    start_mission(&mut sim, brute, MissionType::Attack);
+    let mut draws = sim.scenario_rng.clone();
+    for _ in 0..25 {
+        draws.next_range_u32(4);
+    }
+    sim.approach_target(
+        brute,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    let nav_com = sim
+        .substrate
+        .entities
+        .get(brute)
+        .unwrap()
+        .navigation
+        .nav_com;
+    assert_eq!(
+        sim.scenario_rng.logical_state(),
+        draws.logical_state(),
+        "{nav_com:?}"
+    );
+}
+
+/// A Brute's candidate spot beyond Smash's reach is still taken when it lies
+/// under 307.2 leptons from the tank (`0x004D622C..0x004D625C`). The tank has
+/// driven off its cell centre into the south-west quarter, so each spot
+/// request prefers spot 3, (64, 192), without a draw: in the cell west of the
+/// tank that spot lies 302 leptons from it.
+#[test]
+fn a_brute_takes_a_spot_beyond_his_reach_under_307_leptons_from_the_tank() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let mut sim = arena(&rules);
+    let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (17, 16));
+    let position = &mut sim.substrate.entities.get_mut(tank).unwrap().position;
+    position.sub_x = crate::util::fixed_math::SimFixed::from_num(110);
+    position.sub_y = crate::util::fixed_math::SimFixed::from_num(192);
+    let brute = spawn(&mut sim, &rules, "BRUTE", "Americans", (11, 16));
+    target(&mut sim, brute, tank);
+    start_mission(&mut sim, brute, MissionType::Attack);
+    let aim = position_world_coord(&sim.substrate.entities.get(tank).unwrap().position);
+    let reach = f64::from(16 * 256 + 64 - aim.x).hypot(f64::from(16 * 256 + 192 - aim.y));
+    assert!(reach > range(&rules, "Smash") && reach < 307.2, "{reach}");
+    let before = sim.scenario_rng.logical_state();
+    sim.approach_target(
+        brute,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(sim.scenario_rng.logical_state(), before);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(brute)
+            .unwrap()
+            .navigation
+            .nav_com,
+        Some(NavTargetRef::cell(16, 16))
+    );
+}
+
+/// A Brute far from the tank he attacks searches its neighbours (`CloseRange=`
+/// infantry search no closer than 332 leptons, `0x004D5CFE..0x004D5D2F`):
+/// his NavCom is a cell beside the tank, never its own. Each candidate's
+/// admission picks him up and puts him down again (Mark(UP) and Mark(DOWN),
+/// `0x004D62C0..0x004D637D`), which puts him back at the head of his cell's
+/// list, ahead of a GI who came after him.
+#[test]
+fn a_brutes_approach_picks_a_cell_beside_the_tank() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let mut sim = arena(&rules);
+    let brute = spawn(&mut sim, &rules, "BRUTE", "Americans", (6, 10));
+    let gi = spawn(&mut sim, &rules, "E1", "Americans", (6, 10));
+    let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (16, 10));
+    target(&mut sim, brute, tank);
+    start_mission(&mut sim, brute, MissionType::Attack);
+    assert!(sim.mission_owns_approach(brute, &rules));
+    let first = |sim: &Simulation| {
+        sim.substrate
+            .occupancy
+            .get(6, 10)
+            .and_then(|cell| {
+                cell.iter_layer(crate::sim::movement::locomotor::MovementLayer::Ground)
+                    .next()
+            })
+            .map(|occupant| occupant.entity_id)
+    };
+    assert_eq!(first(&sim), Some(gi));
+    sim.approach_target(
+        brute,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(first(&sim), Some(brute));
+    let nav_com = sim
+        .substrate
+        .entities
+        .get(brute)
+        .unwrap()
+        .navigation
+        .nav_com;
+    let Some(NavTargetRef::Cell { rx, ry }) = nav_com else {
+        panic!("Approach sets a cell: {nav_com:?}");
+    };
+    assert_ne!((rx, ry), (16, 10));
+    assert!(rx.abs_diff(16) <= 1 && ry.abs_diff(10) <= 1, "{nav_com:?}");
+}
+
+/// A human's Brute ordered to attack a tank sets out for a cell beside it,
+/// not the tank's own cell, never makes the tank itself his destination, and
+/// smashes it once in reach.
+#[test]
+fn a_brute_ordered_to_attack_a_tank_walks_beside_it_and_smashes_it() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let mut sim = arena(&rules);
+    let brute = spawn(&mut sim, &rules, "BRUTE", "Americans", (6, 10));
+    let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (16, 10));
+    let strength = sim.substrate.entities.get(tank).unwrap().health.current;
+    order(
+        &mut sim,
+        "Americans",
+        Command::Attack {
+            attacker_id: brute,
+            target_id: tank,
+        },
+    );
+    let mut first = None;
+    let mut smashed = None;
+    for _ in 0..900 {
+        step(&mut sim, &rules);
+        let now = frame(&sim, brute, tank);
+        if let Some(nav_com) = now.nav_com {
+            assert_ne!(nav_com, NavTargetRef::object(tank), "{now:?}");
+            first.get_or_insert(nav_com);
+        }
+        if sim.substrate.entities.get(tank).unwrap().health.current < strength {
+            smashed = Some(now);
+            break;
+        }
+    }
+    let Some(NavTargetRef::Cell { rx, ry }) = first else {
+        panic!("Approach sets a cell: {first:?}");
+    };
+    assert_ne!((rx, ry), (16, 10));
+    assert!(rx.abs_diff(16) <= 1 && ry.abs_diff(10) <= 1, "{first:?}");
+    let smashed = smashed.expect("the Brute smashes the tank");
+    assert!(smashed.distance <= range(&rules, "Smash"), "{smashed:?}");
+}

@@ -409,12 +409,16 @@ pub(super) fn prepare_draw(
     let draw_matrix =
         super::voxel_params_draw_rotation(params, super::voxel_facing_step(params.facing));
     let geometry = prepare_geometry(vxl, hva, params.frame, draw_matrix)?;
-    // 706ED0 calls 753D00 once for the VXL, before submitting its sections.
-    // Its normal mode is read from limb zero, not switched for every limb.
-    let pages = super::vxl_normals::blinn_phong_pages(
-        vxl.limbs.first()?.normals_mode,
-        glam::Mat3::from_mat4(draw_matrix),
-    );
+    // 706ED0 calls 753D00 once for the VXL, before submitting its sections;
+    // VoxelAnimClass::DrawIt calls 753C80 instead (749DA3). Either reads the
+    // normal mode from limb zero, not switched for every limb.
+    let normals_mode = vxl.limbs.first()?.normals_mode;
+    let rotation = glam::Mat3::from_mat4(draw_matrix);
+    let pages = if matches!(params.body_tilt, Some(super::BodyTilt::Tumble(_))) {
+        super::vxl_normals::diffuse_pages(normals_mode, rotation)
+    } else {
+        super::vxl_normals::blinn_phong_pages(normals_mode, rotation)
+    };
     let mut writes = Vec::with_capacity(vxl.limbs.iter().map(|limb| limb.voxels.len()).sum());
     for &index in &geometry.paint_order {
         paint_section(
@@ -514,6 +518,159 @@ mod tests {
             .collect()
     }
 
+    /// One native Render case through the production geometry, paint and
+    /// crop. Returns its backward raster dispatches and the zero results that
+    /// erased an earlier visible pixel.
+    fn compare_native_render(
+        vxl: &VxlFile,
+        hva: Option<&HvaFile>,
+        vpl: &super::super::VplFile,
+        params: &super::super::VxlRenderParams,
+        matrix: Mat4,
+        case: &Value,
+        label: &str,
+    ) -> (usize, usize) {
+        let mut backward = 0;
+        assert_eq!(
+            matrix_bits(matrix),
+            words(&case["input_matrix_bits"]),
+            "{label} production draw matrix"
+        );
+        let geometry = prepare_geometry(vxl, hva, 0, matrix).unwrap();
+        let expected_rect: Vec<i32> = case["rect"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap() as i32)
+            .collect();
+        assert_eq!(
+            geometry.rect.as_slice(),
+            expected_rect,
+            "{label} all six crop outputs"
+        );
+        assert_eq!(
+            geometry
+                .paint_order
+                .iter()
+                .map(|i| *i as u32)
+                .collect::<Vec<_>>(),
+            words(&case["paint_order"]),
+            "{label} section exchange order"
+        );
+        for (index, section) in geometry.sections.iter().enumerate() {
+            assert_eq!(
+                matrix_bits(section.matrix),
+                words(&case["section_matrix_bits"][index]),
+                "{label} section {index} matrix"
+            );
+            if let Some(hva_matrix) = section.hva_matrix {
+                assert_eq!(
+                    matrix_bits(hva_matrix),
+                    words(&case["hva_matrix_bits"][index]),
+                    "{label} section {index} globally scaled HVA"
+                );
+            } else {
+                assert!(case["hva_matrix_bits"].as_array().unwrap().is_empty());
+            }
+            let expected = &case["boxes"][index];
+            assert_eq!(
+                section.corner_index as u64,
+                expected["corner_index"].as_u64().unwrap(),
+                "{label} section {index} orientation"
+            );
+            let extents = [section.minimum, section.maximum]
+                .into_iter()
+                .flat_map(|v| v.to_array().map(f32::to_bits))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                extents,
+                words(&expected["extents_bits"]),
+                "{label} section {index} bounds bits"
+            );
+            let corners = section
+                .corners
+                .into_iter()
+                .flat_map(|v| v.to_array().map(f32::to_bits))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                corners,
+                words(&expected["corner_bits"]),
+                "{label} section {index} corner bits"
+            );
+        }
+        for (order, &index) in geometry.paint_order.iter().enumerate() {
+            let params = &geometry.sections[index].params;
+            let actual = serde_json::json!({
+                "entry": if params.reverse { 0x7dfae0 } else { 0x7df9c0 },
+                "column_steps": params.column_steps, "origin_xy": params.origin_xy,
+                "axis_xy": params.axis_xy, "sizes": params.sizes,
+            });
+            assert_eq!(
+                actual, case["raster_params"][order],
+                "{label} section {index} live integer parameters"
+            );
+            backward += usize::from(params.reverse);
+        }
+        let draw = prepare_draw(vxl, hva, params, Some(vpl)).unwrap();
+        let mut visibility = vec![0u8; 65536];
+        let mut zero = 0;
+        let mut erased = 0;
+        for write in &draw.writes {
+            let address = usize::from(write.address);
+            if write.color == 0 {
+                zero += 1;
+                erased += usize::from(visibility[address] != 0);
+            }
+            visibility[address] = write.color;
+        }
+        assert_eq!(
+            serde_json::json!({"all": draw.writes.len(), "zero": zero, "zero_erases_nonzero": erased}),
+            case["write_counts"],
+            "{label} all paint events"
+        );
+
+        let mut expected = vec![0u8; 65536];
+        for pixel in case["pixels"].as_array().unwrap() {
+            expected[pixel[0].as_u64().unwrap() as usize] = pixel[1].as_u64().unwrap() as u8;
+        }
+        assert_eq!(
+            visibility, expected,
+            "{label} complete native visibility buffer"
+        );
+        let sprite = super::super::render_vxl(vxl, hva, params, Some(vpl));
+        assert_eq!(
+            sprite.palette_indices,
+            draw.crop_indices(&expected).unwrap(),
+            "{label} production CPU crop"
+        );
+        assert_eq!(
+            [
+                sprite.offset_x as i32,
+                sprite.offset_y as i32,
+                sprite.width as i32,
+                sprite.height as i32
+            ],
+            [
+                geometry.rect[0],
+                geometry.rect[1],
+                geometry.rect[4],
+                geometry.rect[5]
+            ],
+            "{label} production sprite metadata"
+        );
+        assert_eq!(
+            super::super::native_vxl_draw_bounds(vxl, hva, params),
+            Some([
+                geometry.rect[0],
+                geometry.rect[1],
+                geometry.rect[4],
+                geometry.rect[5]
+            ]),
+            "{label} shared row-Z metadata authority"
+        );
+        (backward, erased)
+    }
+
     #[test]
     fn native_sections_match_all_geometry_and_visibility_bytes() {
         let fixture: Value = serde_json::from_str(crate::test_fixture::text(
@@ -547,150 +704,54 @@ mod tests {
                     bytes(case["normal_pages"].as_str().unwrap()),
                     "{label} native normal pages"
                 );
-                assert_eq!(
-                    matrix_bits(matrix),
-                    words(&case["input_matrix_bits"]),
-                    "{label} production draw matrix"
-                );
-                let geometry = prepare_geometry(&vxl, hva.as_ref(), 0, matrix).unwrap();
-                let expected_rect: Vec<i32> = case["rect"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|v| v.as_i64().unwrap() as i32)
-                    .collect();
-                assert_eq!(
-                    geometry.rect.as_slice(),
-                    expected_rect,
-                    "{label} all six crop outputs"
-                );
-                assert_eq!(
-                    geometry
-                        .paint_order
-                        .iter()
-                        .map(|i| *i as u32)
-                        .collect::<Vec<_>>(),
-                    words(&case["paint_order"]),
-                    "{label} section exchange order"
-                );
-                for (index, section) in geometry.sections.iter().enumerate() {
-                    assert_eq!(
-                        matrix_bits(section.matrix),
-                        words(&case["section_matrix_bits"][index]),
-                        "{label} section {index} matrix"
-                    );
-                    if let Some(hva_matrix) = section.hva_matrix {
-                        assert_eq!(
-                            matrix_bits(hva_matrix),
-                            words(&case["hva_matrix_bits"][index]),
-                            "{label} section {index} globally scaled HVA"
-                        );
-                    } else {
-                        assert!(case["hva_matrix_bits"].as_array().unwrap().is_empty());
-                    }
-                    let expected = &case["boxes"][index];
-                    assert_eq!(
-                        section.corner_index as u64,
-                        expected["corner_index"].as_u64().unwrap(),
-                        "{label} section {index} orientation"
-                    );
-                    let extents = [section.minimum, section.maximum]
-                        .into_iter()
-                        .flat_map(|v| v.to_array().map(f32::to_bits))
-                        .collect::<Vec<_>>();
-                    assert_eq!(
-                        extents,
-                        words(&expected["extents_bits"]),
-                        "{label} section {index} bounds bits"
-                    );
-                    let corners = section
-                        .corners
-                        .into_iter()
-                        .flat_map(|v| v.to_array().map(f32::to_bits))
-                        .collect::<Vec<_>>();
-                    assert_eq!(
-                        corners,
-                        words(&expected["corner_bits"]),
-                        "{label} section {index} corner bits"
-                    );
-                }
-                for (order, &index) in geometry.paint_order.iter().enumerate() {
-                    let params = &geometry.sections[index].params;
-                    let actual = serde_json::json!({
-                        "entry": if params.reverse { 0x7dfae0 } else { 0x7df9c0 },
-                        "column_steps": params.column_steps, "origin_xy": params.origin_xy,
-                        "axis_xy": params.axis_xy, "sizes": params.sizes,
-                    });
-                    assert_eq!(
-                        actual, case["raster_params"][order],
-                        "{label} section {index} live integer parameters"
-                    );
-                    backward += usize::from(params.reverse);
-                }
-                let draw = prepare_draw(&vxl, hva.as_ref(), &params, Some(&vpl)).unwrap();
-                let mut visibility = vec![0u8; 65536];
-                let mut zero = 0;
-                let mut erased = 0;
-                for write in &draw.writes {
-                    let address = usize::from(write.address);
-                    if write.color == 0 {
-                        zero += 1;
-                        erased += usize::from(visibility[address] != 0);
-                    }
-                    visibility[address] = write.color;
-                }
-                assert_eq!(
-                    serde_json::json!({"all": draw.writes.len(), "zero": zero, "zero_erases_nonzero": erased}),
-                    case["write_counts"],
-                    "{label} all paint events"
-                );
+                let (reversed, erased) =
+                    compare_native_render(&vxl, hva.as_ref(), &vpl, &params, matrix, case, &label);
+                backward += reversed;
                 zero_erases += erased;
-                let mut expected = vec![0u8; 65536];
-                for pixel in case["pixels"].as_array().unwrap() {
-                    expected[pixel[0].as_u64().unwrap() as usize] =
-                        pixel[1].as_u64().unwrap() as u8;
-                }
-                assert_eq!(
-                    visibility, expected,
-                    "{label} complete native visibility buffer"
-                );
-                let sprite = super::super::render_vxl(&vxl, hva.as_ref(), &params, Some(&vpl));
-                assert_eq!(
-                    sprite.palette_indices,
-                    draw.crop_indices(&expected).unwrap(),
-                    "{label} production CPU crop"
-                );
-                assert_eq!(
-                    [
-                        sprite.offset_x as i32,
-                        sprite.offset_y as i32,
-                        sprite.width as i32,
-                        sprite.height as i32
-                    ],
-                    [
-                        geometry.rect[0],
-                        geometry.rect[1],
-                        geometry.rect[4],
-                        geometry.rect[5]
-                    ],
-                    "{label} production sprite metadata"
-                );
-                assert_eq!(
-                    super::super::native_vxl_draw_bounds(&vxl, hva.as_ref(), &params),
-                    Some([
-                        geometry.rect[0],
-                        geometry.rect[1],
-                        geometry.rect[4],
-                        geometry.rect[5]
-                    ]),
-                    "{label} shared row-Z metadata authority"
-                );
                 compared += 1;
             }
         }
         assert_eq!(compared, 32);
         assert_eq!(backward, 20);
         assert_eq!(zero_erases, 1729);
+    }
+
+    /// `VoxelAnimClass::DrawIt`'s body (`0x00749D73..0x00749DD4`): the bounce
+    /// drawing matrix under the identity viewer, no HVA, lit through 753C80.
+    #[test]
+    fn tumbling_body_matches_original_execution() {
+        let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/tumble_fixtures.json",
+        ))
+        .unwrap();
+        let vxl = VxlFile::from_bytes(&bytes(fixture["vxl"].as_str().unwrap())).unwrap();
+        let vpl =
+            super::super::VplFile::from_bytes(&bytes(fixture["vpl"].as_str().unwrap())).unwrap();
+        let cases = fixture["cases"].as_array().unwrap();
+        let mut backward = 0;
+        for case in cases {
+            let body = &case["body"];
+            let label = format!("flight {} tick {}", case["flight"], case["tick"]);
+            let bits = words(&body["input_matrix_bits"]);
+            let matrix =
+                super::super::hva_to_mat4(&std::array::from_fn(|i| f32::from_bits(bits[i])), 1.0);
+            assert_eq!(
+                super::super::vxl_normals::diffuse_pages(
+                    vxl.limbs[0].normals_mode,
+                    glam::Mat3::from_mat4(matrix)
+                )
+                .as_slice(),
+                bytes(body["normal_pages"].as_str().unwrap()),
+                "{label} native diffuse pages"
+            );
+            let params = super::super::VxlRenderParams {
+                body_tilt: Some(super::super::BodyTilt::Tumble(matrix)),
+                ..Default::default()
+            };
+            backward += compare_native_render(&vxl, None, &vpl, &params, matrix, body, &label).0;
+        }
+        assert_eq!(cases.len(), 24);
+        assert_eq!(backward, 7);
     }
 
     #[test]

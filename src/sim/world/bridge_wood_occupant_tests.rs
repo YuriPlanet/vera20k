@@ -404,7 +404,9 @@ impl EffectBoundary {
                     "elasticity_bits":bounce.elasticity.bits(),"gravity_bits":bounce.gravity.bits(),
                     "clamp_bits":bounce.angular_velocity_magnitude.bits(),
                     "position_bits":bounce.position.map(|v| v.bits()),
-                    "velocity_bits":bounce.velocity.map(|v| v.bits())
+                    "velocity_bits":bounce.velocity.map(|v| v.bits()),
+                    "orientation_bits":bounce.orientation.map(|v| v.bits()),
+                    "rotation_bits":bounce.rotation.map(|v| v.bits())
                 });
                 for (key, value) in actual.as_object().unwrap() {
                     assert_eq!(
@@ -413,9 +415,6 @@ impl EffectBoundary {
                         names[id]
                     );
                 }
-                // Quaternion bytes stay native evidence. BounceState owns
-                // axis/angle for presentation; this comparison covers its
-                // complete gameplay position/velocity fields and RNG draws.
             }
         }
     }

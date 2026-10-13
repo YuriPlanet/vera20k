@@ -6,8 +6,8 @@
 //! in `track_host.rs`, Hover's Process, a Jumpjet's touchdown, a Teleport
 //! arrival) whenever its mission's Approach carries its approach
 //! (`Simulation::mission_owns_approach`). For a unit the pursuit stage still
-//! carries (a `CloseRange=` type, or a Cell target on a DestroyableCliffs
-//! tile), its in-range halt (`world_orders.rs`) stands in for the InRange arm,
+//! carries (a Cell target on a DestroyableCliffs tile), its in-range halt
+//! (`world_orders.rs`) stands in for the InRange arm,
 //! tested each frame, and only the `OpenTopped=` arm runs at PerCell.
 
 use super::ground_pose;

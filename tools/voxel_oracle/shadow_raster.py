@@ -21,7 +21,11 @@ def pack(*values):
 
 
 def render_shadow_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix, body_pixels=None):
-    """Original flat single-section core, optionally reading a supplied BSurface."""
+    """Original flat single-section core, optionally reading a supplied BSurface.
+
+    Without an HVA it makes VoxelAnimClass::DrawIt's call (0x00749CBE..
+    0x00749CE8): the caller matrix itself and the viewer identity at 0x887430.
+    """
     u = Uc(UC_ARCH_X86, UC_MODE_32)
     oracle.load_image(u)
     u.mem_map(oracle.STACK_BASE, oracle.STACK_SIZE)
@@ -143,13 +147,17 @@ def render_shadow_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix, body_pixe
         assert len(body_pixels) == 65536
         write(read32(mask_surface + 0x14), body_pixels)
         mask_reader = read32(read32(mask_surface) + 0x28)
-    # 707280 takes frame-zero ShadowIndex HVA; this packet supplies index zero.
-    invoke(0x5af980, ecx=INTERMEDIATE, edx=INPUT,
-           args=(read32(HVA_OBJECT + 0x0c),))
-    invoke(0x5ae860, ecx=SECTION)
-    # Ordinary non-aircraft: original viewer identity times scale-one identity.
-    view_product = BASE + 0x900
-    invoke(0x5af980, ecx=view_product, edx=0x887430, args=(SECTION,))
+    if hva_bytes is None:
+        write(INTERMEDIATE, draw_matrix)
+        view_product = 0x887430
+    else:
+        # 707280 takes frame-zero ShadowIndex HVA; this packet supplies index zero.
+        invoke(0x5af980, ecx=INTERMEDIATE, edx=INPUT,
+               args=(read32(HVA_OBJECT + 0x0c),))
+        invoke(0x5ae860, ecx=SECTION)
+        # Ordinary non-aircraft: original viewer identity times scale-one identity.
+        view_product = BASE + 0x900
+        invoke(0x5af980, ecx=view_product, edx=0x887430, args=(SECTION,))
     invoke(0x753f90, ecx=VXL, edx=0,
            args=(0, view_product, INTERMEDIATE, 0x887420, mask_surface, 0, 0),
            required=(0x7564b0, 0x5afb80))

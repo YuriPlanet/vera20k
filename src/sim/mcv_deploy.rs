@@ -242,8 +242,9 @@ pub(crate) fn try_to_deploy(
     // receiver's null arm.
     if !has_destination(sim)
         && !sim.owner_is_human(owner)
-        && let Err(cause) = sim.scatter_null(
+        && let Err(cause) = sim.scatter(
             id,
+            None,
             ScatterFlags::new(false, false),
             rules,
             registry,

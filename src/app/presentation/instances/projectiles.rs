@@ -16,7 +16,7 @@ use crate::render::terrain_draw::TerrainPiece;
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::projectile_type::ProjectileType;
 use crate::sim::projectile::{Projectile, ProjectileCoord, projectile_shp_frame};
-use crate::util::lepton::{absolute_leptons_to_screen, ground_height_leptons};
+use crate::util::lepton::absolute_leptons_to_screen;
 use crate::util::native_x87::adjust_for_z_standard;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -60,20 +60,6 @@ fn geometry(
         z_adjust: (-10i32).wrapping_sub(adjust_for_z_standard(surface_z)),
     });
     BulletGeometry { body, shadow }
-}
-
-/// Cell578080 arithmetic without its shared dummy-coordinate write. Rendering
-/// must not change a retained DummyCell target or future gameplay/RNG state.
-fn ground_probe(terrain: &ResolvedTerrainGrid, coord: ProjectileCoord) -> (i32, bool) {
-    let cell = super::foot_depth::depth_cell(
-        terrain,
-        None,
-        None,
-        [(coord.x / 256) as i16, (coord.y / 256) as i16],
-    );
-    let ground = ground_height_leptons(cell.level as u8, cell.ramp, coord.x, coord.y)
-        .expect("Bullet draw requires a supported native Cell slope");
-    (ground, cell.flags & 0x100 != 0)
 }
 
 pub(crate) fn build_projectile_visual_instances(
@@ -156,7 +142,8 @@ pub(crate) fn projectile_draw_instance(
     }
     let frame = u16::from(projectile_shp_frame(projectile, kind));
     let entry = atlas.projectile_sprite(type_id, kind, frame, scheme)?;
-    let (ground_z, structural) = ground_probe(terrain, projectile.position);
+    let (ground_z, structural) =
+        super::foot_depth::floor_probe(terrain, projectile.position.x, projectile.position.y);
     let geometry = geometry(
         projectile.position,
         ground_z,

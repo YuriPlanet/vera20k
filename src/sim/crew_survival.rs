@@ -1193,8 +1193,9 @@ impl Simulation {
         id: u64,
         effects: FrameEffects<'_>,
     ) {
-        if let Err(cause) = self.scatter_null(
+        if let Err(cause) = self.scatter(
             id,
+            None,
             crate::sim::movement::ScatterFlags::new(true, false),
             rules,
             registry,

@@ -9,6 +9,7 @@
 //! - `units` — voxel unit instance generation (turrets, harvest overlays)
 //! - `shp` — SHP building/infantry instances (building anims, bibs)
 //! - `overlays` — map overlays, AnimClass objects, fog snapshots
+//! - `voxel_anims` — VoxelAnimClass debris (tumbling VXL pieces)
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
@@ -31,5 +32,8 @@ pub(crate) use projectiles::*;
 
 mod particles;
 pub(crate) use particles::*;
+
+mod voxel_anims;
+pub(crate) use voxel_anims::*;
 
 pub mod bridges;

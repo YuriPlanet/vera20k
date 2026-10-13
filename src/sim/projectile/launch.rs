@@ -1,8 +1,9 @@
 //! Native FireAt launch math, with the stores and lookup boundaries retained.
 //!
 //! Owners: 6FE663..6FE8E7 (launch scatter), 6FE8EE..6FF014, 48A8D0/48A9D0,
-//! 4CAE30/4CB3D0, 4CADB0 and 4CACB0/4CAD00, and SpawnShrapnel's child
-//! velocity (46A5D2..46A86D). This module does not resolve world receivers.
+//! 4CAE30/4CB3D0, 4CADB0 and 4CACB0/4CAD00, BulletClass::Fire's flak
+//! placement (46874E..4688A5) and SpawnShrapnel's child velocity
+//! (46A5D2..46A86D). This module does not resolve world receivers.
 
 use crate::map::retail_trig::{AcosTable, TrigTable};
 use crate::util::native_x87::{NativeF64Bits, X87Chop53 as X, X87Ordering, X87Value};
@@ -300,18 +301,81 @@ fn launch_scatter_with(
     trig: &TrigTable,
 ) -> ProjectileCoord {
     let magnitude = if flak {
-        let distance = flak_scatter_distance(delta);
-        // 0x006FE727..0x006FE73D: IMUL, then IDIV by the range.
-        random_ranged(0, ballistic_scatter)
-            .wrapping_mul(distance)
-            .checked_div(weapon_range)
-            .unwrap_or(0)
+        flak_magnitude(delta, ballistic_scatter, weapon_range, &mut random_ranged)
     } else {
         // 0x006FE815..0x006FE81C: the halving is CDQ/SUB/SAR, toward zero.
         random_ranged(ballistic_scatter / 2, ballistic_scatter)
     };
     let raw = random_ranged(0, 0x7fff_fffe);
     scatter_delta(delta, magnitude, raw, trig)
+}
+
+/// `BulletClass::Fire`'s flak placement (`0x0046874E..0x004688A5`), taken
+/// for a `FlakScatter=` `Inviso=` bullet (stock `FlakProj`) before its Inviso
+/// arm: FireAt's flak arm, moving the target coordinate Fire kept, with three
+/// differences. The distance runs from that target to the coordinate Fire was
+/// given (`launch`); the magnitude draw's ceiling is twice `BallisticScatter=`
+/// (`SHL` at `0x004687C0`); and the divisor is the bullet's WeaponType
+/// `Range=` (`+0x130`, `+0xB4`), not GetWeaponRange. Two Scenario draws,
+/// magnitude then angle; Z is unchanged. A zero range faults natively; here
+/// it scatters by zero.
+pub(crate) fn bullet_fire_flak_placement(
+    launch: ProjectileCoord,
+    target: ProjectileCoord,
+    ballistic_scatter: i32,
+    weapon_range: i32,
+    rng: &mut SimRng,
+) -> ProjectileCoord {
+    flak_placement_with(
+        launch,
+        target,
+        ballistic_scatter,
+        weapon_range,
+        |low, high| rng.next_range_i32_inclusive(low, high),
+        TrigTable::embedded(),
+    )
+}
+
+/// The placement with its two `Random__RandomRanged` draws supplied.
+fn flak_placement_with(
+    launch: ProjectileCoord,
+    target: ProjectileCoord,
+    ballistic_scatter: i32,
+    weapon_range: i32,
+    mut random_ranged: impl FnMut(i32, i32) -> i32,
+    trig: &TrigTable,
+) -> ProjectileCoord {
+    // 0x0046874E..0x00468777, wrapping: X and Z are the launch minus the
+    // target, Y the target minus the launch (0x00468760).
+    let delta = ProjectileCoord::new(
+        launch.x.wrapping_sub(target.x),
+        target.y.wrapping_sub(launch.y),
+        launch.z.wrapping_sub(target.z),
+    );
+    let magnitude = flak_magnitude(
+        delta,
+        ballistic_scatter << 1,
+        weapon_range,
+        &mut random_ranged,
+    );
+    let raw = random_ranged(0, 0x7fff_fffe);
+    scatter_delta(target, magnitude, raw, trig)
+}
+
+/// Both flak arms' magnitude (`0x006FE6AD..0x006FE73D`, again at
+/// `0x0046874E..0x004687E5`): `RandomRanged(0, ceiling)` times the delta's
+/// length ([`flak_scatter_distance`]), `IMUL` then `IDIV` by the range.
+fn flak_magnitude(
+    delta: ProjectileCoord,
+    ceiling: i32,
+    range: i32,
+    random_ranged: &mut impl FnMut(i32, i32) -> i32,
+) -> i32 {
+    let distance = flak_scatter_distance(delta);
+    random_ranged(0, ceiling)
+        .wrapping_mul(distance)
+        .checked_div(range)
+        .unwrap_or(0)
 }
 
 /// `0x006FE6AD..0x006FE722`: the flak arm's length of the delta: X and Y
@@ -328,11 +392,12 @@ fn flak_scatter_distance(delta: ProjectileCoord) -> i32 {
 }
 
 /// The scatter's angle (`0x006FE75F..0x006FE796`, again at `0x006FE841..
-/// 0x006FE878`): the draw times 1/0x7FFFFFFE and 2π to a DirStruct word,
-/// then back to radians. Then `0x006FE79A..0x006FE7E9`: the new delta is
-/// `(cos·magnitude + x, y − sin·magnitude)`, each truncated.
+/// 0x006FE878` and in Fire at `0x0046880B..0x00468846`): the draw times
+/// 1/0x7FFFFFFE and 2π to a DirStruct word, then back to radians. Then
+/// `0x006FE79A..0x006FE7E9` (Fire: `0x0046884A..0x00468894`): `point` moves
+/// to `(cos·magnitude + x, y − sin·magnitude)`, each truncated.
 fn scatter_delta(
-    delta: ProjectileCoord,
+    point: ProjectileCoord,
     magnitude: i32,
     raw: i32,
     trig: &TrigTable,
@@ -341,7 +406,7 @@ fn scatter_delta(
         X::mul(X::load_i32(raw), d(INVERSE_DRAW_SPAN)),
         d(TWO_PI),
     )));
-    offset_along(delta, angle, magnitude, trig)
+    offset_along(point, angle, magnitude, trig)
 }
 
 /// The pitch both nuclear missiles leave at, pushed as an immediate
@@ -927,6 +992,48 @@ mod tests {
                 .iter()
                 .any(|call| call[0] == "weapon_range" && call[1] == input["weapon"]);
             assert_eq!(asks_range, flak, "row {index}");
+        }
+    }
+
+    /// The same corpus's `bullet_fire_flak` rows: `BulletClass::Fire`'s flak
+    /// placement on the original instructions. The Rust placement runs with
+    /// the recorded draws, and its `RandomRanged` bounds must match the
+    /// recorded arguments in order.
+    #[test]
+    fn original_bullet_fire_flak_placement() {
+        let trig = TrigTable::embedded();
+        let corpus = launch_scatter_corpus();
+        let rows = corpus["bullet_fire_flak"].as_array().unwrap();
+        assert_eq!(rows.len(), 84);
+        for (index, row) in rows.iter().enumerate() {
+            let input = &row["input"];
+            let int = |key: &str| input[key].as_i64().unwrap() as i32;
+            let mut draws = input["draws"].as_array().unwrap().iter();
+            let mut bounds = Vec::new();
+            let result = flak_placement_with(
+                coord(&input["launch"]),
+                coord(&input["target"]),
+                int("scatter"),
+                int("range"),
+                |low, high| {
+                    bounds.push((low, high));
+                    draws.next().unwrap().as_i64().unwrap() as i32
+                },
+                trig,
+            );
+            let native: Vec<(i32, i32)> = row["calls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|call| {
+                    (
+                        call[1].as_i64().unwrap() as i32,
+                        call[2].as_i64().unwrap() as i32,
+                    )
+                })
+                .collect();
+            assert_eq!(bounds, native, "row {index}: the draws");
+            assert_eq!(result, coord(&row["result"]), "row {index}: {input}");
         }
     }
 

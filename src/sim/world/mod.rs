@@ -4182,9 +4182,16 @@ impl Simulation {
     /// `0x0046A875`, `0x0046AD24`), whose Inviso arm (`0x004688B7..0x00468986`)
     /// stands an `Inviso=` child on its target's vt+0x58, the coordinate the
     /// spawn captured ([`ProjectileStore::fire_inviso`]); its OnBridge stays
-    /// clear, as only FireAt copies one. A `FlakScatter=` child would first be
-    /// scattered, the unported second scatter site (GSI-08.07 in `combat`); no
-    /// retail shrapnel weapon's projectile sets it.
+    /// clear, as only FireAt copies one.
+    ///
+    /// RESIDUAL: a child has no WeaponType. The constructor zeroes `+0x130`
+    /// (`0x00466401`) and only SetWeaponType (`0x0046B260`, called from
+    /// `0x0044CAFF`, `0x006CDB7E`, `0x006E34E6`, `0x006FE573` and
+    /// `0x0070D764`) writes it, so a `FlakScatter=` child would fault reading
+    /// its `Range=` in Fire's flak placement (`0x004687E5`). VERA stands it on
+    /// its target. Trigger: a shrapnel weapon whose projectile is `Inviso=`
+    /// and `FlakScatter=`; the five retail shrapnel weapons' projectiles are
+    /// `Inviso=` without it. Effect: native crashes.
     ///
     /// [`ProjectileStore::fire_inviso`]: crate::sim::projectile::ProjectileStore::fire_inviso
     pub(crate) fn admit_projectile_spawns(

@@ -462,7 +462,8 @@ fn finalize_tube_object(
             // The Infantry exit's locomotor Stop_Movement_Animation
             // (`0x0051BA16`).
             // RESIDUAL: its Force_Immediate_Destination(null) just before
-            // (`0x0051B9F4`, Walk `0x0075AE30`) is not ported.
+            // (`0x0051B9F4`, Walk `0x0075AE30`) is not called here
+            // (`Simulation::foot_force_immediate_destination`).
             // - Trigger: an infantryman leaving a map tube.
             // - Effect: Walk's forced null destination is skipped: its head
             //   and destination handling (`0x0075C240`), then, once both are

@@ -221,35 +221,6 @@ fn the_pursuit_pass_leaves_a_crush_charge_alone() {
     );
 }
 
-/// The charge stays the crush arm's while its NavCom is the Target within
-/// `Crush=`: not with the NavCom elsewhere, nor at a Target out of reach (the
-/// lapsed-charge residual on `crush_owns_approach`). A Drive unit's approach
-/// stays its mission's either way, through the Foot body.
-#[test]
-fn crush_owns_a_charge_while_its_target_stays_within_reach() {
-    let Some(rules) = retail_rules() else {
-        return;
-    };
-    let owns = |gi_cell: (u16, u16), nav_on_gi: bool| {
-        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x7414E4);
-        let rhino = spawn(&mut sim, &rules, "HTNK", "Russians", (10, 10));
-        let gi = spawn(&mut sim, &rules, "E1", "Americans", gi_cell);
-        target(&mut sim, rhino, gi);
-        start_mission(&mut sim, rhino, MissionType::Attack);
-        let nav = if nav_on_gi {
-            NavTargetRef::object(gi)
-        } else {
-            NavTargetRef::cell(4, 4)
-        };
-        set_nav_com(&mut sim, rhino, nav);
-        assert!(sim.mission_owns_approach(rhino, &rules));
-        sim.crush_owns_approach(rhino, &rules)
-    };
-    assert!(owns((11, 10), true));
-    assert!(!owns((11, 10), false));
-    assert!(!owns((13, 10), true));
-}
-
 /// A computer's Rhino whose charge at a GI the crush arm carries takes the
 /// per-cell range stop on arriving in the cell before the GI's
 /// (`0x004D882F..0x004D896E`), the GI in weapon range: its NavCom is dropped,
@@ -265,7 +236,7 @@ fn a_crush_charge_takes_the_per_cell_range_stop() {
     target(&mut sim, rhino, gi);
     start_mission(&mut sim, rhino, MissionType::Attack);
     set_nav_com(&mut sim, rhino, NavTargetRef::object(gi));
-    assert!(sim.crush_owns_approach(rhino, &rules));
+    assert!(sim.mission_owns_approach(rhino, &rules));
     sim.per_cell_process(
         rhino,
         crate::sim::movement::PerCellReason::Arrival,

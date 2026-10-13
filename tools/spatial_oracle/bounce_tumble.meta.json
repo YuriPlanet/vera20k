@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Quaternion_FromAxisAngle 0x00646480, the product 0x00645ED0 and Quaternion_ToMatrix 0x00646980 on supplied bits (unit, unnormalized, short, zero and signed-zero axes; zero, small, large and negative angles; zero and non-unit quaternions); and 32 [TIRE]-like flights: BounceClass::Init 0x004397E0 after a native Scenario seed, then Update 0x00439B00 and GetDrawingMatrix 0x004399E0 per tick on flat level-0 terrain until result 2 or 400 ticks.",
+  "assumptions": [
+    "x87 control word 0x0E7F (PC53, chop); 0x00822D80 holds 0x0E7F for ftol 0x007C5F00.",
+    "Flights use anim_bouncer_flight.py's machine('flat0') and carry its terrain assumptions (supplied cell table, original deck init and slope matrices).",
+    "Init receives gravity 1.4 and a zero clamp, as VoxelAnimClass's constructor passes them (0x00749648..0x00749663); the angle double and velocity floats are supplied, not drawn by the constructor.",
+    "The sine table and Sqrt_Approx table are the image's own data."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "from_axis_angle": "0x00646480",
+    "multiply": "0x00645ED0",
+    "to_matrix": "0x00646980",
+    "seed": "0x0065C6D0",
+    "init": "0x004397E0",
+    "update": "0x00439B00",
+    "drawing_matrix": "0x004399E0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bounce_tumble",
+  "payload_sha256": "056ad586039dd16fda195081647eee2af8cbf4a0c30137fde8914841b017a7e2"
+}

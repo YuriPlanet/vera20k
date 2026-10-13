@@ -20,7 +20,7 @@ impl Simulation {
     /// The caller already cleared readiness. Search belongs to the next visit.
     /// Each visit returns Mission+0xBC and the frames it returns.
     pub(crate) fn aircraft_begin_attack(&mut self, id: u64) -> (u8, i32) {
-        let present = attack_mission::aircraft_target_present(
+        let present = crate::sim::combat::target_present(
             self.substrate
                 .entities
                 .get(id)
@@ -47,7 +47,7 @@ impl Simulation {
             .attack_target
             .as_ref()
             .filter(|attack| {
-                attack_mission::aircraft_target_present(Some(attack), &self.substrate.entities)
+                crate::sim::combat::target_present(Some(attack), &self.substrate.entities)
             })
             .map(|a| NavTargetRef::from(a.target));
         let ammo = entity.aircraft_ammo.as_ref().map_or(-1, |a| a.current);
@@ -105,7 +105,7 @@ impl Simulation {
             .attack_target
             .as_ref()
             .filter(|attack| {
-                attack_mission::aircraft_target_present(Some(attack), &self.substrate.entities)
+                crate::sim::combat::target_present(Some(attack), &self.substrate.entities)
             })
             .map(|a| a.target)
         else {
@@ -206,7 +206,7 @@ impl Simulation {
     pub(crate) fn aircraft_strikes(&self, id: u64, state: u8) -> bool {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
         let attack = entity.attack_target.as_ref();
-        let target = attack_mission::aircraft_target_present(attack, &self.substrate.entities);
+        let target = crate::sim::combat::target_present(attack, &self.substrate.entities);
         let ammo = entity.aircraft_ammo.as_ref().map_or(-1, |a| a.current);
         attack.is_some() && !attack_mission::strike_leaves(state, target, ammo)
     }
@@ -222,7 +222,7 @@ impl Simulation {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
         let facts = attack_mission::ExitFacts {
             ammo: entity.aircraft_ammo.as_ref().map_or(-1, |a| a.current),
-            target: attack_mission::aircraft_target_present(
+            target: crate::sim::combat::target_present(
                 entity.attack_target.as_ref(),
                 &self.substrate.entities,
             ),

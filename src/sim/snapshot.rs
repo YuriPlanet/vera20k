@@ -978,7 +978,13 @@ use crate::sim::world::Simulation;
 // 337 -> 338: objects keep the deactivated latch (Techno+1C8), buildings
 // whether they count as a powered center (+662), and houses that count
 // (+2D8). Version 337 records lack them.
-const SNAPSHOT_VERSION: u32 = 338;
+// 338 -> 339: every bullet keeps its ProximityDetector reference (+0xD0),
+// which a FlakScatter= Inviso shot's moved placement sets; guidance no longer
+// carries it. Version 338 records keep it in the guidance of guided bullets.
+// 339 -> 340: a bounce body keeps its native orientation and rotation
+// quaternions (BounceClass+0x30/+0x40) instead of the axis and angle that
+// built them. Version 339 records carry the axis and angle.
+const SNAPSHOT_VERSION: u32 = 340;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4347,7 +4353,9 @@ mod tests {
         // 335 -> 336: saved world resources, local view and Tactical center.
         // 336 -> 337: Magnetron links and the object's warp credit house.
         // 337 -> 338: the deactivated latch and the powered-center counts.
-        assert_eq!(super::SNAPSHOT_VERSION, 338);
+        // 338 -> 339: every bullet's ProximityDetector reference.
+        // 339 -> 340: a bounce body's orientation and rotation quaternions.
+        assert_eq!(super::SNAPSHOT_VERSION, 340);
     }
 
     #[test]

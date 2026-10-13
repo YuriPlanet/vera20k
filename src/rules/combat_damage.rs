@@ -42,6 +42,13 @@ pub struct CombatDamageDefaults {
     /// computer unit charges a crushable attacker
     /// (`UnitClass::Should_Crush_It @ 0x007438F0`).
     pub crush: i32,
+    /// `Incoming=` (`RulesClass+0x16C0`), read through `ReadSpeed @
+    /// 0x00474810` at `0x0066CF24` with the current value as its default; the
+    /// constructor writes 0 (`0x006674EA`). Stock `10` reads as 25. An
+    /// infantryman whose weapon 0 is slower (`+0xA8`) makes the objects in
+    /// its target's cell scatter away from it as it fires
+    /// (`InfantryClass::Fire_At_Target @ 0x00520A61..0x00520AC7`).
+    pub incoming: i32,
     /// `OpenToppedWarpDistance=` in CELLS (`RulesClass+0xF60`, ReadInt at
     /// `0x0066C79C`; constructor default 5 at `0x00666AB1`/`0x00666AE5`;
     /// stock 7). `TemporalClass::Update` multiplies it by 256 at its use.
@@ -104,6 +111,7 @@ impl CombatDamageDefaults {
             collapse_chance: section.read_int("CollapseChance", 100),
             ballistic_scatter: section.read_range("BallisticScatter", 0x100),
             crush: section.read_range("Crush", 0x180),
+            incoming: section.read_speed("Incoming", 0),
             open_topped_warp_distance: section.read_int("OpenToppedWarpDistance", 5),
             death_weapon: section.read_name("DeathWeapon", 0x80).map(str::to_string),
             falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
@@ -154,6 +162,7 @@ impl Default for CombatDamageDefaults {
             collapse_chance: 100,
             ballistic_scatter: 0x100,
             crush: 0x180,
+            incoming: 0,
             open_topped_warp_distance: 5,
             death_weapon: None,
             falling_damage_multiplier: 1.0,
@@ -271,5 +280,18 @@ mod tests {
         assert_eq!(read("[CombatDamage]\nCrush=1.8\n"), 460);
         assert_eq!(read("[CombatDamage]\nFixtureOnly=1\n"), 0x180);
         assert_eq!(CombatDamageDefaults::default().crush, 0x180);
+    }
+
+    /// `Incoming=` is a percent read as a speed: stock `10` is 25, and a
+    /// missing key keeps the constructor's 0.
+    #[test]
+    fn incoming_reads_through_read_speed() {
+        let read = |text: &str| {
+            let ini = IniFile::from_str(text);
+            CombatDamageDefaults::from_ini_section(ini.section("CombatDamage").unwrap()).incoming
+        };
+        assert_eq!(read("[CombatDamage]\nIncoming=10\n"), 25);
+        assert_eq!(read("[CombatDamage]\nFixtureOnly=1\n"), 0);
+        assert_eq!(CombatDamageDefaults::default().incoming, 0);
     }
 }

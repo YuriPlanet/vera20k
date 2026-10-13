@@ -105,6 +105,36 @@ fn native_generated_shadow_geometry_and_body_mask() {
     );
 }
 
+/// `VoxelAnimClass::DrawIt`'s shadow (`0x00749CBE..0x00749CE8`): the bounce
+/// drawing matrix itself, the identity viewer, no HVA and no mask.
+#[test]
+fn tumbling_piece_shadow_matches_original_execution() {
+    let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/tumble_fixtures.json",
+    ))
+    .unwrap();
+    let vxl = VxlFile::from_bytes(&bytes(fixture["vxl"].as_str().unwrap())).unwrap();
+    let cases = fixture["cases"].as_array().unwrap();
+    for case in cases {
+        let shadow = &case["shadow"];
+        let bits: Vec<u32> = shadow["input_matrix_bits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|word| word.as_u64().unwrap() as u32)
+            .collect();
+        let matrix =
+            super::super::hva_to_mat4(&std::array::from_fn(|i| f32::from_bits(bits[i])), 1.0);
+        let sprite = render_matrix(&vxl, matrix).unwrap();
+        check(
+            &sprite,
+            shadow,
+            &format!("flight {} tick {}", case["flight"], case["tick"]),
+        );
+    }
+    assert_eq!(cases.len(), 24);
+}
+
 #[test]
 #[ignore = "requires original stock shadow evidence and extracted art in VERA20K_SHADOW_PROBE_DIR"]
 fn stock_shadow_geometry_and_native_composed_body_masks() {

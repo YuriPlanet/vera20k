@@ -348,8 +348,9 @@ impl Simulation {
                     .map(|team| team.members().collect())
                     .unwrap_or_default();
                 for member in members {
-                    if let Err(cause) = self.scatter_null(
+                    if let Err(cause) = self.scatter(
                         member,
+                        None,
                         crate::sim::movement::ScatterFlags::new(true, false),
                         rules,
                         registry,

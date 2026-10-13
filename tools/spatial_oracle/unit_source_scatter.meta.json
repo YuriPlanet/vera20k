@@ -25,5 +25,6 @@
     "projection": "0x006D6410",
     "height": "0x005F5F00"
   },
-  "payload_sha256": "0777af63df5e443345b40e091fbdcc2a1ef68ae7754929bb5f77fee58b82d0c1"
+  "replay_command": "python -m tools.spatial_oracle.unit_source_scatter",
+  "payload_sha256": "d6a069dd57f2c2eda722e35dd2121409731081c2f55a593ecf2e4b8b8b95e4cb"
 }

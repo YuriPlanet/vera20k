@@ -4742,7 +4742,6 @@ fn gsi_05_04_guided_projectile(
         very_high: false,
         max_speed: 0,
         acceleration: 3,
-        fuse_reference: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
         closing_frames: 0,
         closing_accumulator_bits: 0,
     });
@@ -4805,7 +4804,6 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
         let guidance = shot.guidance.as_mut().unwrap();
         guidance.max_speed = 4;
         guidance.acceleration = 0;
-        guidance.fuse_reference = shot.initial_target_position;
         let source_id = if with_source {
             let source_id = sim.allocate_stable_id();
             insert_entity(&mut sim, source_id, EntityCategory::Unit);
@@ -4813,7 +4811,6 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
             sim.substrate.entities.get_mut(source_id).unwrap().type_ref = type_ref;
             shot.source_id = source_id;
             shot.arm_frames = 0;
-            guidance.fuse_reference = ProjectileCoord::new(origin.x + 104, origin.y, origin.z - 2);
             Some(source_id)
         } else {
             None
@@ -4829,7 +4826,10 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
         // Restore it after admission's independent 46C4F0 launch-floor fixup.
         sim.projectiles.get_mut(id).unwrap().position = origin;
         if with_source {
-            sim.projectiles.get_mut(id).unwrap().last_distance_half = 0;
+            let bullet = sim.projectiles.get_mut(id).unwrap();
+            bullet.proximity_reference =
+                ProjectileCoord::new(origin.x + 104, origin.y, origin.z - 2);
+            bullet.last_distance_half = 0;
         }
         if expire_source {
             sim.uninit(source_id.unwrap());
@@ -4915,11 +4915,11 @@ fn homing_mode_one_fuse_snaps_to_cell_location_below_bridge_aim_point() {
     shot.speed_leptons_per_frame = 4;
     shot.velocity = ProjectileVelocity::new(4, 0, 0);
     shot.ranged_fuse = true;
-    let guidance = shot.guidance.as_mut().unwrap();
-    guidance.max_speed = 4;
-    guidance.fuse_reference = shot.origin;
+    shot.guidance.as_mut().unwrap().max_speed = 4;
+    let origin = shot.origin;
     let id = sim.allocate_stable_id();
     sim.admit_projectile(id, shot);
+    sim.projectiles.get_mut(id).unwrap().proximity_reference = origin;
     let result = sim.projectiles.advance(
         0,
         &BTreeMap::new(),

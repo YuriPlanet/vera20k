@@ -861,8 +861,14 @@ fn unit_run_away(
         return;
     }
     crate::sim::miner::clear_unload_latch(sim, unit);
-    if let Err(cause) = sim.scatter_null(unit, ScatterFlags::new(true, false), rules, None, effects)
-    {
+    if let Err(cause) = sim.scatter(
+        unit,
+        None,
+        ScatterFlags::new(true, false),
+        rules,
+        None,
+        effects,
+    ) {
         log::debug!("RUN_AWAY unit {unit} did not scatter: {cause}");
     }
     let now = sim.session.binary_frame;
@@ -1288,8 +1294,14 @@ fn foot_run_away(
         .entities
         .get(foot)
         .is_some_and(|entity| !entity.turret_rotation_latch && entity.navigation.nav_com.is_none())
-        && let Err(cause) =
-            sim.scatter_null(foot, ScatterFlags::new(true, true), rules, None, effects)
+        && let Err(cause) = sim.scatter(
+            foot,
+            None,
+            ScatterFlags::new(true, true),
+            rules,
+            None,
+            effects,
+        )
     {
         log::debug!("RUN_AWAY foot {foot} did not scatter: {cause}");
     }

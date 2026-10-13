@@ -156,12 +156,14 @@ pub const BRIDGE_DECK_HEIGHT_LEVELS: i32 = 4;
 /// `0x00439610`, read by `0x00439A10`/`0x00439B00`), Jumpjet `[0x00ABC5DC]`,
 /// the parasite release deck `[0x00AC497C]`, Anim `[0x0089A1B4]`
 /// (initializer `0x00421E20`, the same `4 * level + 0.5` truncation, read by
-/// the MakeInfantry mark and clear at `0x0042629B`/`0x00426328`), and Rocket
+/// the MakeInfantry mark and clear at `0x0042629B`/`0x00426328`), Rocket
 /// `[0x00B04E6C]` (one of the initializers at `0x008147C4`, read by the
 /// impact predictor `0x006620F0`; 416 when those initializers run under
-/// Unicorn). None is
-/// INI-read and every captured value is 416, so one constant serves them all,
-/// as [`LEPTONS_PER_LEVEL`] does for their level steps.
+/// Unicorn), and VoxelAnim `[0x00B1D1BC]` (initializer `0x00749310`, again
+/// `4 * level + 0.5`, read by `VoxelAnimClass::DrawIt`'s shadow at
+/// `0x00749C2D`; 416 when its initializers run in order under Unicorn). None
+/// is INI-read and every captured value is 416, so one constant serves them
+/// all, as [`LEPTONS_PER_LEVEL`] does for their level steps.
 pub const BRIDGE_DECK_HEIGHT_LEPTONS: i32 = BRIDGE_DECK_HEIGHT_LEVELS * GROUND_LEVEL_HEIGHT_LEPTONS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

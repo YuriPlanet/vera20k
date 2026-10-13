@@ -6200,6 +6200,12 @@ fn parse_particle_types(ini: &IniFile) -> (Vec<ParticleType>, HashMap<String, Pa
 /// Registry order is the id order, exactly as for particles and particle
 /// systems, because `DebrisTypes=` and `Spawns=` resolve by name and the ids
 /// are hashed.
+///
+/// RESIDUAL: RulesClass::ReadVoxelAnims (`0x00672920`) allocates a type for
+/// every listed name through FindOrAllocate (`0x0074B960`), section or not;
+/// VERA skips an entry without a section, which shifts later ids and leaves a
+/// `DebrisTypes=` reference to it unresolved. Every retail entry has a
+/// section.
 fn parse_voxel_anim_types(ini: &IniFile) -> (Vec<VoxelAnimType>, HashMap<String, VoxelAnimTypeId>) {
     let ids: Vec<String> = parse_registry(ini, "VoxelAnims");
     let mut types: Vec<VoxelAnimType> = Vec::with_capacity(ids.len());

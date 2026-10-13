@@ -1493,8 +1493,8 @@ impl Simulation {
 
     /// [`Self::set_unit_null_destination`] from its NavCom guard (0x741A80)
     /// on, past the BalloonHover arm. Besides the setter itself, only the
-    /// pursuit pass's halt for a cruising Jumpjet it still carries (a
-    /// `CloseRange=` type, or a Cell target on a DestroyableCliffs tile) calls
+    /// pursuit pass's halt for a cruising Jumpjet it still carries (a Cell
+    /// target on a DestroyableCliffs tile) calls
     /// it: that halt stands in for the Jumpjet's arrival at the cell Foot's
     /// approach (0x4D5690) would have sent it to, which native never routes
     /// through this setter.

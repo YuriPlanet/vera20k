@@ -1,5 +1,5 @@
-//! Per-frame sprites of posed bodies: tilted (crashing) bodies and pitched
-//! rockets.
+//! Per-frame sprites of posed bodies: tilted (crashing) bodies, pitched
+//! rockets and tumbling voxel debris.
 //!
 //! `FlyLocomotionClass` Draw_Matrix's crashing arm (`0x004CF610`) and
 //! `JumpjetLocomotionClass`'s `TiltCrashJumpjet=` arm (`0x0054DCC0`) key their
@@ -7,10 +7,12 @@
 //! rasterized afresh every frame with its current roll and pitch.
 //! `RocketLocomotionClass::Draw_Matrix` (`0x00663470`) keys a pitched missile
 //! -1 too, except at the stored PitchFinal product, whose cached image is the
-//! one a fresh render gives. This page renders the posed bodies on screen. It
-//! is rebuilt each presentation frame ([`VxlPoseFrameCache::begin_frame`]) and
-//! its used rows are written into one reused GPU page after the unit instances
-//! are built ([`VxlPoseFrameCache::upload`]).
+//! one a fresh render gives. `VoxelAnimClass::DrawIt` (`0x00749B70`) renders
+//! its piece fresh every frame too. This page renders the posed bodies on
+//! screen. It is rebuilt each presentation frame
+//! ([`VxlPoseFrameCache::begin_frame`]) and its used rows are written into one
+//! reused GPU page after the voxel instances are built
+//! ([`VxlPoseFrameCache::upload`]).
 
 use std::collections::BTreeMap;
 
@@ -38,6 +40,9 @@ pub struct VxlPoseFrameCache {
     vpl: Option<Option<VplFile>>,
     /// Each posed type's voxel model, parsed on its first pose.
     models: BTreeMap<String, Option<UnitModel>>,
+    /// Each `[VoxelAnims]` image's model, parsed on its first draw. Kept apart
+    /// from `models`: an image is a file name, not a rules type.
+    debris_models: BTreeMap<String, Option<UnitModel>>,
 }
 
 impl VxlPoseFrameCache {
@@ -82,8 +87,50 @@ impl VxlPoseFrameCache {
             .or_insert_with(|| UnitModel::load(asset_manager, &key.type_id, rules))
             .as_ref()?;
         let (sprite, native_draw_bounds) = model.render_pose(key, vpl, tilt);
-        let (px, py) = self.try_place(&sprite)?;
-        self.blit(&sprite, px, py);
+        self.place(&sprite, native_draw_bounds)
+    }
+
+    /// Rasterize one `VoxelAnimClass` piece's body and ground shadow at its
+    /// bounce matrix and place both on this frame's page. `image` is the
+    /// type's `ImageFile`, which names its model (`%s.VXL`, `0x0074B56C`).
+    /// None when the model does not resolve, the piece is not drawable or the
+    /// page is full.
+    pub fn render_tumble(
+        &mut self,
+        asset_manager: &AssetManager,
+        image: &str,
+        section: i32,
+        matrix: glam::Mat4,
+    ) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)> {
+        if self.pixels.is_empty() {
+            self.begin_frame();
+        }
+        let vpl = self
+            .vpl
+            .get_or_insert_with(|| {
+                asset_manager
+                    .get_ref("VOXELS.VPL")
+                    .and_then(|data| VplFile::from_bytes(data).ok())
+            })
+            .as_ref();
+        let model = self
+            .debris_models
+            .entry(image.to_string())
+            .or_insert_with(|| UnitModel::load(asset_manager, image, None))
+            .as_ref()?;
+        let (body, shadow) = model.render_tumble(section, matrix, vpl)?;
+        let shadow = shadow.and_then(|sprite| self.place(&sprite, None));
+        Some((self.place(&body, None)?, shadow))
+    }
+
+    /// Put one rasterized sprite on the page.
+    fn place(
+        &mut self,
+        sprite: &VxlSprite,
+        native_draw_bounds: Option<[i32; 4]>,
+    ) -> Option<UnitSpriteEntry> {
+        let (px, py) = self.try_place(sprite)?;
+        self.blit(sprite, px, py);
         self.dirty = true;
         Some(UnitSpriteEntry {
             uv_origin: [px as f32 / PAGE_SIZE as f32, py as f32 / PAGE_SIZE as f32],

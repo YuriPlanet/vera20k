@@ -331,10 +331,10 @@ pub struct MissionControlEntry {
     ///    it only on the Area-Guard-promotion branch, not on the ordinary Guard
     ///    fall, so a `Paralyzed=` mission does not stop a vehicle falling to
     ///    Guard;
-    /// 2. the scatter paths, which live in `sim/movement` — **not consumed
-    ///    there yet**. That is where `[Sticky] Paralyzed=yes` would actually
-    ///    bite: a Sticky civilian can currently be shoved off its cell, which
-    ///    is the opposite of the section comment's "cannot move".
+    /// 2. `UnitClass::Scatter`'s coordinate arm (`0x00743CA7`,
+    ///    `movement::scatter`), which refuses it. That body's prefix already
+    ///    refuses Sticky (`vt+0x28C`), the one stock section that sets it.
+    ///    `InfantryClass::Scatter` does not read it.
     pub paralyzed: bool,
     /// Allowed to retaliate while on this mission (`Retaliate=`, def yes).
     pub retaliate: bool,

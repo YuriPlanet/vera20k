@@ -756,7 +756,9 @@ pub struct GameEntity {
     pub barrel_facing: Option<crate::sim::movement::FacingClass>,
     /// Turret rotation latch — `UnitClass+0x6AF`, written only by
     /// `UnitClass::Facing_Update @ 0x00736990` (cleared at `0x00736AD5`, re-set
-    /// from `FacingClass::Is_Rotating` at `0x00736B16`) and read only by
+    /// from `FacingClass::Is_Rotating` at `0x00736B16`). Its readers include
+    /// the transport unload (`0x0073D892`), the radio receivers and Scatter's
+    /// coordinate arm (`0x00743CFD`), besides
     /// `UnitClass::GetFireError @ 0x00741233`. While set, the aim block is
     /// skipped so the turret finishes the arc it started instead of
     /// re-snapshotting every frame, and — unless the projectile homes — the

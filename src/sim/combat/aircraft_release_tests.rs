@@ -16,7 +16,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
          [Gun]\nDamage=10\nROF=20\nRange=20\nBurst={}\nOmniFire={}\nProjectile=Shell\nWarhead=WH\n{}\
          [EliteGun]\nDamage=10\nROF=37\nRange=20\nBurst={}\nProjectile=Shell\nWarhead=WH\n\
          [Shell]\nROT={}\nInviso={}\nAG=yes\nAA=yes\n\
-         [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{}",
+         [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{}{}",
         if elite { "ElitePrimary=EliteGun\n" } else { "" },
         input["fighter"].as_bool().unwrap_or(false),
         if input["missile_spawn"].as_bool().unwrap_or(false) {
@@ -37,6 +37,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         } else {
             ""
         },
+        input["extra_ini"].as_str().unwrap_or(""),
     )))
     .unwrap();
     let mut sim = Simulation::with_seed(0);
@@ -533,4 +534,47 @@ fn a_kamikaze_missile_is_removed_after_its_shot() {
     let missile = sim.substrate.entities.get(1).unwrap();
     assert!(!missile.lifecycle.object_alive, "UnInit");
     assert!(sim.substrate.pending_delete.contains_object(&1));
+}
+
+/// Mission_Attack's strike: after the state-4 burst, Scatter_Objects on the
+/// target's cell (Map[Target vt+0x48]) from the aircraft's Location, forced
+/// and not no-kidding. A computer tank on the struck cell, north of the
+/// aircraft, heads further north with a queued Move.
+#[test]
+fn an_aircraft_strike_scatters_the_target_cell_away_from_the_aircraft() {
+    use crate::sim::mission::{MissionId, MissionType};
+    let (mut sim, rules) = fixture(&serde_json::json!({
+        "burst": 1,
+        "extra_ini": "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=200\nSpeed=6\n\
+                      SpeedType=Track\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    }));
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let russians = sim.interner.intern("Russians");
+    let mut house = crate::sim::house_state::HouseState::new(russians, 0, None, false, 0, 10);
+    house.current_iq = 5;
+    sim.houses.insert(russians, house);
+    let tank = sim
+        .spawn_object("MTNK", "Russians", 10, 9, 0, &rules)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .mission
+        .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
+    let result = dispatch(&mut sim, &rules);
+    assert_eq!(result.consequences.fire_events().len(), 1, "one shot");
+    let tank = sim.substrate.entities.get(tank).unwrap();
+    assert!(
+        matches!(
+            tank.navigation.nav_com,
+            Some(crate::sim::components::NavTargetRef::Cell { ry: 8, .. })
+        ),
+        "{:?}",
+        tank.navigation.nav_com
+    );
+    assert_eq!(
+        tank.mission.queued(),
+        MissionId::from_known(MissionType::Move)
+    );
 }

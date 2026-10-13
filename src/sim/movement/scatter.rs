@@ -1,10 +1,12 @@
-//! `TechnoClass::Scatter` (vtable `+0x174`) with a null coordinate: the one
-//! dispatcher over the class receivers, the Unit receiver, and two callers'
-//! gates: the cell dispatcher `CellClass::Scatter_Objects @ 0x00481670` and
-//! `TechnoClass::ReceiveDamage`'s scatter tail (`0x00702B47..0x00702D0B`).
+//! `TechnoClass::Scatter` (vtable `+0x174`): the one dispatcher over the
+//! class receivers ([`Simulation::scatter`]), the Unit receiver, and two
+//! callers' gates: the cell dispatcher `CellClass::Scatter_Objects @
+//! 0x00481670` and `TechnoClass::ReceiveDamage`'s scatter tail
+//! (`0x00702B47..0x00702D0B`).
 //!
 //! Receivers:
-//! - Unit `0x00743A50`: [`Simulation::unit_scatter_null`].
+//! - Unit `0x00743A50`: [`Simulation::unit_scatter_null`] and
+//!   [`Simulation::unit_scatter_from`].
 //! - Infantry `0x0051D0D0`: `infantry_scatter`.
 //! - Aircraft `0x0041A590`: when the current mission's MissionControl
 //!   `Scatter=` (`+0x9`) is set, `Enter_Idle_Mode(0, 1)` (`0x004176F0`,
@@ -12,16 +14,17 @@
 //!   the flags.
 //! - Every other class inherits ObjectClass `0x005F43A0` (`RET 0xC`).
 //!
-//! A null coordinate is the all-zero CoordStruct each caller passes
+//! A null coordinate is the all-zero CoordStruct many callers pass
 //! (`0x008B3DA8`, `0x00B1CFE8`, `0x00B0EA90`); the receivers compare against
-//! their own zero globals (`0x00B1CFE8`, `0x00A8F200`).
+//! their own zero globals (`0x00B1CFE8`, `0x00A8F200`). Any other coordinate
+//! is a source to scatter away from.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::veterancy::RANK_ELITE_U16;
-use crate::sim::components::NavTargetRef;
+use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::find_nearby_cell::{
     NearbyAnchorGate, NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
@@ -35,6 +38,7 @@ use crate::sim::world::Simulation;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::locomotor::MovementLayer;
+use super::scatter_cell::OctantJitter;
 
 /// The two flags every Scatter call passes after its coordinate, under
 /// Westwood's names.
@@ -349,8 +353,9 @@ impl Simulation {
         if !receive_damage_scatter_admitted(entity, retaliation, human, rules, &self.interner)? {
             return Ok(false);
         }
-        self.scatter_null(
+        self.scatter(
             id,
+            None,
             RECEIVE_DAMAGE_SCATTER_FLAGS,
             rules,
             registry,
@@ -358,13 +363,16 @@ impl Simulation {
         )
     }
 
-    /// `TechnoClass::Scatter` (vtable `+0x174`) with a null coordinate.
+    /// `TechnoClass::Scatter(coord, forced, no_kidding)` (vtable `+0x174`):
+    /// `source` is the coordinate to scatter away from; `None`, like the
+    /// all-zero coordinate the receivers test for, takes the null arms.
     /// Answers whether an Infantry receiver's immediate Process changed bridge
     /// state. Missing map state leaves the receiver where it stands; malformed
     /// live class state is an error.
-    pub(crate) fn scatter_null(
+    pub(crate) fn scatter(
         &mut self,
         id: u64,
+        source: Option<DriveCoord>,
         flags: ScatterFlags,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
@@ -373,15 +381,31 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
         };
-        match entity.category {
-            EntityCategory::Unit => {
+        let source = source.filter(|coord| *coord != super::foot_coordinate::NULL_COORD);
+        match (entity.category, source) {
+            (EntityCategory::Unit, None) => {
                 self.unit_scatter_null(id, flags, rules, frame_effects);
                 Ok(false)
             }
-            EntityCategory::Infantry => {
+            (EntityCategory::Unit, Some(source)) => {
+                self.unit_scatter_from(id, source, flags, rules, registry, frame_effects)?;
+                Ok(false)
+            }
+            (EntityCategory::Infantry, None) => {
                 self.infantry_scatter_null(id, flags, rules, registry, frame_effects)
             }
-            EntityCategory::Aircraft => {
+            (EntityCategory::Infantry, Some(source)) => {
+                self.infantry_scatter_from(
+                    id,
+                    (source.x, source.y),
+                    flags,
+                    rules,
+                    registry,
+                    frame_effects,
+                )?;
+                Ok(false)
+            }
+            (EntityCategory::Aircraft, _) => {
                 if mission_permits_scatter(entity, rules) {
                     crate::sim::aircraft::enter_idle_mode_for(
                         self,
@@ -426,6 +450,77 @@ impl Simulation {
                 frame_effects,
             );
         }
+    }
+
+    /// `UnitClass::Scatter @ 0x00743A50` with a real coordinate
+    /// (`0x00743CA0..0x00744070`), after [`unit_scatter_admitted`]. In native
+    /// order it refuses:
+    /// - the current mission's MissionControl `Paralyzed=` (`+7`,
+    ///   `0x00743CA7`; no mission reads it clear);
+    /// - a harvester docked for unload (`+0x6D1`, `miner.unload_active`,
+    ///   `0x00743CD7`);
+    /// - a NavCom (`+0x5A4`) with the turret rotation latch (`+0x6AF`,
+    ///   `0x00743CFD`); a NavCom without no-kidding was refused before;
+    /// - unless forced, a Target (`+0x2B4`, [`crate::sim::combat::target_present`])
+    ///   three times in four: one Scenario `RandomRanged(1, 4)` must answer 1
+    ///   (`0x00743D2B`).
+    ///
+    /// Then the away heading's octant with one Scenario `RandomRanged(0, 2)`
+    /// less one ([`OctantJitter::Unit`]), the shared Foot walk
+    /// ([`Self::foot_scatter_neighbor`]) and, for a found cell,
+    /// `Queue_Mission(Move, 0)` and `SetDestination(cell, 1)`
+    /// (`0x0074404A..0x00744070`, whose answer native does not read). No
+    /// Process runs. Native execution: tools/spatial_oracle/unit_source_scatter.
+    pub(super) fn unit_scatter_from(
+        &mut self,
+        id: u64,
+        source: DriveCoord,
+        flags: ScatterFlags,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<(), String> {
+        let Some(unit) = self.substrate.entities.get(id) else {
+            return Ok(());
+        };
+        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame)
+            || crate::sim::mission::control::current_control(rules, &unit.mission)
+                .is_some_and(|entry| entry.paralyzed)
+            || unit.miner.as_ref().is_some_and(|miner| miner.unload_active)
+            || (unit.navigation.nav_com.is_some() && unit.turret_rotation_latch)
+        {
+            return Ok(());
+        }
+        if crate::sim::combat::target_present(unit.attack_target.as_ref(), &self.substrate.entities)
+            && !flags.forced
+            && self.scenario_rng.next_range_u32_inclusive(1, 4) != 1
+        {
+            return Ok(());
+        }
+        let current = super::foot_coordinate::current_coordinate(unit);
+        let start = super::scatter_cell::source_start_direction(
+            (current.x, current.y),
+            (source.x, source.y),
+            OctantJitter::Unit,
+            &mut self.scenario_rng,
+        );
+        let Some(cell) = self.foot_scatter_neighbor(id, start, rules, registry)? else {
+            return Ok(());
+        };
+        if let Some(unit) = self.substrate.entities.get_mut(id) {
+            crate::sim::mission::authority::queue_entity_mission_deferred(
+                unit,
+                crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
+            );
+        }
+        self.set_unit_destination(
+            id,
+            NavTargetRef::cell(cell.0, cell.1),
+            rules,
+            true,
+            frame_effects,
+        );
+        Ok(())
     }
 
     /// `FootClass::Find_Nearby_Passable_Cell` as both null-coordinate Scatter
@@ -494,21 +589,22 @@ impl Simulation {
         };
         let mut bridge_state_changed = false;
         for (id, flags) in requests {
-            bridge_state_changed |= self.scatter_null(id, flags, rules, registry, frame_effects)?;
+            bridge_state_changed |=
+                self.scatter(id, None, flags, rules, registry, frame_effects)?;
         }
         Ok(bridge_state_changed)
     }
 
-    /// `CellClass::Scatter_Objects @ 0x00481670` with a null coordinate on
-    /// `layer`'s list (`+0xE4` ground, `+0xE8` deck): the list is
-    /// snapshotted, then each occupant [`scatter_objects_admitted`] selects
-    /// takes `Scatter(null, flags)` (`vt+0x174`) in list order. The gate
-    /// reads nothing a receiver writes, so selecting first dispatches the
-    /// same objects.
+    /// `CellClass::Scatter_Objects @ 0x00481670` on `layer`'s list (`+0xE4`
+    /// ground, `+0xE8` deck): the list is snapshotted, then each occupant
+    /// [`scatter_objects_admitted`] selects takes `Scatter(source, flags)`
+    /// (`vt+0x174`, [`Self::scatter`]) in list order. The gate reads nothing
+    /// a receiver writes, so selecting first dispatches the same objects.
     pub(crate) fn scatter_cell_objects(
         &mut self,
         cell: (u16, u16),
         layer: MovementLayer,
+        source: Option<DriveCoord>,
         flags: ScatterFlags,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
@@ -529,9 +625,49 @@ impl Simulation {
         );
         let mut bridge_state_changed = false;
         for id in admitted {
-            bridge_state_changed |= self.scatter_null(id, flags, rules, registry, frame_effects)?;
+            bridge_state_changed |=
+                self.scatter(id, source, flags, rules, registry, frame_effects)?;
         }
         Ok(bridge_state_changed)
+    }
+
+    /// `Scatter_Objects(&Location, 1, 0, 0)` on the ground list of the
+    /// Target's cell (`Map[Target vt+0x48]`, `0x00565730`), even for a Target
+    /// on a bridge: its objects scatter away from `firer`'s Location (+0x9C).
+    /// `AircraftClass::Mission_Attack` asks it after each strike (`0x004184BD`
+    /// and the later shots), `InfantryClass::Fire_At_Target`'s tail after a
+    /// slow weapon's fire frame (`0x00520A85..0x00520AC7`).
+    pub(crate) fn scatter_target_cell_from(
+        &mut self,
+        firer: u64,
+        target: crate::sim::combat::TargetKind,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<bool, String> {
+        let Some(actor) = self.substrate.entities.get(firer) else {
+            return Ok(false);
+        };
+        let source = super::ground_pose::object_location(actor, self.resolved_terrain.as_ref());
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        let Some(cell) =
+            super::ground_pose::target_get_coords(target, &self.substrate.entities, cells.as_ref())
+                .and_then(|coord| self.map_coord_cell(coord.x, coord.y))
+        else {
+            return Ok(false);
+        };
+        self.scatter_cell_objects(
+            cell,
+            MovementLayer::Ground,
+            Some(source),
+            ScatterFlags::new(true, false),
+            rules,
+            registry,
+            frame_effects,
+        )
     }
 }
 

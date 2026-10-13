@@ -271,7 +271,7 @@ impl GuardHost for WorldGuard<'_> {
     }
 
     fn target(&mut self) -> bool {
-        crate::sim::aircraft::attack_mission::aircraft_target_present(
+        crate::sim::combat::target_present(
             self.entity().attack_target.as_ref(),
             &self.sim.substrate.entities,
         )

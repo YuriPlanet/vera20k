@@ -481,8 +481,12 @@ fn mission_factory_unload(
 }
 
 ///Building449540: ask the head Cell's nearest object excluding the producer.
-///A busy head is scattered synchronously and the handler remains at state1.
-///The empty-head path executes no Scatter and advances on its next dispatch.
+///A busy head is scattered synchronously (`Scatter_Objects(null, 1, 1, 0)`,
+///`0x00449626`), then each of its eight neighbours (`Adjacent_Cell`
+///`0x00481810` from North) holding an object other than the producer scatters
+///away from the head's centre (`0x0044962F..0x0044968F`), and the handler
+///remains at state1. The empty-head path executes no Scatter and advances on
+///its next dispatch.
 fn clear_factory_exit_bib(
     sim: &mut Simulation,
     producer: u64,
@@ -490,32 +494,54 @@ fn clear_factory_exit_bib(
     rules: &RuleSet,
     ctx: ObjectAiCtx<'_>,
 ) -> bool {
-    let cell = ((track.x / 256) as i16 as u16, (track.y / 256) as i16 as u16);
-    if sim
-        .nearest_cell_object(
-            cell,
-            crate::sim::movement::locomotor::MovementLayer::Ground,
-            Some(producer),
-        )
-        .is_none()
-    {
+    use crate::sim::movement::locomotor::MovementLayer;
+    let head = ((track.x / 256) as i16, (track.y / 256) as i16);
+    let busy = |sim: &Simulation, (x, y): (i16, i16)| {
+        // A negative word misses the map: the shared dummy holds no object.
+        let cell = (u16::try_from(x).ok()?, u16::try_from(y).ok()?);
+        sim.nearest_cell_object(cell, MovementLayer::Ground, Some(producer))
+            .map(|_| cell)
+    };
+    let Some(cell) = busy(sim, head) else {
         return false;
-    }
+    };
+    let flags = crate::sim::movement::ScatterFlags::new(true, true);
+    // The neighbours' source: the head Cell's centre at Z 0
+    // (`0x004495AD..0x004495D6`), not the track coordinate.
+    let centre = crate::sim::components::DriveCoord::cell(cell.0, cell.1, 0);
     if let Err(error) = sim.scatter_cell_objects(
         cell,
-        crate::sim::movement::locomotor::MovementLayer::Ground,
-        crate::sim::movement::ScatterFlags::new(true, true),
+        MovementLayer::Ground,
+        None,
+        flags,
         rules,
         ctx.overlay_registry,
         ctx.effects,
     ) {
         log::warn!("factory {producer} bib Scatter failed: {error}");
     }
-    //44962B..44968F's eight adjacent Cell requests pass a non-null head
-    //coordinate. Unit743A50's non-null directional Scatter arm is not yet
-    //ported; it cannot be replaced with null Scatter. Trigger: a busy exit
-    //whose neighbours also contain objects; effect: neighbours are not
-    //pushed away, so clearance may take longer. Head's own Scatter is real.
+    for (dx, dy) in crate::util::direction::DIRECTION_DELTAS {
+        let Some(neighbour) = busy(
+            sim,
+            (
+                head.0.wrapping_add(dx as i16),
+                head.1.wrapping_add(dy as i16),
+            ),
+        ) else {
+            continue;
+        };
+        if let Err(error) = sim.scatter_cell_objects(
+            neighbour,
+            MovementLayer::Ground,
+            Some(centre),
+            flags,
+            rules,
+            ctx.overlay_registry,
+            ctx.effects,
+        ) {
+            log::warn!("factory {producer} bib neighbour Scatter failed: {error}");
+        }
+    }
     true
 }
 

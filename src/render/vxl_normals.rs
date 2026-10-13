@@ -270,18 +270,7 @@ pub fn blinn_phong_pages(normals_mode: u8, draw_rotation: Mat3) -> [u8; 256] {
     // Native leaves the gap between the mode's table and slot 253 stale.
     // Retail model indices only use the valid table and fixed ambient tail.
     let mut result = [0u8; 256];
-    let world = YR_WORLD_LIGHT.to_array().map(fp);
-    let light: [X87Value; 3] = std::array::from_fn(|axis| {
-        // Rigid inverse transposes the basis. MatrixVectorMultiply evaluates
-        // row 0 as (y + z) + x, and rows 1/2 as (y + x) + z.
-        let column = draw_rotation.col(axis).to_array().map(fp);
-        let products: [X87Value; 3] = std::array::from_fn(|i| Fpu::mul(column[i], world[i]));
-        fp_store(if axis == 0 {
-            Fpu::add(Fpu::add(products[1], products[2]), products[0])
-        } else {
-            Fpu::add(Fpu::add(products[1], products[0]), products[2])
-        })
-    });
+    let light = model_light(draw_rotation);
     let half_z = Fpu::add(light[2], Fpu::load_i32(1));
     let half = [light[0], light[1], fp_store(half_z)];
     // Z's sum remains on the x87 stack after FST float; X and Y are reloaded.
@@ -297,11 +286,7 @@ pub fn blinn_phong_pages(normals_mode: u8, draw_rotation: Mat3) -> [u8; 256] {
         half.map(|value| fp_store(Fpu::div(value, length).expect("nonzero halfway length")))
     };
     let strength = Fpu::load_i32(3); // TechnoClass::Render pushes 0x40400000 at 0x00706F23.
-    let table: &[[f32; 3]] = match normals_mode {
-        2 => &TS_NORMALS,
-        _ => &RA2_NORMALS,
-    };
-    for (index, normal) in table.iter().enumerate() {
+    for (index, normal) in normal_table(normals_mode).iter().enumerate() {
         let normal = normal.map(fp);
         let diffuse = positive(Fpu::add(
             Fpu::add(Fpu::mul(normal[2], light[2]), Fpu::mul(normal[1], light[1])),
@@ -334,6 +319,61 @@ pub fn blinn_phong_pages(normals_mode: u8, draw_rotation: Mat3) -> [u8; 256] {
     result[255] = AMBIENT_PAGE;
 
     result
+}
+
+/// Normal-index -> VPL page table for a `VoxelAnimClass` draw: diffuse light
+/// only, no viewer term.
+///
+/// `VoxelAnimClass::DrawIt` (`0x00749D97`) calls `0x00753C80` with the bounce
+/// matrix and the world light (`0x00887470`). It carries the light into model
+/// space as [`blinn_phong_pages`] does, and `0x00758670` stores
+/// `ftol(16 * ((n.x * l.x + n.z * l.z) + l.y * n.y))` for each normal whose
+/// sum is not negative, zero for the rest, then the ambient tail. Native
+/// execution: `tools/voxel_oracle/lighting.py` `diffuse_cases`.
+pub fn diffuse_pages(normals_mode: u8, draw_rotation: Mat3) -> [u8; 256] {
+    let mut result = [0u8; 256];
+    let light = model_light(draw_rotation);
+    let scale = Fpu::load_i32(16); // the float 16.0 at 0x007F6960
+    for (index, normal) in normal_table(normals_mode).iter().enumerate() {
+        let normal = normal.map(fp);
+        let dot = Fpu::add(
+            Fpu::add(Fpu::mul(normal[0], light[0]), Fpu::mul(normal[2], light[2])),
+            Fpu::mul(light[1], normal[1]),
+        );
+        if Fpu::compare(dot, Fpu::load_i32(0)) != X87Ordering::Less {
+            // `MOV byte, AL`: the page is ftol's low byte.
+            result[index] =
+                Fpu::ftol_i64(Fpu::mul(dot, scale)).expect("voxel page fits an integer") as u8;
+        }
+    }
+    result[253] = AMBIENT_PAGE;
+    result[254] = AMBIENT_PAGE;
+    result[255] = AMBIENT_PAGE;
+    result
+}
+
+/// The world light in the draw's model space, as both initializers compute
+/// it: the rigid inverse (`0x005AFC20`) transposes the basis, and
+/// `MatrixVectorMultiply @ 0x005AF4D0` evaluates row 0 as `(y + z) + x` and
+/// rows 1 and 2 as `(y + x) + z`, storing each as a float.
+fn model_light(draw_rotation: Mat3) -> [X87Value; 3] {
+    let world = YR_WORLD_LIGHT.to_array().map(fp);
+    std::array::from_fn(|axis| {
+        let column = draw_rotation.col(axis).to_array().map(fp);
+        let products: [X87Value; 3] = std::array::from_fn(|i| Fpu::mul(column[i], world[i]));
+        fp_store(if axis == 0 {
+            Fpu::add(Fpu::add(products[1], products[2]), products[0])
+        } else {
+            Fpu::add(Fpu::add(products[1], products[0]), products[2])
+        })
+    })
+}
+
+fn normal_table(normals_mode: u8) -> &'static [[f32; 3]] {
+    match normals_mode {
+        2 => &TS_NORMALS,
+        _ => &RA2_NORMALS,
+    }
 }
 
 #[cfg(test)]
@@ -387,6 +427,62 @@ mod tests {
                 assert_eq!(pages[253], AMBIENT_PAGE, "mode {mode} facing {facing}");
                 assert_eq!(pages[254], AMBIENT_PAGE, "mode {mode} facing {facing}");
                 assert_eq!(pages[255], AMBIENT_PAGE, "mode {mode} facing {facing}");
+            }
+        }
+    }
+
+    /// `0x00758670` writes only its mode's table and slots 253-255 of the
+    /// shared page buffer (`0x00B45990`); the slots between keep an earlier
+    /// draw's pages, where [`diffuse_pages`] holds zero. Retail `TIRE.VXL`,
+    /// the one model VERA draws through it, indexes none of them.
+    #[test]
+    fn retail_tire_indexes_only_pages_the_diffuse_initializer_writes() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let tire =
+            crate::assets::vxl_file::VxlFile::from_bytes(assets.get_ref("TIRE.VXL").unwrap())
+                .unwrap();
+        for limb in &tire.limbs {
+            let written = normal_table(limb.normals_mode).len();
+            assert!(!limb.voxels.is_empty());
+            for voxel in &limb.voxels {
+                let index = usize::from(voxel.normal_index);
+                assert!(
+                    index < written || index >= 253,
+                    "{} normal {index}",
+                    limb.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn native_diffuse_initializer_matches_bounce_matrices_in_both_modes() {
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/lighting.json",
+        ))
+        .unwrap();
+        let cases = vectors["diffuse_cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 16);
+        for case in cases {
+            let mode = case["mode"].as_u64().unwrap() as u8;
+            let raw: Vec<f32> = case["draw_matrix_bits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| f32::from_bits(value.as_u64().unwrap() as u32))
+                .collect();
+            let matrix = Mat3::from_cols(
+                Vec3::new(raw[0], raw[4], raw[8]),
+                Vec3::new(raw[1], raw[5], raw[9]),
+                Vec3::new(raw[2], raw[6], raw[10]),
+            );
+            let expected = case["pages"].as_str().unwrap();
+            let actual = diffuse_pages(mode, matrix);
+            for normal in 0..256 {
+                let page = u8::from_str_radix(&expected[normal * 2..normal * 2 + 2], 16).unwrap();
+                assert_eq!(actual[normal], page, "{raw:?} mode {mode} normal {normal}");
             }
         }
     }

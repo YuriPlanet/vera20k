@@ -403,7 +403,6 @@ mod tests {
             very_high: false,
             max_speed: 102,
             acceleration: 3,
-            fuse_reference: Coord::new(0, 0, 0),
             closing_frames: 0,
             closing_accumulator_bits: 0,
         };
@@ -478,7 +477,6 @@ mod tests {
                 very_high: prepared["very_high"].as_bool().unwrap(),
                 max_speed: prepared["maximum_speed"].as_i64().unwrap() as i32,
                 acceleration: prepared["acceleration"].as_i64().unwrap() as i32,
-                fuse_reference: target,
                 closing_frames: input["closing_count"].as_i64().unwrap_or(0) as i32,
                 closing_accumulator_bits: input["closing_accum"].as_f64().unwrap_or(0.0).to_bits(),
             });
@@ -620,7 +618,6 @@ mod tests {
                 very_high: kind.very_high,
                 max_speed: weapon.speed,
                 acceleration: kind.acceleration,
-                fuse_reference: target,
                 closing_frames: 0,
                 closing_accumulator_bits: 0,
             });
@@ -729,7 +726,6 @@ mod tests {
                 very_high: false,
                 max_speed: 102,
                 acceleration: 3,
-                fuse_reference: target,
                 closing_frames: 0,
                 closing_accumulator_bits: 0,
             };

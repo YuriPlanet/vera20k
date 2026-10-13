@@ -152,8 +152,6 @@ pub struct ProjectileGuidance {
     /// Bullet+110, retained converted Weapon Speed, not current magnitude.
     pub max_speed: i32,
     pub acceleration: i32,
-    /// ProximityDetector Setup 4E1130 freezes the target's launch-time aim.
-    pub fuse_reference: ProjectileCoord,
     /// Bullet+118/+120, independent of the CourseLock counter.
     pub closing_frames: i32,
     pub closing_accumulator_bits: u64,
@@ -1050,6 +1048,12 @@ pub struct Projectile {
     pub arm_timer: crate::sim::timer::CdTimer,
     pub fuse_frames_remaining: Option<u16>,
     pub ranged_fuse: bool,
+    /// The ProximityDetector's reference (`+0xB8 + 0x18` = `+0xD0`), which
+    /// Fire's `Setup` (`0x00468A80..0x00468A93`, `0x004E1130`) takes from the
+    /// target coordinate Fire kept, as a `FlakScatter=` Inviso bullet's
+    /// placement moved it ([`ProjectileStore::fire_inviso`]). Check measures
+    /// to it and the impact ladder reads it; nothing moves it after Fire.
+    pub proximity_reference: ProjectileCoord,
     pub last_distance_half: i32,
     pub tracks_target: bool,
     pub target_expiry: TargetExpiryPolicy,
@@ -1135,9 +1139,7 @@ impl Projectile {
     fn impact_ladder_bullet(&self, impact_flag: bool) -> ImpactLadderBullet {
         ImpactLadderBullet {
             location: self.position,
-            reference: self.guidance.map_or(self.last_target_position, |guidance| {
-                guidance.fuse_reference
-            }),
+            reference: self.proximity_reference,
             impact_flag,
             inaccurate: self.collision.inaccurate,
             airburst: self.collision.airburst,
@@ -1391,6 +1393,7 @@ impl ProjectileStore {
                 ),
                 fuse_frames_remaining: spawn.fuse_frames,
                 ranged_fuse: spawn.ranged_fuse,
+                proximity_reference: spawn.initial_target_position,
                 // `ProximityDetector::Setup @ 0x004E1130` seeds `+0x24` with
                 // the FULL distance from the placed Object.Location to its
                 // reference coordinate (Fire468A63..468A93), not FireCoord
@@ -1448,13 +1451,15 @@ impl ProjectileStore {
     /// `BulletClass::Fire @ 0x00468670` for an `Inviso=` BulletType
     /// (`+0x29E`, `0x004688B7..0x00468A39`), after the common Unlimbo at the
     /// launch source: the bullet stands on `placement`, the target coordinate
+    /// Fire kept, as a `FlakScatter=` bullet's placement moved it
     /// (`0x0046897D`; the firestorm and cliff walks are dormant or
     /// overwritten), its speed `+0x110` is 0, and its velocity is scaled by
     /// `0.0 / |v|` (an all-zero vector first becoming `(100, 0, 0)`), which a
     /// `ROT > 0` type then renormalises to `(1, 0, 0)` (`0x00468A98..0x00468B57`).
-    /// The proximity detector's reference is the placement, so its starting
-    /// distance is 0 (`ProximityDetector::Setup @ 0x004E1130`). FireAt then
-    /// copies the target's OnBridge (`0x006FF08B`).
+    /// Setup takes the same coordinate as the proximity detector's reference
+    /// (`0x00468A80..0x00468A93`, `ProximityDetector::Setup @ 0x004E1130`), so
+    /// its starting distance is 0. FireAt then copies the target's OnBridge
+    /// (`0x006FF08B`).
     pub(crate) fn fire_inviso(&mut self, id: u64, placement: ProjectileCoord, on_bridge: bool) {
         let Some(projectile) = self.projectiles.get_mut(&id) else {
             return;
@@ -1468,8 +1473,8 @@ impl ProjectileStore {
         };
         if let Some(guidance) = projectile.guidance.as_mut() {
             guidance.max_speed = 0;
-            guidance.fuse_reference = placement;
         }
+        projectile.proximity_reference = placement;
         projectile.last_distance_half = proximity_initial_distance(placement, placement);
         projectile.on_bridge = on_bridge;
     }
@@ -1862,23 +1867,17 @@ impl ProjectileStore {
         }
 
         // `ProximityDetector::Check @ 0x004E11F0`. The reference is the
-        // coordinate frozen at launch, the Arm counter gates this result
+        // coordinate Fire's Setup froze, the Arm counter gates this result
         // and nothing else. Dropping suppresses only detector-driven admission
         // after Check, preserving its watermark and collision-side result.
         let mut fuse_mode = 0;
-        if projectile.ranged_fuse {
-            let reference = projectile
-                .guidance
-                .map_or(projectile.last_target_position, |guidance| {
-                    guidance.fuse_reference
-                });
-            if projectile.arm_timer.expired(binary_frame as i32) {
-                let distance = proximity_check_distance(selected_candidate, reference);
-                let (mode, next_distance) =
-                    ranged_fuse_distance_step(distance, projectile.last_distance_half);
-                projectile.last_distance_half = next_distance;
-                fuse_mode = mode;
-            }
+        if projectile.ranged_fuse && projectile.arm_timer.expired(binary_frame as i32) {
+            let distance =
+                proximity_check_distance(selected_candidate, projectile.proximity_reference);
+            let (mode, next_distance) =
+                ranged_fuse_distance_step(distance, projectile.last_distance_half);
+            projectile.last_distance_half = next_distance;
+            fuse_mode = mode;
         }
         // `0x00467C3C..0x00467C66`: Bullet+0xB0 is the live firer,
         // whose type +0xD94 (JumpJet) changes overshoot mode 2 into 1.
@@ -2654,7 +2653,6 @@ mod tests {
             very_high: true,
             max_speed: 0,
             acceleration: 3,
-            fuse_reference: ProjectileCoord::new(0, 0, 0),
             closing_frames: 0,
             closing_accumulator_bits: 0,
         });
@@ -3228,7 +3226,6 @@ mod tests {
             very_high: false,
             max_speed,
             acceleration,
-            fuse_reference: ProjectileCoord::new(0, 0, 0),
             closing_frames: 0,
             closing_accumulator_bits: 0,
         });
@@ -3335,10 +3332,8 @@ mod tests {
         let mut frozen_near = ProjectileStore::new();
         let mut spawn_near = guided_spawn(1, 3);
         spawn_near.ranged_fuse = true;
-        if let Some(guidance) = spawn_near.guidance.as_mut() {
-            guidance.fuse_reference = ProjectileCoord::new(1, 0, 0);
-        }
         frozen_near.spawn(1, spawn_near);
+        frozen_near.get_mut(1).unwrap().proximity_reference = ProjectileCoord::new(1, 0, 0);
         let near = frozen_near.advance(0, &targets, None, &SharedCellDummy::fresh(), |_, _| None);
         assert_eq!(near.detonations.len(), 1, "the frozen reference is reached");
         assert_eq!(near.detonations[0].reason, ProjectileDetonationReason::Fuse);
@@ -3346,10 +3341,8 @@ mod tests {
         let mut frozen_far = ProjectileStore::new();
         let mut spawn_far = guided_spawn(1, 3);
         spawn_far.ranged_fuse = true;
-        if let Some(guidance) = spawn_far.guidance.as_mut() {
-            guidance.fuse_reference = ProjectileCoord::new(10_000, 0, 0);
-        }
         frozen_far.spawn(1, spawn_far);
+        frozen_far.get_mut(1).unwrap().proximity_reference = ProjectileCoord::new(10_000, 0, 0);
         let far = frozen_far.advance(0, &targets, None, &SharedCellDummy::fresh(), |_, _| None);
         assert!(
             far.detonations.is_empty(),

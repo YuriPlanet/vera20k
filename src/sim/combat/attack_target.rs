@@ -111,6 +111,26 @@ pub(super) fn cell_center_coords(rx: u16, ry: u16) -> (u16, u16, SimFixed, SimFi
     (rx, ry, SimFixed::from_num(128), SimFixed::from_num(128))
 }
 
+/// The native Target pointer (`+0x2B4`) is non-NULL: a cell, or an object
+/// not yet dead. Aircraft Mission_Attack's states, the aircraft idle decision
+/// and the Infantry fire tail read it through this. Natively the killing
+/// hit's Destroy = `Detach_All(1)` (`ObjectClass::ReceiveDamage
+/// 0x005F5765..0x005F57AF`) announces the expiry, so no Target names a dying
+/// object; VERA can keep a dying infantryman's id until its death sequence
+/// ends.
+pub(crate) fn target_present(
+    at: Option<&AttackTarget>,
+    entities: &crate::sim::entity_store::EntityStore,
+) -> bool {
+    match at.map(|attack| attack.target) {
+        None => false,
+        Some(TargetKind::Cell(..)) => true,
+        Some(TargetKind::Entity(id)) => entities
+            .get(id)
+            .is_some_and(|target| !target.dying && target.health.current > 0),
+    }
+}
+
 /// Resolve target coords from a `TargetKind`, looking up entity position when
 /// needed and using cell-center for `Cell` targets.
 ///

@@ -1246,7 +1246,8 @@ impl Simulation {
                 continue;
             }
 
-            // For a Walk man left to this pass (a `CloseRange=` one, or a
+            // For a Walk man left to this pass (a Cell target on a
+            // DestroyableCliffs tile, a `VehicleThief=` man on Hunt, or a
             // pursuit off Approach's missions): Foot's approach4D5690 returns
             // at 4D5A07..18 while NavCom is present. An accepted Walk path/head
             // continues through Process; FootPerCell(mode2)4D882F..896E makes
@@ -1416,14 +1417,13 @@ impl Simulation {
                     // units whose mission's Approach carries them take the
                     // per-cell owner's stop (`movement/per_cell.rs`).
                     // RESIDUAL: a unit on these missions reaches this pass
-                    // only where `mission_owns_approach` leaves it: a
-                    // `CloseRange=` type (no stock unit) or a Cell target on
-                    // a DestroyableCliffs tile. Its native stop runs from
-                    // Per_Cell_Process, at cell entry; this pass runs it on
-                    // the frame the target comes in range, wherever the unit
-                    // is in its cell. It then brakes into its head from
-                    // there, and a turretless one turns to fire only once
-                    // stopped (`0x00736FE1`).
+                    // only where `mission_owns_approach` leaves it: a Cell
+                    // target on a DestroyableCliffs tile. Its native stop
+                    // runs from Per_Cell_Process, at cell entry; this pass
+                    // runs it on the frame the target comes in range,
+                    // wherever the unit is in its cell. It then brakes into
+                    // its head from there, and a turretless one turns to fire
+                    // only once stopped (`0x00736FE1`).
                     // A cruising Jumpjet takes no such stop: Jumpjet calls
                     // Per_Cell_Process only from its descent (`0x0054C8F0`),
                     // and Foot's approach (`0x004D5690`) instead sends it to a

@@ -243,8 +243,9 @@ impl crate::sim::world::Simulation {
         {
             return Ok(false);
         }
-        self.scatter_null(
+        self.scatter(
             id,
+            None,
             crate::sim::movement::ScatterFlags::new(true, false),
             rules,
             registry,

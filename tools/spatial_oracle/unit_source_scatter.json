@@ -3333,5 +3333,61 @@
       104
     ],
     "start_direction": 2
+  },
+  {
+    "checks": [
+      [
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0
+      ]
+    ],
+    "destination": [
+      11,
+      10
+    ],
+    "events": [
+      [
+        "random",
+        0,
+        2
+      ],
+      "entry",
+      "queue_move",
+      "destination"
+    ],
+    "input": {
+      "target": true
+    },
+    "random_indices": [
+      1,
+      104
+    ],
+    "start_direction": 2
+  },
+  {
+    "checks": [],
+    "destination": null,
+    "events": [
+      [
+        "random",
+        1,
+        4
+      ]
+    ],
+    "input": {
+      "force": false,
+      "second": true,
+      "target": true
+    },
+    "random_indices": [
+      1,
+      104
+    ],
+    "start_direction": null
   }
 ]

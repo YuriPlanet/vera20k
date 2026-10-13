@@ -137,6 +137,117 @@ impl crate::sim::world::Simulation {
         #[cfg(test)]
         self.trace_lifecycle_for_test(crate::sim::world::LifecycleTestEvent::RawOccupationCleared);
     }
+
+    /// Walk FindSubCellDest (`0x0075C240`), the one port for its three
+    /// callers: ProcessMovement's fresh head (`0x0075BC1A`) and arrival
+    /// (`0x0075BE18`, a null request) and Force_Immediate_Destination
+    /// (`0x0075AE5D`). [`select_step_head_at`], then the crate question on a
+    /// stored head (`0x0075C565..0x0075C5A6`): a false answer outside limbo
+    /// resets the head to the null coordinate, and a dead owner then answers 0
+    /// without the Mark tail; then the Mark tail ([`commit_walk_head`]).
+    pub(crate) fn walk_find_sub_cell_dest(
+        &mut self,
+        id: u64,
+        request: Option<DriveCoord>,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: crate::sim::world::FrameEffects<'_>,
+    ) -> Result<bool, String> {
+        let grid = self.path_grid_snapshot();
+        let selection = select_step_head_at(
+            &mut self.substrate.entities,
+            id,
+            &self.substrate.occupancy,
+            &mut self.substrate.raw_cell_occupation,
+            self.resolved_terrain.as_ref(),
+            grid.as_deref(),
+            rules,
+            &self.interner,
+            &mut self.scenario_rng,
+            request,
+        );
+        if let StepHead::Done(answer) = selection {
+            return Ok(answer);
+        }
+        let head = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|actor| actor.locomotor.as_ref())
+            .and_then(|loco| loco.step_head())
+            .ok_or("Walk head vanished before its crate question")?;
+        let picked = self.pickup_crate_at(
+            id,
+            super::foot_path::coord_cell(head),
+            rules,
+            registry,
+            frame_effects,
+        );
+        let actor = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .ok_or("retired Walk head owner")?;
+        if !picked && !actor.lifecycle.in_limbo {
+            if let Some(loco) = actor.locomotor.as_mut() {
+                loco.set_step_head(None);
+            }
+            if !actor.lifecycle.object_alive {
+                return Ok(false);
+            }
+        }
+        Ok(commit_walk_head(
+            &self.substrate.entities,
+            id,
+            &mut self.substrate.raw_cell_occupation,
+            self.resolved_terrain.as_ref(),
+            grid.as_deref(),
+        ))
+    }
+
+    /// The Foot's Locomotor (`+0x674`) Force_Immediate_Destination
+    /// (ILocomotion +0x78). Walk's (`0x0075AE30`) reads its IsMoving byte
+    /// (+0x30), runs [`Self::walk_find_sub_cell_dest`] on `coord` (`None` is
+    /// the null coordinate) and then, with both its head and its destination
+    /// null, clears IsMoving and calls the owner's +0x54C when the byte had
+    /// been set (`0x0075AE5B..0x0075AE9A`). Every other VERA locomotor holds
+    /// the base slot, `ret 0x10` (`0x0055AC00`); Mech's (`0x005B01A0`) has no
+    /// VERA locomotor.
+    pub(crate) fn foot_force_immediate_destination(
+        &mut self,
+        id: u64,
+        coord: Option<DriveCoord>,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: crate::sim::world::FrameEffects<'_>,
+    ) -> Result<(), String> {
+        let Some(was_moving) = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|actor| actor.locomotor.as_ref())
+            .and_then(|loco| loco.walk_is_moving())
+        else {
+            return Ok(());
+        };
+        self.walk_find_sub_cell_dest(id, coord, rules, registry, frame_effects)?;
+        let Some(loco) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|actor| actor.locomotor.as_mut())
+        else {
+            return Ok(());
+        };
+        if loco.step_head().is_none() && loco.walk_destination().is_none() {
+            // With no head, a null MoveTo writes only IsMoving.
+            loco.set_walk_destination(None);
+            if was_moving {
+                self.infantry_pending_deploy_stop_callback(id, rules, frame_effects)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -710,6 +821,50 @@ mod tests {
         assert_eq!(raw.ground_infantry_owner(3, 4), None);
         assert_eq!(raw.deck_bits(3, 4), 4);
     }
+
+    /// A Force_Immediate_Destination that cannot be seated drops the held
+    /// head: FindSubCellDest stores PlaceInfantryInCell's answer as the head
+    /// (`0x0075C541..0x0075C562`), here the empty coordinate for a cell with
+    /// a vehicle, and Marks the Foot's own coordinate.
+    #[test]
+    fn a_force_refused_its_spot_drops_the_held_head() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[InfantryTypes]\n0=E1\n[E1]\nStrength=125\nSpeed=4\n\
+                 Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n",
+            ))
+            .unwrap();
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.install_resolved_terrain_for_new_map(
+            crate::map::resolved_terrain::test_flat_ground_grid(16),
+        );
+        let id = sim
+            .spawn_object("E1", "Americans", 6, 5, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .set_step_head(Some(DriveCoord {
+                x: 7 * 256 + 64,
+                y: 5 * 256 + 64,
+                z: 0,
+            }));
+        sim.substrate.raw_cell_occupation.mark_ground(7, 5, 0x20);
+        sim.foot_force_immediate_destination(
+            id,
+            Some(DriveCoord::cell(7, 5, 0)),
+            Some(&rules),
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        let actor = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(actor.locomotor.as_ref().unwrap().step_head(), None);
+    }
 }
 
 /// Test adapter over [`prepare_step_head_at`]: the prospective coordinate is
@@ -759,16 +914,19 @@ pub(super) enum StepHead {
     /// A Walk head is stored (`+0x28`) and awaits the crate question and
     /// [`commit_walk_head`].
     Pending,
-    /// The chooser already answered: a non-Walk head, a retained head, or a
-    /// failed subcell selection that restored the Foot's own raw occupation.
+    /// The chooser already answered: a non-Walk locomotor, a null request, or
+    /// a failed subcell selection that restored the Foot's own raw occupation.
     Done(bool),
 }
 
-/// Walk75BC1A consumes the prospective coordinate already selected from the
-/// retained Foot path word. Its caller owns admission; this is the same
-/// priority/subcell/raw-occupation owner, up to the stored head: the crate
-/// question (`CellClass::PickupCrate @ 0x00481A00` at `0x0075C56C`) and the
-/// Mark tail follow in the caller and [`commit_walk_head`].
+/// Walk FindSubCellDest (`0x0075C240`) up to its crate question. The retained
+/// head's raw bits, else the Foot's own, are cleared first (`0x0075C2A0`). A
+/// null request stores no head and takes the Mark tail at once
+/// (`0x0075C2C6..0x0075C2DF` -> `0x0075C5C5`); any other request is placed
+/// through the priority corridor and PlaceInfantryInCell and stored. The
+/// crate question (`CellClass::PickupCrate @ 0x00481A00` at `0x0075C56C`) and
+/// the Mark tail ([`commit_walk_head`]) follow in
+/// [`crate::sim::world::Simulation::walk_find_sub_cell_dest`].
 pub(super) fn select_step_head_at(
     entities: &mut crate::sim::entity_store::EntityStore,
     id: u64,
@@ -779,7 +937,7 @@ pub(super) fn select_step_head_at(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     interner: &crate::sim::intern::StringInterner,
     rng: &mut crate::sim::rng::SimRng,
-    input: DriveCoord,
+    input: Option<DriveCoord>,
 ) -> StepHead {
     use super::locomotor::MovementLayer;
     use crate::map::entities::EntityCategory;
@@ -790,141 +948,133 @@ pub(super) fn select_step_head_at(
     let Some(loco) = entity.locomotor.as_ref() else {
         return StepHead::Done(true);
     };
-    if loco.kind != LocomotorKind::Walk || loco.step_head().is_some() {
+    if loco.kind != LocomotorKind::Walk {
         return StepHead::Done(true);
     }
-    let is_walk = loco.kind == LocomotorKind::Walk;
     let owner = entity.owner();
     let current = super::ground_pose::position_world_coord(&entity.position);
-    let next = ((input.x / 256) as u16, (input.y / 256) as u16);
-    let head = if is_walk {
-        //75C2A0 first; even a failed chooser must restore current raw at75C62A.
-        raw_at(raw, owner, current, false, terrain, grid);
-        let mut priority = false;
-        if [7, 8, 9, 11, 25].contains(&entity.mission.current().raw()) {
-            let target = match entity.navigation.nav_com {
-                Some(
-                    crate::sim::components::NavTargetRef::Entity { id }
-                    | crate::sim::components::NavTargetRef::Object { id }
-                    | crate::sim::components::NavTargetRef::Building { id },
-                ) => entities.get(id),
-                _ => None,
-            };
-            if let Some(target) = target {
-                priority = match target.category {
-                    EntityCategory::Unit | EntityCategory::Aircraft => {
-                        let c = super::ground_pose::position_world_coord(&target.position);
-                        ((c.x / 256) as i16, (c.y / 256) as i16)
-                            == ((input.x / 256) as i16, (input.y / 256) as i16)
-                    }
-                    EntityCategory::Structure => {
-                        let cell = terrain.map_or(next, |t| {
-                            let cell = t.native_cell_identity((
-                                (input.x / 256) as i16,
-                                (input.y / 256) as i16,
-                            ));
-                            let c = t.native_cell_coord(cell);
-                            (c.0 as u16, c.1 as u16)
-                        });
-                        occupancy.first_building_on_layer(cell.0, cell.1, MovementLayer::Ground)
-                            == Some(target.stable_id())
-                    }
-                    EntityCategory::Infantry => false,
-                };
-            }
+    //75C25A..75C2A0 clears the retained head, else current; even a failed
+    //chooser restores current raw at75C62A.
+    raw_at(
+        raw,
+        owner,
+        loco.step_head().unwrap_or(current),
+        false,
+        terrain,
+        grid,
+    );
+    let Some(input) = input else {
+        if let Some(loco) = entities.get_mut(id).and_then(|e| e.locomotor.as_mut()) {
+            loco.set_step_head(None);
         }
-        //75C434 still executes when the ordinary target already granted
-        //priority. Its map lookups cannot be elided by boolean short-circuit.
-        if let (Some(terrain), Some(rules)) = (terrain, rules) {
-            let query = crate::sim::slave_deposit::SlaveDepositQuery {
-                entities,
-                occupancy,
-                terrain,
-                rules,
-                interner,
-            };
-            let slave_priority = query.walk_priority(id, input);
-            priority |= slave_priority;
-        }
-        //75C4C8 reloads input Cell after the complete priority corridor.
-        let (cell, structural, raw_key) = terrain.map_or_else(
-            || {
-                (
-                    next,
-                    grid.and_then(|g| g.cell(next.0, next.1))
-                        .is_some_and(|c| c.bridge_structural),
-                    RawCellKey::Real(next.0, next.1),
-                )
-            },
-            |t| {
-                let selected =
-                    t.native_cell_identity(((input.x / 256) as i16, (input.y / 256) as i16));
-                let c = t.native_cell_coord(selected);
-                (
-                    (c.0 as u16, c.1 as u16),
-                    t.native_cell_flags(selected) & 0x100 != 0,
-                    RawCellKey::from_native(t, selected),
-                )
-            },
-        );
-        let bridge = structural
-            && current.z
-                > super::ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
-                    .unwrap_or(current.z)
-                    .wrapping_add(312);
-        let ground_raw = raw.bits_at(raw_key, MovementLayer::Ground);
-        let selected_raw = if bridge {
-            raw.bits_at(raw_key, MovementLayer::Bridge)
-        } else {
-            ground_raw
-        };
-        let gate_open = if !priority && selected_raw & 0x20 == 0 && ground_raw & 0x40 != 0 {
-            super::bump_crush::ground_gate_is_open(occupancy, entities, rules, interner, cell)
-        } else {
-            false
-        };
-        let layer = if bridge {
-            MovementLayer::Bridge
-        } else {
-            MovementLayer::Ground
-        };
-        let Some(slot) = super::bump_crush::place_infantry_in_native_cell(
-            raw, raw_key, layer, input, priority, gate_open, rng,
-        ) else {
-            raw_at(raw, owner, current, true, terrain, grid);
-            return StepHead::Done(false);
-        };
-        let ground =
-            super::ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
-                .unwrap_or(current.z);
-        selected_head(input, slot, ground, bridge)
-    } else {
-        //Hover515380..5153D5 retains head Z; the threshold has no extra
-        //structural-cell gate and uses the existing GetHeight projection.
-        let ground =
-            super::ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
-                .unwrap_or(current.z);
-        let bridge =
-            current.z.wrapping_add(loco.altitude.to_num::<i32>()) >= ground.wrapping_add(312);
-        DriveCoord {
-            x: input.x,
-            y: input.y,
-            z: ground.wrapping_add(if bridge {
-                crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-            } else {
-                0
-            }),
-        }
+        return StepHead::Done(commit_walk_head(entities, id, raw, terrain, grid));
     };
+    let next = ((input.x / 256) as u16, (input.y / 256) as u16);
+    let mut priority = false;
+    if [7, 8, 9, 11, 25].contains(&entity.mission.current().raw()) {
+        let target = match entity.navigation.nav_com {
+            Some(
+                crate::sim::components::NavTargetRef::Entity { id }
+                | crate::sim::components::NavTargetRef::Object { id }
+                | crate::sim::components::NavTargetRef::Building { id },
+            ) => entities.get(id),
+            _ => None,
+        };
+        if let Some(target) = target {
+            priority = match target.category {
+                EntityCategory::Unit | EntityCategory::Aircraft => {
+                    let c = super::ground_pose::position_world_coord(&target.position);
+                    ((c.x / 256) as i16, (c.y / 256) as i16)
+                        == ((input.x / 256) as i16, (input.y / 256) as i16)
+                }
+                EntityCategory::Structure => {
+                    let cell = terrain.map_or(next, |t| {
+                        let cell = t
+                            .native_cell_identity(((input.x / 256) as i16, (input.y / 256) as i16));
+                        let c = t.native_cell_coord(cell);
+                        (c.0 as u16, c.1 as u16)
+                    });
+                    occupancy.first_building_on_layer(cell.0, cell.1, MovementLayer::Ground)
+                        == Some(target.stable_id())
+                }
+                EntityCategory::Infantry => false,
+            };
+        }
+    }
+    //75C434 still executes when the ordinary target already granted
+    //priority. Its map lookups cannot be elided by boolean short-circuit.
+    if let (Some(terrain), Some(rules)) = (terrain, rules) {
+        let query = crate::sim::slave_deposit::SlaveDepositQuery {
+            entities,
+            occupancy,
+            terrain,
+            rules,
+            interner,
+        };
+        let slave_priority = query.walk_priority(id, input);
+        priority |= slave_priority;
+    }
+    //75C4C8 reloads input Cell after the complete priority corridor.
+    let (cell, structural, raw_key) = terrain.map_or_else(
+        || {
+            (
+                next,
+                grid.and_then(|g| g.cell(next.0, next.1))
+                    .is_some_and(|c| c.bridge_structural),
+                RawCellKey::Real(next.0, next.1),
+            )
+        },
+        |t| {
+            let selected = t.native_cell_identity(((input.x / 256) as i16, (input.y / 256) as i16));
+            let c = t.native_cell_coord(selected);
+            (
+                (c.0 as u16, c.1 as u16),
+                t.native_cell_flags(selected) & 0x100 != 0,
+                RawCellKey::from_native(t, selected),
+            )
+        },
+    );
+    let bridge = structural
+        && current.z
+            > super::ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
+                .unwrap_or(current.z)
+                .wrapping_add(312);
+    let ground_raw = raw.bits_at(raw_key, MovementLayer::Ground);
+    let selected_raw = if bridge {
+        raw.bits_at(raw_key, MovementLayer::Bridge)
+    } else {
+        ground_raw
+    };
+    let gate_open = if !priority && selected_raw & 0x20 == 0 && ground_raw & 0x40 != 0 {
+        super::bump_crush::ground_gate_is_open(occupancy, entities, rules, interner, cell)
+    } else {
+        false
+    };
+    let layer = if bridge {
+        MovementLayer::Bridge
+    } else {
+        MovementLayer::Ground
+    };
+    //75C541..75C562 stores PlaceInfantryInCell's answer as the head; a
+    //failed placement answers the empty coordinate, so the head is dropped
+    //and 75C5C5 Marks current.
+    let Some(slot) = super::bump_crush::place_infantry_in_native_cell(
+        raw, raw_key, layer, input, priority, gate_open, rng,
+    ) else {
+        if let Some(loco) = entities.get_mut(id).and_then(|e| e.locomotor.as_mut()) {
+            loco.set_step_head(None);
+        }
+        raw_at(raw, owner, current, true, terrain, grid);
+        return StepHead::Done(false);
+    };
+    let ground = super::ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
+        .unwrap_or(current.z);
+    let head = selected_head(input, slot, ground, bridge);
     let Some(loco) = entities.get_mut(id).and_then(|e| e.locomotor.as_mut()) else {
         return StepHead::Done(false);
     };
     loco.set_step_head(Some(head));
-    if is_walk {
-        StepHead::Pending
-    } else {
-        StepHead::Done(true)
-    }
+    StepHead::Pending
 }
 
 /// `0x0075C5C5..0x0075C638`: the chooser's tail after the crate question. A
@@ -957,7 +1107,7 @@ pub(super) fn commit_walk_head(
 
 /// [`select_step_head_at`] then [`commit_walk_head`] with no crate on the
 /// head: the test adapters' complete chooser. Production asks the crate
-/// question between the two (`walk_admission`).
+/// question between the two ([`Simulation::walk_find_sub_cell_dest`]).
 #[cfg(test)]
 pub(super) fn prepare_step_head_at(
     entities: &mut crate::sim::entity_store::EntityStore,
@@ -972,7 +1122,16 @@ pub(super) fn prepare_step_head_at(
     input: DriveCoord,
 ) -> bool {
     match select_step_head_at(
-        entities, id, occupancy, raw, terrain, grid, rules, interner, rng, input,
+        entities,
+        id,
+        occupancy,
+        raw,
+        terrain,
+        grid,
+        rules,
+        interner,
+        rng,
+        Some(input),
     ) {
         StepHead::Pending => commit_walk_head(entities, id, raw, terrain, grid),
         StepHead::Done(answer) => answer,

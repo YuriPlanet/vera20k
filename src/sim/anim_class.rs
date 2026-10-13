@@ -873,27 +873,6 @@ impl Simulation {
         self.substrate.anims.get_mut(id)
     }
 
-    /// Map[coord] (`0x00565730`) for an anim's world XY, which truncates
-    /// toward zero and wraps by row: the real cell, or `None` for the shared
-    /// dummy cell off the map. Without resolved terrain, the truncated cell.
-    fn anim_map_cell(&self, x: i32, y: i32) -> Option<(u16, u16)> {
-        use crate::map::cell_index::NativeCellIdentity;
-        use crate::util::lepton::lepton_to_cell_packed;
-
-        let (rx, ry) = match self.resolved_terrain.as_ref() {
-            Some(terrain) => {
-                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-                let cell = cells.lookup_world(x, y);
-                let NativeCellIdentity::Real(_) = cell else {
-                    return None;
-                };
-                cells.coord(cell)
-            }
-            None => (lepton_to_cell_packed(x), lepton_to_cell_packed(y)),
-        };
-        Some((u16::try_from(rx).ok()?, u16::try_from(ry).ok()?))
-    }
-
     /// `AnimClass::MarkCellOccupancy` (vt+0xF0 = `0x00426270`) at the anim's
     /// stored Location, called directly: InfantryClass::ReceiveDamage's
     /// InfDeath 9 arm marks its new InfantryMutate anim (`0x00518B26`),
@@ -940,7 +919,7 @@ impl Simulation {
                 )
             }
             None => {
-                let Some((rx, ry)) = self.anim_map_cell(location.x, location.y) else {
+                let Some((rx, ry)) = self.map_coord_cell(location.x, location.y) else {
                     return;
                 };
                 (RawCellKey::Real(rx, ry), 0, false)
@@ -1294,7 +1273,7 @@ impl Simulation {
                 }
             }
             None => self
-                .anim_map_cell(location.x, location.y)
+                .map_coord_cell(location.x, location.y)
                 .and_then(grid_fields)
                 .unwrap_or_else(|| self.effective_shared_cell_dummy().overlay_fields()),
         };
@@ -2375,7 +2354,7 @@ impl Simulation {
         // Map[coord] (`0x004239E5`); VERA keeps no objects on the dummy cell.
         let (Some(warhead_name), Some((rx, ry))) = (
             config.warhead.as_deref(),
-            self.anim_map_cell(position.x, position.y),
+            self.map_coord_cell(position.x, position.y),
         ) else {
             return false;
         };
@@ -4336,8 +4315,8 @@ mod tests {
         sim.apply_make_infantry_raw_occupation(world, AnimOccupationOperation::Clear);
         assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(0, 5), 0);
 
-        assert_eq!(sim.anim_map_cell(-128 - 256, world.y), None);
-        assert_eq!(sim.anim_map_cell(512 * 256 + 128, world.y), Some((0, 6)));
+        assert_eq!(sim.map_coord_cell(-128 - 256, world.y), None);
+        assert_eq!(sim.map_coord_cell(512 * 256 + 128, world.y), Some((0, 6)));
     }
 
     /// `AnimClass::MarkCellOccupancy` (`0x00426270`) stores the anim's owner

@@ -9,7 +9,7 @@
 //! [`aircraft::fire_at`]: crate::sim::aircraft::fire_at
 
 use super::*;
-use crate::sim::aircraft::attack_mission::{self, StrikeFacts, StrikeHost, strike_visit};
+use crate::sim::aircraft::attack_mission::{StrikeFacts, StrikeHost, strike_visit};
 use crate::sim::aircraft::fire_at::{AircraftShot, FireAtHost};
 use crate::sim::projectile::ProjectileVelocity;
 
@@ -114,7 +114,7 @@ pub(super) fn visit(
         .and_then(|name| rules.weapon(name));
     let facts = StrikeFacts {
         state,
-        target: attack_mission::aircraft_target_present(
+        target: crate::sim::combat::target_present(
             entity.attack_target.as_ref(),
             &world.substrate.entities,
         ),
@@ -550,10 +550,24 @@ impl StrikeHost for CombatStrike<'_, '_, '_> {
         self.shoot();
     }
 
-    /// RESIDUAL (see `aircraft::attack_mission`): the source-aware Cell
-    /// Scatter_Objects is not ported; `movement::scatter` owns only the
-    /// null-coordinate dispatch.
-    fn scatter(&mut self) {}
+    /// `0x00418478..0x004184BD` and the later shots' copies:
+    /// [`Simulation::scatter_target_cell_from`] away from the aircraft. Native
+    /// reads the Target unchecked (`0x004184A5`); VERA skips a missing one.
+    fn scatter(&mut self) {
+        let id = self.id();
+        let Some(target) = self.target() else {
+            return;
+        };
+        if let Err(cause) = self.world.scatter_target_cell_from(
+            id,
+            target,
+            self.rules,
+            self.overlay_registry,
+            self.run.effects(),
+        ) {
+            log::debug!("aircraft {id} target cell Scatter failed: {cause}");
+        }
+    }
 
     fn assign_target_destination(&mut self) {
         let id = self.id();

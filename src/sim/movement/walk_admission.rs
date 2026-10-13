@@ -127,61 +127,13 @@ impl Simulation {
         let id = request.entity_id;
         let packed = coord_cell(candidate);
         if code == 0 {
-            let grid = self.path_grid_snapshot();
-            let selection = super::walk_head::select_step_head_at(
-                &mut self.substrate.entities,
+            let selected = self.walk_find_sub_cell_dest(
                 id,
-                &self.substrate.occupancy,
-                &mut self.substrate.raw_cell_occupation,
-                self.resolved_terrain.as_ref(),
-                grid.as_deref(),
+                Some(candidate),
                 Some(rules),
-                &self.interner,
-                &mut self.scenario_rng,
-                candidate,
-            );
-            let selected = match selection {
-                super::walk_head::StepHead::Done(answer) => answer,
-                super::walk_head::StepHead::Pending => {
-                    //75C565..75C5A6: the crate question on the stored head. A
-                    //false answer outside limbo resets the head to the dummy;
-                    //a dead owner answers 0 without the Mark tail.
-                    let head = self
-                        .substrate
-                        .entities
-                        .get(id)
-                        .and_then(|actor| actor.locomotor.as_ref())
-                        .and_then(|loco| loco.step_head())
-                        .ok_or("Walk head vanished before its crate question")?;
-                    let picked = self.pickup_crate_at(
-                        id,
-                        coord_cell(head),
-                        Some(rules),
-                        registry,
-                        frame_effects,
-                    );
-                    let actor = self
-                        .substrate
-                        .entities
-                        .get_mut(id)
-                        .ok_or("retired Walk head owner")?;
-                    let mut dead = false;
-                    if !picked && !actor.lifecycle.in_limbo {
-                        if let Some(loco) = actor.locomotor.as_mut() {
-                            loco.set_step_head(None);
-                        }
-                        dead = !actor.lifecycle.object_alive;
-                    }
-                    !dead
-                        && super::walk_head::commit_walk_head(
-                            &self.substrate.entities,
-                            id,
-                            &mut self.substrate.raw_cell_occupation,
-                            self.resolved_terrain.as_ref(),
-                            grid.as_deref(),
-                        )
-                }
-            };
+                registry,
+                frame_effects,
+            )?;
             let actor = self
                 .substrate
                 .entities

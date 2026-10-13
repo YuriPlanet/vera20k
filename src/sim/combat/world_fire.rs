@@ -13,8 +13,18 @@ use crate::sim::world::{FrameEffects, Simulation};
 #[path = "aircraft_release.rs"]
 mod aircraft_release;
 
-/// Returns the GetFireError code the class acted on, when the fire routine
-/// reached GetFireError at all.
+/// How far one fire routine got.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct FireReach {
+    /// The GetFireError code the class acted on, when the routine reached
+    /// GetFireError at all.
+    pub(super) code: Option<fire_error::FireError>,
+    /// An infantryman's Stage matched his fire frame (`0x005209AF`): the
+    /// routine's tail ([`infantry_fire_tail`]) follows whether the shot fired
+    /// or was refused.
+    pub(super) infantry_fire_frame: bool,
+}
+
 pub(super) fn resolve_attacker_fire(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -25,8 +35,8 @@ pub(super) fn resolve_attacker_fire(
     has_active_wave: bool,
     out: &mut CombatEmit,
     effects: FrameEffects<'_>,
-) -> Option<fire_error::FireError> {
-    let mut fire_error = None;
+) -> FireReach {
+    let mut reach = FireReach::default();
     if let Some(shot) = admit_attacker_fire(
         world,
         rules,
@@ -35,7 +45,7 @@ pub(super) fn resolve_attacker_fire(
         fog_enabled,
         binary_frame,
         has_active_wave,
-        &mut fire_error,
+        &mut reach,
         out,
         effects,
     ) {
@@ -49,7 +59,7 @@ pub(super) fn resolve_attacker_fire(
             effects,
         );
     }
-    fire_error
+    reach
 }
 
 /// `TechnoClass::Fire`'s per-shot report (`0x006FF349..0x006FF38F`, every
@@ -79,7 +89,7 @@ fn admit_attacker_fire<'r>(
     fog_enabled: bool,
     binary_frame: u32,
     has_active_wave: bool,
-    fire_error_out: &mut Option<fire_error::FireError>,
+    reach: &mut FireReach,
     out: &mut CombatEmit,
     effects: FrameEffects<'_>,
 ) -> Option<AdmittedFire<'r>> {
@@ -220,6 +230,7 @@ fn admit_attacker_fire<'r>(
         {
             return None;
         }
+        reach.infantry_fire_frame = true;
     }
 
     // `GetFireError` (vt+0x3C0, `fire_error`) with `SelectWeapon(Target)` and
@@ -372,7 +383,7 @@ fn admit_attacker_fire<'r>(
             }
         }
     }
-    *fire_error_out = Some(code);
+    reach.code = Some(code);
     if code != fire_error::FireError::Ok {
         return None;
     }
@@ -433,6 +444,7 @@ fn admit_attacker_fire<'r>(
         {
             return None;
         }
+        reach.infantry_fire_frame = true;
         //5209C7/5209DE reselect and query live state after action/facing/Stop,
         // even when a frame-zero action can shoot in this same call.
         // Both actor and target are live reads after the synchronous callbacks.
@@ -460,7 +472,7 @@ fn admit_attacker_fire<'r>(
             weapon_index,
         }
         .fire_error(true);
-        *fire_error_out = Some(code);
+        reach.code = Some(code);
         if code != fire_error::FireError::Ok {
             world
                 .substrate
@@ -1847,6 +1859,52 @@ pub(crate) enum FireVisit {
     },
 }
 
+/// `InfantryClass::Fire_At_Target`'s tail (`0x00520A57..0x00520AC7`), on the
+/// fire frame after FireAt and its effects, or after a refused shot's reset
+/// (`0x005209FD..0x00520A51`): with a Target, when weapon 0 (GetWeapon(0),
+/// `0x00520A68`) is slower (`+0xA8`, signed) than `[CombatDamage] Incoming=`,
+/// the Target's cell objects scatter away from the infantryman
+/// ([`Simulation::scatter_target_cell_from`]).
+fn infantry_fire_tail(
+    world: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+) {
+    let Some(actor) = world.substrate.entities.get(id) else {
+        return;
+    };
+    let Some(target) = actor
+        .attack_target
+        .as_ref()
+        .filter(|attack| target_present(Some(attack), &world.substrate.entities))
+        .map(|attack| attack.target)
+    else {
+        return;
+    };
+    let slow = rules
+        .object(world.interner.resolve(actor.type_ref()))
+        .and_then(|obj| {
+            combat_weapon::get_weapon(
+                actor,
+                obj,
+                0,
+                &world.substrate.entities,
+                rules,
+                &world.interner,
+            )
+        })
+        .is_some_and(|weapon| weapon.speed < rules.combat_damage.incoming);
+    if !slow {
+        return;
+    }
+    if let Err(cause) = world.scatter_target_cell_from(id, target, rules, overlay_registry, effects)
+    {
+        log::debug!("infantry {id} target cell Scatter failed: {cause}");
+    }
+}
+
 /// One inline receiver transaction for both class and mission FireAt callers.
 /// All emission remains in the existing emit_admitted_fire owner.
 pub(crate) fn visit_fire(
@@ -1862,6 +1920,7 @@ pub(crate) fn visit_fire(
     let remove_start = emit.remove_attack.len();
     let ammo_start = emit.ammo_deduct.len();
     let mut unit_tail = None;
+    let mut infantry_tail = None;
     let facing_start = emit.unit_facing.len();
     #[cfg(not(test))]
     let fog_enabled = true;
@@ -1926,7 +1985,8 @@ pub(crate) fn visit_fire(
                         world.active_wave_links.contains_key(&id),
                         emit,
                         run.effects(),
-                    );
+                    )
+                    .code;
                 }
                 unit_tail = Some((id, fire_error));
             }
@@ -1936,7 +1996,7 @@ pub(crate) fn visit_fire(
             let target = actor.and_then(|actor| actor.attack_target.as_ref().map(|a| a.target));
             if let (Some(actor), Some(target)) = (actor, target) {
                 let snap = build_attacker_snapshot(actor, target, None);
-                resolve_attacker_fire(
+                let reach = resolve_attacker_fire(
                     world,
                     rules,
                     overlay_registry,
@@ -1947,6 +2007,7 @@ pub(crate) fn visit_fire(
                     emit,
                     run.effects(),
                 );
+                infantry_tail = reach.infantry_fire_frame.then_some(id);
             } else if let Some(actor) = world.substrate.entities.get_mut(id) {
                 //520AD2: absence of TarCom clears the raw firing latch.
                 actor.mission_leaf.set_foot_firing_sequence(0);
@@ -2010,6 +2071,9 @@ pub(crate) fn visit_fire(
     }
     deduct_fire_ammo(world, &emit.ammo_deduct[ammo_start..]);
     emit.ammo_deduct.truncate(ammo_start);
+    if let Some(id) = infantry_tail {
+        infantry_fire_tail(world, id, rules, overlay_registry, run.effects());
+    }
     if let Some((id, fire_error)) = unit_tail {
         let fire_hull = if emit.unit_facing.len() > facing_start {
             emit.unit_facing.pop().and_then(|f| f.hull_destination)

@@ -67,8 +67,9 @@ impl Simulation {
                 continue;
             }
             changed |= self
-                .scatter_null(
+                .scatter(
                     id,
+                    None,
                     ScatterFlags::new(true, true),
                     rules,
                     registry,

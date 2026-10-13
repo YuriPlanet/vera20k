@@ -107,22 +107,8 @@ pub(super) fn bullet_type<'r>(
 /// - `Elasticity=` (`+0x2C8`) is live in the ARM B reflection block but has
 ///   zero stock projectile users (the `[PIECE]`/`[TIRE]` hits are VoxelAnims).
 ///
-/// RESIDUAL (GSI-08.07) — the second scatter site is not ported.
-/// `BulletClass::Fire @ 0x0046874E..0x004688A9` offsets an
-/// `Inviso && FlakScatter` bullet's placement before the Inviso body
-/// ([`crate::sim::projectile::ProjectileStore::fire_inviso`]): magnitude
-/// `(RandomRanged(0, RulesClass+0x1734 << 1) * ftol(dist)) / Range`, angle
-/// `RandomRanged(0, 0x7FFFFFFE)`, then `x += cos*mag`, `y -= sin*mag`
-/// (`0x00468864..0x00468890`, the launch site's shape at
-/// `0x006FE7E5`/`0x006FE7C0`; the decompiler drops the `FIADD`). The divisor
-/// is the weapon's `Range=` in leptons: `Bullet+0x130` is the WeaponType
-/// FireAt installs through `SetWeaponType @ 0x0046B260` (`0x006FE573`), and
-/// WeaponType `+0xB4` is `Range=` (`ReadRange` at `0x00772336`). The x87
-/// distance, magnitude and angle conversion want a native oracle first.
-///
-/// Trigger: every Flak Cannon / Flak Track shot at an aircraft (`[FlakProj]`,
-/// 6 weapons). Player effect: flak never misses. Frequency: any skirmish with
-/// air units. Downstream risk: two Scenario RNG draws are missing per shot.
+/// `BulletClass::Fire` takes the second scatter site, for an `Inviso` and
+/// `FlakScatter` bullet ([`inviso_fire_placement`]).
 ///
 /// Ordinary `ROT < 1, Vertical = no` AI subtracts gravity every visit
 /// (467402..467429), independently of `Arcing`. Production gives all such
@@ -177,8 +163,6 @@ pub(super) fn classify_projectile_delivery(
             very_high: projectile.very_high,
             max_speed: weapon.speed,
             acceleration: projectile.acceleration,
-            // Replaced at construction with the launch-time target coord.
-            fuse_reference: ProjectileCoord::new(0, 0, 0),
             closing_frames: 0,
             closing_accumulator_bits: 0,
         }),
@@ -275,7 +259,6 @@ impl ProjectileDelivery {
         bullet: FiredBullet,
     ) -> ProjectileSpawn {
         let guidance = self.guidance.map(|guidance| ProjectileGuidance {
-            fuse_reference: bullet.target_position,
             max_speed: bullet.max_speed,
             ..guidance
         });
@@ -328,8 +311,9 @@ impl ProjectileDelivery {
 /// Admit `bullet`, fired with `weapon`'s BulletType, as `bullet_id`. Fire
 /// Unlimbos it at its coordinate, which appends it to the Logic vector
 /// (`0x005F5040`): it takes its first AI later in this frame's pass. An
-/// `Inviso=` bullet then stands on its target ([`ProjectileStore::fire_inviso`]
-/// with the target's OnBridge, as FireAt copies it at `0x006FF08B`).
+/// `Inviso=` bullet then stands on its placement ([`inviso_fire_placement`],
+/// [`ProjectileStore::fire_inviso`]) with the target's OnBridge, as FireAt
+/// copies it at `0x006FF08B`.
 ///
 /// [`ProjectileStore::fire_inviso`]: crate::sim::projectile::ProjectileStore::fire_inviso
 pub(crate) fn admit_fired_bullet(
@@ -362,10 +346,47 @@ pub(crate) fn admit_fired_bullet(
                 .is_some_and(|target| target.on_bridge),
             _ => false,
         };
+        let placement = inviso_fire_placement(
+            world,
+            rules,
+            delivery.collision.flak_scatter,
+            weapon,
+            bullet.origin,
+            bullet.target_position,
+        );
         world
             .projectiles
-            .fire_inviso(bullet_id, bullet.target_position, on_bridge);
+            .fire_inviso(bullet_id, placement, on_bridge);
     }
+}
+
+/// `BulletClass::Fire`'s placement for its Inviso arm: the target coordinate
+/// it kept (`+0x140`), which a `FlakScatter=` bullet first moves
+/// (`0x00468734..0x004688A5`,
+/// [`crate::sim::projectile::launch::bullet_fire_flak_placement`]: two
+/// Scenario draws). `weapon` is the bullet's WeaponType (`+0x130`, which
+/// FireAt sets to its fired weapon at `0x006FE573`) and `origin` the
+/// coordinate Fire was given.
+/// SpawnShrapnel's Fire leaves its children on their target
+/// (`Simulation::admit_projectile_spawns`).
+fn inviso_fire_placement(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    flak_scatter: bool,
+    weapon: &WeaponType,
+    origin: ProjectileCoord,
+    target: ProjectileCoord,
+) -> ProjectileCoord {
+    if !flak_scatter {
+        return target;
+    }
+    crate::sim::projectile::launch::bullet_fire_flak_placement(
+        origin,
+        target,
+        rules.combat_damage.ballistic_scatter,
+        weapon.range_leptons,
+        &mut world.scenario_rng,
+    )
 }
 
 #[cfg(test)]

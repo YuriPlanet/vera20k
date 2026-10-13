@@ -684,8 +684,9 @@ impl Simulation {
         if let Some(owner) = self.substrate.entities.get_mut(id) {
             crate::sim::movement::foot_stop_moving(owner);
         }
-        if let Err(cause) = self.scatter_null(
+        if let Err(cause) = self.scatter(
             id,
+            None,
             crate::sim::movement::ScatterFlags::new(true, false),
             rules,
             registry,
