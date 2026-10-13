@@ -600,6 +600,17 @@ pub struct GeneralRules {
     /// the player's cells too (the house gate of `MapClass::RevealArea @
     /// 0x005678E0`, `0x00567AEF`). Retail yes.
     pub ally_reveal: bool,
+    /// `[MultiplayerDialogSettings] AlliesAllowed=` (`Rules+0x14B5`, ReadBool
+    /// at `0x0067215B` in `0x00671EA0` over the constructor's 0,
+    /// `0x006672D5`): Computer_Paranoid's gate (`0x0050164D`,
+    /// `sim::house_diplomacy`). Retail RULESMD says no; the Battle mode's
+    /// MPBATTLEMD layers yes over it.
+    pub allies_allowed: bool,
+    /// `[AI] Paranoid=` (`Rules+0x17E0`, ReadBool at `0x00673D23..0x00673D43`
+    /// in ReadAI over the constructor's 1, `0x00667715`): a defeated computer
+    /// house at `MaxIQLevels` (`0x004FC0FF`), and a human house's MakeAlly
+    /// (`0x004F9C5F`), run Computer_Paranoid. Retail yes.
+    pub paranoid: bool,
     /// Low byte of `CliffBackImpassability=` in `[General]`.
     /// Byte 0 skips the scan; only byte 2 can write Rock. Default 2 in standard YR.
     pub cliff_back_impassability: u8,
@@ -1785,7 +1796,7 @@ const DIFFICULTY_REPAIR_DELAY_DEFAULT: f64 = 0.02;
 
 /// The scalar projection of one original ReadDifficulty66D270 row. ContentScan
 /// and its other AI flags belong to their existing AI admission owners.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DifficultyRules {
     pub firepower: f64,
     pub ground_speed: f64,
@@ -1855,7 +1866,7 @@ impl DifficultyRules {
 /// `0x0066F692..0x0066F781`) are the plant the computer's building choice
 /// splices into its BasePlan (`sim::ai_base_building`); retail GAPOWR, NAPOWR,
 /// NANRCT and YAPOWR.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GeneralBuildingTypes {
     pub gdi_gate_one: Option<String>,
     pub gdi_gate_two: Option<String>,
@@ -1916,7 +1927,7 @@ fn read_building_identity(
 /// writes 15/20/5 at +0/+4/+8 (665665..665672). ReadAudioVisual66920D..669258
 /// reads signed integers in this order with current defaults and no clamps.
 /// Native constructor/full-reader controls: rules_oracle/weapon_laser.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct DetailRules {
     pub min_frame_rate_normal: i32,
     pub min_frame_rate_movie: i32,
@@ -1952,7 +1963,7 @@ impl DetailRules {
 /// beam's `PrismSupportDuration=` (`Rules+0x4A8`) feeds the support laser;
 /// `PrismSupportHeight=` (`Rules+0x4AC`) has no
 /// reader outside the constructor and ReadGeneral.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PrismSupportRules {
     /// `PrismSupportModifier=` (`Rules+0x49C`), the percent each supporter
     /// adds to the shot: `ftol(ReadDouble(key, current) x 100)`, so a pass
@@ -2058,6 +2069,8 @@ impl Default for GeneralRules {
             gap_radius: 10,
             reveal_by_height: true,
             ally_reveal: true,
+            allies_allowed: false,
+            paranoid: true,
             tunnel_speed: sim_from_f32(6.0),
             missile_rot_var: 0.25,
             safety_altitude: 500,
@@ -2726,6 +2739,11 @@ impl GeneralRules {
         // Rules ReadAI6739E5..673A31 is independent of ReadGeneral.
         // Constructor66760E..66761E supplies PathDelay0.016 and blockage60.
         let ai = ini.section_or_empty("AI");
+        let paranoid = ai.read_bool("Paranoid", defaults.paranoid);
+        // RulesProcess668EC0 reaches 671EA0 independently of ReadGeneral too.
+        let allies_allowed = ini
+            .section_or_empty("MultiplayerDialogSettings")
+            .read_bool("AlliesAllowed", defaults.allies_allowed);
         let attack_delay = ai.read_double("AttackDelay", defaults.attack_delay);
         let path_delay = ai.read_double("PathDelay", defaults.path_delay);
         let blockage_path_delay_ticks =
@@ -2754,6 +2772,8 @@ impl GeneralRules {
                 bomb_attach_sound,
                 force_shield_color,
                 ally_reveal,
+                allies_allowed,
+                paranoid,
                 psychic_reveal_activate_sound,
                 psychic_reveal_radius,
                 ..defaults
@@ -2971,6 +2991,8 @@ impl GeneralRules {
             gap_radius: general.read_int("GapRadius", 10),
             reveal_by_height: general.read_bool("RevealByHeight", true),
             ally_reveal,
+            allies_allowed,
+            paranoid,
             tunnel_speed: sim_from_f32(general.read_double("TunnelSpeed", 6.0) as f32),
             missile_rot_var: general.read_double("MissileROTVar", defaults.missile_rot_var),
             safety_altitude: general.read_int("MissileSafetyAltitude", defaults.safety_altitude),
@@ -3896,6 +3918,9 @@ impl RuleSet {
             object.voice_select_enslaved = section.map_or_else(Vec::new, |section| {
                 sounds.read_rules_sound_list(section, "VoiceSelectEnslaved")
             });
+            object.voice_select_deactivated = section.map_or_else(Vec::new, |section| {
+                sounds.read_rules_sound_list(section, "VoiceSelectDeactivated")
+            });
             object.move_sound = section.map_or_else(Vec::new, |section| {
                 sounds.read_rules_sound_list(section, "MoveSound")
             });
@@ -3924,6 +3949,12 @@ impl RuleSet {
             // category-gated even though only buildings consume it.
             object.turret_rotate_sound = section
                 .and_then(|section| sounds.read_rules_reference(section, "TurretRotateSound"));
+            // TechnoType7138D1/71390D read ActivateSound (+0x5A8) and
+            // DeactivateSound (+0x5AC) the same way, for every techno type.
+            object.activate_sound =
+                section.and_then(|section| sounds.read_rules_reference(section, "ActivateSound"));
+            object.deactivate_sound =
+                section.and_then(|section| sounds.read_rules_reference(section, "DeactivateSound"));
             // ObjectType5F93C1 reads AmbientSound (+0x1F4) the same way, for
             // every object type.
             object.ambient_sound =
@@ -6472,6 +6503,40 @@ SpawnCount=3
         let general = GeneralRules::from_ini(&ini);
         assert_eq!(general.psychic_reveal_radius, 15);
         assert!(general.ally_reveal);
+    }
+
+    /// `[MultiplayerDialogSettings] AlliesAllowed=` (`0x0067215B`) and `[AI]
+    /// Paranoid=` (`0x00673D43`) keep the constructor's 0 and 1
+    /// (`0x006672D5`, `0x00667715`) when absent, and both readers run whether
+    /// or not [General] exists (`0x00668EC0`, `0x00668EC8`). The Battle mode
+    /// layers MPBATTLEMD's `AlliesAllowed=yes` over RULESMD's `no`;
+    /// FreeForAll's MPFREEFORALLMD says `no`.
+    #[test]
+    fn allies_allowed_and_paranoid_read_over_constructor_defaults() {
+        let absent = GeneralRules::from_ini(&IniFile::from_str("[General]\nFlightLevel=500\n"));
+        assert!(!absent.allies_allowed);
+        assert!(absent.paranoid);
+        let alone = GeneralRules::from_ini(&IniFile::from_str(
+            "[MultiplayerDialogSettings]\nAlliesAllowed=yes\n[AI]\nParanoid=no\n",
+        ));
+        assert!(alone.allies_allowed);
+        assert!(!alone.paranoid);
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let general = GeneralRules::from_ini(&ini);
+        assert!(!general.allies_allowed);
+        assert!(general.paranoid);
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        assert!(battle.rules.general.allies_allowed);
+        assert!(battle.rules.general.paranoid);
+        let free_for_all =
+            crate::rules::retail_ini_fixture::retail_mode_rules_for_map(2, "Hills.mmx")
+                .expect("retail FreeForAll rules beside the Battle ones");
+        assert!(!free_for_all.rules.general.allies_allowed);
+        assert!(free_for_all.rules.general.paranoid);
     }
 
     #[test]

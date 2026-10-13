@@ -298,31 +298,29 @@ pub struct MissionControlEntry {
     /// Frames between anti-aircraft processings (`AARate=`; copies `rate_frames`
     /// when the key is absent or zero).
     pub aa_rate_frames: i32,
-    /// Weapons disabled → ignored as a target until it fires (`NoThreat=`, def no).
+    /// The threat scan skips an object on this mission (`NoThreat=`, read at
+    /// `0x005B37AE..0x005B37BF` over the constructed `false`, `0x005B3706`).
     ///
     /// Stock YR sets it on exactly two sections, `[Harmless]` and `[Selling]`.
-    /// VERA reads it only in `FootClass::ReceiveDamage`'s teamless idle tail
-    /// (`0x004D749F..0x004D74C7`, `combat::world_receiver`): a Harmless Foot
-    /// hit by a source takes `Enter_Idle_Mode(0, 1)`.
-    ///
-    /// **No threat-scoring consumer.** Trigger: an enemy building is
-    /// selected as a target during the seconds it spends on the Selling mission.
-    /// Player effect: retail stops treating a building the player has sold as
-    /// worth shooting, so the deconstruction runs out and the refund lands;
-    /// VERA's keeps drawing fire and can be destroyed instead, costing the
-    /// player the refund. Frequency: every contested sell — a few times a match
-    /// for an active player, and near-continuous when a base is being overrun.
-    /// Downstream risk: the consumer belongs in threat scoring
-    /// (`TechnoClass::Greatest_Threat`), which is not this row's owner; the
-    /// native reader of `NoThreat` is UNCHECKED.
+    /// Two readers take it from the object's current mission
+    /// (`sim::mission::control::current_control`); no other code reads it:
+    /// - `TechnoClass::Evaluate_Candidate` refuses the object as a candidate
+    ///   (`0x006F7DFF..0x006F7E0B`, `combat::greatest_threat`), so no scan
+    ///   picks a building being sold;
+    /// - `FootClass::ReceiveDamage`'s teamless idle tail
+    ///   (`0x004D749F..0x004D74C7`, `combat::world_receiver`): a Harmless Foot
+    ///   hit by a source takes `Enter_Idle_Mode(0, 1)`.
     pub no_threat: bool,
     /// Frozen forever, never recovers (`Zombie=`, def no).
     pub zombie: bool,
     /// Can be recruited into a team / base defence (`Recruitable=`, def yes).
+    /// `[Sticky]` and `[Area Guard]` are the two stock sections that set it
+    /// explicitly.
     ///
-    /// **No consumer, either side.** Its only retail readers are team
-    /// recruitment, and VERA has no AI opponent to run a team. `[Sticky]` and
-    /// `[Area Guard]` are the two stock sections that set it explicitly.
+    /// `RespondToBaseAttack` reads it from the object's current mission
+    /// (`0x0070825B`, `0x00708491`, `combat::base_defense_response`), and
+    /// team recruitment through `0x005B36E0`
+    /// (`sim::mission::control::mission_recruitable`).
     pub recruitable: bool,
     /// Frozen in place but can still fire and function (`Paralyzed=`, def no).
     ///

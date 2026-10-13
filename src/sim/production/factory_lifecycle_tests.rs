@@ -707,7 +707,7 @@ fn prerequisite_revalidation_disposes_manager_and_promoted_build_steps_a_rate_la
     let mut expected = sim.scenario_rng.clone();
     // The producing factory remains; only the active type loses its
     // prerequisite, which its house stops counting on the map.
-    sim.update_house_presence(4, false);
+    sim.house_removed_from_game(4, None, crate::sim::world::FrameEffects::empty());
     sim.substrate.entities.remove(4);
     let promotion_frame = sim.session.binary_frame;
     sim.advance_tick(&[], Some(&rules), None, None, 67);

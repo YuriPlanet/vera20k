@@ -29,17 +29,7 @@ const FRAME_GAP: u32 = 8;
 const FRAMES_PER_ROW: u32 = 8;
 
 fn ra2_dir() -> Option<PathBuf> {
-    std::env::var("RA2_DIR")
-        .ok()
-        .or_else(|| {
-            let default = "C:/Users/enok/Documents/Command and Conquer Red Alert II";
-            if PathBuf::from(default).exists() {
-                Some(default.to_string())
-            } else {
-                None
-            }
-        })
-        .map(PathBuf::from)
+    std::env::var_os("RA2_DIR").map(PathBuf::from)
 }
 
 /// Color a brightness byte for the diagnostic output.
@@ -148,7 +138,7 @@ fn lut_masks_for_frame(frame_idx: u8) -> Vec<u8> {
 #[ignore] // Requires RA2 install
 fn dump_shroud_shp_layout() {
     let Some(ra2_dir) = ra2_dir() else {
-        eprintln!("SKIP: RA2_DIR not set and default install dir not found");
+        eprintln!("SKIP: RA2_DIR not set");
         return;
     };
 

@@ -19,8 +19,9 @@ pub(crate) use cell_reveal::tests::{
 };
 use cell_reveal::{DummyVisibility, MapCellEdgeCache};
 pub(crate) use gap_source::GapGeneratorRuntime;
+use shroud_knowledge::ShroudKnowledge;
+pub(crate) use shroud_knowledge::SightAdmission;
 pub(crate) use shroud_knowledge::SightRefreshTimers;
-use shroud_knowledge::{ShroudKnowledge, SightAdmission};
 
 use std::collections::BTreeMap;
 
@@ -408,10 +409,15 @@ pub struct FogState {
     pub alliances: HouseAllianceMap,
     pub(crate) sight_admissions: BTreeMap<(u64, InternedId), SightAdmission>,
     /// Admissions `TechnoClass::UpdateReveal @ 0x0070AF50` makes for an
-    /// alternate house (`RevealToAll=`; [`admit_alternate_entity_sight`]),
-    /// keyed like `sight_admissions`. Kept apart so the source's own
-    /// reconciliation never releases them, and a viewer that also shares the
-    /// source's ordinary sight holds both contributions, as native does.
+    /// alternate house (`RevealToAll=`;
+    /// `Simulation::reveal_sight_to_current_house`), keyed like
+    /// `sight_admissions`. Kept apart so the source's own reconciliation
+    /// never releases them, and a viewer that also shares the source's
+    /// ordinary sight holds both contributions, as native does.
+    /// Native keeps no record: each call reveals and each release
+    /// ([`FogState::withdraw_alternate_sight`]) leaves the counters. VERA
+    /// retains the first per viewer, which holds its source count until a
+    /// release takes it.
     pub(crate) alternate_sight_admissions: BTreeMap<(u64, InternedId), SightAdmission>,
     /// Native local House+240: whole-map reveal guard, distinct from the
     /// checksum's map-clear byte+241 and SpySatActive+577A. TAction17 at
@@ -477,57 +483,95 @@ impl FogState {
         }
     }
 
-    /// `TechnoClass::ReReveal @ 0x0070B1D0` with an alternate house: the
-    /// footprint [`admit_alternate_entity_sight`] admitted for it leaves
-    /// (`0x0070B24E..0x0070B26C`), at a computer house's building death
-    /// (`0x0044172F`) or at Limbo (`0x006F6B06`).
-    ///
-    /// RESIDUAL: VERA releases each admission once. Native's Limbo releases
-    /// the stored footprint for the current house in place of the owner's, a
-    /// death has already released it once, and a capture keeps it
-    /// (`ReReveal(0, 0, 0, 0)`, `0x00448BD9`). On the current house's map
-    /// the native cell counter therefore ends one step higher after a
-    /// non-allied computer house's building dies, and one step lower after an
-    /// `AllyReveal=` ally's building is sold or a captured one is removed.
-    /// Only a hostile Gap Generator reads the difference
-    /// (`ShroudKnowledge::leave` caps the counter at its gap count): a cell
-    /// one step higher can be re-shrouded while one of the current house's
-    /// sources still sees it, and one lower stays open.
-    pub(crate) fn release_alternate_sight(&mut self, stable_id: u64) {
+    /// The latch clear of `TechnoClass::ReReveal @ 0x0070B1D0`
+    /// (`0x0070B202`) when it releases for an alternate house: the source's
+    /// ordinary admission leaves the record on every map without its leave,
+    /// so the native counters keep counting it while VERA's source counts
+    /// drop it. Returns the footprint the latch held (`+0x254`/`+0x260`).
+    pub(crate) fn clear_sight_latch(&mut self, stable_id: u64) -> Option<SightAdmission> {
         let keys: Vec<_> = self
-            .alternate_sight_admissions
+            .sight_admissions
             .range(source_keys(stable_id))
             .map(|(&key, _)| key)
             .collect();
+        let mut footprint = None;
         for key in keys {
-            let admission = self.alternate_sight_admissions.remove(&key).unwrap();
-            self.withdraw_sight(key.1, &admission);
+            let admission = self.sight_admissions.remove(&key).unwrap();
+            self.release_sight(key.1, &admission, SightRelease::Forget);
+            footprint = Some(admission);
+        }
+        footprint
+    }
+
+    /// One `TechnoClass::UpdateReveal @ 0x0070AF50` for an alternate house
+    /// on `viewer`'s map (`0x0070B17E..0x0070B1C2`): the counters reveal the
+    /// footprint. The first is retained and counts as a source; a retained
+    /// one is revealed again.
+    pub(crate) fn admit_alternate_sight(
+        &mut self,
+        stable_id: u64,
+        viewer: InternedId,
+        admission: SightAdmission,
+    ) {
+        let key = (stable_id, viewer);
+        if let Some(retained) = self.alternate_sight_admissions.get(&key).cloned() {
+            self.apply_sight(viewer, &retained, SightApply::Rereveal);
+        } else {
+            self.apply_sight(viewer, &admission, SightApply::Admit);
+            self.alternate_sight_admissions.insert(key, admission);
+        }
+    }
+
+    /// `TechnoClass::ReReveal @ 0x0070B1D0`'s release for an alternate house
+    /// (`0x0070B24E..0x0070B26C`): `footprint` leaves each of `viewers`'
+    /// maps. A viewer's retained alternate admission goes with its source
+    /// count; a viewer without one (a second release) takes the leave alone.
+    pub(crate) fn withdraw_alternate_sight(
+        &mut self,
+        stable_id: u64,
+        footprint: &SightAdmission,
+        viewers: &[InternedId],
+    ) {
+        for &viewer in viewers {
+            match self.alternate_sight_admissions.remove(&(stable_id, viewer)) {
+                Some(admission) => self.release_sight(viewer, &admission, SightRelease::Withdraw),
+                None => self.release_sight(viewer, footprint, SightRelease::Leave),
+            }
         }
     }
 
     fn release_sight_for_viewer(&mut self, key: (u64, InternedId)) {
         if let Some(admission) = self.sight_admissions.remove(&key) {
-            self.withdraw_sight(key.1, &admission);
+            self.release_sight(key.1, &admission, SightRelease::Withdraw);
         }
     }
 
-    /// The leave of one retained admission on `viewer`'s map.
-    fn withdraw_sight(&mut self, viewer: InternedId, admission: &SightAdmission) {
+    /// Take one footprint off `viewer`'s map as `release` says.
+    fn release_sight(
+        &mut self,
+        viewer: InternedId,
+        admission: &SightAdmission,
+        release: SightRelease,
+    ) {
         if let Some(vis) = self.by_owner.get_mut(&viewer) {
             for &(x, y) in &admission.cells {
                 let Some(index) = vis.index(x, y) else {
                     continue;
                 };
                 let state = &mut vis.shroud_knowledge[index];
-                state.leave();
-                let count = if viewer == admission.owner {
-                    &mut state.local_sources
-                } else {
-                    &mut state.allied_sources
-                };
-                *count = count
-                    .checked_sub(1)
-                    .expect("retained sight admission is balanced");
+                if release != SightRelease::Forget {
+                    state.leave();
+                }
+                if release != SightRelease::Leave {
+                    let count = if viewer == admission.owner {
+                        &mut state.local_sources
+                    } else {
+                        &mut state.allied_sources
+                    };
+                    *count = count
+                        .checked_sub(1)
+                        .expect("retained sight admission is balanced");
+                }
                 vis.publish_knowledge(index);
             }
         }
@@ -1584,52 +1628,27 @@ fn update_entity_sight_admission(
     }
 }
 
-/// `TechnoClass::UpdateReveal @ 0x0070AF50` with an alternate house (its third
-/// and fourth arguments), as a computer house's `RevealToAll=` building opens
-/// (`0x00446816..0x00446829`): the entity's sight, computed as the ordinary
-/// writer computes it, goes to `MapClass::RevealArea @ 0x005678E0` for
-/// `recipient` rather than the owner (`0x0070B17E..0x0070B1C2`; the source
-/// already holds its own admission), unless it is zero (`0x0070B186`). It
-/// writes the maps a reveal by `recipient` writes, counted as `recipient`'s
-/// own sight, until [`FogState::release_alternate_sight`].
-///
-/// A source keeps one alternate admission: native counts each call, but no
-/// building opens twice from construction (`grand_opening`'s placed guard,
-/// native `+0x6E4`), so releasing an earlier admission first only keeps the
-/// store balanced.
-///
-/// RESIDUAL: a source without its own admission yet (`+0x250` clear) would
-/// natively store this footprint as its own and leave its owner without sight
-/// (`0x0070B0BF..0x0070B131`); VERA's owner sight comes from the per-frame
-/// reconciliation regardless. No caller reaches it before the source's
-/// Unlimbo reveal (`0x006F6D27`, ahead of the opening at `0x00440E76`).
-pub(crate) fn admit_alternate_entity_sight(
-    fog: &mut FogState,
+/// The footprint `TechnoClass::UpdateReveal @ 0x0070AF50` reveals for
+/// `entity`'s sight, computed as the ordinary writer computes it and recorded
+/// as a reveal by `revealer`; none for a zero radius (`0x0070B186`).
+pub(crate) fn entity_sight_footprint(
+    fog: &FogState,
     entity: &crate::sim::game_entity::GameEntity,
     config: &VisionConfig,
     height_grid: Option<&[u8]>,
     sight_ability: bool,
-    interner: &StringInterner,
-    recipient: InternedId,
-) {
-    let Some(admission) = entity_sight_admission(
+    revealer: InternedId,
+) -> Option<SightAdmission> {
+    entity_sight_admission(
         fog,
         entity,
-        recipient,
+        revealer,
         config,
         height_grid,
         sight_ability,
         None,
     )
-    .filter(|admission| admission.radius != 0) else {
-        return;
-    };
-    fog.release_alternate_sight(entity.stable_id());
-    for viewer in direct_reveal_viewers(fog, recipient, config, interner) {
-        fog.apply_sight(viewer, &admission, SightApply::Admit);
-        fog.alternate_sight_admissions
-            .insert((entity.stable_id(), viewer), admission.clone());
-    }
+    .filter(|admission| admission.radius != 0)
 }
 
 /// The footprint `TechnoClass::UpdateReveal @ 0x0070AF50` reveals for
@@ -1700,11 +1719,23 @@ fn source_keys(stable_id: u64) -> std::ops::RangeInclusive<(u64, InternedId)> {
 enum SightApply {
     /// An unchanged retained admission: current sight only.
     Mark,
-    /// A retained admission whose cell counters a bulk store overwrote: they
-    /// reveal again, and the source counts already hold it.
+    /// A retained admission revealed again (after a bulk store overwrote its
+    /// cells' counters, or by a further alternate UpdateReveal): the counters
+    /// reveal, and the source counts already hold it.
     Rereveal,
     /// A new admission: the counters reveal and it counts as a source.
     Admit,
+}
+
+/// What [`FogState::release_sight`] does with a footprint.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SightRelease {
+    /// A retained admission leaves: the counters' leave and its source count.
+    Withdraw,
+    /// A release without a retained admission: the counters' leave alone.
+    Leave,
+    /// A retained admission dropped without a release: its source count alone.
+    Forget,
 }
 
 fn resolve_bounds(entities: &EntityStore, path_grid: Option<&PathGrid>) -> (u16, u16) {
@@ -2094,15 +2125,14 @@ pub fn reveal_radius(
 /// `MapClass::RevealShroud @ 0x005673A0` as FireAt's RevealOnFire calls it
 /// (`0x006FF6F2`): radius 3 around the firer's coordinate, centred on its
 /// height-shifted cell, with `RevealByHeight=`'s line of sight (arg 7 = 1),
-/// for `house`'s map, bounded by the map `Size=` diamond (`map_size`) as
+/// for `house`'s map, bounded by `config`'s map `Size=` diamond as
 /// [`collect_reveal_cells`]. Each cell takes the fire leaf `0x004876F0`.
 pub(crate) fn reveal_shroud_on_fire(
     fog: &mut FogState,
     house: InternedId,
     coord: crate::sim::components::DriveCoord,
-    reveal_by_height: bool,
+    config: &VisionConfig,
     height_grid: Option<&[u8]>,
-    map_size: Option<(i32, i32)>,
 ) {
     if coord.x < 0 || coord.y < 0 {
         return;
@@ -2112,10 +2142,10 @@ pub(crate) fn reveal_shroud_on_fire(
         (coord.y / 256) as u16,
         REVEAL_ON_FIRE_RADIUS,
         coord.z,
-        reveal_by_height,
+        config.reveal_by_height,
         height_grid,
         (fog.width, fog.height),
-        map_size,
+        config.map_size,
     );
     fire_reveal_cells(fog, house, cells);
 }

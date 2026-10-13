@@ -2,11 +2,12 @@
 //! Foot takes on entering a cell while it chases a Foot TarCom.
 //!
 //! Walk infantry take the whole stop at their completion (`walk_host.rs`). A
-//! Drive or Ship unit takes it from the track terminal's PerCell
-//! (`track_host.rs`), a Hover unit from its Process (`hover_process.rs`),
-//! whenever its mission's Approach carries its approach
-//! (`Simulation::mission_owns_approach`). For any other unit the pursuit
-//! stage's in-range halt (`world_orders.rs`) stands in for the InRange arm,
+//! unit takes it from its locomotor's PerCell (a Drive or Ship track terminal
+//! in `track_host.rs`, Hover's Process, a Jumpjet's touchdown, a Teleport
+//! arrival) whenever its mission's Approach carries its approach
+//! (`Simulation::mission_owns_approach`). For a unit the pursuit stage still
+//! carries (a `CloseRange=` type, or a Cell target on a DestroyableCliffs
+//! tile), its in-range halt (`world_orders.rs`) stands in for the InRange arm,
 //! tested each frame, and only the `OpenTopped=` arm runs at PerCell.
 
 use super::ground_pose;

@@ -135,7 +135,7 @@ python tools/projectile_oracle/bridge_render_art_state.py --check
 ```
 
 The development extraction is `/tmp/bridge-projectile-input-assets`; the shared
-native-oracle Python is `/Users/halvor/Documents/vera20k-dev/.venv/bin/python`.
+native-oracle Python is `~/Documents/vera20k-dev/.venv/bin/python`.
 Root independently reproduced the check in
 `/tmp/bridge-projectile-root-native-art-check.log`. The original input/draw
 corpus fingerprints are unchanged by this separate extended witness.

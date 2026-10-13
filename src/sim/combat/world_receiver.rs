@@ -678,11 +678,12 @@ pub(crate) fn commit_entities(
         {
             death.combat_light_requests.push(effect);
         }
-        // `0x00701D71..0x00701D9B`: a Psychedelic hit that turns its target
-        // berserk takes it out of its team, with its idle order, before the
-        // receiver clears its target and queues Hunt. Here the removal runs
-        // before the receiver's berserk timer and flag writes, which it does
-        // not read.
+        // `0x00701D71..0x00701DB4`: a Psychedelic hit that turns its target
+        // berserk takes it out of its team, with its idle order
+        // (`0x006EA870`), clears its target (`vt+0x3C8(0)`) and queues Hunt
+        // (`vt+0x1E8(0xF, 0)`). The removal runs here, before the receiver's
+        // timer and flag writes, which it does not read; the other two follow
+        // them, as natively.
         let starts_berserk = receiver_outcome
             .and_then(|resolved| resolved.outcome.psychedelic_value)
             .is_some()
@@ -708,6 +709,7 @@ pub(crate) fn commit_entities(
             latch_hostile_hit,
             uncloak_after_damage,
             threat_feedback,
+            psychedelic,
         }) = receiver_health::commit_receiver_health(
             event,
             &mut world.substrate.entities,
@@ -722,6 +724,24 @@ pub(crate) fn commit_entities(
         else {
             continue;
         };
+        if starts_berserk {
+            // The class setter: Infantry's (`0x0051B1F0`) also resets its
+            // action and path head.
+            let _ = world.assign_target_represented(
+                target_id,
+                None,
+                Some(rules),
+                overlay_registry,
+                run.effects(),
+            );
+            let _ = world.mission_queue_exact(
+                target_id,
+                MissionId::from_known(MissionType::Hunt),
+                0,
+                world.session.binary_frame,
+                &crate::sim::mission::authority::EntityReadyInputProvider,
+            );
+        }
 
         // Techno701900 result1 (switch table702D24 entry 1) selects
         // 702713..7027A9: two distinct Voc750E20 retained-coordinate requests
@@ -729,8 +749,10 @@ pub(crate) fn commit_entities(
         // 702775) holds the protected-Techno call7027E9 before common7027F7.
         // Each request reaches the existing synchronous sound boundary before
         // later receiver consequences can spend Main.
-        // The exact-zero override70202E takes the death arm instead.
-        let result_one_arm = receive_state == damage::DamageState::Damaged && !entered_techno_death;
+        // The exact-zero override70202E takes the death arm instead, and the
+        // Psychedelic arm returns its result 1 before this tail.
+        let result_one_arm =
+            receive_state == damage::DamageState::Damaged && !entered_techno_death && !psychedelic;
         if result_one_arm && sound_enabled {
             for _ in 0..2 {
                 if let Some(target) = world.substrate.entities.get(target_id)
@@ -1174,11 +1196,7 @@ pub(crate) fn commit_entities(
                             EntityCategory::Infantry
                                 | EntityCategory::Unit
                                 | EntityCategory::Aircraft
-                        ) && target
-                            .mission
-                            .current()
-                            .known()
-                            .and_then(|mission| rules.mission_control.entry(mission))
+                        ) && crate::sim::mission::control::current_control(rules, &target.mission)
                             .is_some_and(|entry| entry.no_threat && !entry.zombie)
                     })
                 && world.team_script_vm.team_for_member(target_id).is_none()
@@ -1752,6 +1770,7 @@ fn finish_concrete_death(
         // UnInit, and falls to its impact (a Jumpjet: `jumpjet_crash_impact`).
         effects.despawned_ids.push(dead_id);
     } else if category == EntityCategory::Unit
+        && !crashable
         && world
             .substrate
             .entities
@@ -1759,7 +1778,9 @@ fn finish_concrete_death(
             .is_some_and(|entity| entity.sinking.is_active())
     {
         // Unit738493 checks +3CD after Mark(UP), passenger/crew handling and
-        // Crashable. A sinking hull retains Alive and its Logic/display slot.
+        // Crashable; a Crashable type its Crash refused is UnInit even when
+        // sinking (`0x0073847F`). A sinking hull retains Alive and its
+        // Logic/display slot.
         effects.despawned_ids.push(dead_id);
     } else {
         effects.immediate_uninit_ids.push(dead_id);
@@ -1852,10 +1873,9 @@ enum SpecialArmTarget {
 /// at `0x00469A3F`. So the caller runs neither, and runs the shared tail below
 /// `LAB_00469AA4` after this returns. `owner` is the bullet's `+0xB0`.
 ///
-/// RESIDUAL: the ElectricAssault (`0x0046937A`), IsLocomotor (`0x004694CB`),
-/// Airstrike (`0x00469705`) and DirectRocker (`0x0046978E`) bodies are not
-/// ported; those arms claim the impact and do nothing else (see
-/// `SpecialDetonationAction`).
+/// RESIDUAL: the ElectricAssault (`0x0046937A`), Airstrike (`0x00469705`)
+/// and DirectRocker (`0x0046978E`) bodies are not ported; those arms claim
+/// the impact and do nothing else (see `SpecialDetonationAction`).
 fn run_special_detonation_arm(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1927,8 +1947,31 @@ fn run_special_detonation_arm(
                 world.disguise_as(owner, object, !matches!(target, SpecialArmTarget::None));
             }
         }
+        SpecialDetonationAction::Locomotor => {
+            // 0x004694CB..0x00469700: the bullet's strength (+0x6C) and the
+            // warhead's Locomotor= class (+0x15C).
+            let Some(warhead) = rules.warhead(world.interner.resolve(detonation.payload.warhead))
+            else {
+                return;
+            };
+            let target = match target {
+                SpecialArmTarget::Object(id) => {
+                    crate::sim::locomotor_lift::LocomotorShotTarget::Object(id)
+                }
+                SpecialArmTarget::Cell => crate::sim::locomotor_lift::LocomotorShotTarget::Cell,
+                SpecialArmTarget::None => crate::sim::locomotor_lift::LocomotorShotTarget::None,
+            };
+            world.locomotor_detonation(
+                owner,
+                target,
+                detonation.payload.base_damage,
+                warhead.locomotor,
+                rules,
+                overlay_registry,
+                effects,
+            );
+        }
         SpecialDetonationAction::ElectricAssault
-        | SpecialDetonationAction::Locomotor
         | SpecialDetonationAction::Airstrike
         | SpecialDetonationAction::DirectRocker => {
             log::debug!(

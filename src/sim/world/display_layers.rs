@@ -27,6 +27,11 @@ impl DisplayLayer {
     pub(crate) fn from_index(index: u8) -> Option<Self> {
         (index < 5).then_some(Self(index))
     }
+
+    /// The native layer number vt+0x78 returns.
+    pub(crate) fn index(self) -> u8 {
+        self.0
+    }
 }
 
 #[derive(Debug, Default, Clone)]

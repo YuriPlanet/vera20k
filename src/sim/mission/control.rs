@@ -5,8 +5,26 @@
 
 pub use crate::rules::mission_data::{MissionControl, MissionControlEntry};
 
-use super::MissionId;
+use super::{MissionCom, MissionId};
 use crate::rules::ruleset::RuleSet;
+
+/// `MissionClass::Get_MissionControl @ 0x005B3A00`: the MissionControl slot
+/// of the object's current mission (`+0xAC`) in the table at `0x00A8E3A8`.
+///
+/// `None` for no mission (-1). Native then reads the 0x20 bytes before the
+/// table: zero through `+7` (`0x00A8E38C..0x00A8E38F` has no reference), then
+/// the vtable pointer `0x007E9E64` stored at `0x00A8E390` (`0x004E6BFD`). So
+/// `NoThreat=`, `Zombie=`, `Recruitable=` and `Paralyzed=` read clear, and
+/// `Retaliate=` and `Scatter=` read set.
+pub(crate) fn current_control<'a>(
+    rules: &'a RuleSet,
+    mission: &MissionCom,
+) -> Option<&'a MissionControlEntry> {
+    mission
+        .current()
+        .known()
+        .and_then(|mission| rules.mission_control.entry(mission))
+}
 
 /// `0x005B36E0`: whether MissionControl lets an object on `mission` be
 /// recruited: always with none (-1), else the mission's `Recruitable=`

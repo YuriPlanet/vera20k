@@ -178,9 +178,8 @@ fn combatant_selection(
             .get(*id)
             .is_some_and(|entity| entity.lifecycle.object_alive && player_owned(entity.owner()))
     };
-    // Final7325C0 calls the existing dynamic13C prefix and Object138 owner.
-    // RobotOffline+1C8 requires the separate powered-unit lifecycle; the
-    // existing prefix documents that unmodeled prerequisite.
+    // Final7325C0 calls the existing dynamic13C prefix (which refuses the
+    // offline latch +1C8) and Object138 owner.
     let combatant = |id: &u64| {
         sim.entities().get(*id).is_some_and(|entity| {
             entity.category != EntityCategory::Structure
@@ -303,10 +302,6 @@ pub(crate) struct CategoryNavigation {
 }
 
 impl CategoryNavigation {
-    fn reset(&mut self, mode: &mut crate::app::types::TypeSelectInputState) {
-        *self = Self::default();
-        *mode = Default::default();
-    }
     /// Original733160 scans backward and stable-erases one last match. It
     /// changes neither category, selection mode nor the independent map byte.
     pub(crate) fn pointer_expired(&mut self, id: u64) {
@@ -366,11 +361,15 @@ impl CategoryNavigation {
     }
 }
 
-/// World replacement invalidates pointer-based native navigation candidates.
-/// Stable IDs can be reused by a new/restored world, so clearing only absent
-/// IDs is insufficient. Persistent bindings and CursorCheat are untouched.
+/// ClearScene6853D8..685408 destroys outgoing objects: Unit735892,
+/// Infantry517E75 and Building43BD67 dispatch7258D0 ->733160. Retire their
+/// pointer candidates even when incoming objects reuse the same stable IDs.
+/// Categories845560/845564, modeB0FE54, scopeB0FE64 and held input are process
+/// state; neither fresh Full_Init nor saved load resets them here. The separate
+/// saved CurrentObjects vector replaces the outgoing selection ledger later.
+/// Body/caller evidence and executed expiry: input_oracle/selection_navigation.
 pub(crate) fn reset_for_world_replacement(input: &mut crate::app::input::state::MatchInputState) {
-    input.category_navigation.reset(&mut input.type_select);
+    input.category_navigation.candidates.clear();
     input.selection_order.clear();
     input.selection_order_pending = false;
 }
@@ -674,57 +673,84 @@ mod tests {
     }
 
     #[test]
-    fn veterancy_world_replacement_drops_candidates_even_when_ids_are_reused() {
+    fn world_replacement_drops_candidates_and_preserves_process_navigation() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/input_oracle/selection_navigation.json",
+        ))
+        .unwrap();
+        let native = corpus["veterancy_cleanup_histories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == "all_pointers_expired_empty_snapshot")
+            .unwrap();
+        let outgoing: Vec<u64> =
+            serde_json::from_value(native["retained_navigation"].clone()).unwrap();
         let mut input = crate::app::input::state::MatchInputState::new(Default::default());
         input.category_navigation.prepare(
-            CategoryNavigationKind::Health,
+            CategoryNavigationKind::Veterancy,
             false,
-            vec![8, 3],
+            outgoing.clone(),
             vec![],
         );
-        input
-            .category_navigation
-            .record_category(CategoryNavigationKind::Health, 1);
-        input
-            .category_navigation
-            .record_category(CategoryNavigationKind::Veterancy, 2);
+        input.category_navigation.record_category(
+            CategoryNavigationKind::Veterancy,
+            native["veterancy_category"].as_u64().unwrap() as u8,
+        );
         input
             .type_select
             .finish_category_navigation(CategoryNavigationKind::Veterancy, true);
-        input.type_select.across_map = true;
-        input.selection_order = vec![8, 3];
+        input.type_select.across_map = native["across_map"].as_bool().unwrap();
+        input.type_select.press(
+            winit::keyboard::KeyCode::KeyT,
+            std::time::Instant::now(),
+            false,
+        );
+        input.selection_order = outgoing;
         input.selection_order_pending = true;
         input.cursor_coordinates = true;
 
-        // This exact helper is called by accepted map replacement and prepared
-        // load commit. It is a Rust stale-ID regression, not native save proof.
+        // ClearScene6853D8..685408 destroys outgoing objects; each destructor
+        // dispatches7258D0 ->733160. The executed third expiry supplies the
+        // resulting empty vector and retained process latches. This shared
+        // replacement helper is not a full native save-stream execution.
         reset_for_world_replacement(&mut input);
-
+        let expired = &native["steps"][2];
+        let (candidates, health, veterancy) = input.category_navigation.navigation_view();
         assert_eq!(
-            input.category_navigation.navigation_view(),
-            (&[][..], None, None)
+            serde_json::json!(candidates),
+            expired["retained_navigation"]
         );
+        assert_eq!(health.map_or(-1, i64::from), expired["health_category"]);
         assert_eq!(
-            input.type_select.selection_scope_view(),
-            ("ordinary", false, None)
+            veterancy.map_or(-1, i64::from),
+            expired["veterancy_category"]
         );
+        assert!(
+            input
+                .type_select
+                .category_navigation_continues(CategoryNavigationKind::Veterancy)
+        );
+        assert_eq!(input.type_select.across_map, expired["across_map"]);
+        assert!(input.type_select.held());
+        assert!(input.type_select.owns_key(winit::keyboard::KeyCode::KeyT));
         assert!(input.selection_order.is_empty());
         assert!(!input.selection_order_pending);
         assert!(input.cursor_coordinates);
+
+        // A reused stable ID in the incoming selection cannot resurrect an
+        // outgoing navigation candidate. The next Y advances only its retained
+        // category, matching the fourth original command in this history.
         let category = input.category_navigation.prepare(
             CategoryNavigationKind::Veterancy,
             input
                 .type_select
                 .category_navigation_continues(CategoryNavigationKind::Veterancy),
-            vec![8],
+            vec![20],
             vec![],
         );
-        assert_eq!(input.category_navigation.candidates, vec![8]);
-        assert_eq!(category, 0);
-        assert_eq!(
-            input.category_navigation.veterancy_category, None,
-            "last category writes after feedback"
-        );
+        assert!(input.category_navigation.candidates.is_empty());
+        assert_eq!(category, native["steps"][3]["veterancy_category"]);
     }
 
     #[test]

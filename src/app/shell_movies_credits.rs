@@ -406,7 +406,12 @@ impl App {
         state.audio.stop_theme();
         let saved_score_volume = state.persistence.options_profile.score_volume;
         if saved_score_volume == 0.0 {
-            Self::set_credits_score_volume(state, CREDITS_SILENT_SCORE_VOLUME);
+            crate::app::persistence::options::audio::apply_volume(
+                state,
+                crate::app::persistence::options::audio::AudioVolume::Score,
+                CREDITS_SILENT_SCORE_VOLUME,
+                false,
+            );
         }
         state.audio.queue_theme(CREDITS_THEME, now_ms);
         let roll = CreditsRoll::new(
@@ -437,17 +442,13 @@ impl App {
             return;
         };
         state.audio.stop_theme();
-        Self::set_credits_score_volume(state, session.saved_score_volume);
+        crate::app::persistence::options::audio::apply_volume(
+            state,
+            crate::app::persistence::options::audio::AudioVolume::Score,
+            session.saved_score_volume,
+            false,
+        );
         Self::finish_credits_roll_return(state);
-    }
-
-    /// `OptionsClass::Set_Score_Volume(volume, 0)` @ `0x005FA4A0`: the
-    /// profile field and the theme output both take the value.
-    fn set_credits_score_volume(state: &mut AppState, volume: f32) {
-        state.persistence.options_profile.score_volume = volume;
-        if let Some(music) = state.audio.music_player.as_mut() {
-            music.set_volume(f64::from(volume));
-        }
     }
 
     fn finish_credits_roll_return(state: &mut AppState) {

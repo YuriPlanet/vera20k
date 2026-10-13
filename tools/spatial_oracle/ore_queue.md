@@ -289,7 +289,7 @@ creates new ore while growth-off rebuilds seed nothing. Queue resets retain
 backing allocations. Serialized queue/timer ownership and snapshot layout remain
 unchanged.
 
-The historical enqueue section of the [validation receipt](ore_queue.validation.json) records the 60-case Rust/native
+The historical enqueue section of the validation receipt (`tools/spatial_oracle/ore_queue.validation.json`, in git at 1b1a8b43e) records the 60-case Rust/native
 comparison, the two pre-fix failing regressions, connected production callers,
 9,416 passing mandatory-retail library tests (226 ignored), successful clippy,
 436 Python checks (4 skipped), and the unchanged simulation field ratchet. These
@@ -376,7 +376,7 @@ neighbor observations over 2,600 ticks. The 800x600 GPU readback and v5 sealed
 receipts passed the production observation validator; they do not certify native
 pixels or the whole Scenario. Reproduce the edge run with
 `tools/map_observation.ore-spread.example.json` through the existing observation
-wrapper. The `natural_spread_followup` stage in `ore_queue.validation.json` keeps
+wrapper. The `natural_spread_followup` stage in `ore_queue.validation.json` (in git at 1b1a8b43e) keeps
 source/native/binary/input/result hashes and the earlier enqueue evidence intact.
 The value-owner consolidation also resolves issue #713. Adjacent authored-crate
 Land1-versus5 admission remains issue #993, unchanged by this kernel move.

@@ -9,6 +9,9 @@
 //!      legacy-field clears. Changes require causal behavior or hash-composition
 //!      evidence before updating the Rust regression receipt.
 //!   2. The verb-write + retaliation-gate tripwires (added below the gate).
+//!
+//! The `tools/spatial_oracle/*_replay/` and `foot_bridge_layer*.replay.json`
+//! receipts cited below left the tree; `git show 1b1a8b43e:<path>` retrieves them.
 
 use super::*;
 use crate::map::entities::{EntityCategory, MapEntity};

@@ -57,6 +57,7 @@ mod mutation;
 mod native_cell;
 mod pavement;
 mod recalc_catalog;
+mod saved_terrain;
 mod tubes;
 
 #[cfg(test)]
@@ -80,6 +81,7 @@ pub(crate) use native_cell::CellClassProjectionView;
 pub use native_cell::{NativeCellQuery, SharedCellDummy, SharedCellDummySnapshot};
 use recalc_catalog::BridgeRecalcCatalog;
 pub(crate) use recalc_catalog::BridgeRecalcCatalogError;
+pub(crate) use saved_terrain::{SavedTerrainError, SavedTerrainTemplate};
 #[cfg(test)]
 pub(crate) use tests::{
     bridge_constructor_terrain, install_bridge_batch_test_catalog,
@@ -173,7 +175,7 @@ pub struct BridgeLayer {
     pub direction: BridgeDirection,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResolvedTerrainCell {
     pub rx: u16,
     pub ry: u16,
@@ -343,7 +345,7 @@ impl ResolvedTerrainCell {
 /// This is the load-time descriptor only: the animation's frame set and cadence
 /// come from the named AnimType's `art(md).ini` row, and the spawner owns the
 /// AnimClass lifecycle.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TerrainTileAnimation {
     pub rx: u16,
     pub ry: u16,
@@ -1108,7 +1110,7 @@ impl ResolvedTerrainGrid {
         state.apply(&mut self.cells[index]);
         if !same_entry {
             if let Some(before) = before {
-                if let Err(error) = self.refresh_resident_bridge_presentation(index) {
+                if let Err(error) = self.refresh_saved_cell_presentation(index) {
                     self.cells[index] = before;
                     log::error!("terrain snapshot presentation unavailable at {rx},{ry}: {error}");
                     return false;

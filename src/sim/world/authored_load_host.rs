@@ -389,7 +389,7 @@ mod tests {
                 .expect("snapshot accepts the final bound owner")
                 .sim;
         restored.restore_after_snapshot_load().unwrap();
-        restored.retain_in_scenario_process_state_from(&sim);
+        restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
         assert_eq!(restored.rng_state(), sim.rng_state());
         assert_eq!(restored.state_hash(), sim.state_hash());
         assert_eq!(

@@ -132,9 +132,8 @@ fn trace_wall_sell_zone_repair_step(
 impl Simulation {
     /// G/command-bar Guard730D60 chooses each admitted actor's current
     /// navigation Cell before Player_Send_Command6FFBE0 emits mission11.
-    /// IsControllable700C40 owns the human/bunker/warp/slave gates; after
-    /// that predicate the additional IsActive7010D0 test is the current
-    /// weapon pair. Unit slave-manager/Harvester fallback bypasses both.
+    /// It admits an actor both IsControllable700C40 and IsActive7010D0
+    /// accept. Unit slave-manager/Harvester fallback bypasses both.
     /// Existing controllability lifecycle residuals remain documented at
     /// that owner. This is an input producer, never an event-execution gate.
     pub(crate) fn area_guard_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
@@ -142,9 +141,8 @@ impl Simulation {
         if actor.category == EntityCategory::Structure {
             return None;
         }
-        let object = self.object_type(actor.type_ref(), rules)?;
-        let ordinary = self.techno_player_controllable(id, rules)
-            && combat::combat_weapon::is_armed(actor, object);
+        let ordinary =
+            self.techno_player_controllable(id, rules) && self.techno_is_active(id, rules);
         let miner = actor.category == EntityCategory::Unit
             && (actor.slave_manager.is_some() || actor.is_harvester());
         if !ordinary && !miner {
@@ -667,11 +665,8 @@ impl Simulation {
                     .get(*entity_id)
                     .is_some_and(|e| e.is_deployed())
                     && !rules.is_some_and(|rules| {
-                        self.infantry_setter_receiver(
-                            *entity_id,
-                            crate::sim::components::NavTargetRef::cell(*target_rx, *target_ry),
-                            rules,
-                        ) || self.drive_unit_setter_receiver(*entity_id)
+                        self.infantry_setter_receiver(*entity_id, rules)
+                            || self.drive_unit_setter_receiver(*entity_id)
                     })
                 {
                     return false;
@@ -737,6 +732,7 @@ impl Simulation {
                         (*target_rx, *target_ry),
                         info.speed,
                         rules,
+                        overlay_registry,
                         frame_effects,
                     )
                 } else if !*queue
@@ -897,8 +893,8 @@ impl Simulation {
                         .is_some_and(|loco| loco.is_overridden())
                         && crate::sim::movement::locomotor_owner::piggyback_end_admitted(e)
                 });
-                if may_end && let Some(e) = self.substrate.entities.get_mut(*entity_id) {
-                    crate::sim::movement::locomotor_owner::end_admitted_piggyback(e);
+                if may_end {
+                    self.end_admitted_piggyback(*entity_id, rules);
                 }
                 // Ore-miner arm, last — retail runs it after the radio break,
                 // the navigation clear, the target clear and the path-cursor
@@ -1107,6 +1103,7 @@ impl Simulation {
                         (*target_rx, *target_ry),
                         info.speed,
                         rules,
+                        overlay_registry,
                         frame_effects,
                     )
                 } else {
@@ -1537,39 +1534,37 @@ impl Simulation {
                     return true;
                 }
                 let transport_ref = crate::sim::components::NavTargetRef::object(*transport_id);
-                let object_destination =
-                    if self.infantry_setter_receiver(*passenger_id, transport_ref, rules)
-                        || self
-                            .substrate
-                            .entities
-                            .get(*passenger_id)
-                            .is_some_and(|actor| {
-                                actor.category == crate::map::entities::EntityCategory::Unit
-                            })
-                    {
-                        // Infantry51F190 -> Foot4D76F8 ->6FFBE0 carries the
-                        // clicked object as Destination for Enter7. Event
-                        //4C747C preserves it; Infantry51AA40 samples its live
-                        //+4C through the shared coordinate owner after its
-                        //prelude (foot_navigation_coordinate corpus). Unit
-                        //738902 forwards the same Enter click to Foot4D76F8:
-                        //Enter7, NULL Target, clicked Object Destination. Its
-                        //Event4C747C receiver is Unit741970 (Steam3e81a617).
-                        let Ok(coord) = crate::sim::movement::nav_target_coordinate(
-                            transport_ref,
-                            Some(*passenger_id),
-                            &self.substrate.entities,
-                            self.resolved_terrain.as_ref(),
-                            Some((rules, &self.interner)),
-                        ) else {
-                            return false;
-                        };
-                        Some((transport_ref, coord))
-                    } else {
-                        // Aircraft retains its separate Cell adapter pending
-                        // its object-click/setter migration.
-                        None
+                let object_destination = if self.infantry_setter_receiver(*passenger_id, rules)
+                    || self
+                        .substrate
+                        .entities
+                        .get(*passenger_id)
+                        .is_some_and(|actor| {
+                            actor.category == crate::map::entities::EntityCategory::Unit
+                        }) {
+                    // Infantry51F190 -> Foot4D76F8 ->6FFBE0 carries the
+                    // clicked object as Destination for Enter7. Event
+                    //4C747C preserves it; Infantry51AA40 samples its live
+                    //+4C through the shared coordinate owner after its
+                    //prelude (foot_navigation_coordinate corpus). Unit
+                    //738902 forwards the same Enter click to Foot4D76F8:
+                    //Enter7, NULL Target, clicked Object Destination. Its
+                    //Event4C747C receiver is Unit741970 (Steam3e81a617).
+                    let Ok(coord) = crate::sim::movement::nav_target_coordinate(
+                        transport_ref,
+                        Some(*passenger_id),
+                        &self.substrate.entities,
+                        self.resolved_terrain.as_ref(),
+                        Some((rules, &self.interner)),
+                    ) else {
+                        return false;
                     };
+                    Some((transport_ref, coord))
+                } else {
+                    // Aircraft retains its separate Cell adapter pending
+                    // its object-click/setter migration.
+                    None
+                };
                 // Retask onto Enter; the target setter below owns combat cancellation.
                 self.queue_megamission(
                     *passenger_id,

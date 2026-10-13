@@ -7,21 +7,64 @@
     1,
     33621247
   ],
-  "scope": "Original B7/2B4/2B5 resources and 21 complete 60B7A0 ordinary child placements at three resolutions",
+  "scope": "Original B7/2B4/2B5 resources and 21 complete60B7A0 ordinary placements; original559D60 load controller, campaign CD scalars,734210 click clocks, six Scenario elapsed-clock controls; F0 resource, five geometry and twelve mode2 background controls",
   "assumptions": [
     "Pinned original resource addresses independently checked through PE RT_DIALOG tree; raw bytes and SHA256 retained",
     "Supplied retail 6x13 dialog base units map DLU through MulDiv rounding; Windows font metrics not emulated",
     "60C0C0 active dispatcher and 608500/608CD0 exclusions established by instruction inspection; only complete 60B7A0 is executed",
     "Parent origin0 with extent640x480,800x600,1024x768; original base800/600 globals remain untouched",
-    "Title, right-button and footer placement, painting, list input and persistence are outside this fixture"
+    "Title, right-button and footer placement, painting, list input and full native SAV persistence are outside this fixture",
+    "Controller rows execute559D60, progress623230/622800/622720 and original WWMouse methods with byte10=0 and nonpositive counts; window-stack count0 and inactive session+30D8=0 bound cleanup coverage",
+    "Lower loader AL and optional post-load mouse count are explicit fixture inputs; neither AL nor these rows proves native rollback, world restoration, audio cleanup or full media retry behavior",
+    "Physical BATTLEMD.INI from stock ra2md.mix/localmd.mix is SHA-pinned; all14 Battles CD values, missing default and retained7 pass original46CCF8..46CD1D/ReadInt5276D0",
+    "Original campaign constructor stores46CEBA..46CEC6 run with caller-established EBX=-1; full campaign registry and AbstractType admission are outside the slice",
+    "CD request setter4790B0 executes with byte89E3A0=0/1/2 and requests-3/-2/-1/0/1/2/17; drive search and physical media dialogs are not executed",
+    "Click-clock reset executes734210 with two explicit timeGetTime returns, including zero/wrap controls; group/reset globals are observed, not a whole selection or input-state claim",
+    "Six elapsed-clock cases reuse ScenarioFixture full689310Save/689470Load/683560 postread with supplied+614 start,+618 opaque word,+61C accumulated buckets and ordered OS milliseconds. Real6C8C40 shifts timeGetTime by4; saved stopped state, source resume, loaded resume and distinct+620/+628 auxiliary reset are observed",
+    "Elapsed controls cover running/stopped/zero/same-bucket/millisecond rollover and accumulation wrap. They do not execute world load, UI/offline pause, score-seconds consumption or assert a complete save transaction clock prefix",
+    "F0 geometry supplies initial Windows6x13 DLU conversions and cached C6 benchmark300x163, then executes775BC0 callbacks in775BA0 child-then-parent order,60C540/60C7D0 classification and777060/777080 centering. Windows font metrics, enumeration transport and non-client borders are not emulated",
+    "F0 mode2 controls execute full621E90 with supplied record/cache/window extent and original69BBE0/palette getters. Surface copy and shape draw calls record exact original arguments; glyph/SHP rasterization and Win32 parent-message scheduling are excluded. Existing Alternate887310 is read and updated only within the dialog rectangle, not cleared or recomposed",
+    "Mode2 literals are read from original844C44/48/4C/50 and844BA4/BA0/B9C pointers. Inactive chooses neutral, active chooses side0/1/other; missing selected shape or palette suppresses drawing without fallback. These are supplied session/side controls, not a whole559D60 session teardown prefix"
   ],
   "substitutions": [
-    "Reuse native_child_case hooks for supplied GetParent/GetWindowRect/MoveWindow and true69BBE0; original placement instructions unchanged"
+    "Reuse native_child_case hooks for supplied GetParent/GetWindowRect/MoveWindow and true69BBE0; original placement instructions unchanged",
+    "Controller CSF734E60 returns TXT_LOADING text; lower window creation622650 supplies F0 handle;54F720 input service and608070 dialog-record teardown are platform seams",
+    "Controller lower structured-storage loader67E440 supplies AL/post-load mouse count; Win32 mutex, ShowCursor counter and window services return declared OS results; original wrapper/WWMouse instructions remain unchanged",
+    "Reuse lexical physical values and bridge_anim_inputs.Reader native INI cache/CRT environment; MIX/file loading and complete campaign registry creation are not emulated; no integer parser or setter result is substituted",
+    "Click-clock reset timeGetTime returns each declared ordered pair; original subtraction, two calls and sentinel writes execute unchanged",
+    "Elapsed controls retain the existing Scenario in-memory IStream, empty arrays/string admission and diagnostic transport; only the timeGetTime IAT is replaced for the real clock body, and original executable bytes remain unchanged",
+    "F0 reuses shell_relayout.Machine window-record/Win32 transport; preexisting cached surfaces expose supplied vtable copy methods, and4AED70 drawing is an argument-recording boundary. Original621E90 and its branches execute unchanged"
   ],
   "entry_points": {
     "browser": "0x00558DD0",
     "dispatcher": "0x0060C0C0",
-    "ordinary_child": "0x0060B7A0"
+    "ordinary_child": "0x0060B7A0",
+    "controller_load": "0x00559D60",
+    "progress_create": "0x00623230",
+    "mouse_get": "0x007B89F0",
+    "mouse_hide": "0x007B9930",
+    "mouse_show": "0x007B9750",
+    "campaign_cd_reader": "0x0046CCF8",
+    "read_int": "0x005276D0",
+    "campaign_default_stores": "0x0046CEBA",
+    "cd_request_setter": "0x004790B0",
+    "postload_clock_reset": "0x00734210",
+    "scenario_save": "0x00689310",
+    "scenario_load": "0x00689470",
+    "scenario_postread": "0x00683560",
+    "scenario_clock": "0x006C8C40",
+    "progress_resize": "0x00775BC0",
+    "progress_center": "0x00777060",
+    "progress_center_body": "0x00777080",
+    "progress_fullscreen": "0x0060C540",
+    "progress_mode2": "0x0060C7D0",
+    "progress_background": "0x00621E90",
+    "session_active": "0x0069BBE0",
+    "palette_as": "0x0072AFF0",
+    "palette_y": "0x0072B010",
+    "palette_neutral": "0x0072B030"
   },
-  "payload_sha256": "969f6d3b485487f9c3e09890304057d60016dbc3f6ca4cf0d472c3c27b9dcac2"
+  "command": "python -m tools.storage_oracle.saved_game_layout --check",
+  "replay_command": "python -m tools.storage_oracle.saved_game_layout",
+  "payload_sha256": "64301308cc759623c68fe43a5981e68e591f266d387daff962f1f1f60fd86a27"
 }

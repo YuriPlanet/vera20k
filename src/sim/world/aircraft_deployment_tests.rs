@@ -90,7 +90,7 @@ fn mission_only_survives_snapshot_limbo_and_ordinary_type_reveal() {
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let saved = GameSnapshot::save(&sim, 0, 0, "deployment", 0);
     let mut restored = GameSnapshot::load(&saved).unwrap().sim;
-    restored.retain_in_scenario_process_state_from(&sim);
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     for world in [&mut sim, &mut restored] {
         assert!(world.substrate.entities.get(id).unwrap().is_mission_only());
         assert!(

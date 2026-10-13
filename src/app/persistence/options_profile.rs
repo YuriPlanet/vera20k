@@ -265,6 +265,13 @@ impl RetailOptionsLoad {
 }
 
 impl RetailOptionsProfile {
+    /// `OptionsClass::Set_Score_Volume` at `0x005FA4A0` stores an upper-only
+    /// clamped f32. Reuse the INI reader's normalization so live setters retain
+    /// negative and unordered inputs instead of copying the output clamp.
+    pub(crate) fn set_score_volume(&mut self, value: f64) {
+        self.score_volume = upper_only_volume(value);
+    }
+
     /// Seed native constructor defaults with the screen fields already chosen
     /// by the command-line switch pass.
     ///
@@ -327,8 +334,7 @@ impl RetailOptionsProfile {
                 upper_only_volume(audio.read_double("SoundVolume", f64::from(self.sound_volume)));
             self.voice_volume =
                 upper_only_volume(audio.read_double("VoiceVolume", f64::from(self.voice_volume)));
-            self.score_volume =
-                upper_only_volume(audio.read_double("ScoreVolume", f64::from(self.score_volume)));
+            self.set_score_volume(audio.read_double("ScoreVolume", f64::from(self.score_volume)));
             self.is_score_repeat = audio.read_bool("IsScoreRepeat", self.is_score_repeat);
             self.is_score_shuffle = audio.read_bool("IsScoreShuffle", self.is_score_shuffle);
             self.in_game_music = audio.read_bool("InGameMusic", self.in_game_music);
@@ -625,6 +631,28 @@ mod tests {
         assert!(!profile.is_score_shuffle);
         assert_eq!(profile.sound_latency, 9);
         assert!(profile.in_game_music);
+    }
+
+    /// Executed Options5FA4A0 controls retain the input/store f32 bits,
+    /// including upper clamp, signed zero, negative and nonfinite values.
+    #[test]
+    fn score_volume_store_matches_native_options_setter() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/sound_theme_metadata.json",
+        ))
+        .unwrap();
+        let cases = corpus["score_volume_cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 16);
+        for case in cases {
+            let input = f32::from_bits(case["input_f32_bits"].as_u64().unwrap() as u32);
+            let mut profile = RetailOptionsProfile::default();
+            profile.set_score_volume(f64::from(input));
+            assert_eq!(
+                profile.score_volume.to_bits(),
+                case["stored_f32_bits"].as_u64().unwrap() as u32,
+                "{case}"
+            );
+        }
     }
 
     #[test]

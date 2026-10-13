@@ -1767,6 +1767,50 @@ pub(crate) fn next_native_loading_frame(state: &AppState) -> Option<NextLoadingF
     Some(session.next_frame)
 }
 
+/// Show the static F0 saved-load progress dialog before synchronous resource
+/// preparation. Original559D60 invokes623230 with TXT_LOADING and no Cancel
+/// caption. This is independent of fresh scenario artwork, milestones or audio.
+/// The retained B7 browser is not painted or mutated, so failure can redraw it.
+/// The dialog paints no pointer; the window's own stays as the frame owner
+/// last set it, hidden wherever mouse.sha loaded.
+pub(crate) fn present_saved_game_loading(state: &mut AppState) {
+    if !crate::app::App::ensure_skirmish_shell_chrome(state) {
+        log::warn!("Saved-game loading dialog has no shell chrome");
+        return;
+    }
+    let result = (|| -> anyhow::Result<()> {
+        let output = state
+            .renderer
+            .gpu
+            .surface
+            .get_current_texture()
+            .map_err(|error| anyhow::anyhow!("saved-game loading surface: {error}"))?;
+        let mut encoder =
+            state
+                .renderer
+                .gpu
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Saved Game Loading"),
+                });
+        crate::app::frontend::skirmish_shell_render::render_saved_game_loading(
+            state,
+            &mut encoder,
+            &output.texture,
+        )?;
+        state
+            .renderer
+            .gpu
+            .queue
+            .submit(std::iter::once(encoder.finish()));
+        output.present();
+        Ok(())
+    })();
+    if let Err(error) = result {
+        log::warn!("Saved-game loading dialog presentation failed: {error:#}");
+    }
+}
+
 /// After the load gamemd switches to the game mode and shows black until
 /// the first game frame (`0x00683E07..0x00683E1C`, again at
 /// `0x0052EAA1..0x0052EAEB`); the tactical install runs under it.

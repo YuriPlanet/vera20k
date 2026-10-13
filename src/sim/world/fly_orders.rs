@@ -92,7 +92,7 @@ impl Simulation {
             self.foot_null_destination(id, Some(rules), None, frame_effects);
             return;
         };
-        if !self.begin_foot_destination(id, true) {
+        if !self.begin_foot_destination(id, true, Some(rules), None, frame_effects) {
             return;
         }
         let entity = self.substrate.entities.get_mut(id).unwrap();

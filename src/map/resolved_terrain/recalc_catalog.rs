@@ -10,6 +10,7 @@ use super::build::{
 };
 use super::tubes::auto_tube_direction_from_bases;
 use super::*;
+use crate::map::tile_variant_selector::TileVariantSelector;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum BridgeRecalcCatalogError {
@@ -124,11 +125,11 @@ fn read_resident_tmp(
     })
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct BridgeRecalcCatalog {
     heads: HashMap<u16, ResidentTmp>,
     files: HashMap<u16, Box<[ResidentTmp]>>,
-    selector_table: Option<[u8; 64]>,
+    selector: TileVariantSelector,
     permissions: Vec<(bool, bool)>,
     registered_names: Vec<Vec<u8>>,
     pub(super) terrain_rules: TerrainRules,
@@ -164,6 +165,10 @@ impl BridgeRecalcCatalog {
         Ok(self.file(tile, variant)?.tactical(sub).clone())
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "distinct native retained/draw subtile and Main continuation inputs"
+    )]
     fn presentation(
         &self,
         tile: u16,
@@ -172,6 +177,7 @@ impl BridgeRecalcCatalog {
         rx: u16,
         ry: u16,
         clear_fallback: bool,
+        raw_main_draw: &mut dyn FnMut() -> u32,
     ) -> Result<BridgePresentation, BridgeRecalcCatalogError> {
         let pristine = self.file(tile, 0)?;
         let count = self.files[&tile].len() as u8;
@@ -180,25 +186,30 @@ impl BridgeRecalcCatalog {
         // Native sentinel branches bypass the damaged gate altogether.
         let variant = if clear_fallback || ordinary_variant_selection_enabled(count, false, damaged)
         {
-            let table =
-                self.selector_table
-                    .as_ref()
-                    .ok_or(BridgeRecalcCatalogError::Unsupported {
-                        tile,
-                        effect: "uninitialized process terrain variant table",
-                    })?;
-            crate::map::tile_variant_selector::select_from_initialized_table(
-                table,
-                i32::from(rx),
-                i32::from(ry),
+            self.selector.select_variant(
+                (i32::from(rx), i32::from(ry)),
                 retained_sub,
-                source.template_width_cells,
-                source.template_height_cells,
+                (source.template_width_cells, source.template_height_cells),
                 count,
+                raw_main_draw,
             )
         } else {
             0
         };
+        self.presentation_for_variant(tile, retained_sub, draw_sub, clear_fallback, variant)
+    }
+
+    fn presentation_for_variant(
+        &self,
+        tile: u16,
+        retained_sub: u8,
+        draw_sub: u8,
+        clear_fallback: bool,
+        variant: u8,
+    ) -> Result<BridgePresentation, BridgeRecalcCatalogError> {
+        let pristine = self.file(tile, 0)?;
+        let damaged = !clear_fallback && pristine.tactical(retained_sub).has_damaged_data;
+        let count = self.files[&tile].len();
         let selected = self.file(tile, variant)?;
         let tactical = self.tactical_metadata(tile, draw_sub, variant)?;
         Ok(BridgePresentation {
@@ -244,7 +255,7 @@ impl BridgeRecalcCatalog {
                 })
                 .collect(),
         );
-        self.selector_table = Some(table);
+        self.selector = TileVariantSelector::from_initialized(table);
         self
     }
 
@@ -254,7 +265,7 @@ impl BridgeRecalcCatalog {
         rules: &TerrainRules,
         lat_enabled: bool,
         cliff_back_impassability: u8,
-        selector_table: Option<[u8; 64]>,
+        selector: TileVariantSelector,
     ) -> Self {
         // Span construction and the queued Recalc rectangle have no family
         // gate. Registered ordinary sources and later LAT replacements must
@@ -268,7 +279,7 @@ impl BridgeRecalcCatalog {
             cliff_back_impassability,
             (0..theater.lookup.len() as i32).filter(|_| has_bridge_family),
         );
-        catalog.selector_table = selector_table;
+        catalog.selector = selector;
         catalog
     }
 
@@ -393,7 +404,7 @@ impl BridgeRecalcCatalog {
         Self {
             heads,
             files,
-            selector_table: None,
+            selector: TileVariantSelector::default(),
             permissions,
             registered_names,
             terrain_rules: rules.clone(),
@@ -410,6 +421,63 @@ impl BridgeRecalcCatalog {
                 .and_then(|set| theater.lookup.bounds().get(usize::from(set)))
                 .map(|bounds| bounds.start),
         }
+    }
+
+    fn presentation_tile(&self, cell: &ResolvedTerrainCell, clear_tile: u16) -> (u16, bool) {
+        let fallback = cell.final_tile_index < 0
+            || cell.final_tile_index == 0xffff
+            || cell.final_tile_index as usize >= self.permissions.len();
+        (
+            if fallback {
+                clear_tile
+            } else {
+                cell.final_tile_index as u16
+            },
+            fallback,
+        )
+    }
+
+    pub(super) fn bind_selector(&mut self, selector: TileVariantSelector) {
+        self.selector = selector;
+    }
+
+    /// Mouse Load5BE657 calls546DA0 after Cell bodies are restored. The pass
+    /// only selects resident files; it never calls Fill or RecalcAttributes.
+    /// Native executed controls: bridge_recalc_presentation.json/load_selector_cases.
+    pub(super) fn select_loaded_variant(
+        &self,
+        cell: &ResolvedTerrainCell,
+        clear_tile: u16,
+        selector: &mut TileVariantSelectionContext<'_, '_>,
+    ) -> Result<u8, BridgeRecalcCatalogError> {
+        let fallback = cell.final_tile_index == 0xffff
+            || cell.final_tile_index >= self.permissions.len() as i32;
+        let tile = if fallback {
+            clear_tile
+        } else {
+            u16::try_from(cell.final_tile_index).map_err(|_| {
+                BridgeRecalcCatalogError::Uncached {
+                    tile: cell.final_tile_index,
+                }
+            })?
+        };
+        let pristine = self.file(tile, 0)?;
+        let count = self.files[&tile].len() as u8;
+        if !fallback && count <= 1 {
+            return Ok(0);
+        }
+        let source = pristine.tactical(cell.final_sub_tile);
+        if !fallback && source.has_damaged_data {
+            return Ok(u8::from(cell.bridge_facts.raw_flags & 0x2000 != 0));
+        }
+        Ok(selector.select_variant(
+            i32::from(cell.rx),
+            i32::from(cell.ry),
+            cell.final_sub_tile,
+            source.template_width_cells,
+            source.template_height_cells,
+            count,
+        ))
     }
 
     pub(super) fn metadata(
@@ -557,37 +625,63 @@ impl ResolvedTerrainGrid {
     pub(crate) fn refresh_resident_bridge_presentation(
         &mut self,
         index: usize,
+        raw_main_draw: &mut dyn FnMut() -> u32,
     ) -> Result<(), LoadCellRecalcError<&'static str>> {
         let catalog = self
             .bridge_recalc_catalog
-            .as_ref()
+            .clone()
             .ok_or(LoadCellRecalcError::MissingResidentInputs)?;
+        self.refresh_cell_presentation(&catalog, index, Some(raw_main_draw))
+    }
+
+    /// Snapshot scalar restoration retains its saved selection until the
+    /// ordered loaded-cell pass has advanced the candidate process selector.
+    pub(super) fn refresh_saved_cell_presentation(
+        &mut self,
+        index: usize,
+    ) -> Result<(), LoadCellRecalcError<&'static str>> {
+        let catalog = self
+            .bridge_recalc_catalog
+            .clone()
+            .ok_or(LoadCellRecalcError::MissingResidentInputs)?;
+        self.refresh_cell_presentation(&catalog, index, None)
+    }
+
+    pub(super) fn refresh_cell_presentation(
+        &mut self,
+        catalog: &BridgeRecalcCatalog,
+        index: usize,
+        raw_main_draw: Option<&mut dyn FnMut() -> u32>,
+    ) -> Result<(), LoadCellRecalcError<&'static str>> {
         let cell = self
             .cells
             .get(index)
             .ok_or(LoadCellRecalcError::CellIndexOutOfBounds { index })?;
-        let clear_fallback = cell.final_tile_index < 0
-            || cell.final_tile_index == 0xffff
-            || cell.final_tile_index as usize >= catalog.permissions.len();
-        let tile = if clear_fallback {
-            self.clear_tile_id
+        let (tile, clear_fallback) = catalog.presentation_tile(cell, self.clear_tile_id);
+        let draw_sub = if clear_fallback {
+            0
         } else {
-            cell.final_tile_index as u16
+            cell.final_sub_tile
         };
-        let metadata = catalog
-            .presentation(
+        let metadata = match raw_main_draw {
+            Some(draw) => catalog.presentation(
                 tile,
                 cell.final_sub_tile,
-                if clear_fallback {
-                    0
-                } else {
-                    cell.final_sub_tile
-                },
+                draw_sub,
                 cell.rx,
                 cell.ry,
                 clear_fallback,
-            )
-            .map_err(LoadCellRecalcError::ResidentInput)?;
+                draw,
+            ),
+            None => catalog.presentation_for_variant(
+                tile,
+                cell.final_sub_tile,
+                draw_sub,
+                clear_fallback,
+                cell.variant,
+            ),
+        }
+        .map_err(LoadCellRecalcError::ResidentInput)?;
         let cell = &mut self.cells[index];
         cell.radar_left = metadata.radar.left;
         cell.radar_right = metadata.radar.right;
@@ -598,6 +692,33 @@ impl ResolvedTerrainGrid {
         cell.filled_clear = clear_fallback;
         self.radar_color_valid[index] = metadata.radar.valid;
         self.damaged_radar_metadata[index] = metadata.damaged_radar;
+        Ok(())
+    }
+
+    /// Reconstruct only the asset-derived damaged sibling plane. The saved
+    /// baseline's complete Cell values and explicit radar validity stay intact.
+    pub(super) fn bind_saved_damaged_radar(
+        &mut self,
+        catalog: &BridgeRecalcCatalog,
+    ) -> Result<(), BridgeRecalcCatalogError> {
+        for (index, cell) in self.cells.iter().enumerate() {
+            if self
+                .native_allocated
+                .as_ref()
+                .is_some_and(|mask| !mask[index])
+            {
+                continue;
+            }
+            let (tile, fallback) = catalog.presentation_tile(cell, self.clear_tile_id);
+            let metadata = catalog.presentation_for_variant(
+                tile,
+                cell.final_sub_tile,
+                if fallback { 0 } else { cell.final_sub_tile },
+                fallback,
+                cell.variant,
+            )?;
+            self.damaged_radar_metadata[index] = metadata.damaged_radar;
+        }
         Ok(())
     }
 

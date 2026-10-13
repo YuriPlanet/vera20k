@@ -5,6 +5,8 @@ native RGB565 stores on unobstructed floor and ArchiveTarget cleanup. Ordinary
 Move and Attack compare opaque native stores, real input and matched-time controls. This
 does not certify native Scenario initialization, revelation history or occlusion.
 The historical module name remains the shared archive owner for procedural lines.
+Retained text spells the home directory `~`, and `capture_sha256` binds those
+retained capture bytes rather than the live file.
 """
 
 from __future__ import annotations
@@ -15,7 +17,8 @@ import gzip
 import hashlib
 import io
 import json
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
+import re
 import tempfile
 
 from tools.map_observation import compare_runs, validate_capture, validate_run
@@ -46,6 +49,60 @@ def document(path: Path):
 def check(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+# Path-name characters, as tools/tests/test_no_home_paths.py reads them.
+_PATH_NAME = r'[^/\\\s"\'`<>:;,()\[\]{}|*$%]'
+
+
+def without_home(raw: bytes, home: PurePath | None = None) -> bytes:
+    """`raw` with the home directory spelled `~`, so retained evidence names no account.
+
+    Covers its native, forward-slash and JSON-escaped spellings, ignoring case on
+    Windows. A longer name that only starts with the home path is kept.
+    """
+    home = Path.home() if home is None else home
+    if len(home.parts) < 2:
+        return raw
+    spellings = {str(home), home.as_posix()}
+    spellings |= {json.dumps(spelling)[1:-1] for spelling in spellings}
+    alternatives = '|'.join(map(re.escape, sorted(spellings, key=len, reverse=True)))
+    flags = re.IGNORECASE if isinstance(home, PureWindowsPath) else 0
+    return re.sub(f'(?:{alternatives})(?!{_PATH_NAME})'.encode(), b'~', raw, flags=flags)
+
+
+def _repinned(raw: bytes, moved: dict[str, tuple[str, int]]) -> bytes:
+    """`raw` with each flat identity object of a rewritten file naming its retained
+    `sha256` and `byte_length`."""
+    for old, (new, length) in moved.items():
+        if old.encode() not in raw:
+            continue
+        def repin(match, old=old.encode(), new=new.encode(), length=str(length).encode()):
+            return re.sub(rb'("byte_length"\s*:\s*)\d+', lambda field: field.group(1) + length,
+                          match.group().replace(old, new))
+        raw = re.sub(rb'\{[^{}]*"' + old.encode() + rb'"[^{}]*\}', repin, raw)
+    return raw
+
+
+# run.json pins the capture, and both pin the inputs and logs.
+PINNING = ('child-output/capture.json', 'run.json')
+
+
+def retained_run(run: Path, moved: dict[str, tuple[str, int]]) -> dict[str, bytes]:
+    """The run's FILES as the archive keeps, binds and rechecks them.
+
+    Text drops the home directory and every identity of a rewritten file names
+    the retained bytes; `moved` collects those rewrites for the receipt. Frame
+    pixels are kept unchanged.
+    """
+    kept = {}
+    for relative in [*(name for name in FILES if name not in PINNING), *PINNING]:
+        raw = (run / relative).read_bytes()
+        new = raw if relative.endswith('.bgra') else _repinned(without_home(raw), moved)
+        if new != raw:
+            moved[digest(raw)] = (digest(new), len(new))
+        kept[relative] = new
+    return kept
 
 
 def packed565(bgra: bytes) -> int:
@@ -195,7 +252,8 @@ def bound_action_capture(name, row, capture, pixels, capture_hash):
     proof = row['production']
     profile = capture['profile']['request']
     frame = capture['observations']['frames'][-1]
-    check(capture_hash == proof['capture_sha256'], f'{name}: native receipt binding differs')
+    check(capture_hash == proof['capture_sha256'],
+          f'{name}: native receipt binding differs; retained capture is {capture_hash}')
     check(capture['profile']['sha256'] == proof['profile_sha256'], f'{name}: profile differs')
     check(digest(pixels) == capture['frame']['sha256'] == proof['frame_sha256'],
           f'{name}: native frame binding differs')
@@ -561,16 +619,17 @@ def check_run_name(name):
 
 def record(root: Path, archive: Path, final_candidate: str | None = None, family='rally'):
     check(not archive.exists(), 'refusing to overwrite retained evidence')
-    captures, capture_hashes, validations, files = [], [], {}, {}
+    captures, capture_hashes, validations, files, kept, moved = [], [], {}, {}, {}, {}
     runs = run_names(family, final_candidate)
     for name in runs:
         run = (root / name).resolve()
         validated = validate_run(run)
         check(validated['status'] == 'VALID', f'{name}: {validated["errors"]}')
         validations[name] = validation_summary(validated)
-        captures.append((document(run / 'child-output/capture.json'),
-                         (run / 'child-output/frame.bgra').read_bytes()))
-        capture_hashes.append(digest((run / 'child-output/capture.json').read_bytes()))
+        kept[name] = retained_run(run, moved)
+        capture = kept[name]['child-output/capture.json']
+        captures.append((json.loads(capture), kept[name]['child-output/frame.bgra']))
+        capture_hashes.append(digest(capture))
     if family in ('unit-move', 'unit-attack') and final_candidate:
         # The observation owner checks original executable/input bytes and
         # the full diagnostic clock/atlas policy before these portable frame
@@ -584,7 +643,7 @@ def record(root: Path, archive: Path, final_candidate: str | None = None, family
     archive.mkdir(parents=True)
     for name in runs:
         for relative in FILES:
-            raw = (root / name / relative).read_bytes()
+            raw = kept[name][relative]
             target = archive / name / (relative + '.gz')
             target.parent.mkdir(parents=True, exist_ok=True)
             compressed = io.BytesIO()
@@ -598,7 +657,8 @@ def record(root: Path, archive: Path, final_candidate: str | None = None, family
                    live_run_validations=validations, files=files)
     if family in ('unit-move', 'unit-attack'):
         receipt['native_payload_sha256_at_record'] = digest((HERE / 'action_lines.json').read_bytes())
-    (archive / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    text = (json.dumps(receipt, indent=2) + '\n').encode()
+    (archive / 'receipt.json').write_bytes(_repinned(without_home(text), moved))
     return result
 
 

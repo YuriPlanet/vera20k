@@ -115,12 +115,24 @@ fn hit_with(
     damage: i32,
     ignore_defenses: bool,
 ) {
+    hit_by(sim, rules, "SA", target, source, damage, ignore_defenses);
+}
+
+fn hit_by(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    warhead: &str,
+    target: u64,
+    source: u64,
+    damage: i32,
+    ignore_defenses: bool,
+) {
     let owner = sim
         .substrate
         .entities
         .get(source)
         .map(|entity| entity.owner());
-    let warhead = sim.interner.intern("SA");
+    let warhead = sim.interner.intern(warhead);
     let flags = ReceiverCallFlags {
         ignore_defenses,
         arg6: false,
@@ -250,6 +262,38 @@ fn computer_crusher_charges_a_crushable_attacker() {
     assert!(health < rules.object("HTNK").unwrap().strength);
     assert_ne!(mission, MOVE);
     assert!(lone(Some(1), true).is_none_or(|(health, mission)| health == 0 && mission != MOVE));
+}
+
+/// A computer's Battle Fortress (`OmniCrusher=yes`, not
+/// `ImmuneToPsionics=`) gassed by a Chaos Drone a cell away: the Psychedelic
+/// arm's result 1 (`0x00701DBA`) reaches the Unit receiver's response
+/// (`0x007384B9`), whose charge (`SetDestination(drone)`, `Queue_Mission(Move)`)
+/// replaces the berserk Hunt.
+#[test]
+fn gassed_computer_fortress_charges_the_chaos_drone() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let mut sim = arena(&rules);
+    let fortress = spawn(&mut sim, &rules, "BFRT", "Russians", (10, 10));
+    let drone = spawn(&mut sim, &rules, "CAOS", "Americans", (11, 10));
+    hit_by(
+        &mut sim,
+        &rules,
+        "PsychGasCreate",
+        fortress,
+        drone,
+        600,
+        false,
+    );
+    let unit = sim.substrate.entities.get(fortress).unwrap();
+    assert!(unit.berserk.active);
+    assert_eq!(unit.health.current, rules.object("BFRT").unwrap().strength);
+    assert_eq!(
+        nav_com(&sim, fortress),
+        Some(NavTargetRef::Entity { id: drone })
+    );
+    assert_eq!(queued(&sim, fortress), MOVE);
 }
 
 /// The charge outlives the frame's pursuit pass. The Rhino still holds the GI

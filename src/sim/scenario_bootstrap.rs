@@ -1175,7 +1175,7 @@ pub(crate) fn apply_skirmish_launch_alliances(
 ) {
     let slots = normalized_launch_slots(session);
     sim.install_house_alliances(
-        crate::sim::house_threat::HouseAllianceAdmission::Admitted(launch_alliance_map(
+        crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(launch_alliance_map(
             house_roster,
             &slots,
             &session.mode,
@@ -1634,6 +1634,11 @@ pub(crate) fn populate_launch_houses(
         // Rules.MaxIQLevels in non-campaign sessions.
         if !slot.is_human {
             house.current_iq = rules.general.max_iq_levels;
+            // `0x006881F5..0x00688209`: a computer slot's team marks the
+            // Scenario, which turns Computer_Paranoid off.
+            if slot.team != LaunchTeam::None {
+                sim.session.set_computer_slot_has_team();
+            }
         }
         house.multiplay_passive =
             crate::sim::house_state::resolve_multiplay_passive(Some(rules), Some(country_name));
@@ -2769,7 +2774,7 @@ pub(crate) fn initialize_map_roster_houses(
     }
     if campaign_difficulties.is_some() {
         sim.install_house_alliances(
-            crate::sim::house_threat::HouseAllianceAdmission::ScenarioInitialization {
+            crate::sim::house_diplomacy::HouseAllianceAdmission::ScenarioInitialization {
                 roster: house_roster,
             },
             rules.expect("admitted campaign rules"),
@@ -4488,7 +4493,6 @@ mod tests {
         let output = sim.finalize_scenario_post_map(ScenarioPostMapInput {
             map_width: SIZE,
             map_height: SIZE,
-            normal_lighting: crate::map::lighting::parse_lighting_profiles(&map.ini).normal,
             rules: &rules,
             overlay_registry: &overlays,
             house_roster: &house_roster,

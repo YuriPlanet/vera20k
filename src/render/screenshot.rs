@@ -7,6 +7,7 @@
 //! PCX bytes, probes the current working directory, and writes the first unused
 //! `SCRN%04d.pcx`.
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -72,6 +73,13 @@ impl<T> PresentedFrameSlots<T> {
 /// Last cursor-free composition committed to successful presentation.
 #[derive(Default)]
 pub(crate) struct PresentedFrameCache {
+    // Shell draw lists borrow their source atlases while this derived GPU cache
+    // is staged. Keep this presentation-only mutation inside its single owner.
+    state: RefCell<PresentedFrameCacheState>,
+}
+
+#[derive(Default)]
+struct PresentedFrameCacheState {
     slots: PresentedFrameSlots<wgpu::Texture>,
     width: u32,
     height: u32,
@@ -92,7 +100,7 @@ impl PresentedFrameCache {
     /// gamemd.exe provenance: active YR `ScreenCaptureCommandClass::Execute`
     /// at 0x00537BC0 hides WWMouse while copying the presented client surface.
     pub(crate) fn stage_pre_cursor_composition(
-        &mut self,
+        &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         current: &wgpu::Texture,
@@ -102,7 +110,8 @@ impl PresentedFrameCache {
         presentation_width: u32,
         presentation_height: u32,
     ) {
-        self.ensure_composition_textures(
+        let mut state = self.state.borrow_mut();
+        state.ensure_composition_textures(
             device,
             format,
             width,
@@ -110,7 +119,7 @@ impl PresentedFrameCache {
             presentation_width,
             presentation_height,
         );
-        let staging = self
+        let staging = state
             .slots
             .staging()
             .expect("pre-cursor staging texture was just ensured");
@@ -134,7 +143,7 @@ impl PresentedFrameCache {
                 depth_or_array_layers: 1,
             },
         );
-        self.slots.mark_staged();
+        state.slots.mark_staged();
     }
 
     /// Queue a readback from the previously presented cursor-free composition.
@@ -142,7 +151,7 @@ impl PresentedFrameCache {
     /// passed through the same zoom pass into a temporary client-sized target
     /// before readback.
     pub(crate) fn capture_previous_if_requested(
-        &mut self,
+        &self,
         requested: bool,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
@@ -151,15 +160,17 @@ impl PresentedFrameCache {
         client_height: u32,
         upscale: Option<&crate::render::upscale_pass::UpscalePass>,
     ) -> Result<Option<crate::render::frame_readback::PendingBgra8Readback>> {
-        if !requested || self.slots.presented().is_none() {
+        let mut state = self.state.borrow_mut();
+        if !requested || state.slots.presented().is_none() {
             return Ok(None);
         }
 
-        if self.width == client_width && self.height == client_height {
+        if state.width == client_width && state.height == client_height {
             return crate::render::frame_readback::PendingBgra8Readback::encode(
                 device,
                 encoder,
-                self.slots
+                state
+                    .slots
                     .presented()
                     .expect("presented source was checked above"),
                 client_format,
@@ -170,31 +181,18 @@ impl PresentedFrameCache {
             .map_err(anyhow::Error::new);
         }
 
-        let upscale = upscale.context(
-            "cursor-free screenshot source differs from client size without a zoom pass",
-        )?;
-        ensure!(
-            upscale.src_width() == self.width && upscale.src_height() == self.height,
-            "cursor-free screenshot cache is {}x{}, zoom source is {}x{}",
-            self.width,
-            self.height,
-            upscale.src_width(),
-            upscale.src_height()
-        );
-        self.ensure_client_readback_texture(device, client_format, client_width, client_height);
-        let target = self
+        state.ensure_client_readback_texture(device, client_format, client_width, client_height);
+        let target = state
             .client_readback_texture
             .as_ref()
             .expect("client screenshot target was just ensured");
-        let target_view = target.create_view(&Default::default());
-        upscale.draw_texture(
+        state.encode_previous_composition(
             device,
             encoder,
-            self.slots
-                .presented()
-                .expect("presented source was checked above"),
-            &target_view,
-        );
+            target,
+            (client_width, client_height),
+            upscale,
+        )?;
         crate::render::frame_readback::PendingBgra8Readback::encode(
             device,
             encoder,
@@ -209,8 +207,85 @@ impl PresentedFrameCache {
 
     /// Commit the staged composition only after its cursor-bearing counterpart
     /// has been submitted and presented.
-    pub(crate) fn commit_presented(&mut self) {
-        self.slots.commit_presented();
+    pub(crate) fn commit_presented(&self) {
+        self.state.borrow_mut().slots.commit_presented();
+    }
+
+    /// Restore the last presented cursor-free backing for a retained modal
+    /// painting a `frame`-sized top-left corner of `destination`.
+    /// The saved-load mode-2 paint (621E90) copies existing AlternateSurface;
+    /// this shares screenshot retention and its ordinary upscale projection.
+    pub(crate) fn encode_previous_composition(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+        frame: (u32, u32),
+        upscale: Option<&crate::render::upscale_pass::UpscalePass>,
+    ) -> Result<bool> {
+        self.state.borrow().encode_previous_composition(
+            device,
+            encoder,
+            destination,
+            frame,
+            upscale,
+        )
+    }
+}
+
+impl PresentedFrameCacheState {
+    /// A zoomed match frame keeps its source size here: the retained source
+    /// fills the frame's corner, and the frame's own zoom pass scales both.
+    fn encode_previous_composition(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+        frame: (u32, u32),
+        upscale: Option<&crate::render::upscale_pass::UpscalePass>,
+    ) -> Result<bool> {
+        let Some(source) = self.slots.presented() else {
+            return Ok(false);
+        };
+        ensure!(
+            self.presentation_width == destination.width()
+                && self.presentation_height == destination.height()
+                && self.format == Some(destination.format()),
+            "cursor-free backing no longer matches the presentation target"
+        );
+        if (self.width, self.height) == frame {
+            encoder.copy_texture_to_texture(
+                source.as_image_copy(),
+                destination.as_image_copy(),
+                source.size(),
+            );
+        } else {
+            ensure!(
+                frame == (destination.width(), destination.height()),
+                "cursor-free cache is {}x{}, the frame is {}x{}",
+                self.width,
+                self.height,
+                frame.0,
+                frame.1
+            );
+            let upscale = upscale
+                .context("cursor-free source differs from client size without a zoom pass")?;
+            ensure!(
+                upscale.src_width() == self.width && upscale.src_height() == self.height,
+                "cursor-free cache is {}x{}, zoom source is {}x{}",
+                self.width,
+                self.height,
+                upscale.src_width(),
+                upscale.src_height()
+            );
+            upscale.draw_texture(
+                device,
+                encoder,
+                source,
+                &destination.create_view(&Default::default()),
+            );
+        }
+        Ok(true)
     }
 
     fn ensure_composition_textures(
@@ -379,6 +454,84 @@ fn first_unused_screenshot_path_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires an explicit GPU readback run"]
+    fn retained_backing_excludes_later_cursor_and_unpresented_frames() {
+        let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+        let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+        let size = [2, 2];
+        let source = gpu.target(size, format);
+        let destination = gpu.target(size, format);
+        let original = [32_u8, 48, 64, 255].repeat(4);
+        gpu.queue.write_texture(
+            source.as_image_copy(),
+            &original,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(8),
+                rows_per_image: Some(2),
+            },
+            source.size(),
+        );
+        let cache = PresentedFrameCache::default();
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        cache.stage_pre_cursor_composition(&gpu.device, &mut encoder, &source, format, 2, 2, 2, 2);
+        assert!(
+            !cache
+                .encode_previous_composition(&gpu.device, &mut encoder, &destination, (2, 2), None)
+                .unwrap()
+        );
+        // Stand in for the later cursor draw: it changes the live source only
+        // after the shared retention boundary has copied the completed frame.
+        let view = source.create_view(&Default::default());
+        {
+            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Cursor overwrite after backing retention"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.0,
+                            g: 1.0,
+                            b: 0.0,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+        }
+        gpu.queue.submit([encoder.finish()]);
+        cache.commit_presented();
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        // A staged successor is not the visible frame until present commits it.
+        cache.stage_pre_cursor_composition(&gpu.device, &mut encoder, &source, format, 2, 2, 2, 2);
+        assert!(
+            cache
+                .encode_previous_composition(&gpu.device, &mut encoder, &destination, (2, 2), None)
+                .unwrap()
+        );
+        let read = gpu.read(&mut encoder, &destination);
+        assert_eq!(gpu.finish(encoder, &[read], size)[0], original);
+        cache.commit_presented();
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        assert!(
+            cache
+                .encode_previous_composition(&gpu.device, &mut encoder, &destination, (2, 2), None)
+                .unwrap()
+        );
+        let read = gpu.read(&mut encoder, &destination);
+        assert_eq!(
+            gpu.finish(encoder, &[read], size)[0],
+            [0_u8, 255, 0, 255].repeat(4)
+        );
+    }
 
     #[test]
     fn filename_probe_starts_at_zero_and_uses_first_gap() {

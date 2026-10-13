@@ -11,7 +11,7 @@ assumptions, substituted boundaries and source identities in the matching meta.
 The joined payload SHA-256 is
 `62e31e63c49350afa9be3ffefafe158a7ae4423a898c3614e80b0506b7889ae3`.
 The three Rust replay hash changes have a separate
-[819-boundary composition receipt](building_construction_replay/README.md);
+819-boundary composition receipt (`tools/spatial_oracle/building_construction_replay/README.md`, in git at 1b1a8b43e);
 their observed Rust pins are not native goldens.
 
 ## Coverage
@@ -86,7 +86,7 @@ VERA20K_REQUIRE_RETAIL_INI=1 VERA20K_REQUIRE_RETAIL_ASSETS=1 \
   python -m tools.cargo_run -- test -p vera20k --lib sim::world::techno_ai::building_missions::opening_oracle_tests::
 ```
 
-The [ordinary release-map production receipt](building_construction.production.json)
+The ordinary release-map production receipt (`tools/spatial_oracle/building_construction.production.json`, in git at 1b1a8b43e)
 and [profile](../map_observation.building-opening.example.json) exercise normal
 DeployMcv, QueueProduction and PlaceReadyBuilding orders on retail Battle/AnyTown.
 The yard opens at step43, the power plant at701 and the barracks at1152. The

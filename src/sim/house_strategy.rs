@@ -386,6 +386,7 @@ pub(crate) fn all_to_hunt(
 /// only a constructor-registered peer node, then forward-scans every peer with
 /// a strict-positive/strict-greater winner rule. Rust's sparse map represents
 /// untouched constructor-zero nodes without materializing serialized state.
+/// With no winner the enemy is cleared (`0x0050484F`).
 pub(crate) fn update_anger_nodes(
     houses: &mut BTreeMap<InternedId, HouseState>,
     house_order: &[InternedId],

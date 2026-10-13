@@ -321,7 +321,7 @@ impl OpeningCapture {
         projection["camera"]
             .as_object_mut()
             .expect("camera object")
-            .remove("view_world_pixels");
+            .remove("view_center_world_pixels");
         projection["camera"]
             .as_object_mut()
             .expect("camera object")

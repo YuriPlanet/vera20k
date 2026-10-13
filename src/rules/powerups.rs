@@ -105,7 +105,7 @@ pub fn powerup_from_name(name: &str) -> usize {
 /// Native keeps these outside `RulesClass`; VERA keeps them beside the other
 /// crate rule data because the ownership distinction has no player-visible
 /// consequence, while the fixed slot order does.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PowerupTable {
     /// Token 1 — selection weight. `CellClass__PickupCrate` sums all
     /// nineteen and draws `RandomRanged(1, total)`.

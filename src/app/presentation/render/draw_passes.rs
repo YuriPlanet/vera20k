@@ -762,6 +762,23 @@ pub(super) fn dispatch_draw_passes(
         surface.composite(&mut pass);
     }
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    // The message rows' black boxes: native rows render through the shared
+    // text engine with the row's opaque-background style, which fills a black
+    // box one pixel out on every side (0x4A5EB0 @ 0x4A5F61) behind each line
+    // before its glyphs. Fill first, then the text, in the same screen-fixed
+    // pass group.
+    draw_pooled_ui(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.white_texture()),
+        "message_fill",
+    );
     draw_pooled_ui(
         &mut pass,
         &state.renderer.batch_renderer,

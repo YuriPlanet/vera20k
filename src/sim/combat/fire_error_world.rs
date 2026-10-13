@@ -4,8 +4,6 @@
 //! RESIDUAL questions VERA cannot answer natively, each fixed to the value its
 //! missing producer would leave (trigger, effect and frequency are on the
 //! owning row in `fire_error.rs`):
-//! - `target_layer` answers the ground layer: VERA has no locomotor layer, so
-//!   T39 never fires (a Foot target taking off or landing below two levels).
 //! - `deploy_cell_ok` answers true: `CellClass 0x00487C10` is not ported, and
 //!   only U4's dormant DeployToFire reads it.
 //! - `locomotor_can_fire` answers OK: only the Tunnel locomotor, unused in
@@ -206,6 +204,7 @@ impl<'a> FireSubject<'a> {
             enslaved: firer.slave.owner().is_some(),
             warped_out: firer.is_warped_out(),
             warping_in: firer.is_warping_in(),
+            robot_offline: firer.deactivated,
             on_bridge: firer.on_bridge,
             z: self.terrain().map_or(0, |terrain| {
                 crate::sim::movement::ground_pose::object_world_z_leptons(firer, Some(terrain))
@@ -243,6 +242,7 @@ impl<'a> FireSubject<'a> {
             current_weapon: combat_weapon::attacker_facts(firer, obj).current_weapon_number,
             draining_me: firer.draining_me.is_some(),
             drain_target: link(firer.drain_target),
+            locomotor_target: link(firer.locomotor_target),
             temporal: firer
                 .temporal
                 .has_link()
@@ -268,6 +268,7 @@ impl<'a> FireSubject<'a> {
                 .map_or(firer.body_facing_current(frame), |facing| {
                     facing.current(frame)
                 }),
+            magnetron_lifted: firer.foot_locomotor_swap_active,
             navcom: firer.navigation.nav_com.is_some(),
             moving_faster_than_tenth: firer.foot_speed.above_tenth(),
             deploying: firer.unit_deploying(),
@@ -615,8 +616,21 @@ impl FireQuery for WorldQuery<'_, '_> {
         )
     }
 
+    /// T39 asks only a Foot target: its vt+0x78 ([`entity_layer`]).
+    ///
+    /// [`entity_layer`]: crate::sim::world::entity_layer
     fn target_layer(&mut self) -> i32 {
-        2
+        let Some(target) = self.subject.target_entity() else {
+            return i32::from(crate::sim::world::display_layers::DisplayLayer::GROUND.index());
+        };
+        i32::from(
+            crate::sim::world::entity_layer(
+                target,
+                self.subject.terrain(),
+                Some((self.subject.rules, &self.subject.world.interner)),
+            )
+            .index(),
+        )
     }
 
     fn target_cell(&mut self) -> Option<CellFacts> {

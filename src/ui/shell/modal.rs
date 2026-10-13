@@ -6,8 +6,7 @@
 //! string slots, and the TWO distinct result conventions the modals resolve under
 //! (the message-box helper vs the in-game Options own dialog proc). Depends only on
 //! the shared shell descriptor/geometry types (no sim/render/assets), so it honors
-//! the ui/ layering rule. The modal render emitter and the quit-confirm/validation
-//! wiring in later slices consume this; nothing reads it yet (zero behavior change).
+//! the ui/ layering rule. The shared modal renderer consumes these descriptors.
 
 use super::descriptor::{
     AnchorRule, BgKind, ControlDescriptor, ControlKind, DialogDescriptor, DialogId,
@@ -26,6 +25,8 @@ pub mod control {
     pub const CANCEL: u16 = 0x0002;
     /// Third owner-draw button -> message-box result 2 (0x121 template only).
     pub const THIRD: u16 = 0x05AF;
+    /// F0 progress-dialog Cancel. The saved-load caller leaves it hidden.
+    pub const PROGRESS_CANCEL: u16 = 0x05C0;
 }
 
 /// One front-end pop-up modal, identified by the RT_DIALOG template it loads.
@@ -216,6 +217,32 @@ pub fn build_message_box_descriptor(kind: ModalKind, rects: &MessageBoxRects) ->
     }
 }
 
+/// Saved-game loading's F0 progress dialog: original 559D60 -> 623230 supplies
+/// TXT_LOADING and a null Cancel caption. F0's resource keeps 5C0 hidden; this
+/// ordinary saved-load presentation has no interactive controls.
+/// Source: tools/storage_oracle/saved_game_layout.py and its native corpus.
+pub fn build_saved_game_loading_descriptor() -> DialogDescriptor {
+    let mut body = modal_control(
+        control::BODY_STATIC,
+        ControlKind::Static,
+        RectPx::new(40, 40, 220, 50),
+    );
+    body.csf_key = Some("TXT_LOADING");
+    let mut cancel = modal_control(
+        control::PROGRESS_CANCEL,
+        ControlKind::Button,
+        RectPx::new(207, 175, 83, 15),
+    );
+    cancel.visible = false;
+    DialogDescriptor {
+        id: DialogId(0xF0),
+        controls: vec![cancel, body],
+        bg_kind: BgKind::ModalShp,
+        slide_eligible: false,
+        reposition_policy: RepositionPolicy::ModalCentered,
+    }
+}
+
 /// Whether the kind's template includes the Cancel (control 2) button.
 fn includes_cancel(kind: ModalKind) -> bool {
     matches!(kind, ModalKind::Confirm | ModalKind::ThreeButton)
@@ -246,11 +273,11 @@ fn modal_control(id: u16, kind: ControlKind, dlu_rect: RectPx) -> ControlDescrip
 
 // --- Centered message-box modal layout (screen-relative pixel rects) ---
 
-/// Pixel size of the message-box modal panel. The 0xCE/0x120 templates declare a
-/// 300x200 DLU dialog, which at the 8pt MS Sans Serif DLU factor (x*6/4, y*13/8)
-/// is 450x325 px; PUDLGBGN frame 0 fills this box.
-pub const MESSAGE_BOX_W: i32 = 450;
-pub const MESSAGE_BOX_H: i32 = 325;
+/// Pixel client size of the 300x200 DLU modal templates (F0/CE/120). The common
+/// 775BC0 resize adds one to the converted extents. Executed F0 controls and
+/// 777060/777080 centering: tools/storage_oracle/saved_game_layout.json.
+pub const MESSAGE_BOX_W: i32 = 451;
+pub const MESSAGE_BOX_H: i32 = 326;
 
 /// Screen-relative pixel rects for the quit-confirm (0x120) modal: the centered
 /// PUDLGBGN panel plus its body static and its two buttons. Rects mirror the
@@ -269,8 +296,9 @@ pub struct QuitConfirmLayout {
 /// Screen-relative pixel rects for a one-button message box: `0xCE` (the
 /// skirmish validation and saved-map notices) and `0xD0` (the Westwood Online
 /// `TXT_APIMISSING` box) share this geometry: body static `0x5B0`
-/// (40,40,220,50) and OK (207,175,83,15). The box centres on the live
-/// screen, not inside the 800x600 shell.
+/// (40,40,220,50) and OK (207,175,83,15). F0's hidden Cancel shares that lower
+/// control rect and its visible body uses the same projection. The box centres
+/// on the live screen, not inside the 800x600 shell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BodyOkLayout {
     pub dialog: RectPx,
@@ -282,8 +310,8 @@ pub fn body_ok_layout(screen_w: i32, screen_h: i32) -> BodyOkLayout {
     let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
     BodyOkLayout {
         dialog,
-        body: modal_child(dialog, geom::dlu_rect(40, 40, 220, 50)),
-        ok: modal_child(dialog, geom::dlu_rect(207, 175, 83, 15)),
+        body: modal_child(dialog, geom::child_window(40, 40, 220, 50)),
+        ok: modal_child(dialog, geom::child_window(207, 175, 83, 15)),
     }
 }
 
@@ -294,9 +322,9 @@ pub fn quit_confirm_layout(screen_w: i32, screen_h: i32) -> QuitConfirmLayout {
     let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
     QuitConfirmLayout {
         dialog,
-        body: modal_child(dialog, geom::dlu_rect(40, 40, 220, 50)),
-        ok: modal_child(dialog, geom::dlu_rect(207, 155, 83, 15)),
-        cancel: modal_child(dialog, geom::dlu_rect(207, 175, 83, 15)),
+        body: modal_child(dialog, geom::child_window(40, 40, 220, 50)),
+        ok: modal_child(dialog, geom::child_window(207, 155, 83, 15)),
+        cancel: modal_child(dialog, geom::child_window(207, 175, 83, 15)),
     }
 }
 
@@ -471,11 +499,11 @@ mod tests {
         // Panel centered on the live screen (round-half-up, clamped).
         assert_eq!(
             l.dialog,
-            RectPx::new(175, 138, MESSAGE_BOX_W, MESSAGE_BOX_H)
+            RectPx::new(175, 137, MESSAGE_BOX_W, MESSAGE_BOX_H)
         );
         // Controls at the dialog origin + their template DLU rects.
         let child = |dx, dy, dw, dh| {
-            let local = geom::dlu_rect(dx, dy, dw, dh);
+            let local = geom::child_window(dx, dy, dw, dh);
             RectPx::new(l.dialog.x + local.x, l.dialog.y + local.y, local.w, local.h)
         };
         assert_eq!(l.body, child(40, 40, 220, 50));
@@ -488,15 +516,62 @@ mod tests {
     }
 
     #[test]
-    fn body_ok_layout_centres_on_the_live_screen() {
-        // (800-450+1)/2 = 175, (600-325+1)/2 = 138.
-        let l = body_ok_layout(800, 600);
-        assert_eq!(l.dialog, RectPx::new(175, 138, 450, 325));
-        assert_eq!(l.body, RectPx::new(235, 203, 330, 81));
-        assert_eq!(l.ok, RectPx::new(486, 422, 125, 24));
-        // Not inside an 800x600 sub-box: (1024-450+1)/2 = 287.
-        let wide = body_ok_layout(1024, 768);
-        assert_eq!(wide.dialog, RectPx::new(287, 222, 450, 325));
+    fn modal_resource_and_shared_projection_match_original_saved_progress() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/saved_game_layout.json",
+        ))
+        .unwrap();
+        let rect = |value: &serde_json::Value| {
+            let values: [i32; 4] = serde_json::from_value(value.clone()).unwrap();
+            RectPx::new(values[0], values[1], values[2], values[3])
+        };
+        let descriptor = build_saved_game_loading_descriptor();
+        let resource = &corpus["progress_resource"];
+        assert_eq!(
+            descriptor.id.0 as u64,
+            resource["dialog_id"].as_u64().unwrap()
+        );
+        for (control, native) in descriptor
+            .controls
+            .iter()
+            .zip(resource["controls"].as_array().unwrap())
+        {
+            assert_eq!(control.id as u64, native["control_id"].as_u64().unwrap());
+            assert_eq!(control.dlu_rect, rect(&native["dlu_rect"]));
+            assert_eq!(
+                control.visible,
+                native["style"].as_u64().unwrap() & 0x1000_0000 != 0
+            );
+        }
+        for row in corpus["progress_geometry"].as_array().unwrap() {
+            let width = row["input"]["width"].as_i64().unwrap() as i32;
+            let height = row["input"]["height"].as_i64().unwrap() as i32;
+            let projected = body_ok_layout(width, height);
+            let quit = quit_confirm_layout(width, height);
+            assert_eq!(projected.dialog, rect(&row["dialog_rect"]));
+            assert_eq!(quit.dialog, projected.dialog);
+            let children = crate::ui::shell::layout::layout_pass(&descriptor, width, height);
+            for native in row["children"].as_array().unwrap() {
+                let id = native["id"].as_u64().unwrap() as u16;
+                let expected = rect(&native["rect"]);
+                let child = children.iter().find(|child| child.id == id).unwrap();
+                assert_eq!(
+                    child.rect.translate(projected.dialog.x, projected.dialog.y),
+                    expected
+                );
+                match id {
+                    control::BODY_STATIC => {
+                        assert_eq!(projected.body, expected);
+                        assert_eq!(quit.body, expected);
+                    }
+                    control::PROGRESS_CANCEL => {
+                        assert_eq!(projected.ok, expected);
+                        assert_eq!(quit.cancel, expected);
+                    }
+                    _ => panic!("unexpected F0 child"),
+                }
+            }
+        }
     }
 
     #[test]

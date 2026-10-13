@@ -2,7 +2,6 @@
 //! TMP tile metadata, overlay classification and the height maps.
 
 use super::bridge_flags::apply_native_bridge_flag_stamp_to_parts;
-use super::cliffs::build_destroyable_cliff_catalog;
 use super::native_cell::native_resolved_cell_index;
 use super::tubes::{build_auto_low_bridge_tubes, seed_explicit_map_tubes};
 use super::*;
@@ -246,11 +245,11 @@ impl ResolvedTerrainGrid {
         };
         let (width, height) = grid_dimensions(&raw_cells);
         if width == 0 || height == 0 {
-            return Self {
+            let mut grid = Self {
                 width: 0,
                 height: 0,
                 cells: Vec::new(),
-                land_speed_costs: land_speed_cost_profiles(terrain_rules),
+                land_speed_costs: land_speed_cost_profiles(None),
                 native_tmp_draw_heights: HashMap::new(),
                 shared_cell_dummy,
                 mutation_epoch: std::cell::Cell::new(0),
@@ -260,30 +259,28 @@ impl ResolvedTerrainGrid {
                 tube_facts: Vec::new(),
                 native_tube_indices: Vec::new(),
                 tube_native_ids: Vec::new(),
-                clear_tile_id,
-                water_tiles: theater_data.map_or_else(
-                    || crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
-                    crate::map::rmg::tiles::TileIds::resolve,
-                ),
-                tile_registry_len: theater_data.map(|td| td.lookup.len()),
-                dummy_accepts_smudge: theater_data
-                    .is_some_and(|td| current_tile_permissions(&td.lookup, 0xFFFF).0),
-                high_bridge_rim_tiles: theater_data
-                    .map(crate::map::bridge_rim_tiles::HighBridgeRimTiles::from_theater),
-                bridge_set_start: theater_data.and_then(|td| {
-                    td.bridge_set
-                        .and_then(|set| td.lookup.bounds().get(set as usize))
-                        .map(|bounds| bounds.start)
-                }),
-                wood_bridge_set_start: theater_data.and_then(|td| {
-                    td.wood_bridge_set
-                        .and_then(|set| td.lookup.bounds().get(set as usize))
-                        .map(|bounds| bounds.start)
-                }),
+                clear_tile_id: 0,
+                water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
+                tile_registry_len: None,
+                dummy_accepts_smudge: false,
+                high_bridge_rim_tiles: None,
+                bridge_set_start: None,
+                wood_bridge_set_start: None,
                 tile_animations: Vec::new(),
                 destroyable_cliff_catalog: None,
                 bridge_recalc_catalog: None,
             };
+            grid.bind_asset_catalogs(
+                theater_data,
+                asset_manager,
+                terrain_rules,
+                lat_enabled,
+                cliff_back_impassability,
+                variant_selector
+                    .as_ref()
+                    .map_or_else(Default::default, |s| s.selector()),
+            );
+            return grid;
         }
 
         let mut final_cells: Vec<MapCell> = raw_cells.clone();
@@ -980,12 +977,12 @@ impl ResolvedTerrainGrid {
             })
             .collect();
 
-        Self {
+        let mut grid = Self {
             width,
             height,
             cells,
-            land_speed_costs: land_speed_cost_profiles(terrain_rules),
-            native_tmp_draw_heights: load_native_tmp_draw_heights(theater_data, asset_manager),
+            land_speed_costs: land_speed_cost_profiles(None),
+            native_tmp_draw_heights: HashMap::new(),
             shared_cell_dummy,
             mutation_epoch: std::cell::Cell::new(0),
             native_allocated,
@@ -994,48 +991,28 @@ impl ResolvedTerrainGrid {
             tube_facts,
             native_tube_indices,
             tube_native_ids,
-            clear_tile_id,
-            water_tiles: theater_data.map_or_else(
-                || crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
-                crate::map::rmg::tiles::TileIds::resolve,
-            ),
-            tile_registry_len: theater_data.map(|td| td.lookup.len()),
-            dummy_accepts_smudge: theater_data
-                .is_some_and(|td| current_tile_permissions(&td.lookup, 0xFFFF).0),
-            high_bridge_rim_tiles: theater_data
-                .map(crate::map::bridge_rim_tiles::HighBridgeRimTiles::from_theater),
-            bridge_set_start: theater_data.and_then(|td| {
-                td.bridge_set
-                    .and_then(|set| td.lookup.bounds().get(set as usize))
-                    .map(|bounds| bounds.start)
-            }),
-            wood_bridge_set_start: theater_data.and_then(|td| {
-                td.wood_bridge_set
-                    .and_then(|set| td.lookup.bounds().get(set as usize))
-                    .map(|bounds| bounds.start)
-            }),
+            clear_tile_id: 0,
+            water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
+            tile_registry_len: None,
+            dummy_accepts_smudge: false,
+            high_bridge_rim_tiles: None,
+            bridge_set_start: None,
+            wood_bridge_set_start: None,
             tile_animations,
-            destroyable_cliff_catalog: build_destroyable_cliff_catalog(
-                theater_data,
-                asset_manager,
-                terrain_rules,
-            ),
-            bridge_recalc_catalog: match (theater_data, asset_manager, terrain_rules) {
-                (Some(theater), Some(assets), Some(rules)) => {
-                    Some(Arc::new(BridgeRecalcCatalog::for_runtime_bridges(
-                        theater,
-                        assets,
-                        rules,
-                        lat_enabled,
-                        cliff_back_impassability,
-                        variant_selector
-                            .as_ref()
-                            .and_then(|selector| selector.initialized_table()),
-                    )))
-                }
-                _ => None,
-            },
-        }
+            destroyable_cliff_catalog: None,
+            bridge_recalc_catalog: None,
+        };
+        grid.bind_asset_catalogs(
+            theater_data,
+            asset_manager,
+            terrain_rules,
+            lat_enabled,
+            cliff_back_impassability,
+            variant_selector
+                .as_ref()
+                .map_or_else(Default::default, |s| s.selector()),
+        );
+        grid
     }
 
     pub fn build_height_map(&self) -> BTreeMap<(u16, u16), u8> {
@@ -1366,7 +1343,7 @@ pub(super) fn is_wood_bridge_repair_tile(
 /// Include every registered pristine type so LAT, cliff collapse and restore can
 /// change a cell's tile without a render-thread asset lookup or stale scalar.
 /// Only headers are read here; the large color/depth planes are not decoded.
-fn load_native_tmp_draw_heights(
+pub(super) fn load_native_tmp_draw_heights(
     theater: Option<&TheaterData>,
     assets: Option<&crate::assets::asset_manager::AssetManager>,
 ) -> HashMap<u16, PristineTmpHeader> {

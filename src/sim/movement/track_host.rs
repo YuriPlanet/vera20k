@@ -1093,13 +1093,13 @@ impl Simulation {
         entity.mission_leaf.set_foot_idle_entry_latch(1);
         // Foot4D82D9 -> Techno709A54 lets a held Temporal target go first.
         self.temporal_release_if_warping(id);
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
-            return false;
-        };
         // Foot4D831A..8376 asks the active IPiggyback, whatever its class,
         // and ends it before NavQueue when its Is_Ok_To_End allows.
         // Unit saves the base return but still executes its own receiver tail.
-        let ended = super::locomotor_owner::try_end_piggyback(entity);
+        let ended = self.try_end_piggyback(id, rules);
+        let Some(entity) = self.substrate.entities.get_mut(id) else {
+            return false;
+        };
         // Foot4D8382..83E2 takes NavQueue even with an existing NavCom.
         // Preserve its saved return independently from the resulting NavCom.
         // Non-Cell targets and other class END remain bounded base-receiver
@@ -1133,7 +1133,7 @@ impl Simulation {
                     EntityCategory::Unit => self.unit_setter_receiver(id, Some(rules)),
                     EntityCategory::Infantry => {
                         let target = crate::sim::components::NavTargetRef::cell(rx, ry);
-                        self.infantry_setter_receiver(id, target, rules)
+                        self.infantry_setter_receiver(id, rules)
                             && self
                                 .infantry_destination_inputs_available(id, target, rules, registry)
                     }
@@ -1252,6 +1252,17 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) -> bool {
         let saved_base_return = self.foot_enter_idle_base(id, rules, None, effects);
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return saved_base_return;
+        };
+        //73899E..7389AB: Wait28 suppresses only the Unit tail after Foot.
+        if entity.mission.effective().known() == Some(MissionType::Deliberate) {
+            return saved_base_return;
+        }
+        // 0x007389B1..0x007389BF: a Magnetron lets go of what it holds.
+        if entity.locomotor_target.is_some() {
+            self.release_locomotor(id, true, rules, None, effects);
+        }
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return saved_base_return;
         };
@@ -1282,10 +1293,6 @@ impl Simulation {
         {
             // Unarmed738AB4..738AE4 returns before either setter for pending
             // deployment, AreaGuard, or Unload with resolved DeploysInto.
-            return saved_base_return;
-        }
-        //73899E..7389AB: Wait28 suppresses only the Unit tail after Foot.
-        if effective == Some(MissionType::Deliberate) {
             return saved_base_return;
         }
         let selection = if has_destination {

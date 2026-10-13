@@ -935,7 +935,9 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
                         .native_zone_source_size(),
                     sim.bridge_state.as_ref().unwrap().native_zone_source_size(),
                 );
-                loaded.retain_in_scenario_process_state_from(&sim);
+                loaded.retain_process_state_for_load(
+                    crate::sim::world::SnapshotProcessState::Live(&sim),
+                );
                 loaded.restore_after_snapshot_load().unwrap();
                 loaded.resolve_type_handles(&rules);
                 assert!(loaded.zone_grid.as_ref().unwrap().is_native_load_pending());

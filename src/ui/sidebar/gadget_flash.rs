@@ -146,11 +146,11 @@ pub struct SidebarGadgetState {
     /// Strip availability projected at sidebar refresh (native gadget+1E).
     pub tab_disabled: [bool; 4],
 
-    /// Mirrors SidebarClass +0x46c. Toggled by clicking the Repair button.
+    /// Mirrors Display +0x11B0 (set by 4AC8C0). Toggled by clicking the Repair button.
     /// Mutually exclusive with `sell_mode_on` and `AppState.targeting_mode`.
     pub repair_mode_on: bool,
 
-    /// Mirrors SidebarClass +0x11B1. Toggled by clicking the Sell button.
+    /// Mirrors Display +0x11B1 (set by 4AC660). Toggled by clicking the Sell button.
     /// Mutually exclusive with `repair_mode_on` and `AppState.targeting_mode`.
     pub sell_mode_on: bool,
 

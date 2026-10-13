@@ -22,7 +22,6 @@ use crate::skirmish_launch::SkirmishLaunchSession;
 pub(crate) struct ScenarioPostMapInput<'a> {
     pub(crate) map_width: u16,
     pub(crate) map_height: u16,
-    pub(crate) normal_lighting: crate::map::lighting::LightingProfileUnits,
     pub(crate) rules: &'a RuleSet,
     pub(crate) overlay_registry: &'a OverlayTypeRegistry,
     pub(crate) house_roster: &'a HouseRoster,
@@ -61,10 +60,6 @@ impl Simulation {
         &mut self,
         input: ScenarioPostMapInput<'_>,
     ) -> ScenarioPostMapOutput {
-        // Retain the scenario's parsed ordinary lighting so the runtime crate
-        // regeneration rung reaches `OverlayClass::Mark` with the same source
-        // this startup pass uses.
-        self.scenario_normal_lighting = input.normal_lighting;
         // Runtime rebuilds use this same sim-owned publication seam. Crate
         // placement below reads the newly published canonical grid.
         let navigation_published = self.rebuild_dynamic_navigation(input.rules);
@@ -78,12 +73,17 @@ impl Simulation {
             {
                 skirmish_order[0] = Some(ScenarioPostMapStep::StartupCrates);
             }
+            let normal_lighting = self
+                .session
+                .lighting
+                .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
+                .into();
             let placement = crate::sim::crates::place_scenario_start_crates_with_lighting(
                 self,
                 input.rules,
                 input.overlay_registry,
                 player_count,
-                input.normal_lighting,
+                normal_lighting,
             );
             // Startup OverlayClass::Mark completes synchronously before native
             // proceeds to AI credits; the placement refreshed the bridge
@@ -107,7 +107,7 @@ impl Simulation {
         } else {
             if self.session.campaign_mission_counter().is_none() {
                 self.install_house_alliances(
-                    crate::sim::house_threat::HouseAllianceAdmission::Admitted(
+                    crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(
                         input.house_roster.alliance_map(),
                     ),
                     input.rules,
@@ -312,7 +312,6 @@ mod tests {
         ScenarioPostMapInput {
             map_width: MAP_SIZE,
             map_height: MAP_SIZE,
-            normal_lighting: crate::map::lighting::ParsedLightingProfiles::default().normal,
             rules,
             overlay_registry: overlays,
             house_roster,
@@ -863,7 +862,6 @@ mod tests {
         let output = sim.finalize_scenario_post_map(ScenarioPostMapInput {
             map_width: MAP_SIZE,
             map_height: MAP_SIZE,
-            normal_lighting: crate::map::lighting::ParsedLightingProfiles::default().normal,
             rules: &rules,
             overlay_registry: &overlays,
             house_roster: &roster,
@@ -961,7 +959,6 @@ mod tests {
         sim.finalize_scenario_post_map(ScenarioPostMapInput {
             map_width: MAP_SIZE,
             map_height: MAP_SIZE,
-            normal_lighting: crate::map::lighting::ParsedLightingProfiles::default().normal,
             rules: &rules,
             overlay_registry: &overlays,
             house_roster: &HouseRoster::default(),
@@ -1039,7 +1036,6 @@ mod tests {
         let output = sim.finalize_scenario_post_map(ScenarioPostMapInput {
             map_width: MAP_SIZE,
             map_height: MAP_SIZE,
-            normal_lighting: crate::map::lighting::ParsedLightingProfiles::default().normal,
             rules: &rules,
             overlay_registry: &overlays,
             house_roster: &HouseRoster::default(),
@@ -1135,7 +1131,6 @@ mod tests {
         let output = sim.finalize_scenario_post_map(ScenarioPostMapInput {
             map_width: MAP_SIZE,
             map_height: MAP_SIZE,
-            normal_lighting: crate::map::lighting::ParsedLightingProfiles::default().normal,
             rules: &rules,
             overlay_registry: &overlays,
             house_roster: &roster,

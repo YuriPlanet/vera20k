@@ -6,10 +6,10 @@ and stop after selection at `0x469BD4`. Physical HE and CombatDamage SplashList 
 the initialized height units at `0x89DE70` and `0x89E870` are both 104.
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 \
 VERA20K_PROJECTILE_RENDER_ASSETS=/tmp/bridge-ifv-assets-1dDM9D/extract \
-/Users/halvor/Documents/vera20k-dev/.venv/bin/python \
+~/Documents/vera20k-dev/.venv/bin/python \
 tools/projectile_oracle/ifv_select_anim.py --check
 ```
 

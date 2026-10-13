@@ -43,6 +43,7 @@ use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::sim::cell_rect::PlayfieldBounds;
+#[cfg(test)]
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
 #[cfg(test)]
@@ -354,15 +355,6 @@ impl MovementTickStats {
 /// authored quarter-turn values remain distinct.
 pub fn facing_from_delta(dx: i32, dy: i32) -> u8 {
     facing_from_delta_int(dx, dy)
-}
-
-/// Restore an active piggyback locomotor whose owner is no longer moving,
-/// teleporting, or deploying.
-pub(crate) fn tick_locomotor_piggyback_restore_one(entities: &mut EntityStore, id: u64) -> bool {
-    let Some(entity) = entities.get_mut(id) else {
-        return false;
-    };
-    locomotor_owner::try_end_piggyback(entity)
 }
 
 // ---------------------------------------------------------------------------

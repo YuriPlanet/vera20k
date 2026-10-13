@@ -170,7 +170,7 @@ pub(crate) fn place(
     entity.position.z = level + deck;
     entity.on_bridge = bridge;
     if latch {
-        let house = entity.owner();
+        entity.warped_by_house = Some(entity.owner());
         entity
             .locomotor
             .as_mut()
@@ -178,7 +178,6 @@ pub(crate) fn place(
             .expect("a latched Foot on its Teleport")
             .arm_chrono(crate::sim::movement::teleport_movement::ChronoWarp::new(
                 DriveCoord { x: 0, y: 0, z: 0 },
-                house,
                 frame,
             ));
     }

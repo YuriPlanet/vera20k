@@ -6,7 +6,7 @@ same supplied Infantry/type/42 signed sequence records/House/Walk fixture as the
 355 historical deployment rows. Neither those rows nor their metadata change.
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.infantry_deploy_action --mission-unload --check
 PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.infantry_deploy_action --check
 PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.infantry_action_callback --check

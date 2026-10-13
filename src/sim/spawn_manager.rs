@@ -889,11 +889,10 @@ pub(crate) fn clear_all_spawn_targets(
 ///   `Simulation::change_owner`; this is the mind-control path.
 /// - `TemporalClass::InitiateWarp` (`0x0071AF39`) — WIRED, via
 ///   `sim::temporal`: a chrono-warped spawner loses its pool first.
-/// - `TechnoClass::ImbueLocomotor` (`0x00710021`), the Magnetron lift reached
-///   only from the IsLocomotor arm of `BulletClass::DetonateAtCoord`
-///   (`0x004696FB`) — **not wired**; VERA does not port that arm.
-/// - `TechnoClass::Stun` (`0x006FCD40`) — WIRED for the death arm via
-///   `Simulation::techno_death_stun`.
+/// - `TechnoClass::ImbueLocomotor` (`0x00710021`), the Magnetron lift —
+///   WIRED, via `Simulation::imbue_locomotor`.
+/// - `TechnoClass::Stun` (`0x006FCD40`) — WIRED via
+///   `Simulation::techno_death_stun`, which a lifted Foot skips.
 ///
 /// Push needs the rules; the rules-less UnInit adapters (tests and fixtures
 /// only) skip it.

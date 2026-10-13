@@ -472,39 +472,86 @@ fn set_target_matches_the_original() {
     }
 }
 
-/// The `unlimbo` rows' Scenario-init arm: a building placed without a
-/// build-up queues Guard without commencing; the first opening's `+0x6DD`
-/// (Grand_Opening `0x004467C9`) lets its first Update's ready check commence
-/// it, and that Update's Mission_Guard runs at once. The build-up arm (mission
-/// 18, Construction) is VERA's build-up owner, which queues and commences
-/// Guard as it completes.
+/// The `unlimbo` rows through the port: `Enter_Idle_Mode` (`0x0044D6A0`) on a
+/// fresh building with the row's arguments, Scenario-init scope and
+/// `0xA8ED6B`. An initial call outside both begins the Construction body and
+/// queues Construction; any other begins the Idle body and queues Guard.
+/// Neither commences or touches the ready byte, the handler status or the
+/// mission timer. A building a convenience spawn places then has its ready
+/// byte (Grand_Opening's `+0x6DD`, `0x004467C9`) commence Guard on its first
+/// Update, and that Update's Mission_Guard runs at once.
 #[test]
-fn a_placed_building_queues_guard_and_commences_it_on_its_first_update() {
+fn enter_idle_mode_matches_the_unlimbo_rows() {
     let golden = golden();
     let unlimbo = rows(&golden, "unlimbo");
     assert_eq!(unlimbo.len(), 12);
+    let rules = rules(".016", 20);
     for row in unlimbo {
-        let args = &row["input"]["args"];
-        let instant =
-            args[0] == 0 || row["input"]["scenario_init"] == 1 || row["input"]["flag_ed6b"] == 1;
-        assert_eq!(row["mission"], "none");
-        assert_eq!(
-            row["queued"],
-            if instant {
-                serde_json::json!("guard")
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let (mut sim, _, _) = fixture(&rules, "DEF", (15, 5));
+        let building = sim
+            .spawn_object_limbo_at_height("DEF", "Americans", 7, 7, 0, 0, &rules)
+            .unwrap();
+        let before = sim.substrate.entities.get(building).unwrap().mission;
+        assert_eq!(before.current(), MissionId::NONE, "{name}");
+        assert_eq!(before.queued(), MissionId::NONE, "{name}");
+        let initial = input["args"][0] != 0;
+        let bypass = input["flag_ed6b"] == 1;
+        let enter = |sim: &mut Simulation| {
+            if bypass {
+                sim.with_buildup_bypass(|sim| {
+                    sim.building_enter_idle_mode(building, initial, Some(&rules))
+                })
             } else {
-                serde_json::json!(18)
-            },
-            "{}",
-            row["input"]["name"]
+                sim.building_enter_idle_mode(building, initial, Some(&rules))
+            }
+        };
+        let returned = if input["scenario_init"] == 1 {
+            sim.with_object_placement_scope(enter)
+        } else {
+            enter(&mut sim)
+        };
+        assert!(!returned, "{name}");
+        let int = |key: &str| i32::try_from(row[key].as_i64().unwrap()).unwrap();
+        let entity = sim.substrate.entities.get(building).unwrap();
+        assert_eq!(entity.building_body_state(), Some(int("bstate")), "{name}");
+        assert_eq!(
+            entity.queued_building_body_state(),
+            Some(int("queued_bstate")),
+            "{name}"
+        );
+        assert_eq!(
+            entity.mission.current(),
+            mission_of(row["mission"].as_str().unwrap()),
+            "{name}"
+        );
+        let queued = row["queued"]
+            .as_str()
+            .map_or_else(|| MissionId::from_raw(int("queued")), mission_of);
+        assert_eq!(entity.mission.queued(), queued, "{name}");
+        assert_eq!(
+            i32::from(ready_latch(&sim, building)),
+            int("ready"),
+            "{name}"
+        );
+        assert_eq!(
+            entity.mission.handler_state(),
+            before.handler_state(),
+            "{name}"
+        );
+        assert_eq!(
+            entity.mission.dispatch_timer(),
+            before.dispatch_timer(),
+            "{name}"
         );
     }
 
-    let rules = rules(".016", 20);
     let (mut sim, building, _) = fixture(&rules, "DEF", (15, 5));
     let entity = sim.substrate.entities.get(building).unwrap();
     assert_eq!(entity.mission.current(), MissionId::NONE);
     assert_eq!(entity.mission.queued(), mission_of("guard"));
+    assert_eq!(entity.building_body_state(), Some(1));
     assert_eq!(ready_latch(&sim, building), 1);
     sim.session.binary_frame += 1;
     object_ai_visit(&mut sim, building, &rules);

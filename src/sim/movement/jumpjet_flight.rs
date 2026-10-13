@@ -21,6 +21,10 @@
 //!   `0x0054CA90`, which drops it by `JumpjetCrash=` a frame on top of
 //!   Update's descent, spins its facing, and at the ground (or on crossing a
 //!   bridge deck) releases its air slot and sends the owner's impact notice.
+//! - The Magnetron's arms (`sim::locomotor_lift`): a held owner (`+0x6AD`)
+//!   keeps its body facing, is let go on arriving at its holder, is centred
+//!   on its cell before the latch, falls ever faster, and once dropped
+//!   (`+0x427`) crushes, lands, sinks or crashes where it meets the ground.
 //! - The reference height helper `0x0054D820` and the cell top height
 //!   `CellClass @ 0x00485080` (ground at the cell centre, plus a building's
 //!   `Dimension2` height or 85 leptons for any other techno in the cell).
@@ -98,6 +102,11 @@ const CRASH_TARGET_HEIGHT: i32 = -5;
 /// `ADD CX,0x2D00` at `0x0054CB24`: State 5 re-aims the facing this far past
 /// its animated current every frame, so it turns at the full turn rate.
 const CRASH_SPIN: u16 = 0x2D00;
+/// `[0x007E2AC8]` = 1.0f, the held fall's per-frame growth of `JumpjetCrash=`.
+const ONE_F32: u32 = 0x3F80_0000;
+/// `CellClass+0xEC` LandType Water and Beach.
+const LAND_WATER: u8 = 2;
+const LAND_BEACH: u8 = 6;
 
 /// The type block `Link_To_Object @ 0x0054AD30` copies into the locomotor
 /// (receiver `+0x1C..+0x3C`). Floats keep their binary32 bits.
@@ -254,10 +263,12 @@ pub(crate) trait JumpjetFlightHost {
     fn balloon_hover(&self) -> bool;
     /// Owner `+0x2B4` TarCom is set.
     fn has_target(&self) -> bool;
-    /// Foot `+0x6AD`, the locomotor piggyback/deploy flag.
+    /// Foot `+0x6AD`: a Magnetron lifted the owner (`sim::locomotor_lift`).
     fn piggyback_active(&self) -> bool;
-    /// Arrival with the piggyback flag: owner `+0x2B0` then `0x0070FEE0(1)`.
-    fn piggyback_arrival(&mut self);
+    /// A lifted owner's arrival (`0x0054C1BD..0x0054C1CB`): the Magnetron
+    /// still holding it (`+0x2B0`) lets it go (`0x0070FEE0(1)`), which drops
+    /// it. The callback runs on the published instance.
+    fn piggyback_arrival(&mut self, runtime: &mut JumpjetRuntime);
     /// `UnitTypeClass+0xE13` `IsSimpleDeployer=` on a Unit owner.
     fn simple_deployer(&self) -> bool;
     /// `TechnoTypeClass+0x6AD` on a Unit owner.
@@ -338,7 +349,9 @@ pub(crate) trait JumpjetFlightHost {
     /// `Set_Destination(0, 1)` runs, the air slot and bucket are released, the
     /// crate at the cell is picked up and the landing latches are cleared.
     fn touchdown(&mut self, runtime: &mut JumpjetRuntime);
-    /// Owner cleanup after the phase0 write54C9E4.
+    /// Owner cleanup after the phase0 write54C9E4: every touchdown lets a
+    /// lift end (`+0x6AE = 1`, `0x0054C9FE`) and clears the dropped and crash
+    /// bytes (`+0x427`, `+0x425`, `0x0054CA08`, `0x0054CA12`).
     fn finish_touchdown(&mut self);
 
     // Seams the crash adds.
@@ -362,6 +375,31 @@ pub(crate) trait JumpjetFlightHost {
     /// The latch's owner work (`0x0054B014..0x0054B02C`): an Infantry owner
     /// (What_Am_I 0xF) plays AirDeathStart, an unforced Do_Action(0x22).
     fn crash_latched(&mut self);
+
+    // Seams the Magnetron's drop adds.
+    /// `CellClass::GetCoords` (vtable `+0x48`, `0x00486840`) of the cell
+    /// `MapClass @ 0x005657A0` finds: its centre at its ground height.
+    fn cell_coords(&self, cell: (i16, i16)) -> [i32; 3];
+    /// Owner `+0x427`: a Magnetron dropped it.
+    fn dropped(&self) -> bool;
+    /// The dropped impact (`0x0054CC47..0x0054CDBD`) on the ground list of
+    /// the cell under the owner (`Simulation::dropped_impact`). Answers
+    /// whether it lands on a Unit or a Building, which crashes it.
+    fn crush_below(&mut self, runtime: &mut JumpjetRuntime) -> bool;
+    /// `TechnoTypeClass+0xD94` `JumpJet=` of the owner's type.
+    fn jumpjet_type(&self) -> bool;
+    /// `CellClass::IsClearToMove @ 0x004834A0` for SpeedType Wheel, both
+    /// occupant classes ignored, zone and level -1 (`0x0054CE7F..0x0054CE8F`).
+    fn wheel_clear(&self, cell: (i16, i16)) -> bool;
+    /// A dropped owner refused the water it falls on sinks
+    /// (`0x0054CEB4..0x0054CF37`, `Simulation::dropped_sink`).
+    fn sink(&mut self, runtime: &mut JumpjetRuntime);
+    /// The owner's `Set_Destination(0, 1)` (vtable `+0x480`, `0x0054CFAF`).
+    fn null_destination(&mut self, runtime: &mut JumpjetRuntime);
+    /// Owner `+0x428` and `+0x42C`, the drop's kill credit, cleared.
+    fn clear_drop_credit(&mut self);
+    /// Owner `+0x8C` OnBridge raised (`0x0054D012`).
+    fn set_on_bridge(&mut self);
 }
 
 fn zero() -> X87Value {
@@ -665,7 +703,7 @@ pub(crate) fn state3_translate(
         let here = host.cell_of([destination[0], destination[1]]);
         if host.piggyback_active() {
             runtime.flight.target_height = 0;
-            host.piggyback_arrival();
+            host.piggyback_arrival(runtime);
             state = STATE_DESCEND;
         } else if !has_target && !host.balloon_hover() {
             if unit_owner && host.simple_deployer() && host.type_flag_6ad() {
@@ -779,7 +817,13 @@ pub(crate) fn process(runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFligh
     if !host.is_object_alive() {
         return runtime.phase;
     }
-    runtime.phase = crash_latch(state, &mut runtime.flight, host);
+    runtime.phase = crash_latch(state, runtime, host);
+    // State 2 reads the destination the latch may have just centred.
+    let destination = [
+        runtime.destination.x,
+        runtime.destination.y,
+        runtime.destination.z,
+    ];
     runtime.phase = match runtime.phase {
         STATE_GROUND => state0_ground(runtime.moving, &params, &mut runtime.flight, host),
         STATE_ASCEND => state1_ascend(runtime, host),
@@ -792,7 +836,7 @@ pub(crate) fn process(runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFligh
         ),
         STATE_TRANSLATE => state3_translate(runtime, host),
         STATE_DESCEND => state4_descend(runtime, host),
-        STATE_CRASH => state5_crash(&params, &mut runtime.flight, host),
+        STATE_CRASH => state5_crash(runtime, host),
         other => other,
     };
     runtime.phase
@@ -805,18 +849,30 @@ pub(crate) fn process(runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFligh
 /// An Infantry owner's latch plays AirDeathStart (vtable `+0x558`,
 /// `0x0054B02C`; [`JumpjetFlightHost::crash_latched`]).
 ///
-/// Not ported: a Magnetron-held owner (`+0x6AD`) first has its destination
-/// moved to its cell's centre and latches only once it stands there
-/// (`0x0054AFE0..0x0054B004`). VERA never raises `+0x6AD` (the
-/// `IsLocomotor=` warhead is unported).
-fn crash_latch(state: i32, flight: &mut JumpjetFlight, host: &mut impl JumpjetFlightHost) -> i32 {
+/// A lifted owner (`+0x6AD`) latches only over the centre of its cell
+/// (GetCoords XY against the cell's, `0x0054AFE0..0x0054AFF6`); elsewhere
+/// the cell's GetCoords becomes the destination and the state runs on
+/// (`0x0054AFF8..0x0054B004`).
+fn crash_latch(state: i32, runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFlightHost) -> i32 {
     if !host.crashing()
         || matches!(state, STATE_CRASH | STATE_CRASHED)
         || host.height_above_ground() <= 0
     {
         return state;
     }
-    flight.target_height = CRASH_TARGET_HEIGHT;
+    if host.piggyback_active() {
+        let location = host.location();
+        let centre = host.cell_coords(host.cell_of([location[0], location[1]]));
+        if location[0] != centre[0] || location[1] != centre[1] {
+            runtime.destination = crate::sim::components::DriveCoord {
+                x: centre[0],
+                y: centre[1],
+                z: centre[2],
+            };
+            return state;
+        }
+    }
+    runtime.flight.target_height = CRASH_TARGET_HEIGHT;
     host.crash_latched();
     STATE_CRASH
 }
@@ -1122,34 +1178,61 @@ pub(crate) fn state4_descend(
     STATE_GROUND
 }
 
-/// `State5_Crash @ 0x0054CA90` for an owner no Magnetron holds. Returns the
-/// new state.
+/// `State5_Crash @ 0x0054CA90`. Returns the new state.
 ///
 /// The owner drops by `JumpjetCrash=` below where Update left it, truncated by
 /// `Math::ftol` (`0x0054CAFE..0x0054CB0A`), and the facing is re-aimed
-/// `0x2D00` past its animated current (`0x0054CB0E..0x0054CB39`). Only a cell
-/// inside the map takes the drop (`0x0054CBC2`); outside it Update's descent
-/// alone brings the owner down. The impact is the ground or a crossing of a
-/// high bridge's deck from above (`0x0054CB3E..0x0054CB81`). It releases the
-/// air slot the owner holds (`0x0054D045..0x0054D067`), zeroes the target
-/// speed (`0x0054D07D`) and hands the owner its notice
+/// `0x2D00` past its animated current (`0x0054CB0E..0x0054CB39`). A lifted
+/// owner (`+0x6AD`) instead stops dead and falls ever faster: its speeds
+/// zero and `JumpjetCrash=` grows by 1.0f a frame after the drop, stored as
+/// binary32 under the chop control word (`0x0054CAD2..0x0054CAFC`). Only a
+/// cell inside the map takes the drop (`0x0054CBC2`); outside it Update's
+/// descent alone brings the owner down. The impact is the ground or a
+/// crossing of a high bridge's deck from above (`0x0054CB3E..0x0054CB81`).
+///
+/// A dropped owner (`+0x427`) meeting it first hits what is below
+/// ([`JumpjetFlightHost::crush_below`]): landing on a Unit or a Building
+/// crashes it. Otherwise the cell under its Location is weighed
+/// (`0x0054CDC3..0x0054CE9A`): a cell its `Can_Enter_Cell` admits (and, for a
+/// `JumpJet=` type, Wheel can cross) lands it through State 4 with a null
+/// destination; water it is refused sinks it; anything else crashes it.
+/// Then a crash, or an owner no Magnetron lifted, above the ground loses
+/// the drop's credit, and a deck crossing after the weighing sets OnBridge
+/// (`0x0054CFBC..0x0054D012`).
+///
+/// The impact proper (`0x0054D019..0x0054D0A7`) waits for the ground or a
+/// deck crossing, and for a lifted owner a crash: it releases the air slot
+/// the owner holds, zeroes the target speed and hands the owner its notice
 /// ([`JumpjetFlightHost::crash_impact`]), leaving State 6.
 ///
-/// Not ported: the Magnetron arms. An owner held by one (`+0x6AD`) instead
-/// stops dead and falls ever faster (`0x0054CAD2..0x0054CAFC`), and one being
-/// dropped by it (`+0x427`) lands on and crushes what is below
-/// (`0x0054CC47..0x0054D012`); VERA raises neither byte.
-pub(crate) fn state5_crash(
-    params: &JumpjetFlightParams,
-    flight: &mut JumpjetFlight,
-    host: &mut impl JumpjetFlightHost,
-) -> i32 {
+/// Dead and not ported: the landing's crash for a Foot speed fraction
+/// (`+0x578`) of 5.0 or 7.0 (`0x0054CF3C..0x0054CF75`); its only writer,
+/// `SetSpeedFraction @ 0x004D3710`, clamps it to [0, 1]. The weighing's
+/// Aircraft arm (`0x0054CE43..0x0054CE65`) is unreachable: Jumpjet owners
+/// here are Units and Infantry.
+pub(crate) fn state5_crash(runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFlightHost) -> i32 {
     let frame = host.binary_frame();
     let [x, y, old_z] = host.location();
-    let new_z =
-        X87Chop53::ftol_i32_low_masked(X87Chop53::sub(int(old_z), single(params.crash_bits)));
-    let spin = flight.facing.current(frame).wrapping_add(CRASH_SPIN);
-    flight.facing.set(spin, frame);
+    let new_z = X87Chop53::ftol_i32_low_masked(X87Chop53::sub(
+        int(old_z),
+        single(runtime.params.crash_bits),
+    ));
+    if host.piggyback_active() {
+        runtime.flight.current_speed_bits = 0;
+        runtime.flight.target_speed_bits = 0;
+        runtime.params.crash_bits = X87Chop53::store_f32_masked_chop(X87Chop53::add(
+            single(runtime.params.crash_bits),
+            single(ONE_F32),
+        ))
+        .bits();
+    } else {
+        let spin = runtime
+            .flight
+            .facing
+            .current(frame)
+            .wrapping_add(CRASH_SPIN);
+        runtime.flight.facing.set(spin, frame);
+    }
 
     // `CMP EBP,ESI` / `CMP EAX,ESI`, both signed: from on or above the deck to
     // below it.
@@ -1161,14 +1244,49 @@ pub(crate) fn state5_crash(
     if host.in_bounds(here) {
         host.crash_relocate([x, y, new_z]);
     }
-    if host.height_above_ground() > 0 && !crossed_deck {
-        return STATE_CRASH;
+
+    let mut crash = false;
+    if (host.height_above_ground() <= 0 || crossed_deck) && host.dropped() {
+        let evaluated = !host.crush_below(runtime);
+        if evaluated {
+            let location = host.location();
+            let xy = [location[0], location[1]];
+            let cell = host.cell_of(xy);
+            let land = host.cell_land_type(xy);
+            let water = land == LAND_WATER && !crossed_deck;
+            let beach = land == LAND_BEACH && !crossed_deck;
+            let answer = host.can_enter_cell(cell);
+            let landable = (!host.jumpjet_type() || host.wheel_clear(cell)) && answer == 0;
+            if landable {
+                if host.holds_air_slot_at(cell) {
+                    host.release_air_slot_at(cell);
+                }
+                runtime.phase = STATE_DESCEND;
+                host.null_destination(runtime);
+            } else if water && !beach {
+                host.sink(runtime);
+            } else {
+                crash = true;
+            }
+        } else {
+            crash = true;
+        }
+        if crossed_deck {
+            if evaluated {
+                host.set_on_bridge();
+            }
+        } else if host.height_above_ground() > 0 && (!host.piggyback_active() || crash) {
+            host.clear_drop_credit();
+        }
     }
 
+    if (host.height_above_ground() > 0 && !crossed_deck) || (host.piggyback_active() && !crash) {
+        return runtime.phase;
+    }
     if host.holds_air_slot_at(here) {
         host.release_air_slot_at(here);
     }
-    flight.target_speed_bits = 0;
+    runtime.flight.target_speed_bits = 0;
     host.crash_impact();
     STATE_CRASHED
 }
@@ -1323,7 +1441,7 @@ mod tests {
         fn piggyback_active(&self) -> bool {
             self.piggyback
         }
-        fn piggyback_arrival(&mut self) {}
+        fn piggyback_arrival(&mut self, _runtime: &mut JumpjetRuntime) {}
         fn simple_deployer(&self) -> bool {
             self.simple_deployer
         }
@@ -1421,6 +1539,27 @@ mod tests {
             self.events.push("crash_impact");
         }
         fn crash_latched(&mut self) {}
+        // Neither corpus lifts or drops its owner.
+        fn cell_coords(&self, cell: (i16, i16)) -> [i32; 3] {
+            let xy = [i32::from(cell.0) * 256 + 128, i32::from(cell.1) * 256 + 128];
+            [xy[0], xy[1], self.floor_height(xy)]
+        }
+        fn dropped(&self) -> bool {
+            false
+        }
+        fn crush_below(&mut self, _runtime: &mut JumpjetRuntime) -> bool {
+            false
+        }
+        fn jumpjet_type(&self) -> bool {
+            false
+        }
+        fn wheel_clear(&self, _cell: (i16, i16)) -> bool {
+            true
+        }
+        fn sink(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn null_destination(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn clear_drop_credit(&mut self) {}
+        fn set_on_bridge(&mut self) {}
     }
 
     fn int(value: &Value) -> i64 {
@@ -1770,7 +1909,7 @@ mod tests {
         fn piggyback_active(&self) -> bool {
             self.piggyback
         }
-        fn piggyback_arrival(&mut self) {}
+        fn piggyback_arrival(&mut self, _runtime: &mut JumpjetRuntime) {}
         fn simple_deployer(&self) -> bool {
             self.simple_deployer
         }
@@ -1886,6 +2025,27 @@ mod tests {
             self.impact_events.push(json!([0x117C, 0]));
         }
         fn crash_latched(&mut self) {}
+        // Neither corpus lifts or drops its owner.
+        fn cell_coords(&self, cell: (i16, i16)) -> [i32; 3] {
+            let xy = [i32::from(cell.0) * 256 + 128, i32::from(cell.1) * 256 + 128];
+            [xy[0], xy[1], JumpjetFlightHost::floor_height(self, xy)]
+        }
+        fn dropped(&self) -> bool {
+            false
+        }
+        fn crush_below(&mut self, _runtime: &mut JumpjetRuntime) -> bool {
+            false
+        }
+        fn jumpjet_type(&self) -> bool {
+            false
+        }
+        fn wheel_clear(&self, _cell: (i16, i16)) -> bool {
+            true
+        }
+        fn sink(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn null_destination(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn clear_drop_credit(&mut self) {}
+        fn set_on_bridge(&mut self) {}
     }
 
     /// Parity with `tools/spatial_oracle/jumpjet_states.json`: the native

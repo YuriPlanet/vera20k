@@ -922,7 +922,7 @@ fn build_exit_confirm_modal_overlay(state: &AppState) -> Option<shell_paint::Mod
     ];
     Some(shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
-        atlas.validation_modal_background_pudlgbgn,
+        atlas.mode_two_dialog_background(None),
         frames,
         layout.dialog,
         &buttons,

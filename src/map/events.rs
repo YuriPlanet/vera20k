@@ -21,7 +21,7 @@ pub struct EventCondition {
     pub team_name: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MapEvent {
     pub id: String,
     pub fields: Vec<String>,

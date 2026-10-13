@@ -41,7 +41,7 @@ used in session `665f9d83-9ab9-4702-b86d-77aa61ccea55` at 09:52:56 UTC. Its comm
 wrapper is rendered as `/goal` below; the checkpoint path is preserved as history.
 
 ```text
-/goal Continue refactoring VERA20k for clear ownership, readable structure and execution: one owner for each piece of state and each decision; unfinished migrations and duplicate call chains finished or deleted. Resume from /Users/halvor/Documents/vera20k-worktrees/.claude-refactor-checkpoint.md. Commit, publish and merge as you go. DONE WHEN a whole-codebase audit finds no duplicate owner or unfinished migration left without an evidence-backed reason. Recording missing work does not complete the goal.
+/goal Continue refactoring VERA20k for clear ownership, readable structure and execution: one owner for each piece of state and each decision; unfinished migrations and duplicate call chains finished or deleted. Resume from ~/Documents/vera20k-worktrees/.claude-refactor-checkpoint.md. Commit, publish and merge as you go. DONE WHEN a whole-codebase audit finds no duplicate owner or unfinished migration left without an evidence-backed reason. Recording missing work does not complete the goal.
 ```
 
 What to carry forward: a compact outcome, a checkpoint pointer and a meaningful

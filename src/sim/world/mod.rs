@@ -97,9 +97,9 @@ pub(crate) use techno_ai::direct_greatest_threat;
 pub(crate) use techno_ai::dispatch_foot_mission;
 pub(crate) use techno_ai::enter_idle_mode;
 pub(crate) use techno_ai::foot_enter_idle_mode_selection;
-pub(crate) use techno_ai::foot_unlimbo_idle_mode;
 pub(crate) use techno_ai::passive_target_acquire;
 pub(crate) use techno_ai::queue_and_commence;
+pub(crate) use techno_ai::techno_unlimbo_idle_mode;
 pub(crate) use techno_ai::{can_fire_at, weapon_at_index};
 mod command_schedule;
 mod selection_voice;
@@ -577,9 +577,11 @@ pub enum SimSoundEvent {
         owner: InternedId,
         radar: RadarEventRequest,
     },
-    /// One of the `HouseClass::Update` advice lines
-    /// (`EVA_InsufficientFunds` `0x004F8BA0`, `EVA_LowPower` `0x004F8D14`)
-    /// for a human house; `event` is the `evamd.ini` section name.
+    /// A `PlayEVA` line native speaks only for the player's house: the
+    /// `HouseClass::Update` advice (`EVA_InsufficientFunds` `0x004F8BA0`,
+    /// `EVA_LowPower` `0x004F8D14`), the depot's empty wallet, the crate
+    /// upgrades and the Robot Tank lines (`sim::powered_unit`). `event` is
+    /// the `evamd.ini` section name; the app applies the local-owner test.
     HouseEva {
         owner: InternedId,
         event: &'static str,
@@ -948,13 +950,6 @@ where
     Ok(SimRng::new(0))
 }
 
-/// Constructor-time lighting for a Simulation that has not reached Post_Map_Init
-/// yet, and the value a deserialized snapshot starts from before the load path
-/// re-supplies the live scenario profile.
-fn default_scenario_normal_lighting() -> crate::map::lighting::LightingProfileUnits {
-    crate::map::lighting::ParsedLightingProfiles::default().normal
-}
-
 /// The game simulation - owns all authoritative game state.
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Simulation {
@@ -985,6 +980,11 @@ pub struct Simulation {
     /// state. Only lifecycle's nested scope API mutates it.
     #[serde(skip, default)]
     object_placement_scope_depth: u32,
+    /// VERA's analog of native `0xA8ED6B`, which sends an initial building
+    /// Unlimbo to Enter_Idle_Mode's Idle arm. Raised only by lifecycle's
+    /// bypass API; balanced at frame boundaries; not saved/hash state.
+    #[serde(skip, default)]
+    buildup_bypass: bool,
     /// Scenario RNG — gamemd `Scenario->Random` (Scen+0x218). Drives in-object-tick
     /// sim draws: scatter, sub-cell placement, smudge/destruction, particles,
     /// wall/overlay damage, bridge collapse/destruction presentation, ore growth/spread, TIBTRE,
@@ -1040,7 +1040,9 @@ pub struct Simulation {
     pub(crate) load_objects: LoadObjectLifecycle,
     /// Deterministic fog/shroud visibility state.
     pub fog: FogState,
-    /// Static alliance graph derived from map house data.
+    /// Each house's ally mask (`HouseClass+0x5788`) as a directed graph,
+    /// written by `sim::house_diplomacy`: the scenario's install, then
+    /// MakeAlly and MakeEnemy.
     pub house_alliances: HouseAllianceMap,
     /// Object substrate — the active-object order plus the monotonic id and
     /// enter-order counters. The single owner the lifecycle contract
@@ -1216,13 +1218,6 @@ pub struct Simulation {
     /// Persistent MapClass scenario-crate slots, including accepted ghosts and
     /// their native timer words. This is authoritative save/hash state.
     pub(crate) crate_authority: crate::sim::crates::CrateAuthority,
-    /// The scenario's ordinary `[Lighting]` profile, retained so the runtime
-    /// crate-regeneration rung reaches `OverlayClass::Mark` with the same
-    /// CellClass `+0x10A` source scenario start used. Static map data, not
-    /// simulation state: NOT serialized, NOT hashed, and carried across an
-    /// in-scenario load beside the other process-scoped values.
-    #[serde(skip, default = "default_scenario_normal_lighting")]
-    pub(crate) scenario_normal_lighting: crate::map::lighting::LightingProfileUnits,
     /// Per-cell smudge state (craters, scorches). Seeded from map [Smudge]
     /// entries at init, mutated by combat death-handling at runtime.
     pub smudge_grid: Option<crate::sim::smudge_grid::SmudgeGrid>,
@@ -1747,6 +1742,12 @@ fn dispatch_smudge_inline(
     );
 }
 
+/// Existing process RNG owner lent to a detached saved-world candidate.
+pub(crate) enum SnapshotProcessState<'a> {
+    Live(&'a Simulation),
+    Cold(&'a MainRng),
+}
+
 impl Simulation {
     /// The live CellClass level of a cell in the terrain the simulation owns,
     /// or `None` without terrain or off the map. Bridge-body and cliff writes
@@ -1879,13 +1880,24 @@ impl Simulation {
                 if !matches!(category, EntityCategory::Unit | EntityCategory::Structure) {
                     return;
                 }
-                // Unit's receiver retains crashes (738475) and sinking
-                // hulls (738493). Their own AI terminal calls UnInit.
+                // Unit's receiver retains a `Crashable=` type its Crash(0)
+                // latched (`0x00738475`) and any other type's sinking hull
+                // (`0x00738493`); their own AI terminal calls UnInit. A
+                // Magnetron's drop latches `crashing` too, and keeps nothing.
                 if self
                     .substrate
                     .entities
                     .get(stable_id)
-                    .is_some_and(|entity| entity.crashing || entity.sinking.is_active())
+                    .is_some_and(|entity| {
+                        if self
+                            .object_type(entity.type_ref(), rules)
+                            .is_some_and(|object| object.crashable)
+                        {
+                            entity.crashing
+                        } else {
+                            entity.sinking.is_active()
+                        }
+                    })
                 {
                     return;
                 }
@@ -2925,21 +2937,42 @@ impl Simulation {
         }
     }
 
-    /// Complete the in-scenario Load Game handoff with process-global state
-    /// that is live at load time. Scenario RNG has already been reset by
-    /// deserialization and is deliberately untouched here. The cold front-end
-    /// load route has a distinct native handoff and does not use this seam.
-    pub(crate) fn retain_in_scenario_process_state_from(&mut self, live: &Self) {
-        self.session.seed = live.session.seed;
-        self.main_rng = live.main_rng.shared_owner();
-        self.mapgen_rng = live.mapgen_rng.clone();
-        self.bind_shared_cell_dummy(live.effective_shared_cell_dummy());
-        self.substrate
-            .raw_cell_occupation
-            .retain_process_dummy_from(&live.substrate.raw_cell_occupation);
-        // Static map data, not saved state: the live scenario is still the one
-        // being reloaded, so its parsed lighting profile carries over.
-        self.scenario_normal_lighting = live.scenario_normal_lighting;
+    /// LoadContent67E730 does not restore process Main/MapGen. ScenarioLoad
+    /// 689470 -> post-read683560 has already reset Scenario to Seed(0).
+    /// The candidate stages the one process Main cursor: draws made while the
+    /// load is prepared advance it, and the commit moves it into that cell
+    /// (`install_fresh_process_main`). In-scenario loading keeps the live
+    /// seed and MapGen; the cold shell starts MapGen from the CRT Seed(0)
+    /// object (native fixture in world/rng_routing_tests.rs).
+    pub(crate) fn retain_process_state_for_load(&mut self, process: SnapshotProcessState<'_>) {
+        match process {
+            SnapshotProcessState::Live(live) => {
+                self.session.seed = live.session.seed;
+                self.main_rng = live.main_rng.staged_copy();
+                self.mapgen_rng = live.mapgen_rng.clone();
+                self.bind_shared_cell_dummy(live.effective_shared_cell_dummy());
+                self.substrate
+                    .raw_cell_occupation
+                    .retain_process_dummy_from(&live.substrate.raw_cell_occupation);
+            }
+            SnapshotProcessState::Cold(main) => {
+                self.session.seed = 0;
+                self.main_rng = main.staged_copy();
+                self.mapgen_rng = SimRng::new(0);
+            }
+        }
+    }
+
+    /// Init_Random_Number_System52FC20, ordinary offline menu-load tail
+    /// 52E619. The caller supplies the resolved clock/override seed. Both
+    /// Scenario and process Main are reseeded, Main in its shared process
+    /// cell; MapGen is untouched. In-game options resume does not reach this
+    /// caller. Executed full-state controls:
+    /// tools/rmg_oracle/vectors/rng.json::menu_rng_cases.
+    pub(crate) fn initialize_random_number_system(&mut self, seed: u32) {
+        self.session.seed = u64::from(seed);
+        self.scenario_rng = SimRng::new(u64::from(seed));
+        self.main_rng.install_from(MainRng::new(u64::from(seed)));
     }
 
     /// Apply the successful load's native MapClass Resize reconstruction to
@@ -2967,6 +3000,17 @@ impl Simulation {
         self.shared_cell_dummy = shared_cell_dummy.clone();
         if let Some(terrain) = self.resolved_terrain.as_mut() {
             terrain.bind_shared_cell_dummy(shared_cell_dummy);
+        }
+    }
+
+    /// Rebind a successfully prepared map to the retained process selector.
+    /// The map owner keeps its catalogs on the same lazy table identity.
+    pub(crate) fn bind_tile_variant_selector(
+        &mut self,
+        selector: crate::map::tile_variant_selector::TileVariantSelector,
+    ) {
+        if let Some(terrain) = self.resolved_terrain.as_mut() {
+            terrain.bind_tile_variant_selector(selector);
         }
     }
 
@@ -3059,8 +3103,8 @@ impl Simulation {
         self.main_rng = main_rng.into();
     }
 
-    /// Bind a successful fresh scenario to the retained process Main cell,
-    /// moving its terrain-advanced bootstrap cursor into that same identity.
+    /// Bind a successful fresh or saved scenario to the retained process Main
+    /// cell, moving its staged cursor into that same identity.
     /// App orchestration must first cancel the outgoing playback callbacks.
     pub(crate) fn install_fresh_process_main(&mut self, process: &MainRng) {
         let staged = std::mem::replace(&mut self.main_rng, process.shared_owner());
@@ -3230,6 +3274,7 @@ impl Simulation {
             production: ProductionState::default(),
             session,
             object_placement_scope_depth: 0,
+            buildup_bypass: false,
             scenario_rng: SimRng::new(seed),
             main_rng: MainRng::new(seed),
             mapgen_rng: SimRng::new(0),
@@ -3286,7 +3331,6 @@ impl Simulation {
             bridge_state: None,
             overlay_grid: None,
             crate_authority: crate::sim::crates::CrateAuthority::default(),
-            scenario_normal_lighting: default_scenario_normal_lighting(),
             smudge_grid: None,
             radiation: crate::sim::radiation::RadiationState::default(),
             bombs: crate::sim::bomb::BombList::default(),
@@ -3359,16 +3403,6 @@ impl Simulation {
     /// Draws remain outside Scenario/hash/save state; no copied audio cursor.
     pub(crate) fn presentation_main_draws(&self) -> crate::sim::rng::MainRngDraws {
         self.main_rng.draws()
-    }
-
-    /// Test/replay helper for the per-game Scenario/Main pair only.
-    ///
-    /// Original52FC20 preserves MapGen while reseeding the per-game pair.
-    #[cfg(test)]
-    pub(crate) fn reseed_scenario_and_main(&mut self, seed: u64) {
-        self.scenario_rng = SimRng::new(seed);
-        self.main_rng.install_from(MainRng::new(seed));
-        self.session.seed = seed;
     }
 
     /// The occupancy grid (per-cell object lists). Read access for systems above sim/.
@@ -3889,14 +3923,7 @@ impl Simulation {
         // Buildings are explicitly excluded. Rust's owned equivalent commits
         // the sight reveal immediately, before this action returns.
         let reveal_config = self.sight_reveal_config(rules);
-        let height_grid = reveal_config
-            .reveal_by_height()
-            .then(|| {
-                self.path_grid
-                    .as_ref()
-                    .map(|grid| grid.ground_height_grid())
-            })
-            .flatten();
+        let height_grid = self.sight_height_grid(&reveal_config);
         for (stable_id, _, reveal) in membership_updates {
             if reveal && let Some(entity) = self.substrate.entities.get(stable_id) {
                 let sight_ability =
@@ -4657,10 +4684,33 @@ impl Simulation {
         ))
     }
 
-    /// `HouseClass::Added_To_Game @ 0x00502A80` (`adding`) or
-    /// `Removed_From_Game @ 0x005025F0` for an object on its owner's house,
-    /// priced with that house's current `Cost_Of` factors.
-    pub(crate) fn update_house_presence(&mut self, stable_id: u64, adding: bool) {
+    /// `HouseClass::Added_To_Game @ 0x00502A80` for an object on its owner's
+    /// house, priced with that house's current `Cost_Of` factors. It counts
+    /// no powered center and invalidates no power; the first GrandOpening
+    /// owns that invalidation.
+    pub(crate) fn house_added_to_game(&mut self, stable_id: u64) {
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
+            return;
+        };
+        if let Some(house) = self.houses.get_mut(&entity.owner()) {
+            let factors = house.cost_factors();
+            house.tracking.added_to_game(entity, &factors);
+        }
+    }
+
+    /// `HouseClass::Removed_From_Game @ 0x005025F0` for an object on its
+    /// owner's house, priced like [`Self::house_added_to_game`]. Between its
+    /// sidebar update and its class switch, a counted `PowersUnit=` building
+    /// stops counting (`0x0050263B..0x00502776`,
+    /// [`Self::powered_center_removed`]); neither half reads what the other
+    /// writes. A Building invalidates its house's power even before the
+    /// DontScore gate (`0x005027FA`).
+    pub(crate) fn house_removed_from_game(
+        &mut self,
+        stable_id: u64,
+        rules: Option<&RuleSet>,
+        effects: FrameEffects<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
@@ -4668,16 +4718,10 @@ impl Simulation {
         let structure = entity.category == EntityCategory::Structure;
         if let Some(house) = self.houses.get_mut(&owner) {
             let factors = house.cost_factors();
-            if adding {
-                house.tracking.added_to_game(entity, &factors);
-            } else {
-                house.tracking.removed_from_game(entity, &factors);
-            }
+            house.tracking.removed_from_game(entity, &factors);
         }
-        // Removed_From_Game5027FA invalidates power for a Building even
-        // before its DontScore gate. Ordinary Added_To_Game has no matching
-        // writer; first GrandOpening owns that invalidation.
-        if !adding && structure {
+        self.powered_center_removed(stable_id, rules, effects);
+        if structure {
             self.invalidate_house_power(owner, false);
         }
     }
@@ -4976,7 +5020,7 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| !entity.lifecycle.in_limbo);
         if on_map {
-            self.update_house_presence(stable_id, false);
+            self.house_removed_from_game(stable_id, rules, effects);
         }
         //7015A8 calls RecordTheKill(NULL) while the old owner is still
         //installed, then7015D2 adds CostOf(oldHouse) to the new owner's
@@ -5111,7 +5155,7 @@ impl Simulation {
         }
         // Techno701757..70178E: Added_To_Game on the new house (not in limbo).
         if on_map {
-            self.update_house_presence(stable_id, true);
+            self.house_added_to_game(stable_id);
         }
         if build_const_eligible
             && let Some(house) = self.houses.get_mut(&new_owner)
@@ -5993,11 +6037,7 @@ impl Simulation {
         // (preserving FLAG_REVEALED) then re-reveals from entity positions.
         // No allocation or merge_revealed_from pass needed.
         let path_grid = self.path_grid.as_deref();
-        let height_grid = if config.reveal_by_height() {
-            path_grid.map(PathGrid::ground_height_grid)
-        } else {
-            None
-        };
+        let height_grid = self.sight_height_grid(config);
 
         vision::recompute_owner_visibility_in_place(
             &mut self.fog,
@@ -6756,11 +6796,16 @@ impl Simulation {
             if let Some(overlay_registry) = overlay_registry {
                 #[cfg(test)]
                 self.trace_master_frame_rung(MasterFrameTestRung::CrateRegen);
+                let normal_lighting = self
+                    .session
+                    .lighting
+                    .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
+                    .into();
                 let regen = crate::sim::crates::tick_crate_regeneration(
                     self,
                     rules,
                     overlay_registry,
-                    self.scenario_normal_lighting,
+                    normal_lighting,
                 );
                 if regen.visible != 0 {
                     // Native Mark mutates live CellClass land/zone/bridge state

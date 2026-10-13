@@ -18,8 +18,25 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
 use crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
+use crate::ui::sidebar::SidebarTheme;
 
 const ATLAS_PADDING: u32 = 2;
+/// Original 72B060/72B0D0: neutral, Allied, Soviet, Yuri mode-2 assets.
+const MODE_TWO_DIALOG_ART: [(&str, &str); 4] = [
+    ("PUDLGBGN.SHP", "DIALOGN.PAL"),
+    ("PUDLGBGA.SHP", "DIALOG.PAL"),
+    ("PUDLGBGS.SHP", "DIALOG.PAL"),
+    ("PUDLGBGY.SHP", "DIALOGY.PAL"),
+];
+
+fn mode_two_dialog_background_slot(side: Option<SidebarTheme>) -> usize {
+    match side {
+        None => 0,
+        Some(SidebarTheme::Allied) => 1,
+        Some(SidebarTheme::Soviet) => 2,
+        Some(SidebarTheme::Yuri) => 3,
+    }
+}
 const OWNER_DRAW_FLAG_TRANSPARENT_RGB: [u8; 3] = [255, 0, 255];
 /// Shell bevel colours `0x00C5BEA7` and `0x00807A68` (`0x0060FA81..0x0060FA9B`),
 /// packed `0x00BBGGRR`.
@@ -82,7 +99,7 @@ pub struct SkirmishShellChromeAtlas {
     pub generic_background_large_mnscrnl_shell: Option<SkirmishShellChromeEntry>,
     pub lower_side_640_lwscrns: Option<SkirmishShellChromeEntry>,
     pub lower_side_large_lwscrnl: Option<SkirmishShellChromeEntry>,
-    pub validation_modal_background_pudlgbgn: Option<SkirmishShellChromeEntry>,
+    mode_two_dialog_backgrounds: [Option<SkirmishShellChromeEntry>; 4],
     pub button_up_left_30: Option<SkirmishShellChromeEntry>,
     pub button_up_mid_30: Option<SkirmishShellChromeEntry>,
     pub button_up_right_30: Option<SkirmishShellChromeEntry>,
@@ -163,6 +180,16 @@ pub struct ControlChrome {
 }
 
 impl SkirmishShellChromeAtlas {
+    /// Original mode-2 paint (`621E90`, branch `6221D1`) selects neutral art
+    /// outside a session, otherwise the scenario's side. Missing selected art or
+    /// palette skips the SHP; it does not borrow another side's background.
+    pub fn mode_two_dialog_background(
+        &self,
+        side: Option<SidebarTheme>,
+    ) -> Option<SkirmishShellChromeEntry> {
+        self.mode_two_dialog_backgrounds[mode_two_dialog_background_slot(side)]
+    }
+
     /// Snapshot the control glyph entries into a Default-able, texture-free subset
     /// the paint seam can take (and tests can build by hand). Entries are `Copy`.
     pub fn control_chrome(&self) -> ControlChrome {
@@ -247,7 +274,6 @@ pub fn build_skirmish_shell_chrome_atlas(
     let shell2_palette = load_named_palette(assets, "SHELL2.PAL")?;
     let sdbtnanm_palette = load_named_palette(assets, "SDBTNANM.PAL");
     let main_button_palette = load_named_palette(assets, "MAINBTTN.PAL");
-    let neutral_dialog_palette = load_named_palette(assets, "DIALOGN.PAL");
     let choose_map_background_palette = load_choose_map_background_palette(assets);
 
     let mut rendered = Vec::new();
@@ -334,22 +360,26 @@ pub fn build_skirmish_shell_chrome_atlas(
             "Skipping verified modal button art MNBTTN.SHP because MAINBTTN.PAL is missing or invalid"
         );
     }
-    if let Some(neutral_dialog_palette) = neutral_dialog_palette.as_ref() {
-        push_optional(
-            &mut rendered,
-            render_shp_entry_labeled(
-                assets,
-                "PUDLGBGN.SHP",
-                "pudlgbgn.shp#0",
-                neutral_dialog_palette,
-                0,
-            ),
-            "PUDLGBGN.SHP",
-        );
-    } else {
-        log::warn!(
-            "Skipping native validation modal background PUDLGBGN.SHP because DIALOGN.PAL is missing or invalid"
-        );
+    // Original loaders 72B060/72B0D0 and getters 72AFF0/72B010/72B030.
+    // AssetManager retains the mounted retail winner and the SHP's dimensions.
+    for (name, palette_name) in MODE_TWO_DIALOG_ART {
+        if let Some(palette) = load_named_palette(assets, palette_name) {
+            push_optional(
+                &mut rendered,
+                render_shp_entry_labeled(
+                    assets,
+                    name,
+                    &format!("{}#0", name.to_ascii_lowercase()),
+                    &palette,
+                    0,
+                ),
+                name,
+            );
+        } else {
+            log::warn!(
+                "Skipping native mode-2 background {name}: missing or invalid {palette_name}"
+            );
+        }
     }
     rendered.push(mandatory_shp(
         assets,
@@ -552,7 +582,11 @@ pub fn build_skirmish_shell_chrome_atlas(
         generic_background_large_mnscrnl_shell: by_label.get("mnscrnl.shp#shell").copied(),
         lower_side_640_lwscrns: by_label.get("lwscrns.shp").copied(),
         lower_side_large_lwscrnl: by_label.get("lwscrnl.shp").copied(),
-        validation_modal_background_pudlgbgn: by_label.get("pudlgbgn.shp#0").copied(),
+        mode_two_dialog_backgrounds: MODE_TWO_DIALOG_ART.map(|(name, _)| {
+            by_label
+                .get(&format!("{}#0", name.to_ascii_lowercase()))
+                .copied()
+        }),
         button_up_left_30: by_label.get("bue_li30.pcx").copied(),
         button_up_mid_30: by_label.get("bue_mi30.pcx").copied(),
         button_up_right_30: by_label.get("bue_ri30.pcx").copied(),
@@ -644,7 +678,9 @@ fn classify_shell_asset(name: &str) -> ShellAssetRole {
         | "gdnarrowp.pcx" | "mnbttn.shp" | "sidebttn.shp" => {
             ShellAssetRole::VerifiedOwnerDrawButton
         }
-        "pudlgbgn.shp" => ShellAssetRole::VerifiedModalDialogBackground,
+        "pudlgbgn.shp" | "pudlgbga.shp" | "pudlgbgs.shp" | "pudlgbgy.shp" => {
+            ShellAssetRole::VerifiedModalDialogBackground
+        }
         "usai.pcx" | "japi.pcx" | "frai.pcx" | "geri.pcx" | "gbri.pcx" | "djbi.pcx"
         | "arbi.pcx" | "lati.pcx" | "rusi.pcx" | "yrii.pcx" | "obsi.pcx" | "rani.pcx" => {
             ShellAssetRole::VerifiedFlag
@@ -1076,6 +1112,45 @@ mod tests {
         trackbar_frame_rgba,
     };
     use crate::assets::asset_manager::MediaArchiveMode;
+
+    #[test]
+    fn mode_two_background_binding_matches_original_progress_paint() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/saved_game_layout.json",
+        ))
+        .unwrap();
+        let mut compared = 0;
+        for row in corpus["progress_background"].as_array().unwrap() {
+            let input = &row["input"];
+            if !input["missing"].is_null() {
+                continue;
+            }
+            let side = (input["session_byte30D8"].as_u64().unwrap() != 0).then(|| {
+                match input["scenario_side34B8"].as_u64().unwrap() {
+                    0 => super::SidebarTheme::Allied,
+                    1 => super::SidebarTheme::Soviet,
+                    2 => super::SidebarTheme::Yuri,
+                    _ => panic!("unsupported fixture side"),
+                }
+            });
+            let draw = row["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|event| event["event"] == "draw")
+                .unwrap();
+            let (shape, palette) =
+                super::MODE_TWO_DIALOG_ART[super::mode_two_dialog_background_slot(side)];
+            assert_eq!(shape, draw["shape"].as_str().unwrap());
+            assert_eq!(palette, draw["palette"].as_str().unwrap());
+            assert_eq!(
+                classify_shell_asset(shape),
+                ShellAssetRole::VerifiedModalDialogBackground
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 4);
+    }
 
     fn pixel(entry: &RenderedShellEntry, x: u32, y: u32) -> [u8; 4] {
         let offset = ((y * entry.width + x) * 4) as usize;

@@ -54,7 +54,7 @@ claims rest on instruction/body/caller evidence, not a newly executed whole-game
 ART load. The inspected physical loop bytes matched Ghidra's region; no full
 Ghidra-export image hash was claimed.
 
-The [validation receipt](art_registry_owner.validation.json) records eleven
+The validation receipt (`tools/art_registry_owner.validation.json`, in git at 1b1a8b43e) records eleven
 successful existing `--check` runs on 2026-09-28 (04:43:23–04:43:41 UTC), with
 24 pinned ART/SHP inputs plus the retained sound inputs. The checked native producers and goldens were unchanged. The standalone Rust
 `bridge_retail_anim_inputs.rs` exporter was migrated to the read-only accessor;

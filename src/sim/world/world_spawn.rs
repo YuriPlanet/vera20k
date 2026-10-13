@@ -26,7 +26,7 @@ use crate::sim::base_plan::pack_base_plan_cell;
 use crate::sim::base_plan_generation::{preflight_recalc, recalc_base_plan};
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::veterancy::{has_weapon_ability, rank_from_u16};
-use crate::sim::components::{BuildingUp, Health};
+use crate::sim::components::Health;
 use crate::sim::game_entity::{
     GameEntity, GeneratedTechnoInit, StructureUpgradeLink, TechnoConstructorInit,
 };
@@ -678,7 +678,7 @@ impl Simulation {
     /// harvest FSM needs a truthful `current` from birth.
     ///
     /// A building's `[Structures]` line has no mission column; it takes
-    /// [`Self::queue_placed_building_guard`].
+    /// [`Self::ready_placed_building`].
     fn commit_map_placement_mission(
         &mut self,
         stable_id: u64,
@@ -686,13 +686,13 @@ impl Simulation {
     ) {
         // A harvester keeps the Harvest that Unlimbo's idle mode gave it
         // (`UnitClass::Enter_Idle_Mode @ 0x00738970`, harvester arm
-        // `0x00738BD8`, owned by `foot_unlimbo_idle_mode`).
+        // `0x00738BD8`, owned by `techno_unlimbo_idle_mode`).
         let harvester = self
             .substrate
             .entities
             .get(stable_id)
             .is_some_and(crate::sim::game_entity::GameEntity::is_harvester);
-        if harvester || self.queue_placed_building_guard(stable_id) {
+        if harvester || self.ready_placed_building(stable_id) {
             return;
         }
         let Some(mission) = authored else {
@@ -706,66 +706,67 @@ impl Simulation {
         );
     }
 
-    /// The mission of a building placed without a build-up (a map building,
-    /// or one [`Self::spawn_object`] places): its Unlimbo arm (vt+0x484 =
-    /// `0x0044D6A0`: Guard at `0x0044D6DC..0x0044D6F1` unless the build-up
-    /// flag is set outside scenario init) queues Guard without commencing,
-    /// and the first opening its discovery runs (`0x0044D5D0` ->
-    /// Grand_Opening, `0x004467C9`) sets `+0x6DD`, so its first Update's
-    /// ready check commences Guard. Native execution:
+    /// The ready byte of a building placed without a build-up (a map
+    /// building, or one [`Self::spawn_object`] places). Its Unlimbo queued
+    /// Guard ([`Self::building_enter_idle_mode`]'s Idle arm: a map placement
+    /// runs inside the placement scope, a convenience spawn inside the
+    /// build-up bypass), and the first opening its discovery runs
+    /// (`0x0044D5D0` -> Grand_Opening, `0x004467C9`) sets `+0x6DD`, so its
+    /// first Update's ready check commences Guard. Native execution:
     /// `tools/spatial_oracle/building_guard_attack.json` (`unlimbo` rows).
-    /// Answers whether `stable_id` is a building.
+    /// Native has no write here: for a building its discovery opened it is
+    /// a repeat; it also readies one no house discovers (a houseless test
+    /// fixture). Answers whether `stable_id` is a building.
     ///
-    /// RESIDUAL: VERA opens every such building at once; native reaches a
+    /// RESIDUAL: VERA readies every such building at once; native reaches a
     /// campaign's human-owned building through its discovery
     /// (DiscoveredBy(Player) needs its cell's `+0x12C & 0x10` when GameMode
     /// is 0). Trigger: a campaign map's shrouded player building. Effect: it
-    /// guards before it is discovered. Frequency: campaign maps only;
-    /// skirmish and multiplayer open every building at Unlimbo.
-    fn queue_placed_building_guard(&mut self, stable_id: u64) -> bool {
-        if !self
+    /// guards before it is discovered. Frequency: campaign maps only; in
+    /// skirmish and multiplayer every map building is discovered, and so
+    /// opened, at its Unlimbo.
+    fn ready_placed_building(&mut self, stable_id: u64) -> bool {
+        let Some(entity) = self
             .substrate
             .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.category == EntityCategory::Structure)
-        {
+            .get_mut(stable_id)
+            .filter(|entity| entity.category == EntityCategory::Structure)
+        else {
             return false;
-        }
-        //The existing immediate-map/convenience-spawn adapter enters without
-        //a build-up. Its native scope is separate from ordinary Construction.
-        self.building_enter_idle_mode(stable_id, false, None);
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.mission_leaf.set_building_ready_latch(1);
-        }
+        };
+        entity.mission_leaf.set_building_ready_latch(1);
         true
     }
 
-    ///Building44D6A0, shared by map placement, owner change, factory Unload
-    ///and Gate Open. The normal arm calls the sole447780 body owner, then
-    ///queues Guard5 without commencing. Native returns false on either arm.
-    ///
-    ///The initial=true, scope0 branch also tests globalA8ED6B (build-up
-    ///bypass) before choosing Construction18. Its caller/global initialization
-    ///belongs to the separate initial Building placement mechanism; existing
-    ///immediate-placement adapters deliberately enter the normal arm.
+    /// `BuildingClass::Enter_Idle_Mode @ 0x0044D6A0` (vt+0x484), shared by
+    /// every Unlimbo (`TechnoClass::Unlimbo`'s `(1, 1)` at `0x006F6E2A`) and,
+    /// with `(0, 1)`, owner change (`0x00701849`), factory Unload
+    /// (`0x0044E25A`) and Gate Open (`0x0044E70C`). An initial call outside
+    /// the placement scope `0xA8E7AC` and the build-up bypass `0xA8ED6B`
+    /// begins the Construction body (Begin_Mode(0), `0x00447780`) and queues
+    /// Construction (`0x0044D6BD..0x0044D6D0`); any other begins the Idle
+    /// body and queues Guard (`0x0044D6DC..0x0044D6F1`). Neither commences,
+    /// and native returns false on both arms. Native execution:
+    /// `tools/spatial_oracle/building_guard_attack.json` (`unlimbo` rows).
     pub(crate) fn building_enter_idle_mode(
         &mut self,
         stable_id: u64,
         initial: bool,
         rules: Option<&RuleSet>,
     ) -> bool {
-        if initial && !self.object_placement_scope_active() {
-            return false;
-        }
+        use crate::sim::building_construction::BuildingBodyMode;
+        use crate::sim::mission::MissionType;
+        let (body, mission) =
+            if initial && !self.object_placement_scope_active() && !self.buildup_bypass_active() {
+                (BuildingBodyMode::Construction, MissionType::Construction)
+            } else {
+                (BuildingBodyMode::Idle, MissionType::Guard)
+            };
         let now = self.session.binary_frame;
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.begin_building_body(
-                crate::sim::building_construction::BuildingBodyMode::Idle,
-                now as i32,
-            );
+            entity.begin_building_body(body, now as i32);
         }
-        let mission =
-            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard);
+        let mission = crate::sim::mission::MissionId::from_known(mission);
         if let Some(rules) = rules {
             let _ = self.mission_queue_exact(
                 stable_id,
@@ -786,7 +787,9 @@ impl Simulation {
         false
     }
 
-    /// Spawn one object instance (used by production). Returns the stable_id on success.
+    /// Spawn one object instance, standing finished (tests, tools, debug
+    /// spawns).
+    /// Returns the stable_id on success.
     pub fn spawn_object(
         &mut self,
         type_id: &str,
@@ -906,12 +909,15 @@ impl Simulation {
         else {
             return Ok(None);
         };
-        let (stable_id, outcome) = self.unlimbo_after_constructor_managers(
-            ge,
-            Some(rules),
-            overlay_registry,
-            FrameEffects::default(),
-        );
+        // A convenience spawn's building stands finished, like a map's.
+        let (stable_id, outcome) = self.with_buildup_bypass(|sim| {
+            sim.unlimbo_after_constructor_managers(
+                ge,
+                Some(rules),
+                overlay_registry,
+                FrameEffects::default(),
+            )
+        });
         if !matches!(outcome, RevealOutcome::Revealed { .. }) {
             // This convenience path owns its transient constructor result.
             // Held production objects use the separate limbo/retry boundary.
@@ -920,7 +926,7 @@ impl Simulation {
         }
         self.initialize_cloak_after_unlimbo(stable_id, rules);
         self.add_unit_sensor_after_unlimbo(stable_id, rules);
-        self.queue_placed_building_guard(stable_id);
+        self.ready_placed_building(stable_id);
         Ok(Some(stable_id))
     }
 
@@ -1489,6 +1495,14 @@ impl Simulation {
                     entity.category == EntityCategory::Structure && !entity.building_up()
                 })
             {
+                // RESIDUAL: native Begin_Mode applies a new mode at once while
+                // ScenarioInit is set (`0x004477A2..0x004477B0`), and in that
+                // arm also starts the type's animations by damage state
+                // (`0x004477DB..0x00447853`, `0x00451890`). VERA's Begin_Mode
+                // has neither: this applies the Unlimbo's Idle to an authored
+                // building that is already idle, whose Begin_Mode only queued
+                // it. Trigger: every map building and convenience spawn.
+                // Effect on the body: none (same mode, same frame).
                 if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                     entity.initialize_building_idle_body(self.session.binary_frame as i32);
                 }
@@ -1496,7 +1510,7 @@ impl Simulation {
                 // shared Unlimbo owner. Do not replace its radio/mission
                 // admission with an eager second opening here. The retained
                 // human-map setup seam is the separate shrouded-human
-                // residual in queue_placed_building_guard.
+                // residual in ready_placed_building.
                 if self
                     .substrate
                     .entities
@@ -1930,14 +1944,14 @@ impl Simulation {
         // here and ActuallyPlaced suppresses the real completion callback.
         converted_health.apply(&mut destination);
         destination.selected = was_selected;
-        // Begin_Mode(0) at its Unlimbo, the Construction mission queued
-        // (0x007396D5) and its ready byte set (0x0073984E).
-        destination.install_building_up(
-            BuildingUp::deployed(
-                rules.buildup_control(&yard_type),
-                self.session.binary_frame as i32,
+        // Construction is queued before the Unlimbo (0x007396D5), so its
+        // cell-put and owner discoveries leave the yard shut while that
+        // Unlimbo begins its build-up.
+        crate::sim::mission::authority::queue_entity_mission_deferred(
+            &mut destination,
+            crate::sim::mission::MissionId::from_known(
+                crate::sim::mission::MissionType::Construction,
             ),
-            self.session.binary_frame as i32,
         );
         let (new_sid, outcome) = self.unlimbo_after_constructor_managers(
             destination,
@@ -2017,6 +2031,17 @@ impl Simulation {
             registry,
             frame_effects,
         );
+        // 0x00739848: DiscoveredBy(owner), which the queued Construction keeps
+        // from opening it; 0x0073984E: the ready byte, so its first Update
+        // commences Construction.
+        self.discover_techno(
+            new_sid,
+            owner_id,
+            super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+        );
+        if let Some(building) = self.substrate.entities.get_mut(new_sid) {
+            building.mission_leaf.set_building_ready_latch(1);
+        }
         self.initialize_cloak_after_unlimbo(new_sid, rules);
         self.add_unit_sensor_after_unlimbo(new_sid, rules);
         self.mission_spawned_entities = true;
@@ -2032,13 +2057,20 @@ impl Simulation {
         if let Some((country_name, side_index, difficulty, tech_level, _)) = recalc_context {
             // The new Building's committed north-west anchor is the native
             // `+0x9C/+0xA0` source. This bounded write order is load-bearing:
-            // primary center, optional Recalc, node zero, BasePlan center,
-            // then the three independent House AI activation latches.
+            // primary center, Computer_Paranoid, optional Recalc, node zero,
+            // BasePlan center, then the three independent House AI activation
+            // latches.
+            self.houses
+                .get_mut(&owner_id)
+                .expect("qualifying deploy owner remains registered")
+                .set_base_center((rx, ry));
+            // `0x00505180` turns the computers paranoid for a house no human
+            // controls (`0x005051AF`) before its Recalc.
+            self.computer_paranoid(rules, registry, frame_effects);
             let house = self
                 .houses
                 .get_mut(&owner_id)
                 .expect("qualifying deploy owner remains registered");
-            house.set_base_center((rx, ry));
             if house.base_plan.nodes.is_empty() {
                 recalc_base_plan(
                     &mut house.base_plan,

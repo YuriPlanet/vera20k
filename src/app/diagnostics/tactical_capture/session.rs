@@ -576,7 +576,7 @@ impl TacticalCaptureSession {
         // building then builds up for its type's Buildup control, on a human
         // player's placement route.
         let construction_ticks = |type_id: &str| -> Result<u64> {
-            let frames = crate::sim::components::BuildingUp::player_placement_frames_to_complete(
+            let frames = crate::sim::building_construction::player_placement_frames_to_complete(
                 rules.buildup_control(type_id),
                 &sim.session.game_options,
             )

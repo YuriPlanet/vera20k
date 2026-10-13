@@ -616,14 +616,11 @@ fn playfield_projection_updates_camera_bounds_and_click_inverse_mapping() {
         .expect("expanded geometry");
     let shrunk_geometry = PlayfieldPresentationGeometry::from_grid(&grid, shrunken_playfield())
         .expect("shrunken geometry");
-    let camera_bounds = shrunk_geometry.camera_local_bounds();
-    assert_eq!(
-        camera_bounds.pixel_x - crate::map::terrain::TILE_WIDTH / 2.0,
-        shrunk_geometry.origin_x
-    );
-    assert_eq!(camera_bounds.pixel_y, shrunk_geometry.origin_y);
-    assert_eq!(camera_bounds.pixel_w, shrunk_geometry.world_width);
-    assert_eq!(camera_bounds.pixel_h, shrunk_geometry.world_height);
+    let camera_bounds = crate::map::terrain::LocalBounds::from_playfield(shrunken_playfield());
+    // Radar enumerates playable cells; camera6D8640 has its own headroom.
+    // Sharing MapClass authority does not make their pixel extents identical.
+    assert_ne!(camera_bounds.pixel_y, shrunk_geometry.origin_y);
+    assert_ne!(camera_bounds.pixel_h, shrunk_geometry.world_height);
     grid.install_playfield_local_bounds(Some(expanded_playfield()));
     let installed_initial = grid.local_bounds.expect("initial camera authority");
     grid.install_playfield_local_bounds(Some(shrunken_playfield()));
@@ -669,7 +666,7 @@ fn playfield_projection_updates_camera_bounds_and_click_inverse_mapping() {
             projection.world_origin_y + projection.world_height * 0.5 - 300.0,
         )
     );
-    assert_ne!(initial_geometry.camera_local_bounds(), camera_bounds);
+    assert_ne!(initial_geometry, shrunk_geometry);
 }
 
 fn radar_gate_projection() -> RadarProjectionFacts {

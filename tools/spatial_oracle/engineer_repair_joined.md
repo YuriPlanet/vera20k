@@ -144,7 +144,7 @@ from the fixture's catalog identity binding. The focused Engineer/House tests
 pass all nine routes/ten arrivals and the106 House boundaries; broader final
 candidate and production results belong to the chain validation record.
 
-The [production receipt](engineer_repair.production.json) retains the final strict
+The production receipt (`tools/spatial_oracle/engineer_repair.production.json`, in git at 1b1a8b43e) retains the final strict
 9445-pass Rust suite, clippy, 460-test Python suite, physical retail input
 comparison and repeated normal release observation. Ordinary production commands
 construct and deliver the target/Engineer before MTNK damage and paid repair;

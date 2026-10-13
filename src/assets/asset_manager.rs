@@ -20,6 +20,7 @@ use crate::assets::mix_archive::MixArchive;
 use crate::assets::mix_hash::mix_hash;
 
 /// A MIX archive with a human-readable name for logging and diagnostics.
+#[derive(Clone)]
 struct NamedArchive {
     /// Name for logs and tools, for example `ra2.mix` or `ra2.mix -> local.mix`.
     name: String,
@@ -201,6 +202,14 @@ pub struct AssetManager {
     active_theater_archives: Vec<String>,
     /// Path to the RA2 installation directory.
     ra2_dir: PathBuf,
+}
+
+/// Reversible current-resolution authority for a fallible VERA save candidate.
+/// Archive bytes remain shared through MixArchive's retained backing storage.
+struct SavedLoadLookupAuthority {
+    archives: Vec<NamedArchive>,
+    active_theater: Option<String>,
+    active_theater_archives: Vec<String>,
 }
 
 /// Named nested archives shipped by the active retail RA2/YR install.
@@ -619,6 +628,45 @@ impl AssetManager {
         }
         self.active_theater = Some(theater_name.to_string());
         Ok(())
+    }
+
+    /// Prepare a replacement world without leaving the outgoing world's
+    /// current-resolution search list pointed at another theater on error.
+    /// Native Load67E440 is not globally atomic; this is VERA's candidate
+    /// admission policy. Resident archive bytes and the explicitly process-
+    /// sticky LoadFileFromMIX cache survive both outcomes.
+    pub(crate) fn prepare_saved_load<T, E>(
+        &mut self,
+        prepare: impl FnOnce(&mut Self) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let previous = SavedLoadLookupAuthority {
+            archives: self.archives.clone(),
+            active_theater: self.active_theater.clone(),
+            active_theater_archives: self.active_theater_archives.clone(),
+        };
+        let result = prepare(self);
+        if result.is_err() {
+            // Keep newly opened files resident but remove their registration.
+            // Restored registrations use the exact prior bytes, even if an
+            // attempted remount selected another backing file of the same name.
+            for archive in std::mem::take(&mut self.archives) {
+                if !previous.archives.iter().any(|old| old.name == archive.name)
+                    && !self
+                        .archive_catalog
+                        .iter()
+                        .any(|cached| cached.name == archive.name)
+                {
+                    self.archive_catalog.push(archive);
+                }
+            }
+            self.archive_catalog
+                .retain(|cached| !previous.archives.iter().any(|old| old.name == cached.name));
+            self.archives = previous.archives;
+            self.active_theater = previous.active_theater;
+            self.active_theater_archives = previous.active_theater_archives;
+            self.rebuild_indexes();
+        }
+        result
     }
 
     /// Load every additional top-level `.mix` file present in the RA2 directory.
@@ -1602,6 +1650,43 @@ mod tests {
             manager.get_ref("custom.map"),
             Some(&b"[Basic]\nName=Custom"[..])
         );
+    }
+
+    #[test]
+    fn rejected_saved_load_restores_lookup_authority_and_keeps_resident_bytes() {
+        let directory = TestDirectory::new("saved-theater-rollback");
+        directory.write_mix("temperat.mix", "tile.bin", b"temperate");
+        directory.write_mix("snow.mix", "tile.bin", b"snow");
+        let mut manager = empty_manager(directory.path());
+        manager
+            .activate_theater_archives("TEMPERATE", &["temperat.mix"])
+            .unwrap();
+        let before = manager.registered_archive_names();
+        let result: Result<(), &'static str> = manager.prepare_saved_load(|candidate| {
+            candidate
+                .activate_theater_archives("SNOW", &["snow.mix"])
+                .unwrap();
+            assert_eq!(candidate.get_ref("tile.bin"), Some(&b"snow"[..]));
+            Err("invalid restored object reference after theater binding")
+        });
+        assert!(result.is_err());
+        assert_eq!(manager.registered_archive_names(), before);
+        assert_eq!(manager.get_ref("tile.bin"), Some(&b"temperate"[..]));
+        assert_eq!(manager.active_theater.as_deref(), Some("TEMPERATE"));
+        assert!(
+            manager
+                .archive_catalog
+                .iter()
+                .any(|entry| archive_name_matches(&entry.name, "snow.mix"))
+        );
+
+        manager
+            .prepare_saved_load(|candidate| {
+                candidate.activate_theater_archives("SNOW", &["snow.mix"])
+            })
+            .unwrap();
+        assert_eq!(manager.get_ref("tile.bin"), Some(&b"snow"[..]));
+        assert_eq!(manager.active_theater.as_deref(), Some("SNOW"));
     }
 
     #[test]

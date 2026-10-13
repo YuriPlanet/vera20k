@@ -508,6 +508,11 @@ pub struct ObjectType {
     /// chooses it while the instance's existing SlaveOwner is nonnull.
     /// Executed constructor/reader/caller controls: input_oracle/selection_navigation.
     pub voice_select_enslaved: Vec<String>,
+    /// `VoiceSelectDeactivated=` at TechnoType+44C: the constructor's empty
+    /// vector, then ReadSoundList (`0x00712BF1`) after VoiceSelectEnslaved,
+    /// with its retention. VoiceSelect chooses it for a deactivated object
+    /// (`+0x1C8`, `0x00708EFD`) that has no SlaveOwner.
+    pub voice_select_deactivated: Vec<String>,
     /// Sound ID played when this unit is ordered to move.
     pub voice_move: Option<String>,
     /// Sound ID played when this unit is ordered to attack.
@@ -582,6 +587,12 @@ pub struct ObjectType {
     /// Stock authors: `[GTGCAN]` `GrandCannonRotate`, `[CAEAST02]`
     /// `YuriBustRotate` (both `Turret=yes`); no other type names it.
     pub turret_rotate_sound: Option<String>,
+    /// `ActivateSound=` / `DeactivateSound=` (TechnoType `+0x5A8` / `+0x5AC`,
+    /// constructor `-1`): read like `TurretRotateSound=` at `0x007138D1` /
+    /// `0x0071390D`. Reactivate and Deactivate play them where the object
+    /// stands when the latch changes (`sim::powered_unit`).
+    pub activate_sound: Option<String>,
+    pub deactivate_sound: Option<String>,
     /// `AmbientSound=`: `ObjectTypeClass+0x1F4`, which the constructor sets to
     /// `-1` (`0x005F7140`). `ObjectTypeClass::ReadINI` reads it at
     /// `0x005F93C1..0x005F9403` (ReadString 0x80, then `VocClass::FindIndex @
@@ -1043,6 +1054,16 @@ pub struct ObjectType {
     /// `UnitTypeClass__FindOrAllocate @ 0x007480D0` and stores its pointer at
     /// `BuildingType+0x408`; native `none`/`<none>` therefore remain `None`.
     pub undeploys_into: Option<String>,
+    /// `PowersUnit=` (TechnoType `+0x40C`): the UnitType this building keeps
+    /// active while operational (retail GAROBO's ROBO). The same block reads
+    /// it at `0x007132DF..0x00713309`: ReadString 0x80, then
+    /// `UnitTypeClass::FindOrAllocate`; an empty value keeps the old one,
+    /// `none` nulls it. Owner: `sim::powered_unit`.
+    pub powers_unit: Option<String>,
+    /// `PoweredUnit=` (TechnoType `+0x410`, ReadBool at `0x0071330F`, default
+    /// false): the unit goes offline while its house has no operational
+    /// `PowersUnit=` building. Owner: `sim::powered_unit`.
+    pub powered_unit: bool,
     /// Raw 8-bit facing required before a unit can deploy into this building type.
     /// BuildingType+EDC, read at460C6C..460C86: `DeployFacing=` <<5; default0x80.
     /// This is separate from the immutable BuildingType+ED8 below.
@@ -2360,6 +2381,10 @@ impl ObjectType {
                 .read_sound_list("VoiceSelectEnslaved")
                 .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
                 .unwrap_or_default(),
+            voice_select_deactivated: section
+                .read_sound_list("VoiceSelectDeactivated")
+                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+                .unwrap_or_default(),
             voice_move: first_sound("VoiceMove"),
             voice_attack: first_sound("VoiceAttack"),
             voice_harvest: section.read_name("VoiceHarvest", 0x80).map(str::to_owned),
@@ -2388,6 +2413,10 @@ impl ObjectType {
             // TechnoTypeClass+0x560 starts at -1. RuleSet's fixed SOUNDMD
             // binder later resolves the layered ReadINI7133BA reference.
             turret_rotate_sound: None,
+            // `+0x5A8`/`+0x5AC` start at -1; the binder resolves them like
+            // `TurretRotateSound=`.
+            activate_sound: None,
+            deactivate_sound: None,
             // ObjectTypeClass+0x1F4 starts at -1 (5F7140); the binder resolves
             // the layered ReadINI5F93C1 reference.
             ambient_sound: None,
@@ -2653,6 +2682,10 @@ impl ObjectType {
             undeploys_into: section
                 .read_type_name("UndeploysInto", 0x80)
                 .map(str::to_owned),
+            powers_unit: section
+                .read_type_name("PowersUnit", 0x80)
+                .map(str::to_owned),
+            powered_unit: section.read_bool("PoweredUnit", false),
             // `ReadInt(DeployFacing, field >> 5) << 5` (`0x00460C6C..0x00460C86`).
             deploy_facing: (section.read_int("DeployFacing", 0x80 >> 5).clamp(0, 7) as u8) << 5,
             construction_yard: section.read_bool("ConstructionYard", false),

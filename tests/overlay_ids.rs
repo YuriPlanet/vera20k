@@ -142,7 +142,9 @@ fn print_overlay_id_mapping_for_dustbowl() {
             println!("  ({},{})", rx, ry);
         }
 
-        let local_bounds: LocalBounds = LocalBounds::from_header(&map.header);
+        let local_bounds = LocalBounds::from_playfield(
+            vera20k::map::playfield::PlayfieldBounds::from_map_header(&map.header),
+        );
         let sw: f32 = 1280.0;
         let sh: f32 = 960.0;
         let cam_x: f32 = local_bounds.pixel_x + (local_bounds.pixel_w - sw) / 2.0;

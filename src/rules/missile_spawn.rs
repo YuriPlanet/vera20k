@@ -62,7 +62,7 @@ pub enum MissileFamily {
 
 /// One `RocketStruct` and the two `[CombatDamage]` warheads its family
 /// detonates with.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MissileSpawnParams {
     /// Resolved child TechnoType section name (`V3ROCKET` / `DMISL` / `CMISL`),
     /// `+0x30`; empty while the key is unset (a null pointer).
@@ -188,7 +188,7 @@ impl MissileSpawnParams {
 }
 
 /// The three `RocketStruct` blocks.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MissileSpawnRules {
     pub v3: MissileSpawnParams,
     pub dmisl: MissileSpawnParams,

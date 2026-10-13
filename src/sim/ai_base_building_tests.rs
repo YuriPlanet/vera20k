@@ -486,6 +486,72 @@ fn a_computer_yard_places_its_building_on_the_node_cell() {
     assert_eq!(node_state(&sim, owner), [((16, 16), 0)]);
 }
 
+/// The placed building's Unlimbo queues Construction (`TechnoClass::Unlimbo`
+/// `0x006F6E2A` -> `0x0044D6BD..0x0044D6D0`) before its DiscoveredBy(owner)
+/// (`0x00440E76`), whose computer arm asks Get_Mission (`0x0044D679`) and so
+/// leaves it unopened. The exit commences that Construction
+/// (`0x00445329..0x0044533F`). From the placement frame on, each of its
+/// Updates matches the native computer `route` rows
+/// (`tools/spatial_oracle/building_construction.json`), up to the opening.
+#[test]
+fn a_computer_yards_building_follows_the_native_computer_route() {
+    use crate::sim::building_construction::native_route;
+    use crate::sim::mission::{MissionId, MissionType};
+    let rows = native_route::rows("computer");
+    assert_eq!(rows.len(), 6);
+    for row in &rows {
+        let name = row["input"]["name"].as_str().unwrap();
+        let (mut sim, rules, owner, yard, product) = exit_fixture();
+        // The native rows run at GameSpeed 0.
+        sim.session.game_options.game_speed = 0;
+        let plain = rules.building_type_index("PLAIN").unwrap();
+        let house = sim.houses.get_mut(&owner).unwrap();
+        house.economy.set_credits_for_test(100);
+        house.ai_production.set_for_test(0, plain, true);
+        sim.substrate
+            .entities
+            .get_mut(product)
+            .unwrap()
+            .bind_building_construction_control(native_route::control(row));
+
+        let exit = exit_building(
+            &mut sim,
+            &rules,
+            yard,
+            product,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+
+        assert_eq!(exit, BuildingExit::Placed, "{name}");
+        let building = sim.substrate.entities.get(product).unwrap();
+        assert!(
+            !building.building_actually_placed,
+            "{name}: opened at placement"
+        );
+        assert_eq!(
+            building.mission.current(),
+            MissionId::from_known(MissionType::Construction),
+            "{name}"
+        );
+        assert_eq!(building.mission.queued(), MissionId::NONE, "{name}");
+        let placed_at = sim.session.binary_frame;
+        for frame in row["frames"].as_array().unwrap() {
+            let now = placed_at + frame["frame"].as_u64().unwrap() as u32;
+            sim.session.binary_frame = now;
+            sim.object_ai_visit_one(
+                product,
+                Some(&rules),
+                crate::sim::world::ObjectAiCtx::default(),
+            );
+            let building = sim.substrate.entities.get(product).unwrap();
+            if native_route::assert_frame(building, frame, &format!("{name} frame {now}")) {
+                break;
+            }
+        }
+    }
+}
+
 #[test]
 fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
     let (mut sim, rules, owner, yard, product) = exit_fixture();

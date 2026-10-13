@@ -72,12 +72,13 @@ impl Simulation {
         // returns action0 for a non-player House50B6F0; for a local Deployer
         // in Doing27..30 it maps Foot action1 to2 (51F8ED..51F94E). Only that
         // live query2 refuses the Doing-family click at51F277..51F28C.
-        // Berserk independently refuses at51F28F..51F29E. Deployer is the
-        // existing layered ReadBool owner (524606..524620), defaultfalse.
-        // Unit7404B0 independently applies House50B6F0, then its6E0/1/2
-        // deployment suffix740709..740727. CellClick738910 re-queries6E0
-        // and independently refuses Berserk at73893D..73894C. Reuse the
-        // existing deployment predicate; stock MTNK has SimpleDeployer=0.
+        // Deployer is the existing layered ReadBool owner (524606..524620),
+        // defaultfalse. Unit7404B0 independently applies House50B6F0, then
+        // its6E0/1/2 deployment suffix740709..740727. CellClick738910
+        // re-queries6E0. Reuse the existing deployment predicate; stock MTNK
+        // has SimpleDeployer=0. Each class's Berserk refusal (51F28F..51F29E,
+        // 73893D..73894C) is `click_order_receivers`, which every click
+        // producer applies before this query; both refusals send nothing.
         // Original initialized controls: walk_first_path.json gi_reissue
         // GI/MTNK input rows; these checks precede MegaMission entirely.
         // Other class/action/high/Teleport input remains on its existing
@@ -86,7 +87,6 @@ impl Simulation {
         let drive_unit = self.drive_unit_setter_receiver(id);
         if (infantry || drive_unit)
             && (!self.house_is_human_player(entity.owner())
-                || entity.berserk.active
                 || (infantry && object.deployer && entity.infantry_deploy_doing())
                 || (drive_unit && entity.is_deployed()))
         {

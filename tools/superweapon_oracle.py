@@ -3509,9 +3509,9 @@ def curtain_draw_arm_row(*, intensity=1000, word=0, curtain=(4990, 750), stage=2
 def curtain_draw_arm():
     """The arm's gate at the curtain's edges (time left 1 and 0, a stopped
     timer holding time and none), each stage's scale at the draw intensities
-    of a lit and a dark cell, and the arms VERA leaves as residuals: the
-    flash count's bit 1, IronCurtainColor indexes other than retail's 0 in
-    each pixel format, Berzerk, Deactivated and a caller's colour word."""
+    of a lit and a dark cell, and the other arms: the flash count's bit 1,
+    IronCurtainColor indexes other than retail's 0 in each pixel format,
+    Berzerk, Deactivated and a caller's colour word."""
     rows = []
     for curtain in CURTAIN_EDGES:
         rows.append(curtain_draw_arm_row(curtain=curtain))

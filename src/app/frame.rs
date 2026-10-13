@@ -69,10 +69,10 @@ impl App {
                 .as_mut()
                 .expect("cascade present")
                 .tick(now, voices_active);
-            if let (Some(vol), Some(player)) =
-                (tick.music_volume, state.audio.music_player.as_mut())
-            {
-                player.set_volume(vol);
+            if let Some(volume) = tick.music_volume {
+                // Quit's bounded transient fade must also reach Theme. The
+                // pre-fade preference has already been persisted.
+                state.audio.set_score_volume(volume as f32);
             }
             if tick.stop_music {
                 state.audio.stop_theme();

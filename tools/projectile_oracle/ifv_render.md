@@ -7,10 +7,10 @@ Thirty-two supplied direction centers additionally cover every physical DRAGON
 frame, followed by four clipping/dirty-region controls: 166 draws in total.
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 \
 VERA20K_PROJECTILE_RENDER_ASSETS=/tmp/bridge-ifv-assets-1dDM9D/extract \
-/Users/halvor/Documents/vera20k-dev/.venv/bin/python \
+~/Documents/vera20k-dev/.venv/bin/python \
 tools/projectile_oracle/ifv_render.py --check
 ```
 

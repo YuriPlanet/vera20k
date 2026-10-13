@@ -696,6 +696,47 @@ fn a_non_allied_sensors_neighbour_surfaces_a_cloaked_mover_on_cell_entry() {
     ));
 }
 
+/// The neighbour's House asks about the mover (`0x004D87E8..0x004D87EF`): a
+/// sensor whose House allies the mover's one way leaves it cloaked, and the
+/// mover's own one-way alliance does not.
+#[test]
+fn a_sensors_neighbour_asks_its_own_house_about_the_mover() {
+    use crate::map::houses::HouseAllianceMap;
+    use crate::sim::house_diplomacy::HouseAllianceAdmission;
+
+    let (mut sim, rules, id) = spawned_sub();
+    let cell = sim
+        .substrate
+        .entities
+        .get(id)
+        .map(|entity| (entity.position.rx, entity.position.ry))
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .cloak
+        .as_mut()
+        .unwrap()
+        .establish_unlimbo_fully_cloaked();
+    sim.spawn_object_at_height("DEST", "Americans", cell.0 + 1, cell.1, 0, 0, &rules)
+        .unwrap();
+    let one_way = |asker: &str, other: &str| {
+        HouseAllianceAdmission::Admitted(HouseAllianceMap::from([(
+            asker.to_ascii_uppercase(),
+            [other.to_ascii_uppercase()].into(),
+        )]))
+    };
+    sim.install_house_alliances(one_way("Americans", "Soviet"), &rules);
+    assert!(!uncloak_on_sensor_neighbour_after_cell_entry(
+        &mut sim, id, &rules
+    ));
+    sim.install_house_alliances(one_way("Soviet", "Americans"), &rules);
+    assert!(uncloak_on_sensor_neighbour_after_cell_entry(
+        &mut sim, id, &rules
+    ));
+}
+
 #[test]
 fn start_cloaking_drops_every_targeter_whose_house_cannot_sense_the_cell() {
     // `StartCloaking @ 0x00703770` opens with `Detach_All(false)`; each

@@ -341,11 +341,12 @@ fn receiver_writes_the_ready_action_only_when_do_action_admits_it() {
     assert_eq!(doing, if has_ready { 0 } else { -1 });
 }
 
-/// A Jumpjet man's damage Scatter takes Foot's setter (`0x004D94B0`): the
-/// NavCom, then the Jumpjet Move_To, then Foot's timer tail. It is not a
-/// grid-bypassing direct move.
+/// A Jumpjet man's damage Scatter takes the Infantry setter (`0x0051AA40`) to
+/// Foot's (`0x004D94B0`): the NavCom, then the Jumpjet Move_To, then Foot's
+/// timer tail. Scatter then runs his locomotor's Process at once
+/// (`0x0051D45B..0x0051D478`), which lifts him off (State 0 to 1).
 #[test]
-fn jumpjet_infantry_damage_scatter_takes_the_foot_air_setter() {
+fn jumpjet_infantry_damage_scatter_takes_the_infantry_setter() {
     use crate::sim::combat::{EntityDamageEvent, world_receiver};
     use crate::sim::components::NavTargetRef;
     let (mut sim, rules, registry) = super::tests::fixture_with_rules(
@@ -387,6 +388,11 @@ fn jumpjet_infantry_damage_scatter_takes_the_foot_air_setter() {
     );
     let state = e.locomotor.as_ref().unwrap().jumpjet_runtime().unwrap();
     assert!(state.moving(), "Jumpjet Move_To accepted the scatter cell");
+    assert_eq!(
+        state.phase(),
+        1,
+        "Scatter's immediate Process lifted him off"
+    );
     assert_eq!(e.mission.queued(), MissionId::from_known(MissionType::Move));
 }
 

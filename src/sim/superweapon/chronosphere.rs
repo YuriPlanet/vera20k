@@ -461,10 +461,13 @@ fn arm_chrono_warp(
     };
     runtime.arm_chrono(crate::sim::movement::teleport_movement::ChronoWarp::new(
         destination,
-        warp.owner,
         frame,
     ));
     crate::sim::radio::broadcast_break(sim, id, Some(rules), frame_effects);
+    // `0x006CCC67`: the Super's owner, credited if the warp sinks the object.
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity.warped_by_house = Some(warp.owner);
+    }
     if let Err(error) = sim.assign_destination_represented(
         id,
         Some(NavTargetRef::cell(cx as u16, cy as u16)),

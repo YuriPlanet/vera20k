@@ -359,7 +359,7 @@ fn held_factory_and_attached_upgrade_stay_off_navigation_through_frame_and_resto
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(terrain, Default::default(), &rules);
     restored
-        .restore_map_authority_after_snapshot_load(&rules, &overlays)
+        .restore_map_authority_after_snapshot_load(&rules, &overlays, None)
         .unwrap();
     assert!(
         restored

@@ -518,7 +518,7 @@ fn a_grounded_rocketeer_fidgets_and_turns_to_the_fidgets_facing() {
     // The crash fixture's rules-free Reveal intentionally skips Techno
     // Unlimbo's idle selection (0x006F6E2A..0x006F6E4F). This live idle test
     // needs the committed Guard that the ordinary rules-bearing owner sets.
-    super::techno_ai::foot_unlimbo_idle_mode(
+    super::techno_ai::techno_unlimbo_idle_mode(
         &mut sim,
         1,
         &rules,
@@ -1185,6 +1185,64 @@ fn a_rocketeer_lifting_off_clears_his_sub_cell() {
     assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(52, 52), 0);
 }
 
+/// A Rocketeer lifting off stays in his cell's object list while his layer
+/// query (`0x0054B8D0`) answers Ground, below two levels (208 leptons), and
+/// leaves it once the query answers Air: Place_Down and Pick_Up
+/// (`0x005683C0`, `0x005687F0`) ask that query (`0x00568405`, `0x00568835`).
+/// Frame by frame through the production tick, his height, the layer query
+/// and the cell list agree.
+#[test]
+fn a_rocketeer_lifting_off_leaves_his_cell_list_at_two_levels() {
+    use crate::sim::command::Command;
+    use crate::sim::world::display_layers::DisplayLayer;
+    let (mut sim, rules, _) = grounded_rocketeer();
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Move {
+            entity_id: 1,
+            target_rx: 60,
+            target_ry: 52,
+            queue: false,
+        },
+        Some(&rules),
+    ));
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+    let (mut low, mut high) = (0, 0);
+    for frame in 0..90 {
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+        let rocketeer = sim.substrate.entities.get(1).unwrap();
+        let height = crate::sim::movement::air_movement::current_fly_height(
+            rocketeer,
+            sim.resolved_terrain.as_ref(),
+        );
+        let layer = sim.entity_display_layer(1, Some(&rules)).unwrap();
+        let listed = sim
+            .substrate
+            .occupancy
+            .get(rocketeer.position.rx, rocketeer.position.ry)
+            .is_some_and(|cell| {
+                cell.iter_layer(crate::sim::movement::locomotor::MovementLayer::Ground)
+                    .any(|occupant| occupant.entity_id == 1)
+            });
+        assert_eq!(
+            layer == DisplayLayer::GROUND,
+            height < 208,
+            "frame {frame}: height {height}, layer {layer:?}"
+        );
+        assert_eq!(
+            listed,
+            layer == DisplayLayer::GROUND,
+            "frame {frame}: height {height}, layer {layer:?}"
+        );
+        if (1..208).contains(&height) {
+            low += 1;
+        } else if height >= 208 {
+            high += 1;
+        }
+    }
+    assert!(low > 0 && high > 0, "{low} frames low, {high} high");
+}
+
 /// A grounded Rocketeer, as an unload leaves him (Ground layer, height 0), and
 /// the fixture's Soviet unit.
 fn grounded_rocketeer() -> (super::Simulation, crate::rules::ruleset::RuleSet, u64) {
@@ -1338,6 +1396,188 @@ fn the_class_setter_flies_a_rocketeer_to_an_object() {
         Ok(true)
     );
     assert_rocketeer_flies_near(&sim, (46, 44));
+}
+
+/// The mission effects' class setter, `vt+0x480(destination, 1)`, is
+/// Infantry's for a Rocketeer as for any infantryman: Rescue's return home
+/// (`0x004DE165..0x004DE17B`) and AreaGuard's leash return fly him there. They
+/// used to write his NavCom alone, and he hovered for good under a NavCom he
+/// never flew to.
+#[test]
+fn the_mission_destination_setter_flies_a_rocketeer() {
+    let (mut sim, rules, _) = grounded_rocketeer();
+    sim.assign_destination_represented(
+        1,
+        Some(crate::sim::components::NavTargetRef::cell(60, 52)),
+        Some(&rules),
+        None,
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
+    assert_rocketeer_flies_near(&sim, (60, 52));
+}
+
+/// An order to the cell a `JumpJet=` infantryman is in returns before any
+/// write (`0x0051AA84..0x0051AB2E`): his NavCom stays empty and his Jumpjet
+/// stays still. It used to fly him there.
+#[test]
+fn an_order_to_a_rocketeers_own_cell_is_ignored() {
+    let (mut sim, rules, _) = grounded_rocketeer();
+    assert_eq!(
+        sim.set_infantry_destination(
+            1,
+            crate::sim::components::NavTargetRef::cell(52, 52),
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        ),
+        Ok(true),
+        "the void setter still dispatched"
+    );
+    let rocketeer = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(rocketeer.navigation.nav_com, None);
+    assert!(
+        !rocketeer
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .jumpjet_runtime()
+            .unwrap()
+            .moving()
+    );
+}
+
+/// The own-cell test compares the object's GetCoords cell (`+0x48`), so an
+/// object order to a unit standing in his cell is ignored too.
+#[test]
+fn an_object_order_into_a_rocketeers_own_cell_is_ignored() {
+    let (mut sim, rules, shooter) = grounded_rocketeer();
+    move_shooter(&mut sim, shooter, (52, 52));
+    assert_eq!(
+        sim.set_infantry_destination(
+            1,
+            crate::sim::components::NavTargetRef::object(shooter),
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        ),
+        Ok(true)
+    );
+    let rocketeer = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(rocketeer.navigation.nav_com, None);
+    assert!(
+        !rocketeer
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .jumpjet_runtime()
+            .unwrap()
+            .moving()
+    );
+}
+
+/// Give the fixture's flat cells the Hover row a moving Rocketeer's re-order
+/// reads for his cell's `0x004834A0` land test.
+fn give_cells_hover_costs(sim: &mut super::Simulation) {
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    for y in 0..70 {
+        for x in 0..70 {
+            terrain.cell_mut(x, y).unwrap().speed_costs.hover = Some(100);
+        }
+    }
+}
+
+/// The mission effects' setter re-orders a moving Rocketeer as any other
+/// caller does: Stop_Driver, then Foot's setter, which flies him to the new
+/// destination.
+#[test]
+fn the_mission_destination_setter_reorders_a_moving_rocketeer() {
+    let (mut sim, rules, _) = grounded_rocketeer();
+    give_cells_hover_costs(&mut sim);
+    let destination = |sim: &mut super::Simulation, cell: (u16, u16)| {
+        sim.assign_destination_represented(
+            1,
+            Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
+            Some(&rules),
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+    };
+    destination(&mut sim, (40, 60));
+    assert_rocketeer_flies_near(&sim, (40, 60));
+    destination(&mut sim, (60, 52));
+    assert_rocketeer_flies_near(&sim, (60, 52));
+}
+
+/// Retail's `JumpJet=` infantry all set `HoverAttack=` (production reader over
+/// retail `rulesmd.ini`), which keeps the setter's Walk piggyback arms
+/// (`0x0051AD1F..0x0051B1CA`, a RESIDUAL on `assign_infantry_destination`)
+/// dormant.
+#[test]
+fn retail_jumpjet_infantry_all_hover_attack() {
+    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
+        .expect("retail rules");
+    let jumpjets: Vec<&str> = rules
+        .infantry_ids
+        .iter()
+        .map(String::as_str)
+        .filter(|id| rules.object(id).is_some_and(|object| object.jumpjet))
+        .collect();
+    assert_eq!(jumpjets, ["JUMPJET", "LUNR"]);
+    for id in jumpjets {
+        assert!(rules.object(id).unwrap().hover_attack, "{id}");
+    }
+}
+
+/// A re-order of a moving `JumpJet=` infantryman runs Stop_Driver
+/// (`0x0051AB4A..0x0051ABD1`) whatever his mission and NavCom, before Foot's
+/// setter flies him to the order. Its Can_Enter_Cell answer for his cell is
+/// the only writer of his `+0x6DC` byte: whatever the byte held, the re-order
+/// leaves the same answer in it. Re-orders used to skip it.
+#[test]
+fn a_moving_rocketeers_reorder_runs_stop_driver_first() {
+    let order =
+        |sim: &mut super::Simulation, rules: &crate::rules::ruleset::RuleSet, cell: (u16, u16)| {
+            assert_eq!(
+                sim.set_infantry_destination(
+                    1,
+                    crate::sim::components::NavTargetRef::cell(cell.0, cell.1),
+                    rules,
+                    None,
+                    crate::sim::world::FrameEffects::default(),
+                ),
+                Ok(true)
+            );
+        };
+    let answer = |held: bool| {
+        let (mut sim, rules, _) = grounded_rocketeer();
+        give_cells_hover_costs(&mut sim);
+        order(&mut sim, &rules, (40, 60));
+        // On Attack with the order's cell as his NavCom, the exception that
+        // spares a moving infantryman of another type.
+        let rocketeer = sim.substrate.entities.get_mut(1).unwrap();
+        rocketeer.mission.set_current_for_test(
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Attack),
+            0,
+        );
+        rocketeer.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(60, 52));
+        rocketeer.infantry.as_mut().unwrap().cell_entry_blocked = held;
+        order(&mut sim, &rules, (60, 52));
+        assert_rocketeer_flies_near(&sim, (60, 52));
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .infantry
+            .as_ref()
+            .unwrap()
+            .cell_entry_blocked
+    };
+    assert_eq!(answer(false), answer(true));
 }
 
 /// Foot's setter refuses before the NavCom while its locomotor swap is active

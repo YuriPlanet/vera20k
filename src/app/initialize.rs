@@ -63,7 +63,7 @@ where
 trait StartupAudioProfileOperations {
     fn set_sound_volume(&mut self, volume: f64);
     fn set_voice_volume(&mut self, volume: f64);
-    fn set_score_volume(&mut self, volume: f64);
+    fn set_score_volume(&mut self, volume: f32);
     fn set_score_repeat_shuffle(&mut self, repeat: bool, shuffle: bool);
 }
 
@@ -80,10 +80,8 @@ impl StartupAudioProfileOperations for crate::app::audio_runtime::AppAudioRuntim
         }
     }
 
-    fn set_score_volume(&mut self, volume: f64) {
-        if let Some(player) = self.music_player.as_mut() {
-            player.set_volume(volume);
-        }
+    fn set_score_volume(&mut self, volume: f32) {
+        crate::app::audio_runtime::AppAudioRuntime::set_score_volume(self, volume);
     }
 
     fn set_score_repeat_shuffle(&mut self, repeat: bool, shuffle: bool) {
@@ -101,7 +99,7 @@ fn apply_startup_audio_profile(
     // `+0x12` (`0x005FAB1C` / `0x005FAB5B`).
     operations.set_sound_volume(f64::from(profile.sound_volume));
     operations.set_voice_volume(f64::from(profile.voice_volume));
-    operations.set_score_volume(f64::from(profile.score_volume));
+    operations.set_score_volume(profile.score_volume);
     operations.set_score_repeat_shuffle(profile.is_score_repeat, profile.is_score_shuffle);
 }
 
@@ -697,8 +695,9 @@ impl App {
         };
 
         // Project all three retained profile gains before any player can start
-        // an audible source. The profile keeps native negative values for
-        // round-trip; the output owners provide the documented safe clamp.
+        // an audible source. Score also initializes Theme's native +0xC gate,
+        // even without a music device. The profile keeps native negative values
+        // for round-trip; physical output owners provide the safe gain clamp.
         apply_startup_audio_profile(&state.persistence.options_profile, &mut state.audio);
         Self::sync_zoom_pass(&mut state);
 
@@ -973,7 +972,7 @@ mod tests {
     enum StartupAudioCall {
         Sound(f64),
         Voice(f64),
-        Score(f64),
+        Score(f32),
         RepeatShuffle(bool, bool),
     }
 
@@ -991,7 +990,7 @@ mod tests {
             self.calls.push(StartupAudioCall::Voice(volume));
         }
 
-        fn set_score_volume(&mut self, volume: f64) {
+        fn set_score_volume(&mut self, volume: f32) {
             self.calls.push(StartupAudioCall::Score(volume));
         }
 

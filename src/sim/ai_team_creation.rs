@@ -502,7 +502,9 @@ fn condition_holds(
         ),
         5 => super_weapon_nearly_ready(sim, rules, owner, SuperWeaponKind::IronCurtain),
         6 => super_weapon_nearly_ready(sim, rules, owner, SuperWeaponKind::ChronoSphere),
-        7 => civilian_house(sim, rules).is_some_and(|house| owned_count_holds(sim, trigger, house)),
+        7 => sim
+            .civilian_side_house(rules)
+            .is_some_and(|house| owned_count_holds(sim, trigger, house)),
         _ => false,
     }
 }
@@ -551,17 +553,6 @@ fn owned_count_holds(
         _ => 0,
     };
     compare(&trigger.comparison_mask, count)
-}
-
-/// The first house, in HouseClass::Array order, whose HouseType's side
-/// (`+0xBC`) is `Civilian` (`SideClass::Find_Index @ 0x006A46D0`).
-fn civilian_house(sim: &Simulation, rules: &RuleSet) -> Option<InternedId> {
-    let civilian = rules.side_index("Civilian")?;
-    sim.session.house_order.iter().copied().find(|owner| {
-        sim.houses.get(owner).is_some_and(|house| {
-            rules.country_side_index(sim.interner.resolve(house.house_type_id())) == Some(civilian)
-        })
-    })
 }
 
 /// `0x0041F0D0` (Iron Curtain) and `0x0041F180` (Chronosphere): the house's

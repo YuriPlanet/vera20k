@@ -270,15 +270,30 @@ struct CameraSequence {
 
 /// The same final MapClass fields used by the production scroll clamp.
 fn camera_fixture_clamp(sequence: &CameraSequence) -> impl Fn((f32, f32)) -> (f32, f32) + use<> {
-    let [left, top, width, height] = sequence.local_size;
-    let bounds = crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
+    fixture_clamp(
         sequence.map_rect_width,
+        sequence.local_size,
+        sequence.viewport,
+    )
+}
+
+/// Native clamp6D8640 reads these final normalized MapClass fields; radar's
+/// enumerated tile extent is a separate consumer and must not supply the
+/// camera's vertical headroom.
+fn fixture_clamp(
+    map_rect_width: i32,
+    local_size: [i32; 4],
+    viewport: [f32; 2],
+) -> impl Fn((f32, f32)) -> (f32, f32) + use<> {
+    let [left, top, width, height] = local_size;
+    let bounds = crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
+        map_rect_width,
         left,
         top,
         width,
         height,
     );
-    let viewport = sequence.viewport.into();
+    let viewport = viewport.into();
     move |point| super::clamp_camera_point_to_local_bounds(point, bounds, viewport, 1.0)
 }
 
@@ -431,7 +446,15 @@ fn cinematic_focus_matches_native_frame_gates_projection_cleanup_and_restored_st
                 }
                 "save_restore" => {
                     use crate::sim::snapshot::GameSnapshot;
-                    let saved_view = pending.saved_view(current, 1.0);
+                    let saved_view = pending.saved_view(
+                        super::tactical_camera_center(
+                            current,
+                            sequence.viewport[0],
+                            sequence.viewport[1],
+                            1.0,
+                        ),
+                        1.0,
+                    );
                     let mut sim = crate::sim::world::Simulation::new();
                     sim.session.binary_frame = frame;
                     let bytes = GameSnapshot::save_validated_with_presentation(
@@ -443,6 +466,8 @@ fn cinematic_focus_matches_native_frame_gates_projection_cleanup_and_restored_st
                         &[],
                         None,
                         Some(&saved_view),
+                        None,
+                        None,
                     );
                     let snapshot = GameSnapshot::load(&bytes).unwrap();
                     let restored = snapshot.tactical_view().unwrap();
@@ -455,7 +480,15 @@ fn cinematic_focus_matches_native_frame_gates_projection_cleanup_and_restored_st
                     }
                     pending = PendingCameraScroll::default();
                     pending.restore_saved_view(restored);
-                    current = clamp((restored.view_world_pixels[0], restored.view_world_pixels[1]));
+                    current = clamp(tactical_camera_top_left(
+                        (
+                            restored.view_center_world_pixels[0],
+                            restored.view_center_world_pixels[1],
+                        ),
+                        sequence.viewport[0],
+                        sequence.viewport[1],
+                        1.0,
+                    ));
                     assert_eq!(step["expected"]["stream"]["consumed"], 3612);
                 }
                 "focus" => {
@@ -541,4 +574,99 @@ fn cinematic_focus_matches_native_frame_gates_projection_cleanup_and_restored_st
         }
     }
     assert_eq!(visits, 1667);
+}
+
+#[test]
+fn saved_camera_center_and_new_viewport_match_original_load_and_resize() {
+    use super::{set_camera_position, tactical_camera_center, tactical_camera_top_left};
+    let data = vectors();
+    let cases = data["camera_save_load"].as_array().unwrap();
+    assert_eq!(cases.len(), 13);
+    let world_bias = crate::util::lepton::absolute_leptons_to_screen(0, 0, 0);
+    let mut checked = 0;
+    for row in cases {
+        let source = &row["input"];
+        // The map-editor no-clamp gate remains characterization: ordinary
+        // production VERA has no editor-mode saved-game route.
+        if source["map_editor"].as_u64().unwrap() != 0 {
+            continue;
+        }
+        let name = source["name"].as_str().unwrap();
+        let viewport: [u32; 2] = serde_json::from_value(source["viewport"].clone()).unwrap();
+        let saved_center: [f32; 2] =
+            serde_json::from_value(source["saved_center"].clone()).unwrap();
+        let pending: [f32; 2] = serde_json::from_value(source["saved_requested"].clone()).unwrap();
+        let local_size: [i32; 4] = serde_json::from_value(source["local_size"].clone()).unwrap();
+        let map_rect_width = source["map_rect_width"].as_i64().unwrap() as i32;
+        let clamp_in = |dimensions: [u32; 2]| {
+            fixture_clamp(
+                map_rect_width,
+                local_size,
+                [dimensions[0] as f32, dimensions[1] as f32],
+            )
+        };
+        let center = (
+            saved_center[0] + world_bias.0,
+            saved_center[1] + world_bias.1,
+        );
+        let point = tactical_camera_top_left(center, viewport[0] as f32, viewport[1] as f32, 1.0);
+        let mut input = crate::app::input::state::MatchInputState::new(Default::default());
+        input.pending_camera_scroll.request(pending.into());
+        set_camera_position(&mut input, clamp_in(viewport)(point));
+        for (expected, dimensions) in [
+            (&row["loaded"], viewport),
+            (
+                &row["resized"],
+                serde_json::from_value(source["resize"].clone()).unwrap_or(viewport),
+            ),
+        ] {
+            if expected.is_null() {
+                continue;
+            }
+            if dimensions != viewport {
+                let center = tactical_camera_center(
+                    (input.camera_x, input.camera_y),
+                    viewport[0] as f32,
+                    viewport[1] as f32,
+                    1.0,
+                );
+                let point = tactical_camera_top_left(
+                    center,
+                    dimensions[0] as f32,
+                    dimensions[1] as f32,
+                    1.0,
+                );
+                set_camera_position(&mut input, clamp_in(dimensions)(point));
+            }
+            let native_top_left: [f32; 2] =
+                serde_json::from_value(expected["top_left"].clone()).unwrap();
+            assert_eq!(
+                (input.camera_x, input.camera_y),
+                (
+                    native_top_left[0] + world_bias.0,
+                    native_top_left[1] + world_bias.1
+                ),
+                "{name}"
+            );
+            let native_center: [f32; 2] =
+                serde_json::from_value(expected["committed"].clone()).unwrap();
+            assert_eq!(
+                tactical_camera_center(
+                    (input.camera_x, input.camera_y),
+                    dimensions[0] as f32,
+                    dimensions[1] as f32,
+                    1.0,
+                ),
+                (
+                    native_center[0] + world_bias.0,
+                    native_center[1] + world_bias.1
+                ),
+                "{name}"
+            );
+            assert_eq!(expected["committed"], expected["requested"], "{name}");
+            assert!(input.pending_camera_scroll.is_idle(), "{name}");
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 13);
 }

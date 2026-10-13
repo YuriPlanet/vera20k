@@ -286,6 +286,9 @@ pub struct AirMovementTickStats {
     /// PerCell2 and class NULL synchronously; the Infantry caller continues
     /// its still separate class path.
     pub touched_down: bool,
+    /// A receiver Process ran synchronously (a dropped Jumpjet's impact)
+    /// changed a bridge.
+    pub bridge_state_changed: bool,
 }
 
 /// `ObjectClass::GetHeight @ 0x005F5F40`, shared by every object vtable
@@ -512,6 +515,7 @@ mod tests {
             (20, 15),
             SimFixed::from_num(10),
             None,
+            None,
             crate::sim::world::FrameEffects::default(),
         );
         assert!(ok);
@@ -562,6 +566,7 @@ mod tests {
             (20, 15),
             SimFixed::from_num(10),
             Some(&rules),
+            None,
             crate::sim::world::FrameEffects::default(),
         ));
 
@@ -602,6 +607,7 @@ mod tests {
             1,
             (10, 10),
             SimFixed::from_num(10),
+            None,
             None,
             crate::sim::world::FrameEffects::default(),
         );

@@ -559,7 +559,7 @@ pub(super) fn spawn_structure(
     // Its house counts it as tracked and on the map, as CanBuild's
     // prerequisites read them.
     sim.update_house_tracking(sid, crate::sim::house_tracking::HouseTracking::add_tracking);
-    sim.update_house_presence(sid, true);
+    sim.house_added_to_game(sid);
     sim.update_house_tracking(
         sid,
         crate::sim::house_tracking::HouseTracking::increment_factory_count,

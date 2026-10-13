@@ -274,6 +274,7 @@ fn bridge_rim_middle_section_fallout_and_restored_navigation() {
         .restore_map_authority_after_snapshot_load(
             &rules,
             &crate::rules::overlay_types::OverlayTypeRegistry::empty(),
+            None,
         )
         .unwrap();
     for y in 140..=144 {

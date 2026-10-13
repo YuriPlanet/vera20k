@@ -30,11 +30,11 @@ loads the physical 4,128-byte, 48×46, 10-frame SHP from
 This separate extraction leaves the earlier IFV input manifest unchanged.
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 \
 VERA20K_PROJECTILE_RENDER_ASSETS=/tmp/bridge-ifv-assets-1dDM9D/extract \
 VERA20K_IFV_NULLIFY_ASSETS=/tmp/bridge-ifv-nullify-assets/extract \
-/Users/halvor/Documents/vera20k-dev/.venv/bin/python \
+~/Documents/vera20k-dev/.venv/bin/python \
 tools/projectile_oracle/ifv_isolated_tail.py --check
 ```
 

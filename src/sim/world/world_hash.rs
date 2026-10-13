@@ -925,6 +925,7 @@ impl Simulation {
             house.hash_event_notifications(hasher);
             house.hash_lost_building(hasher);
             house.hash_spy_gains(hasher);
+            house.hash_powered_unit_centers(hasher);
             house.hash_native_construction(hasher);
             house.hash_difficulty_biases(hasher);
             house.hash_scenario_parameters(hasher);
@@ -1442,6 +1443,14 @@ impl Simulation {
             if entity.building_has_engineer {
                 b"building-has-engineer-v1".hash(hasher);
             }
+            // Building+662 and Techno+1C8 (`sim::powered_unit`), folded only
+            // while set.
+            if entity.building_powered_center {
+                b"building-powered-center-v1".hash(hasher);
+            }
+            if entity.deactivated {
+                b"techno-deactivated-v1".hash(hasher);
+            }
             // Infantry gameplay reads its class-owned Doing/Stage fields.
             // A restored presentation component is not a second state owner.
             if entity.category != crate::map::entities::EntityCategory::Infantry
@@ -1567,6 +1576,32 @@ impl Simulation {
             entity.foot_speed.crate_multiplier().hash(hasher);
             entity.foot_occupation_enabled.hash(hasher);
             entity.foot_locomotor_swap_active.hash(hasher);
+            // The Magnetron's links and drop (Techno+2AC/+2B0/+427/+428) and
+            // the warp or drop credit house (Techno+42C) are clear outside a
+            // lift or a warp; Foot+6AE stays up after any Jumpjet touchdown
+            // until an END clears it. Tagged like +0x1F8 below.
+            if entity.lift_may_end {
+                0x6ae_u32.hash(hasher);
+            }
+            if let Some(target) = entity.locomotor_target {
+                0x2ac_u32.hash(hasher);
+                target.hash(hasher);
+            }
+            if let Some(source) = entity.locomotor_source {
+                0x2b0_u32.hash(hasher);
+                source.hash(hasher);
+            }
+            if entity.being_manipulated {
+                0x427_u32.hash(hasher);
+            }
+            if let Some(firer) = entity.manipulated_by {
+                0x428_u32.hash(hasher);
+                firer.hash(hasher);
+            }
+            if let Some(house) = entity.warped_by_house {
+                0x42c_u32.hash(hasher);
+                house.hash(hasher);
+            }
             // Techno+0x1F8 is up only between the Teleporter arm's can't-end
             // branch and the next Unit setter call; the tag keeps every
             // established stream unchanged while it is clear.

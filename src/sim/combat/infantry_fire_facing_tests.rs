@@ -333,7 +333,7 @@ fn production_pair(rules: &RuleSet) -> (Simulation, u64, u64) {
 fn restore_production_pair(sim: &Simulation, rules: &RuleSet) -> Simulation {
     let bytes = GameSnapshot::save(sim, 0, 0, "fire_facing", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-    restored.retain_in_scenario_process_state_from(sim);
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(sim));
     restored.restore_after_snapshot_load().unwrap();
     // Terrain is rebuilt from map inputs by the load workflow, not serialized
     // with the entities. Damage must see the same subcell/ground context.

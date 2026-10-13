@@ -46,7 +46,7 @@ const IFV_TURRET_READS: [(&str, &str, i32); 17] = [
 ];
 
 /// Immutable runtime projection of the process-resident TechnoType table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct GunnerTurrets {
     charge_turret: bool,
     turrets: [i32; WEAPON_SLOT_COUNT],

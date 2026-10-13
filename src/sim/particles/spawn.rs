@@ -114,8 +114,8 @@ impl Simulation {
     /// `CRElectricBolt` shot. It does NOT cover shrapnel bolts, which reach
     /// `CreateElectricBolt` through a different seam — see the residual below.
     ///
-    /// RESIDUAL (GSI-05.13) — the shrapnel seam and two other native
-    /// producers are not wired. Their reachability is settled rather than
+    /// RESIDUAL (GSI-05.13) — the shrapnel seam and one other native
+    /// producer are not wired. Their reachability is settled rather than
     /// assumed:
     /// - `BulletClass::SpawnShrapnel @ 0x0046A310` calls `CreateElectricBolt`
     ///   once per shrapnel bolt when the CHILD weapon carries `IsElectricBolt`.
@@ -136,25 +136,21 @@ impl Simulation {
     ///   REACHABLE: stock authors it once, on `[RepairBullet]`
     ///   (`AttachedParticleSystem=WeldingSys`), carried by the IFV's
     ///   `Weapon2`/`EliteWeapon2` — the repair IFV's welding sparks.
-    /// - `UnitClass::AI @ 0x007361A4`, mid-deploy, gated on `Techno+0x1C8` and
-    ///   a coordinate/frame modulo. REACHABLE but rare — a few frames per MCV
-    ///   or Slave Miner deploy, taking two `RandomRanged(-100, 100)` draws.
     ///
-    /// - Trigger: an elite Tesla shot, repairing with an IFV, or deploying an
-    ///   MCV. (The parasite bite's `DefaultSparkSystem` at `0x0062A103` is
-    ///   wired in `combat/parasite.rs`, the Mastermind overload's at
-    ///   `0x00471C15` in `capture_manager.rs`.)
-    /// - Player effect: none of those throws sparks. The IFV repair arm is the
+    /// - Trigger: an elite Tesla shot, or repairing with an IFV. (The parasite
+    ///   bite's `DefaultSparkSystem` at `0x0062A103` is wired in
+    ///   `combat/parasite.rs`, the Mastermind overload's at `0x00471C15` in
+    ///   `capture_manager.rs`, and an offline Robot Tank's at `0x007361A4`
+    ///   (`Techno+0x1C8`, not a deploy) in `powered_unit.rs`.)
+    /// - Player effect: neither throws sparks. The IFV repair arm is the
     ///   one a player watches — a repair beam with no welding shower.
     /// - Frequency: the shrapnel arm is the common one — it follows every
     ///   elite Tesla Tank and elite Tesla Coil discharge, and veterancy makes
     ///   those ordinary in a long Soviet game. The IFV arm follows every repair
-    ///   tick; the deploy arm is a handful of frames a match.
+    ///   tick.
     /// - Downstream risk: the `Fire_At` arm needs the `Techno+0x308` slot and
     ///   its clearing writer, which is UNCHECKED — the offset is shared across
-    ///   several classes and the search for the writer was not settled. The
-    ///   deploy arm takes RNG draws *before* its spawn, so it moves the shared
-    ///   stream and wants its own slice with a re-baseline.
+    ///   several classes and the search for the writer was not settled.
     ///
     /// NOT_APPLICABLE_PROVEN, and recorded so it is not re-attempted: the
     /// `DamageParticleSystems=` Spark producer in

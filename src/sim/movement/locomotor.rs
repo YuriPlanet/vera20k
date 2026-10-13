@@ -111,23 +111,25 @@ impl LocomotorState {
             obj.speed_type,
             obj.movement_zone,
         );
-        // `Link_To_Object @ 0x0054AD30` copies the type's jumpjet block and
-        // builds the locomotor facing at its `JumpjetTurnRate=`.
-        if let LocomotorRuntimePayload::Jumpjet(runtime) = &mut state.runtime_payload {
-            runtime.link(&obj.jumpjet_params);
-        }
-        // `Link_To_Object @ 0x00513CB0` builds the steering facing at the
-        // type's `ROT=`.
-        if let LocomotorRuntimePayload::Hover(runtime) = &mut state.runtime_payload {
-            runtime.link(obj.turret_rot);
-        }
-        if let LocomotorRuntimePayload::Fly(runtime) = &mut state.runtime_payload {
-            runtime.link(
+        state.link_to_object(obj);
+        state
+    }
+
+    /// The class's `Link_To_Object` for a Foot of type `obj`, where it copies
+    /// type data: Jumpjet (`0x0054AD30`) copies the type's jumpjet block and
+    /// builds the locomotor facing at its `JumpjetTurnRate=`; Hover
+    /// (`0x00513CB0`) builds the steering facing at the type's `ROT=`; Fly
+    /// keeps whether the type is an `AirportBound=` aircraft.
+    fn link_to_object(&mut self, obj: &ObjectType) {
+        match &mut self.runtime_payload {
+            LocomotorRuntimePayload::Jumpjet(runtime) => runtime.link(&obj.jumpjet_params),
+            LocomotorRuntimePayload::Hover(runtime) => runtime.link(obj.turret_rot),
+            LocomotorRuntimePayload::Fly(runtime) => runtime.link(
                 obj.category == crate::rules::object_type::ObjectCategory::Aircraft
                     && obj.airport_bound,
-            );
+            ),
+            _ => {}
         }
-        state
     }
 
     /// A just-constructed `kind` object on `layer`, before its link: the
@@ -176,11 +178,11 @@ impl LocomotorState {
     /// `LocomotionClass` constructor `0x0055A6C0`) and links it
     /// (`0x007426C9`) before BEGIN (`0x0074276F`).
     /// - It keeps this object's type caches and the Foot's current layer. A
-    ///   BEGIN does not move the Foot, and the two classes production BEGINs
-    ///   install, the setter's Drive and the Chrono Warp's Teleport, answer
-    ///   Ground from `In_Which_Layer` (`0x004B4820`, `0x00719E20`).
-    /// - A Jumpjet or Fly temporary would also need its type's link block and
-    ///   its own layer answer. Nothing installs one.
+    ///   BEGIN does not move the Foot. The setter's Drive and the Chrono
+    ///   Warp's Teleport answer Ground from `In_Which_Layer` (`0x004B4820`,
+    ///   `0x00719E20`); the Magnetron's Jumpjet takes its type's link block
+    ///   ([`Self::begin_piggyback_linked`]) and answers its layer from its
+    ///   height (`world::entity_layer`), not from this cache.
     pub(crate) fn fresh_linked(&self, kind: LocomotorKind, binary_frame: u32) -> Self {
         Self::constructed(
             kind,
@@ -566,6 +568,23 @@ impl LocomotorState {
     /// when the fresh object's own slot is occupied, which it never is.
     pub fn begin_piggyback(&mut self, kind: LocomotorKind, binary_frame: u32) -> bool {
         piggyback::begin(self, kind, binary_frame) == piggyback::BeginOutcome::Installed
+    }
+
+    /// [`Self::begin_piggyback`] with the fresh object linked to the Foot's
+    /// type `obj`, as `TechnoClass::ImbueLocomotor @ 0x00710000` links its
+    /// new locomotor (`0x00710243`) before BEGIN (`0x007102D8`). The link
+    /// reads only the type, so linking the installed object is the same.
+    pub(crate) fn begin_piggyback_linked(
+        &mut self,
+        kind: LocomotorKind,
+        obj: &ObjectType,
+        binary_frame: u32,
+    ) -> bool {
+        let installed = self.begin_piggyback(kind, binary_frame);
+        if installed {
+            self.link_to_object(obj);
+        }
+        installed
     }
 
     /// End the active piggyback, restoring the stashed locomotor.

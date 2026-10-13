@@ -184,7 +184,7 @@ fn fly_integer_target_flags_and_cargo_survive_save_and_continuation() {
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&sim, 0, 0, "Fly native height continuation", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-        restored.retain_in_scenario_process_state_from(&sim);
+        restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
         restored.resolved_terrain = terrain;
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(restored.state_hash(), sim.state_hash(), "{name}");
@@ -408,6 +408,7 @@ fn assert_native_move_takeoff(sim: &mut Simulation, rules: &RuleSet, row: &serde
         (12, 10),
         SimFixed::from_num(10),
         Some(rules),
+        None,
         crate::sim::world::FrameEffects::default()
     ));
     let entity = sim.substrate.entities.get(1).unwrap();
@@ -483,7 +484,8 @@ fn carryall_landing_base_is_recomputed_from_saved_cargo_contacts_and_mission() {
             sim.scenario_rng = crate::sim::rng::SimRng::new(0);
             let bytes = GameSnapshot::save(&sim, 0, 0, "Carryall move continuation", 0);
             let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-            restored.retain_in_scenario_process_state_from(&sim);
+            restored
+                .retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
             restored.resolved_terrain = sim.resolved_terrain.clone();
             restored.restore_after_snapshot_load().unwrap();
             assert_eq!(restored.state_hash(), sim.state_hash());
@@ -628,6 +630,7 @@ fn fly_cell_orders_resolve_ground_before_retaining_the_coordinate() {
         (64, 64),
         SimFixed::from_num(10),
         Some(&rules),
+        None,
         crate::sim::world::FrameEffects::default()
     ));
     let destination = sim
@@ -665,7 +668,7 @@ fn fly_retained_destination_drives_subcell_arrival_after_save_and_restore() {
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let bytes = GameSnapshot::save(&sim, 0, 0, "Fly retained destination", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-    restored.retain_in_scenario_process_state_from(&sim);
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     restored.resolved_terrain = sim.resolved_terrain.clone();
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(restored.state_hash(), sim.state_hash());
@@ -726,7 +729,7 @@ fn fly_destination_is_hashed_and_persisted_in_active_and_stashed_runtime() {
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&sim, 0, 0, "Fly active/stashed destination", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-        restored.retain_in_scenario_process_state_from(&sim);
+        restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
         restored.resolved_terrain = sim.resolved_terrain.clone();
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(restored.state_hash(), sim.state_hash());
@@ -1008,7 +1011,7 @@ fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
     assert_eq!(state.target_height(), 40000);
     let bytes = GameSnapshot::save(&sim, 0, 0, "Non-Landable Fly continuation", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-    restored.retain_in_scenario_process_state_from(&sim);
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     restored.resolved_terrain = sim.resolved_terrain.clone();
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(restored.state_hash(), sim.state_hash());
@@ -1106,7 +1109,9 @@ fn fly_landing_state_hashes_and_restores_active_and_stashed_instances() {
             );
             let bytes = GameSnapshot::save(&changed, 0, 0, "Fly landing state", 0);
             let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-            restored.retain_in_scenario_process_state_from(&changed);
+            restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(
+                &changed,
+            ));
             restored.resolved_terrain = changed.resolved_terrain.clone();
             restored.restore_after_snapshot_load().unwrap();
             assert_eq!(
@@ -1227,7 +1232,7 @@ fn fly_production_tick_uses_primary_current_and_continues_after_restore() {
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let bytes = GameSnapshot::save(&sim, 0, 0, "Fly takeoff continuation", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-    restored.retain_in_scenario_process_state_from(&sim);
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     restored.resolved_terrain = sim.resolved_terrain.clone();
     restored.restore_after_snapshot_load().unwrap();
     for frame in 100..104 {
@@ -1350,7 +1355,8 @@ fn fly_paid_step_matches_native_math_and_production_type_speed() {
             sim.scenario_rng = crate::sim::rng::SimRng::new(0);
             let bytes = GameSnapshot::save(&sim, 0, 0, "Fly paid movement", 0);
             let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-            restored.retain_in_scenario_process_state_from(&sim);
+            restored
+                .retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
             restored.resolved_terrain = sim.resolved_terrain.clone();
             restored.restore_after_snapshot_load().unwrap();
             assert_eq!(restored.state_hash(), sim.state_hash());

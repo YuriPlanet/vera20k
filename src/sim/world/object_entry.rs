@@ -63,11 +63,16 @@ impl EntryReadContext<'_> {
     }
 }
 
-fn friendly(live: &EntryReadContext<'_>, a: InternedId, b: InternedId) -> bool {
-    crate::map::houses::are_houses_friendly(
-        &live.sim.house_alliances,
-        live.sim.interner.resolve(a),
-        live.sim.interner.resolve(b),
+/// `HouseClass::Is_Ally_ByObject @ 0x004F9A90` / `Is_Ally`: `asker`'s own
+/// mask. Can_Enter_Cell asks from the mover's house (`+0x21C`, e.g.
+/// `0x0051C579`, `0x0073FB53`), except at a closed gate
+/// ([`EntryMover::is_ally_of`]).
+fn allied(live: &EntryReadContext<'_>, asker: InternedId, other: InternedId) -> bool {
+    crate::sim::combat::combat_weapon::is_ally_by_object(
+        Some(&live.sim.house_alliances),
+        &live.sim.interner,
+        asker,
+        other,
     )
 }
 /// Infantry5227F0 checks raw disguise first, then resolves the actual center
@@ -88,7 +93,7 @@ fn infantry_disguised_to(
     let cell = live
         .terrain()
         .native_cell_identity(((x / 256) as i16, (y / 256) as i16));
-    if friendly(live, entity.owner(), observer) {
+    if allied(live, entity.owner(), observer) {
         return Ok(false);
     }
     let coord = live.coord(cell);
@@ -102,7 +107,7 @@ fn infantry_disguised_to(
         detected,
         disguise
             .house()
-            .is_some_and(|fake| friendly(live, observer, fake)),
+            .is_some_and(|fake| allied(live, observer, fake)),
         disguise.house().is_some(),
     ))
 }
@@ -463,7 +468,7 @@ struct EntryMover<'a> {
     obj: &'a ObjectType,
     weapon0: Option<&'a crate::rules::weapon_type::WeaponType>,
     crusher: bool,
-    /// Answers of `friendly(mover owner, house)` already asked, and blocker
+    /// Answers of `allied(mover owner, house)` already asked, and blocker
     /// types already resolved by name; the alliance graph and rules are fixed
     /// for the receiver's lifetime.
     allies: std::cell::RefCell<Vec<(InternedId, bool)>>,
@@ -496,13 +501,20 @@ impl<'a> EntryMover<'a> {
         Some(kind)
     }
 
-    fn friendly(&self, live: &EntryReadContext<'_>, house: InternedId) -> bool {
+    fn allied_with(&self, live: &EntryReadContext<'_>, house: InternedId) -> bool {
         if let Some(&(_, answer)) = self.allies.borrow().iter().find(|(h, _)| *h == house) {
             return answer;
         }
-        let answer = friendly(live, self.e.owner(), house);
+        let answer = allied(live, self.e.owner(), house);
         self.allies.borrow_mut().push((house, answer));
         answer
+    }
+
+    /// `house`'s own mask asked about the mover, as a closed gate's House
+    /// asks (`IsAlliedWith @ 0x004F9A50`: Unit `0x0073F6F5..0x0073F702`,
+    /// Infantry `0x0051C504..0x0051C511`).
+    fn is_ally_of(&self, live: &EntryReadContext<'_>, house: InternedId) -> bool {
+        allied(live, house, self.e.owner())
     }
 }
 
@@ -837,7 +849,7 @@ fn classify_foot_entry<'a>(
                 continue;
             }
         }
-        let allied = mover.friendly(live, b.owner());
+        let allied = mover.allied_with(live, b.owner());
         let mission = if infantry {
             e.mission.current().known()
         } else {
@@ -924,6 +936,7 @@ fn classify_foot_entry<'a>(
                 if b.is_open_gate() {
                     continue;
                 }
+                let allied = mover.is_ally_of(live, b.owner());
                 if !allied && !combat_weapon::is_armed(e, obj) {
                     return Ok(7);
                 }
@@ -987,7 +1000,13 @@ fn classify_foot_entry<'a>(
                 continue;
             }
             if if infantry {
-                crate::sim::combat::combat_weapon::weapon_damage_value(e, obj, live.rules) <= 0
+                crate::sim::combat::combat_weapon::weapon_damage_value(
+                    e,
+                    obj,
+                    &live.sim.substrate.entities,
+                    live.rules,
+                    &live.sim.interner,
+                ) <= 0
             } else {
                 weapon0.is_none()
             } {
@@ -1057,12 +1076,19 @@ fn classify_foot_entry<'a>(
             return Ok(2);
         }
         if let Some(owner) = owner {
-            if mover.friendly(live, owner) {
+            if mover.allied_with(live, owner) {
                 if bits & 0x1c == 0x1c && entry_result < 2 {
                     entry_result = if stationary_infantry == 3 { 6 } else { 2 };
                 }
             } else {
-                if crate::sim::combat::combat_weapon::weapon_damage_value(e, obj, live.rules) <= 0 {
+                if crate::sim::combat::combat_weapon::weapon_damage_value(
+                    e,
+                    obj,
+                    &live.sim.substrate.entities,
+                    live.rules,
+                    &live.sim.interner,
+                ) <= 0
+                {
                     return Ok(7);
                 }
                 entry_result = entry_result.max(5);
@@ -1095,7 +1121,7 @@ fn classify_foot_entry<'a>(
                         crate::sim::pathfinding::cell_entry::unit_tail_is_crushable_by(
                             unit,
                             capability,
-                            mover.friendly(live, unit.owner()),
+                            mover.allied_with(live, unit.owner()),
                             live.sim.session.binary_frame,
                         )
                     })
@@ -1109,7 +1135,7 @@ fn classify_foot_entry<'a>(
         if bits & 0x3f == 0 {
             return Ok(0);
         }
-        if vehicle_occupied || owner.is_some_and(|owner| mover.friendly(live, owner)) {
+        if vehicle_occupied || owner.is_some_and(|owner| mover.allied_with(live, owner)) {
             return Ok(2);
         }
         if !crusher {

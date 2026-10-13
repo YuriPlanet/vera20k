@@ -65,8 +65,8 @@ use crate::sim::ai_base_site::{SiteKey, find_base_building_site, reserved_near};
 use crate::sim::ai_unit_choice::{self, UnitChoiceKind};
 use crate::sim::base_plan::{BasePlanNode, pack_base_plan_cell, unpack_base_plan_cell};
 use crate::sim::build_site::{Flush, can_place_building_at, flush_for_placement};
-use crate::sim::components::BuildingUp;
 use crate::sim::intern::InternedId;
+use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::production::find_factory;
 use crate::sim::world::FrameEffects;
@@ -598,11 +598,13 @@ fn building_site(
 /// its `Can_Enter_Cell` (`sim::build_site`). A wall stamps its overlay and
 /// deletes the object (`0x00440774..0x00440865`), then fills towards the
 /// house's walls (`0x00445408`). Any other building stands and runs its
-/// Unlimbo's grant pass (`0x0050B1D0`); its slave manager takes the hand-off
-/// (`0x004452F0..0x004452FA`) and its queued Construction mission commences
-/// (`0x00445329..0x0044533F`). A computer house's yard stands in the Logic
-/// vector, which is re-read, so the new building's first Update follows
-/// later in the same frame ([`BuildingUp::placed_by_computer`]).
+/// Unlimbo's grant pass (`0x0050B1D0`); its Unlimbo queued Construction
+/// (`Simulation::building_enter_idle_mode`), which keeps its owner's
+/// discovery from opening it; its slave manager takes the hand-off
+/// (`0x004452F0..0x004452FA`) and the queued Construction commences with no
+/// readiness check (`0x00445329..0x0044533F`). A computer house's yard stands
+/// in the Logic vector, which is re-read, so the new building's first Update
+/// follows later in the same frame.
 fn place_building(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -657,10 +659,12 @@ fn place_building(
     sim.slave_manager_hand_off(product, rules, effects);
     // The choice clear at `0x0044531F` compares the product with the choice
     // the exit cleared at its start; nothing in between sets it.
-    let control = rules.buildup_control(&ty.id);
-    let now = sim.session.binary_frame as i32;
-    if let Some(building) = sim.substrate.entities.get_mut(product) {
-        building.install_building_up(BuildingUp::placed_by_computer(control, now), now);
+    let now = sim.session.binary_frame;
+    if let Some(building) = sim.substrate.entities.get_mut(product)
+        && building.mission.current() == MissionId::NONE
+        && building.mission.queued() == MissionId::from_known(MissionType::Construction)
+    {
+        crate::sim::mission::authority::commence_entity_mission(building, now);
     }
     true
 }

@@ -16,18 +16,19 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
 
-fn represented_infantry_destination(
-    actor: &crate::sim::game_entity::GameEntity,
-    object: &crate::rules::object_type::ObjectType,
-    _requested: NavTargetRef,
-) -> bool {
-    use crate::rules::locomotor_type::LocomotorKind;
+/// Whether the Infantry class setter (`0x0051AA40`) is represented for this
+/// infantryman: his active locomotor is Walk, Teleport or Jumpjet, whose
+/// `Move_To` its Foot tail reaches.
+fn represented_infantry_destination(actor: &crate::sim::game_entity::GameEntity) -> bool {
     actor.category == crate::map::entities::EntityCategory::Infantry
-        && !object.jumpjet
         && actor
             .locomotor
             .as_ref()
-            .is_some_and(|loco| matches!(loco.kind, LocomotorKind::Walk | LocomotorKind::Teleport))
+            .is_some_and(|loco| match loco.kind {
+                LocomotorKind::Walk | LocomotorKind::Teleport => true,
+                LocomotorKind::Jumpjet => loco.jumpjet_runtime().is_some(),
+                _ => false,
+            })
 }
 
 /// The Doing values of the deploy family, as Scatter (`0x0051D0E3..0x0051D0F5`)
@@ -340,16 +341,10 @@ impl Simulation {
         Ok(destination.map(|destination| (destination.0 as u16, destination.1 as u16)))
     }
 
-    /// Scatter's `SetDestination(cell, 1)` (`vt+0x480`). Walk and Teleport men
-    /// take the Infantry setter (`0x0051AA40`). A Jumpjet man takes the
-    /// existing air destination owner (FNPC, placement and cached XYZ).
-    /// `process_now` runs the locomotor's Process at once, as the found-cell
-    /// arm does (`0x0051D478`).
-    ///
-    /// RESIDUAL: a Jumpjet man advances at its ordinary object turn, one frame
-    /// later. Trigger: such a man scattered into a found cell. Effect: its
-    /// first step comes one frame later. Frequency: rare; stock Jumpjet
-    /// infantry are few. Walk and Teleport use the shared immediate Process.
+    /// Scatter's `SetDestination(cell, 1)` (`vt+0x480`): the Infantry setter
+    /// (`0x0051AA40`) for a Walk, Teleport or Jumpjet man. `process_now` runs
+    /// the active locomotor's Process at once, as the found-cell arm does for
+    /// every locomotor (`0x0051D45B..0x0051D478`).
     fn infantry_scatter_destination(
         &mut self,
         id: u64,
@@ -366,15 +361,7 @@ impl Simulation {
             .ok_or("Scatter lost its infantryman")?;
         let kind = infantry.locomotor.as_ref().map(|loco| loco.active_kind());
         let speed = scatter_movement_speed(infantry, Some(rules), &self.interner, &self.houses);
-        if kind == Some(LocomotorKind::Jumpjet) {
-            if !self.issue_air_cell_destination(id, cell, speed, Some(rules), frame_effects) {
-                return Err(
-                    "Scatter Jumpjet destination requires its failed-placement continuation".into(),
-                );
-            }
-            return Ok(false);
-        }
-        self.assign_infantry_walk_destination(
+        self.assign_infantry_destination(
             id,
             NavTargetRef::cell(cell.0, cell.1),
             speed,
@@ -382,7 +369,12 @@ impl Simulation {
             registry,
             frame_effects,
         )?;
-        if !process_now || !matches!(kind, Some(LocomotorKind::Walk | LocomotorKind::Teleport)) {
+        if !process_now
+            || !matches!(
+                kind,
+                Some(LocomotorKind::Walk | LocomotorKind::Teleport | LocomotorKind::Jumpjet)
+            )
+        {
             return Ok(false);
         }
         // 0x0051D478 is an immediate locomotor invocation, without another
@@ -454,16 +446,11 @@ impl Simulation {
     }
 
     /// Whether the non-null Infantry51AA40 destination owner represents this
-    /// receiver and target. This checks port coverage, not native admission.
-    pub(crate) fn infantry_setter_receiver(
-        &self,
-        id: u64,
-        requested: NavTargetRef,
-        rules: &RuleSet,
-    ) -> bool {
+    /// receiver. This checks port coverage, not native admission.
+    pub(crate) fn infantry_setter_receiver(&self, id: u64, rules: &RuleSet) -> bool {
         self.substrate.entities.get(id).is_some_and(|actor| {
-            self.object_type(actor.type_ref(), rules)
-                .is_some_and(|object| represented_infantry_destination(actor, object, requested))
+            self.object_type(actor.type_ref(), rules).is_some()
+                && represented_infantry_destination(actor)
         })
     }
 
@@ -486,7 +473,7 @@ impl Simulation {
         let Some(object) = self.object_type(actor.type_ref(), rules) else {
             return false;
         };
-        if !represented_infantry_destination(actor, object, requested) || actor.infantry.is_none() {
+        if !represented_infantry_destination(actor) || actor.infantry.is_none() {
             return false;
         }
         if actor.mission_leaf.as_infantry().is_none() {
@@ -580,29 +567,82 @@ impl Simulation {
     }
 
     /// The Infantry class setter `vt+0x480(target, 1)` (`0x0051AA40`) for a
-    /// Walk or Teleport infantryman: Infantry51AA40 -> Foot4D94B0 -> the
-    /// active locomotor's Move_To (Walk75ACB0 or Teleport `0x00718100`; the
-    /// setter never reads `Teleporter=`). Reached from Scatter (`0x0051D6E0`),
-    /// the slave manager's sends, team scripts, ordinary represented Walk
-    /// and Teleport orders, and FindPath's redirect callbacks. The human
-    /// same-reference prone DoAction7
-    /// arm (`0x0051ABD7..0x0051AC1F`) uses the existing action owner.
+    /// Walk, Teleport or Jumpjet infantryman: Infantry51AA40 -> Foot4D94B0 ->
+    /// the active locomotor's Move_To (Walk75ACB0, Teleport `0x00718100`, or
+    /// Jumpjet through [`Self::jumpjet_foot_destination`]; the setter never
+    /// reads `Teleporter=`). Every represented Infantry destination comes
+    /// here: Scatter (`0x0051D6E0`), the slave manager's sends, team scripts,
+    /// orders, the mission effects, the Jumpjet host's own re-targets and
+    /// FindPath's redirect callbacks. In order:
+    /// - a human owner's deploy Doing refuses before any write
+    ///   (`0x0051AA49..0x0051AA7E`);
+    /// - a `JumpJet=` type (`+0xD94`) whose destination's GetCoords (`+0x48`)
+    ///   lies in his own cell returns before any write
+    ///   (`0x0051AA84..0x0051AB2E`, [`Self::jumpjet_destination_in_own_cell`]);
+    /// - the mutual `+0x2A8` link clears (`0x0051AB34`); only the dormant
+    ///   `DirectRocker=` warhead raises it, and VERA keeps none;
+    /// - while the locomotor `Is_Moving` and his cell passes `0x004834A0`,
+    ///   Stop_Driver (`0x0051ABD1`) runs: for a `JumpJet=` type always, for
+    ///   another unless he is on Attack with this NavCom already;
+    /// - the human same-reference prone DoAction7 (`0x0051ABD7..0x0051AC1F`)
+    ///   uses the existing action owner;
+    /// - on Enter (current or queued) without a radio contact the transport
+    ///   radio arm runs and the path head stays (`0x0051AC25..0x0051AD17`);
+    ///   otherwise the path head clears;
+    /// - Foot's setter (`0x0051B1D2`).
+    ///
     /// Non-cell targets retain their reference and read the receiver's +4C
     /// navigation coordinate, including a Foot's committed head. No Process
     /// runs until the ordinary object turn.
     /// Native comparisons: infantry_scatter_destination.{py,json,meta.json}
     /// and anytown_damage/foot_missions.{py,json,meta.json}; ordinary original
     /// input/event/class reissues are in walk_first_path.json `gi_reissue`.
+    /// The two `JumpJet=` arms were read from the instructions, not executed.
     ///
-    /// A Jumpjet infantryman takes the deploy refusal and the path-head clear,
-    /// then Foot's setter through his Jumpjet ([`Self::jumpjet_destination`]),
-    /// for a cell or an object; that owner records the JumpJet arms this
-    /// setter still lacks.
+    /// RESIDUAL: the composed `JumpJet=` re-order has not been executed
+    /// natively. Its Scenario draws are Stop_Driver's Jumpjet Stop
+    /// (`0x0054B4D0`: FNPC, then its own Move_To's placement through
+    /// `0x0054D6D0`/`0x004ACA10`), then the order's Move_To placement
+    /// (`0x0054B1C0`). Each leaf runs against the original
+    /// in `jumpjet_coordinates`; their order is the call order `0x0051ABD1`
+    /// then `0x0051B1D2`, and the arm's two tests are the Walk-checked
+    /// `0x004834A0` port and the Jumpjet `Is_Moving` the same corpus pins.
+    /// Trigger: a re-order of a flying Rocketeer, a cruise re-target or a
+    /// team's BalloonHover resend. Effect if misread: the Scenario stream
+    /// shifts for every later draw. Frequency: most orders to an airborne
+    /// Rocketeer. Risk: RNG drift against native, not a visible movement
+    /// difference.
+    ///
+    /// RESIDUAL: the Enter radio arm is not ported. With a Techno destination
+    /// (`0x0040DD70`) it queues him on a transport already in radio contact
+    /// (QueueUpToEnter `+0x500`, ArchiveTarget cleared, NULL destination) or
+    /// sends RADIO_HELLO and, on ROGER, message 0xE, returning before Foot's
+    /// setter when that answers 0xE. VERA writes the object through Foot's
+    /// setter either way. Trigger: an infantryman's boarding order
+    /// (EnterTransport, Enter 7) or an Enter re-target. Frequency: every
+    /// infantry boarding. Risk: boarding a busy transport or one that turns
+    /// him away differs from native.
+    ///
+    /// RESIDUAL: a `JumpJet=` infantryman's Walk piggyback is not modelled.
+    /// The setter swaps the Jumpjet of one that is not moving for a Walk
+    /// (`0x0051AE5A..0x0051B1CA`) unless `0x005221D0` says fly or the type has
+    /// `HoverAttack=` (`+0x390`), ends the piggyback when it says fly, and
+    /// pushes the destination onto NavQueue's front for a walking one
+    /// (`0x0051AD1F..0x0051AE57`). `0x005221D0` says fly when airborne; on
+    /// the ground it says walk for a reachable hop of one cell, for two or
+    /// three cells in the playfield whose zone cost is at most 7, and in two
+    /// house and cell cases (`0x0053A130`, `0x00484AE0`). VERA flies every
+    /// hop. Trigger: a grounded `JumpJet=` infantry without `HoverAttack=`
+    /// given a short hop. Effect: it lifts off instead of walking. Frequency:
+    /// dormant in retail `rulesmd.ini`, where each `JumpJet=` infantry type
+    /// also sets `HoverAttack=` (production reader:
+    /// `retail_jumpjet_infantry_all_hover_attack`); a map or mode layer could
+    /// clear it. Risk: a mod's walking jumpjet infantry fly.
     ///
     /// Returns false for the other unmigrated class setters.
-    /// DirectRocker reciprocal links, lifted-unit release, retained fire particles
-    /// and the Unit-produced +6AC latch still lack their production owners here.
-    pub(crate) fn assign_infantry_walk_destination(
+    /// DirectRocker reciprocal links, retained fire particles and the
+    /// Unit-produced +6AC latch still lack their production owners here.
+    pub(crate) fn assign_infantry_destination(
         &mut self,
         id: u64,
         requested: NavTargetRef,
@@ -611,7 +651,6 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
-        use crate::rules::locomotor_type::LocomotorKind;
         let actor = self
             .substrate
             .entities
@@ -620,33 +659,21 @@ impl Simulation {
         let object = self
             .object_type(actor.type_ref(), rules)
             .ok_or("Infantry destination requires type")?;
-        let teleport = actor
-            .locomotor
-            .as_ref()
-            .is_some_and(|l| l.kind == LocomotorKind::Teleport);
-        // A Jumpjet infantryman's destination, a cell or an object, takes
-        // Foot's setter through the Jumpjet Move_To (`0x0051B1D2` ->
-        // `0x004D94B0`), whichever route gave it (the idle Archive handoff,
-        // an order, a scatter).
-        let jumpjet = actor
-            .locomotor
-            .as_ref()
-            .and_then(|l| l.jumpjet_runtime())
-            .is_some();
-        if !jumpjet && !represented_infantry_destination(actor, object, requested) {
+        if !represented_infantry_destination(actor) {
             return Ok(false);
         }
         if self.infantry_setter_refuses(actor) {
             return Ok(true);
         }
-        if jumpjet {
-            super::movement_commands::clear_destination_path_head(
-                self.substrate.entities.get_mut(id).unwrap(),
-            );
-            return Ok(self
-                .jumpjet_destination(id, requested, speed, Some(rules), frame_effects)
-                .unwrap_or(false));
+        let jumpjet_type = object.jumpjet;
+        if jumpjet_type && self.jumpjet_destination_in_own_cell(actor, requested) {
+            return Ok(true);
         }
+        let kind = actor
+            .locomotor
+            .as_ref()
+            .map(|l| l.kind)
+            .expect("represented receiver");
         let human = self.owner_is_human(actor.owner());
         if !self.infantry_destination_inputs_available(id, requested, rules, registry) {
             return Err("Infantry destination requires available class inputs".into());
@@ -654,11 +681,13 @@ impl Simulation {
         let speed_type = object.speed_type;
         let type_allows_up = !object.fraidycat && !object.cyborg;
         let moving = super::motion_query::is_moving(actor) == Some(true);
-        // 51ABA2 invokes the shared Cell leaf BEFORE the Attack/same-NavCom
-        // exception. The current physical coordinate owns this lookup.
+        // 51ABA2 invokes the shared Cell leaf BEFORE the JumpJet and
+        // Attack/same-NavCom tests. The current physical coordinate owns this
+        // lookup.
         if moving && self.infantry_destination_current_cell_clear(id, speed_type, registry)? {
             let actor = self.substrate.entities.get(id).unwrap();
-            if actor.mission.current().raw() != 1
+            if jumpjet_type
+                || actor.mission.current().raw() != 1
                 || !super::navcom::nav_targets_same_receiver(actor.navigation.nav_com, requested)
             {
                 self.infantry_stop_driver(id, rules, registry, frame_effects)?;
@@ -680,53 +709,86 @@ impl Simulation {
             self.infantry_do_action(id, 7, false, rules, frame_effects)?;
         }
         super::movement_commands::clear_destination_path_head(
-            self.substrate.entities.get_mut(id).unwrap(),
+            self.substrate
+                .entities
+                .get_mut(id)
+                .ok_or("destination lost infantry after DoAction")?,
         );
-        if !self.begin_foot_destination(id, true) {
+        if !self.begin_foot_destination(id, true, Some(rules), registry, frame_effects) {
             return Ok(true);
         }
-        if teleport {
-            // Foot tail: NavCom, then Teleport Move_To, then the accepted
-            // timers whatever it answered (`0x004D96C2..0x004D9707`).
-            let frame = self.session.binary_frame;
-            let actor = self.substrate.entities.get_mut(id).unwrap();
-            super::navcom::publish_nav_com(actor, requested);
-            // Infantry51AA40 -> Foot4D94B0 samples destination +4C before
-            // Teleport718100. An Enter carries the vehicle, not a Cell alias.
-            // Original object coordinate/resolver controls:
-            // infantry_teleport_destination.json transport_rows.
-            let point = super::navcom::nav_target_coordinate(
-                requested,
-                Some(id),
-                &self.substrate.entities,
-                self.resolved_terrain.as_ref(),
-                Some((rules, &self.interner)),
-            )?;
-            let accepted =
-                self.teleport_move_to(id, point, rules, false, registry, frame_effects)?;
-            let actor = self.substrate.entities.get_mut(id).unwrap();
-            super::DestinationTiming::from_rules(frame, Some(rules)).accept(actor);
-            return Ok(accepted);
+        match kind {
+            LocomotorKind::Teleport => {
+                // Foot tail: NavCom, then Teleport Move_To, then the accepted
+                // timers whatever it answered (`0x004D96C2..0x004D9707`).
+                let frame = self.session.binary_frame;
+                let actor = self.substrate.entities.get_mut(id).unwrap();
+                super::navcom::publish_nav_com(actor, requested);
+                // Infantry51AA40 -> Foot4D94B0 samples destination +4C before
+                // Teleport718100. An Enter carries the vehicle, not a Cell alias.
+                // Original object coordinate/resolver controls:
+                // infantry_teleport_destination.json transport_rows.
+                let point = super::navcom::nav_target_coordinate(
+                    requested,
+                    Some(id),
+                    &self.substrate.entities,
+                    self.resolved_terrain.as_ref(),
+                    Some((rules, &self.interner)),
+                )?;
+                let accepted =
+                    self.teleport_move_to(id, point, rules, false, registry, frame_effects)?;
+                let actor = self.substrate.entities.get_mut(id).unwrap();
+                super::DestinationTiming::from_rules(frame, Some(rules)).accept(actor);
+                Ok(accepted)
+            }
+            LocomotorKind::Jumpjet => {
+                Ok(self.jumpjet_foot_destination(id, requested, speed, rules))
+            }
+            _ => {
+                let coord = super::navcom::nav_target_coordinate(
+                    requested,
+                    Some(id),
+                    &self.substrate.entities,
+                    self.resolved_terrain.as_ref(),
+                    Some((rules, &self.interner)),
+                )?;
+                super::prepare_walk_destination(
+                    &mut self.substrate.entities,
+                    id,
+                    (requested, coord),
+                    speed,
+                    self.resolved_terrain.as_ref(),
+                    super::DestinationTiming::from_rules(self.session.binary_frame, Some(rules)),
+                );
+                Ok(true)
+            }
         }
-        let coord = super::navcom::nav_target_coordinate(
-            requested,
-            Some(id),
-            &self.substrate.entities,
-            self.resolved_terrain.as_ref(),
-            Some((rules, &self.interner)),
-        )?;
-        super::prepare_walk_destination(
-            &mut self.substrate.entities,
-            id,
-            (requested, coord),
-            speed,
-            self.resolved_terrain.as_ref(),
-            super::DestinationTiming::from_rules(self.session.binary_frame, Some(rules)),
-        );
-        Ok(true)
     }
 
-    /// [`Self::assign_infantry_walk_destination`] at the mover's own
+    /// The Infantry setter's JumpJet own-cell test (`0x0051AA84..0x0051AB2E`):
+    /// his GetCoords (`+0x48`) and the destination's, each truncated to its
+    /// cell (signed leptons / 256, `0x0042D470`), name the same cell. A Cell
+    /// answers its centre, an object its own GetCoords.
+    fn jumpjet_destination_in_own_cell(
+        &self,
+        actor: &crate::sim::game_entity::GameEntity,
+        requested: NavTargetRef,
+    ) -> bool {
+        let terrain = self.resolved_terrain.as_ref();
+        let cells = terrain.map(NativeCellQuery::canonical);
+        let here = super::ground_pose::object_get_coords(actor, terrain);
+        let Some(there) = super::ground_pose::target_get_coords(
+            crate::sim::combat::TargetKind::from(requested),
+            &self.substrate.entities,
+            cells.as_ref(),
+        ) else {
+            return false;
+        };
+        let cell = |coord: crate::sim::components::DriveCoord| (coord.x / 256, coord.y / 256);
+        cell(here) == cell(there)
+    }
+
+    /// [`Self::assign_infantry_destination`] at the mover's own
     /// movement speed (`GetCurrentSpeed`, as an ordinary Move order).
     pub(crate) fn set_infantry_destination(
         &mut self,
@@ -744,7 +806,7 @@ impl Simulation {
                 .ok_or("destination lost infantry actor")?;
             scatter_movement_speed(infantry, Some(rules), &self.interner, &self.houses)
         };
-        self.assign_infantry_walk_destination(id, requested, speed, rules, registry, frame_effects)
+        self.assign_infantry_destination(id, requested, speed, rules, registry, frame_effects)
     }
 
     /// The Infantry class setter `vt+0x480(NULL, 1)` (`0x0051AA40`), every

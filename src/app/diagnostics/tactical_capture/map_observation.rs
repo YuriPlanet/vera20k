@@ -280,6 +280,25 @@ fn super_weapon_rows(sim: &crate::sim::world::Simulation, owner: &str) -> Value 
         .collect()
 }
 
+/// The observed House's allies in House array order, those its own mask
+/// names (`HouseClass+0x5788`), and the enemy its anger chose (`+0x5600`).
+fn diplomacy_row(sim: &crate::sim::world::Simulation, owner: &str) -> Value {
+    let allies: Vec<&str> = sim
+        .session
+        .house_order
+        .iter()
+        .map(|&house| sim.interner.resolve(house))
+        .filter(|house| {
+            !house.eq_ignore_ascii_case(owner)
+                && crate::map::houses::is_allied_with(&sim.house_alliances, owner, house)
+        })
+        .collect();
+    let enemy = crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
+        .and_then(|house| house.enemy_house)
+        .map(|enemy| sim.interner.resolve(enemy));
+    json!({"allies": allies, "enemy": enemy})
+}
+
 fn deserialize_present<'de, D, T>(deserializer: D) -> std::result::Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -414,6 +433,13 @@ pub(crate) struct MapCaptureProfile {
         skip_serializing_if = "Option::is_none"
     )]
     observe_super_weapons: Option<bool>,
+    // Opt-in diplomacy on each observed House: its allies and its enemy.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    observe_diplomacy: Option<bool>,
     /// Exact committed steps whose retained projection is observed. A draw
     /// marks its matching row rendered only after comparing the actual output.
     #[serde(
@@ -465,6 +491,7 @@ impl MapCaptureProfile {
                     && self.cursor_position.is_none()
                     && self.terrain_cells.is_none()
                     && self.observe_super_weapons.is_none()
+                    && self.observe_diplomacy.is_none()
                     && self.observe_sidebar_steps.is_none(),
                 "map observation profile v1 cannot declare v2 extension fields"
             );
@@ -3077,6 +3104,8 @@ impl TacticalCaptureSession {
                     "elite_flash_frames": entity.elite_flash_frames,
                     "object_alive": entity.is_object_alive(),
                     "in_limbo": entity.lifecycle.in_limbo, "dying": entity.dying,
+                    // Techno +0x1C8, the offline latch (`sim::powered_unit`).
+                    "deactivated": entity.deactivated,
                     // Mark and Logic membership are independent retained facts.
                     "cell_marked": entity.lifecycle.cell_marked,
                     "in_logic_vector": entity.in_logic_vector,
@@ -3177,6 +3206,9 @@ impl TacticalCaptureSession {
                 let mut row = json!({"owner": owner, "economy": economy});
                 if profile.observe_super_weapons == Some(true) {
                     row["super_weapons"] = super_weapon_rows(sim, owner);
+                }
+                if profile.observe_diplomacy == Some(true) {
+                    row["diplomacy"] = diplomacy_row(sim, owner);
                 }
                 row
             })
@@ -4237,6 +4269,9 @@ mod tests {
         legacy.observe_super_weapons = Some(false);
         assert!(legacy.validate().is_err());
         let mut legacy = example();
+        legacy.observe_diplomacy = Some(false);
+        assert!(legacy.validate().is_err());
+        let mut legacy = example();
         legacy.observe_sidebar_steps = Some(Vec::new());
         assert!(legacy.validate().is_err());
         let mut modern = original;
@@ -4257,6 +4292,7 @@ mod tests {
         modern["cursor_position"] = json!([720, 556]);
         modern["gestures"] = json!([]);
         modern["observe_super_weapons"] = json!(true);
+        modern["observe_diplomacy"] = json!(true);
         modern["observe_sidebar_steps"] = json!([0]);
         let profile: MapCaptureProfile = serde_json::from_value(modern.clone()).unwrap();
         profile.validate().unwrap();
@@ -4277,6 +4313,7 @@ mod tests {
             "cursor_position",
             "terrain_cells",
             "observe_super_weapons",
+            "observe_diplomacy",
             "observe_sidebar_steps",
         ] {
             let mut invalid = modern.clone();

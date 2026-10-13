@@ -6,6 +6,9 @@
 //! queued commands — lives in the simulation, never here.
 
 use crate::sim::intern::InternedId;
+use crate::sim::snapshot::saved_local_view::{
+    CONTROL_GROUP_SLOTS, SavedCursorModes, SavedLocalView, SavedLocalViewError, SavedTargeting,
+};
 use std::collections::HashSet;
 use winit::keyboard::{KeyCode, ModifiersState};
 
@@ -50,6 +53,128 @@ pub(crate) struct BuildingPlacementInputView<'a> {
 struct SavedBuildingPlacement {
     target: BuildingPlacementTarget,
     preview: Option<crate::sim::production::BuildingPlacementPreview>,
+}
+
+/// A saved view whose identities and selection timeline were checked against
+/// the prepared world. Commit performs no further admission or command work.
+#[derive(Debug)]
+pub(crate) struct PreparedSavedLocalView {
+    saved: SavedLocalView,
+    targeting: Option<crate::app::types::TargetingMode>,
+}
+
+impl PreparedSavedLocalView {
+    /// Validate before replacing either the world or its input owner. Stable
+    /// IDs are resolved only against the incoming world, never the outgoing one.
+    pub(crate) fn new(
+        saved: SavedLocalView,
+        simulation: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Result<Self, SavedLocalViewError> {
+        saved.validate_structure()?;
+        let follow_target = saved.follow_target();
+        for (field, references) in [
+            ("selection", saved.selection_order()),
+            ("Follow", follow_target.as_slice()),
+        ] {
+            for &object_id in references {
+                if simulation.entities().get(object_id).is_none() {
+                    return Err(SavedLocalViewError::MissingEntityReference { field, object_id });
+                }
+            }
+        }
+        for &object_id in saved.control_groups().iter().flatten() {
+            if simulation.entities().get(object_id).is_none() {
+                return Err(SavedLocalViewError::MissingEntityReference {
+                    field: "control group",
+                    object_id,
+                });
+            }
+        }
+        let (order, pending) = crate::app::input::dispatch::selection_order_for_world(
+            simulation,
+            Some(rules),
+            saved.selection_order(),
+            saved.selection_order_pending(),
+        );
+        if order != saved.selection_order() || pending != saved.selection_order_pending() {
+            return Err(SavedLocalViewError::SelectionTimelineMismatch);
+        }
+        let unknown = |field, name: &str| SavedLocalViewError::UnknownName {
+            field,
+            name: name.to_owned(),
+        };
+        let targeting = match &saved.modes().targeting {
+            None => None,
+            Some(SavedTargeting::SuperWeapon(name)) => {
+                rules
+                    .super_weapon(name)
+                    .ok_or_else(|| unknown("superweapon", name))?;
+                Some(crate::app::types::TargetingMode::SuperWeapon(name.clone()))
+            }
+            Some(SavedTargeting::BuildingPlacement {
+                type_id,
+                product_id,
+                owner,
+            }) => {
+                rules
+                    .object(type_id)
+                    .ok_or_else(|| unknown("placement type", type_id))?;
+                if let Some(object_id) = *product_id
+                    && simulation.entities().get(object_id).is_none()
+                {
+                    return Err(SavedLocalViewError::MissingEntityReference {
+                        field: "placement",
+                        object_id,
+                    });
+                }
+                let owner = simulation
+                    .interner
+                    .get(owner)
+                    .ok_or_else(|| unknown("placement House", owner))?;
+                Some(crate::app::types::TargetingMode::BuildingPlacement(
+                    BuildingPlacementTarget {
+                        type_id: type_id.clone(),
+                        product_id: *product_id,
+                        owner,
+                    },
+                ))
+            }
+        };
+        Ok(Self { saved, targeting })
+    }
+
+    /// Restore exactly the saved owners after navigation's world-replacement
+    /// invalidation. The Tactical view has its own owner,
+    /// camera::restore_tactical_view, applied once new geometry is installed.
+    pub(crate) fn commit_into(
+        self,
+        input: &mut MatchInputState,
+        sidebar: &mut crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+    ) {
+        input
+            .view_bookmarks
+            .restore_saved_cells(self.saved.view_bookmarks());
+        let modes = self.saved.modes();
+        sidebar.repair_mode_on = modes.repair;
+        sidebar.sell_mode_on = modes.sell;
+        input.targeting_mode = self.targeting;
+        // The preview is derived from the cursor; the next tactical frame
+        // recomputes it. The BandBoxLeftUp retry copy (+1190..+1198) loads
+        // raw but MouseLoad never swizzles it, so no retry survives a load.
+        input.building_placement_preview = None;
+        input.saved_building_placement = None;
+        let (order, pending, groups, follow) = self.saved.into_local_input();
+        input.selection_order = order;
+        input.selection_order_pending = pending;
+        input.control_groups = groups.into();
+        input.follow_target = follow;
+        // ClearScene685640 and PostLoad6851D2 call734210, which resets the
+        // last team slot to -1 and rewinds both click clocks. None has the
+        // same next-press behavior without persisting a wall-clock Instant.
+        // Original reset witnesses: saved_game_layout.json/postload_clock_reset.
+        input.last_control_group_press = None;
+    }
 }
 
 pub(crate) struct MatchInputState {
@@ -140,7 +265,7 @@ impl MatchInputState {
             selection_order_pending: false,
             selection_voice_enabled: true,
             queued_order_mode: crate::app::types::OrderMode::Move,
-            control_groups: vec![Vec::new(); 10],
+            control_groups: vec![Vec::new(); CONTROL_GROUP_SLOTS],
             last_control_group_press: None,
             follow_target: None,
             targeting_mode: None,
@@ -357,15 +482,24 @@ impl MatchInputState {
         }
     }
 
+    /// Deactivate683EB0/4AEAD0's drag/capture teardown: the tactical capture
+    /// byte, the band rectangle and the minimap gesture. Armed cursor modes
+    /// (building placement, superweapon targeting, repair/sell) and physical
+    /// held-button state survive this call — the pause overlay cancels a drag,
+    /// never a pending placement.
+    pub(crate) fn cancel_tactical_drag(&mut self) {
+        self.minimap_dragging = false;
+        self.selection_state.cancel_drag();
+        self.tactical_mouse.cancel_mouse_drag();
+    }
+
     /// TAction46 clears the active display modes before Lock684240 cancels
     /// the tactical drag through6938C0/4AEAD0/6DA160. Selection membership,
     /// camera requests/focus and physical held-key state survive this call.
     pub(crate) fn cancel_tactical_gesture_and_targeting(&mut self) {
         self.targeting_mode = None;
         self.building_placement_preview = None;
-        self.minimap_dragging = false;
-        self.selection_state.cancel_drag();
-        self.tactical_mouse.cancel_mouse_drag();
+        self.cancel_tactical_drag();
     }
 
     /// KeyboardClear54F720 drains accepted input and Lock/Unlock clear the
@@ -376,4 +510,61 @@ impl MatchInputState {
         self.type_select.clear_held();
         self.queued_order_mode = crate::app::types::OrderMode::Move;
     }
+
+    /// Capture the app-owned portion of a save at the same boundary as its
+    /// Simulation. The existing selection owner decides whether its local
+    /// order is provisional; this does not drain commands or alter selection.
+    pub(crate) fn capture_saved_local_view(
+        &self,
+        simulation: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        sidebar: &crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+    ) -> Result<SavedLocalView, SavedLocalViewError> {
+        let (order, pending) = crate::app::input::dispatch::selection_order_for_world(
+            simulation,
+            Some(rules),
+            &self.selection_order,
+            self.selection_order_pending,
+        );
+        assert_eq!(self.control_groups.len(), CONTROL_GROUP_SLOTS);
+        // Native membership lives on each serialized Techno, not in a list
+        // retaining already-deleted objects. Project the existing app lists
+        // onto the same entity store being saved, preserving member order.
+        let groups = std::array::from_fn(|slot| {
+            self.control_groups[slot]
+                .iter()
+                .copied()
+                .filter(|id| simulation.entities().get(*id).is_some())
+                .collect()
+        });
+        let alive = |id: &u64| simulation.entities().get(*id).is_some();
+        let targeting = self.targeting_mode.as_ref().map(|mode| match mode {
+            crate::app::types::TargetingMode::BuildingPlacement(target) => {
+                SavedTargeting::BuildingPlacement {
+                    type_id: target.type_id.clone(),
+                    product_id: target.product_id.filter(alive),
+                    owner: simulation.interner.resolve(target.owner).to_owned(),
+                }
+            }
+            crate::app::types::TargetingMode::SuperWeapon(name) => {
+                SavedTargeting::SuperWeapon(name.clone())
+            }
+        });
+        SavedLocalView::new(
+            self.view_bookmarks.saved_cells(),
+            order,
+            pending,
+            groups,
+            self.follow_target.filter(alive),
+            SavedCursorModes {
+                repair: sidebar.repair_mode_on,
+                sell: sidebar.sell_mode_on,
+                targeting,
+            },
+        )
+    }
 }
+
+#[cfg(test)]
+#[path = "saved_local_view_tests.rs"]
+mod saved_local_view_tests;

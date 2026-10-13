@@ -394,7 +394,11 @@ pub(crate) fn place_crate(
     let Some(slot_index) = sim.crate_authority.first_empty_index() else {
         return false;
     };
-    let lighting = sim.scenario_normal_lighting;
+    let lighting = sim
+        .session
+        .lighting
+        .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
+        .into();
     if place_overlay_and_init_timer(
         sim,
         rules,
@@ -2451,8 +2455,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[test]
-    fn ordinary_cell_anim_spawns_after_visible_or_failed_ordinary_mark() {
+    fn cell_anim_crate_rules_and_registry() -> (RuleSet, OverlayTypeRegistry) {
         let ini = IniFile::from_str(
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
              [Colors]\nGold=43,239,255\nNeonGreen=104,241,195\n\
@@ -2468,6 +2471,88 @@ pub(crate) mod tests {
         ));
         art.bind_anim_frame_count_for_test("SPARK", 2);
         rules.replace_art_registry_for_test(art);
+        (rules, registry)
+    }
+
+    #[test]
+    fn restored_crate_regeneration_uses_incoming_normal_lighting() {
+        use crate::sim::scenario_session::{ScenarioLightingProfile, ScenarioLightingState};
+        use crate::sim::snapshot::GameSnapshot;
+        use crate::sim::world::SnapshotProcessState;
+
+        let (rules, registry) = cell_anim_crate_rules_and_registry();
+        let profiles = crate::map::lighting::parse_lighting_profiles(&IniFile::from_str(
+            "[Lighting]\nAmbient=0.80\nRed=0.91\nGreen=0.72\nBlue=0.63\n\
+             Ground=0.025\nLevel=0.005\nIonAmbient=1.20\nIonGround=0.040\n",
+        ));
+        let mut incoming = sim_with_grid(0x14_09_0007);
+        incoming.session.game_mode_nonzero = true;
+        incoming.session.binary_frame = 100;
+        incoming.session.lighting = ScenarioLightingState::from_map(&profiles);
+        incoming.session.lighting.selected_profile = ScenarioLightingProfile::Ion;
+        incoming.session.lighting.current_ambient = profiles.ion.ambient_percent;
+        incoming.session.lighting.target_ambient = profiles.ion.ambient_percent;
+        let terrain = incoming.resolved_terrain.take().unwrap();
+        incoming.install_resolved_terrain_for_new_map(terrain.clone());
+        incoming
+            .overlay_grid
+            .as_mut()
+            .unwrap()
+            .place_overlay(12, 13, 0, 1);
+        *incoming.crate_authority.slot_mut(0) = state::CrateSlot {
+            start_frame: 0,
+            aux: 0,
+            duration: 0,
+            cell_x: 12,
+            cell_y: 13,
+        };
+        let bytes = GameSnapshot::save(&incoming, 0, 0, "incoming-lighting.map", 0);
+        let mut outgoing = sim_with_grid(0x14_09_0008);
+        outgoing.session.lighting.normal.ambient_percent = 150;
+        outgoing.session.lighting.normal.ground_units = 50;
+        let cold_main = crate::sim::rng::MainRng::new(0x14_09_0009);
+
+        for in_game in [false, true] {
+            let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+            restored.retain_process_state_for_load(if in_game {
+                SnapshotProcessState::Live(&outgoing)
+            } else {
+                SnapshotProcessState::Cold(&cold_main)
+            });
+            restored.restore_after_snapshot_load().unwrap();
+            restored.rebuild_caches_after_load(terrain.clone(), Default::default(), &rules);
+            restored
+                .restore_map_authority_after_snapshot_load(&rules, &registry, None)
+                .unwrap();
+            assert_eq!(restored.session.lighting.normal, profiles.normal.into());
+            assert_eq!(
+                restored.session.lighting.selected_profile,
+                ScenarioLightingProfile::Ion
+            );
+
+            restored.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+
+            let anims: Vec<_> = restored
+                .substrate
+                .anims
+                .iter()
+                .map(|(_, anim)| anim)
+                .collect();
+            assert_eq!(
+                anims.len(),
+                1,
+                "the expired slot must construct its replacement CellAnim"
+            );
+            assert_eq!(
+                anims[0].z_adjust, 775,
+                "cold/in-game restore must use incoming ordinary Cell10A, not defaults, outgoing, or selected Ion lighting"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_cell_anim_spawns_after_visible_or_failed_ordinary_mark() {
+        let (rules, registry) = cell_anim_crate_rules_and_registry();
         let cell = (12, 13);
 
         let mut visible = sim_with_grid(0x14090005);

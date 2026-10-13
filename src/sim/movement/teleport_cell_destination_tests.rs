@@ -859,9 +859,8 @@ fn stop_does_not_touch_a_stashed_native_cleg_request() {
             .unwrap(),
         retained
     );
-    assert!(super::super::locomotor_owner::end_admitted_piggyback(
-        entity
-    ));
+    assert!(sim.end_admitted_piggyback(id, None));
+    let entity = sim.substrate.entities.get(id).unwrap();
     assert_eq!(
         entity
             .locomotor
@@ -925,7 +924,7 @@ fn native_cleg_reservation_survives_snapshot_and_is_hashed() {
         let hash = sim.state_hash();
         let bytes = GameSnapshot::save(&sim, 0, 0, "CLEG supplied command cells", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-        restored.retain_in_scenario_process_state_from(&sim);
+        restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
         restored.restore_after_snapshot_load().unwrap();
         restored.rebuild_caches_after_load(
             sim.resolved_terrain.as_ref().unwrap().clone(),
@@ -986,9 +985,7 @@ fn native_cleg_reservation_survives_snapshot_and_is_hashed() {
         assert_eq!(restored.state_hash(), hash, "exact resolver restoration");
         for world in [&mut sim, &mut restored] {
             if stashed {
-                assert!(super::super::locomotor_owner::end_admitted_piggyback(
-                    world.substrate.entities.get_mut(id).unwrap()
-                ));
+                assert!(world.end_admitted_piggyback(id, None));
             }
             execute(world, id, &boundaries[2]["input"], &rules, None);
         }
@@ -1059,6 +1056,45 @@ fn two_ordinary_cleg_moves_publish_class_destinations_before_process() {
     assert_ne!(
         sim.substrate.raw_cell_occupation.ground_bits(13, 10) & 0x1c,
         0
+    );
+}
+
+/// A deferred Restore (`complete_pending_order`) gives a CLEG his class
+/// setter with NavCom's target, as Restore_Mission's `vt+0x480(saved, 1)`
+/// (`0x004D8F99`) does: an object order keeps the object as his NavCom. It
+/// used to be cut down to the object's cell.
+#[test]
+fn a_deferred_restore_keeps_a_cleg_object_navcom() {
+    let Some(rules) = command_fixture_rules() else {
+        return;
+    };
+    let data = corpus();
+    let row = row_named(&data, "guard_two_distinct_cells");
+    let (mut sim, id, _) = fixture(row, &rules);
+    let object = sim
+        .spawn_object("E1", "Americans", 13, 10, 0, &rules)
+        .expect("E1 spawns");
+    let target = NavTargetRef::object(object);
+    let cleg = sim.substrate.entities.get_mut(id).unwrap();
+    cleg.navigation.nav_com = Some(target);
+    cleg.navigation.pending_arrival_clear = true;
+    sim.complete_pending_order(
+        id,
+        Some(&rules),
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    let cleg = sim.substrate.entities.get(id).unwrap();
+    assert_eq!(cleg.navigation.nav_com, Some(target));
+    assert!(!cleg.navigation.pending_arrival_clear);
+    assert!(
+        cleg.locomotor
+            .as_ref()
+            .unwrap()
+            .teleport_runtime()
+            .unwrap()
+            .requested,
+        "his Teleport Move_To ran"
     );
 }
 

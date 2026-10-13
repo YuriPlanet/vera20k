@@ -86,6 +86,17 @@ pub(crate) struct AppAudioRuntime {
 /// `FUN_00407000` (`DAT_0087E728 != 0`) alongside Theme initialization
 /// `DAT_00A8EC74 != 0` and startup suppression `DAT_00A8ED64 == 0`.
 impl AppAudioRuntime {
+    /// `OptionsClass::Set_Score_Volume` at `0x005FA4A0` publishes the stored
+    /// Options f32 to the stream first, then Theme's `+0xC` gate. Theme owns its
+    /// native quantization; the player's safe 0..1 gain never feeds back into
+    /// that logical state or the persisted preference.
+    pub(crate) fn set_score_volume(&mut self, value: f32) {
+        if let Some(player) = self.music_player.as_mut() {
+            player.set_volume(f64::from(value));
+        }
+        self.theme.set_score_volume(value);
+    }
+
     fn theme_gates(&self) -> ThemeGates {
         ThemeGates {
             launcher_audio_available: self.launcher_audio_available,
@@ -186,24 +197,47 @@ impl AppAudioRuntime {
         logical_started
     }
 
-    /// Start_Scenario tail: pin the local player's side, then `Stop(1)` /
+    /// Start_Scenario tail after shared `bind_match_theme_context`: `Stop(1)` /
     /// `Queue_Song([Basic] Theme)`. Later AI borrows the installed Main stream.
     pub(crate) fn request_scenario_theme(
         &mut self,
         requested_section: Option<&str>,
         assets: &AssetManager,
-        context: ThemeAllowContext,
-        resolve_side: impl Fn(&str) -> Option<i32>,
         wall_ms: u64,
     ) {
         self.theme.initialize_catalog(assets);
-        self.theme.begin_scenario(context, resolve_side);
         let gates = self.theme_gates();
         let physical = self.music_output_state();
         let action =
             self.theme
                 .request_scenario_theme(requested_section, assets, gates, physical, wall_ms);
         self.apply_theme_action(action);
+    }
+
+    pub(crate) fn restore_saved_theme(
+        &mut self,
+        saved: [i32; 2],
+        in_game_music: bool,
+        assets: &AssetManager,
+        wall_ms: u64,
+    ) {
+        let gates = self.theme_gates();
+        let physical = self.music_output_state();
+        let output = &mut self.music_player;
+        self.theme.restore_saved_slots(
+            saved,
+            in_game_music,
+            assets,
+            gates,
+            physical,
+            wall_ms,
+            |action| {
+                apply_theme_action_to_output(output.as_mut(), action);
+                output
+                    .as_ref()
+                    .map_or(MusicOutputState::Unavailable, MusicPlayer::state)
+            },
+        );
     }
 
     /// `Main_Tick @ 0x0055D360` head rule while a scenario runs.
@@ -299,6 +333,40 @@ impl AppAudioRuntime {
     }
 }
 
+/// Bind Theme's Is_Allowed context from the incoming world on either fresh
+/// start or saved load. Native reads live House/Side state; the Rust projection
+/// must not keep the previous map's local side or registry indices.
+pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
+    if let Some(assets) = state.process_assets.manager() {
+        state.audio.initialize_theme(assets);
+    }
+    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        return;
+    };
+    let simulation = &runtime.simulation;
+    let local_side = state.match_state.local_player_owner().and_then(|owner| {
+        crate::sim::house_state::house_state_for_owner(
+            &simulation.houses,
+            owner,
+            &simulation.interner,
+        )
+        .map(|house| i32::from(house.side_index))
+    });
+    state.audio.theme.begin_scenario(
+        ThemeAllowContext {
+            local_side,
+            campaign_scenario: simulation.session.campaign_mission_counter(),
+        },
+        |name| {
+            runtime
+                .resources
+                .rules
+                .side_index(name)
+                .map(|index| i32::from(index.0))
+        },
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,6 +415,71 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).expect("test asset dir");
         AssetManager::from_loose_root_for_test(&dir)
+    }
+
+    /// The app setter must reach Theme even when the physical music device
+    /// is absent. Expected slots come from the executed native Load/AI rows;
+    /// no waveform decoding or hardware output is part of this check.
+    #[test]
+    fn score_volume_setter_controls_saved_theme_without_music_output() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/sound_theme_metadata.json",
+        ))
+        .unwrap();
+        let root =
+            std::env::temp_dir().join(format!("vera20k-app-score-volume-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut ini = String::from("[Themes]\n");
+        for index in 0..8 {
+            ini.push_str(&format!("{index}=Track{index}\n"));
+        }
+        for index in 0..8 {
+            ini.push_str(&format!("[Track{index}]\nSound=Track{index}\n"));
+        }
+        std::fs::write(root.join("thememd.ini"), ini).unwrap();
+        let assets = AssetManager::from_loose_root_for_test(&root);
+        for volume in [0, 1, 255] {
+            let native = corpus["ai_volume_cases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["input"]["volume"] == volume)
+                .unwrap();
+            let options = corpus["score_volume_cases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["theme_volume"] == volume)
+                .unwrap();
+            let mut runtime = AppAudioRuntime {
+                theme: ThemeRuntime::default(),
+                service_clock: AudioServiceClock::default(),
+                music_player: None,
+                sfx_player: None,
+                launcher_audio_available: true,
+                theme_startup_suppressed: false,
+            };
+            runtime.initialize_theme(&assets);
+            let stored = f32::from_bits(options["stored_f32_bits"].as_u64().unwrap() as u32);
+            runtime.set_score_volume(stored);
+            runtime.restore_saved_theme([6, 7], true, &assets, 2_000);
+            let actual = runtime.theme.slots();
+            assert_eq!(
+                serde_json::json!([actual.active, actual.retained, actual.pending]),
+                native["loaded_slots"],
+                "volume {volume} loaded slots"
+            );
+            runtime.service_theme(&assets, 2_001, &mut |_, _| {
+                panic!("native fixed-pending AI consumed no Main draws")
+            });
+            let actual = runtime.theme.slots();
+            assert_eq!(
+                serde_json::json!([actual.active, actual.retained, actual.pending]),
+                native["after_ai"]["slots"],
+                "volume {volume} AI slots"
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// `AudioSystem__Pump @ 0x00406F70` services `ThemeClass::AI` only when

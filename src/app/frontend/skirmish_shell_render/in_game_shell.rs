@@ -285,12 +285,26 @@ pub(super) fn render_in_game_shell_frame(
         frame,
         ShellFrameArt::Sidebar,
         ShellFrameOverlay::default(),
+        ShellFrameCursor::Visible,
     )
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ShellFrameArt {
     Sidebar,
     Launcher,
+    /// Original mode-2 overlays preserve the already composed backing.
+    Retained,
+    /// No compatible completed backing exists (for example, just after resize).
+    Clear,
+}
+
+/// Static native progress dialogs suppress the pointer while their caller
+/// blocks; ordinary interactive shell frames paint it last.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ShellFrameCursor {
+    Visible,
+    Hidden,
 }
 
 #[derive(Default)]
@@ -313,6 +327,7 @@ pub(super) fn render_shell_frame(
     frame: InGameShellFrame,
     art: ShellFrameArt,
     overlay: ShellFrameOverlay,
+    cursor_policy: ShellFrameCursor,
 ) -> anyhow::Result<()> {
     #[cfg(feature = "dev-ui")]
     state
@@ -347,19 +362,20 @@ pub(super) fn render_shell_frame(
         );
     }
     let background_texture = match art {
-        ShellFrameArt::Sidebar => {
+        ShellFrameArt::Sidebar => Some(
             &crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
                 .expect("active side art")
-                .texture
-        }
-        ShellFrameArt::Launcher => {
+                .texture,
+        ),
+        ShellFrameArt::Launcher => Some(
             &state
                 .frontend
                 .skirmish_shell_chrome
                 .as_ref()
                 .expect("launcher art")
-                .texture
-        }
+                .texture,
+        ),
+        ShellFrameArt::Retained | ShellFrameArt::Clear => None,
     };
     let control_atlas = state.frontend.skirmish_shell_chrome.as_ref();
     let InGameShellFrame {
@@ -393,11 +409,15 @@ pub(super) fn render_shell_frame(
         .iter()
         .map(|d| batch.create_instance_buffer(gpu, &d.instances))
         .collect();
-    let cursor: Vec<_> =
-        crate::app::frontend::shell_pass::software_cursor(state, super::SHELL_CURSOR_DEPTH)
-            .map(|(_, instance)| instance)
-            .into_iter()
-            .collect();
+    let cursor: Vec<_> = match cursor_policy {
+        ShellFrameCursor::Visible => {
+            crate::app::frontend::shell_pass::software_cursor(state, super::SHELL_CURSOR_DEPTH)
+                .map(|(_, instance)| instance)
+                .into_iter()
+                .collect()
+        }
+        ShellFrameCursor::Hidden => Vec::new(),
+    };
     let cursor_buffer = batch.create_instance_buffer(gpu, &cursor);
     let cursor_texture = state
         .match_state
@@ -413,11 +433,17 @@ pub(super) fn render_shell_frame(
         Some(surface) => (surface.color_view(), surface.depth_view()),
         None => (&source, &state.renderer.depth_view),
     };
-    let mut pass = begin_shell_pass(encoder, label, color, depth);
+    let color_load = match art {
+        ShellFrameArt::Retained => wgpu::LoadOp::Load,
+        _ => wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+    };
+    let mut pass = begin_shell_pass(encoder, label, color, depth, color_load, CLEAR_DEPTH);
     // Both targets are at least frame-sized (the presenter's is the
     // window's); the frame is their top-left corner.
     pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
-    if let Some((buffer, count)) = &background_buffer {
+    if let (Some((buffer, count)), Some(background_texture)) =
+        (&background_buffer, background_texture)
+    {
         batch.draw_with_buffer_passthrough(&mut pass, background_texture, buffer, *count);
     }
     if let (Some((buffer, count)), Some(control_atlas)) = (&control_buffer, control_atlas) {
@@ -463,18 +489,40 @@ pub(super) fn render_shell_frame(
             );
         }
     }
+    drop(pass);
     if let Some(surface) = shell_surface {
-        drop(pass);
-        pass = begin_shell_pass(encoder, label, &source, &state.renderer.depth_view);
+        let mut pass = begin_shell_pass(
+            encoder,
+            label,
+            &source,
+            &state.renderer.depth_view,
+            wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+            CLEAR_DEPTH,
+        );
         pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
         surface.draw(&mut pass, None, [0, 0, width, height]);
     }
-    pass.set_scissor_rect(0, 0, width, height);
+    let presenter = &state.renderer.shell_surface_presenter;
+    if matches!(art, ShellFrameArt::Sidebar | ShellFrameArt::Launcher) {
+        presenter.stage_cursor_free_composition(
+            &state.renderer.retail_screenshot_frame_cache,
+            &gpu.device,
+            encoder,
+            (width, height),
+        );
+    }
     if let (Some((buffer, count)), Some(texture)) = (&cursor_buffer, cursor_texture) {
+        let mut pass = begin_shell_pass(
+            encoder,
+            "Shell cursor after retained composition",
+            &source,
+            &state.renderer.depth_view,
+            wgpu::LoadOp::Load,
+            wgpu::LoadOp::Load,
+        );
+        pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
         batch.draw_with_buffer_passthrough(&mut pass, texture, buffer, *count);
     }
-    drop(pass);
-    let presenter = &state.renderer.shell_surface_presenter;
     match state.match_zoom_pass() {
         Some(zoom) => {
             presenter.encode_present(encoder, zoom.color_texture());
@@ -485,12 +533,16 @@ pub(super) fn render_shell_frame(
     Ok(())
 }
 
-/// A shell pass over `color`, cleared to black, with `depth` cleared.
+const CLEAR_DEPTH: wgpu::LoadOp<f32> = wgpu::LoadOp::Clear(1.0);
+
+/// A shell pass over `color` and `depth`, each cleared or kept as given.
 fn begin_shell_pass<'e>(
     encoder: &'e mut wgpu::CommandEncoder,
     label: &'static str,
     color: &wgpu::TextureView,
     depth: &wgpu::TextureView,
+    color_load: wgpu::LoadOp<wgpu::Color>,
+    depth_load: wgpu::LoadOp<f32>,
 ) -> wgpu::RenderPass<'e> {
     encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some(label),
@@ -499,14 +551,14 @@ fn begin_shell_pass<'e>(
             depth_slice: None,
             resolve_target: None,
             ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                load: color_load,
                 store: wgpu::StoreOp::Store,
             },
         })],
         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
             view: depth,
             depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(1.0),
+                load: depth_load,
                 store: wgpu::StoreOp::Store,
             }),
             stencil_ops: None,

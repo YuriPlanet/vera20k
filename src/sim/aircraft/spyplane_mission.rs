@@ -170,10 +170,7 @@ fn snapshot(sim: &mut Simulation, id: u64, rules: &RuleSet, sound: bool) {
         .is_some_and(|house| house.multiplay_passive);
     if plane.in_playfield && !passive {
         let config = sim.sight_reveal_config(Some(rules));
-        let heights = config
-            .reveal_by_height()
-            .then(|| sim.path_grid().map(|grid| grid.ground_height_grid()))
-            .flatten();
+        let heights = sim.sight_height_grid(&config);
         let ability =
             crate::sim::vision::entity_has_sight_ability(plane, &sim.interner, Some(rules));
         crate::sim::vision::force_refresh_entity_vision_at_radius(

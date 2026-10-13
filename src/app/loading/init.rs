@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use crate::app::frontend::skirmish::{
-    build_overlay_atlas_from_map, house_color_map_for_launch_session,
+    build_overlay_presentation, house_color_map_for_launch_session,
 };
 use crate::app::loading::fresh_scenario::{
     FreshMapMaterialization, FreshScenarioLoadContextDescriptor, FreshScenarioParts,
@@ -20,8 +20,8 @@ use crate::app::loading::fresh_scenario::{
 #[cfg(test)]
 use crate::app::loading::init_helpers::load_rules_with_merged_ini;
 use crate::app::loading::init_helpers::{
-    build_sidebar_cameo_atlas, build_tile_atlas, log_trigger_graph_diagnostics,
-    parse_debug_spawn_units_env, scheduler_anim_roots, theater_ext_for,
+    build_tile_atlas, log_trigger_graph_diagnostics, parse_debug_spawn_units_env,
+    scheduler_anim_roots, theater_ext_for,
 };
 use crate::app::match_bootstrap::LoadingStartup;
 use crate::sim::scenario_bootstrap::{
@@ -30,6 +30,7 @@ use crate::sim::scenario_bootstrap::{
     initialize_skirmish_launch_houses,
 };
 
+#[cfg(test)]
 use crate::app::presentation::lighting::rebuild_lighting_grid_from_sim;
 #[cfg(test)]
 use crate::app::presentation::lighting::{build_lighting_grid_from_view, derive_lighting_view};
@@ -56,7 +57,6 @@ use crate::map::waypoints;
 use crate::render::batch::BatchRenderer;
 use crate::render::bridge_atlas::BridgeAtlas;
 use crate::render::bridge_railing_atlas::{BridgeRailingAtlas, BridgeRailingTileBases};
-use crate::render::cursor_atlas;
 use crate::render::gpu::GpuContext;
 use crate::render::overlay_atlas::OverlayAtlas;
 use crate::render::sidebar_cameo_atlas::SidebarCameoAtlas;
@@ -843,7 +843,13 @@ mod map_wall_owner_candidate_tests {
         sim.rebuild_lighting_sources_after_load(&rules);
         assert!(sim.lighting_sources.pending.is_empty());
         assert!(sim.lighting_sources.buildings[&41].active);
-        lights.restore(&terrain, &sim, &rules, 2);
+        // A load reinstalls lighting through the world-presentation owner.
+        lights.install(
+            CellLightGrid::new(),
+            LightingConfig::default(),
+            2,
+            Some((&terrain, &sim, &rules)),
+        );
         for _ in 0..3 {
             assert_eq!(lights.grid().terrain_tile_tint_at((1, 1)), restored_tint);
             lights.refresh(&terrain, &sim, &rules, 2);
@@ -2669,17 +2675,13 @@ pub(crate) fn load_map_from_initial(
     )
     .map_err(anyhow::Error::msg)?;
     let mut rules = loaded_rules;
-    rules.install_art_data(ArtRegistry::from_ini(&fixed_art_ini));
-    // Preserve the load phase: marking dimensions precede scheduler binding.
-    let (populated, fallback) =
-        rules.populate_anim_frame_dims(asset_manager, theater_ext, &map_data.header.theater);
-    log::info!(
-        "Anim frame dims: {} populated, {} fallback (defaults to 30x30)",
-        populated,
-        fallback,
+    crate::app::loading::init_helpers::bind_rules_art_metadata(
+        &mut rules,
+        &fixed_art_ini,
+        asset_manager,
+        theater_ext,
+        &map_data.header.theater,
     );
-    let infantry_sequences =
-        crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art_ini);
     // Rules + art parsed, merged, and processed (gamemd command-bar/CD/rules
     // milestones).
     progress.milestone(31);
@@ -2694,7 +2696,9 @@ pub(crate) fn load_map_from_initial(
         houses::parse_house_roster(&map_data.ini, rules.color_schemes.as_slice(), Some(&rules));
 
     // Compute playable area bounds from LocalSize (border filler hidden by shroud).
-    let local_bounds: Option<LocalBounds> = Some(LocalBounds::from_header(&map_data.header));
+    let local_bounds: Option<LocalBounds> = Some(LocalBounds::from_playfield(
+        crate::sim::cell_rect::PlayfieldBounds::from_map_header(&map_data.header),
+    ));
 
     let cliff_back = rules.general.cliff_back_impassability;
 
@@ -2854,44 +2858,26 @@ pub(crate) fn load_map_from_initial(
     // Bind the complete scheduler closure only after theater Tile##Anim rows
     // have resolved, but before any atlas or AnimClass construction. Missing
     // tile art is a load error rather than a silently invisible map feature.
-    {
-        let r = &mut rules;
-        let mut roots = scheduler_anim_roots(
-            r,
-            &overlay_registry,
-            resolved_terrain
-                .as_ref()
-                .map_or(&[], |terrain| terrain.tile_animations()),
-        );
-        roots.extend(crate::app::loading::init_helpers::trigger_anim_class_roots(
-            r,
-            &map_data.actions,
-        ));
-        r.bind_scheduler_anim_assets(&roots, asset_manager, theater_ext, &map_data.header.theater)?;
-        // Every other AnimClass producer and the building animations need the
-        // same loader-derived End/LoopEnd. Tolerant by design; must follow the
-        // strict pass, which rewrites the scheduler-owned set wholesale.
-        let tolerant_roots = crate::app::loading::init_helpers::tolerant_anim_class_roots(r);
-        let unbound_explosion_roots = r.bind_anim_class_assets(
-            &tolerant_roots,
-            asset_manager,
-            theater_ext,
-            &map_data.header.theater,
-        );
-        crate::rules::effect_asset_catalog::log_unbound_combat_explosion_roots(
-            unbound_explosion_roots,
-        );
-        r.bind_effect_assets(asset_manager, theater_ext, &map_data.header.theater);
-        r.bind_building_buildup_assets(asset_manager, &map_data.header.theater);
-        r.bind_building_rubble_assets(asset_manager, theater_ext, &map_data.header.theater);
-        r.bind_terrain_spawner_assets(
-            &rules_ini,
-            asset_manager,
-            theater_ext,
-            &map_data.header.theater,
-        );
-        r.bind_animation_sequences(&infantry_sequences);
-    }
+    let mut roots = scheduler_anim_roots(
+        &rules,
+        &overlay_registry,
+        resolved_terrain
+            .as_ref()
+            .map_or(&[], |terrain| terrain.tile_animations()),
+    );
+    roots.extend(crate::app::loading::init_helpers::trigger_anim_class_roots(
+        &rules,
+        &map_data.actions,
+    ));
+    crate::app::loading::init_helpers::bind_rules_asset_closure(
+        &mut rules,
+        &rules_ini,
+        &fixed_art_ini,
+        &roots,
+        asset_manager,
+        theater_ext,
+        &map_data.header.theater,
+    )?;
     // `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70` snapshots the fresh
     // prefix before theater Tile##Anim resolution, then sets the cursor from
     // that snapshot plus 0x2710. Only after that reservation does
@@ -3291,35 +3277,30 @@ pub(crate) fn load_map_from_initial(
         unit_palette.as_ref(),
         overlay_iso_palette.as_ref(),
     );
-    let (unit_atlas, sprite_atlas, palette_set) = (
-        manifest.unit_atlas,
-        manifest.sprite_atlas,
-        manifest.palette_set,
-    );
     let mut simulation = Some(staged_simulation);
 
-    let (
-        overlay_atlas,
-        bridge_atlas,
-        bridge_railing_atlas,
-        overlay_names,
-        mut overlays_connected,
-        overlay_radar_colors,
-    ) = build_overlay_atlas_from_map(
-        &map_data,
+    // Fresh map presentation has its established connectivity pass. The
+    // common asset builder also serves saved worlds and never changes frames.
+    let mut overlays_connected = map_data.overlays.clone();
+    let walls_updated =
+        crate::map::overlay::compute_wall_connectivity(&mut overlays_connected, &overlay_registry);
+    if walls_updated > 0 {
+        log::info!("Wall connectivity: {} wall entries updated", walls_updated);
+    }
+    let overlay_assets = build_overlay_presentation(
+        &overlays_connected,
+        &map_data.terrain_objects,
         asset_manager,
         gpu,
         batch,
         theater_ext,
+        &map_data.header.theater,
         &rules_ini,
-        &rules.crate_rules,
-        rules.art(),
-        &rules.general.default_mirage_disguises,
+        &rules,
+        &overlay_registry,
         overlay_iso_palette.as_ref(),
         unit_palette.as_ref(),
         overlay_tiberium_palette.as_ref(),
-        Some(&rules.smudge_types),
-        &rules.building_rubble_arts().cloned().collect::<Vec<_>>(),
         bridge_railing_tile_bases,
     );
 
@@ -3429,40 +3410,20 @@ pub(crate) fn load_map_from_initial(
             };
             (area_x + area_w / 2.0, area_y + area_h / 2.0)
         };
-    // Load cameo MIX archives so that *ICON.SHP files are findable.
-    // These nested MIXes live inside local.mix/localmd.mix and aren't
-    // auto-extracted by the two-level brute-force pass.
-    for cameo_mix in ["cameomd.mix", "cameo.mix"] {
-        match asset_manager.load_nested(cameo_mix) {
-            Ok(()) => log::info!("Loaded nested {cameo_mix} for sidebar cameo icons"),
-            Err(_) => log::debug!("{cameo_mix} not found (optional)"),
-        }
-    }
-    let sidebar_cameo_atlas = build_sidebar_cameo_atlas(gpu, batch, asset_manager, Some(&rules));
-    let sidebar_chrome =
-        crate::render::sidebar_chrome::build_sidebar_chrome_set(gpu, batch, asset_manager);
-    let fnt_file = asset_manager.get_ref("GAME.FNT").and_then(|data| {
-        crate::assets::fnt_file::FntFile::from_bytes(data)
-            .map_err(|e| log::warn!("Failed to parse GAME.FNT: {e}"))
-            .ok()
-    });
-    let building_zshape =
-        crate::render::building_zshape::BuildingZShape::load(gpu, batch, asset_manager);
-    if building_zshape.is_none() {
-        log::warn!("BUILDNGZ.SHA not loaded: building bodies write flat depth");
-    }
-    let software_cursor = cursor_atlas::build_software_cursor(gpu, batch, asset_manager);
-    if software_cursor.is_some() {
-        log::info!("Software cursor loaded from mouse.sha — OS cursor will be hidden");
-    } else {
-        log::warn!("Software cursor NOT loaded (mouse.sha missing?) — using OS cursor");
-    }
-    let lighting_grid = rebuild_lighting_grid_from_sim(
+    let presentation = crate::app::loading::init_helpers::finish_presentation_assets(
+        gpu,
+        batch,
+        asset_manager,
+        simulation.as_ref().expect("freshly constructed simulation"),
+        &rules,
         &resolved_terrain,
         &lighting_config,
-        simulation.as_ref(),
-        Some(&rules),
         2,
+        tile_atlas,
+        manifest,
+        overlay_assets,
+        house_color_map,
+        csf,
     );
     // Final post-map-init milestones (cell attributes, beacon art, post-map
     // init, tactical cleanup, final pre-render refresh). 100 is emitted by the
@@ -3505,25 +3466,7 @@ pub(crate) fn load_map_from_initial(
             camera_anchor_x,
             camera_anchor_y,
         },
-        presentation: PresentationLoadAssets {
-            tile_atlas,
-            building_zshape,
-            unit_atlas,
-            palette_set,
-            sprite_atlas,
-            overlay_atlas,
-            bridge_atlas,
-            bridge_railing_atlas,
-            sidebar_cameo_atlas,
-            sidebar_chrome,
-            software_cursor,
-            overlay_names,
-            overlay_radar_colors,
-            house_color_map,
-            lighting_grid,
-            csf,
-            fnt_file,
-        },
+        presentation,
         // The app loading job retains the one process-lifetime manager while
         // this borrowed phase runs, then moves it into the completed result.
         asset_manager: None,

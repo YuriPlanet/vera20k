@@ -674,11 +674,9 @@ fn deploy_crush_immune(entity: &GameEntity) -> bool {
 /// Carried as a required parameter, not an `Option`: a missing-alliance default
 /// would fail open into the very case this exists to refuse.
 ///
-/// RESIDUAL (#582): [`Self::spares`] answers for either side
-/// ([`crate::map::houses::are_houses_friendly`]); `0x004F9A90` reads only the
-/// asking house's alliances. Trigger: the victim's house allied with the
-/// crusher's but not the reverse, which lobby teams never set up. Effect: the
-/// victim is spared where native crushes it.
+/// `0x004F9A90` reads only the asking house's mask, so a victim whose house
+/// allies the crusher's one way (Neutral's with a paranoid computer's,
+/// `sim::house_diplomacy`) is still crushed.
 #[derive(Clone, Copy)]
 pub struct CrushAllyGate<'a> {
     /// The crusher's owning house, already resolved by the caller.
@@ -707,12 +705,12 @@ impl<'a> CrushAllyGate<'a> {
     ///
     /// No id fast path. An earlier version carried the crusher's `InternedId`
     /// to settle own-house without allocating, which was wasted work:
-    /// `are_houses_friendly` already returns on a case-insensitive name compare
+    /// `is_allied_with` already returns on a case-insensitive name compare
     /// *before* it normalizes anything (`houses.rs`), so own-house never
     /// allocated. The allocating case is a genuinely foreign house, which an id
     /// compare cannot shortcut anyway.
     pub fn spares(&self, victim: &GameEntity) -> bool {
-        crate::map::houses::are_houses_friendly(
+        crate::map::houses::is_allied_with(
             self.alliances,
             self.crusher_owner,
             self.interner.resolve(victim.owner()),
@@ -998,28 +996,28 @@ mod tests {
         );
     }
 
-    /// The gate answers exactly what the shared helper answers.
+    /// The gate is the crusher's house asking (`0x005F6D1A`, `0x0073FB53`).
     ///
     /// Admission and the kill site both go through `spares`, so this is the one
     /// place the predicate is pinned. Their disagreement was the A7 defect.
     #[test]
-    fn ally_gate_answers_what_the_shared_helper_answers() {
-        let alliances = crate::map::houses::HouseAllianceMap::new();
+    fn ally_gate_asks_only_the_crushers_house() {
         let victim = infantry(1, 5, 5, 2); // "Allies"
         let interner = crate::sim::intern::test_interner();
+        let one_way = |asker: &str, ally: &str| {
+            crate::map::houses::HouseAllianceMap::from([(
+                asker.to_ascii_uppercase(),
+                std::collections::BTreeSet::from([ally.to_ascii_uppercase()]),
+            )])
+        };
 
-        for crusher in ["Allies", "Soviets", "NoSuchHouse"] {
-            let gate = CrushAllyGate::new(crusher, &alliances, &interner);
-            assert_eq!(
-                gate.spares(&victim),
-                crate::map::houses::are_houses_friendly(
-                    &alliances,
-                    crusher,
-                    interner.resolve(victim.owner())
-                ),
-                "gate and helper disagree for crusher {crusher}"
-            );
-        }
+        let victims_side = one_way("Allies", "Soviets");
+        assert!(!CrushAllyGate::new("Soviets", &victims_side, &interner).spares(&victim));
+        let crushers_side = one_way("Soviets", "Allies");
+        assert!(CrushAllyGate::new("Soviets", &crushers_side, &interner).spares(&victim));
+        let none = crate::map::houses::HouseAllianceMap::new();
+        assert!(CrushAllyGate::new("Allies", &none, &interner).spares(&victim));
+        assert!(!CrushAllyGate::new("NoSuchHouse", &none, &interner).spares(&victim));
     }
 
     /// A mover that cannot crush pays no alliance test at all.

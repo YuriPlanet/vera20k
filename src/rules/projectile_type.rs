@@ -150,7 +150,7 @@ pub struct ProjectileType {
 
 /// Inputs captured at the latest ObjectType::LoadImage5F9070 call. Asset binding
 /// resolves this attempted name; it must not infer a load from constructor text.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ProjectileImageLoad {
     pub image: String,
     pub theater: bool,
@@ -160,7 +160,7 @@ pub struct ProjectileImageLoad {
 /// Process-resident Bullet ART values, owned by native_processing::ProcessedType.
 /// Native constructors46BBC0/5F7090 and full ReadINI46BEE0; executable inputs:
 /// tools/projectile_oracle/bridge_render_art_state.{py,json}.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ProjectileArtState {
     image: String,
     image_load: Option<ProjectileImageLoad>,

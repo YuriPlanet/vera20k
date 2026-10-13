@@ -30,9 +30,9 @@ use vera20k::rules::ini_parser::IniFile;
 use vera20k::rules::overlay_types::OverlayTypeRegistry;
 use vera20k::rules::terrain_rules::TerrainRules;
 
+/// The retail install named by `RA2_DIR`; empty when it is unset, so the test skips.
 fn ra2_dir() -> String {
-    std::env::var("RA2_DIR")
-        .unwrap_or_else(|_| "C:/Users/enok/Documents/Command and Conquer Red Alert II".to_string())
+    std::env::var("RA2_DIR").unwrap_or_default()
 }
 
 /// 8-directional neighbor offsets (matches A*'s ortho + diagonal step set).

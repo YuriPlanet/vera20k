@@ -561,10 +561,17 @@ mod tests {
             .find("encoder.begin_render_pass")
             .expect("complete shell render pass");
         let cursor = encoder.find("if let (Some((texture, _))").expect("cursor");
-        let pass_end = encoder.find("drop(pass);").expect("render pass end");
+        let retained = encoder
+            .find("stage_cursor_free_composition(")
+            .expect("cursor-free backing");
+        let pass_end = encoder
+            .rfind("drop(pass);")
+            .expect("cursor render pass end");
         let present = encoder.find("presenter.encode_present(").expect("present");
         assert!(source_view < render_pass);
         assert!(render_pass < cursor);
+        assert!(render_pass < retained);
+        assert!(retained < cursor);
         assert!(cursor < pass_end);
         assert!(pass_end < present);
 

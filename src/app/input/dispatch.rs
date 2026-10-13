@@ -75,10 +75,20 @@ pub(crate) fn handle_mouse_input(
     if state.match_state.paused() {
         // VERA-internal (gamemd has no pause overlay; gamemd equivalent
         // UNCHECKED): a release that arrives while the overlay owns the mouse
-        // never reaches the tactical body, so the capture is dropped here.
-        // Leaving it set would freeze edge auto-scroll for the rest of the match.
+        // never reaches the tactical body, so the whole gesture is dropped
+        // here — not just the capture byte. Leaving `minimap_dragging` or the
+        // band drag set would freeze edge auto-scroll, swallow every cursor
+        // move, and keep a stale gadget sticky capture eating clicks for the
+        // rest of the match. `enter_in_game_menu_state` already tore the
+        // gesture down on the way into the modal; this catches releases that
+        // arrive afterwards (debug pause and any path that skips that owner).
         if !pressed {
-            state.match_state.input.tactical_mouse.release();
+            state.match_state.input.cancel_tactical_drag();
+            state
+                .match_state
+                .match_presentation
+                .in_game_gadgets
+                .cancel_pointer_capture();
         }
         if state.match_state.match_presentation.in_game_menu
             == crate::ui::pause_menu::InGameMenuState::Sound
@@ -173,6 +183,27 @@ fn route_click_action_before_type_select<T>(
     resolve_context_order(sx, sy)
         .map(ClickActionRoute::ContextOrder)
         .unwrap_or(ClickActionRoute::Selection)
+}
+
+/// No selected object can send a click order (`click_order_receivers`), so
+/// DetermineAction's best object is berserk: `SelectBestObjectForAction`
+/// ranks a berserk object below every other (`0x00535435`).
+fn every_selected_object_is_berserk(state: &AppState) -> bool {
+    let Some(sim) = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|rt| &rt.simulation)
+    else {
+        return false;
+    };
+    let selection = selected_stable_ids_in_order(
+        Some(sim),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    );
+    !selection.is_empty() && sim.click_order_receivers(&selection).is_empty()
 }
 
 /// Tactical-viewport mouse body (routed here when the full-tactical ClickRegion
@@ -310,10 +341,15 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 // selection/toggle. Ground move, attack, and every other
                 // context action keep their ordinary priority while T is held.
                 let type_select_held = state.match_state.input.type_select.held();
+                // Shift toggles selection through What_Action's Shift arm
+                // (`0x00700082`). A berserk best object answers 0 before it
+                // (`0x006FFEC9`), so when every selected object is berserk a
+                // Shift click resolves like any other click.
+                let shift_selects = shift && !every_selected_object_is_berserk(state);
                 if matches!(
                     route_click_action_before_type_select(
                         action,
-                        shift,
+                        shift_selects,
                         type_select_held,
                         |sx, sy| {
                             // A resolved context dispatch consumes the click
@@ -2075,21 +2111,45 @@ fn reconcile_selection_order_for_sim(
     // Navigation733160 consumes actual pointer expiry through LifecycleOutput,
     // independently of this membership ledger. Alive/Health/Deselect alone
     // do not remove an entry from its retained vector.
-    if input.selection_order_pending && sim.has_pending_selection_commands() {
-        input.selection_order.retain(|id| {
-            sim.entities()
-                .get(*id)
-                .is_some_and(|entity| entity.lifecycle.object_alive)
-        });
-        return;
+    let (order, pending) = selection_order_for_world(
+        sim,
+        rules,
+        &input.selection_order,
+        input.selection_order_pending,
+    );
+    input.selection_order = order;
+    input.selection_order_pending = pending;
+}
+
+/// Shared reconciliation decision for the live input ledger and a saved
+/// local-view record. The simulation's command queue remains authoritative;
+/// observing a save boundary neither drains nor applies queued commands.
+pub(crate) fn selection_order_for_world(
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    order: &[u64],
+    pending: bool,
+) -> (Vec<u64>, bool) {
+    if pending && sim.has_pending_selection_commands() {
+        return (
+            order
+                .iter()
+                .copied()
+                .filter(|id| {
+                    sim.entities()
+                        .get(*id)
+                        .is_some_and(|entity| entity.lifecycle.object_alive)
+                })
+                .collect(),
+            true,
+        );
     }
     // MainTick55D8AB/55D8B4 commits local Select before Logic55DC9E.
     // A consumed snapshot may have been refused or then deselected by
     // ObjectDestroy/Conceal. Trust committed bits once the queue is drained,
     // rather than waiting forever for those bits to equal the provisional
     // ledger. Deselect5F44A0/expiry733160 do not reset mode or map scope.
-    let reconciled: Vec<u64> = input
-        .selection_order
+    let reconciled: Vec<u64> = order
         .iter()
         .copied()
         .filter(|id| {
@@ -2100,8 +2160,7 @@ fn reconcile_selection_order_for_sim(
         .collect();
     let reconciled = admit_missing_selected_ids(reconciled, sim, rules);
     debug_assert!(selection_membership_committed(sim, &reconciled));
-    input.selection_order = reconciled;
-    input.selection_order_pending = false;
+    (reconciled, false)
 }
 
 fn apply_selection_mutation(
@@ -2462,17 +2521,30 @@ fn queue_selection_snapshot_command(state: &mut AppState, selected_ids: Vec<u64>
     );
 }
 
+/// `StopCommandClass::Execute @ 0x00730EA0` issues Stop to each selected
+/// object it may control (vt+0xA0) or that is active (vt+0x9C,
+/// `0x00730ECD..0x00730EE3`), so an offline Robot Tank a click selected stays
+/// put.
+///
+/// RESIDUAL: a refused event push ending the walk (`0x00730EF5`) and the
+/// closing `Rules+0x720` sound are not ported.
 fn queue_stop_for_selected(state: &mut AppState) {
-    let selected_ids = selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
+    let sim = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|rt| &rt.simulation);
+    let mut selected_ids = selected_stable_ids_in_order(
+        sim,
         state.rules(),
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
+    if let (Some(sim), Some(rules)) = (sim, state.rules()) {
+        selected_ids.retain(|&id| {
+            sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules)
+        });
+    }
     if selected_ids.is_empty() {
         return;
     }
@@ -2587,17 +2659,104 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
     }
     let owner: String = preferred_local_owner(state).unwrap_or_else(|| "Americans".to_string());
     // Collect commands first to avoid borrow conflict with schedule_command.
-    let commands: Vec<Command> = selected_ids
-        .iter()
-        .filter_map(|&entity_id| deploy_key_command(sim, state.rules(), entity_id))
-        .collect();
+    let commands = deploy_key_commands(sim, state.rules(), &selected_ids);
     for cmd in commands {
         schedule_command(state, &owner, cmd);
     }
 }
 
-/// The deploy key's per-object decision, in selection order. The command's
-/// historical `DeployMcv` wire name also carries a SimpleDeployer toggle.
+/// `Selection::IssueDeployCommand @ 0x00730AF0`, over the local player's
+/// selection in order.
+/// - A first selected building with occupants (`vt+0x408`, `0x004581F0`)
+///   unloads them alone.
+/// - Otherwise a first walk (`0x00730B8C..0x00730C0E`) notes whether any
+///   deployer is deployed and any is not, berserk ones included.
+/// - The issue walk then admits only an object the player may control
+///   (vt+0xA0) or that is active (vt+0x9C, `0x00730C38`, `0x00730C46`), as
+///   the Stop key does, skips a berserk object (`0x00730C82`) and, when the
+///   first walk found both, every deployed deployer, so only the undeployed
+///   ones deploy.
+///
+/// Its closing sound reads `Rules+0x72C`, which no INI key sets: the
+/// constructor's -1 (`0x0066606A`) plays nothing.
+///
+/// RESIDUAL: the issue walk's other admission tests are not ported: bit 0 of
+/// `+0x14`, `vt+0x310` (`0x00700D10`) and `vt+0x314` (`0x00700D50`).
+/// `deploy_key_command`'s capability checks stand in for them, and their
+/// equivalence is unchecked. Trigger: an object one of them refuses. Effect:
+/// the deploy key orders it anyway. Frequency unknown.
+fn deploy_key_commands(
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    selection: &[u64],
+) -> Vec<Command> {
+    let first = selection.first().and_then(|&id| sim.entities().get(id));
+    if let Some(building) = first.filter(|entity| {
+        entity.category == EntityCategory::Structure
+            && entity
+                .passenger_role
+                .cargo()
+                .is_some_and(|cargo| !cargo.is_empty())
+    }) {
+        return deploy_key_command(sim, rules, building.stable_id())
+            .into_iter()
+            .collect();
+    }
+    let deployed = |id: u64| deployer_is_deployed(sim, rules, id);
+    let mut found_deployed = false;
+    let mut found_undeployed = false;
+    for &id in selection {
+        match deployed(id) {
+            Some(true) => found_deployed = true,
+            Some(false) => found_undeployed = true,
+            None => continue,
+        }
+        if found_deployed && found_undeployed {
+            break;
+        }
+    }
+    let mixed = found_deployed && found_undeployed;
+    selection
+        .iter()
+        .copied()
+        .filter(|&id| {
+            rules.is_none_or(|rules| {
+                sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules)
+            }) && sim
+                .entities()
+                .get(id)
+                .is_some_and(|entity| !entity.berserk.active)
+                && !(mixed && deployed(id) == Some(true))
+        })
+        .filter_map(|id| deploy_key_command(sim, rules, id))
+        .collect()
+}
+
+/// The deploy walk's deployer state: a `Deployer=` infantryman
+/// (`0x005224E0`) is deployed in Doing 27..30 (`0x00522510`); an
+/// `IsSimpleDeployer=` Unit is deployed or still deploying (`0x00746D90`:
+/// `+0x6E0` or `+0x6E1`). Anything else is no deployer.
+fn deployer_is_deployed(
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    id: u64,
+) -> Option<bool> {
+    let entity = sim.entities().get(id)?;
+    let object = rules?.object(sim.interner.resolve(entity.type_ref()))?;
+    match entity.category {
+        EntityCategory::Infantry if object.deployer => Some(entity.infantry_deploy_doing()),
+        EntityCategory::Unit if object.is_simple_deployer => Some(
+            entity
+                .mission_leaf
+                .as_unit()
+                .is_some_and(|leaf| leaf.deployed() != 0 || leaf.deploy_begin_active() != 0),
+        ),
+        _ => None,
+    }
+}
+
+/// The deploy key's per-object decision. The command's historical
+/// `DeployMcv` wire name also carries a SimpleDeployer toggle.
 fn deploy_key_command(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
@@ -3015,12 +3174,21 @@ fn jump_camera_to_base(state: &mut AppState) {
 
 #[cfg(test)]
 mod deploy_key_tests {
-    use super::deploy_key_command;
+    use super::{deploy_key_command, deploy_key_commands};
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
     use crate::sim::command::Command;
     use crate::sim::passenger::{PassengerCargo, PassengerRole};
     use crate::sim::world::Simulation;
+
+    /// A battle whose player is `Americans`, so the issue walk's control
+    /// and activity tests can admit the fixture's objects.
+    fn player_sim() -> Simulation {
+        let mut sim = Simulation::new();
+        sim.session.game_mode_nonzero = true;
+        sim.session.current_house = Some(sim.interner.intern("Americans"));
+        sim
+    }
 
     #[test]
     fn simple_deployer_key_preserves_infantry_and_loaded_transport_actions() {
@@ -3080,6 +3248,79 @@ mod deploy_key_tests {
             },
         );
         assert_eq!(deploy_key_command(&sim, Some(&rules), heli), None);
+    }
+
+    /// `Selection::IssueDeployCommand`'s issue walk skips a berserk object
+    /// (`0x00730C82`).
+    #[test]
+    fn the_deploy_key_skips_a_berserk_object() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=HELI\n[HELI]\nIsSimpleDeployer=yes\n",
+        ))
+        .expect("deploy key rules");
+        let mut sim = player_sim();
+        let heli = sim
+            .spawn_object_limbo_at_height("HELI", "Americans", 10, 10, 0, 0, &rules)
+            .expect("the deploy key fixture builds");
+        assert_eq!(
+            deploy_key_commands(&sim, Some(&rules), &[heli]),
+            [Command::DeployMcv { entity_id: heli }]
+        );
+        sim.entities_mut().get_mut(heli).unwrap().berserk.active = true;
+        assert!(deploy_key_commands(&sim, Some(&rules), &[heli]).is_empty());
+    }
+
+    /// The issue walk admits an object the player may control (vt+0xA0) or
+    /// that is active (vt+0x9C, `0x00730C38`, `0x00730C46`): an offline one
+    /// is neither, and nor is another house's.
+    #[test]
+    fn the_deploy_key_skips_an_object_neither_controllable_nor_active() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=HELI\n[HELI]\nIsSimpleDeployer=yes\n",
+        ))
+        .expect("deploy key rules");
+        let mut sim = player_sim();
+        let mut spawn = |owner| {
+            sim.spawn_object_limbo_at_height("HELI", owner, 10, 10, 0, 0, &rules)
+                .expect("the deploy key fixture builds")
+        };
+        let (heli, theirs) = (spawn("Americans"), spawn("Russians"));
+        assert_eq!(
+            deploy_key_commands(&sim, Some(&rules), &[heli, theirs]),
+            [Command::DeployMcv { entity_id: heli }]
+        );
+        sim.entities_mut().get_mut(heli).unwrap().deactivated = true;
+        assert!(deploy_key_commands(&sim, Some(&rules), &[heli]).is_empty());
+    }
+
+    /// The first walk (`0x00730B8C..0x00730C0E`) counts deployed and
+    /// undeployed `Deployer=` infantry, berserk ones included; a mixed
+    /// selection deploys only its undeployed members.
+    #[test]
+    fn a_mixed_selection_deploys_only_its_undeployed_deployers() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=GI\n[GI]\nDeployer=yes\nDeployFire=yes\n",
+        ))
+        .expect("deploy key rules");
+        let mut sim = player_sim();
+        let mut spawn = |rx: u16| {
+            sim.spawn_object("GI", "Americans", rx, 5, 0, &rules)
+                .expect("the deploy key fixture builds")
+        };
+        let (standing, deployed, gassed) = (spawn(3), spawn(4), spawn(5));
+        sim.entities_mut()
+            .get_mut(deployed)
+            .unwrap()
+            .mission_leaf
+            .set_infantry_doing_verified(28)
+            .unwrap();
+        sim.entities_mut().get_mut(gassed).unwrap().berserk.active = true;
+        let toggle = |entity_id| Command::ToggleInfantryDeploy { entity_id };
+        let commands = |selection: &[u64]| deploy_key_commands(&sim, Some(&rules), selection);
+        assert_eq!(commands(&[deployed]), [toggle(deployed)]);
+        assert_eq!(commands(&[deployed, standing]), [toggle(standing)]);
+        // The gassed man counts as undeployed but is not ordered.
+        assert!(commands(&[gassed, deployed]).is_empty());
     }
 
     #[test]

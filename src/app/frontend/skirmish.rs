@@ -7,21 +7,20 @@ use std::collections::{BTreeMap, HashMap};
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
 use crate::map::houses::{HouseColorMap, HouseRoster};
+#[cfg(test)]
 use crate::map::map_file::MapFile;
-use crate::map::overlay::OverlayEntry;
+use crate::map::overlay::{OverlayEntry, TerrainObject};
 use crate::render::batch::BatchRenderer;
 use crate::render::bridge_atlas::{self, BridgeAtlas};
 use crate::render::bridge_railing_atlas::{self, BridgeRailingAtlas, BridgeRailingTileBases};
 use crate::render::gpu::GpuContext;
 use crate::render::overlay_assets::{render_overlay_names, resolve_overlay_name_for_render};
 use crate::render::overlay_atlas::{self, OverlayAtlas};
-use crate::rules::art_data::ArtRegistry;
 use crate::rules::color_scheme::scheme_entry_for_priority;
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::rules::tiberium_type::TiberiumTypeRegistry;
 use crate::sim::scenario_bootstrap::normalized_launch_slots;
 use crate::skirmish_launch::SkirmishLaunchSession;
 
@@ -77,33 +76,36 @@ pub fn deployable_building_types(rules: Option<&RuleSet>) -> Vec<&str> {
     result
 }
 
-type OverlayAtlasBuild = (
-    Option<OverlayAtlas>,
-    Option<BridgeAtlas>,
-    Option<BridgeRailingAtlas>,
-    BTreeMap<u8, String>,
-    Vec<OverlayEntry>,
-    HashMap<(u8, u8), [u8; 3]>,
-);
+/// Resident overlay, bridge and radar presentation derived from already-bound
+/// registries and explicit display descriptors. It owns no gameplay frames.
+pub(crate) struct OverlayPresentationAssets {
+    pub(crate) overlay_atlas: Option<OverlayAtlas>,
+    pub(crate) bridge_atlas: Option<BridgeAtlas>,
+    pub(crate) bridge_railing_atlas: Option<BridgeRailingAtlas>,
+    pub(crate) overlay_names: BTreeMap<u8, String>,
+    pub(crate) overlay_radar_colors: HashMap<(u8, u8), [u8; 3]>,
+}
 
-/// Build overlay sprite atlas and name mapping from map data + rules.ini.
-pub(crate) fn build_overlay_atlas_from_map(
-    map_data: &MapFile,
+/// Build resident images from the current world descriptors. Fresh loading
+/// supplies its connected authored overlays; saved loading supplies restored
+/// damage/connectivity bytes unchanged. Neither registry readers nor wall
+/// topology writers run at this asset-only boundary.
+pub(crate) fn build_overlay_presentation(
+    overlays: &[OverlayEntry],
+    terrain_objects: &[TerrainObject],
     asset_manager: &AssetManager,
     gpu: &GpuContext,
     batch: &BatchRenderer,
     theater_ext: &str,
+    theater_name: &str,
     rules_ini: &IniFile,
-    crate_rules: &crate::rules::crate_rules::CrateRules,
-    art_registry: &ArtRegistry,
-    mirage_terrain_types: &[String],
+    rules: &RuleSet,
+    overlay_registry: &OverlayTypeRegistry,
     theater_iso_palette: Option<&Palette>,
     theater_unit_palette: Option<&Palette>,
     theater_tiberium_palette: Option<&Palette>,
-    smudge_types: Option<&crate::rules::smudge_type::SmudgeTypeRegistry>,
-    rubble_arts: &[crate::rules::building_rubble::RubbleArt],
     bridge_railing_tile_bases: Option<BridgeRailingTileBases>,
-) -> OverlayAtlasBuild {
+) -> OverlayPresentationAssets {
     let force_tib_remap_enabled: bool = std::env::var("RA2_FORCE_TIB3_TO_TIB01")
         .ok()
         .map(|v| {
@@ -125,23 +127,15 @@ pub(crate) fn build_overlay_atlas_from_map(
         );
     }
 
-    let overlay_registry: OverlayTypeRegistry = OverlayTypeRegistry::from_ini(rules_ini, None);
-    let tiberium_types = TiberiumTypeRegistry::from_ini(rules_ini);
-
-    // Compute wall connectivity bitmasks on a mutable clone so the atlas
-    // and AppState see correct auto-tiled frames (0–15 per wall type).
-    let mut wall_overlays: Vec<OverlayEntry> = map_data.overlays.clone();
-    let walls_updated: u32 =
-        crate::map::overlay::compute_wall_connectivity(&mut wall_overlays, &overlay_registry);
-    if walls_updated > 0 {
-        log::info!("Wall connectivity: {} wall entries updated", walls_updated);
-    }
+    let crate_rules = &rules.crate_rules;
+    let art_registry = rules.art();
+    let rubble_arts: Vec<_> = rules.building_rubble_arts().cloned().collect();
 
     // Log first 20 overlay types for diagnostic verification.
     let max_diag: usize = 20.min(overlay_registry.len());
     for i in 0..max_diag {
         if let Some(name) = overlay_registry.name(i as u8) {
-            let mapped = resolve_overlay_name_for_render(&overlay_registry, i as u8)
+            let mapped = resolve_overlay_name_for_render(overlay_registry, i as u8)
                 .unwrap_or_else(|| name.to_string());
             let flags = overlay_registry.flags(i as u8);
             let tib: bool = flags.map(|f| f.tiberium).unwrap_or(false);
@@ -159,9 +153,8 @@ pub(crate) fn build_overlay_atlas_from_map(
 
     // Every registered type is named: a cell draws whichever identity it holds,
     // whether the map authored it or the simulation wrote it after load.
-    let overlay_names: BTreeMap<u8, String> = render_overlay_names(&overlay_registry);
-    let mut unmapped_ids: Vec<u8> = map_data
-        .overlays
+    let overlay_names: BTreeMap<u8, String> = render_overlay_names(overlay_registry);
+    let mut unmapped_ids: Vec<u8> = overlays
         .iter()
         .map(|entry| entry.overlay_id)
         .filter(|overlay_id| !overlay_names.contains_key(overlay_id))
@@ -212,10 +205,10 @@ pub(crate) fn build_overlay_atlas_from_map(
     let overlay_radar_colors: HashMap<(u8, u8), [u8; 3]> =
         overlay_atlas::compute_overlay_radar_colors(
             asset_manager,
-            &overlay_registry,
+            overlay_registry,
             &overlay_names,
             theater_ext,
-            &map_data.header.theater,
+            theater_name,
             rules_ini,
             art_registry,
         );
@@ -227,22 +220,22 @@ pub(crate) fn build_overlay_atlas_from_map(
         overlay_atlas::build_overlay_atlas(
             gpu,
             batch,
-            &wall_overlays,
-            &map_data.terrain_objects,
-            mirage_terrain_types,
+            overlays,
+            terrain_objects,
+            &rules.general.default_mirage_disguises,
             asset_manager,
             theater_pal,
             unit_pal,
             tib_pal,
             theater_ext,
-            &map_data.header.theater,
-            &overlay_registry,
-            &tiberium_types,
+            theater_name,
+            overlay_registry,
+            &rules.tiberium_types,
             crate_rules,
             rules_ini,
             art_registry,
-            smudge_types,
-            rubble_arts,
+            Some(&rules.smudge_types),
+            &rubble_arts,
         )
     });
 
@@ -257,8 +250,8 @@ pub(crate) fn build_overlay_atlas_from_map(
             theater_pal,
             unit_pal,
             theater_ext,
-            &map_data.header.theater,
-            &overlay_registry,
+            theater_name,
+            overlay_registry,
             rules_ini,
             art_registry,
         )
@@ -276,14 +269,13 @@ pub(crate) fn build_overlay_atlas_from_map(
             )
         });
 
-    (
-        atlas,
+    OverlayPresentationAssets {
+        overlay_atlas: atlas,
         bridge_atlas,
         bridge_railing_atlas,
         overlay_names,
-        wall_overlays,
         overlay_radar_colors,
-    )
+    }
 }
 
 #[cfg(test)]

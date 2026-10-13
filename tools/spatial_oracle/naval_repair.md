@@ -151,7 +151,7 @@ area exclusion, firing/target legality, statistics and app cache persistence.
 The ignored physical AEGIS test compares all four native bounds and complete
 palette-byte hashes. The ignored GPU test sends all 16 Unit clip visits through
 real batch lowering, upload and Metal shader, checking every 640×480 pixel and
-unchanged depth. The [chain validation record](naval_repair_validation.json)
+unchanged depth. The chain validation record (`tools/spatial_oracle/naval_repair_validation.json`, in git at 1b1a8b43e)
 retains the actual suite/focused results, binary and log hashes, navigation
 comparison, Ghidra readbacks and ordinary visible save/load/sinking captures.
 The final candidate9a176561, including the critic correction and main772808f1,

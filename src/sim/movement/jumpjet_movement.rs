@@ -847,15 +847,16 @@ impl Simulation {
         }
     }
 
-    /// An air order to a cell. A Jumpjet Unit or Infantry takes Foot's setter
-    /// ([`Self::jumpjet_destination`]); other fliers continue through their
-    /// established motion adapter.
+    /// An air order to a cell. A Jumpjet Unit or Infantry takes its class
+    /// setter ([`Self::jumpjet_destination`]); other fliers continue through
+    /// their established motion adapter.
     pub(crate) fn issue_air_cell_destination(
         &mut self,
         id: u64,
         target: (u16, u16),
         speed: SimFixed,
         rules: Option<&crate::rules::ruleset::RuleSet>,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         if let Some(accepted) = self.jumpjet_destination(
@@ -863,6 +864,7 @@ impl Simulation {
             crate::sim::components::NavTargetRef::cell(target.0, target.1),
             speed,
             rules,
+            registry,
             frame_effects,
         ) {
             return accepted;
@@ -898,116 +900,90 @@ impl Simulation {
         )
     }
 
-    /// An order to a Jumpjet Unit or Infantry, whichever route gave it:
-    /// Foot's setter (`0x004D94B0`: its admission, the NavCom at
-    /// `0x004D9510`, then the locomotor's `Move_To` at `0x004D965D` with the
-    /// coordinate the destination's `+0x4C` answers this mover at
-    /// `0x004D9628`) and Foot's timer tail (`0x004D96C2`). A Cell answers its
-    /// own coordinate, an object the one it gives this mover; no route is
-    /// searched. Units enter their class destination owner, including its
-    /// deployment refusal and existing power/warp gates. `None` when `id` is
-    /// not a Jumpjet Unit or Infantry.
-    ///
-    /// RESIDUAL: before Foot's setter, Infantry's (`0x0051AA40`) swaps the
-    /// Jumpjet of a `JumpJet=` infantry that is not moving for a Walk
-    /// piggyback (`0x0051AE5A..0x0051B1CA`) unless `0x005221D0` says fly or
-    /// the type has `HoverAttack=` (`+0x390`), and ends the piggyback when it
-    /// says fly; a walking one queues the destination (`0x0051AD1F`).
-    /// `0x005221D0` says fly when airborne; on the ground it says walk for a
-    /// reachable hop of one cell, for two or three cells in the playfield
-    /// whose zone cost is at most 7, and in two house and cell cases
-    /// (`0x0053A130`, `0x00484AE0`). VERA flies every hop. Trigger: a grounded
-    /// `JumpJet=` infantry without `HoverAttack=` given a short hop. Effect:
-    /// it lifts off instead of walking. Frequency: dormant in retail, where
-    /// each `JumpJet=` type also sets `HoverAttack=` (raw RULESMD read, not
-    /// the production reader). Risk: a mod's walking jumpjet infantry fly.
-    ///
-    /// RESIDUAL: an Infantry caller other than his class setter
-    /// ([`Self::assign_infantry_walk_destination`]) skips Infantry's whole
-    /// prelude, and that setter still skips two of its JumpJet arms. Read from
-    /// the instructions, not executed:
-    /// - `0x0051AA84..0x0051AB2E`: a `JumpJet=` type whose destination's
-    ///   GetCoords (`+0x48`) lies in his own cell returns before any write.
-    ///   VERA moves him there.
-    /// - `0x0051AB4A..0x0051ABD1`: while his Jumpjet `Is_Moving` and his cell
-    ///   passes `0x004834A0`, Stop_Driver (`0x0051DAF0`) runs whatever his
-    ///   mission and NavCom, and its Jumpjet Stop draws Scenario RNG for the
-    ///   nearest passable cell ([`Self::infantry_stop_driver`]). VERA skips
-    ///   it, so later Scenario draws shift.
-    ///
-    /// Trigger: an order to a Rocketeer, the second arm only in flight.
-    /// Frequency: every re-order of a flying Rocketeer.
-    ///
-    /// RESIDUAL: `infantry_setter_receiver` excludes `JumpJet=` types, so two
-    /// Infantry object orders still reach here as the object's cell: Restore
-    /// of an object NavCom (`finish_class_destination`) and EnterTransport.
-    /// `Move_To` is seeded with that cell's center instead of the object's
-    /// `+0x4C`, and in an Enter mission, where `Move_To` keeps the NavCom it
-    /// is given, the NavCom names the cell rather than the transport.
-    /// Frequency: rare.
+    /// The class setter `vt+0x480(target, 1)` of a Jumpjet Unit or Infantry,
+    /// whichever route gave the order: Unit `0x00741970`
+    /// ([`Self::set_unit_destination`]) or Infantry `0x0051AA40`
+    /// ([`Self::assign_infantry_destination`]). Both end in Foot's setter and
+    /// the Jumpjet `Move_To`. `None` when `id` is not a Jumpjet Unit or
+    /// Infantry; `Some(false)` without rules.
     pub(crate) fn jumpjet_destination(
         &mut self,
         id: u64,
         requested: crate::sim::components::NavTargetRef,
         speed: SimFixed,
         rules: Option<&crate::rules::ruleset::RuleSet>,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Option<bool> {
         use crate::map::entities::EntityCategory;
         let entity = self.substrate.entities.get(id)?;
-        let jumpjet = matches!(
-            entity.category,
-            EntityCategory::Infantry | EntityCategory::Unit
-        ) && entity
-            .locomotor
-            .as_ref()
-            .and_then(|l| l.jumpjet_runtime())
-            .is_some();
+        let category = entity.category;
+        let jumpjet = matches!(category, EntityCategory::Infantry | EntityCategory::Unit)
+            && entity
+                .locomotor
+                .as_ref()
+                .and_then(|l| l.jumpjet_runtime())
+                .is_some();
         if !jumpjet {
             return None;
         }
-        if entity.category == EntityCategory::Unit {
-            // Every Unit caller uses the one class setter, including its
-            // deployment refusal and Foot admission/timer tail. That owner
-            // dispatches directly to Jumpjet Move_To, so this is not recursive.
-            return Some(rules.is_some_and(|rules| {
-                self.set_unit_destination(id, requested, rules, true, frame_effects)
-            }));
-        }
-        // Foot clears NavComAux (`0x004D94C7`); its three refusals
-        // (`0x004D94CD..0x004D94F3`) then return before the NavCom. The void
-        // setter still dispatched.
-        if !self.begin_foot_destination(id, true) {
-            return Some(true);
-        }
-        let Some(terrain) = self.resolved_terrain.as_ref() else {
+        let Some(rules) = rules else {
             return Some(false);
+        };
+        Some(if category == EntityCategory::Unit {
+            self.set_unit_destination(id, requested, rules, true, frame_effects)
+        } else {
+            self.assign_infantry_destination(id, requested, speed, rules, registry, frame_effects)
+                .unwrap_or_else(|cause| {
+                    log::debug!("Jumpjet infantry {id} destination: {cause}");
+                    false
+                })
+        })
+    }
+
+    /// Foot's setter (`0x004D94B0`) after the Infantry setter's prelude, for a
+    /// Jumpjet infantryman whose admission (`begin_foot_destination`) passed:
+    /// the NavCom at `0x004D9510`, then the Jumpjet `Move_To` at `0x004D965D`
+    /// with the coordinate the destination's `+0x4C` answers this mover at
+    /// `0x004D9628`, then Foot's timer tail (`0x004D96C2`). A Cell answers its
+    /// own coordinate, an object the one it gives this mover; no route is
+    /// searched.
+    pub(super) fn jumpjet_foot_destination(
+        &mut self,
+        id: u64,
+        requested: crate::sim::components::NavTargetRef,
+        speed: SimFixed,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> bool {
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
         };
         let input = match super::navcom::nav_target_coordinate(
             requested,
             Some(id),
             &self.substrate.entities,
             Some(terrain),
-            rules.map(|rules| (rules, &self.interner)),
+            Some((rules, &self.interner)),
         ) {
             Ok(input) => input,
             Err(cause) => {
                 log::debug!("Jumpjet {id} destination refused: {cause}");
-                return Some(false);
+                return false;
             }
         };
         let entity = self.substrate.entities.get_mut(id).expect("selected mover");
         super::navcom::publish_nav_com(entity, requested);
-        if self.jumpjet_move_to(id, input, rules).is_none() {
-            return Some(false);
+        if self.jumpjet_move_to(id, input, Some(rules)).is_none() {
+            return false;
         }
         self.publish_jumpjet_order_adapter(id, speed);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            // Infantry51B1D2 and Unit741970 return through Foot4D96C2 after
-            // the locomotor's Move_To; the Move_To inside Stop cannot own this.
-            super::DestinationTiming::from_rules(self.session.binary_frame, rules).accept(entity);
+            // Infantry51B1D2 returns through Foot4D96C2 after the locomotor's
+            // Move_To; the Move_To inside Stop cannot own this.
+            super::DestinationTiming::from_rules(self.session.binary_frame, Some(rules))
+                .accept(entity);
         }
-        Some(true)
+        true
     }
 }
 

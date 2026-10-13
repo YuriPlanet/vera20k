@@ -1,6 +1,6 @@
-//! Foot4D5690, reached through Unit7414E0 by a Drive, Ship or Hover unit's
-//! Approach (Attack, Hunt, AreaGuard, Rescue), and through Infantry522340 by a
-//! Walk or Teleport infantryman's ([`Simulation::approach_target`]). Native execution:
+//! Foot4D5690, reached through Unit7414E0 by a unit's Approach (Attack, Hunt,
+//! AreaGuard, Rescue), and through Infantry522340 by an infantryman's
+//! ([`Simulation::approach_target`]), whatever their locomotor. Native execution:
 //! tools/spatial_oracle/fv_cell_attack. The shared range,
 //! Cell admission, zone-cost, target and destination owners retain their work.
 //!
@@ -219,9 +219,9 @@ impl Simulation {
     /// (`per_cell::per_cell_range_stop`) ends it.
     ///
     /// RESIDUAL: VERA counts that drive as the crush's only while the Target
-    /// stays within the computer arm's reach. A Drive, Ship or Hover unit's
-    /// approach stays its mission's anyway ([`Self::owns_foot_approach`]),
-    /// which leaves no armed stock crusher outside it. Trigger: the Target
+    /// stays within the computer arm's reach. Any other unit's approach stays
+    /// its mission's anyway ([`Self::owns_foot_approach`]) unless its type is
+    /// `CloseRange=`, which no armed stock crusher is. Trigger: the Target
     /// moves out of `Crush=` mid-charge, as a victim walking away does.
     /// Effect: the pursuit pass takes any other crusher back and, with the
     /// Target in weapon range, halts it at once, where native drives on until
@@ -436,52 +436,23 @@ impl Simulation {
         let Some(target) = actor.attack_target.as_ref().map(|a| a.target) else {
             return false;
         };
-        // A unit on the ground or water: Drive, Ship or Hover, each of whose
-        // Process runs Per_Cell_Process(2) on entering a cell.
-        let ground_mover = |actor: &crate::sim::game_entity::GameEntity| {
-            actor.locomotor.as_ref().is_some_and(|l| {
-                matches!(
-                    l.active_kind(),
-                    LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover
-                )
-            })
-        };
-        let represented = match (actor.category, target) {
-            (EntityCategory::Unit, TargetKind::Cell(rx, ry)) => {
-                ground_mover(actor) && !terrain.is_destroyable_cliff(rx, ry)
-            }
-            // Unit741689's ordinary tail: a vehicle or ship chasing an object.
-            (EntityCategory::Unit, TargetKind::Entity(target)) => {
-                ground_mover(actor) && self.substrate.entities.contains(target)
-            }
-            (EntityCategory::Infantry, target) => {
-                // Infantry522340 calls Foot4D5690(false) at 52236E for any
-                // infantryman not in a deploy action (522352..52236A; the
-                // deployed arm is `approach_infantry_deployed`), whatever his
-                // locomotor. Two kinds stay with the pursuit pass:
-                // RESIDUAL: a Jumpjet man (Rocketeer, Cosmonaut) flies at the
-                // Target's own cell and halts on the frame it comes in range,
-                // where retail sends him to a cell Approach picks in range and
-                // he stops on arriving there (a Jumpjet calls Per_Cell_Process
-                // only from its descent, 54C8F0). Frequency: every Rocketeer
-                // attack.
-                // RESIDUAL: a CloseRange= man (Brute, Mummy, Dinosaur) walks at
-                // the Target's own cell; retail takes the body's CloseRange
-                // arms (4D5D14.., 4D60A5.., 4D623F.., 4D62C0.., 4D6563..), not
-                // ported. Frequency: every Brute attack.
-                actor.locomotor.as_ref().is_some_and(|l| {
-                    matches!(
-                        l.active_kind(),
-                        LocomotorKind::Walk | LocomotorKind::Teleport
-                    )
-                }) && !actor.infantry_deploy_doing()
-                    && match target {
-                        TargetKind::Cell(rx, ry) => !terrain.is_destroyable_cliff(rx, ry),
-                        TargetKind::Entity(target) => self.substrate.entities.contains(target),
-                    }
-            }
-            _ => false,
-        };
+        // Unit7414E0 ends in Foot4D5690(false) at 741689, and Infantry522340
+        // calls it at 52236E for any infantryman not in a deploy action
+        // (522352..52236A; the deployed arm is `approach_infantry_deployed`),
+        // whatever the locomotor: the body tells a Jumpjet apart itself.
+        let represented = matches!(
+            actor.category,
+            EntityCategory::Unit | EntityCategory::Infantry
+        ) && actor.locomotor.is_some()
+            && !actor.infantry_deploy_doing()
+            && match target {
+                TargetKind::Cell(rx, ry) => !terrain.is_destroyable_cliff(rx, ry),
+                TargetKind::Entity(target) => self.substrate.entities.contains(target),
+            };
+        // RESIDUAL: a CloseRange= man (Brute, Mummy, Dinosaur) stays with the
+        // pursuit pass and walks at the Target's own cell; retail takes the
+        // body's CloseRange arms (4D5D14.., 4D60A5.., 4D623F.., 4D62C0..,
+        // 4D6563..), not ported. Frequency: every Brute attack.
         represented
             && self.zone_grid.is_some()
             && self
@@ -511,8 +482,11 @@ impl Simulation {
         let Some(target) = actor.attack_target.as_ref().map(|a| a.target) else {
             return Ok(None);
         };
-        // Native's first test, 4D56A1..56B1, returns on a LocomotorTarget
-        // (+2AC) identical to TarCom, a Magnetron's hold VERA does not port.
+        // 4D56A1..56B1: a Magnetron holding its target (+2AC == TarCom)
+        // does not approach it.
+        if matches!(target, TargetKind::Entity(target) if actor.locomotor_target == Some(target)) {
+            return Ok(None);
+        }
         let Some(selected) = combat::pursuit_selection(
             actor,
             &target,
@@ -708,6 +682,20 @@ impl Simulation {
         .ok_or("Approach target surface failed")?;
         let mut retained_candidate = target_cell;
         let mut chosen = None;
+        //4D5909..590D: a mover whose locomotor is Jumpjet flies there, so
+        // it takes the first admitted candidate without either path-cost
+        // test (4D6764 -> 4D689A). 4D5873 sets the same flag for an
+        // aircraft, which native brings here from Foot's Mission_Rescue
+        // (AircraftClass vt+0x258 = 4DDF90, Approach at 4DDFEB).
+        // RESIDUAL: VERA's aircraft never run Rescue
+        // (`aircraft::dispatch_mission`) and `owns_foot_approach` refuses
+        // them, so that arm is not ported. Trigger: an aircraft on Rescue; VERA's one
+        // Rescue producer, the base-defense response, queues it only on
+        // infantry and units. Effect: none while no producer exists.
+        let flies = actor
+            .locomotor
+            .as_ref()
+            .is_some_and(|loco| loco.active_kind() == LocomotorKind::Jumpjet);
         'rings: while radius > 204 {
             for offset in OFFSETS {
                 let direction = (i16::from(facing_byte).wrapping_add(offset) as u16) << 8;
@@ -769,6 +757,10 @@ impl Simulation {
                 }
                 if !admitted {
                     continue;
+                }
+                if flies {
+                    chosen = Some(candidate);
+                    break 'rings;
                 }
                 let candidate_bridge = cells.flags(cells.lookup(candidate)) & 0x100 != 0;
                 if self.estimate_zone_cost(

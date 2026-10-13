@@ -311,6 +311,60 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
     );
 }
 
+/// A computer house's MCV deploys into a yard that builds up before it opens:
+/// Construction is queued before its Unlimbo (`0x007396D5`), so neither that
+/// Unlimbo's owner discovery nor the deploy's own (`0x00739848`) opens it,
+/// and the ready byte (`0x0073984E`) commences Construction on its first
+/// Update. From the deploy frame on, each of its Updates matches the native
+/// deploy `route` rows (`tools/spatial_oracle/building_construction.json`),
+/// up to the opening.
+#[test]
+fn a_computer_mcv_deploys_into_a_yard_that_follows_the_native_deploy_route() {
+    use crate::sim::building_construction::native_route;
+    use crate::sim::mission::{MissionId, MissionType};
+    let rows = native_route::rows("deploy");
+    assert_eq!(rows.len(), 6);
+    for row in &rows {
+        let name = row["input"]["name"].as_str().unwrap();
+        let mut rules = make_recalc_mcv_rules("0,0,0");
+        rules.set_buildup_control_for_test("GACNST", native_route::control(row));
+        let mut sim = deploy_sim(&rules);
+        sim.session.game_mode_nonzero = true;
+        // The native rows run at GameSpeed 0.
+        sim.session.game_options.game_speed = 0;
+        add_house(&mut sim, "Americans", false);
+        let mcv = sim
+            .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
+            .expect("spawn MCV");
+        let deployed_at = sim.session.binary_frame;
+        assert!(sim.deploy_mcv(
+            mcv,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default()
+        ));
+        let yard = deployed_type(&sim, "GACNST");
+        let id = yard.stable_id;
+        assert!(!yard.building_actually_placed, "{name}: opened at deploy");
+        assert_eq!(yard.mission.current(), MissionId::NONE, "{name}");
+        assert_eq!(
+            yard.mission.queued(),
+            MissionId::from_known(MissionType::Construction),
+            "{name}"
+        );
+        assert_eq!(yard.building_ready_latch(), 1, "{name}");
+        for frame in row["frames"].as_array().unwrap() {
+            let now = deployed_at + frame["frame"].as_u64().unwrap() as u32;
+            sim.session.binary_frame = now;
+            sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
+            let yard = sim.substrate.entities.get(id).unwrap();
+            if native_route::assert_frame(yard, frame, &format!("{name} frame {now}")) {
+                break;
+            }
+        }
+    }
+}
+
 #[test]
 fn deploy_mcv_accepts_mixed_height_clear_foundation() {
     let rules = make_mcv_rules();
@@ -557,6 +611,48 @@ fn deploy_mcv_rejects_pure_0x400_bridge_marker_foundation_cell() {
     assert!(!applied);
     assert!(mcv_remains);
     assert_eq!(sound_count, 1);
+}
+
+/// `UnitClass::Deploy` reaches Computer_Paranoid through `0x00505180`
+/// (`0x007398D9`, `0x005051AF`), after the base center and before the
+/// Recalc: a computer MCV's deploy allies the computer houses against the
+/// human.
+#[test]
+fn a_computer_mcv_deploy_turns_the_computers_paranoid() {
+    let mut rules = make_recalc_mcv_rules("0,0,0");
+    rules.general.allies_allowed = true;
+    let mut sim = deploy_sim(&rules);
+    sim.session.game_mode_nonzero = true;
+    // Every house is of the fixture's one country, which `[Sides]` lists as
+    // Allied: a type outside every list would answer Find_Index's -1 for a
+    // ruleset without a `Civilian` side, and Can_Ally refuses that house.
+    let americans = sim.interner.intern("Americans");
+    for (owner, human) in [("Player", true), ("Americans", false), ("Computer2", false)] {
+        let id = sim.interner.intern(owner);
+        sim.houses.insert(
+            id,
+            crate::sim::house_state::HouseState::new(id, 0, Some(americans), human, 5000, 10),
+        );
+        sim.session.house_order.push(id);
+    }
+    let mcv = sim
+        .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
+        .expect("spawn MCV");
+    assert!(sim.house_alliances.is_empty());
+    assert!(sim.deploy_mcv(
+        mcv,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    let allies = |name: &str| sim.house_alliances[&name.to_ascii_uppercase()].clone();
+    assert!(allies("Americans").contains("COMPUTER2"));
+    assert!(allies("Computer2").contains("AMERICANS"));
+    let player = sim.interner.get("Player").unwrap();
+    for computer in ["Americans", "Computer2"] {
+        let id = sim.interner.get(computer).unwrap();
+        assert_eq!(sim.houses[&id].enemy_house, Some(player), "{computer}");
+    }
 }
 
 fn add_house(sim: &mut Simulation, owner: &str, is_human: bool) {

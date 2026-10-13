@@ -1,6 +1,6 @@
 # Retail fixture contracts
 
-[Validation evidence](retail_fixture_contracts.validation.json) records the
+Validation evidence (`tools/retail_fixture_contracts.validation.json`, in git at 1b1a8b43e) records the
 strict test runs, native replay, release build and exact production comparison.
 
 Library tests check the narrow tracked INI fixtures against the user's retail

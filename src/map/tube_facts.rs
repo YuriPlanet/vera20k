@@ -39,7 +39,7 @@ impl TubeId {
 /// Active YR stores this field as a signed 16-bit value.  A negative value or
 /// a nonnegative value outside the current Tube registry admits automatic
 /// construction; only an in-range nonnegative value is a gameplay `TubeId`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct NativeTubeCellIndex(i16);
 
 impl Default for NativeTubeCellIndex {

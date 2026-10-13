@@ -14,7 +14,7 @@ use crate::map::events::EventMap;
 use crate::map::tags::TagMap;
 use crate::map::triggers::TriggerMap;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LinkedTrigger {
     pub trigger_id: String,
     pub tag_ids: Vec<String>,
@@ -23,7 +23,7 @@ pub struct LinkedTrigger {
     pub action_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TriggerGraph {
     pub triggers: Vec<LinkedTrigger>,
     pub dangling_cell_tags: Vec<String>,

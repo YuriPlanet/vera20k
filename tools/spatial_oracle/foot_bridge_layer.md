@@ -216,7 +216,7 @@ zone cache. A common `(32,32)` translation preserves the authored scene's relati
 geometry within the native Size diamond. It keeps the frame's existing PathGrid
 owner. The mining tripwire now requires field acquisition, movement and cargo.
 
-[The paired Rust receipts](foot_bridge_layer.replay.json) isolate this fixture
+The paired Rust receipts (`tools/spatial_oracle/foot_bridge_layer.replay.json`, in git at 1b1a8b43e) isolate this fixture
 change from the ore-query migration. The control restored only `ore_scan.rs` and
 `zone_map.rs` from parent commit `b34f76e72c2afe614bf9e65fe42ecf07d166d4e0`;
 all other candidate code, including the independently native-proved fresh Foot
@@ -275,7 +275,7 @@ remaining Building+2E4 source substitution. These query comparisons do not close
 ## Bridge-response prerequisite replay provenance (2026-09-30)
 
 The `bridge_ai_prerequisite_followup` entry in
-[the same Rust receipt owner](foot_bridge_layer.replay.json) records real spawn
+the same Rust receipt owner (`tools/spatial_oracle/foot_bridge_layer.replay.json`, in git at 1b1a8b43e) records real spawn
 and `advance_tick` calls after the class-target, Foot mission and idle changes.
 It compares missing-ART inputs against explicit E1 `Image=GI` and the fixed
 GI/sequence excerpt bound through the production reader. These are Rust
@@ -357,7 +357,7 @@ visibility/GPU comparisons are not closed by these response/action dependencies.
 
 ## Incoming-main replay composition
 
-[The complete incoming-main receipt](foot_bridge_layer.main986.replay.json)
+The complete incoming-main receipt (`tools/spatial_oracle/foot_bridge_layer.main986.replay.json`, in git at 1b1a8b43e)
 retains all819 before/final/control observations. Its lossless comparison accounts
 for all2,734 field differences: two buildings retain exact floor Z=0 rather than
 None (1,202 fields), their hash views change (1,201 fields), and331 raw caller
@@ -380,7 +380,7 @@ bridge `4477C32418EDA27F` and Slice6 `77B7FEF300222AB2` stay unchanged. The rece
 preserves complete source, installation/restoration and binary identities, actual
 old-pin failure logs, control logs and the comparison recipes. None is a native
 whole-world golden. The earlier full replay contexts remain unchanged in
-[the historical receipt](foot_bridge_layer.replay.json).
+the historical receipt (`tools/spatial_oracle/foot_bridge_layer.replay.json`, in git at 1b1a8b43e).
 
 The final strict-retail library run passes9,463 tests (211 ignored); lib clippy
 finishes with765 existing warnings. Field ownership is2,646 versus2,661 on
@@ -400,7 +400,7 @@ validate connected production output; their native parity certification is NONE.
 
 ## Final main474 integration
 
-The same [replay receipt](foot_bridge_layer.main986.replay.json) adds complete
+The same replay receipt (`tools/spatial_oracle/foot_bridge_layer.main986.replay.json`, in git at 1b1a8b43e) adds complete
 main474/HEAD95d observations after integrating the shared Aircraft CanEnter and
 Object SetHeight owners. All819 actor/hash/state/RNG records agree with the
 preceding candidate. Only331 raw caller strings change, through seven exact

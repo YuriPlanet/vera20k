@@ -80,6 +80,7 @@ pub struct MixEntry {
 ///
 /// Holds the entire MIX file data in memory and provides
 /// methods to look up and extract files by name or hash ID.
+#[derive(Clone)]
 pub struct MixArchive {
     /// The file index entries, sorted by id for binary search lookup.
     entries: Vec<MixEntry>,

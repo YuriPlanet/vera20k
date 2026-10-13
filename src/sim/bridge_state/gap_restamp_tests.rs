@@ -169,6 +169,7 @@ fn gap_flags_snapshot_hash_and_later_setter_preserve_value_authority() {
         .restore_map_authority_after_snapshot_load(
             &rules,
             &crate::rules::overlay_types::OverlayTypeRegistry::empty(),
+            None,
         )
         .unwrap();
     assert_eq!(

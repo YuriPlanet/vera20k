@@ -52,7 +52,7 @@ Codex, in `.codex/config.toml` — absolute path:
 ```toml
 [mcp_servers.asset-browser]
 command = "python"
-args = ['C:\Users\enok\Documents\ra2-rust-game\tools\asset_browser\mcp_server.py']
+args = ['<checkout>/tools/asset_browser/mcp_server.py']
 ```
 
 The server locates the workspace from its own file path, never from the working

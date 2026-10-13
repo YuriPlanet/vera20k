@@ -25,7 +25,7 @@
 /// The six named groups, the original's codes -1..-6. Each names a `[General]
 /// Prerequisite*` list for `HouseClass::CanBuild` and an `[AI] Build*` list
 /// for the base planner.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum PrerequisiteGroup {
     Power,
     Factory,
@@ -83,7 +83,7 @@ impl PrerequisiteGroup {
 }
 
 /// One parsed entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Prerequisite {
     Group(PrerequisiteGroup),
     /// A BuildingType, by its native array index.

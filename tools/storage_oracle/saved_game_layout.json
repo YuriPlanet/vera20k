@@ -1,4 +1,125 @@
 {
+  "campaign_cd_reader": [
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "ALL1"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "SOV1"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "ALL02"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "ALL03"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "ALL04"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "ALL05"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "ALL06"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "ALL07"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "SOV02"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "SOV03"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "SOV04"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "SOV05"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "SOV06"
+    },
+    {
+      "after": 2,
+      "before": -1,
+      "raw_cd": "2",
+      "section": "SOV07"
+    },
+    {
+      "after": -1,
+      "before": -1,
+      "raw_cd": null,
+      "section": "MISSING_CD"
+    },
+    {
+      "after": 7,
+      "before": 7,
+      "raw_cd": null,
+      "section": "RETAINED_CD"
+    }
+  ],
+  "campaign_cd_retail": {
+    "battle_roster": {
+      "1": "ALL1",
+      "10": "SOV03",
+      "11": "SOV04",
+      "12": "SOV05",
+      "13": "SOV06",
+      "14": "SOV07",
+      "2": "SOV1",
+      "3": "ALL02",
+      "4": "ALL03",
+      "5": "ALL04",
+      "6": "ALL05",
+      "7": "ALL06",
+      "8": "ALL07",
+      "9": "SOV02"
+    },
+    "bytes": 2733,
+    "entry_id": "0x07E280DD",
+    "path": "ra2md.mix/localmd.mix/BATTLEMD.INI",
+    "sha256": "7e40691a3480b1e5ffe6d1cdfccb83f67da4447157607ec3ecb5d2278acf0791",
+    "source": "ra2md.mix -> localmd.mix"
+  },
   "cases": [
     {
       "control_id": 1317,
@@ -505,6 +626,1638 @@
       "width": 1024
     }
   ],
+  "cd_request_setter": [
+    {
+      "flag": 0,
+      "requested": -3,
+      "stored": -3
+    },
+    {
+      "flag": 0,
+      "requested": -2,
+      "stored": -2
+    },
+    {
+      "flag": 0,
+      "requested": -1,
+      "stored": -1
+    },
+    {
+      "flag": 0,
+      "requested": 0,
+      "stored": 2
+    },
+    {
+      "flag": 0,
+      "requested": 1,
+      "stored": 2
+    },
+    {
+      "flag": 0,
+      "requested": 2,
+      "stored": 2
+    },
+    {
+      "flag": 0,
+      "requested": 17,
+      "stored": 2
+    },
+    {
+      "flag": 1,
+      "requested": -3,
+      "stored": -2
+    },
+    {
+      "flag": 1,
+      "requested": -2,
+      "stored": -2
+    },
+    {
+      "flag": 1,
+      "requested": -1,
+      "stored": -2
+    },
+    {
+      "flag": 1,
+      "requested": 0,
+      "stored": -2
+    },
+    {
+      "flag": 1,
+      "requested": 1,
+      "stored": -2
+    },
+    {
+      "flag": 1,
+      "requested": 2,
+      "stored": -2
+    },
+    {
+      "flag": 1,
+      "requested": 17,
+      "stored": -2
+    },
+    {
+      "flag": 2,
+      "requested": -3,
+      "stored": -3
+    },
+    {
+      "flag": 2,
+      "requested": -2,
+      "stored": -2
+    },
+    {
+      "flag": 2,
+      "requested": -1,
+      "stored": -1
+    },
+    {
+      "flag": 2,
+      "requested": 0,
+      "stored": 2
+    },
+    {
+      "flag": 2,
+      "requested": 1,
+      "stored": 2
+    },
+    {
+      "flag": 2,
+      "requested": 2,
+      "stored": 2
+    },
+    {
+      "flag": 2,
+      "requested": 17,
+      "stored": 2
+    }
+  ],
+  "postload_clock_reset": [
+    {
+      "calls": [
+        2000,
+        2010
+      ],
+      "code_unchanged": true,
+      "group_last_slot": -1,
+      "group_last_time": 399,
+      "input_clock_returns": [
+        2000,
+        2010
+      ],
+      "other_last_id": -100,
+      "other_last_time": 409
+    },
+    {
+      "calls": [
+        0,
+        1
+      ],
+      "code_unchanged": true,
+      "group_last_slot": -1,
+      "group_last_time": 4294965695,
+      "input_clock_returns": [
+        0,
+        1
+      ],
+      "other_last_id": -100,
+      "other_last_time": 4294965696
+    },
+    {
+      "calls": [
+        4294967295,
+        0
+      ],
+      "code_unchanged": true,
+      "group_last_slot": -1,
+      "group_last_time": 4294965694,
+      "input_clock_returns": [
+        4294967295,
+        0
+      ],
+      "other_last_id": -100,
+      "other_last_time": 4294965695
+    }
+  ],
+  "progress_background": [
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72b030",
+          "event": "entry"
+        },
+        {
+          "clip": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "draw",
+          "flags": 1024,
+          "frame": 0,
+          "palette": "DIALOGN.PAL",
+          "point": [
+            0,
+            0
+          ],
+          "shape": "PUDLGBGN.SHP",
+          "surface": "dialog_cache"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": null,
+        "scenario_side34B8": 2,
+        "session_byte30D8": 0
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72b030",
+          "event": "entry"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": "PUDLGBGN.SHP",
+        "scenario_side34B8": 2,
+        "session_byte30D8": 0
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72b030",
+          "event": "entry"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": "DIALOGN.PAL",
+        "scenario_side34B8": 2,
+        "session_byte30D8": 0
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72aff0",
+          "event": "entry"
+        },
+        {
+          "clip": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "draw",
+          "flags": 1024,
+          "frame": 0,
+          "palette": "DIALOG.PAL",
+          "point": [
+            0,
+            0
+          ],
+          "shape": "PUDLGBGA.SHP",
+          "surface": "dialog_cache"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": null,
+        "scenario_side34B8": 0,
+        "session_byte30D8": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72aff0",
+          "event": "entry"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": "PUDLGBGA.SHP",
+        "scenario_side34B8": 0,
+        "session_byte30D8": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72aff0",
+          "event": "entry"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": "DIALOG.PAL",
+        "scenario_side34B8": 0,
+        "session_byte30D8": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72aff0",
+          "event": "entry"
+        },
+        {
+          "clip": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "draw",
+          "flags": 1024,
+          "frame": 0,
+          "palette": "DIALOG.PAL",
+          "point": [
+            0,
+            0
+          ],
+          "shape": "PUDLGBGS.SHP",
+          "surface": "dialog_cache"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": null,
+        "scenario_side34B8": 1,
+        "session_byte30D8": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72aff0",
+          "event": "entry"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": "PUDLGBGS.SHP",
+        "scenario_side34B8": 1,
+        "session_byte30D8": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72aff0",
+          "event": "entry"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": "DIALOG.PAL",
+        "scenario_side34B8": 1,
+        "session_byte30D8": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72b010",
+          "event": "entry"
+        },
+        {
+          "clip": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "draw",
+          "flags": 1024,
+          "frame": 0,
+          "palette": "DIALOGY.PAL",
+          "point": [
+            0,
+            0
+          ],
+          "shape": "PUDLGBGY.SHP",
+          "surface": "dialog_cache"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": null,
+        "scenario_side34B8": 2,
+        "session_byte30D8": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72b010",
+          "event": "entry"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": "PUDLGBGY.SHP",
+        "scenario_side34B8": 2,
+        "session_byte30D8": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "destination": "dialog_cache",
+          "destination_rect": [
+            0,
+            0,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "alternate887310",
+          "source_rect": [
+            175,
+            137,
+            451,
+            326
+          ]
+        },
+        {
+          "address": "0x69bbe0",
+          "event": "entry"
+        },
+        {
+          "address": "0x72b010",
+          "event": "entry"
+        },
+        {
+          "destination": "alternate887310",
+          "destination_rect": [
+            175,
+            137,
+            451,
+            326
+          ],
+          "event": "copy",
+          "flags": [
+            0,
+            1
+          ],
+          "source": "dialog_cache",
+          "source_rect": [
+            0,
+            0,
+            451,
+            326
+          ]
+        }
+      ],
+      "input": {
+        "dialog_rect": [
+          175,
+          137,
+          451,
+          326
+        ],
+        "missing": "DIALOGY.PAL",
+        "scenario_side34B8": 2,
+        "session_byte30D8": 1
+      }
+    }
+  ],
+  "progress_geometry": [
+    {
+      "background_mode": 2,
+      "children": [
+        {
+          "id": 1472,
+          "rect": [
+            406,
+            361,
+            126,
+            25
+          ],
+          "style": 1073741835,
+          "visible": false
+        },
+        {
+          "id": 1456,
+          "rect": [
+            155,
+            142,
+            331,
+            82
+          ],
+          "style": 1342177280,
+          "visible": true
+        }
+      ],
+      "code_unchanged": true,
+      "dialog_rect": [
+        95,
+        77,
+        451,
+        326
+      ],
+      "events": [
+        {
+          "args": [
+            8192,
+            311,
+            284,
+            126,
+            25,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            8193,
+            60,
+            65,
+            331,
+            82,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            4096,
+            0,
+            0,
+            451,
+            326,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            4096,
+            0,
+            95,
+            77,
+            4294967295,
+            4294967295,
+            5
+          ],
+          "event": "SetWindowPos"
+        }
+      ],
+      "fullscreen": 0,
+      "input": {
+        "benchmark_client": [
+          300,
+          163
+        ],
+        "dialog_base_units": [
+          6,
+          13
+        ],
+        "height": 480,
+        "initial_window_rects": {
+          "0": [
+            0,
+            0,
+            450,
+            325
+          ],
+          "1456": [
+            60,
+            65,
+            390,
+            146
+          ],
+          "1472": [
+            311,
+            284,
+            436,
+            308
+          ]
+        },
+        "width": 640
+      },
+      "mode2": 1
+    },
+    {
+      "background_mode": 2,
+      "children": [
+        {
+          "id": 1472,
+          "rect": [
+            486,
+            421,
+            126,
+            25
+          ],
+          "style": 1073741835,
+          "visible": false
+        },
+        {
+          "id": 1456,
+          "rect": [
+            235,
+            202,
+            331,
+            82
+          ],
+          "style": 1342177280,
+          "visible": true
+        }
+      ],
+      "code_unchanged": true,
+      "dialog_rect": [
+        175,
+        137,
+        451,
+        326
+      ],
+      "events": [
+        {
+          "args": [
+            8192,
+            311,
+            284,
+            126,
+            25,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            8193,
+            60,
+            65,
+            331,
+            82,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            4096,
+            0,
+            0,
+            451,
+            326,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            4096,
+            0,
+            175,
+            137,
+            4294967295,
+            4294967295,
+            5
+          ],
+          "event": "SetWindowPos"
+        }
+      ],
+      "fullscreen": 0,
+      "input": {
+        "benchmark_client": [
+          300,
+          163
+        ],
+        "dialog_base_units": [
+          6,
+          13
+        ],
+        "height": 600,
+        "initial_window_rects": {
+          "0": [
+            0,
+            0,
+            450,
+            325
+          ],
+          "1456": [
+            60,
+            65,
+            390,
+            146
+          ],
+          "1472": [
+            311,
+            284,
+            436,
+            308
+          ]
+        },
+        "width": 800
+      },
+      "mode2": 1
+    },
+    {
+      "background_mode": 2,
+      "children": [
+        {
+          "id": 1472,
+          "rect": [
+            598,
+            505,
+            126,
+            25
+          ],
+          "style": 1073741835,
+          "visible": false
+        },
+        {
+          "id": 1456,
+          "rect": [
+            347,
+            286,
+            331,
+            82
+          ],
+          "style": 1342177280,
+          "visible": true
+        }
+      ],
+      "code_unchanged": true,
+      "dialog_rect": [
+        287,
+        221,
+        451,
+        326
+      ],
+      "events": [
+        {
+          "args": [
+            8192,
+            311,
+            284,
+            126,
+            25,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            8193,
+            60,
+            65,
+            331,
+            82,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            4096,
+            0,
+            0,
+            451,
+            326,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            4096,
+            0,
+            287,
+            221,
+            4294967295,
+            4294967295,
+            5
+          ],
+          "event": "SetWindowPos"
+        }
+      ],
+      "fullscreen": 0,
+      "input": {
+        "benchmark_client": [
+          300,
+          163
+        ],
+        "dialog_base_units": [
+          6,
+          13
+        ],
+        "height": 768,
+        "initial_window_rects": {
+          "0": [
+            0,
+            0,
+            450,
+            325
+          ],
+          "1456": [
+            60,
+            65,
+            390,
+            146
+          ],
+          "1472": [
+            311,
+            284,
+            436,
+            308
+          ]
+        },
+        "width": 1024
+      },
+      "mode2": 1
+    },
+    {
+      "background_mode": 2,
+      "children": [
+        {
+          "id": 1472,
+          "rect": [
+            486,
+            422,
+            126,
+            25
+          ],
+          "style": 1073741835,
+          "visible": false
+        },
+        {
+          "id": 1456,
+          "rect": [
+            235,
+            203,
+            331,
+            82
+          ],
+          "style": 1342177280,
+          "visible": true
+        }
+      ],
+      "code_unchanged": true,
+      "dialog_rect": [
+        175,
+        138,
+        451,
+        326
+      ],
+      "events": [
+        {
+          "args": [
+            8192,
+            311,
+            284,
+            126,
+            25,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            8193,
+            60,
+            65,
+            331,
+            82,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            4096,
+            0,
+            0,
+            451,
+            326,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            4096,
+            0,
+            175,
+            138,
+            4294967295,
+            4294967295,
+            5
+          ],
+          "event": "SetWindowPos"
+        }
+      ],
+      "fullscreen": 0,
+      "input": {
+        "benchmark_client": [
+          300,
+          163
+        ],
+        "dialog_base_units": [
+          6,
+          13
+        ],
+        "height": 601,
+        "initial_window_rects": {
+          "0": [
+            0,
+            0,
+            450,
+            325
+          ],
+          "1456": [
+            60,
+            65,
+            390,
+            146
+          ],
+          "1472": [
+            311,
+            284,
+            436,
+            308
+          ]
+        },
+        "width": 801
+      },
+      "mode2": 1
+    },
+    {
+      "background_mode": 2,
+      "children": [
+        {
+          "id": 1472,
+          "rect": [
+            311,
+            284,
+            126,
+            25
+          ],
+          "style": 1073741835,
+          "visible": false
+        },
+        {
+          "id": 1456,
+          "rect": [
+            60,
+            65,
+            331,
+            82
+          ],
+          "style": 1342177280,
+          "visible": true
+        }
+      ],
+      "code_unchanged": true,
+      "dialog_rect": [
+        0,
+        0,
+        451,
+        326
+      ],
+      "events": [
+        {
+          "args": [
+            8192,
+            311,
+            284,
+            126,
+            25,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            8193,
+            60,
+            65,
+            331,
+            82,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            4096,
+            0,
+            0,
+            451,
+            326,
+            1
+          ],
+          "event": "MoveWindow"
+        },
+        {
+          "args": [
+            4096,
+            0,
+            0,
+            0,
+            4294967295,
+            4294967295,
+            5
+          ],
+          "event": "SetWindowPos"
+        }
+      ],
+      "fullscreen": 0,
+      "input": {
+        "benchmark_client": [
+          300,
+          163
+        ],
+        "dialog_base_units": [
+          6,
+          13
+        ],
+        "height": 200,
+        "initial_window_rects": {
+          "0": [
+            0,
+            0,
+            450,
+            325
+          ],
+          "1456": [
+            60,
+            65,
+            390,
+            146
+          ],
+          "1472": [
+            311,
+            284,
+            436,
+            308
+          ]
+        },
+        "width": 320
+      },
+      "mode2": 1
+    }
+  ],
+  "progress_resource": {
+    "address": 12552712,
+    "controls": [
+      {
+        "caption": "GUI:Cancel",
+        "class": 128,
+        "control_id": 1472,
+        "dlu_rect": [
+          207,
+          175,
+          83,
+          15
+        ],
+        "exstyle": 0,
+        "style": 1073741835
+      },
+      {
+        "caption": "GUI:Blank",
+        "class": 130,
+        "control_id": 1456,
+        "dlu_rect": [
+          40,
+          40,
+          220,
+          50
+        ],
+        "exstyle": 0,
+        "style": 1342177280
+      }
+    ],
+    "dialog_id": 240,
+    "hex": "40000040000000000200000000002c01c80000000000000008004d0053002000530061006e007300200053006500720069006600000000000b00004000000000cf00af0053000f00c005ffff80004700550049003a00430061006e00630065006c00000000000000000000500000000028002800dc003200b005ffff82004700550049003a0042006c0061006e006b0000000000",
+    "sha256": "b903d3bbe520094fbc6d7719f160893414cf38ef694748b76431657d6ddc8899",
+    "size": 148
+  },
   "resources": [
     {
       "address": 12516600,
@@ -781,5 +2534,3321 @@
       "size": 348
     }
   ],
-  "source": "unicorn/gamemd.exe"
+  "scenario_elapsed_clock": [
+    {
+      "boundaries": [
+        {
+          "after": [
+            1010,
+            2779096485,
+            950
+          ],
+          "auxiliary_timer": [
+            111,
+            222,
+            333
+          ],
+          "before": [
+            100,
+            2779096485,
+            50
+          ],
+          "entry": "0x689310"
+        },
+        {
+          "after": [
+            4000,
+            2779096485,
+            950
+          ],
+          "auxiliary_timer": [
+            2010,
+            222,
+            0
+          ],
+          "before": [
+            1010,
+            2779096485,
+            950
+          ],
+          "entry": "0x689470"
+        },
+        {
+          "after": [
+            4000,
+            2779096485,
+            950
+          ],
+          "auxiliary_timer": [
+            2010,
+            222,
+            0
+          ],
+          "before": [
+            4000,
+            2779096485,
+            950
+          ],
+          "entry": "0x68bcb0"
+        }
+      ],
+      "clock_calls": [
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 16000,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 16160,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 32000,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000624",
+          "milliseconds": 32160,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 64000,
+          "return_address": "0x6c8c46"
+        }
+      ],
+      "code_unchanged": true,
+      "input": {
+        "elapsed_before": [
+          100,
+          2779096485,
+          50
+        ],
+        "milliseconds": [
+          16000,
+          16160,
+          32000,
+          32160,
+          64000
+        ],
+        "name": "running"
+      },
+      "loaded_auxiliary": [
+        2010,
+        222,
+        0
+      ],
+      "loaded_elapsed": [
+        4000,
+        2779096485,
+        950
+      ],
+      "owner_result": {
+        "input": 1010038,
+        "loaded": 1010038,
+        "next": 1010039,
+        "read_bytes": 14156,
+        "saved": 1010038,
+        "stream_bytes": 14156
+      },
+      "saved_elapsed": [
+        4294967295,
+        2779096485,
+        950
+      ]
+    },
+    {
+      "boundaries": [
+        {
+          "after": [
+            4294967295,
+            2779096485,
+            77
+          ],
+          "auxiliary_timer": [
+            111,
+            222,
+            333
+          ],
+          "before": [
+            4294967295,
+            2779096485,
+            77
+          ],
+          "entry": "0x689310"
+        },
+        {
+          "after": [
+            1010,
+            2779096485,
+            77
+          ],
+          "auxiliary_timer": [
+            1000,
+            222,
+            0
+          ],
+          "before": [
+            4294967295,
+            2779096485,
+            77
+          ],
+          "entry": "0x689470"
+        },
+        {
+          "after": [
+            1010,
+            2779096485,
+            77
+          ],
+          "auxiliary_timer": [
+            1000,
+            222,
+            0
+          ],
+          "before": [
+            1010,
+            2779096485,
+            77
+          ],
+          "entry": "0x68bcb0"
+        }
+      ],
+      "clock_calls": [
+        {
+          "clock_this": "0x20000624",
+          "milliseconds": 16000,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 16160,
+          "return_address": "0x6c8c46"
+        }
+      ],
+      "code_unchanged": true,
+      "input": {
+        "elapsed_before": [
+          4294967295,
+          2779096485,
+          77
+        ],
+        "milliseconds": [
+          16000,
+          16160
+        ],
+        "name": "stopped"
+      },
+      "loaded_auxiliary": [
+        1000,
+        222,
+        0
+      ],
+      "loaded_elapsed": [
+        1010,
+        2779096485,
+        77
+      ],
+      "owner_result": {
+        "input": 1010038,
+        "loaded": 1010038,
+        "next": 1010039,
+        "read_bytes": 14156,
+        "saved": 1010038,
+        "stream_bytes": 14156
+      },
+      "saved_elapsed": [
+        4294967295,
+        2779096485,
+        77
+      ]
+    },
+    {
+      "boundaries": [
+        {
+          "after": [
+            4294967295,
+            0,
+            0
+          ],
+          "auxiliary_timer": [
+            111,
+            222,
+            333
+          ],
+          "before": [
+            4294967295,
+            0,
+            0
+          ],
+          "entry": "0x689310"
+        },
+        {
+          "after": [
+            0,
+            0,
+            0
+          ],
+          "auxiliary_timer": [
+            0,
+            222,
+            0
+          ],
+          "before": [
+            4294967295,
+            0,
+            0
+          ],
+          "entry": "0x689470"
+        },
+        {
+          "after": [
+            0,
+            0,
+            0
+          ],
+          "auxiliary_timer": [
+            0,
+            222,
+            0
+          ],
+          "before": [
+            0,
+            0,
+            0
+          ],
+          "entry": "0x68bcb0"
+        }
+      ],
+      "clock_calls": [
+        {
+          "clock_this": "0x20000624",
+          "milliseconds": 0,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 0,
+          "return_address": "0x6c8c46"
+        }
+      ],
+      "code_unchanged": true,
+      "input": {
+        "elapsed_before": [
+          4294967295,
+          0,
+          0
+        ],
+        "milliseconds": [
+          0,
+          0
+        ],
+        "name": "stopped_zero"
+      },
+      "loaded_auxiliary": [
+        0,
+        222,
+        0
+      ],
+      "loaded_elapsed": [
+        0,
+        0,
+        0
+      ],
+      "owner_result": {
+        "input": 1010038,
+        "loaded": 1010038,
+        "next": 1010039,
+        "read_bytes": 14156,
+        "saved": 1010038,
+        "stream_bytes": 14156
+      },
+      "saved_elapsed": [
+        4294967295,
+        0,
+        0
+      ]
+    },
+    {
+      "boundaries": [
+        {
+          "after": [
+            100,
+            0,
+            50
+          ],
+          "auxiliary_timer": [
+            111,
+            222,
+            333
+          ],
+          "before": [
+            100,
+            0,
+            50
+          ],
+          "entry": "0x689310"
+        },
+        {
+          "after": [
+            100,
+            0,
+            50
+          ],
+          "auxiliary_timer": [
+            100,
+            222,
+            0
+          ],
+          "before": [
+            100,
+            0,
+            50
+          ],
+          "entry": "0x689470"
+        },
+        {
+          "after": [
+            100,
+            0,
+            50
+          ],
+          "auxiliary_timer": [
+            100,
+            222,
+            0
+          ],
+          "before": [
+            100,
+            0,
+            50
+          ],
+          "entry": "0x68bcb0"
+        }
+      ],
+      "clock_calls": [
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 1601,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 1615,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 1615,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000624",
+          "milliseconds": 1615,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 1615,
+          "return_address": "0x6c8c46"
+        }
+      ],
+      "code_unchanged": true,
+      "input": {
+        "elapsed_before": [
+          100,
+          0,
+          50
+        ],
+        "milliseconds": [
+          1601,
+          1615,
+          1615,
+          1615,
+          1615
+        ],
+        "name": "same_bucket"
+      },
+      "loaded_auxiliary": [
+        100,
+        222,
+        0
+      ],
+      "loaded_elapsed": [
+        100,
+        0,
+        50
+      ],
+      "owner_result": {
+        "input": 1010038,
+        "loaded": 1010038,
+        "next": 1010039,
+        "read_bytes": 14156,
+        "saved": 1010038,
+        "stream_bytes": 14156
+      },
+      "saved_elapsed": [
+        4294967295,
+        0,
+        50
+      ]
+    },
+    {
+      "boundaries": [
+        {
+          "after": [
+            3,
+            2779096485,
+            4026531830
+          ],
+          "auxiliary_timer": [
+            111,
+            222,
+            333
+          ],
+          "before": [
+            268435452,
+            2779096485,
+            4294967280
+          ],
+          "entry": "0x689310"
+        },
+        {
+          "after": [
+            6,
+            2779096485,
+            4026531830
+          ],
+          "auxiliary_timer": [
+            5,
+            222,
+            0
+          ],
+          "before": [
+            3,
+            2779096485,
+            4026531830
+          ],
+          "entry": "0x689470"
+        },
+        {
+          "after": [
+            6,
+            2779096485,
+            4026531830
+          ],
+          "auxiliary_timer": [
+            5,
+            222,
+            0
+          ],
+          "before": [
+            6,
+            2779096485,
+            4026531830
+          ],
+          "entry": "0x68bcb0"
+        }
+      ],
+      "clock_calls": [
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 32,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 48,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 64,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000624",
+          "milliseconds": 80,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 96,
+          "return_address": "0x6c8c46"
+        }
+      ],
+      "code_unchanged": true,
+      "input": {
+        "elapsed_before": [
+          268435452,
+          2779096485,
+          4294967280
+        ],
+        "milliseconds": [
+          32,
+          48,
+          64,
+          80,
+          96
+        ],
+        "name": "millisecond_wrap"
+      },
+      "loaded_auxiliary": [
+        5,
+        222,
+        0
+      ],
+      "loaded_elapsed": [
+        6,
+        2779096485,
+        4026531830
+      ],
+      "owner_result": {
+        "input": 1010038,
+        "loaded": 1010038,
+        "next": 1010039,
+        "read_bytes": 14156,
+        "saved": 1010038,
+        "stream_bytes": 14156
+      },
+      "saved_elapsed": [
+        4294967295,
+        2779096485,
+        4026531830
+      ]
+    },
+    {
+      "boundaries": [
+        {
+          "after": [
+            6,
+            0,
+            2
+          ],
+          "auxiliary_timer": [
+            111,
+            222,
+            333
+          ],
+          "before": [
+            1,
+            0,
+            4294967294
+          ],
+          "entry": "0x689310"
+        },
+        {
+          "after": [
+            9,
+            0,
+            2
+          ],
+          "auxiliary_timer": [
+            8,
+            222,
+            0
+          ],
+          "before": [
+            6,
+            0,
+            2
+          ],
+          "entry": "0x689470"
+        },
+        {
+          "after": [
+            9,
+            0,
+            2
+          ],
+          "auxiliary_timer": [
+            8,
+            222,
+            0
+          ],
+          "before": [
+            9,
+            0,
+            2
+          ],
+          "entry": "0x68bcb0"
+        }
+      ],
+      "clock_calls": [
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 80,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 96,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 112,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000624",
+          "milliseconds": 128,
+          "return_address": "0x6c8c46"
+        },
+        {
+          "clock_this": "0x20000618",
+          "milliseconds": 144,
+          "return_address": "0x6c8c46"
+        }
+      ],
+      "code_unchanged": true,
+      "input": {
+        "elapsed_before": [
+          1,
+          0,
+          4294967294
+        ],
+        "milliseconds": [
+          80,
+          96,
+          112,
+          128,
+          144
+        ],
+        "name": "accumulator_wrap"
+      },
+      "loaded_auxiliary": [
+        8,
+        222,
+        0
+      ],
+      "loaded_elapsed": [
+        9,
+        0,
+        2
+      ],
+      "owner_result": {
+        "input": 1010038,
+        "loaded": 1010038,
+        "next": 1010039,
+        "read_bytes": 14156,
+        "saved": 1010038,
+        "stream_bytes": 14156
+      },
+      "saved_elapsed": [
+        4294967295,
+        0,
+        2
+      ]
+    }
+  ],
+  "source": "unicorn/gamemd.exe",
+  "wrapper_cases": [
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": 0
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": 0
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            0
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": -1,
+          "os_counter_before": 0
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -1
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -1,
+          "result": 0,
+          "supplied_postload_mouse": null
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -1
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -1
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            1
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": 0,
+          "os_counter_before": -1
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        }
+      ],
+      "id": "result0_handle0_mouse0_postNone",
+      "input": {
+        "loader_result": 0,
+        "mouse_initial": 0,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": null,
+        "progress_handle": 0,
+        "session_byte30D8": 0
+      },
+      "mouse_final": 0,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": 0,
+      "return_al": 0
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 0,
+          "supplied_postload_mouse": null
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -3
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        }
+      ],
+      "id": "result0_handle0_mouse-2_postNone",
+      "input": {
+        "loader_result": 0,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": null,
+        "progress_handle": 0,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 0
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 0,
+          "supplied_postload_mouse": -5
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -5
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -5
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -4
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -4
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -3
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        }
+      ],
+      "id": "result0_handle0_mouse-2_post-5",
+      "input": {
+        "loader_result": 0,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": -5,
+        "progress_handle": 0,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 0
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 0,
+          "supplied_postload_mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": 0
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            0
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": -1,
+          "os_counter_before": 0
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -1
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -1
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        }
+      ],
+      "id": "result0_handle0_mouse-2_post0",
+      "input": {
+        "loader_result": 0,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": 0,
+        "progress_handle": 0,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 0
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": 0
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 4660
+        },
+        {
+          "args": [
+            4660,
+            8,
+            0
+          ],
+          "event": "SetWindowLongA"
+        },
+        {
+          "args": [
+            4660,
+            1456
+          ],
+          "event": "GetDlgItem"
+        },
+        {
+          "args": [
+            9320,
+            1202,
+            0,
+            536875008
+          ],
+          "event": "SendMessageA"
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": 0
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            0
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": -1,
+          "os_counter_before": 0
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x622800",
+          "event": "progress_show",
+          "mouse": -1
+        },
+        {
+          "args": [
+            4660,
+            1
+          ],
+          "event": "ShowWindow"
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "SetForegroundWindow"
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -1
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -1,
+          "result": 0,
+          "supplied_postload_mouse": null
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -1
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -1
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            1
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": 0,
+          "os_counter_before": -1
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x622720",
+          "event": "progress_destroy",
+          "mouse": 0
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "event": "dialog_record_teardown608070_transport",
+          "handle": 4660
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "DestroyWindow"
+        }
+      ],
+      "id": "result0_handle1_mouse0_postNone",
+      "input": {
+        "loader_result": 0,
+        "mouse_initial": 0,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": null,
+        "progress_handle": 4660,
+        "session_byte30D8": 0
+      },
+      "mouse_final": 0,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": 0,
+      "return_al": 0
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 4660
+        },
+        {
+          "args": [
+            4660,
+            8,
+            0
+          ],
+          "event": "SetWindowLongA"
+        },
+        {
+          "args": [
+            4660,
+            1456
+          ],
+          "event": "GetDlgItem"
+        },
+        {
+          "args": [
+            9320,
+            1202,
+            0,
+            536875008
+          ],
+          "event": "SendMessageA"
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x622800",
+          "event": "progress_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            4660,
+            1
+          ],
+          "event": "ShowWindow"
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "SetForegroundWindow"
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 0,
+          "supplied_postload_mouse": null
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -3
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x622720",
+          "event": "progress_destroy",
+          "mouse": -2
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "event": "dialog_record_teardown608070_transport",
+          "handle": 4660
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "DestroyWindow"
+        }
+      ],
+      "id": "result0_handle1_mouse-2_postNone",
+      "input": {
+        "loader_result": 0,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": null,
+        "progress_handle": 4660,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 0
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 4660
+        },
+        {
+          "args": [
+            4660,
+            8,
+            0
+          ],
+          "event": "SetWindowLongA"
+        },
+        {
+          "args": [
+            4660,
+            1456
+          ],
+          "event": "GetDlgItem"
+        },
+        {
+          "args": [
+            9320,
+            1202,
+            0,
+            536875008
+          ],
+          "event": "SendMessageA"
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x622800",
+          "event": "progress_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            4660,
+            1
+          ],
+          "event": "ShowWindow"
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "SetForegroundWindow"
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 0,
+          "supplied_postload_mouse": -5
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -5
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -5
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -4
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -4
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -3
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x622720",
+          "event": "progress_destroy",
+          "mouse": -2
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "event": "dialog_record_teardown608070_transport",
+          "handle": 4660
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "DestroyWindow"
+        }
+      ],
+      "id": "result0_handle1_mouse-2_post-5",
+      "input": {
+        "loader_result": 0,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": -5,
+        "progress_handle": 4660,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 0
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 4660
+        },
+        {
+          "args": [
+            4660,
+            8,
+            0
+          ],
+          "event": "SetWindowLongA"
+        },
+        {
+          "args": [
+            4660,
+            1456
+          ],
+          "event": "GetDlgItem"
+        },
+        {
+          "args": [
+            9320,
+            1202,
+            0,
+            536875008
+          ],
+          "event": "SendMessageA"
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x622800",
+          "event": "progress_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            4660,
+            1
+          ],
+          "event": "ShowWindow"
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "SetForegroundWindow"
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 0,
+          "supplied_postload_mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": 0
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            0
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": -1,
+          "os_counter_before": 0
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -1
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -1
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x622720",
+          "event": "progress_destroy",
+          "mouse": -2
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "event": "dialog_record_teardown608070_transport",
+          "handle": 4660
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "DestroyWindow"
+        }
+      ],
+      "id": "result0_handle1_mouse-2_post0",
+      "input": {
+        "loader_result": 0,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": 0,
+        "progress_handle": 4660,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 0
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": 0
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": 0
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            0
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": -1,
+          "os_counter_before": 0
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -1
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -1,
+          "result": 1,
+          "supplied_postload_mouse": null
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -1
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -1
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            1
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": 0,
+          "os_counter_before": -1
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        }
+      ],
+      "id": "result1_handle0_mouse0_postNone",
+      "input": {
+        "loader_result": 1,
+        "mouse_initial": 0,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": null,
+        "progress_handle": 0,
+        "session_byte30D8": 0
+      },
+      "mouse_final": 0,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": 0,
+      "return_al": 1
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 1,
+          "supplied_postload_mouse": null
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -3
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        }
+      ],
+      "id": "result1_handle0_mouse-2_postNone",
+      "input": {
+        "loader_result": 1,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": null,
+        "progress_handle": 0,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 1
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 1,
+          "supplied_postload_mouse": -5
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -5
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -5
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -4
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -4
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -3
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        }
+      ],
+      "id": "result1_handle0_mouse-2_post-5",
+      "input": {
+        "loader_result": 1,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": -5,
+        "progress_handle": 0,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 1
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 1,
+          "supplied_postload_mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": 0
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            0
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": -1,
+          "os_counter_before": 0
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -1
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -1
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        }
+      ],
+      "id": "result1_handle0_mouse-2_post0",
+      "input": {
+        "loader_result": 1,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": 0,
+        "progress_handle": 0,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 1
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": 0
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 4660
+        },
+        {
+          "args": [
+            4660,
+            8,
+            0
+          ],
+          "event": "SetWindowLongA"
+        },
+        {
+          "args": [
+            4660,
+            1456
+          ],
+          "event": "GetDlgItem"
+        },
+        {
+          "args": [
+            9320,
+            1202,
+            0,
+            536875008
+          ],
+          "event": "SendMessageA"
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": 0
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            0
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": -1,
+          "os_counter_before": 0
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x622800",
+          "event": "progress_show",
+          "mouse": -1
+        },
+        {
+          "args": [
+            4660,
+            1
+          ],
+          "event": "ShowWindow"
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "SetForegroundWindow"
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -1
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -1,
+          "result": 1,
+          "supplied_postload_mouse": null
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -1
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -1
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            1
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": 0,
+          "os_counter_before": -1
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x622720",
+          "event": "progress_destroy",
+          "mouse": 0
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "event": "dialog_record_teardown608070_transport",
+          "handle": 4660
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "DestroyWindow"
+        }
+      ],
+      "id": "result1_handle1_mouse0_postNone",
+      "input": {
+        "loader_result": 1,
+        "mouse_initial": 0,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": null,
+        "progress_handle": 4660,
+        "session_byte30D8": 0
+      },
+      "mouse_final": 0,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": 0,
+      "return_al": 1
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 4660
+        },
+        {
+          "args": [
+            4660,
+            8,
+            0
+          ],
+          "event": "SetWindowLongA"
+        },
+        {
+          "args": [
+            4660,
+            1456
+          ],
+          "event": "GetDlgItem"
+        },
+        {
+          "args": [
+            9320,
+            1202,
+            0,
+            536875008
+          ],
+          "event": "SendMessageA"
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x622800",
+          "event": "progress_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            4660,
+            1
+          ],
+          "event": "ShowWindow"
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "SetForegroundWindow"
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 1,
+          "supplied_postload_mouse": null
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -3
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x622720",
+          "event": "progress_destroy",
+          "mouse": -2
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "event": "dialog_record_teardown608070_transport",
+          "handle": 4660
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "DestroyWindow"
+        }
+      ],
+      "id": "result1_handle1_mouse-2_postNone",
+      "input": {
+        "loader_result": 1,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": null,
+        "progress_handle": 4660,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 1
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 4660
+        },
+        {
+          "args": [
+            4660,
+            8,
+            0
+          ],
+          "event": "SetWindowLongA"
+        },
+        {
+          "args": [
+            4660,
+            1456
+          ],
+          "event": "GetDlgItem"
+        },
+        {
+          "args": [
+            9320,
+            1202,
+            0,
+            536875008
+          ],
+          "event": "SendMessageA"
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x622800",
+          "event": "progress_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            4660,
+            1
+          ],
+          "event": "ShowWindow"
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "SetForegroundWindow"
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 1,
+          "supplied_postload_mouse": -5
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -5
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -5
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -4
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -4
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -3
+        },
+        {
+          "entry": "0x7b9750",
+          "event": "mouse_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x622720",
+          "event": "progress_destroy",
+          "mouse": -2
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "event": "dialog_record_teardown608070_transport",
+          "handle": 4660
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "DestroyWindow"
+        }
+      ],
+      "id": "result1_handle1_mouse-2_post-5",
+      "input": {
+        "loader_result": 1,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": -5,
+        "progress_handle": 4660,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 1
+    },
+    {
+      "events": [
+        {
+          "entry": "0x559d60",
+          "event": "wrapper",
+          "mouse": -2
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "event": "CSF_lookup_transport",
+          "label": "TXT_LOADING"
+        },
+        {
+          "entry": "0x623230",
+          "event": "progress_create",
+          "mouse": -2
+        },
+        {
+          "event": "window_create_transport",
+          "resource": 240,
+          "result": 4660
+        },
+        {
+          "args": [
+            4660,
+            8,
+            0
+          ],
+          "event": "SetWindowLongA"
+        },
+        {
+          "args": [
+            4660,
+            1456
+          ],
+          "event": "GetDlgItem"
+        },
+        {
+          "args": [
+            9320,
+            1202,
+            0,
+            536875008
+          ],
+          "event": "SendMessageA"
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -2
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x622800",
+          "event": "progress_show",
+          "mouse": -3
+        },
+        {
+          "args": [
+            4660,
+            1
+          ],
+          "event": "ShowWindow"
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "SetForegroundWindow"
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "entry": "0x69bb40",
+          "event": "session_prepare",
+          "mouse": -3
+        },
+        {
+          "event": "Load_Game_transport",
+          "flags_at_entry": [
+            0,
+            0
+          ],
+          "mouse_at_entry": -3,
+          "result": 1,
+          "supplied_postload_mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": 0
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": 0
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            0
+          ],
+          "event": "ShowCursor",
+          "os_counter_after": -1,
+          "os_counter_before": 0
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -1
+        },
+        {
+          "entry": "0x7b9930",
+          "event": "mouse_hide",
+          "mouse": -1
+        },
+        {
+          "args": [
+            48879,
+            10000
+          ],
+          "event": "WaitForSingleObject"
+        },
+        {
+          "args": [
+            48879
+          ],
+          "event": "ReleaseMutex"
+        },
+        {
+          "entry": "0x7b89f0",
+          "event": "mouse_get",
+          "mouse": -2
+        },
+        {
+          "entry": "0x622720",
+          "event": "progress_destroy",
+          "mouse": -2
+        },
+        {
+          "event": "input_service54F720_transport"
+        },
+        {
+          "event": "dialog_record_teardown608070_transport",
+          "handle": 4660
+        },
+        {
+          "args": [
+            4660
+          ],
+          "event": "DestroyWindow"
+        }
+      ],
+      "id": "result1_handle1_mouse-2_post0",
+      "input": {
+        "loader_result": 1,
+        "mouse_initial": -2,
+        "mouse_mode_byte10": 0,
+        "native_window_stack_count": 0,
+        "postload_mouse": 0,
+        "progress_handle": 4660,
+        "session_byte30D8": 0
+      },
+      "mouse_final": -2,
+      "original_executable_bytes_unchanged": true,
+      "os_cursor_final": -1,
+      "return_al": 1
+    }
+  ]
 }

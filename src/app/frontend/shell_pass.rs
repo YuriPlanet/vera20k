@@ -166,12 +166,40 @@ pub(crate) fn encode_shell_pass(
             *count,
         );
     }
-    pass.set_scissor_rect(0, 0, gpu.config.width, gpu.config.height);
+    drop(pass);
+    let presenter = &state.renderer.shell_surface_presenter;
+    presenter.stage_cursor_free_composition(
+        &state.renderer.retail_screenshot_frame_cache,
+        &gpu.device,
+        encoder,
+        (gpu.config.width, gpu.config.height),
+    );
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Shell cursor after retained composition"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: &color,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view: &state.renderer.depth_view,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            }),
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
     if let (Some((texture, _)), Some((buffer, count))) = (cursor, cursor_buffer.as_ref()) {
         batch.draw_with_buffer_passthrough(&mut pass, texture, buffer, *count);
     }
     drop(pass);
-    let presenter = &state.renderer.shell_surface_presenter;
     match effects {
         Some(effects) => {
             presenter.encode_present_with_effects(&gpu.queue, encoder, destination, effects)

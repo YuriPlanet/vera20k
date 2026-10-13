@@ -551,7 +551,10 @@ fn run_bridge_catalog_native_group(group: &serde_json::Value, files: &[Vec<u8>])
             grid.cells[index].slope_type,
             grid.cells[index].height_in_pixels,
         );
-        grid.refresh_resident_bridge_presentation(index).unwrap();
+        grid.refresh_resident_bridge_presentation(index, &mut || {
+            panic!("native fixture table is warm")
+        })
+        .unwrap();
         assert_eq!(
             before,
             (
@@ -685,8 +688,14 @@ fn retail_bridge_recalc_and_presentation_match_original_execution() {
         .try_into()
         .unwrap();
     let rules = TerrainRules::default();
-    let catalog =
-        BridgeRecalcCatalog::for_runtime_bridges(&theater, &assets, &rules, false, 0, Some(table));
+    let catalog = BridgeRecalcCatalog::for_runtime_bridges(
+        &theater,
+        &assets,
+        &rules,
+        false,
+        0,
+        crate::map::tile_variant_selector::TileVariantSelector::from_initialized(table),
+    );
     let keys = crate::map::bridge_rim_tiles::HighBridgeRimTiles::from_theater(&theater);
     let wood = theater.lookup.bounds()[usize::from(theater.wood_bridge_set.unwrap())].start;
     drop(assets);
@@ -759,7 +768,9 @@ fn retail_bridge_catalog_after_normal_map_loading() {
                 )
                 .unwrap_or_else(|error| panic!("{fallback} {coord:?} source{input:?}: {error}"));
             terrain
-                .refresh_resident_bridge_presentation(index)
+                .refresh_resident_bridge_presentation(index, &mut || {
+                    panic!("native fixture table is warm")
+                })
                 .unwrap_or_else(|error| {
                     panic!("{fallback} {coord:?} presentation{input:?}: {error}")
                 });

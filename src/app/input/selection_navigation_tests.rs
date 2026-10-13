@@ -1840,7 +1840,7 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
     // not a load history: restore its declared seed through the existing test
     // pair owner. SelectionFixture177..182 also seeds MapGen identically;
     // that explicit input differs from production's fresh MapGen Seed(0).
-    sim.reseed_scenario_and_main(inputs.seed);
+    sim.initialize_random_number_system(inputs.seed as u32);
     sim.mapgen_rng = crate::sim::rng::SimRng::new(inputs.seed);
     for (index, ids) in layers.iter().enumerate() {
         assert_eq!(

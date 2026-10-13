@@ -63,7 +63,9 @@ fn repair_ifv(rules: &RuleSet) -> (Simulation, u64, u64) {
         crate::sim::combat::combat_weapon::weapon_damage_value(
             sim.entities().get(ifv).unwrap(),
             rules.object("FV").unwrap(),
-            rules
+            sim.entities(),
+            rules,
+            &sim.interner,
         ),
         -50
     );
@@ -76,6 +78,7 @@ fn repair_click(sim: &Simulation, rules: &RuleSet, ifv: u64, tank: u64) -> Comma
     let dispatch = unit_repair_branch_orders(
         sim,
         rules,
+        &[ifv],
         &[ifv],
         &HoverTargetKindWithId {
             kind: HoverTargetKind::FriendlyUnit,
@@ -152,20 +155,27 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
     let feedback = capability_cursor_for_hover(&sim, &[ifv], Some(ifv), &hover, Some(rules), None);
     assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
     assert_eq!(cursor_id_for_feedback(feedback), Some(CursorId::Repair));
-    let dispatch = unit_repair_branch_orders(
-        &sim,
-        rules,
-        &[ifv],
-        &hover,
-        sim.entities().get(ifv).unwrap().owner(),
-        OrderModifier::Normal,
-        OrderMode::Move,
-    );
-    assert!(dispatch.consumed && !dispatch.select_fallback);
-    assert_eq!(dispatch.receivers, [ifv].into_iter().collect());
+    // DetermineAction still answers Repair29, which dispatches (the click is
+    // consumed and the action-line timer starts), but Unit738890 refuses the
+    // berserk IFV, so it sends nothing.
     assert!(
-        dispatch.commands.is_empty(),
+        sim.click_order_receivers(&[ifv]).is_empty(),
         "native Unit738890 refuses berserk clicks"
+    );
+    let owner = sim.entities().get(ifv).unwrap().owner();
+    assert_eq!(
+        berserk_selection_click(&sim, rules, &[ifv], Some(&hover), (0, 0), owner),
+        BerserkSelectionClick::Dispatch
+    );
+    // Over itself the healer arm answers Select (`0x0073FE3B`), since the
+    // berserk base answer (0) skips the self action.
+    let over_itself = HoverTargetKindWithId {
+        kind: HoverTargetKind::FriendlyUnit,
+        stable_id: ifv,
+    };
+    assert_eq!(
+        berserk_selection_click(&sim, rules, &[ifv], Some(&over_itself), (0, 0), owner),
+        BerserkSelectionClick::Select
     );
     assert_eq!(sim.state_hash(), prior);
     // The refusal belongs to ClickedAction, not Event::Execute. An event
@@ -281,6 +291,7 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
             &sim,
             rules,
             &[ifv],
+            &[ifv],
             &hover,
             owner,
             modifier,
@@ -318,6 +329,7 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
             &sim,
             rules,
             &[ifv],
+            &[ifv],
             &hover,
             owner,
             OrderModifier::Normal,
@@ -342,6 +354,7 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
     let move_dispatch = unit_repair_branch_orders(
         &sim,
         rules,
+        &[ifv],
         &[ifv],
         &enemy_hover,
         owner,

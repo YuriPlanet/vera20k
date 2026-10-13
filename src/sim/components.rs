@@ -94,9 +94,11 @@ impl Health {
     }
 }
 
-// Placement descriptors are transient; MissionCom, MissionLeaf and the private
-// GameEntity body own retained construction and sale state.
-pub(crate) use crate::sim::building_construction::{BuildingDown, BuildingUp};
+// MissionCom, MissionLeaf and the private GameEntity body own retained
+// construction and sale state.
+pub(crate) use crate::sim::building_construction::BuildingDown;
+#[cfg(test)]
+pub(crate) use crate::sim::building_construction::BuildingUp;
 
 /// Move-order scheduling adapter, with no gamemd counterpart (#689).
 ///

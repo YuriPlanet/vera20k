@@ -117,6 +117,10 @@ Observing it sends no selection or lifecycle mutation. Historical sealed
 receipts may omit it, and omission supplies no observed Alive value. The fixed
 boolean remains part of the existing one-sample actor row.
 
+Actor `deactivated`, when present, is the Techno `+0x1C8` offline latch that
+`sim::powered_unit` owns: a Robot Tank whose house has no powered Robot Control
+Center. Historical receipts omit it; omission supplies no observed latch.
+
 Actor `retask` reads the existing `suspended_target` and `suspended_nav`
 references alongside current `target`, `archive`, `nav` and mission fields.
 References retain their distinct tagged target/navigation representations;
@@ -461,6 +465,11 @@ charge start, duration and remaining frames, and the Force Shield's fade countdo
 (`SuperClass+0x50`, -1 when idle) and its coordinate. The rows count toward the sample
 budget. `false` or an absent field adds nothing; version 1 rejects the option,
 and present null/nonboolean values are invalid.
+
+Optional v2 `observe_diplomacy: true` adds a `diplomacy` object to each observed
+House row: `allies`, the other Houses its own ally mask names in House array
+order, and `enemy`, the House its anger chose (null for none). It follows the
+same presence rules as `observe_super_weapons`.
 
 `render.frame_wall_mean_ms`, when present, reads the existing frame timer's last
 up-to-60 intervals. It includes simulation, diagnostic observation, rendering and
@@ -936,7 +945,7 @@ at step5200 and stop at step5300 with the camera on (41,95). These observe
 production output; no gamemd frame was compared. Numeric handles are tied to
 each launch.
 
-The [validation receipt](map_observation.unit-body-draw.validation.json) records
+The validation receipt (`tools/map_observation.unit-body-draw.validation.json`, in git at 1b1a8b43e) records
 the source and executable identities, frame hashes, changed-pixel bounds and
 test results. The step3745 frame immediately before dumping is byte-identical.
 Original runs, raw frames, profiles, native disassembly and logs are retained
@@ -998,7 +1007,7 @@ Unit observations expose the existing owner words `current_weapon_138` and
 remain readable. They establish selected state; retained GPU frames separately
 establish rendered output. Neither establishes native raster parity.
 
-The [validation receipt](map_observation.ifv-turret.validation.json) records the
+The validation receipt (`tools/map_observation.ifv-turret.validation.json`, in git at 1b1a8b43e) records the
 native corpus, build/source identities, capture hashes and inspected images.
 All three passengers board at step 12: GI selects weapon/turret `(2,1)`, Engineer
 `(1,2)`, and Tesla Trooper `(6,3)`. Departure restores `(0,0)` at step 164;
@@ -1047,7 +1056,7 @@ step 25 targets `(48,59)`; the profile ends at step 120.
 
 Run the profile through the capture command above, from the repository root.
 For an external profile copy, set `launch.selected_map_file` to the absolute path
-of the tracked map. The [validation receipt](map_observation.grand-cannon.validation.json)
+of the tracked map. The validation receipt (`tools/map_observation.grand-cannon.validation.json`, in git at 1b1a8b43e)
 records exact inputs, binaries, native corpora, capture hashes and test results.
 The same release build also loaded the unchanged retail-directory `Hills.mmx`
 and completed 20 steps with a valid GPU readback. That load uses the idle profile,
@@ -1822,7 +1831,7 @@ trajectory matches the corresponding prefix of the full cycle.
 | Reverse SCHPDEPL with the unit body hidden | 550; attached reverse animation frame 5 visible |
 | SCHP returned to flight | 640; SCHP visible at Z=500 before the later Move order |
 
-The [validation receipt](map_observation.siege-chopper.validation.json) records
+The validation receipt (`tools/map_observation.siege-chopper.validation.json`, in git at 1b1a8b43e) records
 source/build/map/profile identities, every retained frame hash and inspected
 image, and the exact transition steps. Landing starts at 202, touchdown clears
 the request at 253, forward animation starts at 254, and deployed state begins
@@ -1895,7 +1904,7 @@ contact release and resumed harvesting. It is production integration evidence;
 native scheduler, movement, audio and pixels require separate comparisons. Native
 coverage is recorded in [`spatial_oracle/refinery_dock.md`](spatial_oracle/refinery_dock.md).
 
-The [refinery validation receipt](spatial_oracle/refinery_dock.validation.json)
+The refinery validation receipt (`tools/spatial_oracle/refinery_dock.validation.json`, in git at 1b1a8b43e)
 records two observed deposits at steps 3778 and 5670, release and Harvest at
 3794 and 5686, then new cargo at 4229 and 6154. Each deposit paid 1,000 credits
 while spent credits stayed at 2,600. Both complete compact receipts are about
@@ -1967,7 +1976,7 @@ integrated release run witnessed 16 new ore cells at density 3. This is a
 production integration observation, not a gamemd gameplay/pixel comparison.
 Original executable queue/RNG/Mark comparisons and the final run identities are
 in [`spatial_oracle/ore_queue.md`](spatial_oracle/ore_queue.md) and its
-[`validation receipt`](spatial_oracle/ore_queue.validation.json).
+`validation receipt` (`tools/spatial_oracle/ore_queue.validation.json`, in git at 1b1a8b43e).
 
 ## Ordinary scheduled commands and actor trajectories
 
@@ -1975,7 +1984,7 @@ in [`spatial_oracle/ore_queue.md`](spatial_oracle/ore_queue.md) and its
 uses ordinary Battle/AnyTown orders to deploy the MCV, construct GAPOWR/GAPILE,
 deliver an ENGINEER, damage the power plant by MTNK ForceAttack, stop the tank,
 enable paid repair and send the Engineer through CaptureBuilding. The
-[production receipt](spatial_oracle/engineer_repair.production.json) records the
+production receipt (`tools/spatial_oracle/engineer_repair.production.json`, in git at 1b1a8b43e) records the
 1650-step release capture and exact repeat: all fingerprints, complete observed
 trajectories and full Metal BGRA bytes MATCH. At frame1602, actual health changes
 304→750, damaged slot1581 is replaced by healthy slot1742 and Engineer1557 is
@@ -2162,7 +2171,7 @@ Portable validation:
 python -m unittest tools.tests.test_map_observation tools.tactical_certification.tests.test_core tools.tests.test_child_process
 ```
 
-The saved [validation receipt](map_observation.validation.json) records the checked
+The saved validation receipt (`tools/map_observation.validation.json`, in git at 1b1a8b43e) records the checked
 release binary and source snapshot, repeated MIX-map state, loose-map and zero-step
 captures, missing-map diagnostics, and the explicit coverage limits. It is a run
 summary, not a native oracle golden.
@@ -2283,14 +2292,14 @@ python -m unittest tools.tests.test_map_observation tools.tests.test_cargo_run
 python -O -m unittest tools.tests.test_map_observation tools.tests.test_cargo_run
 ```
 
-The [checked comparison validation](map_comparison.validation.json) records
+The checked comparison validation (`tools/map_comparison.validation.json`, in git at 1b1a8b43e) records
 whole-suite checks, preserved-label selection, revalidated historical pairs and
 new sealed production captures for this workflow. The earlier capture validation
 receipt above remains historical evidence for its recorded source revision.
 
 ### Checked diagnostic-clock captures
 
-The [presentation-clock validation](map_presentation_clock.validation.json)
+The presentation-clock validation (`tools/map_presentation_clock.validation.json`, in git at 1b1a8b43e)
 records fifteen independent release captures and eight exact full-frame
 comparisons on Apple M4/Metal: three Allied 30-step runs, and two each at Allied
 zero/200 steps, Soviet 30 steps, and message steps 1/182/183. All same-profile
@@ -2363,7 +2372,7 @@ statistics at each allocation stage; fresh and grown totals need not match.
 
 The [atlas observation validation](atlas_observation.validation.json) records
 before/after production captures and the explicit retail GPU atlas refresh test.
-The older `map_observation.validation.json` remains historical v1 evidence; it
+The older `map_observation.validation.json` (in git at 1b1a8b43e) remains historical v1 evidence; it
 has not been retroactively given statistics or new source identities.
 
 Final PR1018 integration includes main2e05101f and snapshot285. Stock R10 and

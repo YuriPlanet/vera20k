@@ -9,7 +9,7 @@ use crate::util::native_x87::NativeF64Bits;
 
 /// Every `[CrateRules]` field `RulesClass__ReadCrateRules @ 0x0066B900` reads,
 /// in its native read order.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CrateRules {
     /// `FreeMCV` -> `Rules+0x40`. `CellClass::PickupCrate @ 0x00481A00` does
     /// not read it: its MCV pre-empt (`0x00481BB8..0x00481BFF`) gates on the

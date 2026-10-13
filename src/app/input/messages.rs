@@ -314,7 +314,7 @@ pub(crate) fn build_message_text_instances(state: &AppState) -> Vec<SpriteInstan
     if state.frontend.screen != GameScreen::InGame {
         return Vec::new();
     }
-    message_text_instances(
+    message_instances(
         &state.renderer.bit_font,
         &state.match_state.match_presentation.message_list,
         [
@@ -322,32 +322,74 @@ pub(crate) fn build_message_text_instances(state: &AppState) -> Vec<SpriteInstan
             state.match_state.input.camera_y,
         ],
     )
+    .1
 }
 
-fn message_text_instances(
+/// Solid black boxes for the "message_fill" pooled buffer, drawn behind the
+/// message rows. Native `MessageListEntry::Draw` (`0x488520`, entry vtable
+/// `0x7F5B44` + `0x38`) renders every row through the shared text engine with
+/// the row's opaque-background style, which fills a black box one pixel out on
+/// every side of the text rect (`0x4A5EB0` @ `0x4A5F61`: `[x-1, y-1, w+2,
+/// h+2]`, colour 0) before blitting the glyphs — the same box the sidebar
+/// super-weapon timers get.
+pub(crate) fn build_message_fill_instances(state: &AppState) -> Vec<SpriteInstance> {
+    if state.frontend.screen != GameScreen::InGame {
+        return Vec::new();
+    }
+    message_instances(
+        &state.renderer.bit_font,
+        &state.match_state.match_presentation.message_list,
+        [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ],
+    )
+    .0
+}
+
+fn message_instances(
     font: &crate::render::bit_font::BitFont,
     list: &crate::ui::messages::MessageList,
     camera_offset: [f32; 2],
-) -> Vec<SpriteInstance> {
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     let x = list.x() as f32;
-    list.messages()
-        .iter()
-        .flat_map(|m| {
-            // Message rows are screen-space, but `draw_pooled_ui` binds the
-            // live world camera and the shader subtracts it. Add that camera
-            // back here so scrolling cannot displace the HUD text.
-            crate::render::sidebar_text::build_text(
-                font,
-                &m.text,
-                x,
-                m.y as f32,
-                1.0,
-                0.00022,
-                m.rgb,
-                camera_offset,
-            )
-        })
-        .collect()
+    let mut fills = Vec::new();
+    let mut texts = Vec::new();
+    for m in list.messages() {
+        // Message rows are screen-space, but `draw_pooled_ui` binds the
+        // live world camera and the shader subtracts it. Add that camera
+        // back here so scrolling cannot displace the HUD text.
+        let text = crate::render::sidebar_text::build_text(
+            font,
+            &m.text,
+            x,
+            m.y as f32,
+            1.0,
+            0.00022,
+            m.rgb,
+            camera_offset,
+        );
+        let width = font.text_width(&m.text) as f32;
+        let height = font.cell_height() as f32;
+        fills.push(SpriteInstance {
+            position: [
+                x - 1.0 + camera_offset[0],
+                m.y as f32 - 1.0 + camera_offset[1],
+            ],
+            size: [width + 2.0, height + 2.0],
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            // The UI pass depth-tests: the box must sit BEHIND its own glyphs
+            // (text depth 0.00022), mirroring the tooltip lane's ordering
+            // (fill 0.00021 > border 0.000205 > text).
+            depth: 0.00023,
+            tint: [0.0; 3],
+            alpha: 1.0,
+            ..Default::default()
+        });
+        texts.extend(text);
+    }
+    (fills, texts)
 }
 
 #[cfg(test)]
@@ -594,9 +636,9 @@ mod tests {
             &|text| font.text_width(text) as i32,
         );
 
-        let at_origin = message_text_instances(&font, &list, [0.0, 0.0]);
+        let at_origin = message_instances(&font, &list, [0.0, 0.0]).1;
         let ui_camera = [640.0_f32, 480.0_f32];
-        let panned = message_text_instances(&font, &list, ui_camera);
+        let panned = message_instances(&font, &list, ui_camera).1;
 
         assert_eq!(at_origin.len(), 3);
         assert_eq!(panned.len(), at_origin.len());

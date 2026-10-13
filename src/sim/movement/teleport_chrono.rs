@@ -28,7 +28,7 @@
 //!   again; -> 6 (`0x00719A01..0x00719B85`).
 //! - 7: WarpingIn down, the archive target cleared, a NULL destination,
 //!   Is_Moving down; -> 0 (`0x00719BB4..0x00719BDF`), after which the next
-//!   IPiggyback END ends the piggyback (`locomotor_owner::try_end_piggyback`):
+//!   IPiggyback END ends the piggyback (`Simulation::try_end_piggyback`):
 //!   an idle entry's (`0x004D831A`) or the Foot AI tail's.
 //!
 //! FootClass::AI's Process call runs it, and so does each class AI's prologue
@@ -71,12 +71,6 @@
 //!   (`0x007362A7..0x007362F5`); VERA runs none. Trigger: a destination for
 //!   a Chrono Miner in the warp's last frames. Effect: TimerCheck's draw
 //!   moves a frame and the warp's END up to one; the Drive goes nowhere.
-//! - PostWarpValidation's hover arm (`0x00718864..0x007188AF`): a Hover type
-//!   with `PoweredUnit=` (TechnoType `+0x410`) whose house has no matching
-//!   powering building (`HouseClass @ 0x0050E1B0`) loses its hover; VERA
-//!   reads neither, so every Hover type keeps it. Trigger: a Robot Tank
-//!   chronoshifted onto water while its owner has no Robot Control Center.
-//!   Effect: it floats instead of sinking.
 //! - A landed Aircraft that sinks keeps `+0x3CD` with nothing to end it:
 //!   VERA ports only the Unit's sinking (Unit AI `0x007364A1`); the Aircraft
 //!   AI's handling is not established. Trigger: an airfield's Harriers
@@ -235,10 +229,10 @@ impl Simulation {
                 )?;
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     super::teleport_movement::teleport_stop_moving(entity);
+                    // `0x00719AEE`/`0x00719AF7`: the drop and warp credits go.
+                    entity.manipulated_by = None;
+                    entity.warped_by_house = None;
                     entity.set_archive_target(None);
-                }
-                if let Some(warp) = self.chrono_warp_mut(id) {
-                    warp.clear_house();
                 }
                 self.assign_null_destination(id, Some(rules), registry, ctx.effects);
                 let delay = self
@@ -598,7 +592,8 @@ impl Simulation {
     ///    kills the owner, reading each successor after the call;
     /// 2. a Naval type is out of place on a bridge cell or a Road cell
     ///    (LandType 1, `+0xEC`); a Hover type (SpeedType 3) is at home on
-    ///    water (module residual);
+    ///    water unless it is `PoweredUnit=` and its house has no powered
+    ///    center (`0x00718864..0x007188AF`, `sim::powered_unit`);
     /// 3. on a Water cell (LandType 2) with no bridge, an object that is not
     ///    Hover, Naval or Infantry sinks, its slaves go free, and its kill is
     ///    booked for the warping house (`0x00718968..0x007189F4`);
@@ -648,7 +643,8 @@ impl Simulation {
                 (
                     entity.category,
                     object.naval,
-                    object.speed_type == SpeedType::Hover,
+                    object.speed_type == SpeedType::Hover
+                        && !(object.powered_unit && !self.has_powered_center(entity.owner())),
                 )
             })
         }) else {
@@ -660,23 +656,9 @@ impl Simulation {
         let infantry = category == EntityCategory::Infantry;
         if land == LandType::Water.as_index() as i32 && !hover && !naval && !infantry && !bridge {
             self.chrono_warp_sink(id, rules, registry, effects);
-            let house = self
-                .substrate
-                .entities
-                .get(id)
-                .and_then(|entity| entity.chrono_warp())
-                .and_then(ChronoWarp::house);
-            if let Some(house) = house {
-                // TechnoClass vt+0xE4 (`0x00703230`): Record_The_Kill's
-                // house-credited twin, with no experience to award.
-                self.record_the_kill(
-                    id,
-                    None,
-                    Some(house),
-                    crate::sim::combat::KillCallback::Terminal,
-                    rules,
-                );
-            }
+            // `0x007189BE..0x007189F5`: the kill goes to the Magnetron that
+            // dropped the object, else the warping house.
+            self.record_manipulated_kill(id, id, rules);
             return;
         }
         let code = self
@@ -707,8 +689,8 @@ impl Simulation {
     }
 
     /// PostWarpValidation's sink: `+0x3CD` and the Stun, then FreeSlaves with
-    /// `+0x428` (VERA keeps none) and the warping house, and the slave
-    /// manager deleted (`0x00718968..0x007189B4`).
+    /// the dropping Magnetron (`+0x428`) and the warping house (`+0x42C`), and
+    /// the slave manager deleted (`0x00718968..0x007189B4`).
     fn chrono_warp_sink(
         &mut self,
         id: u64,
@@ -717,12 +699,14 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         self.begin_warp_sinking(id, rules, effects);
-        let house = self
+        let Some((killer, house)) = self
             .substrate
             .entities
             .get(id)
-            .and_then(|entity| entity.chrono_warp())
-            .and_then(ChronoWarp::house);
-        self.free_slaves(id, None, house, rules, registry, effects);
+            .map(|entity| (entity.manipulated_by, entity.warped_by_house))
+        else {
+            return;
+        };
+        self.free_slaves(id, killer, house, rules, registry, effects);
     }
 }

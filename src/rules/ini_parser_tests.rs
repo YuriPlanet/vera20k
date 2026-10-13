@@ -3,6 +3,31 @@
 use super::*;
 
 #[test]
+fn saved_standalone_reader_body_rejects_inconsistent_indexes() {
+    let ini = IniFile::from_str("[E1]\nCost=100\nStrength=125\n");
+    let section = ini.section("E1").unwrap();
+    let bytes = bincode::serialize(section).unwrap();
+    assert_eq!(
+        bincode::deserialize::<IniSection>(&bytes).unwrap(),
+        *section
+    );
+
+    let mut duplicate_order = section.clone();
+    duplicate_order.key_order[1] = duplicate_order.key_order[0].clone();
+    let mut missing_order = section.clone();
+    missing_order.key_order.pop();
+    let mut orphan_history = section.clone();
+    orphan_history
+        .projected_values
+        .insert("Absent".into(), vec!["1".into()]);
+    for invalid in [duplicate_order, missing_order, orphan_history] {
+        let bytes = bincode::serialize(&invalid).unwrap();
+        let error = bincode::deserialize::<IniSection>(&bytes).unwrap_err();
+        assert!(error.to_string().contains("invalid saved INI key order"));
+    }
+}
+
+#[test]
 fn test_basic_parse() {
     let ini: IniFile = IniFile::from_str("[General]\nName=Test\nCost=1000\n[Combat]\nDamage=50\n");
 

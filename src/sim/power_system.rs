@@ -305,7 +305,7 @@ fn recalculate_power_for_owner(
         // This derived sidebar capacity retains its dword storage contract.
         theoretical = theoretical.wrapping_add(obj.power.wrapping_abs());
 
-        // BuildingUp is presentation state, not lifecycle authority. Native
+        // A building still building up counts as well. Native
         // AI_AssessPower iterates every live owned building and lets
         // GetPowerOutput/GetPowerDrain decide its contribution; it has no
         // construction-state exclusion.

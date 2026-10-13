@@ -2,11 +2,15 @@
 //!
 //! ## The native shape
 //!
-//! Power is a plain byte on the locomotor instance. `Power_On` writes 1,
-//! `Power_Off` writes 0, `Is_Powered` reads it back. Both setters then
-//! re-dispatch ILoco+60 to `IsPowered55A930`, returning the new flag.
-//! Neither setter stops movement or
-//! clears a destination — powering off is not a stop.
+//! Power is a plain byte on the locomotor instance (`+0xC` of the
+//! interface). The base `Power_On` (`0x0055A8F0`) writes 1, the base
+//! `Power_Off` (`0x0055A910`) writes 0 and `Is_Powered` (`0x0055A930`) reads
+//! it back; both setters then re-dispatch ILoco+60, returning the new flag.
+//! The base setters stop nothing and keep the destination. Every family
+//! keeps the base Power_On; Hover and Fly override Power_Off
+//! ([`Simulation::locomotor_power_off`](crate::sim::world::Simulation::locomotor_power_off)):
+//! a powered Hover (its byte, or any height) spins down and a moving one
+//! stops.
 //!
 //! The flag itself lives on [`LocomotorState`]; this module owns the
 //! documentation of *when* it moves and what reads it, because that is the part
@@ -24,6 +28,8 @@
 //! | bunker normal release4595C0 | on | `docking::bunker_link::release_normal` |
 //! | Unit destination tail742F48, on a repair/bunker building's ground cell | on | `track_path::unit_destination_power_on` |
 //! | depot MissionRepair44B780 pending admission / servicing / state1 release | on / off / on | `docking::building_dock::mission_repair` |
+//! | Unit PerCell dock arrival73A52B | off | `movement::per_cell::unit_dock_now` |
+//! | Deactivate70FD0B / Reactivate70FC15 (Robot Tanks) | off / on | `sim::powered_unit` |
 //!
 //! Both bunker calls dispatch ILoco+58 (Power_On55A8F0), before Force_Track
 //! and the caller's separate speed write. The building+2E4 link gates them;
@@ -51,14 +57,12 @@
 //!
 //! ## Frequency
 //!
-//! How often a stock skirmish actually reaches the powered-off state is **not
-//! established** for Hover. EMP-driven power is not modelled here. Deployment
-//! and ordinary depot servicing produce the flag changes; depot departure
-//! reaches the shared Unit setter's current-cell power-on gate. No pass has traced a stock sequence
-//! that leaves a *hover* unit unpowered long enough to be seen sinking, so the
-//! player-visible reach of this slice is unquantified. It is modelled because
-//! the flag is real deterministic state that deploy flips, not because a
-//! symptom demanded it.
+//! A Robot Tank (stock ROBO, a Hover) is unpowered for as long as it is
+//! offline (`sim::powered_unit`): every Robot Tank of a house whose Robot
+//! Control Center loses power or is lost settles and spins down. EMP-driven
+//! power is not modelled here. Deployment and ordinary depot servicing
+//! produce the other flag changes; depot departure reaches the shared Unit
+//! setter's current-cell power-on gate.
 //!
 //! ## Explicitly out of scope
 //!
@@ -69,6 +73,30 @@
 //! ## Dependency rules
 //! - Part of sim/ — depends on sibling movement state only.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
+
+impl crate::sim::world::Simulation {
+    /// ILocomotion+0x5C, `Power_Off`, on `id`'s active locomotor: Hover's
+    /// override (`0x00516BF0`, [`Self::hover_power_off`]) or the base
+    /// (`0x0055A910`).
+    ///
+    /// RESIDUAL: Fly's override (`0x004CFD20`: a spin of `Random(20, 30)`
+    /// steps and a stop while moving) is not ported. None of the callers
+    /// reaches it: they are a Unit's dock and depot service and Deactivate,
+    /// which the stock `PoweredUnit=` type (a Hover) alone reaches.
+    pub(crate) fn locomotor_power_off(&mut self, id: u64) {
+        if self.hover_power_off(id) {
+            return;
+        }
+        if let Some(locomotor) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|entity| entity.locomotor.as_mut())
+        {
+            locomotor.power_off();
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -100,7 +128,7 @@ mod tests {
         assert!(state.is_powered());
     }
 
-    /// Powering off is not a stop: the native setters touch the flag and nothing
+    /// The base Power_Off is not a stop: it touches the flag and nothing
     /// else, so a destination already installed survives.
     #[test]
     fn powering_off_does_not_disturb_the_rest_of_the_locomotor() {

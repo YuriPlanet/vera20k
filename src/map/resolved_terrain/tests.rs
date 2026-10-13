@@ -3914,6 +3914,7 @@ fn authored_load_cliff_back_nonzero_modes_scan_but_only_two_writes() {
 }
 
 include!("recalc_native_tests.rs");
+include!("saved_terrain_tests.rs");
 
 #[test]
 fn authored_load_early_overlay_refreshes_tmp_slope_before_resource_clear() {

@@ -107,7 +107,7 @@ impl ActionEntry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MapAction {
     pub id: String,
     pub fields: Vec<String>,

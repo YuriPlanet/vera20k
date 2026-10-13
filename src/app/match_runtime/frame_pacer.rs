@@ -57,6 +57,18 @@ pub(crate) struct ScenarioElapsedClock {
     accumulated_buckets: u32,
 }
 
+/// Temporary source-clock continuation across the synchronous save write.
+pub(crate) struct ScenarioClockSave {
+    accumulated_buckets: u32,
+    resume_source: bool,
+}
+
+impl ScenarioClockSave {
+    pub(crate) fn accumulated_buckets(&self) -> u32 {
+        self.accumulated_buckets
+    }
+}
+
 impl Default for ScenarioElapsedClock {
     fn default() -> Self {
         Self::new()
@@ -68,6 +80,33 @@ impl ScenarioElapsedClock {
         Self {
             start_bucket: ELAPSED_CLOCK_STOPPED,
             accumulated_buckets: 0,
+        }
+    }
+
+    /// ScenarioSave689310 stops +614 and accumulates +61C before689378's
+    /// stream write. The source resumes at689454 only if it was running.
+    /// Original wrapping/bucket controls: storage_oracle/saved_game_layout.
+    pub(crate) fn begin_save(&mut self, now_ms: u64) -> ScenarioClockSave {
+        let resume_source = self.start_bucket != ELAPSED_CLOCK_STOPPED;
+        self.pause(now_ms);
+        ScenarioClockSave {
+            accumulated_buckets: self.accumulated_buckets,
+            resume_source,
+        }
+    }
+
+    pub(crate) fn finish_save(&mut self, saved: ScenarioClockSave, now_ms: u64) {
+        if saved.resume_source {
+            self.resume(now_ms);
+        }
+    }
+
+    /// ScenarioLoad689630..641 rearms the saved stopped +614 without
+    /// resetting accumulated score time. PostRead683560 resets another timer.
+    pub(crate) fn from_saved_accumulator(accumulated_buckets: u32, now_ms: u64) -> Self {
+        Self {
+            start_bucket: frame_bucket(now_ms),
+            accumulated_buckets,
         }
     }
 
@@ -305,5 +344,73 @@ mod tests {
         // timeGetTime wraps before the >>4. Native's uncorrected unsigned
         // subtraction becomes negative only when the score path casts to i32.
         assert_eq!(clock.elapsed_seconds(u64::from(u32::MAX) + 1), -4_473_924);
+    }
+
+    #[test]
+    fn saved_elapsed_clock_matches_original_executable() {
+        #[derive(serde::Deserialize)]
+        struct Input {
+            name: String,
+            elapsed_before: [u32; 3],
+            milliseconds: Vec<u64>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Boundary {
+            after: [u32; 3],
+        }
+        #[derive(serde::Deserialize)]
+        struct Case {
+            input: Input,
+            saved_elapsed: [u32; 3],
+            loaded_elapsed: [u32; 3],
+            boundaries: Vec<Boundary>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Corpus {
+            scenario_elapsed_clock: Vec<Case>,
+        }
+        let corpus: Corpus = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/saved_game_layout.json",
+        ))
+        .unwrap();
+        assert_eq!(corpus.scenario_elapsed_clock.len(), 6);
+        for case in corpus.scenario_elapsed_clock {
+            let input = case.input;
+            let mut clock = ScenarioElapsedClock {
+                start_bucket: input.elapsed_before[0],
+                accumulated_buckets: input.elapsed_before[2],
+            };
+            let saved = clock.begin_save(input.milliseconds[0]);
+            assert_eq!(clock.start_bucket, case.saved_elapsed[0], "{}", input.name);
+            assert_eq!(
+                saved.accumulated_buckets(),
+                case.saved_elapsed[2],
+                "{}",
+                input.name
+            );
+            let saved_accumulator = saved.accumulated_buckets();
+            clock.finish_save(saved, input.milliseconds[1]);
+            let source_after = case.boundaries[0].after;
+            assert_eq!(clock.start_bucket, source_after[0], "{}", input.name);
+            assert_eq!(clock.accumulated_buckets, source_after[2], "{}", input.name);
+
+            // The final native clock call rearms the loaded elapsed timer.
+            // Its opaque middle word and the separate post-read auxiliary
+            // timer have no corresponding app clock state.
+            let loaded = ScenarioElapsedClock::from_saved_accumulator(
+                saved_accumulator,
+                *input.milliseconds.last().unwrap(),
+            );
+            assert_eq!(
+                loaded.start_bucket, case.loaded_elapsed[0],
+                "{}",
+                input.name
+            );
+            assert_eq!(
+                loaded.accumulated_buckets, case.loaded_elapsed[2],
+                "{}",
+                input.name
+            );
+        }
     }
 }

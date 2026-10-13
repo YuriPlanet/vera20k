@@ -906,23 +906,14 @@ fn reveal_on_fire(world: &mut Simulation, rules: &RuleSet, firer_id: u64, target
             return;
         }
     }
-    let reveal_by_height = rules.general.reveal_by_height;
-    let height_grid = reveal_by_height
-        .then(|| {
-            world
-                .path_grid
-                .as_ref()
-                .map(|grid| grid.ground_height_grid())
-        })
-        .flatten();
-    let map_size = world.map_size_diamond();
+    let config = world.sight_reveal_config(Some(rules));
+    let height_grid = world.sight_height_grid(&config);
     crate::sim::vision::reveal_shroud_on_fire(
         &mut world.fog,
         house,
         coord,
-        reveal_by_height,
+        &config,
         height_grid.as_deref(),
-        map_size,
     );
 }
 

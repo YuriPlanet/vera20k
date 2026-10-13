@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "Full original Tactical_RightDrag_Pan: supplied cursor/viewport/OS metrics and scroll settings; original gate, threshold, edge boost, arithmetic, call order and cursor table",
+  "scope": "Full original Tactical_RightDrag_Pan: supplied cursor/viewport/OS metrics and scroll settings; original gate, threshold, edge boost, arithmetic, call order and cursor table; thirteen original Tactical Save/Load/resize controls with derived viewport projection",
   "assumptions": [
     "Fixture Display singleton fields model explicit anchor/crossed/engaged/band-box inputs; constructors and Windows delivery are outside these vectors",
     "Windows initial x87 PC53/nearest 0x027F is supplied; original WinMain 0x6BBFB7..0x6BBFCE executes controlfp and cache, establishing live/cached 0x0E3F (reserved bit6 clear, PC53/chop)",
@@ -18,6 +18,9 @@
     "Camera sequence Tactical+A8 and global frame are both0, bypassing unrelated animation/timer work while retaining full original request commit; original clamp determines initial centers from supplied seeds",
     "Focus sequences execute original FocusOn6D2420 and full TacticalAI6D2540, float stores/interpolation75F5C0/clamp/cleanup for velocities0..4, all four clipping edges, nonzero/small LocalSize, repeated/wrapping frame gates, retarget, zero target, absolute SetView, ScenarioStarted/replay gates and pending scrolls. Original waypoint animation is kept stopped with remaining time1; geometry, subcell coordinates and Z=-104/0/727/728/1500 are explicit supplied inputs, not a stock mission timing or terrain ground-height comparison",
     "Original throttle entry 0x55E160 through 0x55E33B observes supplied clocks and session modes 0..6; later FPS bookkeeping is outside scope",
+    "Saved view rows supply restored map/local rectangle and current viewport; input centers/requests are explicit pre-save state, not camera-command outputs or retail-map provenance",
+    "Saved view rows execute original constructor matrix stores6D1DC5..6D1E24, TacticalSave/AbstractSave and TacticalLoad/AbstractLoad/no-init/clamp/6D8B30 viewport update; optional resize executes6D5F60",
+    "Saved Tactical pointer region+E0 is empty and isolated identity registration succeeds; no world swizzle, Ole/COM loading, ordinary selection or Follow execution is claimed",
     "No original executable instructions are replaced; fresh original image per independent row, retained state only within the explicitly listed sequence"
   ],
   "substitutions": [
@@ -29,6 +32,7 @@
     "Camera sequence keyboard distances are supplied producer outputs; the21 distance is the original constant at0x82A030, while drag25 is produced by original method0 for100 pixels at rate3; keyboard producer/follow-target selection is not emulated",
     "Camera SetView Z=0 rows supply the standard original projection multiplier from existing bridge_click_oracle; no new height or terrain coverage is claimed",
     "Camera lifecycle rows execute the full original Tactical constructor, Abstract/Tactical Save and Load, no-init constructor, size leaf, native clamp and subsequent AI. IStream retains exactly original requested bytes; Here_I_Am records the identity token without reconstructing the global Swizzle manager. VisibleCellCount is zero; pointer swizzling, complete scenario reload and serialization wire equivalence to Rust are excluded. The unrelated waypoint-display clock is supplied bucket0 and stopped during AI visits.",
+    "Saved view rows replace the ordinary camera fixture's6D8B30 sink with the original updater and projection; exact in-memory IStream transfer,6C8C40 clock123 and recorded successful isolated identity registration are the only new seams",
     "Display vtable+0x48 records cursor, +0xC4 records band-box cancel argument without engagement mutation",
     "ClientToScreen adds fixture origin 101/202, SetCursorPos records requested OS coordinates; tactical offsets are 11/23"
   ],
@@ -53,8 +57,12 @@
     "TacticalSave": "0x006DBE00",
     "TacticalLoad": "0x006DBD20",
     "AbstractSave": "0x00410320",
-    "AbstractLoad": "0x00410380"
+    "AbstractLoad": "0x00410380",
+    "TacticalResize": "0x006D5F60",
+    "UpdateViewport": "0x006D8B30",
+    "ConstructorMatrixStart": "0x006D1DC5",
+    "ConstructorMatrixEnd": "0x006D1E24"
   },
-  "payload_sha256": "a100f216691907a05893665167101507d9880fbade58f5249c755e47ff23e46d",
-  "replay_command": "python -m tools.input_oracle.fast_scroll"
+  "replay_command": "python -m tools.input_oracle.fast_scroll",
+  "payload_sha256": "96ddd79ccbd39812d11b09174a084b3b17a661902f969cc886473989582d51a3"
 }

@@ -901,6 +901,19 @@ fn retail_arena_hit(
     sourced: bool,
     setup: impl FnOnce(&mut Simulation, &[u64]),
 ) -> (Simulation, Vec<u64>, u64) {
+    let (sim, ids, rng, _) = retail_arena_hit_by(rules, actors, sourced, ("SA", 10), setup);
+    (sim, ids, rng)
+}
+
+/// [`retail_arena_hit`] with a hit of `damage` by `warhead`, also answering
+/// the hit's under-attack pings.
+fn retail_arena_hit_by(
+    rules: &RuleSet,
+    actors: &[(&str, &str, bool, u16)],
+    sourced: bool,
+    (warhead, damage): (&str, i32),
+    setup: impl FnOnce(&mut Simulation, &[u64]),
+) -> (Simulation, Vec<u64>, u64, Vec<UnderAttackEvent>) {
     let mut sim = Simulation::with_seed(0x5CA7);
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
     let mut ids = Vec::new();
@@ -921,13 +934,13 @@ fn retail_arena_hit(
         (RAD_NO_ATTACKER, None)
     };
     let rng = sim.scenario_rng.state();
-    let warhead = sim.interner.intern("SA");
-    crate::sim::combat::world_receiver::commit_entities(
+    let warhead = sim.interner.intern(warhead);
+    let (_, pings) = crate::sim::combat::world_receiver::commit_entities(
         &mut sim,
         &mut crate::sim::combat::world_receiver::ReceiverRun::default(),
         &[EntityDamageEvent::area(
             ids[0],
-            10,
+            damage,
             0,
             source,
             source_owner,
@@ -937,7 +950,7 @@ fn retail_arena_hit(
         rules,
         None,
     );
-    (sim, ids, rng)
+    (sim, ids, rng, pings)
 }
 
 /// A source the victim answers takes the scatter tail's accepted arm
@@ -1093,6 +1106,304 @@ fn retail_infantry_postlude_hunts_and_idles() {
     assert_eq!(queued("E1", false, Harmless, true, false), Some(Move));
     assert_eq!(queued("E1", false, Harmless, false, false), None);
     assert_eq!(queued("E1", false, Harmless, true, true), None);
+}
+
+/// A Chaos Drone's gas (`PsychGasCreate`, `Psychedelic=yes`) returns result 1
+/// from TechnoClass's Psychedelic arm (`0x00701DBA`), and the Infantry
+/// receiver's tail follows (`0x00518BB2..`). With a source a Fraidycat
+/// scatters from it (`0x00518C56`; the unforced Scatter refuses anyone
+/// else), whose Move replaces the berserk Hunt, and fear latches (100, or
+/// 300 for a Fraidycat); without one it climbs the health ladder (12 at full
+/// strength). Before them the Foot tail runs: a teamless man on a NoThreat
+/// mission (`[Harmless]`) takes `Enter_Idle_Mode(0, 1)` (`0x004D749F`), whose
+/// Guard replaces the Hunt. The Unit tail pings for a `Harvester=` vehicle
+/// (`0x007384B9`); only the map-placed miners (HORV, CMON, SMON) lack
+/// `ImmuneToPsionics=`.
+#[test]
+fn retail_gassed_infantry_scatters_and_fears() {
+    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
+    assert!(rules.object("CIV1").unwrap().fraidycat);
+    let gassed = |type_id: &str, sourced: bool, mission: Option<MissionType>| {
+        let (sim, ids, _, pings) = retail_arena_hit_by(
+            &rules,
+            &[
+                (type_id, "Russians", false, 10),
+                ("CAOS", "YuriCountry", false, 14),
+            ],
+            sourced,
+            ("PsychGasCreate", 600),
+            |sim, ids| {
+                if let Some(mission) = mission {
+                    let victim = sim.substrate.entities.get_mut(ids[0]).unwrap();
+                    victim.mission.apply_test_fixture(MissionTestFixture {
+                        current: MissionId::from_known(mission),
+                        suspended: MissionId::NONE,
+                        queued: MissionId::NONE,
+                        movement_bypass_latch: 0,
+                        handler_state: 0,
+                        mission_start_frame: 0,
+                        ai_counter: 0,
+                        dispatch_timer: MissionDispatchTimer::at_frame(0),
+                    });
+                }
+            },
+        );
+        let victim = sim.substrate.entities.get(ids[0]).unwrap();
+        assert!(victim.berserk.active, "{type_id} goes berserk");
+        assert_eq!(
+            victim.health.current,
+            rules.object(type_id).unwrap().strength,
+            "gas does no damage"
+        );
+        (
+            victim.infantry.as_ref().map(|man| man.fear_level),
+            victim.navigation.nav_com.is_some(),
+            victim.mission.queued().known(),
+            pings.iter().any(|ping| ping.miner),
+        )
+    };
+    use MissionType::{Guard, Harmless, Hunt, Move};
+    assert_eq!(
+        gassed("E1", true, None),
+        (Some(100), false, Some(Hunt), false)
+    );
+    assert_eq!(
+        gassed("CIV1", true, None),
+        (Some(300), true, Some(Move), false)
+    );
+    assert_eq!(
+        gassed("E1", false, None),
+        (Some(12), false, Some(Hunt), false)
+    );
+    assert_eq!(
+        gassed("E1", true, Some(Harmless)),
+        (Some(100), false, Some(Guard), false)
+    );
+    assert!(gassed("HORV", false, None).3, "a gassed miner pings");
+}
+
+/// The gas's target clear is the class setter (`vt+0x3C8(0)` at
+/// `0x00701DA6`): Infantry's (`0x0051B1F0`) also drops a firing man's
+/// action and his path head.
+#[test]
+fn retail_gassed_infantry_drops_its_fire_and_path() {
+    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
+    let (sim, ids, _, _) = retail_arena_hit_by(
+        &rules,
+        &[
+            ("E1", "Russians", false, 10),
+            ("CAOS", "YuriCountry", false, 14),
+        ],
+        false,
+        ("PsychGasCreate", 600),
+        |sim, ids| {
+            let man = sim.substrate.entities.get_mut(ids[0]).unwrap();
+            man.attack_target = Some(AttackTarget::new(ids[1]));
+            man.mission_leaf.set_infantry_doing_verified(0).unwrap();
+            man.mission_leaf.set_foot_firing_sequence(1);
+            man.navigation.path_replay.directions = vec![0, 1, 2];
+            man.navigation.path_replay.cursor = 0;
+        },
+    );
+    let man = sim.substrate.entities.get(ids[0]).unwrap();
+    assert!(man.berserk.active);
+    assert!(man.attack_target.is_none());
+    assert_eq!(man.mission_leaf.foot_firing_sequence_latch(), 0);
+    assert!(man.navigation.path_replay.remaining_directions().is_empty());
+}
+
+/// Through the frame's object AI: a berserk computer GI's time runs down one
+/// per frame (`0x006F9F0D`), and in the frame it ends the GI calms down and
+/// queues Hunt.
+#[test]
+fn retail_berserk_gi_calms_down_in_the_frame_its_time_ends() {
+    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
+    let mut sim = Simulation::with_seed(0x5CA7);
+    let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let owner = sim.interner.intern("Russians");
+    sim.houses
+        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+    let gi = sim
+        .spawn_object("E1", "Russians", 10, 10, 0, &rules)
+        .unwrap();
+    let berserk = |active, timer| crate::sim::game_entity::BerserkState { active, timer };
+    sim.substrate.entities.get_mut(gi).unwrap().berserk = berserk(true, 2);
+    let frame = |sim: &mut Simulation| {
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
+        let gi = sim.substrate.entities.get(gi).unwrap();
+        (
+            gi.berserk,
+            gi.mission
+                .queued()
+                .known()
+                .or_else(|| gi.mission.current().known()),
+        )
+    };
+    assert_eq!(frame(&mut sim).0, berserk(true, 1));
+    assert_eq!(
+        frame(&mut sim),
+        (berserk(false, 0), Some(MissionType::Hunt))
+    );
+}
+
+/// A berserk GI takes its own house's man as it takes an enemy, on stock
+/// rules: the ring walk's cell walk passes the first Techno, ally or not
+/// (`0x006F8AAA`, `0x006F8BD0`), Hunt's Techno walk admits allies
+/// (`0x006F9C92..`), and Evaluate_Candidate skips its ally test
+/// (`0x006F7F0C`). Calm, it finds nothing.
+#[test]
+fn retail_berserk_gi_targets_its_own_house() {
+    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
+    let mut sim = Simulation::with_seed(0x5CA7);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let owner = sim.interner.intern("Russians");
+    sim.houses
+        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+    let gi = sim
+        .spawn_object("E1", "Russians", 10, 10, 0, &rules)
+        .unwrap();
+    let ally = sim
+        .spawn_object("E1", "Russians", 11, 10, 0, &rules)
+        .unwrap();
+    let scan = |sim: &mut Simulation, mask| {
+        sim.greatest_threat_represented(
+            &rules,
+            None,
+            gi,
+            mask,
+            None,
+            crate::sim::combat::combat_targeting::greatest_threat_for_entity,
+        )
+    };
+    let masks = [ScanMission::Guard, ScanMission::Hunt];
+    for mask in masks {
+        assert_eq!(scan(&mut sim, mask), None, "calm, {mask:?}");
+    }
+    sim.substrate.entities.get_mut(gi).unwrap().berserk.active = true;
+    for mask in masks {
+        assert_eq!(scan(&mut sim, mask), Some(ally), "berserk, {mask:?}");
+    }
+}
+
+/// The scan's ally test is the scanner's house asking (`0x006F7F22`): a GI
+/// takes a man whose house allies its own only one way, as a paranoid
+/// computer's GIs take the Neutral house's, and spares one its own house
+/// allies.
+#[test]
+fn retail_gi_scan_asks_only_its_own_house_about_allies() {
+    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
+    let mut sim = Simulation::with_seed(0x5CA7);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    for name in ["Russians", "Americans"] {
+        let id = sim.interner.intern(name);
+        sim.houses
+            .insert(id, HouseState::new(id, 0, None, false, 0, 10));
+        sim.session.house_order.push(id);
+    }
+    let gi = sim
+        .spawn_object("E1", "Russians", 10, 10, 0, &rules)
+        .unwrap();
+    let other = sim
+        .spawn_object("E1", "Americans", 11, 10, 0, &rules)
+        .unwrap();
+    let one_way = |sim: &mut Simulation, asker: &str, ally: &str| {
+        let alliances = crate::map::houses::HouseAllianceMap::from([(
+            asker.to_ascii_uppercase(),
+            std::collections::BTreeSet::from([ally.to_ascii_uppercase()]),
+        )]);
+        sim.install_house_alliances(
+            crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(alliances),
+            &rules,
+        );
+    };
+    let scan = |sim: &mut Simulation, mask| {
+        sim.greatest_threat_represented(
+            &rules,
+            None,
+            gi,
+            mask,
+            None,
+            crate::sim::combat::combat_targeting::greatest_threat_for_entity,
+        )
+    };
+    let masks = [ScanMission::Guard, ScanMission::Hunt];
+    one_way(&mut sim, "Americans", "Russians");
+    for mask in masks {
+        assert_eq!(
+            scan(&mut sim, mask),
+            Some(other),
+            "allied one way, {mask:?}"
+        );
+    }
+    one_way(&mut sim, "Russians", "Americans");
+    for mask in masks {
+        assert_eq!(scan(&mut sim, mask), None, "its own ally, {mask:?}");
+    }
+}
+
+/// Through the frame: a berserk computer GI on the Hunt the gas queued shoots
+/// its own house's man. Hunt's scan takes him, the allied-target drop spares
+/// a berserk owner (`0x006FA45D`) and GetFireError admits the shot
+/// (`0x006FC1CC`).
+#[test]
+fn retail_berserk_gi_shoots_its_own_house() {
+    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
+    let mut sim = Simulation::with_seed(0x5CA7);
+    let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let owner = sim.interner.intern("Russians");
+    sim.houses
+        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+    let gi = sim
+        .spawn_object("E1", "Russians", 10, 10, 0, &rules)
+        .unwrap();
+    let friend = sim
+        .spawn_object("E1", "Russians", 12, 10, 0, &rules)
+        .unwrap();
+    let strength = rules.object("E1").unwrap().strength;
+    sim.substrate
+        .entities
+        .get_mut(gi)
+        .unwrap()
+        .berserk
+        .start(900);
+    let _ = sim.mission_queue_exact(
+        gi,
+        MissionId::from_known(MissionType::Hunt),
+        0,
+        sim.session.binary_frame,
+        &crate::sim::mission::authority::EntityReadyInputProvider,
+    );
+    let shot = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(friend)
+            .is_none_or(|man| man.health.current < strength)
+    };
+    for _ in 0..150 {
+        if shot(&sim) {
+            break;
+        }
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
+    }
+    assert!(shot(&sim), "the berserk GI shoots his friend");
 }
 
 #[test]
@@ -6989,7 +7300,7 @@ fn build_minimal_sim_with_gawall_seeded(
     seed: u64,
 ) -> (Simulation, RuleSet, OverlayTypeRegistry) {
     let (mut sim, rules, registry) = build_minimal_sim_with_gawall(rx, ry);
-    sim.reseed_scenario_and_main(seed);
+    sim.initialize_random_number_system(seed as u32);
     (sim, rules, registry)
 }
 
@@ -8092,8 +8403,8 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
 /// `BulletClass::DetonateAtCoord @ 0x004690B0`: every special arm, its own
 /// refusals included, leaves by `JMP 0x00469AA4`, and `Apply_area_damage`
 /// (`0x00469A83`) is reachable only from the final else at `0x00469A3F`. An
-/// Inviso shot is that same detonation, so a warhead selecting an arm whose
-/// body VERA has not ported deals no damage and still runs the shared tail:
+/// Inviso shot is that same detonation, so a warhead selecting one of these
+/// arms deals no damage and still runs the shared tail:
 /// the Inviso re-scatter draw (`0x00469AD7`) and the `AnimList=` anim. Before,
 /// the immediate path took ordinary area damage for these arms: the
 /// Magnetron's `[MagneticBeam]` dealt 5000 to the vehicle it should lift.

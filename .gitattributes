@@ -3,7 +3,6 @@
 tools/**/*.py text eol=lf
 # Native replay and proof identities hash exact bytes, including LF endings.
 tools/spatial_oracle/_factory_infantry_output/** -text
-tools/spatial_oracle/factory_infantry_output_replay/** -text
 tools/map_observation.barracks-*.example.json -text
 src/sim/docking/fixtures/building_exit_tables_native.json -text
 src/sim/production/fixtures/infantry_exit_native.json -text

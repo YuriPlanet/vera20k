@@ -5484,7 +5484,7 @@ fn test_bridge_collapse_is_deterministic_under_replay() {
     fn run_one(seed: u64) -> (u64, crate::sim::rng::SimRngLogicalState) {
         let (mut sim, rules, registry, native) =
             concrete_damage_fixture("concrete_220_across_0", 1500);
-        sim.reseed_scenario_and_main(seed);
+        sim.initialize_random_number_system(seed as u32);
         let before_hash = sim.state_hash();
         let scenario_before = sim.scenario_rng.logical_state();
         let main_before = sim.main_rng.logical_state();
@@ -5584,7 +5584,7 @@ fn test_bridge_dispatcher_consumes_one_path_gate_draw_per_non_ion_event() {
     let (mut sim, rules, registry, native) =
         concrete_damage_fixture("concrete_205_across_0", strength);
     // Seed31 and damage2000 are the saved harness defaults for direct_205.
-    sim.reseed_scenario_and_main(31);
+    sim.initialize_random_number_system(31);
     let before_hash = sim.state_hash();
     let main_before = sim.main_rng.logical_state();
     let mapgen_before = sim.mapgen_rng.logical_state();
@@ -10180,9 +10180,10 @@ fn repro_two_moving_vehicles_pass_through_each_other() {
     // value in the new marker owner exactly recovers main's path and127-lepton
     // closest approach with no shared cells; native effective urgency instead
     // selects the raw W/SW route and later shares one cell116 leptons apart.
-    // See astar_path_finishing_replay/marker_urgency for unchanged-binary
-    // causal transcripts. This floor remains a Rust regression ratchet, not a
-    // native two-vehicle world bound. The visible108 and one-tick limits remain.
+    // See tools/spatial_oracle/astar_path_finishing_replay/marker_urgency (in git
+    // at 1b1a8b43e) for unchanged-binary causal transcripts. This floor remains a
+    // Rust regression ratchet, not a native two-vehicle world bound. The visible108
+    // and one-tick limits remain.
     const SHARED_CELL_FLOOR_LEPTONS: i64 = 116;
     const SHARED_CELL_TICKS: usize = 1;
     let bound = derived_min_transit_separation_leptons();

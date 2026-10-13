@@ -776,6 +776,7 @@ fn execute_step(
                     touched_down: false,
                     impact: false,
                     crash_latched: false,
+                    bridge_state_changed: false,
                 };
                 let phase = match label {
                     "state1_decision" => jumpjet_flight::state1_ascend(runtime, &mut host),
@@ -989,7 +990,7 @@ fn native_scatter_result_survives_snapshot_and_continues_through_touchdown() {
     let saved_hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "SHAD native supplied world", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-    restored.retain_in_scenario_process_state_from(&sim);
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     let native_seed0_hex =
         crate::test_fixture::text("tests/fixtures/rng/mapgen_seed0_native_0x3f4.hex")
             .split_whitespace()

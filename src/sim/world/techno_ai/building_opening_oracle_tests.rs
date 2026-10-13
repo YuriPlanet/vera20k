@@ -33,17 +33,10 @@ fn prior_building(sim: &mut Simulation, rules: &RuleSet, name: &str, x: u16, y: 
         .spawn_object_limbo_at_height(name, "Americans", x, y, 0, 0, rules)
         .unwrap();
     // The original joined corpus supplies admitted actors with6E4=0 and
-    // excludes Unlimbo/discovery. Keep Construction current during this
-    // Rust-only admission so its AI discovery cannot run Grand_Opening,
-    // then restore the supplied constructor MissionCom before the join.
-    let prior_mission = {
-        let entity = sim.substrate.entities.get_mut(id).unwrap();
-        let prior = entity.mission;
-        entity
-            .mission
-            .set_current_for_test(MissionId::from_known(MissionType::Construction), 0);
-        prior
-    };
+    // excludes Unlimbo/discovery. The Unlimbo queues Construction, so its
+    // discovery cannot run Grand_Opening; restore the supplied constructor
+    // MissionCom before the join.
+    let prior_mission = sim.substrate.entities.get(id).unwrap().mission;
     assert!(
         sim.reveal_constructed_object_at_height(
             id,

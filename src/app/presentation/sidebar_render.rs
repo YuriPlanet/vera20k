@@ -453,7 +453,7 @@ pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {
         rect.w,
         rect.h,
     );
-    crate::app::input::camera::set_camera_position(state, (cx, cy));
+    crate::app::input::camera::set_camera_position(&mut state.match_state.input, (cx, cy));
     crate::app::input::camera::clamp_camera_to_playable_area(state, sw, sh);
 }
 

@@ -52,7 +52,7 @@ On macOS arm64 / Apple clang17, the native test passed: dry-run left all files
 unchanged, apply removed the orphan, source/binary/required-object hashes matched,
 the preserved binary printed42, and its debugging dependencies were unchanged.
 After trimming, `dsymutil` built a dSYM containing `required_answer` and `fixture.c`.
-[The saved receipt](cargo_cache_validation.json) retains compiler identity,
+The saved receipt (`tools/cargo_cache_validation.json`, in git at 1b1a8b43e) retains compiler identity,
 hashes, selected/removed bytes and observed volume changes. Temporary fixture
 paths identify that run and are deleted by the test; the harness reproduces it.
 This validates the host example, not gamemd or whole-game debugging equivalence.
@@ -106,7 +106,7 @@ APFS allocation and concurrent unrelated activity also affect free space.
 Dry-run projections are estimates; apply checks actual free space as it proceeds,
 then records remaining protected-budget and free-space shortfalls.
 
-The [retirement follow-up receipt](cargo_cache_retirement_validation.json) records
+The retirement follow-up receipt (`tools/cargo_cache_retirement_validation.json`, in git at 1b1a8b43e) records
 402 passing Python tests (four optional skips), native fixture comparisons and the
 real production apply: 8,231 compiler files removed, 19.50 GiB allocated and
 19.42 GiB observed volume reclamation. All 51 saved labels' manifests and executable

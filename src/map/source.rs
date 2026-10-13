@@ -15,7 +15,7 @@ use crate::util::sha256::sha256_hex;
 const MAP_EXTENSIONS: [&str; 5] = ["mmx", "yro", "map", "mpr", "yrm"];
 
 /// Exact source whose bytes were parsed into the active map.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum LoadedMapSource {
     Loose {

@@ -81,6 +81,29 @@ fn infiltrator_admits(
 }
 
 impl Simulation {
+    /// The selected objects whose ClickedAction can still send a click
+    /// order, in selection order. `ClickedAction_Object` and `_Cell` refuse a
+    /// berserk object (`+0x298`) before anything else: Foot
+    /// `0x004D74EC`/`0x004D7D58`, Infantry `0x0051F1D8`/`0x0051F28F` and Unit
+    /// `0x007388EB`/`0x0073893D`. Aircraft's own arms
+    /// (`0x00417BD0`: actions 3, 4 and 17) never see one, because a berserk
+    /// aircraft's What_Action answers 0 (`0x00417CC0` -> `0x006FFEC9`, cell
+    /// `0x00417F80`). Producer-side, like `unit_repair_action`: an event sent
+    /// before the object went berserk still executes.
+    pub(crate) fn click_order_receivers(&self, selection: &[u64]) -> Vec<u64> {
+        selection
+            .iter()
+            .copied()
+            .filter(|&id| {
+                !self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|entity| entity.berserk.active)
+            })
+            .collect()
+    }
+
     /// UnitClass::What_Action_OnObject73FD7C..73FE43, after the base self/
     /// Shift action. Reproducible original control/weapon/health/display
     /// and ClickedAction witnesses: spatial_oracle/bunker_attack_action.json
@@ -98,7 +121,13 @@ impl Simulation {
         if actor.category != EntityCategory::Unit
             || actor.owner() != issuing_house
             || !self.house_is_human_player(actor.owner())
-            || combat::combat_weapon::weapon_damage_value(actor, actor_type, rules) >= 0
+            || combat::combat_weapon::weapon_damage_value(
+                actor,
+                actor_type,
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+            ) >= 0
         {
             return None;
         }
@@ -185,15 +214,11 @@ impl Simulation {
     /// House50B6F0, bunker link, Spawned, paralysis, warp, slave ownership and
     /// launched-missile count remain with their existing authoritative owners.
     ///
-    /// Ordinary Infantry +504 EMP and +1C8 Robot-offline start zero in the
-    /// native constructor. EMPulseApply4C575E admits RTTI1/2, not Infantry15;
-    /// Robot House writers scan all Techno but compare type pointers with
-    /// PowersUnit+40C, read by7132DF..713309 through UnitType7480D0.
-    /// Its UnitType pointer cannot match an ordinary InfantryType; the other
-    /// established writer is UnitPerCell739F59. This is not a generic EMP or
-    /// Robot implementation and makes no unreachable claim for50E1C0.
-    /// Unit+6D8 death-frame and Robot/EMP lifecycle producers remain separate
-    /// residuals; ordinary live Unit controls use their constructor -1/0/0.
+    /// Ordinary Infantry +504 EMP starts zero in the native constructor.
+    /// EMPulseApply4C575E admits RTTI1/2, not Infantry15. The deactivated
+    /// latch +1C8 (700CBC) has its owner in `sim::powered_unit`.
+    /// Unit+6D8 death-frame and EMP lifecycle producers remain separate
+    /// residuals; ordinary live Unit controls use their constructor -1/0.
     /// Arbitrary authored native raw-save bytes are outside this producer.
     /// See engineer_bridge_cursor_caller.md for executed gate controls/bounds.
     pub(crate) fn techno_player_controllable(&self, id: u64, rules: &RuleSet) -> bool {
@@ -230,6 +255,7 @@ impl Simulation {
             || actor.is_warped_out()
             || actor.is_warping_in()
             || actor.slave.owner().is_some()
+            || actor.deactivated
         {
             return false;
         }
@@ -242,6 +268,22 @@ impl Simulation {
             }
         }
         true
+    }
+
+    /// `TechnoClass::IsActive @ 0x007010D0` (vt+0x9C, no override): not
+    /// deactivated (`+0x1C8`), owned by the player's house (`0x0050B6F0`),
+    /// its current weapon (vt+0x3F4) typed and not vt+0x37C. `is_armed`
+    /// stands in for the weapon test; vt+0x37C (a Unit's death frames or
+    /// EMP) has no VERA producer, as in [`Self::techno_player_controllable`].
+    pub(crate) fn techno_is_active(&self, id: u64, rules: &RuleSet) -> bool {
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        !actor.deactivated
+            && self.house_is_human_player(actor.owner())
+            && self
+                .object_type(actor.type_ref(), rules)
+                .is_some_and(|object| combat::combat_weapon::is_armed(actor, object))
     }
 
     /// Object-route Engineer action in Infantry51E49E..51E637. Ordinary
@@ -591,6 +633,7 @@ impl Simulation {
                     (goal_rx, goal_ry),
                     speed,
                     rules,
+                    overlay_registry,
                     frame_effects,
                 );
             } else {
@@ -1370,12 +1413,12 @@ impl Simulation {
                     // holds no NavCom. GetFireError's NavCom tests (U7..U10)
                     // would otherwise keep refusing a spark, flame, drain or
                     // temporal weapon. Infantry, open-topped units and the
-                    // Drive, Ship and Hover units whose mission's Approach
-                    // carries them take the per-cell owner's stop
-                    // (`movement/per_cell.rs`).
-                    // RESIDUAL: for any other unit on these missions but a
-                    // Jumpjet (a Teleport mover or a `CloseRange=` type; no
-                    // armed stock unit), the native stop runs from
+                    // units whose mission's Approach carries them take the
+                    // per-cell owner's stop (`movement/per_cell.rs`).
+                    // RESIDUAL: a unit on these missions reaches this pass
+                    // only where `mission_owns_approach` leaves it: a
+                    // `CloseRange=` type (no stock unit) or a Cell target on
+                    // a DestroyableCliffs tile. Its native stop runs from
                     // Per_Cell_Process, at cell entry; this pass runs it on
                     // the frame the target comes in range, wherever the unit
                     // is in its cell. It then brakes into its head from
@@ -1384,11 +1427,11 @@ impl Simulation {
                     // A cruising Jumpjet takes no such stop: Jumpjet calls
                     // Per_Cell_Process only from its descent (`0x0054C8F0`),
                     // and Foot's approach (`0x004D5690`) instead sends it to a
-                    // cell in range, where it arrives. For it this halt stands
-                    // in for that arrival, which never reaches the setter's
-                    // BalloonHover arm (`0x00741983`); through the arm, a
-                    // Floating Disc on its laser would keep flying at its
-                    // target and switch to Attack.
+                    // cell in range, where it arrives. For one left here this
+                    // halt stands in for that arrival, which never reaches the
+                    // setter's BalloonHover arm (`0x00741983`); through the
+                    // arm, a Floating Disc on its laser would keep flying at
+                    // its target and switch to Attack.
                     if e.category == EntityCategory::Unit && movement::range_stop_admits(e) {
                         let jumpjet = e.locomotor.as_ref().is_some_and(|loco| {
                             loco.active_kind()
@@ -1513,5 +1556,40 @@ mod repair_notification_tests {
             sim.sound_events.last(),
             Some(SimSoundEvent::BridgeRepaired { radar: Some(_), .. })
         ));
+    }
+}
+
+#[cfg(test)]
+mod click_order_receiver_tests {
+    use super::*;
+
+    /// ClickedAction refuses a berserk object (Infantry `0x0051F1D8`, Unit
+    /// `0x007388EB`): only the calm objects stay, in selection order.
+    #[test]
+    fn click_orders_go_only_to_calm_objects() {
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[InfantryTypes]\n0=GI\n[VehicleTypes]\n0=MTNK\n[GI]\nStrength=125\n\
+             [MTNK]\nStrength=300\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let mut spawn = |kind: &str, rx: u16| {
+            sim.spawn_object(kind, "Americans", rx, 5, 0, &rules)
+                .unwrap()
+        };
+        let (first, gassed_man, tank, gassed_tank) = (
+            spawn("GI", 3),
+            spawn("GI", 4),
+            spawn("MTNK", 5),
+            spawn("MTNK", 6),
+        );
+        for id in [gassed_man, gassed_tank] {
+            sim.entities_mut().get_mut(id).unwrap().berserk.active = true;
+        }
+        assert_eq!(
+            sim.click_order_receivers(&[gassed_tank, tank, gassed_man, first]),
+            [tank, first]
+        );
+        assert!(sim.click_order_receivers(&[gassed_man]).is_empty());
     }
 }

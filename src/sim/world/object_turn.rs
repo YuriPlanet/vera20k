@@ -299,6 +299,7 @@ impl Simulation {
             });
         let air =
             self.tick_air_movement_with_cell_lists_one(stable_id, rules, overlay_registry, effects);
+        process.bridge_state_changed |= air.bridge_state_changed;
         let jumpjet_unit_touchdown = jumpjet
             && self
                 .substrate
@@ -1028,7 +1029,9 @@ impl Simulation {
             return Ok(outcome);
         }
 
-        movement::tick_locomotor_piggyback_restore_one(&mut sim.substrate.entities, stable_id);
+        // FootClass::AI 0x004DAE5F..0x004DAEC3: the active IPiggyback ends
+        // when its Is_Ok_To_End allows.
+        sim.try_end_piggyback(stable_id, rules);
         // FootClass::AI 0x004DAED0..0x004DAEDC: with vt+0x1D8 (the warp-in)
         // clear, the pending entry (`Unit+0x500`) asks for its slot.
         if let Some(rules) = rules

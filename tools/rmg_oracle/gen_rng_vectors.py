@@ -13,12 +13,17 @@ No expected-value reduction or returned-function substitution is used.
 """
 
 import struct
+from functools import lru_cache
 from pathlib import Path
 
-from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
+from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (
-    UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESI, UC_X86_REG_ESP,
+    UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESI, UC_X86_REG_ESP,
 )
+
+from tools import native_oracle as native
+from tools.spatial_oracle.native_id_snapshot import ScenarioFixture, SCENARIO
+from tools.storage_oracle.shell_relayout import Image
 
 from tools.native_oracle import (
     RET_MAGIC, SCRATCH, SCRATCH_SIZE, STACK_BASE, STACK_SIZE,
@@ -33,6 +38,10 @@ STRUCT_LEN = 0xC + 250 * 4  # locked/idx_a/idx_b + 250 state dwords = 0x3F4
 
 SEEDS = (0, 1, 1234, 0x7FFF, 0xFFFF)
 DRAWS_PER_SEED = 16
+RNGS = {'scenario': SCENARIO + 0x218, 'main': 0x886B88, 'mapgen': 0xABE890}
+STUB = 0x50000000
+SYSTEMTIME = [2026, 10, 6, 10, 19, 27, 43, 123]
+SEED_IN = 0x13579BDF
 
 
 def seeded_struct(seed: int) -> bytes:
@@ -125,6 +134,202 @@ def ranged_history(seed: int, advance_raw: int = 0) -> dict:
                 steps=[request(bounds) for bounds in requests])
 
 
+def put32(u, at, value):
+    u.mem_write(at, struct.pack('<I', value & 0xFFFFFFFF))
+
+
+def get32(u, at):
+    return struct.unpack('<I', u.mem_read(at, 4))[0]
+
+
+def signed32(u, at):
+    return struct.unpack('<i', u.mem_read(at, 4))[0]
+
+
+def ret(u, cleanup=0, eax=None):
+    sp = u.reg_read(UC_X86_REG_ESP)
+    if eax is not None:
+        u.reg_write(UC_X86_REG_EAX, eax & 0xFFFFFFFF)
+    u.reg_write(UC_X86_REG_EIP, get32(u, sp))
+    u.reg_write(UC_X86_REG_ESP, sp + 4 + cleanup)
+
+
+def invoke(u, function, *, ecx=0, args=(), required=(), sp=0x100DF000):
+    u.mem_write(sp, struct.pack('<' + 'I' * (1 + len(args)), native.RET_MAGIC, *args))
+    u.reg_write(UC_X86_REG_ESP, sp)
+    u.reg_write(UC_X86_REG_ECX, ecx)
+    native.run_checked(u, function, native.RET_MAGIC, count=2_000_000,
+                       required_addresses=required, context={'entry': hex(function)})
+    assert u.reg_read(UC_X86_REG_ESP) == sp + 4 + len(args) * 4
+
+
+def code_guard(u):
+    return [(native.IMAGE_BASE + rva,
+             bytes(u.mem_read(native.IMAGE_BASE + rva, size)))
+            for rva, _raw, size, _virtual, flags in native._sections(native.image_bytes())
+            if flags & 0x20000000 and size]
+
+
+def check_code(u, guard):
+    assert all(bytes(u.mem_read(at, len(data))) == data for at, data in guard)
+
+
+def states(u):
+    return {name: bytes(u.mem_read(at, STRUCT_LEN)).hex() for name, at in RNGS.items()}
+
+
+def logical(raw):
+    data = bytes.fromhex(raw) if isinstance(raw, str) else raw
+    # Byte0 locked, dwords+4/+8 indices, then250 state words. Bytes1..3 are padding.
+    return data[:1] + data[4:]
+
+
+@lru_cache(maxsize=None)
+def seeded(seed):
+    return seeded_struct(seed)
+
+
+@lru_cache(maxsize=1)
+def supplied_states():
+    out = {}
+    for name, seed, count in [('scenario',1234,7), ('main',0x10203,3), ('mapgen',0,11)]:
+        _values, current = draws(seeded(seed), count)
+        out[name] = current
+    return out
+
+
+def scenario_loaded():
+    """Execute the shared Scenario stream owner with native-produced RNG inputs.
+
+    This is the common inner load boundary for both UI routes. Only the menu
+    caller subsequently enters 52FC20; the in-game loop reachability is retained
+    as instruction-level evidence in rng.md, not an invented loop execution.
+    """
+    fixture = ScenarioFixture()
+    u = fixture.u
+    for name, state in supplied_states().items():
+        u.mem_write(RNGS[name], state)
+    put32(u, 0xA8ED94, SEED_IN)
+    put32(u, 0xA8B230, SCENARIO)
+    before, guard, seed_calls = states(u), code_guard(u), []
+
+    def observe(_u, pc, _size, _data):
+        if pc == SEED_FN:
+            seed_calls.append({'receiver': u.reg_read(UC_X86_REG_ECX),
+                               'seed': get32(u, u.reg_read(UC_X86_REG_ESP) + 4)})
+
+    u.hook_add(UC_HOOK_CODE, observe)
+    identity = fixture.round_trip()
+    after = states(u)
+    assert logical(after['scenario']) == logical(seeded(0))
+    assert after['main'] == before['main']
+    assert after['mapgen'] == before['mapgen']
+    assert get32(u, 0xA8ED94) == SEED_IN
+    check_code(u, guard)
+    return u, {'id_owner_result': identity, 'before': before, 'after': after,
+               'global_seed_before': SEED_IN, 'global_seed_after': get32(u, 0xA8ED94),
+               'native_seed_calls': seed_calls.copy(),
+               'scenario_equals_native_seed0': True,
+               'main_retained_raw': True, 'mapgen_retained_raw': True}
+
+
+RNG_CASES = [
+    dict(id='mode0_clock', mode=0, tick=0x12345678, override=0, gate_a=0, gate_flags=0, gate_secondary=0),
+    dict(id='mode5_clock_high_bit', mode=5, tick=0x89ABCDEF, override=0, gate_a=0, gate_flags=0, gate_secondary=0),
+    dict(id='mode5_clock_zero', mode=5, tick=0, override=0, gate_a=0, gate_flags=0, gate_secondary=0),
+    dict(id='mode5_override', mode=5, tick=0x12345678, override=0xFEDCBA98, gate_a=0, gate_flags=0, gate_secondary=0),
+    dict(id='gate_a_preserves_seed', mode=5, tick=0x12345678, override=0xFEDCBA98, gate_a=1, gate_flags=0, gate_secondary=0),
+    dict(id='gate_flag2_preserves_seed', mode=5, tick=0x12345678, override=0xFEDCBA98, gate_a=0, gate_flags=2, gate_secondary=0),
+    dict(id='gate_secondary1_preserves_seed', mode=5, tick=0x12345678, override=0xFEDCBA98, gate_a=0, gate_flags=0, gate_secondary=1),
+    dict(id='gate_secondary2_preserves_seed', mode=5, tick=0x12345678, override=0xFEDCBA98, gate_a=0, gate_flags=0, gate_secondary=2),
+    dict(id='mode1_preserves_seed_regular_arm', mode=1, tick=0x12345678, override=0xFEDCBA98, gate_a=0, gate_flags=0, gate_secondary=0),
+]
+
+
+def menu_rng_case(case):
+    u, loaded = scenario_loaded()
+    guard = code_guard(u)
+    # Actual constructor, not a hand-written RandomStraw buffer or patched body.
+    invoke(u, 0x6616B0, ecx=0xA8E7B0, required=(0x6616B0,0x65C890,0x6616FF))
+    straw_before = bytes(u.mem_read(0xA8E7B0, 0x114)).hex()
+    u.mem_map(STUB, 0x1000)
+    imports = Image(u).imports()
+    assert imports[0x7E10D4] == 'GetSystemTime'
+    assert imports[0x7E1138] == 'GetTickCount'
+    put32(u, 0x7E10D4, STUB)
+    put32(u, 0x7E1138, STUB + 0x10)
+    for at, value in [(0xA8B238,case['mode']), (0xA8ED98,case['override']),
+                      (0xA8B8B8,case['gate_a']), (0xAA0444,case['gate_secondary'])]:
+        put32(u, at, value)
+    u.mem_write(0xA8D5F8, bytes([case['gate_flags']]))
+    events = []
+    writes = {name: [] for name in RNGS}
+
+    def hook(_u, pc, _size, _data):
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if pc == STUB:
+            pointer = get32(u, sp + 4)
+            u.mem_write(pointer, struct.pack('<8H', *SYSTEMTIME))
+            events.append({'event':'GetSystemTime', 'supplied': SYSTEMTIME})
+            ret(u,4,0)
+        elif pc == STUB + 0x10:
+            events.append({'event':'GetTickCount', 'supplied':case['tick']})
+            ret(u,0,case['tick'])
+        elif pc == 0x65C6D0:
+            events.append({'event':'native_seed', 'seed':get32(u,sp+4),
+                           'receiver':u.reg_read(UC_X86_REG_ECX)})
+        elif pc in (0x661850,0x661770,0x661C10,0x65C8B0):
+            events.append({'event':'RandomStraw_original', 'entry':hex(pc)})
+        elif pc in (0x52FE31,0x52FE51,0x52FE80,0x52FEAB):
+            # REP invokes hooks repeatedly; one call-site marker is enough.
+            if not events or events[-1] != {'event':'native_copy','entry':hex(pc)}:
+                events.append({'event':'native_copy','entry':hex(pc)})
+
+    def write_hook(_u, _access, at, size, _value, _data):
+        for name, begin in RNGS.items():
+            if at < begin + STRUCT_LEN and begin < at + size:
+                writes[name].append({'pc':hex(u.reg_read(UC_X86_REG_EIP)),
+                                     'offset':at-begin,'size':size})
+
+    u.hook_add(UC_HOOK_CODE,hook)
+    u.hook_add(UC_HOOK_MEM_WRITE,write_hook)
+    before = states(u)
+    sp = 0x100BF000
+    u.reg_write(UC_X86_REG_ESP,sp)
+    u.mem_write(sp+0x13,b'\x01')
+    alternate = bool(case['gate_a'] or case['gate_flags'] & 2 or case['gate_secondary'])
+    copies = (0x52FE80,0x52FEAB) if alternate else (0x52FE31,0x52FE51)
+    stop = native.run_checked(u,0x52E619,0x52E61E,count=2_000_000,
+                             required_addresses=(0x52E619,0x52FC20,0x65C6D0,*copies),
+                             context=case)
+    assert u.reg_read(UC_X86_REG_ESP) == sp
+    after = states(u)
+    actual_seed = get32(u,0xA8ED94)
+    expected_source = (SEED_IN if alternate or case['mode'] not in (0,5)
+                       else case['override'] or case['tick'])
+    assert actual_seed == expected_source
+    exact_seed = seeded(actual_seed)
+    assert logical(after['scenario']) == logical(exact_seed)
+    assert logical(after['main']) == logical(exact_seed)
+    assert before['mapgen'] == after['mapgen']
+    assert len(writes['scenario']) == 253 and len(writes['main']) == 253
+    assert not writes['mapgen']
+    assert len([e for e in events if e['event']=='native_seed']) == 2
+    # Independent original loaded-flag test; 6370B0 between these slices is excluded.
+    branch_stop = native.run_checked(u,0x52E623,(0x52E97D,0x52E62F),count=100,
+                                     required_addresses=(0x52E623,0x52E629),context=case)
+    assert branch_stop == 0x52E97D
+    check_code(u,guard)
+    return {'id':case['id'],'input':dict(case,global_seed=SEED_IN,system_time=SYSTEMTIME),
+            'after_scenario_save_load':loaded,'menu_before':before,'menu_after':after,
+            'resolved_seed':actual_seed,'native_seed_result_hex':exact_seed.hex(),
+            'scenario_main_match_native_seed_logical':True,'mapgen_retained_raw':True,
+            'random_straw_before':straw_before,'random_straw_after':bytes(u.mem_read(0xA8E7B0,0x114)).hex(),
+            'events':events,'rng_writes':writes,'menu_call_stop':hex(stop),
+            'separate_loaded_flag_stop':hex(branch_stop),'original_executable_bytes_unchanged':True}
+
+
+
 def generate() -> dict:
     """Preserve legacy seed/raw cases and add original-executed mixed calls."""
     vectors = {
@@ -152,6 +357,7 @@ def generate() -> dict:
         )
     vectors["ranged_cases"] = [ranged_history(seed) for seed in SEEDS]
     vectors["ranged_cases"].extend(ranged_history(1, prefix) for prefix in (146, 249))
+    vectors['menu_rng_cases'] = [menu_rng_case(case) for case in RNG_CASES]
     return vectors
 
 
@@ -163,7 +369,7 @@ def main() -> None:
             scope=("Random seed and first 16 draws for five selected seeds, plus seven "
                    "mixed raw/ranged histories (98 calls) at ordinary audio bounds. "
                    "Includes equal/reversed bounds, rejection and cursor-wrap continuation; "
-                   "not exhaustive signed-range or full generator parity."),
+                   "nine original Scenario load/menu reseed controls. Not exhaustive signed-range, full world-load or whole-loop RNG parity."),
             assumptions=[
                 "A zero-initialized 0x3f4-byte generator is supplied to Random__Seed.",
                 "Legacy raw calls use fresh emulators and carry only generator bytes forward.",
@@ -171,13 +377,27 @@ def main() -> None:
                 "Source RNG initialization and supplied bounds are fixture inputs, not a whole application audio/theme scheduling claim.",
                 "Raw draw counts and values are observed at native word stores65C79D/65C84B; RandomRanged inlines the draw instead of calling65C780.",
                 "Disabled RNG objects and signed spans at or above 0x7fffffff are outside these controls.",
+                "Menu rows reuse ScenarioFixture Save/Load/post-read with supplied stopped timer, empty arrays and false11F8; each incoming RNG state is produced by original Seed/Next.",
+                "Original RandomStraw6616B0 constructor executes; mode, gate globals, seed override and two OS clocks are supplied inputs, not captured startup values.",
+                "52E619..52E61E executes the actual menu call into52FC20; separate52E623..52E97D observes the loaded flag. Intervening6370B0 and later common continuation are excluded.",
+                "Logical RNG comparison excludes only padding bytes1..3; MapGen retention compares all bytes at this bounded boundary, not every full-load consumer.",
+                "The in-game caller bypasses52FC20 by original caller/control-flow evidence, not by an emulated complete options/game loop.",
             ],
-            substitutions=[],
+            substitutions=[
+                "Shared Scenario in-memory IStream transport,4068E0 diagnostic return and6C8C40 clock0.",
+                "GetSystemTime supplies the declared8-word SYSTEMTIME; GetTickCount supplies each explicit tick. No RNG routine or original executable instruction is substituted.",
+            ],
             entry_points={"Random__Seed": SEED_FN, "Random__Next": NEXT_FN,
-                          "Random__RandomRanged": RANGED_FN},
+                          "Random__RandomRanged": RANGED_FN,
+                          "ScenarioSave": 0x689310, "ScenarioLoad": 0x689470,
+                          "ScenarioPostRead": 0x683560, "MenuCall": 0x52E619,
+                          "InitRandom": 0x52FC20, "MenuLoadedFlag": 0x52E623,
+                          "RandomStrawConstructor": 0x6616B0},
         ), command="python -m tools.rmg_oracle.gen_rng_vectors --check"),
         source_paths={"generator": Path(__file__),
-                      "checked_runner": Path(__file__).parents[1] / "native_oracle.py"},
+                      "checked_runner": Path(__file__).parents[1] / "native_oracle.py",
+                      "scenario_stream": Path(__file__).parents[1] / "spatial_oracle/native_id_snapshot.py",
+                      "pe_imports": Path(__file__).parents[1] / "storage_oracle/shell_relayout.py"},
     )
 
 

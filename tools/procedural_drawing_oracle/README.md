@@ -114,6 +114,8 @@ The final executable (`776a416b…`, clean source `d5b667327`) reproduces all
 5760000 captured frame pixels and385 observed boundaries. The observation
 owner independently checks sealed input bytes, diagnostic clock and atlas;
 portable rechecks validate the retained bytes and scoped pixel/state results.
+`record` keeps text with the home directory spelled `~` and re-pins every identity
+of a file it rewrites, so `capture_sha256` binds the retained capture, not the live file.
 
 ```sh
 python -m tools.procedural_drawing_oracle.action_lines --check

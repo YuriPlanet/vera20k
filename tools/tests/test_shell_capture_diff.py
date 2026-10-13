@@ -107,13 +107,11 @@ def opening_bundle(directory, phase="opening-unlocked"):
     receipt = campaign_bundle(directory, "sov1")
     receipt.update(checkpoint=f"campaign-sov1-{phase}", checkpoint_phase=phase)
     receipt["runtime"]["scenario_started"] = True
-    receipt["runtime"]["startup_admission"] = {
-        "accepted_rust_l0": False, "campaign_installation": True,
-    }
+    receipt["runtime"]["startup_admission"] = dict(diff.CAMPAIGN_INSTALLED)
     initial = copy.deepcopy(receipt["runtime"])
     initial["binary_frame"] = 0
     receipt["runtime"].update(tick=3, binary_frame=3)
-    view = {"view_world_pixels": [0, 0], "focus_rate_bits": 1,
+    view = {"view_center_world_pixels": [0, 0], "focus_rate_bits": 1,
             "focus_progress_bits": struct.unpack("<I", struct.pack("<f", .5))[0]}
     locked = phase not in ("opening-unlocked", "opening-restore-unlocked")
     current = {"tick": 3, "binary_frame": 3, "input_locked": locked,
@@ -124,6 +122,10 @@ def opening_bundle(directory, phase="opening-unlocked"):
                "messages": [{"text": "Synthetic protocol text"}]}
     saved = copy.deepcopy(initial)
     saved.update(tick=2, binary_frame=2)
+    loaded = copy.deepcopy(saved)
+    if phase == "opening-restore-unlocked":
+        loaded["startup_admission"] = dict(diff.SAVED_WORLD_RESTORED)
+        receipt["runtime"]["startup_admission"] = dict(diff.SAVED_WORLD_RESTORED)
     receipt["opening"] = {
         "target": phase, "initial_runtime": initial, "saw_lock": True,
         "saw_unlock": not locked,
@@ -147,7 +149,7 @@ def opening_bundle(directory, phase="opening-unlocked"):
         },
         "save_restore": {"view_before": view, "view_after": view,
                          "cursor_depth_before": -1, "cursor_depth_after": -1,
-                         "saved_runtime": saved, "loaded_runtime": copy.deepcopy(saved)}
+                         "saved_runtime": saved, "loaded_runtime": loaded}
                         if phase == "opening-restore-unlocked" else None,
     }
     return receipt
@@ -405,6 +407,9 @@ class CampaignReceiptTests(unittest.TestCase):
                 lambda value: value["opening"]["save_restore"].update(cursor_depth_after=0),
                 lambda value: value["opening"]["save_restore"]["loaded_runtime"].update(tick=0),
                 lambda value: value["opening"]["save_restore"]["loaded_runtime"]["rng"]["main"].update(index_a=1),
+                lambda value: value["opening"]["save_restore"]["loaded_runtime"].update(
+                    startup_admission=dict(diff.CAMPAIGN_INSTALLED)),
+                lambda value: value["runtime"].update(startup_admission=dict(diff.CAMPAIGN_INSTALLED)),
             ):
                 invalid = copy.deepcopy(receipt)
                 mutate(invalid)

@@ -85,13 +85,13 @@ tested modules. There was no second critic pass.
 The normal ungated
 `global_skirmish_replay_is_deterministic_and_baseline_stable` assertion passed
 with pin `0xCDA1_0AEE_6EA0_AE46`.
-[The integrated replay package](depot_service_replay/main1018/README.md)
+The integrated replay package (`tools/spatial_oracle/depot_service_replay/main1018/README.md`, in git at 1b1a8b43e)
 attributes the new Building progress hash over 601 complete recorded boundaries,
 including three complete RNG streams and their exact caller order. Its only
 projection is `tick_result.state_hash`; control asserts the incoming pin and
 current was a self-measuring diagnostic. Its receipt checker passed. This is
 Rust replay evidence, separate from the final ungated assertion and native
-goldens. Both replay packages remain unchanged.
+goldens. Both replay packages are in git at 1b1a8b43e.
 
 The map-observer Python suite passed 80 tests in normal mode and 80 with `-O`.
 The field ratchet passed 2537 versus 2538 at the merge base. `git diff --check`

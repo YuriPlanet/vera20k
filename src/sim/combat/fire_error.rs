@@ -230,7 +230,7 @@ pub(crate) struct FirerFacts {
     /// vt+0x1D4 (`+0x270`) and vt+0x1D8 (`+0x271`).
     pub warped_out: bool,
     pub warping_in: bool,
-    /// `+0x1C8`.
+    /// `+0x1C8`, the deactivated latch (`sim::powered_unit`).
     pub robot_offline: bool,
     /// `+0x3CD`.
     pub sinking: bool,

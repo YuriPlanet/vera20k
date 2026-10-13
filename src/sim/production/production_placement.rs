@@ -8,7 +8,6 @@ use crate::map::houses::are_houses_friendly;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::BuildingUp;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::FrameEffects;
@@ -404,14 +403,10 @@ pub(crate) fn place_production_with_overlays(
             ry + fh - 1,
         );
     }
-    // The placed building builds up (`sim::building_construction`) through
-    // the PLACE event (`HouseClass::Place_Production`); a computer house's
-    // yard places its own through `sim::ai_base_building::exit_building`.
-    let control = rules.buildup_control(type_id);
-    let now = sim.session.binary_frame as i32;
-    if let Some(ge) = sim.substrate.entities.get_mut(new_sid) {
-        ge.install_building_up(BuildingUp::placed_by_player(control, now), now);
-    }
+    // The placed building's Unlimbo queued Construction
+    // (`Simulation::building_enter_idle_mode`); the HELLO above kept its
+    // cell-put discovery from opening it. A computer house's yard places its
+    // own through `sim::ai_base_building::exit_building`.
     // Refresh superweapon grants — newly placed building may provide a SW.
     crate::sim::superweapon::refresh_super_weapons_for_owner(sim, rules, owner_id);
 

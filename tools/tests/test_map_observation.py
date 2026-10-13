@@ -285,6 +285,16 @@ class MapObservationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValidationError, 'object_alive'):
                     observation._actor(actor, 'actor')
 
+    def test_offline_latch_is_an_optional_boolean(self):
+        actor = self.actor()
+        observation._actor(actor, 'historical')
+        for value in (False, True):
+            observation._actor(dict(actor, deactivated=value), 'projected')
+        for value in (None, 0, 1, 'true'):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValidationError, 'deactivated'):
+                    observation._actor(dict(actor, deactivated=value), 'bad')
+
     def test_veterancy_owner_projections_preserve_raw_bits_and_legacy_absence(self):
         actor = self.actor()
         observation._actor(actor, 'historical')
@@ -2668,6 +2678,50 @@ class MapObservationTests(unittest.TestCase):
         self.profile.pop('observe_super_weapons')
         self.profile_path.write_text(json.dumps(self.profile))
         self.output = self.root / 'unrequested-super-weapon-rows'
+        self.assertEqual(self.run_capture()['status'], 'INVALID')
+
+    def test_diplomacy_rows_are_opt_in_typed_and_count_towards_budget(self):
+        self.scripted_profile()
+        self.profile['observe_diplomacy'] = True
+        self.profile_path.write_text(json.dumps(self.profile))
+        diplomacy = {'allies': ['Computer2'], 'enemy': 'Player'}
+        self.house_frames = {step: [{'owner': 'Computer1', 'economy': None,
+                                     'diplomacy': dict(diplomacy, enemy=None if step < 2 else 'Player')}]
+                             for step in range(4)}
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        self.assertEqual(report['capture']['observations']['frames'][3]['houses'][0]['diplomacy'], diplomacy)
+        rows = lambda m: m['observations']['frames'][1]['houses'][0]
+        changes = [lambda m: rows(m).pop('diplomacy'),
+                   lambda m: rows(m)['diplomacy'].pop('enemy'),
+                   lambda m: rows(m)['diplomacy'].update(extra=0),
+                   lambda m: rows(m)['diplomacy'].update(allies='Computer2'),
+                   lambda m: rows(m)['diplomacy'].update(allies=['']),
+                   lambda m: rows(m)['diplomacy'].update(allies=['Computer2', 'COMPUTER2']),
+                   lambda m: rows(m)['diplomacy'].update(allies=['computer1']),
+                   lambda m: rows(m)['diplomacy'].update(enemy=''),
+                   lambda m: rows(m)['diplomacy'].update(enemy=1),
+                   lambda m: rows(m)['diplomacy'].update(enemy='Computer1')]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                self.output = self.root / f'diplomacy-invalid-{index}'
+                self.change = change
+                self.assertEqual(self.run_capture()['status'], 'INVALID')
+        self.change = lambda manifest: None
+        # Four frames of one actor, terrain cell, House and ally cost sixteen
+        # samples; without the allies they would fit in twelve.
+        for budget, status in ((15, 'INVALID'), (16, 'VALID')):
+            self.output = self.root / f'diplomacy-budget-{budget}'
+            with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', budget):
+                self.assertEqual(self.run_capture()['status'], status)
+        self.profile['observe_diplomacy'] = 1
+        self.profile_path.write_text(json.dumps(self.profile))
+        self.output = self.root / 'nonboolean-diplomacy-option'
+        with self.assertRaises(ValidationError):
+            self.run_capture()
+        self.profile.pop('observe_diplomacy')
+        self.profile_path.write_text(json.dumps(self.profile))
+        self.output = self.root / 'unrequested-diplomacy-rows'
         self.assertEqual(self.run_capture()['status'], 'INVALID')
 
     def test_paid_walk_receipts_retain_head_destination_moving_and_cleanup(self):

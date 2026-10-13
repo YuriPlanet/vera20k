@@ -26,8 +26,24 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
         .enumerate()
         .map(|(index, name)| format!("{}=Country{index}\n", name.as_str().unwrap()))
         .collect::<String>();
+    // Each house's type is `Country{side}`, which `[Sides]` lists under its
+    // side; `Unsided`, in no list, keeps the HouseType constructor's -1.
+    let countries = (0..input["side_names"].as_array().unwrap().len())
+        .map(|index| format!("Country{index}"))
+        .chain(std::iter::once(String::from("Unsided")))
+        .collect::<Vec<_>>();
+    let country_list = countries
+        .iter()
+        .enumerate()
+        .map(|(index, name)| format!("{index}={name}\n"))
+        .collect::<String>();
+    let country_sections = countries
+        .iter()
+        .map(|name| format!("[{name}]\n"))
+        .collect::<String>();
     let ini = IniFile::from_str(&format!(
-        "[BuildingTypes]\n0=B\n[InfantryTypes]\n0=E1\n[Sides]\n{sides}\n[B]\nStrength={}\nTechLevel={}\nCanBeOccupied={}\nMaxNumberOccupants=10\n[E1]\nStrength=100\nSpeed=4\nOccupier=yes\n[Animations]\n0=N\n1=D\n2=G\n[AudioVisual]\nBuildingAbandonedSound=Abandon\n",
+        "[Countries]\n{country_list}{country_sections}\
+         [BuildingTypes]\n0=B\n[InfantryTypes]\n0=E1\n[Sides]\n{sides}\n[B]\nStrength={}\nTechLevel={}\nCanBeOccupied={}\nMaxNumberOccupants=10\n[E1]\nStrength=100\nSpeed=4\nOccupier=yes\n[Animations]\n0=N\n1=D\n2=G\n[AudioVisual]\nBuildingAbandonedSound=Abandon\n",
         integer(&input["strength"]),
         integer(&input["tech_level"]),
         input["can_be_occupied"].as_bool().unwrap_or(true),
@@ -69,10 +85,16 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
         .iter()
         .map(|house| {
             let owner = sim.interner.intern(house["name"].as_str().unwrap());
+            let side = integer(&house["side_index"]);
+            let country = sim.interner.intern(&if side < 0 {
+                String::from("Unsided")
+            } else {
+                format!("Country{side}")
+            });
             let mut state = HouseState::new(
                 owner,
-                integer(&house["side_index"]) as u8,
-                None,
+                side as u8,
+                Some(country),
                 house["is_human"].as_bool().unwrap(),
                 0,
                 10,
@@ -144,16 +166,11 @@ fn allegiance_matches_native_decisions_for_valid_rosters() {
         let input = &row["input"];
         let expected = &row["output"];
         let name = input["name"].as_str().unwrap();
-        // NULL and Side=-1 are malformed native pointer controls. Rust keeps
-        //the real owner for those rosters. The retained-occupant callback is
-        //an injected dependency mutation, not SellBuilding's normal outcome.
+        // NULL is a malformed native pointer control. Rust keeps the real
+        //owner for those rosters. The retained-occupant callback is an
+        //injected dependency mutation, not SellBuilding's normal outcome.
         if input["current_owner"].is_null()
             || expected["owner_after_callback"].is_null()
-            || input["houses"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|h| integer(&h["side_index"]) < 0)
             || !input["eject_retained_occupants"]
                 .as_array()
                 .unwrap()
@@ -231,7 +248,7 @@ fn allegiance_matches_native_decisions_for_valid_rosters() {
         );
         replayed += 1;
     }
-    assert_eq!(replayed, 35);
+    assert_eq!(replayed, 36);
 }
 
 #[test]
@@ -322,7 +339,8 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
     use std::sync::Arc;
 
     let root = IniFile::from_str(
-        "[BuildingTypes]\n0=B\n[Sides]\nAllied=Player\nCivilian=Town\n\
+        "[Countries]\n0=Player\n1=Town\n[Player]\n[Town]\n\
+         [BuildingTypes]\n0=B\n[Sides]\nAllied=Player\nCivilian=Town\n\
          [B]\nStrength=100\nTechLevel=-1\nCanBeOccupied=yes\nMaxNumberOccupants=10\n\
          [Animations]\n0=N\n[AudioVisual]\nBuildingAbandonedSound=Abandon\n",
     );
@@ -336,7 +354,10 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
     )
     .unwrap();
     let (mut rules, _, _, _) = process
-        .load_scenario(crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None), &IniFile::from_str("[B]\nMaxNumberOccupants=0\n"))
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+            &IniFile::from_str("[B]\nMaxNumberOccupants=0\n"),
+        )
         .unwrap()
         .into_parts();
     assert_eq!(rules.object("B").unwrap().max_number_occupants, 0);

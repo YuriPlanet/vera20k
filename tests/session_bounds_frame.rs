@@ -13,11 +13,9 @@ use std::path::Path;
 use vera20k::map::map_file::MapFile;
 use vera20k::map::waypoints::multiplayer_start_waypoints;
 
-/// The documented retail install location for this project (single-machine
-/// repo; see CLAUDE.md "Asset paths"). RA2_DIR overrides.
+/// The retail install named by `RA2_DIR`; empty when it is unset, so the test skips.
 fn retail_dir() -> String {
-    std::env::var("RA2_DIR")
-        .unwrap_or_else(|_| "C:/Users/enok/Documents/Command and Conquer Red Alert II".to_string())
+    std::env::var("RA2_DIR").unwrap_or_default()
 }
 
 #[test]

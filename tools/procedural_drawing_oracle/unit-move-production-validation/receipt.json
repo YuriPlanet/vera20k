@@ -354,91 +354,91 @@
     ],
     "final_candidate": {
       "unit-move-active-v1": {
-        "capture_sha256": "3dc1e42c0e9d082a9c87cff4fb9997becc085349003966a2b7cb12bfa65b10af",
+        "capture_sha256": "0efb860f1d51a4e3816e74eb7b475e89fefc947b59290d0753dd4692eac1c6d0",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "455b8456235da85a13ff00ccfee4201a5479fcb64114f0a2e3fb00a4149c24b6",
         "compared_frame_pixels": 480000,
         "state_boundaries": 7
       },
       "unit-selected-only-v1": {
-        "capture_sha256": "a93a758a7600d9159c7098cd4bf98b8f3532d6e3b90c11d511031d5a4ac29f2a",
+        "capture_sha256": "3b83f683b81273bf8ec99e51187aa32518ad0268d881989a6a470e1184ad1d77",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "02a759640488fd6bc51185b5d368b78dedc26913a040e35b31e89fb8b851a5f0",
         "compared_frame_pixels": 480000,
         "state_boundaries": 7
       },
       "unit-move-before-stop-v1": {
-        "capture_sha256": "7a778a3f4b03d92ff35aa332b6bf39d92c97960a337a4147296c6a8bb38e6c54",
+        "capture_sha256": "6c470f7a909fc1a6b3681f9aa922d04834dcb6d852cc24ec3de9219e26ea49a2",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "5746e7a050b5304124dc29f6c02f31b1c71fa03510ccffd8c7c2a8c0e3aa7a1a",
         "compared_frame_pixels": 480000,
         "state_boundaries": 8
       },
       "unit-move-stopped-v1": {
-        "capture_sha256": "31941f329d583368291a1d1780f4354d8f5e940fcc32c03bdbb6e559abec6ea7",
+        "capture_sha256": "db721f13f53c5e245bf4976dbc828ea697ee8fb46b149a677923e1c5562f36d5",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "d80670eaf9b1754f5c73816c3d626082ebc699da5c8f4f98c291355248aa1977",
         "compared_frame_pixels": 480000,
         "state_boundaries": 8
       },
       "unit-move-last-active-v1": {
-        "capture_sha256": "c57c7bb2fa54482efb6f20335157cf17459674a19bb7be3fa7ece6dad62c448f",
+        "capture_sha256": "e0e6d5656d9a6e496feed31f1f455b9fdcad8760052a06990836ee1acb4c940d",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "d015dd29b61bb500f83811712cf6162d0b642a7e6e51e77667c255c7f2c762ee",
         "compared_frame_pixels": 480000,
         "state_boundaries": 30
       },
       "unit-move-expired-v1": {
-        "capture_sha256": "539ff1057bab843c0fa6613260f422c68c357428908605cbb2567631f62ddd05",
+        "capture_sha256": "176b56d94e076280fbc20b3952e913b2a765c2aa7162ef147fdb566623089d0f",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "91ef1e5759ed2dffc55d0dfcab83a3da55654ec4b67557398b187de8ae77e54c",
         "compared_frame_pixels": 480000,
         "state_boundaries": 31
       },
       "unit-move-expired-next-v1": {
-        "capture_sha256": "e84c7e5535872638c35ec915ae285d53e6251f1029abce5f07829458ad46c93a",
+        "capture_sha256": "b63e373c983ebd7eeb47f6a74219891154a2b3e6579fd83bb65c61acaa0e0d60",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "2772b4f632589bf81fef500170156faa0cec9765f264d48e5b1e4f36b4cf696d",
         "compared_frame_pixels": 480000,
         "state_boundaries": 32
       },
       "unit-move-reselect-v1": {
-        "capture_sha256": "8b0c0c3e7fd1cd9446a0f7761dbaa764b3de63b3b084c01dbe827cd72890e1e7",
+        "capture_sha256": "2ff9bcf0b995a15f278575480e61514e221d70350539ca21b680a95823330ece",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "2af20da1da22fa9a9dce3c321e46180430ff75e64502e37fec692420c135bcfb",
         "compared_frame_pixels": 480000,
         "state_boundaries": 32
       },
       "empty-band-unselected-v1": {
-        "capture_sha256": "5929a3ce6dc1bae2dfefe42668194315ac78f7a9191e7c3c3b6237d358ec05f8",
+        "capture_sha256": "39098d6dba146afe159e3793a1bf4fb3a931330d1da5146610cd34a5caf26604",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "85c471ebcd7c0405a0681f28d01de812577f6719096318cd6593fc08bcc95e03",
         "compared_frame_pixels": 480000,
         "state_boundaries": 6
       },
       "unit-move-empty-band-restart-v1": {
-        "capture_sha256": "91ece240086dce2df765a40757b2c5390d2e6757710d2237695ff267991b9bc9",
+        "capture_sha256": "789779df13040039d9bbc78edb1c506620a27fb1593fc732fc772bc5c9b32055",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "1dd6906e848ff04eb94b2e0dba5995187302090645471bd22bdb03a6a5b94a8c",
         "compared_frame_pixels": 480000,
         "state_boundaries": 32
       },
       "unit-move-arrived-control-v1": {
-        "capture_sha256": "afd2af5f214b799d477c2f530dbc0bc427cd858a81645eb0be535c58922226e1",
+        "capture_sha256": "07056220a4c317590fb729b765c94d84d493dc764b7a6ca9071422d2550013b7",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "7e3978dd5a2080a5e5a0649b7bf83dcdd2fe7c1c317acd91c6c1987011a92913",
         "compared_frame_pixels": 480000,
         "state_boundaries": 96
       },
       "unit-move-arrived-reselect-v1": {
-        "capture_sha256": "f0b1f75d88e315877c16e90b7ac4f53b0e41fb179e7e9a5c0e73745f0bb0a7f6",
+        "capture_sha256": "aadccffaac8310999234c8502417556d2564f2a35894605e366fdc3661092e4d",
         "executable_sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5",
         "identical_frame_sha256": "1ba8eb4e6e9dca6ee61b1467e3a34be0e399619a91af2d5b1e928ac813c30eb0",
         "compared_frame_pixels": 480000,
         "state_boundaries": 96
       }
     },
-    "native_case_set_sha256": "00147802b667522211ee593941d20a5924c6cc1848e9cf1eccd42d195f307d16"
+    "native_case_set_sha256": "e922521b766452d23b40cd5e8a697ee6ad60c43abde1d2ff8c0edba35490adfd"
   },
   "family": "unit-move",
   "final_candidate": true,
@@ -452,29 +452,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-active-v1/run.json",
-        "byte_length": 113626,
-        "sha256": "3e40ca338571cdaa04f59cd9e9fbbdd7d7b7d9b6354916862818d19aa9786b82"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-active-v1/run.json",
+        "byte_length": 113494,
+        "sha256": "bd26a3303f8103864f83ccbfb98d877a038962f6f55f0aa2194411740dd1f4a2"
       },
       "inputs": {
         "profile": {
           "byte_length": 3517,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-active.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-active.profile.json",
           "sha256": "40867e4e969354b30a2c9236f80b948947f0defda39d87fda46394a3c8a9e5f1"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -486,12 +486,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-active-v1/child-output/capture.json",
-          "byte_length": 115923,
-          "sha256": "eeea2c5c791ebe5ba7042b149ffb66518c40a8f75cdf068ada43bfc0228688bc"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-active-v1/child-output/capture.json",
+          "byte_length": 115899,
+          "sha256": "2599ebae9de0fb55abcdc5f6be8424149db60a7f6e3f9a72cdca1c80d185749f"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-active-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-active-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "455b8456235da85a13ff00ccfee4201a5479fcb64114f0a2e3fb00a4149c24b6"
         },
@@ -565,29 +565,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-selected-only-v1/run.json",
-        "byte_length": 113024,
-        "sha256": "b3cb995cc3200c613d0f3333662189442b30ee6e97927772ec409f4bb6d4e769"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-selected-only-v1/run.json",
+        "byte_length": 112892,
+        "sha256": "41aac3a6f481fce899fab049c7963944de6c5d7fbcce6578e2087d21eea47d39"
       },
       "inputs": {
         "profile": {
           "byte_length": 3362,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-selected-only.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-selected-only.profile.json",
           "sha256": "48da7a40346d761afe1cde0a828f6d00c02e9729118f13ad0f8952ab1ab00567"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -599,12 +599,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-selected-only-v1/child-output/capture.json",
-          "byte_length": 115240,
-          "sha256": "4e23ad1e73664a15cf376660d7c792d90e95576e9a53bd514959b396f15844c0"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-selected-only-v1/child-output/capture.json",
+          "byte_length": 115216,
+          "sha256": "cce4b814129d3276acd57bf66176fc1b94846830daac6f60f5f9fe90b80fe2e6"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-selected-only-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-selected-only-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "02a759640488fd6bc51185b5d368b78dedc26913a040e35b31e89fb8b851a5f0"
         },
@@ -678,29 +678,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-before-stop-v1/run.json",
-        "byte_length": 124245,
-        "sha256": "256b6ee99d2c55194b12b2ed143e4bb9f2d2e805a6eb5681b4c509fe3aa59d5a"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-before-stop-v1/run.json",
+        "byte_length": 124113,
+        "sha256": "81a6001787bb12bb5304b8769023d5a0ca186807e3d7bad49916bc8c18b35d1a"
       },
       "inputs": {
         "profile": {
           "byte_length": 3517,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-before-stop.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-before-stop.profile.json",
           "sha256": "25d6bd225c3ab37e380f2d6b0e2f6417eebab31796fe3ffa4b561bc96488fe2e"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -712,12 +712,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-before-stop-v1/child-output/capture.json",
-          "byte_length": 126517,
-          "sha256": "48707e591e9468e1999c6387f49857bf951ecdc427d7c7cc55477d73fa1a2226"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-before-stop-v1/child-output/capture.json",
+          "byte_length": 126493,
+          "sha256": "5235733500a35959c7f4442d0c946d01409fdb2d7b3b8542cf9009281207a567"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-before-stop-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-before-stop-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "5746e7a050b5304124dc29f6c02f31b1c71fa03510ccffd8c7c2a8c0e3aa7a1a"
         },
@@ -791,29 +791,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-stopped-v1/run.json",
-        "byte_length": 124352,
-        "sha256": "2c9e968eff75597c8d140bb1ae2d0e6a57360481c9f82ac4f14e630241338f32"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-stopped-v1/run.json",
+        "byte_length": 124220,
+        "sha256": "9247853a71756f4dfaece1646458923bddc4839670a079c3082b2b6a1d4c96ca"
       },
       "inputs": {
         "profile": {
           "byte_length": 3676,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-stopped.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-stopped.profile.json",
           "sha256": "c6f19895938cdc6e7358b2cfd5e1f59fed97f99696293b1048b846ad1a049ff7"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -825,12 +825,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-stopped-v1/child-output/capture.json",
-          "byte_length": 126728,
-          "sha256": "4c90dcdfad51b53fb496f22ce882435011bb3eb8fee4d3ae168c2799dd291bc9"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-stopped-v1/child-output/capture.json",
+          "byte_length": 126704,
+          "sha256": "b6de4f522b7f83ee3e205a89935247bf741ff163b3ea48ccdea883e16aeab3c8"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-stopped-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-stopped-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "d80670eaf9b1754f5c73816c3d626082ebc699da5c8f4f98c291355248aa1977"
         },
@@ -904,29 +904,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-last-active-v1/run.json",
-        "byte_length": 357580,
-        "sha256": "2031e7dc317d9c352a9f6e356e6640f7cbedc6013d66fa2266ddf6d16eed143f"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-last-active-v1/run.json",
+        "byte_length": 357448,
+        "sha256": "dbdae0cfc9c0b9aea85b97f4bbe42cfe822e715534d299ba5c5fb183d27b5e43"
       },
       "inputs": {
         "profile": {
           "byte_length": 3518,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-last-active.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-last-active.profile.json",
           "sha256": "be74112bd0f7cbb5fa4a7239282a6c076fef727e942dad7755cddd85dc79db3f"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -938,12 +938,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-last-active-v1/child-output/capture.json",
-          "byte_length": 359857,
-          "sha256": "9781d6094b079673915cdc564e23755211d95835a931918cddc67e0aa19f45f6"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-last-active-v1/child-output/capture.json",
+          "byte_length": 359833,
+          "sha256": "49e316a32647b9924bf0dbd4c13948bfbf68e217d7e228f0c807fec4f1764d5a"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-last-active-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-last-active-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "d015dd29b61bb500f83811712cf6162d0b642a7e6e51e77667c255c7f2c762ee"
         },
@@ -1017,29 +1017,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-v1/run.json",
-        "byte_length": 368177,
-        "sha256": "1cd173acf803e40fab4c1b6cc814fd3df5bc9f07e27d42ffda08953574d2fb64"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-v1/run.json",
+        "byte_length": 368045,
+        "sha256": "2cdfdb725ca67436ced0004b02a5bb6e7a232d22105ad824f3ca47e4ad3c3425"
       },
       "inputs": {
         "profile": {
           "byte_length": 3518,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-expired.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-expired.profile.json",
           "sha256": "d139967b26f806cf9499b946a227b82e94d28a67c2f7b9e778b20770d579071b"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -1051,12 +1051,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-v1/child-output/capture.json",
-          "byte_length": 370474,
-          "sha256": "ef0e2b87a16dd055fcc755024220c0e9abfa47362edf5b880eed762cec25b14a"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-v1/child-output/capture.json",
+          "byte_length": 370450,
+          "sha256": "e059f9cb391740c675843006bd631be0ad4325e96cf0a0b6ac458dcbe7e40186"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "91ef1e5759ed2dffc55d0dfcab83a3da55654ec4b67557398b187de8ae77e54c"
         },
@@ -1130,29 +1130,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-next-v1/run.json",
-        "byte_length": 378818,
-        "sha256": "281b6d35e8c57e7d917d8f74c80e11cf4391fc7accd700681d716ba948b3224c"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-next-v1/run.json",
+        "byte_length": 378686,
+        "sha256": "e7be26b3afc3381f6a1c8984838049390a715f0437d08e5619a3e230c604ad73"
       },
       "inputs": {
         "profile": {
           "byte_length": 3518,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-expired-next.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-expired-next.profile.json",
           "sha256": "31fbc11c173fc5f13dbce593c63df2e80aac16a04a106b8622ec1e1393eeada2"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -1164,12 +1164,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-next-v1/child-output/capture.json",
-          "byte_length": 381090,
-          "sha256": "14afdd1c63a4adba9ad190084a1c02228546a965c9b2ae45995aa700b14284fc"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-next-v1/child-output/capture.json",
+          "byte_length": 381066,
+          "sha256": "1ef48063a908f799977e5d83bee211d3f62d0fdfc77b1985e947de961ae9d816"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-next-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-next-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "2772b4f632589bf81fef500170156faa0cec9765f264d48e5b1e4f36b4cf696d"
         },
@@ -1243,29 +1243,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-reselect-v1/run.json",
-        "byte_length": 379369,
-        "sha256": "f00629188c205741c340e5a43cb8968b6f52878a3aa9b8a18f13fa4143a34dee"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-reselect-v1/run.json",
+        "byte_length": 379237,
+        "sha256": "86e6a67a74275553c77c1ae5488b95efc7bafdd3cf1ef7a3ade9a8ba10a26f7a"
       },
       "inputs": {
         "profile": {
           "byte_length": 3674,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-reselect.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-reselect.profile.json",
           "sha256": "8626b70f5a9d908d75e6586ded5e8aea047618c7a0e5aeb8bff566a8f0488141"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -1277,12 +1277,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-reselect-v1/child-output/capture.json",
-          "byte_length": 381733,
-          "sha256": "3e74ca085d6b6d938c711c39d3b74fd2ff9b5f2a04441a3b7676d15838d7f96e"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-reselect-v1/child-output/capture.json",
+          "byte_length": 381709,
+          "sha256": "1d14588cdd5ee746f7bb645247776f94357a47190e575faf4712a99707dc34ad"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-reselect-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-reselect-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "2af20da1da22fa9a9dce3c321e46180430ff75e64502e37fec692420c135bcfb"
         },
@@ -1356,29 +1356,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/empty-band-unselected-v1/run.json",
-        "byte_length": 102365,
-        "sha256": "792aa204fc599c41941c06934247e7841bd809c3ce8c013ce5b475c8bd04fb1c"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/empty-band-unselected-v1/run.json",
+        "byte_length": 102233,
+        "sha256": "27ab687a1d82457b0a77faeb8a931a143f9b27b57b41a1e3e1dfcf81a60e84f7"
       },
       "inputs": {
         "profile": {
           "byte_length": 3412,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/empty-band-unselected.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/empty-band-unselected.profile.json",
           "sha256": "3ac2aeac211bb79a06b70b70d3e54840c864a3956a3cf4a55e924d6beb4b3b65"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -1390,12 +1390,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/empty-band-unselected-v1/child-output/capture.json",
-          "byte_length": 104575,
-          "sha256": "bbd841d1fca7828eb5b1892602c4d0513cf026ac9a146867f0ca4c69406c6678"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/empty-band-unselected-v1/child-output/capture.json",
+          "byte_length": 104551,
+          "sha256": "c63d4a409c4cdfe0ad0a4e85d9965fda70480eb8d0a6f181036e95edcf5bb804"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/empty-band-unselected-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/empty-band-unselected-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "85c471ebcd7c0405a0681f28d01de812577f6719096318cd6593fc08bcc95e03"
         },
@@ -1469,29 +1469,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-empty-band-restart-v1/run.json",
-        "byte_length": 379450,
-        "sha256": "5999db00db2ea4a6b21542c95d26d0ca90f73f0bcd10c472ee20fcdd89f72922"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-empty-band-restart-v1/run.json",
+        "byte_length": 379318,
+        "sha256": "741d7c184a8845e7679fa63baef000cce4d3ec9e6362554273414574e060b910"
       },
       "inputs": {
         "profile": {
           "byte_length": 3724,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-empty-band-restart.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-empty-band-restart.profile.json",
           "sha256": "80db2aca17fbaab27e99ed807349b18863830e8489bc2b70d3fd72b1f68587cc"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -1503,12 +1503,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-empty-band-restart-v1/child-output/capture.json",
-          "byte_length": 381773,
-          "sha256": "f458a8c4f34d08e4c4ba3b89be8314ab524acfd0d5b98a9c20e261df914d3e71"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-empty-band-restart-v1/child-output/capture.json",
+          "byte_length": 381749,
+          "sha256": "30799cbbcbe7a83b1980e3a5e4271535b42223bdfc8a99f21b36c3fa2189d1f2"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-empty-band-restart-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-empty-band-restart-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "1dd6906e848ff04eb94b2e0dba5995187302090645471bd22bdb03a6a5b94a8c"
         },
@@ -1582,29 +1582,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-control-v1/run.json",
-        "byte_length": 1058396,
-        "sha256": "7a35070db48e18c255c6ecdb108f15493aa8c8a5293856b478dbc60b0337d72e"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-control-v1/run.json",
+        "byte_length": 1058264,
+        "sha256": "da3cfdb6512cba165fa705fa24a7c5f3b8f74de150b3526016367edaea521358"
       },
       "inputs": {
         "profile": {
           "byte_length": 3518,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-arrived-control.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-arrived-control.profile.json",
           "sha256": "0175a0d69739b46662405f2165f1c76674e3beb2e79f7f71f1242269f3d6e0a4"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -1616,12 +1616,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-control-v1/child-output/capture.json",
-          "byte_length": 1060652,
-          "sha256": "9bbcc82e4146285cb234f61225b315552b9afb32206a98a60cc4b31deb676028"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-control-v1/child-output/capture.json",
+          "byte_length": 1060628,
+          "sha256": "6e894702f7f6f1bad8831927a2ac867123ff0fa4696f893ebad98421ac433c62"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-control-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-control-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "7e3978dd5a2080a5e5a0649b7bf83dcdd2fe7c1c317acd91c6c1987011a92913"
         },
@@ -1695,29 +1695,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-reselect-v1/run.json",
-        "byte_length": 1058973,
-        "sha256": "b6b8e3f6078bf5688497b0a701d2f464bc18e7cf1bc4a61ffc94243b132dddd0"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-reselect-v1/run.json",
+        "byte_length": 1058841,
+        "sha256": "5be643d772534d4cdcff5c55174dcd4904525a17233bdfa497a4c00f8081bfe7"
       },
       "inputs": {
         "profile": {
           "byte_length": 3674,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-arrived-reselect.profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-profile-drafts/unit-move-arrived-reselect.profile.json",
           "sha256": "83572ac0b01abd5c75aa521600859949e0e9180d41fe2f86fc25bbee07e8c9da"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/rally-clear-v4/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31869216,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v1/0/vera20k",
           "sha256": "dc06728fb081e18054a28e9e9aa61e5ca6e7e3e82a20acc9052ac2471e6653dd"
         }
       },
@@ -1729,12 +1729,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-reselect-v1/child-output/capture.json",
-          "byte_length": 1061296,
-          "sha256": "1262353de7d469ebe07474271821d61582d94756e071e66bb771b0915e7e172f"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-reselect-v1/child-output/capture.json",
+          "byte_length": 1061272,
+          "sha256": "3d8f5e546b4d8e48d8e8182fffe9fa2fb222698c9de0c8ed0fe3a5233bac77a3"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-reselect-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-reselect-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "1ba8eb4e6e9dca6ee61b1467e3a34be0e399619a91af2d5b1e928ac813c30eb0"
         },
@@ -1808,29 +1808,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-active-v1/run.json",
-        "byte_length": 113646,
-        "sha256": "bcdff7fe8ed8272e3da3575224c055f6b50b16445efd043110b0c5a862098c39"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-active-v1/run.json",
+        "byte_length": 113514,
+        "sha256": "b2390f7a292e9e095957b5cfad72dcb4fff9cf6bdbf8c43ff941b1fa7b7e46ae"
       },
       "inputs": {
         "profile": {
           "byte_length": 3517,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-active-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-active-v1/profile.json",
           "sha256": "40867e4e969354b30a2c9236f80b948947f0defda39d87fda46394a3c8a9e5f1"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-active-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-active-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -1842,12 +1842,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-active-v1/child-output/capture.json",
-          "byte_length": 115920,
-          "sha256": "3dc1e42c0e9d082a9c87cff4fb9997becc085349003966a2b7cb12bfa65b10af"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-active-v1/child-output/capture.json",
+          "byte_length": 115896,
+          "sha256": "0efb860f1d51a4e3816e74eb7b475e89fefc947b59290d0753dd4692eac1c6d0"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-active-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-active-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "455b8456235da85a13ff00ccfee4201a5479fcb64114f0a2e3fb00a4149c24b6"
         },
@@ -1921,29 +1921,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-selected-only-v1/run.json",
-        "byte_length": 113051,
-        "sha256": "343f044f45450eea7222b3dc25f1ced96c029b529815225f4693827ec27a0e53"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-selected-only-v1/run.json",
+        "byte_length": 112919,
+        "sha256": "608f79fbf1648e4ce90f243240d20db4a4496ec979100303b8105f2cd634937a"
       },
       "inputs": {
         "profile": {
           "byte_length": 3362,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-selected-only-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-selected-only-v1/profile.json",
           "sha256": "48da7a40346d761afe1cde0a828f6d00c02e9729118f13ad0f8952ab1ab00567"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-selected-only-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-selected-only-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -1955,12 +1955,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-selected-only-v1/child-output/capture.json",
-          "byte_length": 115240,
-          "sha256": "a93a758a7600d9159c7098cd4bf98b8f3532d6e3b90c11d511031d5a4ac29f2a"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-selected-only-v1/child-output/capture.json",
+          "byte_length": 115216,
+          "sha256": "3b83f683b81273bf8ec99e51187aa32518ad0268d881989a6a470e1184ad1d77"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-selected-only-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-selected-only-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "02a759640488fd6bc51185b5d368b78dedc26913a040e35b31e89fb8b851a5f0"
         },
@@ -2034,29 +2034,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-before-stop-v1/run.json",
-        "byte_length": 124278,
-        "sha256": "f459eb5274d31cae54d55bc1836334da346aa223615026b12ee983ed890baef8"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-before-stop-v1/run.json",
+        "byte_length": 124146,
+        "sha256": "a619226fc994882634d787d75b932f058f5083b9d796475f7cc3547b22416034"
       },
       "inputs": {
         "profile": {
           "byte_length": 3517,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-before-stop-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-before-stop-v1/profile.json",
           "sha256": "25d6bd225c3ab37e380f2d6b0e2f6417eebab31796fe3ffa4b561bc96488fe2e"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-before-stop-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-before-stop-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -2068,12 +2068,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-before-stop-v1/child-output/capture.json",
-          "byte_length": 126517,
-          "sha256": "7a778a3f4b03d92ff35aa332b6bf39d92c97960a337a4147296c6a8bb38e6c54"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-before-stop-v1/child-output/capture.json",
+          "byte_length": 126493,
+          "sha256": "6c470f7a909fc1a6b3681f9aa922d04834dcb6d852cc24ec3de9219e26ea49a2"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-before-stop-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-before-stop-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "5746e7a050b5304124dc29f6c02f31b1c71fa03510ccffd8c7c2a8c0e3aa7a1a"
         },
@@ -2147,29 +2147,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-stopped-v1/run.json",
-        "byte_length": 124378,
-        "sha256": "5cab3a40644cafcdd9e803b90d44a0755c1f80ae20df18d62133ecd2f4c7a092"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-stopped-v1/run.json",
+        "byte_length": 124246,
+        "sha256": "23485806023c9112c99b317a841dad6a430cd56f4ae6113225e0b89daddf9e97"
       },
       "inputs": {
         "profile": {
           "byte_length": 3676,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-stopped-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-stopped-v1/profile.json",
           "sha256": "c6f19895938cdc6e7358b2cfd5e1f59fed97f99696293b1048b846ad1a049ff7"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-stopped-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-stopped-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -2181,12 +2181,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-stopped-v1/child-output/capture.json",
-          "byte_length": 126729,
-          "sha256": "31941f329d583368291a1d1780f4354d8f5e940fcc32c03bdbb6e559abec6ea7"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-stopped-v1/child-output/capture.json",
+          "byte_length": 126705,
+          "sha256": "db721f13f53c5e245bf4976dbc828ea697ee8fb46b149a677923e1c5562f36d5"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-stopped-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-stopped-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "d80670eaf9b1754f5c73816c3d626082ebc699da5c8f4f98c291355248aa1977"
         },
@@ -2260,29 +2260,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-last-active-v1/run.json",
-        "byte_length": 357614,
-        "sha256": "7f2ec2fb14af2dc2cc9498a717d0bc3ccd35aa3995c3e1cc8da59be5f92702d3"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-last-active-v1/run.json",
+        "byte_length": 357482,
+        "sha256": "a59ad1a15233475b41a9ae88907bd89cda65309f13ebc2d555065fec4254ef1b"
       },
       "inputs": {
         "profile": {
           "byte_length": 3518,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-last-active-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-last-active-v1/profile.json",
           "sha256": "be74112bd0f7cbb5fa4a7239282a6c076fef727e942dad7755cddd85dc79db3f"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-last-active-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-last-active-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -2294,12 +2294,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-last-active-v1/child-output/capture.json",
-          "byte_length": 359858,
-          "sha256": "c57c7bb2fa54482efb6f20335157cf17459674a19bb7be3fa7ece6dad62c448f"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-last-active-v1/child-output/capture.json",
+          "byte_length": 359834,
+          "sha256": "e0e6d5656d9a6e496feed31f1f455b9fdcad8760052a06990836ee1acb4c940d"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-last-active-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-last-active-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "d015dd29b61bb500f83811712cf6162d0b642a7e6e51e77667c255c7f2c762ee"
         },
@@ -2373,29 +2373,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-v1/run.json",
-        "byte_length": 368201,
-        "sha256": "96c19efc0e32c3c328551efb17f8864dbea56c8e237a207840eb8ec7c3d48257"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-v1/run.json",
+        "byte_length": 368069,
+        "sha256": "01440036006d1bb49a63ac480bd77fcf3218d89d6512dc7aabeedcdc37d91d97"
       },
       "inputs": {
         "profile": {
           "byte_length": 3518,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-v1/profile.json",
           "sha256": "d139967b26f806cf9499b946a227b82e94d28a67c2f7b9e778b20770d579071b"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -2407,12 +2407,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-v1/child-output/capture.json",
-          "byte_length": 370473,
-          "sha256": "539ff1057bab843c0fa6613260f422c68c357428908605cbb2567631f62ddd05"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-v1/child-output/capture.json",
+          "byte_length": 370449,
+          "sha256": "176b56d94e076280fbc20b3952e913b2a765c2aa7162ef147fdb566623089d0f"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "91ef1e5759ed2dffc55d0dfcab83a3da55654ec4b67557398b187de8ae77e54c"
         },
@@ -2486,29 +2486,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-next-v1/run.json",
-        "byte_length": 378852,
-        "sha256": "72efed06477ae2c646f9dde0fd13d7fb8ce7b8beb611aa8536015022eaace333"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-next-v1/run.json",
+        "byte_length": 378720,
+        "sha256": "0b1827c01719d6f093f4ed8dcb7e27f74d2f36bef77c364f5b108a67188d0f53"
       },
       "inputs": {
         "profile": {
           "byte_length": 3518,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-next-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-next-v1/profile.json",
           "sha256": "31fbc11c173fc5f13dbce593c63df2e80aac16a04a106b8622ec1e1393eeada2"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-next-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-expired-next-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -2520,12 +2520,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-next-v1/child-output/capture.json",
-          "byte_length": 381089,
-          "sha256": "e84c7e5535872638c35ec915ae285d53e6251f1029abce5f07829458ad46c93a"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-next-v1/child-output/capture.json",
+          "byte_length": 381065,
+          "sha256": "b63e373c983ebd7eeb47f6a74219891154a2b3e6579fd83bb65c61acaa0e0d60"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-next-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-expired-next-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "2772b4f632589bf81fef500170156faa0cec9765f264d48e5b1e4f36b4cf696d"
         },
@@ -2599,29 +2599,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-reselect-v1/run.json",
-        "byte_length": 379397,
-        "sha256": "7fd528d18f5080538676632bc616d408047d8fcd15d7cdb17fa5e19d37fa595f"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-reselect-v1/run.json",
+        "byte_length": 379265,
+        "sha256": "9f014907dee760853b1165bafeea4c151d885b2d939eb775ec14c1f9c82016c8"
       },
       "inputs": {
         "profile": {
           "byte_length": 3674,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-reselect-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-reselect-v1/profile.json",
           "sha256": "8626b70f5a9d908d75e6586ded5e8aea047618c7a0e5aeb8bff566a8f0488141"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-reselect-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-reselect-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -2633,12 +2633,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-reselect-v1/child-output/capture.json",
-          "byte_length": 381734,
-          "sha256": "8b0c0c3e7fd1cd9446a0f7761dbaa764b3de63b3b084c01dbe827cd72890e1e7"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-reselect-v1/child-output/capture.json",
+          "byte_length": 381710,
+          "sha256": "2ff9bcf0b995a15f278575480e61514e221d70350539ca21b680a95823330ece"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-reselect-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-reselect-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "2af20da1da22fa9a9dce3c321e46180430ff75e64502e37fec692420c135bcfb"
         },
@@ -2712,29 +2712,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/empty-band-unselected-v1/run.json",
-        "byte_length": 102397,
-        "sha256": "f814e02804222b3fdb05000f608cbc34cad67f661f20b4ade208310e017908e6"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/empty-band-unselected-v1/run.json",
+        "byte_length": 102265,
+        "sha256": "2c4eb13aabdfe0bbc7ab82640a6bd26738cfc0dd2c7c076baf6a8de0d26235e3"
       },
       "inputs": {
         "profile": {
           "byte_length": 3412,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/empty-band-unselected-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/empty-band-unselected-v1/profile.json",
           "sha256": "3ac2aeac211bb79a06b70b70d3e54840c864a3956a3cf4a55e924d6beb4b3b65"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/empty-band-unselected-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/empty-band-unselected-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -2746,12 +2746,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/empty-band-unselected-v1/child-output/capture.json",
-          "byte_length": 104574,
-          "sha256": "5929a3ce6dc1bae2dfefe42668194315ac78f7a9191e7c3c3b6237d358ec05f8"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/empty-band-unselected-v1/child-output/capture.json",
+          "byte_length": 104550,
+          "sha256": "39098d6dba146afe159e3793a1bf4fb3a931330d1da5146610cd34a5caf26604"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/empty-band-unselected-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/empty-band-unselected-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "85c471ebcd7c0405a0681f28d01de812577f6719096318cd6593fc08bcc95e03"
         },
@@ -2825,29 +2825,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-empty-band-restart-v1/run.json",
-        "byte_length": 379496,
-        "sha256": "db358336aa6dfff1049cca1f8935171b27889024d2efc8c4e3813ca11b4f3252"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-empty-band-restart-v1/run.json",
+        "byte_length": 379364,
+        "sha256": "0da6914a43e0c0cce05751c197062e319ea14055d76373e30d7c7ecd0deb0f91"
       },
       "inputs": {
         "profile": {
           "byte_length": 3724,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-empty-band-restart-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-empty-band-restart-v1/profile.json",
           "sha256": "80db2aca17fbaab27e99ed807349b18863830e8489bc2b70d3fd72b1f68587cc"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-empty-band-restart-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-empty-band-restart-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -2859,12 +2859,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-empty-band-restart-v1/child-output/capture.json",
-          "byte_length": 381772,
-          "sha256": "91ece240086dce2df765a40757b2c5390d2e6757710d2237695ff267991b9bc9"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-empty-band-restart-v1/child-output/capture.json",
+          "byte_length": 381748,
+          "sha256": "789779df13040039d9bbc78edb1c506620a27fb1593fc732fc772bc5c9b32055"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-empty-band-restart-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-empty-band-restart-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "1dd6906e848ff04eb94b2e0dba5995187302090645471bd22bdb03a6a5b94a8c"
         },
@@ -2938,29 +2938,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-control-v1/run.json",
-        "byte_length": 1058437,
-        "sha256": "81646dcf7fdb4bae16393d167d8dbce7f131b697695316a6774a2a42d2213e70"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-control-v1/run.json",
+        "byte_length": 1058305,
+        "sha256": "dac6e70f1b6558a97ec9384a3b5dc8332da860d159e2f909c6d2448fab005360"
       },
       "inputs": {
         "profile": {
           "byte_length": 3518,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-control-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-control-v1/profile.json",
           "sha256": "0175a0d69739b46662405f2165f1c76674e3beb2e79f7f71f1242269f3d6e0a4"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-control-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-control-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -2972,12 +2972,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-control-v1/child-output/capture.json",
-          "byte_length": 1060652,
-          "sha256": "afd2af5f214b799d477c2f530dbc0bc427cd858a81645eb0be535c58922226e1"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-control-v1/child-output/capture.json",
+          "byte_length": 1060628,
+          "sha256": "07056220a4c317590fb729b765c94d84d493dc764b7a6ca9071422d2550013b7"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-control-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-control-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "7e3978dd5a2080a5e5a0649b7bf83dcdd2fe7c1c317acd91c6c1987011a92913"
         },
@@ -3051,29 +3051,29 @@
       "native_comparator": "NONE",
       "parity_certification": "NONE",
       "run": {
-        "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-reselect-v1/run.json",
-        "byte_length": 1059016,
-        "sha256": "013aa5caf00d8ae34acdca361dc18536da750f62dc2b3079355c119494cacfed"
+        "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-reselect-v1/run.json",
+        "byte_length": 1058884,
+        "sha256": "fd6dd291a8018b50737153925564dd725bb691d985c3b5a3456216ee9202abc4"
       },
       "inputs": {
         "profile": {
           "byte_length": 3674,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-reselect-v1/profile.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-reselect-v1/profile.json",
           "sha256": "83572ac0b01abd5c75aa521600859949e0e9180d41fe2f86fc25bbee07e8c9da"
         },
         "config": {
-          "byte_length": 596,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/config.toml",
-          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          "byte_length": 584,
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/config.toml",
+          "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815"
         },
         "contract": {
           "byte_length": 590,
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-reselect-v1/contract.json",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-arrived-reselect-v1/contract.json",
           "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
         },
         "executable": {
           "byte_length": 31859792,
-          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
+          "path": "~/Documents/vera20k/.git/owned-builds/artifacts/procedural-unit-move-production-v2/0/vera20k",
           "sha256": "776a416bc6645aa0da3137b207012fd5cf51a3516e99a81fb4da79a5e7d9c4c5"
         }
       },
@@ -3085,12 +3085,12 @@
       },
       "capture": {
         "manifest": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-reselect-v1/child-output/capture.json",
-          "byte_length": 1061296,
-          "sha256": "f0b1f75d88e315877c16e90b7ac4f53b0e41fb179e7e9a5c0e73745f0bb0a7f6"
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-reselect-v1/child-output/capture.json",
+          "byte_length": 1061272,
+          "sha256": "aadccffaac8310999234c8502417556d2564f2a35894605e366fdc3661092e4d"
         },
         "frame": {
-          "path": "/Users/halvor/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-reselect-v1/child-output/frame.bgra",
+          "path": "~/.codex/worktrees/procedural-drawing/vera20k/logs/procedural-drawing/unit-move-final-v2/unit-move-arrived-reselect-v1/child-output/frame.bgra",
           "byte_length": 1920000,
           "sha256": "1ba8eb4e6e9dca6ee61b1467e3a34be0e399619a91af2d5b1e928ac813c30eb0"
         },
@@ -3159,9 +3159,9 @@
   },
   "files": {
     "unit-move-active-v1/run.json.gz": {
-      "bytes": 113626,
-      "sha256": "3e40ca338571cdaa04f59cd9e9fbbdd7d7b7d9b6354916862818d19aa9786b82",
-      "gzip_sha256": "e62c8dcb4d72ca8bd90363728dc9c9065a9379b6888e3dba6111177220b5b9a5"
+      "bytes": 113494,
+      "sha256": "bd26a3303f8103864f83ccbfb98d877a038962f6f55f0aa2194411740dd1f4a2",
+      "gzip_sha256": "cece8a949cb152783533af6dce998ffd66ae5710b8cbe90a3fa49ccb4a6a09ae"
     },
     "unit-move-active-v1/profile.json.gz": {
       "bytes": 3517,
@@ -3174,9 +3174,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-active-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-active-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3184,14 +3184,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-active-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-active-v1/child-output/capture.json.gz": {
-      "bytes": 115923,
-      "sha256": "eeea2c5c791ebe5ba7042b149ffb66518c40a8f75cdf068ada43bfc0228688bc",
-      "gzip_sha256": "87d35e45045b215451726d955d329eb8e878f889b34dc0defd42602240cb2663"
+      "bytes": 115899,
+      "sha256": "2599ebae9de0fb55abcdc5f6be8424149db60a7f6e3f9a72cdca1c80d185749f",
+      "gzip_sha256": "8d568556914c4e0fae9c1eed703c5a5e1fd95366c5080e0dd1859c481cabee5a"
     },
     "unit-move-active-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3199,9 +3199,9 @@
       "gzip_sha256": "244baa1fceab9049c191c0ab49dc18c1d1f08785b22a52092bd4a79591b4436f"
     },
     "unit-selected-only-v1/run.json.gz": {
-      "bytes": 113024,
-      "sha256": "b3cb995cc3200c613d0f3333662189442b30ee6e97927772ec409f4bb6d4e769",
-      "gzip_sha256": "59db8bd527099895c96195380fdb27700c6fc0823fe2421093f3b8c740157698"
+      "bytes": 112892,
+      "sha256": "41aac3a6f481fce899fab049c7963944de6c5d7fbcce6578e2087d21eea47d39",
+      "gzip_sha256": "18fdd9e7cf93213c0426c28100ef28efdb4bab5a3f083e9df5cfb0e9ab4b5e3b"
     },
     "unit-selected-only-v1/profile.json.gz": {
       "bytes": 3362,
@@ -3214,9 +3214,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-selected-only-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-selected-only-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3224,14 +3224,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-selected-only-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-selected-only-v1/child-output/capture.json.gz": {
-      "bytes": 115240,
-      "sha256": "4e23ad1e73664a15cf376660d7c792d90e95576e9a53bd514959b396f15844c0",
-      "gzip_sha256": "2eaecb2953a66dc4eb5e4ffe4433225bea2910294f3c44bb4787dd6855406706"
+      "bytes": 115216,
+      "sha256": "cce4b814129d3276acd57bf66176fc1b94846830daac6f60f5f9fe90b80fe2e6",
+      "gzip_sha256": "34c88cef12eda6c0fff7e2110473c075152d3f5e2d43ac0e2442d6cab08d45f1"
     },
     "unit-selected-only-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3239,9 +3239,9 @@
       "gzip_sha256": "2c8039e1bdc777e94cf27c6bb5e70dd3d9347ff8975d032812a6ce78e485af7b"
     },
     "unit-move-before-stop-v1/run.json.gz": {
-      "bytes": 124245,
-      "sha256": "256b6ee99d2c55194b12b2ed143e4bb9f2d2e805a6eb5681b4c509fe3aa59d5a",
-      "gzip_sha256": "781be155e110d9ea09e1aa7f7060f499ec0e42478e22ff54ad01d3e58bf11126"
+      "bytes": 124113,
+      "sha256": "81a6001787bb12bb5304b8769023d5a0ca186807e3d7bad49916bc8c18b35d1a",
+      "gzip_sha256": "9954f8265cbc1759e8c9900c53e5039a320cfb6538914450b753910eb6f83599"
     },
     "unit-move-before-stop-v1/profile.json.gz": {
       "bytes": 3517,
@@ -3254,9 +3254,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-before-stop-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-before-stop-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3264,14 +3264,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-before-stop-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-before-stop-v1/child-output/capture.json.gz": {
-      "bytes": 126517,
-      "sha256": "48707e591e9468e1999c6387f49857bf951ecdc427d7c7cc55477d73fa1a2226",
-      "gzip_sha256": "5ba9d96c96d873f1d9f309f2723cbfe3558e71f595a647d2613ba81be0069687"
+      "bytes": 126493,
+      "sha256": "5235733500a35959c7f4442d0c946d01409fdb2d7b3b8542cf9009281207a567",
+      "gzip_sha256": "06709f2dfb4be102149ab6e4632e6362391fc395e0834286277d559ec8e9bfc4"
     },
     "unit-move-before-stop-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3279,9 +3279,9 @@
       "gzip_sha256": "996a59608ae7649cc84f68cf9effe431faaba6080cdc4e0f5426d532d80c7cb2"
     },
     "unit-move-stopped-v1/run.json.gz": {
-      "bytes": 124352,
-      "sha256": "2c9e968eff75597c8d140bb1ae2d0e6a57360481c9f82ac4f14e630241338f32",
-      "gzip_sha256": "ca393c9f0fc30ea9acd43fccbf7a5e377f8228ee07fe2b550783fb7598c6b87a"
+      "bytes": 124220,
+      "sha256": "9247853a71756f4dfaece1646458923bddc4839670a079c3082b2b6a1d4c96ca",
+      "gzip_sha256": "d4c558aa328ff2d5cae5d400ad5dcd8f2e11986146df4e1abe20a9d465d613d5"
     },
     "unit-move-stopped-v1/profile.json.gz": {
       "bytes": 3676,
@@ -3294,9 +3294,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-stopped-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-stopped-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3304,14 +3304,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-stopped-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-stopped-v1/child-output/capture.json.gz": {
-      "bytes": 126728,
-      "sha256": "4c90dcdfad51b53fb496f22ce882435011bb3eb8fee4d3ae168c2799dd291bc9",
-      "gzip_sha256": "f0e508205340e9cc9a89f1a74713f494fc6cb15b745d56696356a716add0fbf0"
+      "bytes": 126704,
+      "sha256": "b6de4f522b7f83ee3e205a89935247bf741ff163b3ea48ccdea883e16aeab3c8",
+      "gzip_sha256": "9f28808091c6eaee486f56a3e6631faa969d368cdbf6e5b9b4120834fb8afb01"
     },
     "unit-move-stopped-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3319,9 +3319,9 @@
       "gzip_sha256": "034b7e0609ba1fa9e6207e4213a41e23728974a1a5b53ebc84fc8c367a01fa5b"
     },
     "unit-move-last-active-v1/run.json.gz": {
-      "bytes": 357580,
-      "sha256": "2031e7dc317d9c352a9f6e356e6640f7cbedc6013d66fa2266ddf6d16eed143f",
-      "gzip_sha256": "77c1f1edc3f62fc86946223fb46693f23b04814f7b5a4b62535b6e4dec4c69a7"
+      "bytes": 357448,
+      "sha256": "dbdae0cfc9c0b9aea85b97f4bbe42cfe822e715534d299ba5c5fb183d27b5e43",
+      "gzip_sha256": "b9c5e1caee09c5918f3e34d719408b2f8620f72745ae4c25d09f51b7b7604c74"
     },
     "unit-move-last-active-v1/profile.json.gz": {
       "bytes": 3518,
@@ -3334,9 +3334,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-last-active-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-last-active-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3344,14 +3344,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-last-active-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-last-active-v1/child-output/capture.json.gz": {
-      "bytes": 359857,
-      "sha256": "9781d6094b079673915cdc564e23755211d95835a931918cddc67e0aa19f45f6",
-      "gzip_sha256": "5dbf9add0f9694a0079044ec4a38df19f975a04fcadee4c585ff55f2de0046f2"
+      "bytes": 359833,
+      "sha256": "49e316a32647b9924bf0dbd4c13948bfbf68e217d7e228f0c807fec4f1764d5a",
+      "gzip_sha256": "29e4cc9b0ecb49ac8dfbd72b21039873c4110a7408043b6f1ad8e73aed40848d"
     },
     "unit-move-last-active-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3359,9 +3359,9 @@
       "gzip_sha256": "87155f5c53878a9464e0751f0f1532d7717b82b6c6c2e1e06b391d93aef57b8f"
     },
     "unit-move-expired-v1/run.json.gz": {
-      "bytes": 368177,
-      "sha256": "1cd173acf803e40fab4c1b6cc814fd3df5bc9f07e27d42ffda08953574d2fb64",
-      "gzip_sha256": "1f97fd1d76b5e5f4bba381f3dc766291c92ed43dc5ff129a01a51d69e6d3d978"
+      "bytes": 368045,
+      "sha256": "2cdfdb725ca67436ced0004b02a5bb6e7a232d22105ad824f3ca47e4ad3c3425",
+      "gzip_sha256": "81532196a69f23c398495484fec39f5faaa2513f763cf83186c0292438a3687c"
     },
     "unit-move-expired-v1/profile.json.gz": {
       "bytes": 3518,
@@ -3374,9 +3374,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-expired-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-expired-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3384,14 +3384,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-expired-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-expired-v1/child-output/capture.json.gz": {
-      "bytes": 370474,
-      "sha256": "ef0e2b87a16dd055fcc755024220c0e9abfa47362edf5b880eed762cec25b14a",
-      "gzip_sha256": "cb8e82af8f109dddf013c3dc1f611dc03021dfee366f67e8cf2915dba6f2c9f8"
+      "bytes": 370450,
+      "sha256": "e059f9cb391740c675843006bd631be0ad4325e96cf0a0b6ac458dcbe7e40186",
+      "gzip_sha256": "f3fdfce497124a80ea4d7c5a87d4a5f922a15e7f7ab7ede3ec681d2891797bbd"
     },
     "unit-move-expired-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3399,9 +3399,9 @@
       "gzip_sha256": "65e2265558f165038fd39e0cfdb2802b304adb83de190e9ebb540c1f007e8270"
     },
     "unit-move-expired-next-v1/run.json.gz": {
-      "bytes": 378818,
-      "sha256": "281b6d35e8c57e7d917d8f74c80e11cf4391fc7accd700681d716ba948b3224c",
-      "gzip_sha256": "177ab0e92bd7701fb558cfa6d7a5b51e48722b9d10e596ec5dab34426d10a084"
+      "bytes": 378686,
+      "sha256": "e7be26b3afc3381f6a1c8984838049390a715f0437d08e5619a3e230c604ad73",
+      "gzip_sha256": "402966cc46fc5ca8399d776f430c6e4cccfffba2ea3e5aada034e3d4633253ac"
     },
     "unit-move-expired-next-v1/profile.json.gz": {
       "bytes": 3518,
@@ -3414,9 +3414,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-expired-next-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-expired-next-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3424,14 +3424,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-expired-next-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-expired-next-v1/child-output/capture.json.gz": {
-      "bytes": 381090,
-      "sha256": "14afdd1c63a4adba9ad190084a1c02228546a965c9b2ae45995aa700b14284fc",
-      "gzip_sha256": "ea9175da742e36f707184d18aed407b5185a3618246373feba591644fbb04e7f"
+      "bytes": 381066,
+      "sha256": "1ef48063a908f799977e5d83bee211d3f62d0fdfc77b1985e947de961ae9d816",
+      "gzip_sha256": "d0ffebeca05c42efb7fe8dbf511dea4a14d17a3c71582c4f60249a5c006eb578"
     },
     "unit-move-expired-next-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3439,9 +3439,9 @@
       "gzip_sha256": "2d8cfe7f592ad67a02b9cbeb4e150b11b92de5b810666b80f77f23f78d5c9a24"
     },
     "unit-move-reselect-v1/run.json.gz": {
-      "bytes": 379369,
-      "sha256": "f00629188c205741c340e5a43cb8968b6f52878a3aa9b8a18f13fa4143a34dee",
-      "gzip_sha256": "e9422dd5d66bbdf65539186c596aef07e52c546a49225e63d0bae0636649e090"
+      "bytes": 379237,
+      "sha256": "86e6a67a74275553c77c1ae5488b95efc7bafdd3cf1ef7a3ade9a8ba10a26f7a",
+      "gzip_sha256": "0520bff25a761a67755f2632abebb9a0e2b93a432a55a51e9ec7e97eb9f28c3c"
     },
     "unit-move-reselect-v1/profile.json.gz": {
       "bytes": 3674,
@@ -3454,9 +3454,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-reselect-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-reselect-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3464,14 +3464,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-reselect-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-reselect-v1/child-output/capture.json.gz": {
-      "bytes": 381733,
-      "sha256": "3e74ca085d6b6d938c711c39d3b74fd2ff9b5f2a04441a3b7676d15838d7f96e",
-      "gzip_sha256": "01885159c250d81c26d7dc8a65fac1fd67f2b268170adad7c6786484a9559dcf"
+      "bytes": 381709,
+      "sha256": "1d14588cdd5ee746f7bb645247776f94357a47190e575faf4712a99707dc34ad",
+      "gzip_sha256": "470728e2b2a8d7eb07d2de1ae845484b8b43078dd8ab99fafc7c0b0e0926b592"
     },
     "unit-move-reselect-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3479,9 +3479,9 @@
       "gzip_sha256": "e4ba6e704aea565eda58d05bc1371f1cb54c793c201f09406b77c8fdfb461d67"
     },
     "empty-band-unselected-v1/run.json.gz": {
-      "bytes": 102365,
-      "sha256": "792aa204fc599c41941c06934247e7841bd809c3ce8c013ce5b475c8bd04fb1c",
-      "gzip_sha256": "977df46ea10cec2a124d34859b5f3dd45d79949e1ce91f1e35d73753a67b63cf"
+      "bytes": 102233,
+      "sha256": "27ab687a1d82457b0a77faeb8a931a143f9b27b57b41a1e3e1dfcf81a60e84f7",
+      "gzip_sha256": "df6a71f0e7137fa1c0939158a531392b821fb7e9e303e75f2d563d0f9f0c97f3"
     },
     "empty-band-unselected-v1/profile.json.gz": {
       "bytes": 3412,
@@ -3494,9 +3494,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "empty-band-unselected-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "empty-band-unselected-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3504,14 +3504,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "empty-band-unselected-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "empty-band-unselected-v1/child-output/capture.json.gz": {
-      "bytes": 104575,
-      "sha256": "bbd841d1fca7828eb5b1892602c4d0513cf026ac9a146867f0ca4c69406c6678",
-      "gzip_sha256": "f867081db62951dd2fe440cdc2e3c55a2a15e2dc6cd83a6531faf3c673730852"
+      "bytes": 104551,
+      "sha256": "c63d4a409c4cdfe0ad0a4e85d9965fda70480eb8d0a6f181036e95edcf5bb804",
+      "gzip_sha256": "d9f326ec40b64b522aa2fb0ef222a2591a77bc2c624acceca4a200d6e7864f02"
     },
     "empty-band-unselected-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3519,9 +3519,9 @@
       "gzip_sha256": "ac4089dcb383b77039112461d0579effc1add70ff2676caff359ec48f0eb5654"
     },
     "unit-move-empty-band-restart-v1/run.json.gz": {
-      "bytes": 379450,
-      "sha256": "5999db00db2ea4a6b21542c95d26d0ca90f73f0bcd10c472ee20fcdd89f72922",
-      "gzip_sha256": "bd10b1e037b38e888150a7d0b11af8a4708844f74172367378e263d368ec1e65"
+      "bytes": 379318,
+      "sha256": "741d7c184a8845e7679fa63baef000cce4d3ec9e6362554273414574e060b910",
+      "gzip_sha256": "9105bc2ded3760a428532cfd4c1c9ff86b6ce0c4eaaab7f8b819e3aa329c7860"
     },
     "unit-move-empty-band-restart-v1/profile.json.gz": {
       "bytes": 3724,
@@ -3534,9 +3534,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-empty-band-restart-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-empty-band-restart-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3544,14 +3544,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-empty-band-restart-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-empty-band-restart-v1/child-output/capture.json.gz": {
-      "bytes": 381773,
-      "sha256": "f458a8c4f34d08e4c4ba3b89be8314ab524acfd0d5b98a9c20e261df914d3e71",
-      "gzip_sha256": "91dbf6c2b64b437cc3ca3cad0e392910da58bea901fbd5541f387f26c6697fcc"
+      "bytes": 381749,
+      "sha256": "30799cbbcbe7a83b1980e3a5e4271535b42223bdfc8a99f21b36c3fa2189d1f2",
+      "gzip_sha256": "590445e969fce20f8fd4f74935755f26f8c1c554eab2fe823facc976e26bb41c"
     },
     "unit-move-empty-band-restart-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3559,9 +3559,9 @@
       "gzip_sha256": "290e1b69452f495b5491b5e3f35b4061d3d86eb812ef40ee5181ef14df6cadbf"
     },
     "unit-move-arrived-control-v1/run.json.gz": {
-      "bytes": 1058396,
-      "sha256": "7a35070db48e18c255c6ecdb108f15493aa8c8a5293856b478dbc60b0337d72e",
-      "gzip_sha256": "07c2cfbac4d55f6a100f6ca98ac37e8387f8674fb13222fde1834c4ba049832f"
+      "bytes": 1058264,
+      "sha256": "da3cfdb6512cba165fa705fa24a7c5f3b8f74de150b3526016367edaea521358",
+      "gzip_sha256": "1695d65f9291610ad1e99dbc8db6f9b919af5acdbd3136bb2211663793298f89"
     },
     "unit-move-arrived-control-v1/profile.json.gz": {
       "bytes": 3518,
@@ -3574,9 +3574,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-arrived-control-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-arrived-control-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3584,14 +3584,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-arrived-control-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-arrived-control-v1/child-output/capture.json.gz": {
-      "bytes": 1060652,
-      "sha256": "9bbcc82e4146285cb234f61225b315552b9afb32206a98a60cc4b31deb676028",
-      "gzip_sha256": "c7a5e789022f9572b428f33a3a7f6e0e4ba013fd1d64b9b15f365b6f78aaafb3"
+      "bytes": 1060628,
+      "sha256": "6e894702f7f6f1bad8831927a2ac867123ff0fa4696f893ebad98421ac433c62",
+      "gzip_sha256": "3f3d71a1fa1a5d45c3cfc3b38f039dc01cb72e79ae619c1bce31c95b95199cf3"
     },
     "unit-move-arrived-control-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3599,9 +3599,9 @@
       "gzip_sha256": "425740116157f940656ce4c6088a6317e234c67af22b53f187ac37c62cc2497c"
     },
     "unit-move-arrived-reselect-v1/run.json.gz": {
-      "bytes": 1058973,
-      "sha256": "b6b8e3f6078bf5688497b0a701d2f464bc18e7cf1bc4a61ffc94243b132dddd0",
-      "gzip_sha256": "12570f17f6d59e92a8075187755f47439af31f14c4e3122eea99d8cb356618a1"
+      "bytes": 1058841,
+      "sha256": "5be643d772534d4cdcff5c55174dcd4904525a17233bdfa497a4c00f8081bfe7",
+      "gzip_sha256": "e10283163ce1e7af7a65e33e84ce4ad7986f2fe84b206c2df042563278d740a5"
     },
     "unit-move-arrived-reselect-v1/profile.json.gz": {
       "bytes": 3674,
@@ -3614,9 +3614,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-arrived-reselect-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-arrived-reselect-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3624,14 +3624,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-arrived-reselect-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-arrived-reselect-v1/child-output/capture.json.gz": {
-      "bytes": 1061296,
-      "sha256": "1262353de7d469ebe07474271821d61582d94756e071e66bb771b0915e7e172f",
-      "gzip_sha256": "f90e5e1a942f8a52e0caee81cc495b0a5fd424cc0b36e37c4c4c099272632580"
+      "bytes": 1061272,
+      "sha256": "3d8f5e546b4d8e48d8e8182fffe9fa2fb222698c9de0c8ed0fe3a5233bac77a3",
+      "gzip_sha256": "bd74cf74aa811b87d8e8b466abe6fd7324e704f7eafa2f57eb897f93a05d844b"
     },
     "unit-move-arrived-reselect-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3639,9 +3639,9 @@
       "gzip_sha256": "fa503d2af0ddc5d9e0f80c7b6122b8454c6332e8fa5d9c765d314866738e80cf"
     },
     "unit-move-final-v2/unit-move-active-v1/run.json.gz": {
-      "bytes": 113646,
-      "sha256": "bcdff7fe8ed8272e3da3575224c055f6b50b16445efd043110b0c5a862098c39",
-      "gzip_sha256": "ff0e799986acee9c5ebbf22815d08809e69193da9089a5f1f9a71118b347d2a2"
+      "bytes": 113514,
+      "sha256": "b2390f7a292e9e095957b5cfad72dcb4fff9cf6bdbf8c43ff941b1fa7b7e46ae",
+      "gzip_sha256": "9b5b16f808955f2cf389651412aed154b55cbe1b01ab1b7b12c6008dc9509b60"
     },
     "unit-move-final-v2/unit-move-active-v1/profile.json.gz": {
       "bytes": 3517,
@@ -3654,9 +3654,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/unit-move-active-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/unit-move-active-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3664,14 +3664,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/unit-move-active-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/unit-move-active-v1/child-output/capture.json.gz": {
-      "bytes": 115920,
-      "sha256": "3dc1e42c0e9d082a9c87cff4fb9997becc085349003966a2b7cb12bfa65b10af",
-      "gzip_sha256": "4babe937cf99b654b49e7a59897b9f17aa9f9779c50cd43a3a9c9722967a58d6"
+      "bytes": 115896,
+      "sha256": "0efb860f1d51a4e3816e74eb7b475e89fefc947b59290d0753dd4692eac1c6d0",
+      "gzip_sha256": "69f355cd4447c0746114f20c6b6c74203950ce14636570f60179577b79a31d79"
     },
     "unit-move-final-v2/unit-move-active-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3679,9 +3679,9 @@
       "gzip_sha256": "244baa1fceab9049c191c0ab49dc18c1d1f08785b22a52092bd4a79591b4436f"
     },
     "unit-move-final-v2/unit-selected-only-v1/run.json.gz": {
-      "bytes": 113051,
-      "sha256": "343f044f45450eea7222b3dc25f1ced96c029b529815225f4693827ec27a0e53",
-      "gzip_sha256": "8b9425d262bf91b2cb5e8ed78070c4253308906581c3eb3b5f8c06021e9b6251"
+      "bytes": 112919,
+      "sha256": "608f79fbf1648e4ce90f243240d20db4a4496ec979100303b8105f2cd634937a",
+      "gzip_sha256": "f871fdf79be729bcd468561b08bbff4dc53badba7b690ec4a20edad82554d904"
     },
     "unit-move-final-v2/unit-selected-only-v1/profile.json.gz": {
       "bytes": 3362,
@@ -3694,9 +3694,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/unit-selected-only-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/unit-selected-only-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3704,14 +3704,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/unit-selected-only-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/unit-selected-only-v1/child-output/capture.json.gz": {
-      "bytes": 115240,
-      "sha256": "a93a758a7600d9159c7098cd4bf98b8f3532d6e3b90c11d511031d5a4ac29f2a",
-      "gzip_sha256": "a5402a9ab6e0ed06af1be69fb36fb8e05971aec0e86ed4044393067fcf4536de"
+      "bytes": 115216,
+      "sha256": "3b83f683b81273bf8ec99e51187aa32518ad0268d881989a6a470e1184ad1d77",
+      "gzip_sha256": "b78c551c6d58cbf5b73204bca9a1f6556412ba88e2a8e73c7b607c416edf3c43"
     },
     "unit-move-final-v2/unit-selected-only-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3719,9 +3719,9 @@
       "gzip_sha256": "2c8039e1bdc777e94cf27c6bb5e70dd3d9347ff8975d032812a6ce78e485af7b"
     },
     "unit-move-final-v2/unit-move-before-stop-v1/run.json.gz": {
-      "bytes": 124278,
-      "sha256": "f459eb5274d31cae54d55bc1836334da346aa223615026b12ee983ed890baef8",
-      "gzip_sha256": "a29a18bd047cc3919ad95667c03f1a71ccff393e1aff694233b00b81e1628538"
+      "bytes": 124146,
+      "sha256": "a619226fc994882634d787d75b932f058f5083b9d796475f7cc3547b22416034",
+      "gzip_sha256": "2a08bef8f237b5ccbe10b75250b5edb39e083e257b59471dfe7212b723c685ec"
     },
     "unit-move-final-v2/unit-move-before-stop-v1/profile.json.gz": {
       "bytes": 3517,
@@ -3734,9 +3734,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/unit-move-before-stop-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/unit-move-before-stop-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3744,14 +3744,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/unit-move-before-stop-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/unit-move-before-stop-v1/child-output/capture.json.gz": {
-      "bytes": 126517,
-      "sha256": "7a778a3f4b03d92ff35aa332b6bf39d92c97960a337a4147296c6a8bb38e6c54",
-      "gzip_sha256": "f11a0ae8756c129185bbcbed886bb63ebad012d1787abc2e8f3843a502d21c41"
+      "bytes": 126493,
+      "sha256": "6c470f7a909fc1a6b3681f9aa922d04834dcb6d852cc24ec3de9219e26ea49a2",
+      "gzip_sha256": "b02c5efa84fa6a75c36045eb696b07f7fb71a0406319b41d2d6757b9490fb56f"
     },
     "unit-move-final-v2/unit-move-before-stop-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3759,9 +3759,9 @@
       "gzip_sha256": "996a59608ae7649cc84f68cf9effe431faaba6080cdc4e0f5426d532d80c7cb2"
     },
     "unit-move-final-v2/unit-move-stopped-v1/run.json.gz": {
-      "bytes": 124378,
-      "sha256": "5cab3a40644cafcdd9e803b90d44a0755c1f80ae20df18d62133ecd2f4c7a092",
-      "gzip_sha256": "8a8d5f4e7a6d586948cb49e5a048f6bacbb9b27a588cdfa02ca03a6729d6544e"
+      "bytes": 124246,
+      "sha256": "23485806023c9112c99b317a841dad6a430cd56f4ae6113225e0b89daddf9e97",
+      "gzip_sha256": "1aefd85b96d35ee18e406863817c4f2265426c06423e3ff361294b55f63cd0cd"
     },
     "unit-move-final-v2/unit-move-stopped-v1/profile.json.gz": {
       "bytes": 3676,
@@ -3774,9 +3774,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/unit-move-stopped-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/unit-move-stopped-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3784,14 +3784,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/unit-move-stopped-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/unit-move-stopped-v1/child-output/capture.json.gz": {
-      "bytes": 126729,
-      "sha256": "31941f329d583368291a1d1780f4354d8f5e940fcc32c03bdbb6e559abec6ea7",
-      "gzip_sha256": "cf138cf32a188088cfa2b1ae575fa9d47305f0e173035873f139ef6d1f50eb2b"
+      "bytes": 126705,
+      "sha256": "db721f13f53c5e245bf4976dbc828ea697ee8fb46b149a677923e1c5562f36d5",
+      "gzip_sha256": "fda87ac8f758b4f5dad346abae6c9d14a1502700d095105ba5a4ca9316c5fb59"
     },
     "unit-move-final-v2/unit-move-stopped-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3799,9 +3799,9 @@
       "gzip_sha256": "034b7e0609ba1fa9e6207e4213a41e23728974a1a5b53ebc84fc8c367a01fa5b"
     },
     "unit-move-final-v2/unit-move-last-active-v1/run.json.gz": {
-      "bytes": 357614,
-      "sha256": "7f2ec2fb14af2dc2cc9498a717d0bc3ccd35aa3995c3e1cc8da59be5f92702d3",
-      "gzip_sha256": "4f6f77b4e43dd4143512044efc73805615c80517e15cfef9c96be077a94758f3"
+      "bytes": 357482,
+      "sha256": "a59ad1a15233475b41a9ae88907bd89cda65309f13ebc2d555065fec4254ef1b",
+      "gzip_sha256": "ba33439956218b5af0df250cf945e749a9d7bdfeed258f02acbd20d888de4a55"
     },
     "unit-move-final-v2/unit-move-last-active-v1/profile.json.gz": {
       "bytes": 3518,
@@ -3814,9 +3814,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/unit-move-last-active-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/unit-move-last-active-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3824,14 +3824,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/unit-move-last-active-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/unit-move-last-active-v1/child-output/capture.json.gz": {
-      "bytes": 359858,
-      "sha256": "c57c7bb2fa54482efb6f20335157cf17459674a19bb7be3fa7ece6dad62c448f",
-      "gzip_sha256": "9dc67af8dc91c2f999f7de3802c7fce2bbdaa3a7677c04f32f957487811f7b30"
+      "bytes": 359834,
+      "sha256": "e0e6d5656d9a6e496feed31f1f455b9fdcad8760052a06990836ee1acb4c940d",
+      "gzip_sha256": "d9a63b818af7db0c32a70fb62c653fec6d73a9657a883a4ac1e7bab3adf58e00"
     },
     "unit-move-final-v2/unit-move-last-active-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3839,9 +3839,9 @@
       "gzip_sha256": "87155f5c53878a9464e0751f0f1532d7717b82b6c6c2e1e06b391d93aef57b8f"
     },
     "unit-move-final-v2/unit-move-expired-v1/run.json.gz": {
-      "bytes": 368201,
-      "sha256": "96c19efc0e32c3c328551efb17f8864dbea56c8e237a207840eb8ec7c3d48257",
-      "gzip_sha256": "83ece3c24f1537cd194d8ef80e7b5dc80615191aa76f93cddc600da785574076"
+      "bytes": 368069,
+      "sha256": "01440036006d1bb49a63ac480bd77fcf3218d89d6512dc7aabeedcdc37d91d97",
+      "gzip_sha256": "fed0ed81b41cd05271e26fe43af34e649d807714c6e58e87c39b17121b9423ce"
     },
     "unit-move-final-v2/unit-move-expired-v1/profile.json.gz": {
       "bytes": 3518,
@@ -3854,9 +3854,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/unit-move-expired-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/unit-move-expired-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3864,14 +3864,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/unit-move-expired-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/unit-move-expired-v1/child-output/capture.json.gz": {
-      "bytes": 370473,
-      "sha256": "539ff1057bab843c0fa6613260f422c68c357428908605cbb2567631f62ddd05",
-      "gzip_sha256": "2041d0b30baacbb9b98d4b6fda999fc49b46e3abf8b88b17417b99b216149d58"
+      "bytes": 370449,
+      "sha256": "176b56d94e076280fbc20b3952e913b2a765c2aa7162ef147fdb566623089d0f",
+      "gzip_sha256": "71a6dc3e55f3bc15e5f93a43712ec062332c91e56ebc60cadd3f997de9ccc7b1"
     },
     "unit-move-final-v2/unit-move-expired-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3879,9 +3879,9 @@
       "gzip_sha256": "65e2265558f165038fd39e0cfdb2802b304adb83de190e9ebb540c1f007e8270"
     },
     "unit-move-final-v2/unit-move-expired-next-v1/run.json.gz": {
-      "bytes": 378852,
-      "sha256": "72efed06477ae2c646f9dde0fd13d7fb8ce7b8beb611aa8536015022eaace333",
-      "gzip_sha256": "bdd3d99e2623e83660b0eaa204cf5894f14e5e6548727e466858a2b34560d5c6"
+      "bytes": 378720,
+      "sha256": "0b1827c01719d6f093f4ed8dcb7e27f74d2f36bef77c364f5b108a67188d0f53",
+      "gzip_sha256": "9d6e8dea07283e89cfc9cbde6fa811a82cbae660fc347db07f7041bf063c82ca"
     },
     "unit-move-final-v2/unit-move-expired-next-v1/profile.json.gz": {
       "bytes": 3518,
@@ -3894,9 +3894,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/unit-move-expired-next-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/unit-move-expired-next-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3904,14 +3904,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/unit-move-expired-next-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/unit-move-expired-next-v1/child-output/capture.json.gz": {
-      "bytes": 381089,
-      "sha256": "e84c7e5535872638c35ec915ae285d53e6251f1029abce5f07829458ad46c93a",
-      "gzip_sha256": "12d924ef42f2db7579abc4005b7d08f5ea894436e2133b9a105ff7aca7adcb43"
+      "bytes": 381065,
+      "sha256": "b63e373c983ebd7eeb47f6a74219891154a2b3e6579fd83bb65c61acaa0e0d60",
+      "gzip_sha256": "fd75d81d4d258494abbe8042587630154e0085652e03d3e46f59cdfdbaa1e246"
     },
     "unit-move-final-v2/unit-move-expired-next-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3919,9 +3919,9 @@
       "gzip_sha256": "2d8cfe7f592ad67a02b9cbeb4e150b11b92de5b810666b80f77f23f78d5c9a24"
     },
     "unit-move-final-v2/unit-move-reselect-v1/run.json.gz": {
-      "bytes": 379397,
-      "sha256": "7fd528d18f5080538676632bc616d408047d8fcd15d7cdb17fa5e19d37fa595f",
-      "gzip_sha256": "537f3adbd8975d7f767f06f9dc977e8745c3dd7e9e756011e44d29a341ed6879"
+      "bytes": 379265,
+      "sha256": "9f014907dee760853b1165bafeea4c151d885b2d939eb775ec14c1f9c82016c8",
+      "gzip_sha256": "7e462af5db9e7013bb445a42794a618f96c73d60bd09d124d774397a672b3e3d"
     },
     "unit-move-final-v2/unit-move-reselect-v1/profile.json.gz": {
       "bytes": 3674,
@@ -3934,9 +3934,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/unit-move-reselect-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/unit-move-reselect-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3944,14 +3944,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/unit-move-reselect-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/unit-move-reselect-v1/child-output/capture.json.gz": {
-      "bytes": 381734,
-      "sha256": "8b0c0c3e7fd1cd9446a0f7761dbaa764b3de63b3b084c01dbe827cd72890e1e7",
-      "gzip_sha256": "18c5b71542b0fdd3c6652c645cd0ac3eb30934d41d3f2dcfc6d5d89e12f6253e"
+      "bytes": 381710,
+      "sha256": "2ff9bcf0b995a15f278575480e61514e221d70350539ca21b680a95823330ece",
+      "gzip_sha256": "ec38242e63e5a9eabae6259e6d7cef445fab8686072be761e75934d1d34de300"
     },
     "unit-move-final-v2/unit-move-reselect-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3959,9 +3959,9 @@
       "gzip_sha256": "e4ba6e704aea565eda58d05bc1371f1cb54c793c201f09406b77c8fdfb461d67"
     },
     "unit-move-final-v2/empty-band-unselected-v1/run.json.gz": {
-      "bytes": 102397,
-      "sha256": "f814e02804222b3fdb05000f608cbc34cad67f661f20b4ade208310e017908e6",
-      "gzip_sha256": "d77d8cb138240093bc5975bfec4bb107c16069492d5175fd380ea6aa3fe28d82"
+      "bytes": 102265,
+      "sha256": "2c4eb13aabdfe0bbc7ab82640a6bd26738cfc0dd2c7c076baf6a8de0d26235e3",
+      "gzip_sha256": "59e2b9eb0fb1cb0b2024bb5e4f9d86b8c22b48d2fdfcd20c1d90bc1d91ade878"
     },
     "unit-move-final-v2/empty-band-unselected-v1/profile.json.gz": {
       "bytes": 3412,
@@ -3974,9 +3974,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/empty-band-unselected-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/empty-band-unselected-v1/stdout.log.gz": {
       "bytes": 0,
@@ -3984,14 +3984,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/empty-band-unselected-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/empty-band-unselected-v1/child-output/capture.json.gz": {
-      "bytes": 104574,
-      "sha256": "5929a3ce6dc1bae2dfefe42668194315ac78f7a9191e7c3c3b6237d358ec05f8",
-      "gzip_sha256": "4aef01b3467511f7e5486f4146d4803a66fa816d84d95f07c235ebfb224f2f02"
+      "bytes": 104550,
+      "sha256": "39098d6dba146afe159e3793a1bf4fb3a931330d1da5146610cd34a5caf26604",
+      "gzip_sha256": "8b2b3fe141b32d35a3637e41b26f192f705f82f85298f3a79eb9ae4fda44552d"
     },
     "unit-move-final-v2/empty-band-unselected-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -3999,9 +3999,9 @@
       "gzip_sha256": "ac4089dcb383b77039112461d0579effc1add70ff2676caff359ec48f0eb5654"
     },
     "unit-move-final-v2/unit-move-empty-band-restart-v1/run.json.gz": {
-      "bytes": 379496,
-      "sha256": "db358336aa6dfff1049cca1f8935171b27889024d2efc8c4e3813ca11b4f3252",
-      "gzip_sha256": "110b6f636ba7f673becf6ff7836fe26af668b252de1808984267854c2edc97ae"
+      "bytes": 379364,
+      "sha256": "0da6914a43e0c0cce05751c197062e319ea14055d76373e30d7c7ecd0deb0f91",
+      "gzip_sha256": "e16b6cdb3cce40349a6c357e1b4faac2331901183176bb709de8835d5e096e55"
     },
     "unit-move-final-v2/unit-move-empty-band-restart-v1/profile.json.gz": {
       "bytes": 3724,
@@ -4014,9 +4014,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/unit-move-empty-band-restart-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/unit-move-empty-band-restart-v1/stdout.log.gz": {
       "bytes": 0,
@@ -4024,14 +4024,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/unit-move-empty-band-restart-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/unit-move-empty-band-restart-v1/child-output/capture.json.gz": {
-      "bytes": 381772,
-      "sha256": "91ece240086dce2df765a40757b2c5390d2e6757710d2237695ff267991b9bc9",
-      "gzip_sha256": "d855c557a1ac8b8ebe20739fcce68cddb6ccc9b55b30fec667be5a9753bf4eac"
+      "bytes": 381748,
+      "sha256": "789779df13040039d9bbc78edb1c506620a27fb1593fc732fc772bc5c9b32055",
+      "gzip_sha256": "b1282e3a6a6e8f14ae0e70e70526d02699b78ddfbb7266fa734bc83d4589a253"
     },
     "unit-move-final-v2/unit-move-empty-band-restart-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -4039,9 +4039,9 @@
       "gzip_sha256": "290e1b69452f495b5491b5e3f35b4061d3d86eb812ef40ee5181ef14df6cadbf"
     },
     "unit-move-final-v2/unit-move-arrived-control-v1/run.json.gz": {
-      "bytes": 1058437,
-      "sha256": "81646dcf7fdb4bae16393d167d8dbce7f131b697695316a6774a2a42d2213e70",
-      "gzip_sha256": "1009c412ec6d268747e2e7f812f16c0f17c0bc3c67d23f036ded21b5e93a7582"
+      "bytes": 1058305,
+      "sha256": "dac6e70f1b6558a97ec9384a3b5dc8332da860d159e2f909c6d2448fab005360",
+      "gzip_sha256": "e732eb96d013f33a7a3e87cf7669fa3af4628f28c1346952820a3589e4b81ffe"
     },
     "unit-move-final-v2/unit-move-arrived-control-v1/profile.json.gz": {
       "bytes": 3518,
@@ -4054,9 +4054,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/unit-move-arrived-control-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/unit-move-arrived-control-v1/stdout.log.gz": {
       "bytes": 0,
@@ -4064,14 +4064,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/unit-move-arrived-control-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/unit-move-arrived-control-v1/child-output/capture.json.gz": {
-      "bytes": 1060652,
-      "sha256": "afd2af5f214b799d477c2f530dbc0bc427cd858a81645eb0be535c58922226e1",
-      "gzip_sha256": "b6e8cad8c704952183f3ec293e80b1fd42ab1cd7fab6610fd496acdfbcec19a0"
+      "bytes": 1060628,
+      "sha256": "07056220a4c317590fb729b765c94d84d493dc764b7a6ca9071422d2550013b7",
+      "gzip_sha256": "8805525ea63e92a4e83c4116c357fa4428b570d94449f8c5ca30e67faa06b32b"
     },
     "unit-move-final-v2/unit-move-arrived-control-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,
@@ -4079,9 +4079,9 @@
       "gzip_sha256": "425740116157f940656ce4c6088a6317e234c67af22b53f187ac37c62cc2497c"
     },
     "unit-move-final-v2/unit-move-arrived-reselect-v1/run.json.gz": {
-      "bytes": 1059016,
-      "sha256": "013aa5caf00d8ae34acdca361dc18536da750f62dc2b3079355c119494cacfed",
-      "gzip_sha256": "e1e00d0eb9baeaeffe9d764010b4db6b8f4f9a640ea3331d306c7abc5c47039c"
+      "bytes": 1058884,
+      "sha256": "fd6dd291a8018b50737153925564dd725bb691d985c3b5a3456216ee9202abc4",
+      "gzip_sha256": "9074a7714da5a40e75fb2cbc0bc8d2619813dee7d99c44036f4d5a4effe86446"
     },
     "unit-move-final-v2/unit-move-arrived-reselect-v1/profile.json.gz": {
       "bytes": 3674,
@@ -4094,9 +4094,9 @@
       "gzip_sha256": "ae9121b6780cf6afde3cf475932381892017b3b4d79bcd8c809a50a98cd5a986"
     },
     "unit-move-final-v2/unit-move-arrived-reselect-v1/config.toml.gz": {
-      "bytes": 596,
-      "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
-      "gzip_sha256": "b3701f6c194bc992d9edb5d789b198db56349d23a6be2af56803c3fc55c15811"
+      "bytes": 584,
+      "sha256": "0fa107926257c02168189618c54ae65e6441e935035343d8018a6cf66afa4815",
+      "gzip_sha256": "5ed82aff6ddd22522367fb596b8a5eed8841482f9e217ec8a5945da4d41f0b7a"
     },
     "unit-move-final-v2/unit-move-arrived-reselect-v1/stdout.log.gz": {
       "bytes": 0,
@@ -4104,14 +4104,14 @@
       "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
     },
     "unit-move-final-v2/unit-move-arrived-reselect-v1/stderr.log.gz": {
-      "bytes": 410,
-      "sha256": "198a41f8a820429d184de88bf1d51838ac74b700a85b8167c86ae421401536a6",
-      "gzip_sha256": "19a36ec648f085506d85e6104320ceeee7d5190102e00e648386193727e2e5b6"
+      "bytes": 398,
+      "sha256": "21e03d1f97f37a00f08e78488984f58538f7a0a8a063b2f9d1c6a295ef337c5f",
+      "gzip_sha256": "359d3756f9ce705a0fd9265ba8bed2375ffbc6fd858e0deaa3ebd42d912a674a"
     },
     "unit-move-final-v2/unit-move-arrived-reselect-v1/child-output/capture.json.gz": {
-      "bytes": 1061296,
-      "sha256": "f0b1f75d88e315877c16e90b7ac4f53b0e41fb179e7e9a5c0e73745f0bb0a7f6",
-      "gzip_sha256": "a51e382461c006b4f213cf47bb582d6069cc9ff285a0633db06bb90c1be728ff"
+      "bytes": 1061272,
+      "sha256": "aadccffaac8310999234c8502417556d2564f2a35894605e366fdc3661092e4d",
+      "gzip_sha256": "8c2f2c36b8ab26971cf67dcf7e14a57d84275d7755c941db222a4b15f6c6b93e"
     },
     "unit-move-final-v2/unit-move-arrived-reselect-v1/child-output/frame.bgra.gz": {
       "bytes": 1920000,

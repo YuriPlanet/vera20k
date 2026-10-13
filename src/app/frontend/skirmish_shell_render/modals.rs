@@ -46,6 +46,95 @@ const VALIDATION_MODAL_SPRITE_DEPTHS: shell_paint::ModalDepths = shell_paint::Mo
     text: 0.0,
 };
 
+/// Ordinary saved-load F0: 559D60 -> 623230, mode-2 paint 621E90. The original
+/// copies its existing AlternateSurface backing, overlays the selected side's
+/// PUDLGBG frame, and paints the plain left/top Static. It neither regenerates a
+/// parent shell nor draws Cancel. Executed controls: saved_game_layout.json.
+pub(crate) fn render_saved_game_loading(
+    state: &mut crate::app::AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+) -> anyhow::Result<()> {
+    use super::in_game_shell::{
+        InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
+    };
+    use crate::ui::shell::modal::{body_ok_layout, build_saved_game_loading_descriptor, control};
+
+    // An in-match load paints over the match frame at its source size and
+    // zooms with it; a menu load paints over the menu at the window's size.
+    let frame = (state.render_width(), state.render_height());
+    let restored = state
+        .renderer
+        .shell_surface_presenter
+        .restore_cursor_free_composition(
+            &state.renderer.retail_screenshot_frame_cache,
+            &state.renderer.gpu.device,
+            encoder,
+            frame,
+            state.renderer.upscale_pass.as_ref(),
+        );
+    let art = match restored {
+        Ok(true) => ShellFrameArt::Retained,
+        Ok(false) => ShellFrameArt::Clear,
+        Err(error) => {
+            log::warn!("Saved-game progress has no compatible retained backing: {error:#}");
+            ShellFrameArt::Clear
+        }
+    };
+    let atlas = state
+        .frontend
+        .skirmish_shell_chrome
+        .as_ref()
+        .expect("loading shell chrome");
+    // 559D60 shows F0 before 69BB40 clears Session+30D8. An active load thus
+    // starts with its current side; a menu load starts with the neutral assets.
+    let side = (state.frontend.screen == crate::ui::game_screen::GameScreen::InGame)
+        .then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
+    let layout = body_ok_layout(frame.0 as i32, frame.1 as i32);
+    let descriptor = build_saved_game_loading_descriptor();
+    let body = descriptor
+        .controls
+        .iter()
+        .find(|child| child.id == control::BODY_STATIC && child.visible)
+        .expect("F0 visible body Static");
+    let labels = [shell_paint::PaintLabel {
+        text: super::text::localized_label(
+            state,
+            body.csf_key.expect("F0 loading caption"),
+            "Mission is loading. Please wait...",
+        )
+        .into(),
+        rect: layout.body,
+        rgb: SHELL_LABEL_TEXT_RGB,
+        align: super::text::validation_modal_body_text_align(),
+        path_a_reveal: None,
+    }];
+    let modal = shell_paint::paint_modal_shp(
+        &state.renderer.bit_font,
+        atlas.mode_two_dialog_background(side),
+        shell_paint::ModalButtonFrames::default(),
+        layout.dialog,
+        &[],
+        &labels,
+        ShellScale::RETAIL,
+        VALIDATION_MODAL_SPRITE_DEPTHS,
+    );
+    super::in_game_shell::render_shell_frame(
+        state,
+        encoder,
+        destination,
+        InGameShellFrame {
+            art: Vec::new(),
+            controls: modal.sprites,
+            texts: modal.text,
+            label: "Saved Game Loading F0",
+        },
+        art,
+        ShellFrameOverlay::default(),
+        ShellFrameCursor::Hidden,
+    )
+}
+
 /// Native owner-draw listboxes preserve a composed backing surface. On the
 /// exact-800 chooser that backing is the Customize Battle artwork; the solid
 /// interior exists only to keep the asset-missing fallback readable.
@@ -238,7 +327,7 @@ pub(super) fn push_eject_box_instances(
         },
     ];
     out.extend(shell_paint::paint_modal_sprites(
-        atlas.validation_modal_background_pudlgbgn,
+        atlas.mode_two_dialog_background(None),
         super::chrome::type3_button_frames(atlas),
         boxed.dialog,
         &buttons,
@@ -483,7 +572,7 @@ pub(super) fn push_validation_modal_instances(
         pressed,
         enabled: true,
     };
-    if atlas.validation_modal_background_pudlgbgn.is_none() {
+    if atlas.mode_two_dialog_background(None).is_none() {
         push_solid_rect(
             out,
             atlas,
@@ -500,7 +589,7 @@ pub(super) fn push_validation_modal_instances(
         );
     }
     out.extend(shell_paint::paint_modal_sprites(
-        atlas.validation_modal_background_pudlgbgn,
+        atlas.mode_two_dialog_background(None),
         frames,
         layout.dialog,
         &[button],
@@ -633,7 +722,7 @@ pub(super) fn push_saved_browser_prompt_instances<I: Clone + PartialEq>(
             });
         }
         out.extend(shell_paint::paint_modal_sprites(
-            atlas.validation_modal_background_pudlgbgn,
+            atlas.mode_two_dialog_background(None),
             super::chrome::type3_button_frames(atlas),
             dialog,
             &buttons,

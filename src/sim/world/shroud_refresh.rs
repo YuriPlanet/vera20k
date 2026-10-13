@@ -90,11 +90,7 @@ impl Simulation {
         let z = level * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
         let radius = rules.reveal_trigger_radius().clamp(0, i32::from(u16::MAX)) as u16;
         let config = self.sight_reveal_config(Some(rules));
-        let height_grid = if config.reveal_by_height() {
-            self.path_grid().map(PathGrid::ground_height_grid)
-        } else {
-            None
-        };
+        let height_grid = self.sight_height_grid(&config);
         // Outline/unreveal/arg6 are zero and by-height is one. Native final0
         // followed by final1 leaves knowledge with no sustained sight source.
         for final_pass in [false, true] {
@@ -319,8 +315,8 @@ impl Simulation {
             //4ADEE0/4ADCD0 do not release allied mobile sight. The represented
             //multiplayer known-own branch and stock AllyReveal=yes directional
             //allied Building arm select callbacks; untouched admissions survive
-            //the bulk counter overwrite, and the fog re-reveals the RevealToAll
-            //alternate sight of the rest. Independent41B discovery and campaign
+            //the bulk counter overwrite, and the RevealToAll branch reveals the
+            //rest's alternate sight. Independent41B discovery and campaign
             //Human remain caller residuals.
             let sources: std::collections::BTreeSet<u64> = self
                 .substrate
@@ -345,6 +341,17 @@ impl Simulation {
                 .get(&owner)
                 .is_some_and(|house| house.spy_sat_active);
             let (gaps, admitted_gap) = self.prepare_spy_sat_gap_reentry(owner, rules);
+            // RESIDUAL: the other callers of `0x004ADCD0` are not ported.
+            // MakeAlly (`0x004F9F4F`) and MakeEnemy (`0x004FA1E3`) bracket it
+            // with `0x004ADEE0`, which has no `RevealToAll=` branch; VERA's
+            // (`sim::house_diplomacy`) run without the bracket, a residual
+            // recorded there. The first House update (`0x004F935A`) runs on the
+            // first frame, before any such building stands (no retail
+            // skirmish map places one); Fill_In_Data's call (`0x00684F89`)
+            // skips buildings; the trigger reshroud (`0x00577C90`, action 51)
+            // runs in no retail skirmish map.
+            let mut alternates = self.reveal_to_all_footprints(owner, rules);
+            alternates.retain(|id, _| !sources.contains(id));
             self.fog.transition_whole_map_with_gap_reentry(
                 owner,
                 cells,
@@ -352,6 +359,7 @@ impl Simulation {
                 old_spy_sat_active,
                 &sources,
                 Some(&gaps),
+                &alternates,
             );
             //577D90 sets240 before callbacks; every successful6FB170
             //re-admission clears it again, including a friendly generator.
@@ -376,15 +384,66 @@ impl Simulation {
         )
     }
 
+    /// The ground levels a reveal under `config` tests its cells' line of
+    /// sight against (`0x00567CB5`): none unless `RevealByHeight=`, or
+    /// without a path grid.
+    pub(crate) fn sight_height_grid(&self, config: &vision::VisionConfig) -> Option<Vec<u8>> {
+        config
+            .reveal_by_height()
+            .then(|| self.path_grid().map(PathGrid::ground_height_grid))
+            .flatten()
+    }
+
+    /// The gates `TechnoClass::UpdateReveal @ 0x0070AF50` and `ReReveal @
+    /// 0x0070B1D0` share for an alternate house: the stored playfield byte
+    /// `+0x3D5`, and an owner that is not `MultiplayPassive=`.
+    fn passes_alternate_reveal_gates(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
+        entity.in_playfield
+            && !self
+                .houses
+                .get(&entity.owner())
+                .is_some_and(|house| house.multiplay_passive)
+    }
+
+    /// The footprint `UpdateReveal(0, 0, 1, PlayerPtr, 0)` reveals for
+    /// `current` past those gates: the source's sight as it stands, none for
+    /// a zero radius ([`vision::entity_sight_footprint`]).
+    fn current_house_sight_footprint(
+        &self,
+        entity: &crate::sim::game_entity::GameEntity,
+        current: crate::sim::intern::InternedId,
+        config: &vision::VisionConfig,
+        height_grid: Option<&[u8]>,
+        rules: &RuleSet,
+    ) -> Option<vision::SightAdmission> {
+        if !self.passes_alternate_reveal_gates(entity) {
+            return None;
+        }
+        let ability = vision::entity_has_sight_ability(entity, &self.interner, Some(rules));
+        vision::entity_sight_footprint(&self.fog, entity, config, height_grid, ability, current)
+    }
+
     /// `TechnoClass::UpdateReveal(0, 0, 1, PlayerPtr, 0)` (`0x0070AF50`) for
-    /// a source that already holds its own sight: its gates (the stored
-    /// playfield byte `+0x3D5`, a `MultiplayPassive=` owner), then
-    /// [`vision::admit_alternate_entity_sight`] for the current house.
+    /// a source that already holds its own sight, as a computer house's
+    /// `RevealToAll=` building opens (`0x00446816..0x00446829`): past its
+    /// gates, the footprint goes to `MapClass::RevealArea @ 0x005678E0` for
+    /// the current house rather than the owner (`0x0070B17E..0x0070B1C2`). It
+    /// writes the maps a reveal by the current house writes, counted as its
+    /// own sight ([`vision::FogState::admit_alternate_sight`]). Each call
+    /// counts again; [`Self::rereveal_sight_to_current_house`] takes it back.
     ///
-    /// RESIDUAL: in a network game each client passes its own `PlayerPtr`, so
-    /// every human player but the owner gets the sight; VERA gives it to the
-    /// session's current house, as `house_is_human_player` reads it. Skirmish
-    /// has one human.
+    /// RESIDUALS:
+    /// - In a network game each client passes its own `PlayerPtr`, so every
+    ///   human player but the owner gets the sight; VERA gives it to the
+    ///   session's current house, as `house_is_human_player` reads it.
+    ///   Skirmish has one human.
+    /// - A source without its own admission yet (`+0x250` clear) would
+    ///   natively store this footprint as its own and leave its owner
+    ///   without sight (`0x0070B0BF..0x0070B131`); VERA's owner sight comes
+    ///   from the per-frame reconciliation regardless. No caller reaches it:
+    ///   the opening follows the source's Unlimbo reveal (`0x006F6D27`,
+    ///   ahead of the opening at `0x00440E76`), and the re-admission
+    ///   callback's branch needs a placed building in the playfield.
     pub(crate) fn reveal_sight_to_current_house(&mut self, stable_id: u64, rules: &RuleSet) {
         let Some(current) = self.session.current_house else {
             return;
@@ -392,29 +451,142 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
-        let passive = self
-            .houses
-            .get(&entity.owner())
-            .is_some_and(|house| house.multiplay_passive);
-        if !entity.in_playfield || passive {
+        let config = self.sight_reveal_config(Some(rules));
+        let height_grid = self.sight_height_grid(&config);
+        let Some(footprint) = self.current_house_sight_footprint(
+            entity,
+            current,
+            &config,
+            height_grid.as_deref(),
+            rules,
+        ) else {
+            return;
+        };
+        for viewer in vision::direct_reveal_viewers(&self.fog, current, &config, &self.interner) {
+            self.fog
+                .admit_alternate_sight(stable_id, viewer, footprint.clone());
+        }
+    }
+
+    /// `TechnoClass::ReReveal(0, 0, 1, PlayerPtr)` (`0x0070B1D0`), as
+    /// DestructionEffects (`0x0044172F`) and Limbo's `RevealToAll=` branch
+    /// (`0x006F6B06`) call it. Past its gates (the stored playfield byte
+    /// `+0x3D5`, a `MultiplayPassive=` owner) it clears the source's latch
+    /// (`0x0070B202`), so its ordinary sight stays counted
+    /// ([`vision::FogState::clear_sight_latch`]), and releases the stored
+    /// footprint for the current house whether the latch was set
+    /// (`0x0070B20D..0x0070B21B`) or not (`0x0070B234..0x0070B24C`), both at
+    /// `0x0070B24E..0x0070B26C` ([`vision::FogState::withdraw_alternate_sight`]).
+    ///
+    /// So a computer house's building that dies leaves the current house's
+    /// map twice, death and Limbo, and the sight an `AllyReveal=` ally's sold
+    /// building shared stays counted there. With the latch already clear the
+    /// footprint is the source's sight as it stands: native keeps the stored
+    /// coordinate and radius (`+0x254`, `+0x260`), and a building has not
+    /// moved.
+    pub(crate) fn rereveal_sight_to_current_house(&mut self, stable_id: u64, rules: &RuleSet) {
+        let Some(current) = self.session.current_house else {
+            return;
+        };
+        if !self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| self.passes_alternate_reveal_gates(entity))
+        {
             return;
         }
         let config = self.sight_reveal_config(Some(rules));
-        let height_grid = if config.reveal_by_height() {
-            self.path_grid().map(PathGrid::ground_height_grid)
-        } else {
-            None
+        let footprint = match self.fog.clear_sight_latch(stable_id) {
+            Some(footprint) => Some(footprint),
+            None => {
+                let height_grid = self.sight_height_grid(&config);
+                let entity = self.substrate.entities.get(stable_id).unwrap();
+                self.current_house_sight_footprint(
+                    entity,
+                    current,
+                    &config,
+                    height_grid.as_deref(),
+                    rules,
+                )
+            }
         };
-        let ability = vision::entity_has_sight_ability(entity, &self.interner, Some(rules));
-        vision::admit_alternate_entity_sight(
-            &mut self.fog,
-            entity,
-            &config,
-            height_grid.as_deref(),
-            ability,
-            &self.interner,
-            current,
-        );
+        let Some(footprint) = footprint.filter(|footprint| footprint.radius != 0) else {
+            return;
+        };
+        let viewers = vision::direct_reveal_viewers(&self.fog, current, &config, &self.interner);
+        self.fog
+            .withdraw_alternate_sight(stable_id, &footprint, &viewers);
+    }
+
+    /// The sources `0x004ADCD0`'s `RevealToAll=` branch (`0x004ADE26..
+    /// 0x004ADE68`) reveals again on `owner`'s map, keyed by registration
+    /// order: each live building of such a type whose owner no human
+    /// controls, which the allied-building branch (`0x004ADDB2..0x004ADDE4`:
+    /// `AllyReveal=` and allied with the current house) does not take, built
+    /// or still building up. Each calls `UpdateReveal(0, 0, 1, PlayerPtr, 0)`
+    /// (`0x0070B17E..0x0070B1C2`, past its gates); only the maps a reveal by
+    /// the current house writes receive it, as at the opening
+    /// ([`Self::reveal_sight_to_current_house`]).
+    ///
+    /// RESIDUALS, each dormant in retail:
+    /// - VERA's allied-building branch (the transition's `sources`) ignores
+    ///   `AllyReveal=`, so under a map's `AllyReveal=no` an ally's building
+    ///   is re-admitted as an allied source and skipped here; native skips
+    ///   that branch (Rules `+0x17E7`, `0x004ADDB2`) and reveals it here.
+    ///   Retail sets `AllyReveal=yes`.
+    /// - Native's branch jumps past the gap re-admission (`0x004ADEA5`) that
+    ///   `0x004ADEE0` undid (`0x004ADFC1..0x004ADFD9`); VERA's transition
+    ///   re-admits the gaps of every generator. No retail type is both a gap
+    ///   generator and `RevealToAll=`.
+    /// - A retained alternate admission keeps its source count through a
+    ///   transition that re-admits the building through the own or allied
+    ///   branch instead; native's counters keep only that re-admission. If
+    ///   the building's ordinary sight then left the map while it stood,
+    ///   VERA would keep the cells in sight. It needs an `AllyReveal=`
+    ///   alliance between a computer house and the current house that ends
+    ///   mid-game.
+    fn reveal_to_all_footprints(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        rules: &RuleSet,
+    ) -> std::collections::BTreeMap<u64, vision::SightAdmission> {
+        let mut footprints = std::collections::BTreeMap::new();
+        let Some(current) = self.session.current_house else {
+            return footprints;
+        };
+        self.fog.alliances = self.house_alliances.clone();
+        let config = self.sight_reveal_config(Some(rules));
+        if !vision::direct_reveal_viewers(&self.fog, current, &config, &self.interner)
+            .contains(&owner)
+        {
+            return footprints;
+        }
+        let height_grid = self.sight_height_grid(&config);
+        for (id, entity) in self.substrate.entities.iter_sorted() {
+            if entity.category != EntityCategory::Structure
+                || !entity.lifecycle.object_alive
+                || entity.lifecycle.in_limbo
+                || self.house_is_human_player(entity.owner())
+                || !self
+                    .object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| object.reveal_to_all)
+                || vision::direct_reveal_viewers(&self.fog, entity.owner(), &config, &self.interner)
+                    .contains(&current)
+            {
+                continue;
+            }
+            if let Some(footprint) = self.current_house_sight_footprint(
+                entity,
+                current,
+                &config,
+                height_grid.as_deref(),
+                rules,
+            ) {
+                footprints.insert(id, footprint);
+            }
+        }
+        footprints
     }
 
     pub(super) fn refresh_high_flying_sight_before_process(
@@ -472,11 +644,7 @@ impl Simulation {
             return;
         }
         let config = self.sight_reveal_config(rules);
-        let height_grid = if config.reveal_by_height() {
-            self.path_grid().map(PathGrid::ground_height_grid)
-        } else {
-            None
-        };
+        let height_grid = self.sight_height_grid(&config);
         let ability = vision::entity_has_sight_ability(entity, &self.interner, rules);
         for &viewer in &due {
             // The two reveal leaves may reject membership/zero-radius. The

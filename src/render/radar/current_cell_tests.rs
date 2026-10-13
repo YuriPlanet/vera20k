@@ -291,7 +291,11 @@ fn snapshot_restored_collapsed_high_runtime(
         &resources.rules,
     );
     restored
-        .restore_map_authority_after_snapshot_load(&resources.rules, &resources.overlay_registry)
+        .restore_map_authority_after_snapshot_load(
+            &resources.rules,
+            &resources.overlay_registry,
+            None,
+        )
         .expect("restored current map authority");
     SimRuntime {
         simulation: restored,

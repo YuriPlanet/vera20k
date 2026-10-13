@@ -213,7 +213,7 @@ native INI loading or all scenario layers. Full animation lifetime, sound
 playback, custom palette rendering, terrain-edge/dummy-cell aliases, forced
 Magnetron source `+2B0`, and native rasterization require separate native evidence.
 The [production observation](../map_observation.md#siege-chopper-deployment-observation)
-and [receipt](../map_observation.siege-chopper.validation.json) separately establish
+and receipt (`tools/map_observation.siege-chopper.validation.json`, in git at 1b1a8b43e) separately establish
 the stock landing, visible forward animation, SCHD model, reverse animation and
 return to flight in VERA's release app. They do not extend the native component
 claims above.

@@ -703,13 +703,14 @@ pub struct ModalButton {
     pub enabled: bool,
 }
 
-/// Emit the mode-2 modal sprites: PUDLGBGN background at the dialog top-left,
-/// then each MNBTTN button centered on its control rect at the state-selected
-/// frame. Both grow with `scale`, which is [`ShellScale::RETAIL`] for the
-/// message-box family's own fixed-size box and a stretched page's scale where the
-/// dialog itself stretches. A missing background (retail always provides
-/// PUDLGBGN) is the caller's concern — only present entries are emitted here, so
-/// the solid-panel fallback stays with the host caller.
+/// Emit the mode-2 modal sprites: selected PUDLGBG background at the dialog
+/// top-left, clipped by the dialog client (621E90 -> 4AED70), then each MNBTTN
+/// button centered on its control rect at the state-selected frame. Both grow
+/// with `scale`, which is [`ShellScale::RETAIL`] for the message-box family's
+/// own fixed-size box and a stretched page's scale where the dialog itself
+/// stretches. A missing background is the caller's concern — only present
+/// entries are emitted here, so the solid-panel fallback stays with the host
+/// caller.
 pub fn paint_modal_sprites(
     background: Option<SkirmishShellChromeEntry>,
     button_frames: ModalButtonFrames,
@@ -719,13 +720,23 @@ pub fn paint_modal_sprites(
     depths: ModalDepths,
 ) -> Vec<SpriteInstance> {
     let mut out = Vec::new();
-    if let Some(bg) = background {
+    if let Some(mut bg) = background {
+        // An oversized mounted SHP is cropped by the client, never squeezed.
+        let grown = scale.art_size(bg.pixel_size[0], bg.pixel_size[1]);
+        let size = [
+            grown[0].min(dialog.w.max(0) as f32),
+            grown[1].min(dialog.h.max(0) as f32),
+        ];
+        bg.uv_size = [
+            bg.uv_size[0] * size[0] / grown[0],
+            bg.uv_size[1] * size[1] / grown[1],
+        ];
         push_skirmish_entry(
             &mut out,
             bg,
             dialog.x as f32,
             dialog.y as f32,
-            scale.art_size(bg.pixel_size[0], bg.pixel_size[1]),
+            size,
             depths.background,
         );
     }
@@ -1243,6 +1254,46 @@ mod tests {
         button: 0.4,
         text: 0.3,
     };
+
+    #[test]
+    fn progress_background_is_clipped_to_original_dialog_client() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/saved_game_layout.json",
+        ))
+        .unwrap();
+        let row = &corpus["progress_background"][0];
+        let dialog: [i32; 4] = serde_json::from_value(row["input"]["dialog_rect"].clone()).unwrap();
+        let native = row["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|event| event["event"] == "draw")
+            .unwrap();
+        let clip: [i32; 4] = serde_json::from_value(native["clip"].clone()).unwrap();
+        // An oversized mounted SHP must be cropped, never scaled into the
+        // client; native draw's supplied clip is independent of its canvas.
+        let background = fake_skirmish_entry([0.1, 0.2], [0.5, 0.4], [500.0, 400.0]);
+        let draw = paint_modal_sprites(
+            Some(background),
+            ModalButtonFrames::default(),
+            RectPx::new(dialog[0], dialog[1], dialog[2], dialog[3]),
+            &[],
+            ShellScale::RETAIL,
+            MODAL_DEPTHS,
+        );
+        assert_eq!(draw.len(), 1);
+        assert_eq!(draw[0].size, [clip[2] as f32, clip[3] as f32]);
+        assert_eq!(draw[0].position, [dialog[0] as f32, dialog[1] as f32]);
+        assert_eq!(draw[0].uv_origin, background.uv_origin);
+        for axis in 0..2 {
+            assert!(
+                (draw[0].uv_size[axis] / draw[0].size[axis]
+                    - background.uv_size[axis] / background.pixel_size[axis])
+                    .abs()
+                    < 1e-7
+            );
+        }
+    }
 
     /// `select` resolves a semantic state to the caller-supplied entry.
     #[test]

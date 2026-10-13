@@ -87,7 +87,7 @@ and presentation inputs. Every Rust test invocation uses `--lib`.
 
 ## Recorded validation
 
-The [validation receipt](render_depth_oracle.validation.json) records the checked
+The validation receipt (`tools/render_depth_oracle.validation.json`, in git at 1b1a8b43e) records the checked
 85-case migration, normal/optimized native reproduction, 30 focused shared/Foot lifecycle tests in both normal and optimized Python,
 and 298 total Python tests (2 optional skips), 18 Foot Z Rust tests, full strict-retail library
 suite (9,592 passed, 213 ignored), clippy (870 existing warnings) and release build.

@@ -13,8 +13,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from unicorn import Uc, UC_ARCH_X86, UC_MODE_32
+from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
 from unicorn.x86_const import *
+from tools import native_oracle as native
+from tools.rmg_oracle.gen_rng_vectors import seeded_struct, draws, STRUCT_LEN
 from tools.native_oracle import load_image, run_checked, STACK_BASE, STACK_SIZE, RET_MAGIC, OracleError, finish_vectors, provenance
 from tools.spatial_oracle.map_queries import dwords, packed
 from tools.spatial_oracle.terrain_recalc import LAT_GLOBALS
@@ -144,6 +146,128 @@ def probe(files, coord, sub, flags, sentinel=False):
     return row
 
 
+LOAD_MAIN, LOAD_SCENARIO, LOAD_MAPGEN = 0x886B88, DATA + 0x5000, 0xABE890
+SELECTOR_TABLE, SELECTOR_FLAG = 0x89E620, 0x89E7C7
+
+
+def u32(u, at):
+    return struct.unpack('<I', u.mem_read(at, 4))[0]
+
+
+def load_rng_states(u):
+    return {name: bytes(u.mem_read(at, STRUCT_LEN)).hex()
+            for name, at in [('main', LOAD_MAIN), ('scenario', LOAD_SCENARIO), ('mapgen', LOAD_MAPGEN)]}
+
+
+def load_selector_case(spec):
+    files = [synthetic_tmp(1, 1, i, spec['damaged_header']) for i in range(spec['files'])]
+    u, file_pointers = machine(files, (1, 2), 0, spec['cell_flags'], spec['sentinel'])
+    before_main = draws(seeded_struct(spec['seed']), spec['advance'])[1]
+    u.mem_write(LOAD_MAIN, before_main)
+    u.mem_write(LOAD_SCENARIO, seeded_struct(1234))
+    u.mem_write(LOAD_MAPGEN, seeded_struct(0x10203))
+    u.mem_write(SELECTOR_FLAG, bytes([int(spec['warm'])]))
+    # With flag0 these supplied bytes must be overwritten by actual original
+    # initialization. With flag1 the existing process table must be retained.
+    supplied_table = PROCESS_TABLE if spec['warm'] else [0xA5A5A5A5] * 64
+    u.mem_write(SELECTOR_TABLE, dwords(*supplied_table))
+    for i in range(spec['files']):
+        head = H + i * 0x400
+        # The native loader's DL=1 file-management facts are supplied here.
+        u.mem_write(head + 0x2F4, b'\x01')
+        u.mem_write(head + 0x2F5, f'fixture{i}.tmp\0'.encode())
+        if i == spec['files'] - 1:
+            u.mem_write(head + 0x2BC, dwords(0))
+    # Actual native iterator starts (1,width), then(2,1) for supplied width2.
+    # A following empty pointer bounds this synthetic loaded-cell plane.
+    cells = ALLOC
+    u.mem_write(MAP + 0xF4, dwords(2))
+    u.mem_write(MAP + 0x13C, dwords(cells))
+    u.mem_write(cells + (2 * 512 + 1) * 4, dwords(CELL))
+    fixture_cells = [CELL]
+    if spec.get('two_cells'):
+        second = CELL + 0x400
+        u.mem_write(second, bytes(u.mem_read(CELL, 0x200)))
+        u.mem_write(second + 0x24, packed(2, 1))
+        u.mem_write(cells + (1 * 512 + 2) * 4, dwords(second))
+        fixture_cells.append(second)
+    cell_before = [bytes(u.mem_read(at, 0x200)).hex() for at in fixture_cells]
+    entries, raw_draws, visited_cells, selected_files, freed_files = [], [], [], [], []
+    code = [(native.IMAGE_BASE + rva, bytes(u.mem_read(native.IMAGE_BASE + rva, size)))
+            for rva, _, size, _, flags in native._sections(native.image_bytes())
+            if flags & 0x20000000 and size]
+
+    def observe(_u, pc, _size, _data):
+        if pc in (0x6C8C40, 0x4068E0, 0x7C8B3D):
+            if pc == 0x7C8B3D:
+                pointer = u32(u, u.reg_read(UC_X86_REG_ESP) + 4)
+                freed_files.append(file_pointers.index(pointer))
+            sp = u.reg_read(UC_X86_REG_ESP)
+            u.reg_write(UC_X86_REG_EAX, 0)
+            u.reg_write(UC_X86_REG_ESP, sp + 4)
+            u.reg_write(UC_X86_REG_EIP, u32(u, sp))
+        elif pc in (0x546DA0, 0x578350, 0x578290, 0x4814F0):
+            entries.append(hex(pc))
+        elif pc == 0x546DEC:
+            cell = u.reg_read(UC_X86_REG_EDI)
+            visited_cells.append(list(struct.unpack('<hh', u.mem_read(cell + 0x24, 4))))
+        elif pc == 0x546EA0:
+            selected_files.append((u.reg_read(UC_X86_REG_ESI) - H) // 0x400)
+        elif pc == 0x65C780:
+            assert u.reg_read(UC_X86_REG_ECX) == LOAD_MAIN
+        elif pc == 0x48152B:
+            raw_draws.append(u.reg_read(UC_X86_REG_EAX))
+
+    u.hook_add(UC_HOOK_CODE, observe)
+    before = load_rng_states(u)
+    sp = native.STACK_BASE + native.STACK_SIZE - 0x1000
+    u.reg_write(UC_X86_REG_ESP, sp)
+    stop = native.run_checked(u, 0x5BE653, 0x5BE65C, count=300000,
+                              required_addresses=(0x5BE657, 0x546DA0, 0x578350, 0x578290, 0x546EC1, 0x54701C),
+                              context=spec)
+    after = load_rng_states(u)
+    continuation_draws, replay = draws(before_main, len(raw_draws))
+    assert continuation_draws == raw_draws
+    assert replay.hex() == after['main']
+    assert before['scenario'] == after['scenario'] and before['mapgen'] == after['mapgen']
+    assert all(bytes(u.mem_read(at, len(data))) == data for at, data in code)
+    table = list(struct.unpack('<64I', u.mem_read(SELECTOR_TABLE, 256)))
+    usage = [u32(u, H + i * 0x400 + 0x308) for i in range(spec['files'])]
+    assert sum(usage) == len(fixture_cells)
+    cell_after = [bytes(u.mem_read(at, 0x200)).hex() for at in fixture_cells]
+    assert cell_before == cell_after
+    file_present = [u32(u, H + i * 0x400 + 0xA4) != 0 for i in range(spec['files'])]
+    assert file_present == [count != 0 for count in usage]
+    assert u.reg_read(UC_X86_REG_ESP) == sp
+    return dict(input=spec, entries=entries, raw_draws=raw_draws, raw_draw_count=len(raw_draws),
+                before=before, after=after, flag_after=u.mem_read(SELECTOR_FLAG, 1)[0],
+                table_before=supplied_table, table_after=table, usage_counts=usage,
+                selected=selected_files[0], selected_files=selected_files,
+                visited_cells=visited_cells, freed_files=freed_files, file_present=file_present,
+                cell_before=cell_before, cell_after=cell_after,
+                stop=hex(stop), original_executable_bytes_unchanged=True)
+
+
+def load_selector_cases():
+    cases = []
+    for name, files, warm, damaged, flags, sentinel, seed, advance in (
+        ('cold_fixed_count2_seed0', 2, False, False, 0, False, 0, 0),
+        ('cold_table_count8_seed0', 8, False, False, 0, False, 0, 0),
+        ('cold_table_count8_advanced', 8, False, False, 0, False, 1234, 7),
+        ('warm_table_retains_other_main', 8, True, False, 0, False, 1234, 7),
+        ('cold_single_valid_skips', 1, False, False, 0, False, 0, 0),
+        ('cold_damaged_header_skips', 8, False, True, 0x2000, False, 0, 0),
+        ('cold_clear_sentinel_count1_initializes', 1, False, False, 0, True, 0, 0),
+    ):
+        cases.append(load_selector_case(dict(name=name, files=files, warm=warm, damaged_header=damaged,
+                                  cell_flags=flags, sentinel=sentinel, seed=seed, advance=advance)))
+    cases.append(load_selector_case(dict(name='cold_two_cell_order', files=8, warm=False,
+                              damaged_header=False, cell_flags=0, sentinel=False,
+                              seed=0, advance=0, two_cells=True)))
+    return cases
+
+
+
 def cases():
     groups = []
     for name, count, damaged in [('ordinary2', 2, False), ('damaged2', 2, True),
@@ -161,19 +285,32 @@ def cases():
     groups.append(dict(name='retail_ubn_wood03',
         files=[dict(name=name, sha256=hashlib.sha256(b).hexdigest()) for name, b in zip(names, files)],
         cases=[probe(files, (16, 16), sub, flags) for sub in range(15) for flags in (0, 0x2000)]))
-    return dict(process_table=PROCESS_TABLE, wheel_values=WHEELS, groups=groups)
+    return dict(process_table=PROCESS_TABLE, wheel_values=WHEELS, groups=groups,
+                load_selector_cases=load_selector_cases())
 
 
 if __name__ == '__main__':
-    finish_vectors(cases, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(
-        scope='Original pristine Recalc plus independent radar file/pointer and tactical selected-entry lookup; synthetic sources and NewUrban Wood03 retail bytes',
+    finish_vectors(cases, Path(__file__).with_suffix('.json'), provenance=lambda: dict(provenance(
+        scope='Original pristine Recalc plus independent radar file/pointer and tactical selected-entry lookup; synthetic sources and NewUrban Wood03 retail bytes; eight original saved-MouseLoad tile scan/cull controls with cold/warm process selector',
         assumptions=[
             'Registered tile100, supplied relocated TMP heads and variant chain; original TMP loader excluded',
-            'Existing process selector table supplied with initialization flag set; table generation/RNG lifetime excluded',
+            'Historical presentation groups supply initialized process selector table; added load_selector_cases separately execute cold/warm initialization and Main continuation',
             'Recalc cases use real16,16 in16x16 map, level6, no overlay/objects, CliffBack0 and supplied Wheel/LAT policies',
             'Radar runs original47C24A prefix,5471F0,4814F0,544E00; no brightness/minimap composition claim',
             'Tactical runs original547F9D selected-template division/table fetch; raw RGB identifies selected entry, stored origin is not decoded canvas offset; no full drawing/GPU claim',
             'Two sentinelFFFF cases retain Cell subtile1 for radar/coordinate selection and use tactical subtile0; supplied ClearTile100 has damaged gate true',
             'Retail NewUrban Wood damaged OOB pointers fault in original RGB read; no authored retail-map reachability claim',
-        ], substitutions=[], entry_points={'recalc':0x47D2B0, 'radar_prefix':0x47C24A,
-            'damaged_gate':0x5471F0, 'selector':0x4814F0, 'file_chain':0x544E00, 'tactical_entry':0x547F9D}))
+            'Load controls reuse resident TMP fixture and one/two supplied restored cells; original5BE653 clearsCL/DL and calls full546DA0, returning5BE65C after real iterator, variant selection, use counts and file culling',
+            'Load controls supply type+2F4 and filenames with all TMPs initially resident; used files need no547020 reload. Cell fixture0x200 bytes are bracketed unchanged; no native SAV/complete theater registry or full resource IO claim',
+            'Incoming Main is native Seed/Next; actual draw order is independently replayed. Scenario/MapGen are separately bracketed. Cold flag0 uses poisoned table; warm flag1 uses declared retained process table',
+        ], substitutions=[
+            'Load controls only:6C8C40 clock0,4068E0 diagnostic return and7C8B3D free transport recording supplied file pointers; native cull clears type+A4/+A8 itself',
+        ], entry_points={'recalc':0x47D2B0, 'radar_prefix':0x47C24A,
+            'damaged_gate':0x5471F0, 'selector':0x4814F0, 'file_chain':0x544E00, 'tactical_entry':0x547F9D,
+            'mouse_load_call':0x5BE653, 'tile_scan_cull':0x546DA0,
+            'iterator_reset':0x578350, 'iterator_next':0x578290,
+            'main_next':0x65C780, 'return_to_mouse_load':0x5BE65C}), command='python -m tools.spatial_oracle.bridge_recalc_presentation --check'),
+        source_paths={'producer':Path(__file__), 'native':Path(native.__file__),
+                      'rng_owner':Path(__file__).parents[1]/'rmg_oracle/gen_rng_vectors.py',
+                      'map_fixture':Path(__file__).with_name('map_queries.py'),
+                      'lat_fixture':Path(__file__).with_name('terrain_recalc.py')})

@@ -1391,14 +1391,9 @@ pub(crate) fn mission_repair(
             let contact = sim.substrate.entities.get(unit)?;
             let powered = contact.locomotor.as_ref().is_some_and(|l| l.is_powered());
             if powered {
-                if crate::sim::movement::motion_query::is_moving(contact) == Some(false)
-                    && let Some(l) = sim
-                        .substrate
-                        .entities
-                        .get_mut(unit)
-                        .and_then(|e| e.locomotor.as_mut())
-                {
-                    l.power_off();
+                // `0x0044C243`: ILoco+0x5C, Hover's override included.
+                if crate::sim::movement::motion_query::is_moving(contact) == Some(false) {
+                    sim.locomotor_power_off(unit);
                 }
                 return Some(1);
             }

@@ -89,7 +89,7 @@ EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe
                               'observe_disguise_inputs', 'observe_lasers', 'observe_electric_bolts', 'observe_bombs',
                               'observe_audio', 'allow_load_segments',
                               'camera_cell', 'cursor_position', 'terrain_cells',
-                              'observe_super_weapons', 'observe_sidebar_steps'))
+                              'observe_super_weapons', 'observe_diplomacy', 'observe_sidebar_steps'))
 ASCII_UPPER = str.maketrans('abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')
 COPIES = {'profile': 'profile.json', 'config': 'config.toml', 'contract': 'contract.json'}
 
@@ -551,8 +551,9 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
     for key in ('observe_lasers', 'observe_electric_bolts', 'observe_bombs'):
         if key in profile and type(profile[key]) is not bool:
             raise ValidationError(f'profile.{key} must be a boolean')
-    if 'observe_super_weapons' in profile and type(profile['observe_super_weapons']) is not bool:
-        raise ValidationError('profile.observe_super_weapons must be a boolean')
+    for key in ('observe_super_weapons', 'observe_diplomacy'):
+        if key in profile and type(profile[key]) is not bool:
+            raise ValidationError(f'profile.{key} must be a boolean')
     if 'cursor_position' in profile:
         position = require_array(profile['cursor_position'], 'profile.cursor_position')
         if len(position) != 2:
@@ -817,7 +818,8 @@ def _foot_air(value: Any, label: str) -> None:
             _bounded_int(air[key], f'{label}.{key}', 1, (1 << 64) - 1)
 
 
-def _houses(value: Any, owners: list[str], label: str, super_weapons: bool = False) -> int:
+def _houses(value: Any, owners: list[str], label: str, super_weapons: bool = False,
+            diplomacy: bool = False) -> int:
     houses = require_array(value, label)
     if len(houses) != len(owners):
         raise ValidationError(f'{label} must contain one row per requested House')
@@ -825,8 +827,8 @@ def _houses(value: Any, owners: list[str], label: str, super_weapons: bool = Fal
     for index, (value, owner) in enumerate(zip(houses, owners)):
         row_label = f'{label}[{index}]'
         house = require_object(value, row_label)
-        require_exact_keys(house, ('owner', 'economy', *(('super_weapons',) if super_weapons else ())),
-                           row_label)
+        require_exact_keys(house, ('owner', 'economy', *(('super_weapons',) if super_weapons else ()),
+                                   *(('diplomacy',) if diplomacy else ())), row_label)
         require_value(house['owner'], owner, f'{row_label}.owner')
         if house['economy'] is not None:
             economy = require_object(house['economy'], f'{row_label}.economy')
@@ -836,7 +838,28 @@ def _houses(value: Any, owners: list[str], label: str, super_weapons: bool = Fal
                 _bounded_int(economy[key], f'{row_label}.economy.{key}', -(1 << 31), (1 << 31) - 1)
         if super_weapons:
             count += _super_weapons(house['super_weapons'], f'{row_label}.super_weapons')
+        if diplomacy:
+            count += _diplomacy(house['diplomacy'], owner, f'{row_label}.diplomacy')
     return count
+
+
+def _diplomacy(value: Any, owner: str, label: str) -> int:
+    """A House's allies by its own mask and its anger's enemy, by House name."""
+    diplomacy = require_object(value, label)
+    require_exact_keys(diplomacy, ('allies', 'enemy'), label)
+    own = owner.translate(ASCII_UPPER)
+    seen = {own}
+    allies = require_array(diplomacy['allies'], f'{label}.allies')
+    for index, ally in enumerate(allies):
+        name = require_string(ally, f'{label}.allies[{index}]').translate(ASCII_UPPER)
+        if not name or name in seen:
+            raise ValidationError(f'{label}.allies[{index}] is empty, repeated or the House itself')
+        seen.add(name)
+    if diplomacy['enemy'] is not None:
+        enemy = require_string(diplomacy['enemy'], f'{label}.enemy').translate(ASCII_UPPER)
+        if not enemy or enemy == own:
+            raise ValidationError(f'{label}.enemy is empty or the House itself')
+    return len(allies)
 
 
 def _super_weapons(value: Any, label: str) -> int:
@@ -1158,6 +1181,7 @@ def _actor(value: Any, label: str, *, building_state: bool = True,
                               *(('veterancy_raw_bits',) if 'veterancy_raw_bits' in actor else ()),
                               *(('veterancy_rank_cache',) if 'veterancy_rank_cache' in actor else ()),
                               *(('elite_flash_frames',) if 'elite_flash_frames' in actor else ()),
+                              *(('deactivated',) if 'deactivated' in actor else ()),
                               *(('building',) if building_state else ()),
                               *(('unit',) if 'unit' in actor else ()),
                               *(('jumpjet',) if 'jumpjet' in actor else ()),
@@ -1214,6 +1238,9 @@ def _actor(value: Any, label: str, *, building_state: bool = True,
     for key in ('object_alive', 'cell_marked', 'in_logic_vector'):
         if key in actor and type(actor[key]) is not bool:
             raise ValidationError(f'{label}.{key} must be a boolean')
+    # The offline latch (Techno +0x1C8); historical receipts omit it.
+    if 'deactivated' in actor and type(actor['deactivated']) is not bool:
+        raise ValidationError(f'{label}.deactivated must be a boolean')
     for key, low, high in (('veterancy_raw_bits', 0, (1 << 32) - 1),
                            ('veterancy_rank_cache', -1, 2),
                            ('elite_flash_frames', 0, (1 << 16) - 1)):
@@ -2223,7 +2250,8 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
                 raise ValidationError('sound-state actor is absent from the observed actor frame')
         if docking_state:
             sample_count += _houses(row['houses'], owners, f'{row_label}.houses',
-                                    profile.get('observe_super_weapons', False))
+                                    profile.get('observe_super_weapons', False),
+                                    profile.get('observe_diplomacy', False))
         if building_state:
             sample_count += sum(len(actor['building']['animation_slots']) for actor in actors
                                 if actor['category'] == 'Structure')

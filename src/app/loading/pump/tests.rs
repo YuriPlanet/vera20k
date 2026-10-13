@@ -1504,6 +1504,47 @@ fn replacing_loading_startup_retires_prior_admission() {
 }
 
 #[test]
+fn saved_load_retires_fresh_receipt_and_admits_restored_exact_steps() {
+    use crate::app::match_runtime::startup::MatchStartup;
+    let mut next = 1;
+    let prior = prepared_startup(&mut next, 0x1111_2222);
+    let mut warm = MatchStartup::default();
+    warm.begin(Some(prior.correlation));
+    let simulation = crate::sim::world::Simulation::with_seed(u64::from(prior.seed.value));
+    warm.acknowledge(prior.clone(), Some(&simulation), true)
+        .unwrap();
+
+    // A cold menu and an outgoing accepted match reach the same successful
+    // saved-world commit. Neither may expose the prior map's L0 afterward.
+    for mut authority in [MatchStartup::default(), warm] {
+        authority.acknowledge_saved_load();
+        assert!(authority.startup().is_none());
+        assert!(authority.receipt().is_none());
+        assert!(authority.admits_ordinary_tick());
+        assert!(authority.admits_exact_step());
+
+        let restored = authority.clone();
+        assert!(
+            authority
+                .acknowledge(prior.clone(), Some(&simulation), true)
+                .is_err()
+        );
+        assert_eq!(
+            authority, restored,
+            "stale fresh-load completion cannot replace saved admission"
+        );
+        authority.clear();
+        assert!(!authority.admits_exact_step());
+        authority.acknowledge_saved_load();
+        authority.begin(Some(prior.correlation));
+        assert!(
+            !authority.admits_exact_step(),
+            "a new loading attempt retires saved admission"
+        );
+    }
+}
+
+#[test]
 fn rejected_startup_observation_does_not_publish_partial_admission() {
     use crate::app::match_runtime::startup::MatchStartup;
     let mut next = 1;

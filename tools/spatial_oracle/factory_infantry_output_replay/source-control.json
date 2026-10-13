@@ -1,6 +1,0 @@
-{
-  "head": "c60d196d548800cec5494ab1d48f5e022719bb81",
-  "before_sha256": "566b730e51b16112c47047d28a7f8f896f0622d894fc89ce3ed700ea3b09065d",
-  "temporary_sha256": "ecc1a1db7f439be6653913a98f10c51da7f3d60480d7fad7d822ac4369493182",
-  "control": "only hash projection: omit new Foot6B3/Factory5D feeds and project facing start0 to former None; all actor runtime state and RNG untouched"
-}

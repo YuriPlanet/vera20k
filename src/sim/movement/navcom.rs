@@ -489,11 +489,22 @@ fn ship_stop_moving(entity: &mut GameEntity) {
 }
 
 impl crate::sim::world::Simulation {
-    /// Foot4D94B0 clears NavComAux before its three nonnull admission gates.
-    /// Class preprocessing precedes this call; publication, locomotor dispatch
-    /// and accepted timers follow it. Linked-lift and retained-particle cleanup
-    /// still require their missing native owners and are not implied here.
-    pub(crate) fn begin_foot_destination(&mut self, id: u64, nonnull: bool) -> bool {
+    /// Foot4D94B0 clears NavComAux before its three nonnull admission gates:
+    /// a Magnetron-lifted object (`+0x6AD`), a passenger of an open transport
+    /// (`+0x82`) and a bunkered vehicle (`+0x2E4`) take no destination. An
+    /// admitted one lets go of any object it holds aloft (`0x004D9509`,
+    /// [`Self::release_locomotor`]) before NavCom is written. Class
+    /// preprocessing precedes this call; publication, locomotor dispatch and
+    /// accepted timers follow it. Retained-particle cleanup still requires
+    /// its missing native owner and is not implied here.
+    pub(crate) fn begin_foot_destination(
+        &mut self,
+        id: u64,
+        nonnull: bool,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
@@ -501,21 +512,28 @@ impl crate::sim::world::Simulation {
             && (entity.foot_locomotor_swap_active
                 || entity.passenger_role.in_open_transport()
                 || entity.bunker_link.installed_in().is_some());
+        let holds = entity.locomotor_target.is_some();
         self.substrate
             .entities
             .get_mut(id)
             .unwrap()
             .navigation
             .nav_com_aux = None;
-        !refused
+        if refused {
+            return false;
+        }
+        if nonnull && holds {
+            self.release_locomotor(id, true, rules, registry, frame_effects);
+        }
+        true
     }
 
     /// Foot's `Set_Destination` with a NULL target (`0x004D94B0`), where every
     /// class setter's null arm ends: Unit's at `0x0074314F`, Infantry's at
     /// `0x0051B1D2` and Aircraft's at once (`0x0041AA8B` -> `0x0041ADAC`).
     /// - NavComAux (`0x004D94C7`) and NavCom (`0x004D9510`) clear.
-    /// - The linked-lift release (`0x004D9518..0x004D953F`) needs Foot+0x6AD,
-    ///   the Magnetron latch, which VERA never raises.
+    /// - A lifted object a Magnetron still holds loses both links and may end
+    ///   its lift (`0x004D9518..0x004D953F`, [`Self::lifted_null_destination`]).
     /// - An Aircraft (What_Am_I 2) whose current (`+0xAC`) or queued
     ///   (`+0xB4`) mission is Attack and which holds a TarCom (`+0x2B4`) skips
     ///   the locomotor Stop (`0x004D9672..0x004D969C`): its Fly flies on.
@@ -538,6 +556,10 @@ impl crate::sim::world::Simulation {
             return;
         };
         publish_null_nav_com(entity);
+        self.lifted_null_destination(id);
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
         let attack = MissionId::from_known(MissionType::Attack);
         let attacking_aircraft = entity.category == crate::map::entities::EntityCategory::Aircraft
             && (entity.mission.current() == attack || entity.mission.queued() == attack)

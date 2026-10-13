@@ -26,6 +26,9 @@
 //!
 //! No new gamemd claim is made here; this fixture only pins the Rust behavior
 //! those already-recorded citations describe.
+//!
+//! The `tools/spatial_oracle/*_replay/` and `foot_bridge_layer*.replay.json`
+//! receipts cited below left the tree; `git show 1b1a8b43e:<path>` retrieves them.
 
 use super::*;
 use crate::map::entities::{EntityCategory, MapEntity};

@@ -50,6 +50,73 @@ fn unit_entry_reads_fly_pitch_and_jumpjet_request_independently_of_phase() {
     );
 }
 
+/// A closed gate's House asks about the mover (`IsAlliedWith @ 0x004F9A50`,
+/// `0x0073F6F5..0x0073F702`). A gate whose House allies the mover one way
+/// makes it wait (3, as for an own gate); the mover's one-way alliance alone
+/// leaves the gate hostile, which refuses an unarmed mover (7). The codes are
+/// the oracle's own-gate and enemy-gate rows in `unit_entry.json`.
+#[test]
+fn a_closed_gate_asks_its_own_house_about_the_mover() {
+    use crate::map::houses::HouseAllianceMap;
+    use crate::sim::house_diplomacy::HouseAllianceAdmission;
+
+    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=MOVER\n[BuildingTypes]\n1=GATE\n\
+         [MOVER]\nSpeedType=Track\n[GATE]\nFoundation=1x1\nGate=yes\n",
+    );
+    sim.session.binary_frame = 100;
+    let mut mover = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
+    mover.owner = sim.intern("Americans");
+    mover.type_ref = sim.intern("MOVER");
+    mover.category = EntityCategory::Unit;
+    mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+    sim.substrate.entities.insert(mover);
+    sim.mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 100)
+        .unwrap();
+    let mut gate = GameEntity::test_default(91, "GATE", "Russians", 11, 10);
+    gate.owner = sim.intern("Russians");
+    gate.type_ref = sim.intern("GATE");
+    gate.category = EntityCategory::Structure;
+    gate.building_gate = Some(Default::default());
+    sim.substrate.entities.insert(gate);
+    sim.substrate.occupancy.add(
+        11,
+        10,
+        91,
+        MovementLayer::Ground,
+        None,
+        CellListInsertion::AppendBuilding,
+    );
+    let cell = sim
+        .resolved_terrain
+        .as_ref()
+        .unwrap()
+        .native_cell_identity((11, 10));
+    let classify = |sim: &Simulation| {
+        let live = EntryReadContext {
+            sim,
+            rules: &rules,
+            registry: Some(&registry),
+        };
+        let args = InfantryEntryArgs {
+            direction: -1,
+            height: -1,
+            previous_cell: None,
+        };
+        classify_entry(&live, CellObjectMember::Entity(90), cell, args)
+    };
+    let one_way = |asker: &str, other: &str| {
+        HouseAllianceAdmission::Admitted(HouseAllianceMap::from([(
+            asker.to_ascii_uppercase(),
+            [other.to_ascii_uppercase()].into(),
+        )]))
+    };
+    sim.install_house_alliances(one_way("Russians", "Americans"), &rules);
+    assert_eq!(classify(&sim), Ok(3));
+    sim.install_house_alliances(one_way("Americans", "Russians"), &rules);
+    assert_eq!(classify(&sim), Ok(7));
+}
+
 fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
     let rows: serde_json::Value = serde_json::from_str(json).unwrap();
     let mut mismatches = Vec::new();

@@ -7,8 +7,9 @@
 //! to Foot, and XYZ/Mark/raw occupation use their existing shared owners.
 //!
 //! Native composed controls and coverage: tools/spatial_oracle/jumpjet_states.md.
-//! Other large mechanisms remain bounded: Magnetron arms, target-facing hold,
-//! radio/tag arrival side effects and Infantry touchdown's full class chain.
+//! Other large mechanisms remain bounded: target-facing hold, radio/tag
+//! arrival side effects and Infantry touchdown's full class chain. The
+//! Magnetron's callbacks run through `sim::locomotor_lift`.
 //! Native Unit touchdown calls Cell PickupCrate481A00 at54C9F6 after phase0;
 //! the touchdown asks `Simulation::pickup_crate_at` after the tracker removal
 //! (54C9DC) as native does. The no-crate native controls do not establish
@@ -51,6 +52,7 @@ struct CruiseHost<'a> {
     touched_down: bool,
     impact: bool,
     crash_latched: bool,
+    bridge_state_changed: bool,
 }
 
 impl CruiseHost<'_> {
@@ -237,7 +239,18 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn piggyback_active(&self) -> bool {
         self.owner().foot_locomotor_swap_active
     }
-    fn piggyback_arrival(&mut self) {}
+    fn piggyback_arrival(&mut self, runtime: &mut JumpjetRuntime) {
+        let Some(holder) = self.owner().locomotor_source else {
+            return;
+        };
+        let id = self.stable_id;
+        let rules = self.rules;
+        let registry = self.registry;
+        let frame_effects = self.frame_effects;
+        runtime.with_owner_call(self.sim, id, |sim| {
+            sim.release_locomotor(holder, true, rules, registry, frame_effects);
+        });
+    }
     fn simple_deployer(&self) -> bool {
         self.object_type()
             .is_some_and(|object| object.is_simple_deployer)
@@ -306,6 +319,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let id = self.stable_id;
         let rules = self.rules;
         let frame_effects = self.frame_effects;
+        let registry = self.registry;
         let speed = self.sim.jumpjet_order_speed(id, rules);
         runtime.with_owner_call(self.sim, id, |sim| {
             sim.jumpjet_destination(
@@ -313,6 +327,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                 crate::sim::components::NavTargetRef::cell(cell.0 as u16, cell.1 as u16),
                 speed,
                 rules,
+                registry,
                 frame_effects,
             );
         });
@@ -456,6 +471,8 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let id = self.stable_id;
         let deploy_to_land = self.owner_kind() == FlightOwnerKind::Unit && self.type_flag_6ad();
         let owner = self.sim.substrate.entities.get_mut(id).unwrap();
+        owner.lift_may_end = true;
+        owner.being_manipulated = false;
         owner.crashing = false;
         if deploy_to_land {
             owner.set_landing_for_deploy(false);
@@ -498,6 +515,104 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     }
     fn crash_latched(&mut self) {
         self.crash_latched = true;
+    }
+    fn cell_coords(&self, cell: (i16, i16)) -> [i32; 3] {
+        let Some(terrain) = self.terrain() else {
+            return [
+                i32::from(cell.0) * 256 + 128,
+                i32::from(cell.1) * 256 + 128,
+                0,
+            ];
+        };
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let identity = cells.lookup(cell);
+        let [x, y] = crate::sim::cell_kernel::native_cell_own_xy(identity, &cells);
+        // An unsupported slope has no ground height; the centre keeps 0.
+        let z = crate::sim::cell_kernel::native_cell_own_coords(identity, &cells)
+            .map_or(0, |(_, _, z)| z as i32);
+        [x, y, z]
+    }
+    fn dropped(&self) -> bool {
+        self.owner().being_manipulated
+    }
+    fn crush_below(&mut self, runtime: &mut JumpjetRuntime) -> bool {
+        let Some(rules) = self.rules else {
+            return false;
+        };
+        let id = self.stable_id;
+        let registry = self.registry;
+        let frame_effects = self.frame_effects;
+        let impact = runtime.with_owner_call(self.sim, id, |sim| {
+            sim.dropped_impact(id, rules, registry, frame_effects)
+        });
+        self.bridge_state_changed |= impact.bridge_state_changed;
+        impact.crash
+    }
+    fn jumpjet_type(&self) -> bool {
+        self.object_type().is_some_and(|object| object.jumpjet)
+    }
+    fn wheel_clear(&self, cell: (i16, i16)) -> bool {
+        use crate::rules::locomotor_type::{MovementZone, SpeedType};
+        use crate::sim::cell_rect::{
+            IsClearToMoveResult, LiveCellPassabilityQuery, evaluate_live_cell_passability,
+        };
+        let target = (cell.0 as u16, cell.1 as u16);
+        let land_passable = self
+            .terrain()
+            .and_then(|terrain| terrain.cell(target.0, target.1))
+            .and_then(|cell| cell.speed_costs.cost_for_speed_type(SpeedType::Wheel))
+            .is_some_and(|cost| cost > 0);
+        let grid = self.sim.path_grid_snapshot();
+        matches!(
+            evaluate_live_cell_passability(LiveCellPassabilityQuery {
+                target,
+                speed_type: SpeedType::Wheel,
+                movement_zone: MovementZone::Normal,
+                requested_zone: None,
+                actual_zone: 0,
+                requested_layer: None,
+                ignore_infantry: true,
+                ignore_vehicles: true,
+                land_passable,
+                path_grid: grid.as_deref(),
+                resolved_terrain: self.terrain(),
+                raw_occupation: Some(&self.sim.substrate.raw_cell_occupation),
+            }),
+            IsClearToMoveResult::Clear { .. } | IsClearToMoveResult::ClearWinged
+        )
+    }
+    fn sink(&mut self, runtime: &mut JumpjetRuntime) {
+        let Some(rules) = self.rules else {
+            return;
+        };
+        let id = self.stable_id;
+        let registry = self.registry;
+        let frame_effects = self.frame_effects;
+        runtime.with_owner_call(self.sim, id, |sim| {
+            sim.dropped_sink(id, rules, registry, frame_effects);
+        });
+    }
+    fn null_destination(&mut self, runtime: &mut JumpjetRuntime) {
+        let id = self.stable_id;
+        let rules = self.rules;
+        let registry = self.registry;
+        let frame_effects = self.frame_effects;
+        runtime.with_owner_call(self.sim, id, |sim| {
+            sim.assign_null_destination(id, rules, registry, frame_effects);
+        });
+    }
+    fn clear_drop_credit(&mut self) {
+        let owner = self.sim.substrate.entities.get_mut(self.stable_id).unwrap();
+        owner.manipulated_by = None;
+        owner.warped_by_house = None;
+    }
+    fn set_on_bridge(&mut self) {
+        self.sim
+            .substrate
+            .entities
+            .get_mut(self.stable_id)
+            .unwrap()
+            .on_bridge = true;
     }
 }
 
@@ -561,6 +676,7 @@ impl Simulation {
                 crate::sim::components::NavTargetRef::from(archive),
                 speed,
                 Some(rules),
+                registry,
                 frame_effects,
             );
             return;
@@ -610,6 +726,7 @@ impl Simulation {
                 touched_down: false,
                 impact: false,
                 crash_latched: false,
+                bridge_state_changed: false,
             };
             let state = jumpjet_flight::process(runtime, &mut host);
             let ended_cruise =
@@ -639,6 +756,7 @@ impl Simulation {
                 arrivals: u32::from(host.touched_down || ended_cruise),
                 impact: host.impact,
                 touched_down: host.touched_down,
+                bridge_state_changed: host.bridge_state_changed,
             }
         })?;
         Some(stats)

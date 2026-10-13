@@ -1479,8 +1479,9 @@ ConditionYellow=50%
             cargo: PassengerCargo::new(obj.max_number_occupants, 1),
         };
         sim.substrate.entities.insert(ge);
+        // A standing building, as a map places it: no build-up.
         assert!(matches!(
-            sim.reveal_entity_with_rules(stable_id, rules),
+            sim.with_buildup_bypass(|sim| sim.reveal_entity_with_rules(stable_id, rules)),
             RevealOutcome::Revealed { .. }
         ));
         if sim.resolved_terrain.is_some() {
@@ -2047,10 +2048,19 @@ ConditionYellow=50%
         let mut sim = Simulation::new();
         let building = spawn_garrison_building(&mut sim, &rules, "CAGAS01", "Americans", 10, 10);
         sim.session.house_order.clear();
-        for (name, side) in [("Special", 0), ("Town", 2), ("Neutral", 2)] {
+        // The house named Special is of type Americans: the house type's
+        // side decides, not the name or the stored side.
+        for (name, side, country) in [
+            ("Special", 2, "Americans"),
+            ("Town", 0, "Neutral"),
+            ("Neutral", 2, "Neutral"),
+        ] {
             let owner = sim.interner.intern(name);
-            sim.houses
-                .insert(owner, HouseState::new(owner, side, None, false, 0, 10));
+            let country = sim.interner.intern(country);
+            sim.houses.insert(
+                owner,
+                HouseState::new(owner, side, Some(country), false, 0, 10),
+            );
             sim.session.house_order.push(owner);
         }
         assert!(reconcile_civilian_garrison_owner_for_building(

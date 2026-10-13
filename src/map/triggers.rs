@@ -11,14 +11,14 @@ use std::collections::HashMap;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_value::{crt_atoi, strtok, truncate_native_bytes};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TriggerDifficulty {
     pub easy: bool,
     pub medium: bool,
     pub hard: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MapTrigger {
     pub id: String,
     pub fields: Vec<String>,

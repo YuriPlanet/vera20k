@@ -20,7 +20,7 @@ execute461225. The regression covers reached, retained and constructor-only
 types through installation, including a changed metadata cache. The80 native
 rows also run through RuleSet projection, installation and the Undeploy consumer.
 
-The [saved receipt](engineer_bridge_production_validation.json) records the actual
+The saved receipt (`tools/spatial_oracle/engineer_bridge_production_validation.json`, in git at 1b1a8b43e) records the actual
 checks, physical inputs, output hashes and preserved test/release identities at
 commit `9f7bdb6cfdde18c58271732a7af71d9adccfd0d5` including main940 and the committed bridge candidate.
 Both label manifests retain its complete source hash and Git status. This

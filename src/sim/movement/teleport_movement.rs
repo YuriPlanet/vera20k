@@ -28,7 +28,6 @@ use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::components::DriveCoord;
 use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
-use crate::sim::intern::InternedId;
 
 const TELEPORT_WARP_DRAW_FLAGS: u32 = 0x600;
 
@@ -226,8 +225,6 @@ pub struct ChronoWarp {
     timer: crate::sim::timer::CdTimer,
     /// Techno `+0x288` ChronoDestCoords.
     destination: DriveCoord,
-    /// Techno `+0x42C` ChronoWarpedByHouse.
-    house: Option<InternedId>,
     /// Techno `+0x27C`: set by case 4, cleared by state 2.
     latched: bool,
     /// Techno `+0x270` BeingWarpedOut: set by state 0, cleared by state 2.
@@ -240,14 +237,14 @@ pub struct ChronoWarp {
 impl ChronoWarp {
     /// Case 4's arming of a fresh Teleport, whose constructor starts its
     /// timer at the current frame with no duration (`0x0071804C..0x00718058`),
-    /// with the latch (`0x006CCC3D`), the destination (`0x006CCC48`) and the
-    /// Super's owner (`0x006CCC67`).
-    pub(crate) fn new(destination: DriveCoord, house: InternedId, frame: u32) -> Self {
+    /// with the latch (`0x006CCC3D`) and the destination (`0x006CCC48`). The
+    /// Super's owner goes to the object's `warped_by_house` (Techno `+0x42C`,
+    /// `0x006CCC67`), which a Magnetron's drop also writes.
+    pub(crate) fn new(destination: DriveCoord, frame: u32) -> Self {
         Self {
             state: 0,
             timer: crate::sim::timer::CdTimer::started(frame as i32, 0),
             destination,
-            house: Some(house),
             latched: true,
             warped_out: false,
             warping_in: false,
@@ -276,14 +273,6 @@ impl ChronoWarp {
 
     pub(crate) fn set_destination(&mut self, destination: DriveCoord) {
         self.destination = destination;
-    }
-
-    pub(crate) fn house(&self) -> Option<InternedId> {
-        self.house
-    }
-
-    pub(crate) fn clear_house(&mut self) {
-        self.house = None;
     }
 
     /// Techno `+0x27C`.

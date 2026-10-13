@@ -107,7 +107,7 @@ pub(super) fn restored_retail(
     )
     .unwrap()
     .sim;
-    restored.retain_in_scenario_process_state_from(live);
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(live));
     restored.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
     restored.reconstruct_cellclass_dummy_for_map_resize();
     restored.restore_after_snapshot_load().unwrap();
@@ -117,7 +117,11 @@ pub(super) fn restored_retail(
         &resources.rules,
     );
     restored
-        .restore_map_authority_after_snapshot_load(&resources.rules, &resources.overlay_registry)
+        .restore_map_authority_after_snapshot_load(
+            &resources.rules,
+            &resources.overlay_registry,
+            None,
+        )
         .unwrap();
     restored.resolve_type_handles(&resources.rules);
     restored.rebuild_lighting_sources_after_load(&resources.rules);

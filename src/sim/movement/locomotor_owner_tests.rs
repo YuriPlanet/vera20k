@@ -159,15 +159,9 @@ fn foot_ai_restore_retires_same_drive_fields_as_direct_destination() {
     let (mut sim, _) = fixture();
     activate_drive(sim.substrate.entities.get_mut(1).unwrap());
 
-    assert!(movement::tick_locomotor_piggyback_restore_one(
-        &mut sim.substrate.entities,
-        1
-    ));
+    assert!(sim.try_end_piggyback(1, None));
     assert_retired(sim.substrate.entities.get(1).unwrap());
-    assert!(!movement::tick_locomotor_piggyback_restore_one(
-        &mut sim.substrate.entities,
-        1
-    ));
+    assert!(!sim.try_end_piggyback(1, None));
 }
 
 /// The arm's can't-end branch (`0x0074258C..0x007425C6`): a Drive still on
@@ -197,10 +191,7 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
         }
 
         assert!(destination(&mut sim, &rules, true));
-        assert!(!movement::tick_locomotor_piggyback_restore_one(
-            &mut sim.substrate.entities,
-            1
-        ));
+        assert!(!sim.try_end_piggyback(1, None));
         let entity = sim.substrate.entities.get(1).unwrap();
         let locomotor = entity.locomotor.as_ref().unwrap();
         assert_eq!(locomotor.active_kind(), LocomotorKind::Drive);
@@ -243,7 +234,7 @@ fn out_of_contact_destination_installs_fresh_drive_without_previous_instance_sta
     let mut track = loco.track_progress(TrackFamily::Drive).unwrap();
     track.turn_index = 0x47;
     loco.store_track_progress(TrackFamily::Drive, track);
-    assert!(try_end_piggyback(entity));
+    assert!(sim.try_end_piggyback(1, None));
 
     assert!(destination(&mut sim, &rules, false));
 
@@ -310,11 +301,7 @@ fn teleporter_drive_ends_what_may_end_and_begins_over_the_rest() {
         let locomotor = entity.locomotor.as_mut().unwrap();
         assert!(locomotor.begin_piggyback(Teleport, 20));
         if mid_warp {
-            let warp = movement::teleport_movement::ChronoWarp::new(
-                DriveCoord::cell(12, 8, 0),
-                entity.owner(),
-                20,
-            );
+            let warp = movement::teleport_movement::ChronoWarp::new(DriveCoord::cell(12, 8, 0), 20);
             let locomotor = entity.locomotor.as_mut().unwrap();
             locomotor.teleport_runtime_mut().unwrap().arm_chrono(warp);
         }
@@ -350,9 +337,9 @@ fn refused_installation_and_absent_stash_preserve_instance_and_foot_state() {
         let before = owned_state(entity);
 
         assert!(!begin_drive_for_teleporter(entity, 37));
-        assert!(!try_end_piggyback(entity));
-        assert!(!end_admitted_piggyback(entity));
-        assert_eq!(owned_state(entity), before);
+        assert!(!sim.try_end_piggyback(1, None));
+        assert!(!sim.end_admitted_piggyback(1, None));
+        assert_eq!(owned_state(sim.substrate.entities.get(1).unwrap()), before);
     }
 }
 
@@ -411,11 +398,11 @@ fn stop_command_retires_only_the_drive_admitted_by_its_existing_gate() {
 fn refused_miner_order_leaves_teleport_payload_untouched() {
     for retired_drive in [false, true] {
         let (mut sim, rules) = fixture();
-        let entity = sim.substrate.entities.get_mut(1).unwrap();
         if retired_drive {
-            activate_drive(entity);
-            assert!(try_end_piggyback(entity));
+            activate_drive(sim.substrate.entities.get_mut(1).unwrap());
+            assert!(sim.try_end_piggyback(1, None));
         }
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
         let mut path_runtime = crate::sim::components::FootPathRuntime::at_frame(0);
         path_runtime.movement_timer = crate::sim::timer::CdTimer::from_raw(-1, -7);
         path_runtime.blocked_timer = crate::sim::timer::CdTimer::from_raw(i32::MAX - 2, 31);
@@ -461,7 +448,8 @@ fn foot_queue_survives_drive_retirement_construction_and_reuse() {
     ));
     let queue = entity.navigation.path_replay.clone();
     let speed = entity.foot_speed.clone();
-    assert!(try_end_piggyback(entity));
+    assert!(sim.try_end_piggyback(1, None));
+    let entity = sim.substrate.entities.get_mut(1).unwrap();
     assert_retired(entity);
     assert_eq!(entity.navigation.path_replay, queue);
     assert_eq!(entity.foot_speed, speed);
@@ -573,7 +561,8 @@ fn foot_speed_ownership_matches_original_helper_witnesses() {
                     case["output"]["constructor_target"].as_f64().unwrap()
                 ))
             );
-            assert!(end_admitted_piggyback(entity));
+            assert!(sim.end_admitted_piggyback(1, None));
+            let entity = sim.substrate.entities.get(1).unwrap();
             assert_retired(entity);
             assert_eq!(entity.foot_speed, owner_speed);
             assert_eq!(case["output"]["end_preserves_owner"], true);
@@ -700,10 +689,11 @@ fn foot_queue_operations_match_original_memory_witnesses() {
         } else if operation == "foot_stop" {
             super::super::navcom::foot_stop_moving(entity);
         } else if operation == "drive_end" {
-            assert!(try_end_piggyback(entity));
+            assert!(sim.try_end_piggyback(1, None));
         } else {
             super::super::path_markers::consume_path_replay(&mut entity.navigation.path_replay, 1);
         }
+        let entity = sim.substrate.entities.get(1).unwrap();
         let expected: Vec<u8> =
             serde_json::from_value(case["output"]["directions"].clone()).unwrap();
         let expected_reference: (i16, i16) =
@@ -746,7 +736,8 @@ fn drive_end_uses_native_gates_and_preserves_owner_state() {
         }
         let before = owned_state(entity);
         let speed = entity.foot_speed.clone();
-        assert_eq!(try_end_piggyback(entity), denied == 0);
+        assert_eq!(sim.try_end_piggyback(1, None), denied == 0);
+        let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(entity.foot_speed, speed);
         if denied != 0 {
             assert_eq!(owned_state(entity), before);
@@ -775,10 +766,7 @@ fn drive_end_denial_flags_survive_save_and_block_generic_restore() {
         let bytes = GameSnapshot::save(&sim, 0, 0, "drive_end_gate", 0);
         let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
         assert_eq!(loaded.state_hash(), sim.state_hash());
-        assert!(!movement::tick_locomotor_piggyback_restore_one(
-            &mut loaded.substrate.entities,
-            1
-        ));
+        assert!(!loaded.try_end_piggyback(1, None));
         let before = loaded.state_hash();
         let entity = loaded.substrate.entities.get_mut(1).unwrap();
         entity
@@ -788,10 +776,7 @@ fn drive_end_denial_flags_survive_save_and_block_generic_restore() {
             .store_drive_end_permission(true);
         entity.foot_locomotor_swap_active = false;
         assert_ne!(loaded.state_hash(), before);
-        assert!(movement::tick_locomotor_piggyback_restore_one(
-            &mut loaded.substrate.entities,
-            1
-        ));
+        assert!(loaded.try_end_piggyback(1, None));
     }
 }
 

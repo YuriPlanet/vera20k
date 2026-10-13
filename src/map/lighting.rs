@@ -54,7 +54,7 @@ const DETAIL_HIGH_RGB_MASK: i32 = !31;
 pub const DEFAULT_TINT: [f32; 3] = [1.0, 1.0, 1.0];
 
 /// Global lighting parameters from the map's [Lighting] INI section.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LightingConfig {
     /// Base brightness level (default 1.0).
     pub ambient: f32,

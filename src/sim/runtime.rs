@@ -219,6 +219,7 @@ impl SimRuntime {
     }
 }
 
+#[cfg(test)]
 impl SimRuntime {
     /// Replace a same-content restored simulation in place. Resource ownership
     /// never changes and callers must already have a running match.
@@ -1226,7 +1227,6 @@ pub(crate) fn finalize_constructed_scenario(
         sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
             map_width: map_data.header.width as u16,
             map_height: map_data.header.height as u16,
-            normal_lighting: crate::map::lighting::parse_lighting_profiles(&map_data.ini).normal,
             rules,
             overlay_registry,
             house_roster,

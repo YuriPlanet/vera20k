@@ -1238,7 +1238,7 @@ mod tests {
     fn hut_collapse_walker_presentation_uses_scenario_only() {
         let mut sim = Simulation::new();
         let seed = 0x48A7_51DE_u64;
-        sim.reseed_scenario_and_main(seed);
+        sim.initialize_random_number_system(seed as u32);
         let mut terrain = water_below_bridge_terrain(3);
         seed_bridge_overlay(&mut terrain, &[(4, 3), (4, 4)], 0xE0);
         sim.resolved_terrain = Some(terrain);
@@ -1328,7 +1328,7 @@ mod tests {
     fn dispatcher_in_band_cell_consumes_two_block_strength_draws() {
         let mut sim = Simulation::new();
         let seed = 0x0B11_D6E5_u64;
-        sim.reseed_scenario_and_main(seed);
+        sim.initialize_random_number_system(seed as u32);
         let mut terrain = water_below_bridge_terrain(4);
         // A raw overlay alone admits only D. A also needs a real concrete
         // Middle tile class (without0x100 its height gate is bypassed).
@@ -1568,7 +1568,7 @@ mod tests {
     #[test]
     fn bridge_debris_requires_bridge_explosion_list() {
         let mut sim = Simulation::new();
-        sim.reseed_scenario_and_main(7);
+        sim.initialize_random_number_system(7);
         let baseline_state = sim.scenario_rng.state();
         sim.resolved_terrain = Some(water_below_bridge_terrain(3));
         let metallic_debris = sim.interner.intern("METALDEB1");

@@ -597,6 +597,11 @@ pub struct HouseState {
     /// `BuildingClass::Infiltrate` (`sim::spy_infiltration`).
     #[serde(default)]
     spy_gains: SpyGains,
+    /// House+2D8: how many of this house's `PowersUnit=` buildings are
+    /// counted as operational (each building's `+0x662`). The constructor
+    /// clears it; `sim::powered_unit` is its only writer.
+    #[serde(default)]
+    powered_unit_centers: i32,
     /// House+1F4: first discovery of this House's foreign object by PlayerPtr.
     /// Constructor4F5716 clears it; TechnoDiscovered6F4A25 sets it and no
     /// clearing writer exists. TEvent71F0FB reads it for event kind5, after
@@ -995,6 +1000,35 @@ impl HouseState {
         self.spy_gains.veteran_units
     }
 
+    /// `HouseClass::RobotTanksBackOnline @ 0x0050E010`'s increment; returns
+    /// the new count.
+    pub(crate) fn gain_powered_center(&mut self) -> i32 {
+        self.powered_unit_centers = self.powered_unit_centers.wrapping_add(1);
+        self.powered_unit_centers
+    }
+
+    /// The decrement of `LostPoweredCenter @ 0x0050E0E0` and of
+    /// Removed_From_Game's copy of it; returns the new count.
+    pub(crate) fn lose_powered_center(&mut self) -> i32 {
+        self.powered_unit_centers = self.powered_unit_centers.wrapping_sub(1);
+        self.powered_unit_centers
+    }
+
+    /// `HouseClass @ 0x0050E1B0`: a signed count above zero. Its UnitType
+    /// argument is unread (`RET 4`).
+    pub(crate) fn has_powered_center(&self) -> bool {
+        self.powered_unit_centers > 0
+    }
+
+    /// Folded only while nonzero, so a house without a powering building
+    /// hashes as earlier schemas did.
+    pub(crate) fn hash_powered_unit_centers(&self, hasher: &mut impl std::hash::Hasher) {
+        if self.powered_unit_centers != 0 {
+            std::hash::Hash::hash(b"house-powered-unit-centers-v1", hasher);
+            std::hash::Hash::hash(&self.powered_unit_centers, hasher);
+        }
+    }
+
     /// Folded only once a spy has taken something, so other houses hash as
     /// earlier schemas did.
     pub(crate) fn hash_spy_gains(&self, hasher: &mut impl std::hash::Hasher) {
@@ -1381,6 +1415,7 @@ impl HouseState {
             building_capture_notified: false,
             lost_building: None,
             spy_gains: SpyGains::default(),
+            powered_unit_centers: 0,
             discovered_by_current_house: false,
             economy: Economy::new(credits),
             strategy_emergency: HouseStrategyEmergencyState::default(),

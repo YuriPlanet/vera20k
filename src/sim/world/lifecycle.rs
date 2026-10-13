@@ -191,6 +191,24 @@ impl Simulation {
     pub(crate) fn object_placement_scope_active(&self) -> bool {
         self.object_placement_scope_depth != 0
     }
+
+    /// Raise VERA's analog of native `0xA8ED6B` around `operation`: an initial
+    /// building Unlimbo inside it takes Enter_Idle_Mode's Idle arm
+    /// (`0x0044D6A0`) and stands finished, with no build-up. Native sets the
+    /// byte only around the random map generator's GALITE pass
+    /// (`0x005A91E0`); VERA raises it around a convenience spawn's Unlimbo
+    /// ([`Self::spawn_object`]), whose buildings stand like a map's. Native's
+    /// other readers of the byte keep the clear byte's answer.
+    pub(crate) fn with_buildup_bypass<R>(&mut self, operation: impl FnOnce(&mut Self) -> R) -> R {
+        let saved = std::mem::replace(&mut self.buildup_bypass, true);
+        let result = operation(self);
+        self.buildup_bypass = saved;
+        result
+    }
+
+    pub(crate) fn buildup_bypass_active(&self) -> bool {
+        self.buildup_bypass
+    }
 }
 
 pub(super) fn building_base_reservation_rect(
@@ -873,7 +891,7 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| entity.lifecycle.object_alive)
         {
-            self.update_house_presence(stable_id, true);
+            self.house_added_to_game(stable_id);
         }
         // Techno6F6DAA: only successful placement of an alive Techno snaps
         // the body to this call's direction, before barrel elevation and idle.
@@ -894,9 +912,13 @@ impl Simulation {
         }
         // TechnoClass::Unlimbo 0x006F6E2A..0x006F6E4F: Enter_Idle_Mode(1, 1),
         // Ready_To_Commence and Commence, ahead of its second mode-one query
-        // and of Foot4D722F's owner discovery below, which then observes the
-        // committed idle mission rather than a queued one.
-        if let Some(rules) = context.rules
+        // and of the owner discovery below (Foot 0x004D722F, Building
+        // 0x00440E5C), which observes the mission it left: a Foot's committed
+        // idle mission, or a placed building's queued Construction. An
+        // upgrade's Unlimbo attaches its type to the host and returns
+        // (0x00440A1C..0x00440A2F) before TechnoClass::Unlimbo.
+        if !attached_upgrade
+            && let Some(rules) = context.rules
             && self
                 .substrate
                 .entities
@@ -907,7 +929,7 @@ impl Simulation {
             if context.requested_facing.is_some() {
                 self.trace_lifecycle_for_test(LifecycleTestEvent::UnlimboIdleMode);
             }
-            super::foot_unlimbo_idle_mode(
+            super::techno_unlimbo_idle_mode(
                 self,
                 stable_id,
                 rules,
@@ -1332,7 +1354,10 @@ impl Simulation {
         let owner = entity.owner();
         let no_radio = entity.radio_contacts.is_empty();
         let construction = Some(crate::rules::mission_data::MissionType::Construction);
-        let current_construction = entity.mission.current().known() == construction;
+        // Both arms ask Get_Mission (vt+0x184 = 0x005B3040: current, else
+        // queued; the computer arm's at 0x0044D679), so a placed building
+        // whose Unlimbo queued Construction stays shut until it is built.
+        let effective_construction = entity.mission.effective().known() == construction;
         let queued_construction = entity.mission.queued().known() == construction;
         let controlled = self
             .houses
@@ -1343,9 +1368,9 @@ impl Simulation {
         // ScenarioInit affects the House notification writes,
         // independently of this Grand_Opening admission.
         let grand_admitted = if controlled {
-            !current_construction && !queued_construction
+            !effective_construction && !queued_construction
         } else {
-            viewer == owner && !current_construction
+            viewer == owner && !effective_construction
         };
         if no_radio
             && grand_admitted
@@ -2899,10 +2924,28 @@ impl Simulation {
         {
             //6F6B16 ordinary sight release precedes TypeCD1 gap removal at
             //6F6B6A; both precede Object Limbo. Repeated Limbo emits neither.
-            // A `RevealToAll=` type's branch (`0x006F6AEF..0x006F6B06`)
-            // releases the sight its opening showed the current house.
-            self.fog.release_entity_sight(stable_id);
-            self.fog.release_alternate_sight(stable_id);
+            // A `RevealToAll=` type takes the branch at `0x006F6AEF..0x006F6B06`
+            // instead: ReReveal(0, 0, 1, PlayerPtr) releases its sight for the
+            // current house in place of its owner's. Without a current house
+            // (headless) there is no PlayerPtr to release for, and the
+            // ordinary release keeps its place before the gap removal.
+            // RESIDUAL: without rules (headless fixtures) the type is unknown,
+            // so a `RevealToAll=` building takes the ordinary release and
+            // keeps an alternate admission it holds. Every production Limbo
+            // passes rules.
+            let reveal_to_all = context.rules().filter(|&rules| {
+                self.session.current_house.is_some()
+                    && self
+                        .substrate
+                        .entities
+                        .get(stable_id)
+                        .and_then(|entity| self.object_type(entity.type_ref(), rules))
+                        .is_some_and(|object| object.reveal_to_all)
+            });
+            match reveal_to_all {
+                Some(rules) => self.rereveal_sight_to_current_house(stable_id, rules),
+                None => self.fog.release_entity_sight(stable_id),
+            }
             self.remove_building_gap_before_limbo(stable_id);
             // Steam gamemd3e81a617, TechnoLimbo6F6B98..6F6BA0 clears an
             // OpenTopped hull's own rider targets before HouseRemoved6F6BD1.
@@ -2917,7 +2960,7 @@ impl Simulation {
                 );
             }
             // 6F6BD1: Removed_From_Game, also only on the first Limbo.
-            self.update_house_presence(stable_id, false);
+            self.house_removed_from_game(stable_id, context.rules(), context.effects());
             // BuildingClass::Limbo 0x00445946..0x00445988: an opened
             // Helipad's docks leave its house's AirportDocks.
             if let Some(rules) = context.rules()
@@ -3217,10 +3260,9 @@ impl Simulation {
     /// 0 re-enters Stop_Driver once more when it accepts. Native execution:
     /// `tools/spatial_oracle/jumpjet_infantry_crash`.
     ///
-    /// Foot+6AD (Magnetron-held) would skip the spawn calls and Detach_All;
-    /// VERA never sets it (the IsLocomotor arm is unported). On this path the
-    /// spawn calls repeat the Destroy's owner arm and find nothing left to
-    /// kill. Detach_All(1) repeats the broadcast the killing hit's Destroy
+    /// A lifted Foot (`+0x6AD`, Magnetron-held) skips the spawn calls and
+    /// Detach_All (`0x006FCD79`). On the death path the spawn calls repeat
+    /// the Destroy's owner arm and find nothing left to kill. Detach_All(1) repeats the broadcast the killing hit's Destroy
     /// already made (on a re-entered death arm, `0x0070202E..0x00702035`, that
     /// was an earlier call). The walk is not repeated: every Target write
     /// since then refused the Health-0 object (the setter through
@@ -3294,6 +3336,24 @@ impl Simulation {
             return;
         }
         crate::sim::radio::broadcast_break(self, stable_id, None, context.effects());
+        // `0x006FCD6B..0x006FCD79`: a lifted Foot keeps its spawns, its spawns'
+        // targets and its listeners.
+        let lifted = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| {
+                matches!(
+                    entity.category,
+                    EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                ) && entity.foot_locomotor_swap_active
+            });
+        if lifted {
+            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+                entity.selected = false;
+            }
+            return;
+        }
         crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
         crate::sim::spawn_manager::clear_all_spawn_targets(
             self,
@@ -3411,9 +3471,10 @@ impl Simulation {
     /// change anything for `expired_id`: the listener is the expiring object,
     /// a field [`Self::notify_entity_pointer_expired`] compares names it, or
     /// it holds an object a forward reaches (SpawnManager, CaptureManager,
-    /// TemporalClass, its parasite). A superset of each forward's own test, so
-    /// passing over a listener without any of these matches visiting it. A
-    /// field or forward added to the broadcast must be added here too.
+    /// TemporalClass, its parasite, the Magnetron links). A superset of each
+    /// forward's own test, so passing over a listener without any of these
+    /// matches visiting it. A field or forward added to the broadcast must be
+    /// added here too.
     fn entity_expiry_listener_acts(
         listener: &GameEntity,
         listener_id: u64,
@@ -3459,6 +3520,9 @@ impl Simulation {
             || listener.capture_manager.is_some()
             || listener.temporal.has_link()
             || listener.parasite_eating_me.is_some()
+            || listener.locomotor_target == Some(expired_id)
+            || listener.locomotor_source == Some(expired_id)
+            || listener.manipulated_by == Some(expired_id)
     }
 
     /// Each RNG stream's cursor, which every draw moves.
@@ -4330,6 +4394,15 @@ impl Simulation {
                     context.rules(),
                     context.effects(),
                 );
+                // Then the Magnetron links (`0x00707B64..0x00707BAC`), also
+                // outside the control test.
+                self.locomotor_link_pointer_expired(
+                    listener_id,
+                    expired_id,
+                    context.rules(),
+                    context.registry(),
+                    context.effects(),
+                );
                 // FootClass::PointerExpired 0x004D998C..0x004D99CD follows the
                 // Techno body: the parasite link and its forward.
                 self.foot_parasite_pointer_expired(
@@ -4493,6 +4566,22 @@ impl Simulation {
             && let Some(rules) = context.rules()
         {
             self.free_all_captures(stable_id, rules, context.registry(), context.effects());
+        }
+        // `0x004DE5F0`: a Magnetron lets go of what it holds.
+        if foot
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.locomotor_target.is_some())
+        {
+            self.release_locomotor(
+                stable_id,
+                true,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
         }
         // `0x004DE604`: then the object leaves its team.
         if foot {

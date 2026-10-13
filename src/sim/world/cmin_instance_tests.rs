@@ -500,10 +500,7 @@ fn replay(row: &Value) {
                     .unwrap();
                 let admitted = gate["return_eax"].as_u64().unwrap() & 0xFF != 0;
                 assert_eq!(
-                    movement::tick_locomotor_piggyback_restore_one(
-                        &mut scene.sim.substrate.entities,
-                        scene.miner
-                    ),
+                    scene.sim.try_end_piggyback(scene.miner, None),
                     admitted,
                     "{label}: native END gate"
                 );

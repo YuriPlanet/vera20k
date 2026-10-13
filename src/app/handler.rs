@@ -417,6 +417,15 @@ impl ApplicationHandler for App {
                     state.match_state.input.tactical_mouse.reset_on_focus_loss();
                     state.match_state.input.selection_state.cancel_drag();
                     state.match_state.input.minimap_dragging = false;
+                    // The gadget substrate keeps its own sticky capture; it
+                    // must die with the same focus edge or the next click is
+                    // still routed to the region that captured it (the
+                    // release that would free it was lost with the focus).
+                    state
+                        .match_state
+                        .match_presentation
+                        .in_game_gadgets
+                        .cancel_pointer_capture();
                     state
                         .match_state
                         .match_presentation

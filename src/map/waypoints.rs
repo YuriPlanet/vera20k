@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use crate::rules::ini_parser::IniFile;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Waypoint {
     pub index: u32,
     pub rx: u16,

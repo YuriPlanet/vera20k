@@ -16,7 +16,7 @@ pub enum BridgeDestroyabilityMode {
 }
 
 /// Parsed metadata from a map's `[Basic]` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BasicSection {
     /// Human-facing map/scenario name when present.
     pub name: Option<String>,

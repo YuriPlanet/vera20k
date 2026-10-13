@@ -17,13 +17,16 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::ground_pose::{building_render_order_parts, position_world_coord};
 
 /// Foot4DB7E0 / Aircraft41ADC0 dispatch to the active locomotor. Fly4CFCF0
-/// reads physical GetHeight, Jumpjet54B8D0 additionally reads marked-on-map,
-/// structural bridge, falling and its linked +2C height. Ground movers do not
-/// query height. No terrain is a headless compatibility case, not native proof.
+/// reads physical GetHeight, Jumpjet54B8D0 additionally reads structural
+/// bridge, falling, its owner's virtual +54 (IsHighFlying,
+/// [`is_high_flying`]) and its linked +2C height. Ground movers do not query
+/// height. No terrain is a headless compatibility case, not native proof.
+///
+/// [`is_high_flying`]: crate::sim::movement::air_movement::is_high_flying
 pub(crate) fn entity_layer(
     entity: &GameEntity,
     terrain: Option<&ResolvedTerrainGrid>,
-    rules: Option<&RuleSet>,
+    rules: Option<(&RuleSet, &crate::sim::intern::StringInterner)>,
 ) -> DisplayLayer {
     let kind = entity.locomotor.as_ref().map(|l| l.active_kind());
     if entity.category != EntityCategory::Structure {
@@ -58,8 +61,10 @@ pub(crate) fn entity_layer(
             adjusted_height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
         }
     }
-    // Object5F6B90 (+54 via4DE620): marked and GetHeight>=two levels.
-    if !entity.lifecycle.cell_marked || height < 208 || adjusted_height == 0 {
+    // The owner's +54 (Foot4DE620 -> Object5F6B90, Aircraft41B920).
+    if !crate::sim::movement::air_movement::is_high_flying(entity, terrain, rules)
+        || adjusted_height == 0
+    {
         return DisplayLayer::GROUND;
     }
     let cruise_height = if kind == Some(LocomotorKind::Jumpjet) {
@@ -72,7 +77,7 @@ pub(crate) fn entity_layer(
             .height
     } else {
         // Object5F4260 uses Rules+420, not FlightLevel or a type's height.
-        rules.map_or(400, |rules| rules.general.display_cruise_height)
+        rules.map_or(400, |(rules, _)| rules.general.display_cruise_height)
     };
     if adjusted_height < cruise_height {
         DisplayLayer::AIR
@@ -220,7 +225,11 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let layer = entity_layer(entity, terrain.or(self.resolved_terrain.as_ref()), rules);
+        let layer = entity_layer(
+            entity,
+            terrain.or(self.resolved_terrain.as_ref()),
+            rules.map(|rules| (rules, &self.interner)),
+        );
         self.submit_object_display(id, layer, rules);
     }
 
@@ -229,10 +238,13 @@ impl Simulation {
         id: u64,
         rules: Option<&RuleSet>,
     ) -> Option<DisplayLayer> {
-        self.substrate
-            .entities
-            .get(id)
-            .map(|entity| entity_layer(entity, self.resolved_terrain.as_ref(), rules))
+        self.substrate.entities.get(id).map(|entity| {
+            entity_layer(
+                entity,
+                self.resolved_terrain.as_ref(),
+                rules.map(|rules| (rules, &self.interner)),
+            )
+        })
     }
 
     /// Jumpjet54AECB/54AED1 captures the live query before Process.54B16F
@@ -249,7 +261,11 @@ impl Simulation {
             return;
         };
         if entity.lifecycle.object_alive
-            && entity_layer(entity, self.resolved_terrain.as_ref(), rules) != before
+            && entity_layer(
+                entity,
+                self.resolved_terrain.as_ref(),
+                rules.map(|rules| (rules, &self.interner)),
+            ) != before
         {
             self.submit_entity_display(id, rules, None);
         }
@@ -402,7 +418,7 @@ mod tests {
             );
             let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
             assert_eq!(
-                entity_layer(entity, Some(&terrain), Some(&rules)),
+                entity_layer(entity, Some(&terrain), Some((&rules, &sim.interner))),
                 DisplayLayer::from_index(row["layer"].as_u64().unwrap() as u8).unwrap(),
                 "{name}"
             );
@@ -430,7 +446,7 @@ mod tests {
                         "{name}, cached height {cached_height}",
                     );
                     assert_eq!(
-                        entity_layer(entity, Some(&terrain), Some(&rules)),
+                        entity_layer(entity, Some(&terrain), Some((&rules, &sim.interner))),
                         DisplayLayer::from_index(row["layer"].as_u64().unwrap() as u8).unwrap(),
                         "{name}, cached height {cached_height}",
                     );

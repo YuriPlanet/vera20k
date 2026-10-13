@@ -208,7 +208,7 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
             // this does not stamp the shared dummy during preflight.
             return false;
         }
-        !sim.infantry_setter_receiver(receiver, destination, rules)
+        !sim.infantry_setter_receiver(receiver, rules)
             || sim.infantry_destination_inputs_available(
                 receiver,
                 destination,
@@ -380,7 +380,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                     return true;
                 }
                 crate::map::entities::EntityCategory::Infantry
-                    if sim.infantry_setter_receiver(prepared.receiver, requested, rules) =>
+                    if sim.infantry_setter_receiver(prepared.receiver, rules) =>
                 {
                     let _ = sim
                         .set_infantry_destination(
@@ -414,8 +414,9 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             .get_mut(prepared.receiver)
             .expect("preflight guaranteed receiver");
         // Bare-storage fixtures and the still-unmigrated locomotor paths retain
-        // their represented NavCom write set. Ordinary Unit/Walk Infantry
-        // always run the sole class owner above, including admission/refusal.
+        // their represented NavCom write set. Ordinary Units and Walk,
+        // Teleport or Jumpjet Infantry always run the sole class owner above,
+        // including admission/refusal.
         represented_assign_destination_mode_one(entity, Some(requested));
         false
     }

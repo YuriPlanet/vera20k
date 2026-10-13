@@ -40,7 +40,7 @@ pub fn layout_pass(desc: &DialogDescriptor, screen_w: i32, screen_h: i32) -> Vec
                 // Modal-centered dialogs keep their DLU-derived client rect; the
                 // caller positions the modal panel (no fullscreen re-anchor).
                 RepositionPolicy::ModalCentered => {
-                    geom::dlu_rect(c.dlu_rect.x, c.dlu_rect.y, c.dlu_rect.w, c.dlu_rect.h)
+                    geom::child_window(c.dlu_rect.x, c.dlu_rect.y, c.dlu_rect.w, c.dlu_rect.h)
                 }
                 // Active in-game Options (`0xBBB`). Ordinary controls
                 // (trackbars/checkboxes/statics) take signed screen-centered offsets; owner-draw
@@ -390,9 +390,13 @@ pub(crate) mod tests {
             )],
         };
         let laid = layout_pass(&desc, 800, 600);
-        // Plain DLU->pixel: (425,125,108,23) -> (638,203,162,37). No snap/anchor.
-        assert_eq!(rect_for(&laid, 0x0001), geom::dlu_rect(425, 125, 108, 23));
-        assert_eq!(rect_for(&laid, 0x0001), RectPx::new(638, 203, 162, 37));
+        // Common native resize keeps the converted position and adds one to
+        // each extent. No fullscreen snap/anchor applies to this modal.
+        assert_eq!(
+            rect_for(&laid, 0x0001),
+            geom::child_window(425, 125, 108, 23)
+        );
+        assert_eq!(rect_for(&laid, 0x0001), RectPx::new(638, 203, 163, 38));
     }
 
     /// Re-anchor is oversized-screen aware: 1024x768 reproduces the 0xE2 cells.

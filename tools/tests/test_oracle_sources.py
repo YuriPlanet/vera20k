@@ -1,4 +1,6 @@
 """The replay command a native run records."""
+from pathlib import Path
+import shlex
 from types import ModuleType, SimpleNamespace
 import unittest
 
@@ -22,6 +24,16 @@ class ReplayCommandTests(unittest.TestCase):
             self.assertEqual(command, 'python -m tools.spatial_oracle.building_guard_attack --gate')
         self.assertEqual(sources.replay_command(['--label', 'a b'], module),
                          "python -m tools.spatial_oracle.building_guard_attack --label 'a b'")
+
+    def test_checkout_paths_are_relative_to_the_root_a_replay_runs_from(self):
+        module = main_module('tools.spatial_oracle.building_guard_attack')
+        relative = str(Path('tools', 'fixture.json'))
+        outside = str(sources.REPO.parent / 'elsewhere.json')
+        nested = f'{Path("/mnt")}{sources.REPO / relative}'
+        argv = ['--input', str(sources.REPO / relative), f'--map={sources.REPO / relative}', outside, nested]
+        self.assertEqual(sources.replay_command(argv, module),
+                         shlex.join(['python', '-m', 'tools.spatial_oracle.building_guard_attack',
+                                     '--input', relative, f'--map={relative}', outside, nested]))
 
     def test_script_runs_become_module_runs_and_other_mains_are_not_recorded(self):
         script = str(sources.REPO / 'tools' / 'render_depth_oracle.py')

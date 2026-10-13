@@ -271,6 +271,14 @@ def validate_campaign_capture(manifest):
             "map_admission": manifest["map_admission"], "parity_certification": "NONE"}
 
 
+CAMPAIGN_INSTALLED = {
+    "accepted_rust_l0": False, "campaign_installation": True, "saved_world_restored": False,
+}
+SAVED_WORLD_RESTORED = {
+    "accepted_rust_l0": False, "campaign_installation": False, "saved_world_restored": True,
+}
+
+
 def _validate_campaign_opening(manifest, phase, runtime):
     opening = manifest["opening"]
     _require(opening["target"] == phase and opening["saw_lock"] is True,
@@ -278,12 +286,13 @@ def _validate_campaign_opening(manifest, phase, runtime):
     initial = opening["initial_runtime"]
     _require(initial["tick"] == 0 and initial["game_mode_nonzero"] is False,
              "opening skipped the ordinary tick-zero installation")
-    for observation in (initial, runtime):
+    restores = phase == "opening-restore-unlocked"
+    for observation, admission in ((initial, CAMPAIGN_INSTALLED),
+                                   (runtime, SAVED_WORLD_RESTORED if restores else CAMPAIGN_INSTALLED)):
         _require(observation.get("scenario_started") is True,
                  "opening retained an inactive scenario")
-        _require(observation.get("startup_admission") == {
-            "accepted_rust_l0": False, "campaign_installation": True,
-        }, "opening has no checked campaign installation admission")
+        _require(observation.get("startup_admission") == admission,
+                 "opening has no checked campaign installation or saved-world admission")
     steps = opening["exact_steps"]
     _require(isinstance(steps, list) and 0 < len(steps) <= 2500,
              "opening has no bounded production step sequence")
@@ -361,6 +370,9 @@ def _validate_campaign_opening(manifest, phase, runtime):
                  and saved["rng"]["main"] == loaded["rng"]["main"]
                  and saved["rng"]["mapgen"] == loaded["rng"]["mapgen"],
                  "ordinary save/load changed its frame or retained RNG owners")
+        _require(saved.get("startup_admission") == CAMPAIGN_INSTALLED
+                 and loaded.get("startup_admission") == SAVED_WORLD_RESTORED,
+                 "ordinary load did not replace the campaign installation with its saved world")
     else:
         _require(restored is None, "non-restore opening capture changed the saved-game timeline")
 

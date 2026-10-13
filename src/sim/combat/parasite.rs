@@ -50,8 +50,6 @@
 //!   Drive/Ship Process path port, which holds those locomotors.
 //! - Grinder (UnitClass::PerCellProcess `0x0073A13E..0x0073A181`): credits the
 //!   eater's refund, then suppression 50 + ExitUnit. VERA has no grinding.
-//! - Magnetron lift (`0x00710026`): a Naval eater exits. VERA does not port the
-//!   IsLocomotor detonation arm.
 //! - Sonic weapons may target an allied infected Foot (What_Action_OnObject
 //!   `0x00700377`); the Sonic hit already ejects any eater (`0x004D7345`), but
 //!   the order needs the cursor/command legality VERA does not port yet.

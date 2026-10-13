@@ -36,7 +36,7 @@ extraction receipts when `../receipts.json` is present.
 The retained run used the following commands from the worktree:
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 export VERA20K_DEPOT_SERVICE_INPUTS=.local-audit/war-miner-attack/inputs/extract
 export VERA20K_BUILDING_SLOT_EXPIRY_ASSETS=.local-audit/depot-service/animation-assets/extract
 python -m tools.spatial_oracle.building_slot_replacement --expiry --write

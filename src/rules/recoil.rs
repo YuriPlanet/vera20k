@@ -45,7 +45,9 @@ impl RecoilControl {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct RecoilConfig {
     enabled: bool,
     turret: RecoilControl,

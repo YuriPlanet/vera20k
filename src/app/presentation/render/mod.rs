@@ -352,6 +352,10 @@ fn upload_to_gpu(
     // A5 chat/system message lines (GAME.FNT atlas) — chat draws before the
     // tooltip (O10). Built before the pool borrow (it reads &AppState).
     let message_text = crate::app::input::messages::build_message_text_instances(state);
+    // Native rows draw through the shared text engine with the row's
+    // opaque-background style: a black box one pixel out on every side
+    // (0x4A5EB0 @ 0x4A5F61) behind each message line.
+    let message_fill = crate::app::input::messages::build_message_fill_instances(state);
 
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
@@ -489,6 +493,7 @@ fn upload_to_gpu(
     );
     pool.upload(&state.renderer.gpu, "sidebar_text", &sidebar.text);
     pool.upload(&state.renderer.gpu, "message_text", &message_text);
+    pool.upload(&state.renderer.gpu, "message_fill", &message_fill);
     pool.upload(&state.renderer.gpu, "tooltip_fill", &tooltip_fill);
     pool.upload(&state.renderer.gpu, "tooltip_border", &tooltip_border);
     pool.upload(&state.renderer.gpu, "tooltip_text", &tooltip_text);

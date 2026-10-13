@@ -509,10 +509,10 @@ fn what_action_on_cell(
 /// Determine the cursor feedback kind for a hover target, checking ObjectType
 /// capability flags from rules.ini before falling back to the generic attack/select logic.
 ///
-/// The original engine picks a single "best" selected unit via
-/// `SelectBestObjectForAction` (priority: armed mobile > unarmed mobile >
-/// immobile; ties broken by distance to target) and uses that unit's
-/// `What_Action_OnObject` to determine the cursor for the entire group.
+/// The original engine picks a single "best" selected object
+/// ([`select_best_for_action`], `SelectBestObjectForAction`) and uses that
+/// object's `What_Action_OnObject` to determine the cursor for the entire
+/// group.
 ///
 /// Priority (highest first):
 /// 1. Deployer self-hover: the selected object itself has a deploy capability.
@@ -1040,68 +1040,34 @@ fn force_fire_feedback(
 /// What the object resolver measures its candidates' distance to.
 ///
 /// gamemd's resolver takes a cell *or* an object: with a cell it measures to the
-/// cell centre at ground level, with an object to that object's own world point.
+/// cell centre at ground level, with an object to that object's GetCoords.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ActionDistanceTarget {
     /// Cell centre, in cell coordinates.
     CellCentre(u16, u16),
-    /// A specific object's world point.
+    /// A specific object's GetCoords.
     Object(u64),
 }
 
-/// Leptons per cell — a cell centre sits half a cell in on both axes.
-const LEPTONS_PER_CELL: i64 = crate::util::lepton::LEPTONS_PER_CELL_I32 as i64;
-
-/// World point in leptons for one entity, including altitude when terrain is
-/// resolved. gamemd's resolver reads the object's full 3-D world coordinate.
-fn entity_world_leptons(
-    entity: &crate::sim::game_entity::GameEntity,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-) -> (i64, i64, i64) {
-    let z = terrain.map_or(0, |t| {
-        i64::from(crate::sim::movement::ground_pose::object_world_z_leptons(
-            entity,
-            Some(t),
-        ))
-    });
-    (
-        entity.position.rx as i64 * LEPTONS_PER_CELL + entity.position.sub_x.to_num::<i64>(),
-        entity.position.ry as i64 * LEPTONS_PER_CELL + entity.position.sub_y.to_num::<i64>(),
-        z,
-    )
-}
-
-/// Integer square root — the resolver compares whole-lepton distances, not
-/// squares, so ties that round to the same distance must resolve the same way.
-fn isqrt_u64(value: u64) -> u64 {
-    if value < 2 {
-        return value;
-    }
-    let mut guess = 1u64 << ((64 - value.leading_zeros()).div_ceil(2));
-    loop {
-        let next = (guess + value / guess) / 2;
-        if next >= guess {
-            return guess;
-        }
-        guess = next;
-    }
-}
-
-/// Pick the single object whose action drives the cursor for the whole selection.
+/// `SelectBestObjectForAction @ 0x005353D0`: the one selected object whose
+/// action drives the cursor and the click for the whole selection
+/// (DisplayClass::DetermineAction `0x00692634`, `0x00692655`). Each object
+/// scores (`0x00535435..0x0053549C`):
+///   0 — berserk (`+0x298`), so every calm object outranks it;
+///   1 — disabled (`vt+0x37C`: EMP, or a Unit's death frames);
+///   2 — unarmed (`Is_Armed`, `vt+0x2AC`);
+///   3 — an armed building;
+///   4 — any other armed object;
+///   5 — one whose `GetWeaponDamageValue(-1)` is positive.
 ///
-/// Matches the original engine's `SelectBestObjectForAction` score ladder:
-///   5 — actionable, not a building, and at least one weapon slot has range
-///   4 — actionable, not a building
-///   3 — actionable
-///   2 — on the map but not actionable
-/// (the engine's tiers 1 and 0 cover deploy-in-progress and warp states that
-/// VERA does not model here yet — recorded, not invented.)
+/// A higher score always wins; an equal one only when strictly nearer. The
+/// distance is `Sqrt_Approx` of `(dx² + dz²) + dy²` through ftol
+/// (`0x00535532..0x00535557`), from the object's GetCoords (`vt+0x48`) to the
+/// cell centre at height 0 when a cell was supplied, else to the target
+/// object's GetCoords.
 ///
-/// Ties are *evaluated*, not skipped: a strictly higher score always replaces
-/// the incumbent and overwrites the stored distance even when it is farther
-/// away, while an equal score replaces only on a strictly smaller distance.
-/// Distance is 3-D Euclidean in leptons — to the cell centre when a cell was
-/// supplied, otherwise to the target object's own world point.
+/// RESIDUAL: score 1 is never given. VERA has no producer for EMP (`+0x504`)
+/// or a Unit's death-frame counter (`+0x6D8`); see `techno_ai_cloak`.
 pub(crate) fn select_best_for_action(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],
@@ -1109,63 +1075,50 @@ pub(crate) fn select_best_for_action(
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> Option<u64> {
     use crate::map::entities::EntityCategory;
+    use crate::sim::combat::combat_weapon::{is_armed, weapon_damage_value};
+    use crate::sim::movement::ground_pose::object_get_coords;
 
     let terrain = sim.resolved_terrain.as_ref();
-    let target_point: (i64, i64, i64) = match target {
-        ActionDistanceTarget::CellCentre(cx, cy) => (
-            cx as i64 * LEPTONS_PER_CELL + LEPTONS_PER_CELL / 2,
-            cy as i64 * LEPTONS_PER_CELL + LEPTONS_PER_CELL / 2,
-            0,
-        ),
+    let target_point = match target {
+        ActionDistanceTarget::CellCentre(cx, cy) => {
+            let centre = |cell: u16| i32::from(cell) * 256 + 128;
+            [centre(cx), centre(cy), 0]
+        }
         ActionDistanceTarget::Object(id) => {
-            let e = sim.entities().get(id)?;
-            entity_world_leptons(e, terrain)
+            let coords = object_get_coords(sim.entities().get(id)?, terrain);
+            [coords.x, coords.y, coords.z]
         }
     };
 
     let mut best_id: Option<u64> = None;
     let mut best_priority: i32 = -1;
-    let mut best_dist: u64 = u64::MAX;
+    let mut best_dist = i32::MAX;
 
     for &sid in selected {
         let Some(entity) = sim.entities().get(sid) else {
             continue;
         };
-        let priority = if entity.category == EntityCategory::Structure {
-            // A building is actionable but is a building, so it stops at 3.
+        let obj = rules.and_then(|r| r.object(sim.interner.resolve(entity.type_ref())));
+        let priority = if entity.berserk.active {
+            0
+        } else if !obj.is_some_and(|obj| is_armed(entity, obj)) {
+            2
+        } else if entity.category == EntityCategory::Structure {
             3
+        } else if obj.zip(rules).is_some_and(|(obj, rules)| {
+            weapon_damage_value(entity, obj, sim.entities(), rules, &sim.interner) > 0
+        }) {
+            5
         } else {
-            // The engine's weapon test queries *all* weapon slots, so a
-            // secondary-only unit scores 5 just like a primary-armed one.
-            //
-            // `primary`/`secondary` are native weapon-array slots 0/1
-            // (`TechnoTypeClass+0x898`/`+0x8B4`), so a `TurretCount>0` type
-            // reads through here correctly: `[SREF]` scores 5 on `Weapon1`.
-            //
-            // RESIDUAL (UNCHECKED, deferred): "all slots" is modelled as slots
-            // 0 and 1 only, so a type whose sole weapon sits at slot >= 2 would
-            // score 4. No stock section is shaped that way — `[FV]`, `[YTNK]`
-            // and `[YAGGUN]` all author slot 0 — so the frequency is zero on
-            // retail data. Downstream: cursor/order dispatch only, no sim
-            // state.
-            let obj = rules.and_then(|r| r.object(sim.interner.resolve(entity.type_ref())));
-            let has_weapon = obj.is_some_and(|o| {
-                [o.primary(), o.secondary()]
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|w| rules.and_then(|r| r.weapon(w)))
-                    .any(|w| w.range > crate::util::fixed_math::SIM_ZERO)
-            });
-            if has_weapon { 5 } else { 4 }
+            4
         };
 
-        let (sx, sy, sz) = entity_world_leptons(entity, terrain);
-        let (dx, dy, dz) = (
-            sx - target_point.0,
-            sy - target_point.1,
-            sz - target_point.2,
-        );
-        let dist = isqrt_u64((dx * dx + dy * dy + dz * dz) as u64);
+        let coords = object_get_coords(entity, terrain);
+        let dist = crate::util::native_x87::sqrt_approx_length([
+            coords.x.wrapping_sub(target_point[0]),
+            coords.z.wrapping_sub(target_point[2]),
+            coords.y.wrapping_sub(target_point[1]),
+        ]);
 
         if priority > best_priority || (priority == best_priority && dist < best_dist) {
             best_priority = priority;
@@ -2568,11 +2521,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         );
     }
 
-    /// The engine's weapon test queries every weapon slot, so a `Secondary=`-only
-    /// unit reaches the armed tier and outranks an unarmed one regardless of
-    /// which is closer.
+    /// `Is_Armed` reads the current weapon slot, slot 0 without `TurretCount=`,
+    /// so a `Secondary=`-only unit is unarmed like the truck (score 2), and
+    /// the nearer of the two wins.
     #[test]
-    fn secondary_only_unit_outranks_a_closer_unarmed_unit() {
+    fn a_secondary_only_unit_is_unarmed_and_the_nearer_one_wins() {
         let rules = cell_action_rules();
         let mut sim = Simulation::new();
         sim.resolve_type_handles(&rules);
@@ -2586,15 +2539,69 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 
         let best = select_best_for_action(
             &sim,
-            &[truck, arty],
+            &[arty, truck],
             ActionDistanceTarget::CellCentre(10, 10),
             Some(&rules),
         );
-        assert_eq!(
-            best,
-            Some(arty),
-            "the armed tier wins even from much farther away",
+        assert_eq!(best, Some(truck));
+    }
+
+    /// A berserk object scores 0 (`0x00535435`), below even an unarmed one,
+    /// however near it is.
+    #[test]
+    fn a_berserk_unit_ranks_below_every_calm_one() {
+        let rules = cell_action_rules();
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 9, 10, 0, &rules)
+            .expect("near tank");
+        let truck = sim
+            .spawn_object("TRUCKA", "Americans", 2, 2, 0, &rules)
+            .expect("far unarmed truck");
+        let best = |sim: &Simulation| {
+            select_best_for_action(
+                sim,
+                &[tank, truck],
+                ActionDistanceTarget::CellCentre(10, 10),
+                Some(&rules),
+            )
+        };
+        assert_eq!(best(&sim), Some(tank));
+        sim.entities_mut().get_mut(tank).unwrap().berserk.active = true;
+        assert_eq!(best(&sim), Some(truck));
+    }
+
+    /// Only a positive `GetWeaponDamageValue(-1)` reaches score 5
+    /// (`0x00535493`); an armed unit whose weapon heals stays at 4.
+    #[test]
+    fn a_healing_weapon_stays_below_a_damaging_one() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=MTNK\n1=MEND\n\
+             [MTNK]\nStrength=300\nPrimary=105mm\n\
+             [MEND]\nStrength=300\nPrimary=Fix\n\
+             [WeaponTypes]\n0=105mm\n1=Fix\n\
+             [105mm]\nDamage=60\nRange=5\n\
+             [Fix]\nDamage=-30\nRange=5\n",
+        ))
+        .expect("healer rules");
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+
+        let mender = sim
+            .spawn_object("MEND", "Americans", 9, 10, 0, &rules)
+            .expect("near mender");
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 2, 2, 0, &rules)
+            .expect("far tank");
+        let best = select_best_for_action(
+            &sim,
+            &[mender, tank],
+            ActionDistanceTarget::CellCentre(10, 10),
+            Some(&rules),
         );
+        assert_eq!(best, Some(tank));
     }
 
     /// Ties inside one tier break on 3-D lepton distance to the *cell centre*.

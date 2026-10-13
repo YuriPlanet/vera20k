@@ -123,7 +123,7 @@ fn retail_normal_selection_reaches_fixed_voice_list_and_queue_without_an_audio_d
             .expect("executed native list cardinality for retail common path");
         let slots = history["voice_list"].as_array().unwrap();
         let mut sim = simulation(type_id, category, "Local", false);
-        sim.reseed_scenario_and_main(1);
+        sim.initialize_random_number_system(1);
         let before_sim = sim.scenario_rng.native_state_hex();
         let mut events = SoundEventQueue::new();
         let mut queue = VoiceQueue::new();
@@ -175,7 +175,7 @@ fn prefixed_selection_fixture() -> (Simulation, RuleSet, serde_json::Value) {
     ))
     .unwrap();
     let mut sim = simulation("TANK", EntityCategory::Unit, "Local", false);
-    sim.reseed_scenario_and_main(history["seed"].as_u64().unwrap());
+    sim.initialize_random_number_system(history["seed"].as_u64().unwrap() as u32);
     {
         let (_, main) = sim.terrain_load_draws();
         for expected in history["main_prefix"]["draws"].as_array().unwrap() {
@@ -250,7 +250,7 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
     // This is PreparedLoad's existing in-scenario process-state handoff.
     // It retains the current cursor, including voices after the saved frame;
     // Scenario's post-read reset remains independent of that continuation.
-    restored.retain_in_scenario_process_state_from(&sim);
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     assert_eq!(restored.main_rng.logical_state(), live_rng.main);
     assert_eq!(restored.mapgen_rng.logical_state(), live_rng.mapgen);
     assert_eq!(

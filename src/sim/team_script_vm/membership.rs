@@ -22,19 +22,18 @@
 //! - `Remove_Member` sets `+0x6B8` on every object it is called for; only a
 //!   `Weeder=` unit's Mission_Guard reads it (`0x00740A60`), and VERA's
 //!   Weeder takes its own guard arm.
-//! - `Can_Add`'s lifted-object link (`+0x2B0`) has no VERA writer: the
-//!   Magnetron is not ported, so that test passes. Of its building-entry
-//!   flags (`0x004E0080`) only the Bio Reactor and Battle Bunker seeks'
-//!   `+0x68F` and `+0x690` are written (`sim::building_entry`).
+//! - Of `Can_Add`'s building-entry flags (`0x004E0080`) only the Bio Reactor
+//!   and Battle Bunker seeks' `+0x68F` and `+0x690` are written
+//!   (`sim::building_entry`).
 //! - `Recruit` adds a recruited unit's passengers (`0x006EADE8..0x006EAE17`);
 //!   a passenger is in limbo, which `Can_Add` refuses while `ScenarioInit`
 //!   is 0, so the loop adds nothing in play and is not ported.
 //! - The team's Risk (`+0x4C`, the members' `ThreatPosed=` sum) is not kept:
 //!   no ported reader.
-//! - `Remove_Member`'s callers in unported owners do not remove: the
-//!   Magnetron's lift (`0x00710349`), a building's occupant release with
-//!   Hunt (`0x0045812B`), and script actions 60 and 64 and the team change
-//!   and merge (`0x006E9E24`, `0x006E9F38`, `0x006E96FD`, `0x006ECFF8`).
+//! - `Remove_Member`'s callers in unported owners do not remove: a
+//!   building's occupant release with Hunt (`0x0045812B`), and script
+//!   actions 60 and 64 and the team change and merge (`0x006E9E24`,
+//!   `0x006E9F38`, `0x006E96FD`, `0x006ECFF8`).
 //! - The removal loops of the five per-seek member loops from `0x006ECB50`
 //!   (`0x006ECB7C..0x006ECCBC`) and of `0x0070F890` (`0x0070F8C7`) are not
 //!   ported: none of these functions has a call or a pointer anywhere in the
@@ -127,7 +126,8 @@ impl Simulation {
     /// (`0x004E0080`, [`crate::sim::building_entry`]); one draining
     /// (`+0x1CC`) or in a tank bunker (`+0x2E4`); a member of a team whose
     /// TeamType's `Priority=` is not lower (signed); an armed aircraft out
-    /// of ammo (`+0x2FC`); and one whose entry is full (signed).
+    /// of ammo (`+0x2FC`); one whose entry is full (signed); and one a
+    /// Magnetron holds (`+0x2B0`, `0x006EA841`).
     pub(crate) fn team_can_add(
         &self,
         team_id: u64,
@@ -199,6 +199,9 @@ impl Simulation {
             return None;
         }
         if !constrained && team.slot_counts[slot] >= entries[slot].count {
+            return None;
+        }
+        if entity.locomotor_source.is_some() {
             return None;
         }
         Some(slot)

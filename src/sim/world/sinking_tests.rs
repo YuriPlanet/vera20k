@@ -148,7 +148,7 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
         .unwrap()
         .sim;
     // Production keeps Main/MapGen as process state, outside serialized sim.
-    loaded.retain_in_scenario_process_state_from(&sim);
+    loaded.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     // Map-derived floor data is supplied by the ordinary map reload.
     loaded.resolved_terrain = sim.resolved_terrain.clone();
     loaded.restore_after_snapshot_load().unwrap();
@@ -376,7 +376,7 @@ fn load_preserves_sinking_edge_and_resets_shared_foot_sound_bytes() {
         let mut loaded = GameSnapshot::load_validated(&bytes, 17, 18, "SINK.MAP")
             .unwrap()
             .sim;
-        loaded.retain_in_scenario_process_state_from(&sim);
+        loaded.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
         loaded.restore_after_snapshot_load().unwrap();
         loaded.resolve_type_handles(&rules);
         let hull = loaded.substrate.entities.get(id).unwrap();

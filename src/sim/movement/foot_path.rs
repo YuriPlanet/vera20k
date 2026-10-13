@@ -1094,11 +1094,11 @@ impl Simulation {
             .ok_or("Find_Path redirect requires the actor's move info")?;
         let target = (cell.0 as u16, cell.1 as u16);
         let requested = crate::sim::components::NavTargetRef::cell(target.0, target.1);
-        if self.infantry_setter_receiver(id, requested, rules) {
+        if self.infantry_setter_receiver(id, rules) {
             // Original4D3CC7/4D3DF9 call the same class+480 as an order.
             // Carry the already-borrowed registry through its current-cell
             // and Stop_Driver decisions instead of composing a second tail.
-            let _ = self.assign_infantry_walk_destination(
+            let _ = self.assign_infantry_destination(
                 id,
                 requested,
                 move_info.speed,

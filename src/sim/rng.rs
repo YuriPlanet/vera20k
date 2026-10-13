@@ -66,6 +66,25 @@ pub(crate) fn trace_draws<T>(run: impl FnOnce() -> T) -> (T, Vec<serde_json::Val
     (result, trace)
 }
 
+/// A draw's backtrace without this machine's checkout and home prefixes, so a
+/// saved trace names `src/...` and `~/...` and compares across checkouts.
+#[cfg(test)]
+fn portable_callers(callers: String) -> String {
+    let separator = std::path::MAIN_SEPARATOR;
+    let checkout = format!("{}{separator}", env!("CARGO_MANIFEST_DIR"));
+    let mut callers = callers.replace(&checkout, "");
+    for home in ["HOME", "USERPROFILE"]
+        .into_iter()
+        .filter_map(|key| std::env::var(key).ok())
+    {
+        let home = home.trim_end_matches(['/', '\\']);
+        if !home.is_empty() {
+            callers = callers.replace(&format!("{home}{separator}"), &format!("~{separator}"));
+        }
+    }
+    callers
+}
+
 /// Deterministic simulation RNG.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SimRng {
@@ -101,6 +120,13 @@ impl MainRng {
         Self {
             state: Arc::clone(&self.state),
         }
+    }
+
+    /// Stage a transactional saved-load candidate. Draws made while the load
+    /// is prepared advance this copy; `install_from` moves it into the process
+    /// cell on commit, and a rejected load drops it with the cell untouched.
+    pub(super) fn staged_copy(&self) -> Self {
+        self.state.lock().expect("Main RNG poisoned").clone().into()
     }
 
     /// Move the finished bootstrap cursor into the retained process cell.
@@ -418,10 +444,11 @@ impl SimRng {
         #[cfg(test)]
         DRAW_TRACE.with_borrow_mut(|trace| {
             if let Some(trace) = trace {
+                let callers = std::backtrace::Backtrace::force_capture().to_string();
                 trace.push(serde_json::json!({
                     "before_indices": [a, b], "value": value,
                     "logic_object": DRAW_LOGIC_OBJECT.get(),
-                    "callers": std::backtrace::Backtrace::force_capture().to_string(),
+                    "callers": portable_callers(callers),
                 }));
             }
         });
@@ -554,7 +581,26 @@ impl SimRng {
 
 #[cfg(test)]
 mod tests {
-    use super::{MainRng, SimRng};
+    use super::{MainRng, SimRng, trace_draws};
+
+    #[test]
+    fn traced_draw_callers_name_no_checkout_or_home_path() {
+        let (_, draws) = trace_draws(|| SimRng::new(1).next_u32());
+        let callers = draws[0]["callers"].as_str().unwrap();
+        assert!(
+            callers.contains("next_u32"),
+            "the trace keeps the call stack"
+        );
+        assert!(!callers.contains(env!("CARGO_MANIFEST_DIR")));
+        for home in ["HOME", "USERPROFILE"]
+            .into_iter()
+            .filter_map(|key| std::env::var(key).ok())
+        {
+            let home = home.trim_end_matches(['/', '\\']);
+            let prefix = format!("{home}{}", std::path::MAIN_SEPARATOR);
+            assert!(home.is_empty() || !callers.contains(&prefix));
+        }
+    }
 
     #[test]
     fn retained_mapgen_transport_preserves_all_logical_fields() {

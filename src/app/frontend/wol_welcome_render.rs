@@ -277,7 +277,7 @@ pub(crate) fn render_wol_welcome_page(
         ];
         let draw = shell_paint::paint_modal_shp(
             &state.renderer.bit_font,
-            atlas.validation_modal_background_pudlgbgn,
+            atlas.mode_two_dialog_background(None),
             crate::app::frontend::skirmish_shell_render::type3_button_frames(atlas),
             geometry.dialog,
             &[shell_paint::ModalButton {

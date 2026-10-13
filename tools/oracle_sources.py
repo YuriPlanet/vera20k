@@ -12,7 +12,9 @@ Sidecars written before the pins were removed, on other branches, may still carr
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
+import re
 import shlex
 import sys
 
@@ -47,8 +49,19 @@ def evidence(metadata: dict) -> dict:
             if key not in (REPLAY_FIELD, LEGACY_SOURCE_FIELD)}
 
 
+def _repo_relative(argument: str) -> str:
+    """An argument with checkout paths relative to the root a replay runs from.
+
+    A path starts the argument or follows `=`, `:` or `,`."""
+    for prefix in {f'{REPO}{os.sep}', f'{REPO.as_posix()}/'}:
+        argument = re.sub(f'(?<![^=:,]){re.escape(prefix)}', '', argument)
+    return argument
+
+
 def replay_command(argv=None, main=None) -> str | None:
-    """The `python -m tools...` invocation running now, without its mode or output."""
+    """The `python -m tools...` invocation running now, without its mode or output.
+
+    Checkout paths in its arguments are recorded relative to the repository root."""
     main = sys.modules.get('__main__') if main is None else main
     spec = getattr(main, '__spec__', None)
     module = spec.name.removesuffix('.__main__') if spec is not None and spec.name else None
@@ -65,5 +78,5 @@ def replay_command(argv=None, main=None) -> str | None:
         elif value == OUTPUT_FLAG:
             output = True
         elif value not in MODE_FLAGS and not value.startswith(OUTPUT_FLAG + '='):
-            arguments.append(value)
+            arguments.append(_repo_relative(value))
     return shlex.join(['python', '-m', module, *arguments])

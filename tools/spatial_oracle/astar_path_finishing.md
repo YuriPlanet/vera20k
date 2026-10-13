@@ -125,8 +125,8 @@ requested value exactly recovers main7412's route and127-lepton closest
 approach with no shared cells; normal effective urgency changes the raw A*
 route, yielding one shared tick at116 leptons while retaining the108 visible
 floor. Both runs used identical executable bytes. The captured source identity,
-complete causal logs and limits are retained in
-`astar_path_finishing_replay/marker_urgency/`; the temporary gates and internal
+complete causal logs and limits were kept in
+`astar_path_finishing_replay/marker_urgency/` (in git at 1b1a8b43e); the temporary gates and internal
 finishing traces have been removed. This justifies the Rust historical threshold
 update and does not establish native two-vehicle world parity.
 
@@ -170,7 +170,7 @@ it does not compare a complete native transport mission or placement admission.
 
 ## Production validation
 
-`astar_path_finishing.production.json` records the final labelled ordinary
+`astar_path_finishing.production.json` (in git at 1b1a8b43e) records the final labelled ordinary
 release, sealed profiles, full observation/capture/frame identities and the
 actual command trajectories on retail `Hills.mmx`. Starting-force MTNKs are
 discovered at L0; no positions, paths or bridge layers are injected. Ordinary
@@ -186,7 +186,7 @@ The existing strict production comparator reports `MISMATCH` against the
 preserved main959 captures with exactly two differences per run: initial and
 final deterministic state hashes. Every compared actor/terrain/command
 observation, presentation clock, camera, atlas and BGRA byte matches. The
-receipt retains these raw comparison reports and the historical main959
+receipt kept these raw comparison reports and the historical main959
 identities; it does not relabel a hash mismatch as a complete match or infer
 unchanged unobserved world state.
 
@@ -194,7 +194,7 @@ Final main964/#965 integration repeated both ordinary captures. The existing
 strict comparator reports `MATCH` against preserved main963, including initial
 and final hashes, all compared actor/terrain/commands, clocks, camera, atlas
 and BGRA bytes. Historical main963/main959 identities and their raw hash-only
-`MISMATCH` reports remain in the receipt. This is bounded Rust-to-Rust evidence.
+`MISMATCH` reports remained in the receipt. This is bounded Rust-to-Rust evidence.
 
 Current strict-retail validation passed9391 library tests (225 ignored),151
 focused checks including required retail ignored and transport-departure
@@ -213,14 +213,15 @@ The actual final ungated executable then passed all three replay tests and
 matched819 recorded current-mode frames including tick hashes. New receipt
 comments shifted59/328/12 debug caller positions; only `.rs` line/column
 positions are normalized for that separate final comparison. The saved
-control/current pair keeps exact caller positions. The ordinary replay
-checker validates historical and current evidence, final source/binary
+control/current pair kept exact caller positions. The ordinary replay
+checker validated historical and current evidence, final source/binary
 identity, all three RNG streams and full actor/command observations. Its shared
-saved-final owner also checks the integrated main965 followup: three replay
+saved-final owner also checked the integrated main965 followup: three replay
 tests pass, and all819 recorded fields including tick hashes match the same
 current-mode baseline. Caller-position normalization remains explicit; commands
-and gameplay state are never masked. Compressed transcripts, manifests, actual
-execution/results and validation logs are retained without executable copies.
+and gameplay state are never masked. The packet (transcripts, manifests,
+execution results and logs) and its checker `astar_path_finishing_replay.py` left
+the tree; both are in git at 1b1a8b43e.
 
 These are Rust production integration and bounded native leaf/route
 comparisons. Native paid Drive, whole-world scheduling, whole transport

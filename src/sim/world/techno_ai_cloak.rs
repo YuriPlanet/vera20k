@@ -178,10 +178,10 @@ fn stock_cloak_tick_facts(
         //    re-cloak branch is unreachable for units: visual state 1 requires
         //    a nonzero progress.
         && cloak_progress == 0
-        // 7. `+0x2B0 && Foot && +0x6AD` (`0x006FBF57..0x006FBF7D`): a
-        //    Magnetron-lifted object (`+0x6AD` is written by
-        //    `TechnoClass::ImbueLocomotor @ 0x00710352`). VERA has no
-        //    Magnetron, so the term is always false and is not evaluated.
+        // 7. `+0x2B0 && Foot && +0x6AD` (`0x006FBF57..0x006FBF7D`): an
+        //    object a Magnetron holds aloft (`sim::locomotor_lift`). This
+        //    producer serves Units only, so the Foot test holds.
+        && !(entity.locomotor_source.is_some() && entity.foot_locomotor_swap_active)
         // 8. `GetHeight() < 1`.
         && crate::sim::movement::air_movement::current_fly_height(
             entity,
@@ -403,11 +403,13 @@ fn detach_targeters_on_cloak(
 ///     n = myCell + g_DirectionOffsets[dir];
 ///     if (!Is_Cell_In_Playfield(n, 1)) continue;
 ///     o = CellClass::Find_Nearest_Object(n, coord(0,0), 0);
-///     if (o && !Is_Ally_ByObject(this, o)
+///     if (o && !o->Owner->Is_Ally_ByObject(this)
 ///           && (oType->Sensors(+0xC9D) || o->HasWeaponAbility(0xC)))
 ///     { vt+0xFC(); break; }
 ///   }
 /// ```
+///
+/// The neighbour's House asks about the mover (`0x004D87E8..0x004D87EF`).
 ///
 /// This is the "drive a Destroyer next to a moving submarine and it surfaces"
 /// rule. Note what it is NOT: the stationary case is not covered — a Destroyer
@@ -436,7 +438,6 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
         return false;
     }
     let owner = mover.owner();
-    let owner_str = sim.interner.resolve(owner).to_owned();
     let (rx, ry) = (i32::from(mover.position.rx), i32::from(mover.position.ry));
 
     let mut triggered = false;
@@ -461,8 +462,12 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
         let Some(other) = sim.substrate.entities.get(nearest) else {
             continue;
         };
-        let other_owner_str = sim.interner.resolve(other.owner());
-        if sim.fog.is_friendly(&owner_str, other_owner_str) || other.owner() == owner {
+        if crate::sim::combat::combat_weapon::is_ally_by_object(
+            Some(&sim.house_alliances),
+            &sim.interner,
+            other.owner(),
+            owner,
+        ) {
             continue;
         }
         let detects = rules

@@ -8,11 +8,10 @@
 //! Screen position: `sx = (rx - ry) * 30`, `sy = (rx + ry) * 15 - z * 15`.
 //!
 //! ## Dependency rules
-//! - Part of map/ — depends on map/map_file for the MapHeader LocalSize rect.
+//! - Part of map/ — reads the normalized MapClass playfield owner.
 
 use std::collections::BTreeMap;
 
-use crate::map::map_file::MapHeader;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 
 #[cfg(test)]
@@ -85,21 +84,11 @@ pub enum TacticalInverseResult {
     Fallback { rx: f32, ry: f32 },
 }
 
-/// Playable area bounds from map `[Map] LocalSize`, in our screen pixel space.
-///
-/// In RA2, cells outside LocalSize are hidden by permanent shroud/fog of war.
-/// We use this to clip terrain rendering so out-of-bounds cells (which are often
-/// tile_index=0 green grass filler) are not drawn.
-///
-/// LocalSize is in "cell unit" coordinates using the TS-scale pixel grid
-/// (CellSizeX=48, CellSizeY=24). We convert those pixel coords to our engine's
-/// coordinate system (CellSizeX=60, CellSizeY=30) which has the same isometric
-/// axes but different scale and offset.
-///
-/// Conversion from TS-scale pixel space to our screen space:
-///   our_x = ts_x * (60/48) - (Size.X - 1) * 30
-///   our_y = ts_y * (30/24) + (Size.X + 1) * 15
-///   (both scale factors are 1.25)
+/// Tactical scroll rectangle derived from the final MapClass Size/LocalSize.
+/// Coordinates are VERA world pixels. The existing camera clamp subtracts
+/// half a tile from `pixel_x` and from the far Y edge; the constructor adapts
+/// native6D8640 to that convention. Radar-cell extents have different vertical
+/// headroom and are owned separately by PlayfieldPresentationGeometry.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LocalBounds {
     pub pixel_x: f32,
@@ -112,7 +101,8 @@ pub struct LocalBounds {
 /// playfield. Native `ComputeRadarMapBounds` enumerates mode-zero-valid cells;
 /// this mirrors that ownership instead of reconstructing a raw-header TS pixel
 /// rectangle. The extent is expressed in the flat (z=0) tile frame so terrain,
-/// overlays, radar events, viewport mapping, and click inverse share one space.
+/// overlays, radar events and click inverse share one space. Native camera
+/// clamping reads the same MapClass fields through its own arithmetic.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlayfieldPresentationGeometry {
     pub origin_x: f32,
@@ -124,7 +114,7 @@ pub struct PlayfieldPresentationGeometry {
 
 impl PlayfieldPresentationGeometry {
     /// Enumerate cells accepted by `MapClass::IsCellInPlayfield(0)` at
-    /// `0x00578460` and derive their isometric radar/scroll rectangle.
+    /// `0x00578460` and derive their isometric radar rectangle.
     pub fn from_grid(
         grid: &TerrainGrid,
         bounds: crate::map::playfield::PlayfieldBounds,
@@ -155,19 +145,6 @@ impl PlayfieldPresentationGeometry {
             valid_cell_count,
         })
     }
-
-    /// Adapt the exact tile-frame rectangle to the existing tactical clamp
-    /// convention. That clamp subtracts half a tile from its X anchor, so the
-    /// stored anchor is the leftmost tile centre while width/height remain the
-    /// exact enumerated extent.
-    pub fn camera_local_bounds(self) -> LocalBounds {
-        LocalBounds {
-            pixel_x: self.origin_x + TILE_WIDTH / 2.0,
-            pixel_y: self.origin_y,
-            pixel_w: self.world_width,
-            pixel_h: self.world_height,
-        }
-    }
 }
 
 impl TerrainGrid {
@@ -177,49 +154,36 @@ impl TerrainGrid {
         &mut self,
         bounds: Option<crate::map::playfield::PlayfieldBounds>,
     ) {
-        self.local_bounds = bounds
-            .and_then(|bounds| PlayfieldPresentationGeometry::from_grid(self, bounds))
-            .map(PlayfieldPresentationGeometry::camera_local_bounds);
+        self.local_bounds = bounds.map(LocalBounds::from_playfield);
     }
 }
 
-/// InitialHeight constant — Y padding at top for elevation headroom.
-const TS_INITIAL_HEIGHT: f32 = 3.0;
-
-/// HeightAddition constant — extra rows below for tall terrain.
-const TS_HEIGHT_ADDITION: f32 = 5.0;
-
-/// TS-scale cell pixel dimensions (used for LocalSize conversion).
-const TS_CELL_SIZE_X: f32 = 48.0;
-const TS_CELL_SIZE_Y: f32 = 24.0;
-
-/// Scale factor from TS-scale pixels to our pixels (60/48 = 30/24 = 1.25).
-const TS_SCALE: f32 = TILE_WIDTH / TS_CELL_SIZE_X;
-
 impl LocalBounds {
-    /// Build from MapHeader LocalSize values.
-    ///
-    /// Converts the TS-scale LocalSize pixel rectangle to our engine's screen coordinates.
-    /// Formula: x = local_left * 48, y = (local_top - 3) * 24
-    /// Our offset: x -= (Size.X - 1) * 30, y += (Size.X + 1) * 15
-    pub fn from_header(header: &MapHeader) -> Self {
-        let size_x: f32 = header.width as f32;
-
-        // TS-scale pixel coordinates (no baseline — we handle offset ourselves).
-        let ts_x: f32 = header.local_left as f32 * TS_CELL_SIZE_X;
-        let ts_y: f32 = (header.local_top as f32 - TS_INITIAL_HEIGHT) * TS_CELL_SIZE_Y;
-        let ts_w: f32 = header.local_width as f32 * TS_CELL_SIZE_X;
-        let ts_h: f32 = (header.local_height as f32 + TS_HEIGHT_ADDITION) * TS_CELL_SIZE_Y;
-
-        // Convert to our coordinate system.
-        let our_x: f32 = ts_x * TS_SCALE - (size_x - 1.0) * (TILE_WIDTH / 2.0);
-        let our_y: f32 = ts_y * TS_SCALE + (size_x + 1.0) * (TILE_HEIGHT / 2.0);
-
-        LocalBounds {
-            pixel_x: our_x,
-            pixel_y: our_y,
-            pixel_w: ts_w * TS_SCALE,
-            pixel_h: ts_h * TS_SCALE,
+    /// ClampViewCenter6D8640 reads final MapClass fields directly. Its near
+    /// X/Y center bounds add the viewport's integer halves; far bounds add
+    /// 60*LocalWidth and (60*LocalHeight+270)/2, then subtract the full view.
+    /// Keep those extent products in native wrapping i32 arithmetic before
+    /// conversion to the presentation API. Original load/resize controls:
+    /// tools/input_oracle/fast_scroll.json/camera_save_load.
+    pub fn from_playfield(bounds: crate::map::playfield::PlayfieldBounds) -> Self {
+        let left = bounds
+            .off_fc
+            .wrapping_mul(2)
+            .wrapping_sub(bounds.base)
+            .wrapping_mul(30);
+        let top = bounds
+            .base
+            .wrapping_add(bounds.off_100.wrapping_mul(2))
+            .wrapping_sub(5)
+            .wrapping_mul(15);
+        let width = bounds.off_104.wrapping_mul(60);
+        let height = bounds.off_108.wrapping_mul(60).wrapping_add(270) / 2;
+        let world_bias = crate::util::lepton::absolute_leptons_to_screen(0, 0, 0);
+        Self {
+            pixel_x: left as f32 + world_bias.0 + TILE_WIDTH / 2.0,
+            pixel_y: top as f32 + world_bias.1,
+            pixel_w: width as f32,
+            pixel_h: height as f32 + TILE_HEIGHT / 2.0,
         }
     }
 
@@ -859,30 +823,6 @@ mod tests {
     }
 
     #[test]
-    fn test_local_bounds_from_header_dustbowl() {
-        // Dustbowl: Size=70x76, LocalSize=2,8,65,62
-        let header = MapHeader {
-            theater: "TEMPERATE".to_string(),
-            fill: "Clear".to_string(),
-            level: 0,
-            width: 70,
-            height: 76,
-            local_left: 2,
-            local_top: 8,
-            local_width: 65,
-            local_height: 62,
-        };
-        let bounds: LocalBounds = LocalBounds::from_header(&header);
-        // TS-scale pixel rect: x=2*48=96, y=(8-3)*24=120, w=65*48=3120, h=(62+5)*24=1608
-        // Our coords: x = 96*1.25 - 69*30 = -1950, y = 120*1.25 + 71*15 = 1215
-        // w = 3120*1.25 = 3900, h = 1608*1.25 = 2010
-        assert!((bounds.pixel_x - (-1950.0)).abs() < 1.0);
-        assert!((bounds.pixel_y - 1215.0).abs() < 1.0);
-        assert!((bounds.pixel_w - 3900.0).abs() < 1.0);
-        assert!((bounds.pixel_h - 2010.0).abs() < 1.0);
-    }
-
-    #[test]
     fn test_local_bounds_contains() {
         let bounds = LocalBounds {
             pixel_x: -1950.0,
@@ -929,7 +869,9 @@ mod tests {
                 .map(|suffix| format!("clear01{}.urb", char::from(suffix)))
                 .collect::<Vec<_>>()
         );
-        let bounds = LocalBounds::from_header(&map.header);
+        let bounds = LocalBounds::from_playfield(
+            crate::map::playfield::PlayfieldBounds::from_map_header(&map.header),
+        );
         let mut selector_cache =
             crate::map::tile_variant_selector::TileVariantSelectorCache::default();
         let mut main_rng = crate::sim::rng::SimRng::new(0);

@@ -1,5 +1,6 @@
-//! App-owned startup admission, from an accepted loading attempt through its
-//! running match. Same-content snapshot restoration never replaces this owner.
+//! App-owned admission for an accepted fresh startup or committed saved world.
+//! Restoring a save retires the outgoing startup's evidence without disabling
+//! diagnostic stepping of the validated replacement.
 //!
 //! VERA-internal admission protocol; gamemd equivalent UNCHECKED. Existing startup
 //! observation checks remain in `match_bootstrap::RustL0Observation`.
@@ -27,6 +28,8 @@ enum StartupPhase {
     /// The ordinary campaign load installed its selected Scenario. Session
     /// remains the authority for campaign state; this token owns admission only.
     CampaignInstalled,
+    /// A validated saved world replaced the outgoing one.
+    Restored,
 }
 
 impl MatchStartup {
@@ -37,6 +40,14 @@ impl MatchStartup {
 
     pub(crate) fn clear(&mut self) {
         self.phase = StartupPhase::Noncertifying;
+    }
+
+    /// Only the successful saved-world commit calls this, after resource and
+    /// snapshot validation. A restored timeline is admitted without claiming
+    /// the outgoing world's fresh-start receipt. Rejected preparation never
+    /// reaches this transition, so it preserves the current admission.
+    pub(crate) fn acknowledge_saved_load(&mut self) {
+        self.phase = StartupPhase::Restored;
     }
 
     /// Publish the startup and its receipt together, only after the existing L0
@@ -109,6 +120,10 @@ impl MatchStartup {
         matches!(self.phase, StartupPhase::CampaignInstalled)
     }
 
+    pub(crate) fn restored(&self) -> bool {
+        matches!(self.phase, StartupPhase::Restored)
+    }
+
     pub(crate) fn accepted(&self) -> Option<(&PreparedMatchStartup, &RustL0Receipt)> {
         match &self.phase {
             StartupPhase::Accepted { startup, receipt } => {
@@ -133,6 +148,8 @@ impl MatchStartup {
     }
 
     pub(crate) fn admits_exact_step(&self) -> bool {
-        (self.accepted().is_some() || self.campaign_installed()) && self.admits_ordinary_tick()
+        self.restored()
+            || ((self.accepted().is_some() || self.campaign_installed())
+                && self.admits_ordinary_tick())
     }
 }

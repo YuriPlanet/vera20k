@@ -1272,7 +1272,7 @@ fn walk_stop_and_retarget_finish_a_same_cell_committed_head() {
         assert!(replay.terrain_costs.is_empty());
         replay.rebuild_caches_after_load(map_terrain, sim.terrain_speed_config.clone(), &rules);
         replay
-            .restore_map_authority_after_snapshot_load(&rules, &registry)
+            .restore_map_authority_after_snapshot_load(&rules, &registry, None)
             .unwrap();
         assert!(replay.path_grid.is_some());
         assert!(replay.zone_grid.is_some());
@@ -1691,7 +1691,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
         let map_terrain = sim.resolved_terrain.as_ref().unwrap().clone();
         let saved = GameSnapshot::save(&sim, 0, 0, "jumpjet", 0);
         let mut restored = GameSnapshot::load(&saved).unwrap().sim;
-        restored.retain_in_scenario_process_state_from(&sim);
+        restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
         restored.restore_after_snapshot_load().unwrap();
         restored.resolve_type_handles(&rules);
         restored.rebuild_caches_after_load(
@@ -1700,7 +1700,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             &rules,
         );
         restored
-            .restore_map_authority_after_snapshot_load(&rules, &registry)
+            .restore_map_authority_after_snapshot_load(&rules, &registry, None)
             .unwrap();
         assert_eq!(
             restored.foot_navigation_coordinate(rocketeer).unwrap(),
@@ -1912,6 +1912,7 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         (20, 15),
         SimFixed::from_num(9),
         Some(&rules),
+        None,
         crate::sim::world::FrameEffects::default()
     ));
     let before = sim

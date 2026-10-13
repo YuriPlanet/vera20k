@@ -106,8 +106,8 @@ impl Simulation {
         if entity.health.current > 0 {
             // `0x004DEC4C`: RecordKill(attacker) books the kill and the loss
             // for the killer's house (no attacker: the loss alone), then
-            // `0x004DEC72` zeroes Health (Foot+6AD, a Magnetron lift, would
-            // keep it; VERA never sets it).
+            // `0x004DEC72` zeroes Health unless a Magnetron lifted the object
+            // (Foot+6AD, `0x004DEC68`).
             let killer = attacker.and_then(|a| self.substrate.entities.get(a).map(|k| k.owner()));
             self.record_the_kill(
                 id,
@@ -116,7 +116,9 @@ impl Simulation {
                 crate::sim::combat::KillCallback::Terminal,
                 rules,
             );
-            if let Some(entity) = self.substrate.entities.get_mut(id) {
+            if let Some(entity) = self.substrate.entities.get_mut(id)
+                && !entity.foot_locomotor_swap_active
+            {
                 entity.health.current = 0;
             }
         }
@@ -274,7 +276,10 @@ impl Simulation {
     /// `UnitClass::Death_Explosion` once more for any other (`0x007461D1`),
     /// and UnInit (vtable `+0xF8`). The impact plays no sound; the crash
     /// sound the wreck holds plays out as it goes (`FootClass::~FootClass`,
-    /// `0x004D3677`).
+    /// `0x004D3677`). A Magnetron-lifted Unit (`+0x6AD`) of any other type
+    /// answers with its falling damage ([`Self::falling_damage`]); the rest
+    /// leave the notice unanswered. After it, the drop's credit (`+0x428`,
+    /// `+0x42C`) clears (`0x0054D097..0x0054D0A7`).
     ///
     /// An Infantry owner's notice (the Rocketeer's) keeps the infantryman
     /// instead: [`Simulation::infantry_crash_impact`]. Returns whether the
@@ -296,21 +301,135 @@ impl Simulation {
                 (object.crashable, object.balloon_hover)
             });
         self.aircraft_tracker_remove(id);
-        if !crashable {
-            // The notice goes unanswered: the wreck rests in State 6.
-            return false;
-        }
-        self.set_object_height(id, 0, Some(rules), overlay_registry, frame_effects);
-        let bridge_state_changed = if balloon_hover {
-            self.fire_death_weapon(id, rules, overlay_registry, frame_effects)
+        let bridge_state_changed = if crashable {
+            self.set_object_height(id, 0, Some(rules), overlay_registry, frame_effects);
+            let bridge_state_changed = if balloon_hover {
+                self.fire_death_weapon(id, rules, overlay_registry, frame_effects)
+            } else {
+                self.unit_death_explosion(rules, id, &mut Vec::new());
+                false
+            };
+            self.uninit_with_context(
+                id,
+                UninitContext::new(Some(rules), overlay_registry).with_effects(frame_effects),
+            );
+            bridge_state_changed
+        } else if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.foot_locomotor_swap_active)
+        {
+            self.falling_damage(id, rules, overlay_registry, frame_effects)
         } else {
-            self.unit_death_explosion(rules, id, &mut Vec::new());
+            // The notice goes unanswered: the wreck rests in State 6.
             false
         };
-        self.uninit_with_context(
-            id,
-            UninitContext::new(Some(rules), overlay_registry).with_effects(frame_effects),
+        // `0x0054D097..0x0054D0A7`: after the notice, the drop's credit goes.
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.manipulated_by = None;
+            entity.warped_by_house = None;
+        }
+        bridge_state_changed
+    }
+
+    /// A lifted Unit's answer to its Jumpjet's impact notice when its type is
+    /// not `Crashable=` (`UnitClass` `INoticeSink`, the `+0x6AD` arm at
+    /// `0x00746209..0x00746387`, which tests no notice code): its fall hurts
+    /// what it lands on. Returns whether a bullet changed a bridge.
+    ///
+    /// The damage is the Unit's Health (`CurrentStrengthDamage=`) or its
+    /// type's `Strength=`, times `FallingDamageMultiplier=`, through
+    /// `Math::ftol` and floored at zero (`0x0074623A..0x0074625D`). A bullet
+    /// of `[CombatDamage] DeathWeapon=`'s projectile carries it in
+    /// `CrushWarhead=` from the dropping Magnetron (`+0x428`), else the Unit
+    /// itself (`CreateBullet @ 0x0046B050`, `0x0074628A`), and detonates where
+    /// the Unit meets the ground: its GetCoords less its height
+    /// (`0x007462B5..0x007462DA`). The Unit's death is booked for the drop's
+    /// credit ([`Self::record_manipulated_kill`]); a second bullet
+    /// detonates `C4Warhead=` at its GetCoords (`0x00746355..0x00746372`) and
+    /// the Unit is UnInit (`0x00746381`).
+    ///
+    /// The first bullet's area usually kills the Unit itself; the booking and
+    /// the UnInit run all the same, as native's do, so its death is booked
+    /// twice (Record_The_Kill, `0x00702D40`, has no first-credit guard). The
+    /// second bullet detonates at the coordinates read before the first;
+    /// native reads GetCoords again (`0x0074631A`), which the first bullet
+    /// leaves unchanged.
+    ///
+    /// RESIDUAL: CreateBullet's bright byte is 1 here; VERA's bullet takes the
+    /// weapon's. Presentation only. Native dereferences a missing
+    /// `DeathWeapon=`; VERA then books the death and UnInits with no bullets.
+    fn falling_damage(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        use crate::util::native_x87::{MaskedX87Chop53, NativeF32Bits};
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let combat = &rules.combat_damage;
+        let base = if combat.current_strength_damage {
+            entity.health.current
+        } else {
+            self.object_type(entity.type_ref(), rules)
+                .map_or(0, |object| object.strength)
+        };
+        let damage = MaskedX87Chop53::ftol_i32_low_masked(MaskedX87Chop53::mul(
+            MaskedX87Chop53::load_i32(base),
+            MaskedX87Chop53::load_f32(NativeF32Bits::from_bits(
+                combat.falling_damage_multiplier.to_bits(),
+            )),
+        ))
+        .max(0);
+        let attacker = entity.manipulated_by.unwrap_or(id);
+        let coords = crate::sim::movement::ground_pose::object_get_coords(
+            entity,
+            self.resolved_terrain.as_ref(),
         );
+        let height = crate::sim::movement::air_movement::current_fly_height(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
+        let weapon_ref = combat
+            .death_weapon
+            .as_deref()
+            .and_then(|weapon| rules.weapon(weapon))
+            .map(|weapon| self.interner.intern(&weapon.id));
+        let crush = self.interner.intern(&rules.bridge_warheads.crush_name);
+        let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
+        let bullet = |warhead, z| {
+            weapon_ref.map(|weapon| crate::sim::projectile::ProjectileDetonation {
+                projectile_id: id,
+                source_id: attacker,
+                target: crate::sim::projectile::ProjectileTarget::Entity(id),
+                impact: crate::sim::projectile::ProjectileCoord::new(coords.x, coords.y, z),
+                payload: crate::sim::projectile::ProjectilePayload::new(damage, warhead, weapon),
+                reason: crate::sim::projectile::ProjectileDetonationReason::DeathWeapon,
+            })
+        };
+        let mut bridge_state_changed = self.commit_logic_projectile_detonations(
+            rules,
+            registry,
+            bullet(crush, coords.z.wrapping_sub(height)).as_slice(),
+            effects,
+        );
+        self.record_manipulated_kill(id, id, rules);
+        bridge_state_changed |= self.commit_logic_projectile_detonations(
+            rules,
+            registry,
+            bullet(c4, coords.z).as_slice(),
+            effects,
+        );
+        if self.substrate.entities.contains(id) {
+            self.uninit_with_context(
+                id,
+                UninitContext::new(Some(rules), registry).with_effects(effects),
+            );
+        }
         bridge_state_changed
     }
 

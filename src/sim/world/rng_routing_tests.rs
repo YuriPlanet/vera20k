@@ -37,6 +37,35 @@ fn decode_hex_fixture(text: &str) -> Vec<u8> {
         .collect()
 }
 
+fn assert_native_rng_state(rng: &SimRng, native_hex: &str, label: &str) {
+    let actual = decode_hex_fixture(&rng.native_state_hex());
+    let expected = decode_hex_fixture(native_hex);
+    assert_eq!(expected.len(), 0x3F4, "{label}: native Random object size");
+    assert_eq!(actual[0], expected[0], "{label}: disabled byte");
+    // The native corpus excludes only padding bytes 1..3. Both cursor words
+    // and all 250 table words must match; no Rust-generated expected stream.
+    assert_eq!(
+        &actual[4..],
+        &expected[4..],
+        "{label}: complete logical state"
+    );
+}
+
+fn assert_native_rng_streams(sim: &Simulation, native: &serde_json::Value, label: &str) {
+    let main = sim.main_rng.snapshot_for_test();
+    for (name, rng) in [
+        ("scenario", &sim.scenario_rng),
+        ("main", &main),
+        ("mapgen", &sim.mapgen_rng),
+    ] {
+        assert_native_rng_state(
+            rng,
+            native[name].as_str().unwrap(),
+            &format!("{label}/{name}"),
+        );
+    }
+}
+
 /// Helper: advance a sim by one tick with empty inputs.
 fn tick(sim: &mut Simulation) {
     sim.advance_tick(&[], None, None, None, 67);
@@ -393,7 +422,7 @@ fn production_in_scenario_load_retains_live_seed_main_and_mapgen() {
     let live_mapgen = live.mapgen_rng.state();
 
     let mut restored = GameSnapshot::load(&bytes).expect("snapshot load").sim;
-    restored.retain_in_scenario_process_state_from(&live);
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&live));
     assert_eq!(
         restored.scenario_rng.state(),
         reset_scenario,
@@ -414,6 +443,146 @@ fn production_in_scenario_load_retains_live_seed_main_and_mapgen() {
         restored.mapgen_rng.state(),
         live_mapgen,
         "MapGen must retain the live pre-load process cursor"
+    );
+}
+
+/// Executed ScenarioLoad689470 -> post-read683560, then the separate original
+/// menu call52E619 -> InitRandom52FC20. The observed resolved seed is the input
+/// here: gate, network, clock and override selection are not implemented by
+/// this RNG owner. See tools/rmg_oracle/rng.md for excluded loader/caller work.
+#[test]
+fn saved_load_then_menu_reseed_matches_native_complete_rng_states() {
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rmg_oracle/vectors/rng.json",
+    ))
+    .unwrap();
+    let mut compared = 0;
+    let mut saw_zero = false;
+    let mut saw_high_bit = false;
+    for row in native["menu_rng_cases"].as_array().unwrap() {
+        let label = row["id"].as_str().unwrap();
+        let load = &row["after_scenario_save_load"];
+        let before = &load["before"];
+        let mut saved = Simulation::with_seed(0xAABB_CCDD);
+        saved.scenario_rng =
+            SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
+        let bytes = GameSnapshot::save(&saved, 0, 0, "menu-rng.map", 0);
+        let mut live = Simulation::with_seed(load["global_seed_before"].as_u64().unwrap());
+        live.main_rng =
+            SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap()).into();
+        live.mapgen_rng =
+            SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
+        let live_before = live.rng_state();
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.retain_process_state_for_load(super::SnapshotProcessState::Live(&live));
+        restored.restore_after_snapshot_load().unwrap();
+
+        assert_eq!(
+            restored.session.seed,
+            load["global_seed_after"].as_u64().unwrap(),
+            "{label}"
+        );
+        assert_native_rng_streams(&restored, &load["after"], &format!("{label}/loaded"));
+        assert_native_rng_streams(
+            &restored,
+            &row["menu_before"],
+            &format!("{label}/menu-before"),
+        );
+
+        let seed = u32::try_from(row["resolved_seed"].as_u64().unwrap()).unwrap();
+        restored.initialize_random_number_system(seed);
+
+        assert_eq!(restored.session.seed, u64::from(seed), "{label}");
+        assert_native_rng_streams(
+            &restored,
+            &row["menu_after"],
+            &format!("{label}/menu-after"),
+        );
+        assert_eq!(
+            live.rng_state(),
+            live_before,
+            "{label}: candidate preparation is detached"
+        );
+        saw_zero |= seed == 0;
+        saw_high_bit |= seed & 0x8000_0000 != 0;
+        compared += 1;
+    }
+    assert_eq!(compared, 9);
+    assert!(
+        saw_zero && saw_high_bit,
+        "menu corpus must retain both seed boundaries"
+    );
+}
+
+/// Cold preparation borrows the frontend process Main and starts MapGen at its
+/// independently executed CRT Seed(0) fixture. The menu corpus instead carries
+/// MapGen after 11 draws, so only its Scenario/Main epilogue values apply here.
+#[test]
+fn cold_saved_load_retains_frontend_main_until_native_menu_reseed() {
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rmg_oracle/vectors/rng.json",
+    ))
+    .unwrap();
+    let cold_mapgen = crate::test_fixture::text("tests/fixtures/rng/mapgen_seed0_native_0x3f4.hex");
+    let mut compared = 0;
+    for row in native["menu_rng_cases"].as_array().unwrap() {
+        let input = &row["input"];
+        if !matches!(input["mode"].as_u64(), Some(0 | 5))
+            || input["gate_a"].as_u64() != Some(0)
+            || input["gate_flags"].as_u64() != Some(0)
+            || input["gate_secondary"].as_u64() != Some(0)
+        {
+            continue;
+        }
+        let label = row["id"].as_str().unwrap();
+        let load = &row["after_scenario_save_load"];
+        let frontend_main: crate::sim::rng::MainRng =
+            SimRng::from_native_state_hex_for_test(load["before"]["main"].as_str().unwrap()).into();
+        let frontend_before = frontend_main.logical_state();
+        let mut saved = Simulation::with_seed(0xFFFF_FFFF);
+        saved.scenario_rng =
+            SimRng::from_native_state_hex_for_test(load["before"]["scenario"].as_str().unwrap());
+        let bytes = GameSnapshot::save(&saved, 0, 0, "cold-menu-rng.map", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.retain_process_state_for_load(super::SnapshotProcessState::Cold(&frontend_main));
+        restored.restore_after_snapshot_load().unwrap();
+
+        assert_native_rng_state(
+            &restored.scenario_rng,
+            load["after"]["scenario"].as_str().unwrap(),
+            label,
+        );
+        assert_native_rng_state(
+            &restored.main_rng.snapshot_for_test(),
+            load["after"]["main"].as_str().unwrap(),
+            label,
+        );
+        assert_native_rng_state(&restored.mapgen_rng, cold_mapgen, label);
+        let seed = u32::try_from(row["resolved_seed"].as_u64().unwrap()).unwrap();
+        restored.initialize_random_number_system(seed);
+
+        assert_eq!(restored.session.seed, u64::from(seed), "{label}");
+        assert_native_rng_state(
+            &restored.scenario_rng,
+            row["menu_after"]["scenario"].as_str().unwrap(),
+            label,
+        );
+        assert_native_rng_state(
+            &restored.main_rng.snapshot_for_test(),
+            row["menu_after"]["main"].as_str().unwrap(),
+            label,
+        );
+        assert_native_rng_state(&restored.mapgen_rng, cold_mapgen, label);
+        assert_eq!(
+            frontend_main.logical_state(),
+            frontend_before,
+            "{label}: frontend Main remains untouched until commit"
+        );
+        compared += 1;
+    }
+    assert_eq!(
+        compared, 4,
+        "ordinary mode-0/5 controls include clock, override, zero and high-bit seeds"
     );
 }
 
@@ -457,7 +626,7 @@ fn scenario_main_reseed_does_not_change_mapgen() {
         sim.mapgen_rng.next_u32();
     }
     let before = sim.mapgen_rng.logical_state();
-    sim.reseed_scenario_and_main(99);
+    sim.initialize_random_number_system(99);
     assert_eq!(sim.mapgen_rng.logical_state(), before);
     assert_eq!(
         sim.scenario_rng.logical_state(),
@@ -488,10 +657,23 @@ fn in_scenario_load_retains_main_callback_draws_after_prepare_and_commit() {
     let mut reference = SimRng::new(0x2A61);
     let bytes = GameSnapshot::save(&live, 0, 0, "main-capability", 0);
     let mut prepared = GameSnapshot::load(&bytes).unwrap().sim;
-    prepared.retain_in_scenario_process_state_from(&live);
+    prepared.retain_process_state_for_load(super::SnapshotProcessState::Live(&live));
     let scenario = prepared.scenario_rng.logical_state();
     let mapgen = prepared.mapgen_rng.logical_state();
 
+    // Preparation draws advance only the staged candidate; a rejected load
+    // would drop them with the process cell untouched.
+    assert_eq!(prepared.main_rng.next_u32(), reference.next_u32());
+    assert_eq!(
+        live.main_rng.logical_state(),
+        SimRng::new(0x2A61).logical_state()
+    );
+
+    // Commit moves them into the process cell, then drops the old Simulation
+    // while a playback capability remains.
+    prepared.install_fresh_process_main(&live.main_rng);
+    assert_eq!(live.main_rng.logical_state(), reference.logical_state());
+    drop(live);
     let (callback, late_draw) = std::thread::spawn(move || {
         let draw = callback.ranged(0, 4);
         (callback, draw)
@@ -499,11 +681,7 @@ fn in_scenario_load_retains_main_callback_draws_after_prepare_and_commit() {
     .join()
     .unwrap();
     assert_eq!(late_draw, reference.next_range_i32_inclusive(0, 4));
-    assert_eq!(live.main_rng.logical_state(), reference.logical_state());
     assert_eq!(prepared.main_rng.logical_state(), reference.logical_state());
-
-    // Commit drops the old Simulation while a playback capability remains.
-    drop(live);
     assert_eq!(callback.next_u32(), reference.next_u32());
     assert_eq!(
         prepared.presentation_main_draws().next_u32(),

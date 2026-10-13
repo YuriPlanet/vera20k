@@ -474,6 +474,78 @@ fn a_gi_stops_on_entering_the_first_cell_with_its_target_in_range() {
     );
 }
 
+/// A human's Rocketeer ordered to attack a tank flies to a cell his Approach
+/// picks within his 20mm's range (Infantry `0x00522340` into the Foot body,
+/// where a Jumpjet takes the first admitted candidate, `0x004D6764`), never
+/// the tank's own cell, and shoots the tank.
+#[test]
+fn a_rocketeer_flies_to_a_cell_in_range_of_the_tank_he_attacks() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let mut sim = arena(&rules);
+    let rocketeer = spawn(&mut sim, &rules, "JUMPJET", "Americans", (4, 10));
+    let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (24, 10));
+    let strength = sim.substrate.entities.get(tank).unwrap().health.current;
+    order(
+        &mut sim,
+        "Americans",
+        Command::Attack {
+            attacker_id: rocketeer,
+            target_id: tank,
+        },
+    );
+    let reach = range(&rules, "20mm");
+    let mut first = None;
+    let mut shot = None;
+    for _ in 0..900 {
+        step(&mut sim, &rules);
+        let now = frame(&sim, rocketeer, tank);
+        if let Some(nav_com) = now.nav_com {
+            assert_ne!(nav_com, NavTargetRef::cell(24, 10), "{now:?}");
+            first.get_or_insert(nav_com);
+        }
+        if sim.substrate.entities.get(tank).unwrap().health.current < strength {
+            shot = Some(now);
+            break;
+        }
+    }
+    assert!(sim.mission_owns_approach(rocketeer, &rules));
+    let Some(NavTargetRef::Cell { rx, ry }) = first else {
+        panic!("Approach sets a cell: {first:?}");
+    };
+    assert!(cell_centre_distance((rx, ry), &sim, tank) <= reach);
+    let shot = shot.expect("the Rocketeer shoots the tank");
+    assert!(shot.distance <= reach, "{shot:?}");
+}
+
+/// A Night Hawk's Approach (`0x007414E0`, no BalloonHover) runs the Foot body
+/// too, which picks a cell in its cannon's range, not the target's own.
+#[test]
+fn a_night_hawks_approach_picks_a_cell_in_range() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let mut sim = arena(&rules);
+    let hawk = spawn(&mut sim, &rules, "SHAD", "Americans", (6, 14));
+    let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (24, 14));
+    target(&mut sim, hawk, tank);
+    start_mission(&mut sim, hawk, MissionType::Attack);
+    assert!(sim.mission_owns_approach(hawk, &rules));
+    sim.approach_target(
+        hawk,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    let nav_com = sim.substrate.entities.get(hawk).unwrap().navigation.nav_com;
+    let Some(NavTargetRef::Cell { rx, ry }) = nav_com else {
+        panic!("Approach sets a cell: {nav_com:?}");
+    };
+    assert_ne!((rx, ry), (24, 14));
+    assert!(cell_centre_distance((rx, ry), &sim, tank) <= range(&rules, "BlackHawkCannon"));
+}
+
 /// A GI attacking a power plant walks to the cell his Approach picks and
 /// stops there on arrival: the per-cell range stop measures only a Foot
 /// Target.

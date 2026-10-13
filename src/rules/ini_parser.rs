@@ -31,7 +31,7 @@ use self::ini_value::strtrim_ascii;
 const READ_LINE_PAYLOAD: usize = 511;
 
 /// One physical section occurrence in an INI file.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct IniSection {
     /// Exact section spelling from the file.
     pub name: String,
@@ -44,6 +44,38 @@ pub struct IniSection {
     /// Raw INIs leave this empty. The compatibility projection retains it so
     /// typed readers can use the current live field as the next pass default.
     projected_values: HashMap<String, Vec<String>>,
+}
+
+// A standalone retained Type reader body uses this same admission as a whole
+// IniFile. Accept neither duplicate order entries nor orphaned reader history.
+impl<'de> serde::Deserialize<'de> for IniSection {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct SavedSection {
+            name: String,
+            entries: HashMap<String, String>,
+            key_order: Vec<String>,
+            projected_values: HashMap<String, Vec<String>>,
+        }
+        let saved = <SavedSection as serde::Deserialize>::deserialize(deserializer)?;
+        let ordered: std::collections::HashSet<_> = saved.key_order.iter().collect();
+        if ordered.len() != saved.key_order.len()
+            || ordered.len() != saved.entries.len()
+            || ordered.iter().any(|key| !saved.entries.contains_key(*key))
+            || saved
+                .projected_values
+                .keys()
+                .any(|key| !saved.entries.contains_key(key))
+        {
+            return Err(serde::de::Error::custom("invalid saved INI key order"));
+        }
+        Ok(Self {
+            name: saved.name,
+            entries: saved.entries,
+            key_order: saved.key_order,
+            projected_values: saved.projected_values,
+        })
+    }
 }
 
 impl IniSection {
@@ -167,10 +199,29 @@ impl IniSection {
 
 /// Parsed section occurrences plus Rust's deterministic exact-name lookup index
 /// for the supported ordinary INI contract.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct IniFile {
     sections: Vec<IniSection>,
+    #[serde(skip)]
     first_section: HashMap<String, usize>,
+}
+
+impl<'de> serde::Deserialize<'de> for IniFile {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct SavedIni {
+            sections: Vec<IniSection>,
+        }
+        let saved = <SavedIni as serde::Deserialize>::deserialize(deserializer)?;
+        let mut first_section = HashMap::new();
+        for (index, section) in saved.sections.iter().enumerate() {
+            first_section.entry(section.name.clone()).or_insert(index);
+        }
+        Ok(Self {
+            sections: saved.sections,
+            first_section,
+        })
+    }
 }
 
 impl IniFile {

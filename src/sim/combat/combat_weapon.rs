@@ -277,21 +277,47 @@ impl TargetFacts<'_> {
 }
 
 /// [`fire_error::weapon_damage_value`](super::fire_error::weapon_damage_value)
-/// (`0x006F3970(-1)`) over the object's own weapon slots at its rank. Not for
-/// a garrisoned building, whose GetWeapon answers the occupant's weapon; that
-/// goes through `FireSubject::weapon_damage_value`. Read by the bridge-repair
-/// infantry entry probe.
-pub(crate) fn weapon_damage_value(entity: &GameEntity, obj: &ObjectType, rules: &RuleSet) -> i32 {
+/// (`0x006F3970(-1)`) of a live object, through GetWeapon ([`get_weapon`],
+/// vt+0x3F8) as native reads it, so an occupied building answers with its
+/// occupant's weapon. GetFireError asks it through
+/// `FireSubject::weapon_damage_value`.
+pub(crate) fn weapon_damage_value(
+    entity: &GameEntity,
+    obj: &ObjectType,
+    entities: &EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+) -> i32 {
     super::fire_error::weapon_damage_value(
         obj.turret_count,
         obj.is_gattling,
         attacker_facts(entity, obj).current_weapon_number,
         |slot| {
-            weapon_for_index(obj, entity.veterancy(), slot)
-                .and_then(|(name, _)| rules.weapon(name))
+            get_weapon(entity, obj, slot, entities, rules, interner)
                 .map(|weapon| weapon.damage.wrapping_add(weapon.ambient_damage))
         },
     )
+}
+
+/// The house (`+0x21C`) of whoever mind-controls (`+0x2C0`) the
+/// `OpenTopped=` transport (`+0x11C`, TechnoType `+0x5E4`) `rider` rides:
+/// the threat scan's (`0x006F7EA2..0x006F7ED8`, `0x006F89D1..0x006F8A0A`)
+/// and the allied-target drop's (`0x006FA30C..0x006FA342`).
+pub(crate) fn controlled_transport_house(
+    entities: &EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+    rider: &GameEntity,
+) -> Option<InternedId> {
+    let transport = entities.get(rider.passenger_role.inside_transport_id()?)?;
+    let open_topped = rules
+        .object(interner.resolve(transport.type_ref()))
+        .is_some_and(|obj| obj.open_topped);
+    open_topped
+        .then(|| transport.mind_control.controller())
+        .flatten()
+        .and_then(|controller| entities.get(controller))
+        .map(|controller| controller.owner())
 }
 
 /// `TechnoClass::GetWeapon @ 0x0070E140`: `-1` → no weapon; elite objects use

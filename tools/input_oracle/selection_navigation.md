@@ -371,6 +371,24 @@ byte-for-byte in old observations; the new opt-in label correctly names
 Kamikaze. Mode reset731D00 and subsequent fresh navigation are executed, but
 whole scenario replacement/persistence and non-Techno cleanup are not.
 
+Ordinary world replacement has a separate instruction-level caller chain:
+ClearScene6853D8..685408 invokes scalar destructors; Unit735892,
+Infantry517E75 and Building43BD67 dispatch7258D0, whose7259B1 calls733160.
+Fresh Full_Init and saved LoadContent both reach this cleanup. Unique outgoing
+candidates therefore retire before incoming objects reuse their stable IDs.
+The `all_pointers_expired_empty_snapshot` history executes the resulting
+empty-source boundary: its first three expiry steps preserve mode4, map scope
+and both last categories; only the following Y changes them. This combines
+original caller reading with executed cleanup leaves, not whole native loading.
+
+World replacement preserves categories845560/845564, modeB0FE54 and scopeB0FE64.
+Saved CurrentObjects are restored by raw pointer-vector read67FA2A..67FAEB,
+without Select's mode reset. Type heldB0FE65 and clockB0FE68 likewise have only
+the ordinary press732CA9/732CB6 and release732CC9 writers; load invents no key
+edge. Double-tap reset734210 is separate and changes only its two click-clock
+pairs. Physical focus/key histories and arbitrary destructor listeners are
+outside this bounded comparison.
+
 ## Raw rank and map percent prerequisites
 
 `veterancy_rank_cases` executes750030 on16 raw binary32 boundary, sign,

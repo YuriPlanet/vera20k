@@ -59,6 +59,6 @@
     "intersect_rect": "0x00421B60",
     "fill_endpoint": "0x007BB020"
   },
-  "payload_sha256": "529edef6c7f7fa9f9bfb9d2a6685fe7d39aa6eba83978f86badba03b8613178e",
+  "payload_sha256": "9c650287d6bb1d3250332986144325144ae92a4977abd9614c286ff5ebbf3c17",
   "replay_command": "python -m tools.procedural_drawing_oracle.action_lines"
 }

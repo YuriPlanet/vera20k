@@ -47,7 +47,7 @@ The production lethal-damage continuation is exercised separately by
 Python checks original execution. Rust comparison and runtime integration have
 their own validation results; this document does not certify a whole native game.
 
-The [validation receipt](refinery_dock.validation.json) binds the 56 represented
+The validation receipt (`tools/spatial_oracle/refinery_dock.validation.json`, in git at 1b1a8b43e) binds the 56 represented
 shared controls, all three histories, selected retail inputs, strict Rust checks
 and the release artifact. The ordinary 7,200-step retail run witnessed deposits
 at steps 3778 and 5670: each drained 40 bales and paid 1,000 credits without

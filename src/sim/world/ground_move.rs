@@ -13,13 +13,13 @@
 //! do not come through here. Ordinary represented Unit Move dispatches directly
 //! through the concrete destination dispatcher in `world_commands`. Internal
 //! Drive orders take the same Unit setter here before acquiring path inputs.
-//! A Walk infantryman takes the existing Infantry
-//! destination owner, including repeated and queued requests; its first
-//! Process owns the path search. A mover on Teleport takes
+//! A Walk, Teleport or Jumpjet infantryman takes the existing Infantry
+//! destination owner, including repeated and queued requests; a walker's
+//! first Process owns the path search. A mover on Teleport takes
 //! its class setter instead of a route: no pass moves a Teleport owner. A
-//! Jumpjet's cell or object order likewise takes Foot's setter, whose
-//! `Move_To` places it near the destination's coordinate and flies there
-//! without a route.
+//! Jumpjet Unit's cell or object order likewise takes its class setter, whose
+//! Jumpjet `Move_To` places it near the destination's coordinate and flies
+//! there without a route.
 //!
 //! Residual, carried over unchanged: the sites differ in what they hand the
 //! search, with no recorded native reason. The resumed-order, both miner and
@@ -62,10 +62,10 @@ impl Simulation {
     /// including a guarded no-op: its native setter is void. Route adapters
     /// require a published grid. A mover on
     /// Teleport takes its class setter ([`Self::teleport_destination`]), and
-    /// a Jumpjet's cell or object order takes Foot's
-    /// ([`Self::jumpjet_destination`]), which ignores `queue`. A Walk
-    /// infantryman takes Infantry51AA40 before borrowing any path-search
-    /// inputs. Its class flag1 never appends to NavQueue. A represented Drive
+    /// a Jumpjet's cell or object order takes its class setter
+    /// ([`Self::jumpjet_destination`]), which ignores `queue`. A Walk or
+    /// Jumpjet infantryman takes Infantry51AA40 before borrowing any
+    /// path-search inputs. Its class flag1 never appends to NavQueue. A represented Drive
     /// Unit likewise takes Unit741970 before any grid read. Its same-Nav/force,
     /// deployment, radio and queue decisions belong to that sole class owner.
     pub(crate) fn issue_ground_move(
@@ -124,13 +124,13 @@ impl Simulation {
                         |()| true,
                     );
             }
-            if self.infantry_setter_receiver(order.entity_id, requested, rules) {
+            if self.infantry_setter_receiver(order.entity_id, rules) {
                 // Event4C747C and the other concrete destination callers
                 // dispatch class+480(target,1), not a second Walk composition.
                 // The class owns current-cell admission, Stop_Driver, prone
                 // Up and path clearing before the shared Foot/Walk tail.
                 return self
-                    .assign_infantry_walk_destination(
+                    .assign_infantry_destination(
                         order.entity_id,
                         requested,
                         order.speed,
@@ -149,6 +149,7 @@ impl Simulation {
             requested,
             order.speed,
             rules,
+            registry,
             frame_effects,
         ) {
             return accepted;

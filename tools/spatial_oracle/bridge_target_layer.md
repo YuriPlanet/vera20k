@@ -298,7 +298,7 @@ rendered claim uses that initial black frame.
 
 Local logs, retained binaries, saves' generating output, PCX/PNG captures and
 `visible-v219-captures.json` are under
-`/Users/halvor/Documents/vera20k-dev/bridge-target-evidence-20260927`.
+`~/Documents/vera20k-dev/bridge-target-evidence-20260927`.
 Release app SHA256`cfa250702c4011c69a5cbcd3f2c719d918d9b3aa28e88c8cf14dee6fec6c80b1`;
 example SHA256`43210b8692b2c0c11abda54ae418de5160dec77645e024b047bfafd02d0479e9`.
 

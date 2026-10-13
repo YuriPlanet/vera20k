@@ -232,7 +232,7 @@ pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
     if input["latch_27c"] == true {
         // Techno+0x27C, which only the Chronosphere's warp writes in VERA:
         // its payload on the active Teleport.
-        let house = entity.owner();
+        entity.warped_by_house = Some(entity.owner());
         entity
             .locomotor
             .as_mut()
@@ -240,7 +240,6 @@ pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
             .expect("latched miner on its Teleport")
             .arm_chrono(crate::sim::movement::teleport_movement::ChronoWarp::new(
                 DriveCoord { x: 0, y: 0, z: 0 },
-                house,
                 frame,
             ));
     }

@@ -7421,7 +7421,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     );
     restored.rebuild_caches_after_load(pristine_terrain, Default::default(), &rules);
     restored
-        .restore_map_authority_after_snapshot_load(&rules, &overlay_registry)
+        .restore_map_authority_after_snapshot_load(&rules, &overlay_registry, None)
         .expect("dynamic cliff terrain reprojects over the pristine map");
     assert_eq!(restored.dynamic_terrain_cells, expected_dynamic_terrain);
     assert!(
@@ -8181,6 +8181,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
             (2, 2),
             SimFixed::from_num(3840),
             Some(&rules),
+            None,
             crate::sim::world::FrameEffects::default()
         ));
         sim.tick_air_movement_with_cell_lists_one(
@@ -8214,7 +8215,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&sim, 0, 0, "Fly terrain landing", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-        restored.retain_in_scenario_process_state_from(&sim);
+        restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
         restored.resolved_terrain = Some(map_terrain);
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(restored.state_hash(), sim.state_hash());

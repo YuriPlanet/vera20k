@@ -936,6 +936,14 @@ Receiver tools, checked on staging copies:
   an existing type matched before the array syntax was read. Give a 4-byte BOOL as
   `WinDef.h/BOOL`, and compare each readback with the type the server picked.
   `set_function_prototype` parses C instead.
+- `delete_data_type` takes the first type of that name in any category, matched
+  ignoring case, and Ghidra deletes a type that is still in use
+  (`DataTypeManager.remove`: a struct or union field keeps its name and length as
+  `BadDataType`, a function definition gets `undefined`). Before deleting, check that
+  only one type has the name and that nothing uses it: on 2026-10-12 the stale
+  `/RA2/AbstractType`, thought unused, still typed a parameter of
+  `CellClass__FindOccupierByRTTI` (0x47C4D0). The signatures research folder (see
+  `LOCAL.md`) has `TypeUses.java`, which lists every use of a type.
 - A successful type-size lookup or `validate_function_prototype` reply does not
   establish that the signature parser can resolve a datatype. The validator checks
   format and convention without parsing the types. On 2026-10-02, two `GUID` entries

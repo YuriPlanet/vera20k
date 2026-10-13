@@ -2,7 +2,7 @@
 //! Native callbacks visit Techno registration order, ordinary sight then Gap on
 //! each object. House240 idempotence is distinct from House577A SpySatActive;
 //! Map577F30 (RevealEntireMap) shares the House240 latch.
-use super::{FogState, InternedId, OwnerVisibility, SightApply, gap_footprint};
+use super::{FogState, InternedId, OwnerVisibility, SightAdmission, gap_footprint};
 
 impl FogState {
     /// House+240, the existing Map reveal/gap authority. The separately
@@ -69,9 +69,12 @@ impl FogState {
             old_spy_sat_active,
             source_ids,
             None,
+            &std::collections::BTreeMap::new(),
         );
     }
 
+    /// `alternates` are the sources the re-admission callback's
+    /// `RevealToAll=` branch reveals on this map, with their footprints.
     pub(crate) fn transition_whole_map_with_gap_reentry(
         &mut self,
         owner: InternedId,
@@ -80,6 +83,7 @@ impl FogState {
         old_spy_sat_active: bool,
         source_ids: &std::collections::BTreeSet<u64>,
         gap_reentry: Option<&[super::GapGeneratorSource]>,
+        alternates: &std::collections::BTreeMap<u64, SightAdmission>,
     ) {
         if self.width == 0
             || self.height == 0
@@ -106,35 +110,14 @@ impl FogState {
                 reentry_by_id.entry(gap.stable_id).or_default().push(gap);
             }
         }
-        // `0x004ADCD0`'s `RevealToAll=` branch (`0x004ADE26..0x004ADE68`):
-        // a computer house's building that neither callback branch above
-        // admits shows its sight to this map again. `0x004ADEE0` never
-        // released it, so its retained admission keeps its source count.
-        //
-        // RESIDUAL: native re-reveals every such building on the map, not
-        // only those that opened: one still building up, or one a computer
-        // house captured from a human, gains the sight here and later loses
-        // it twice (death, Limbo). Trigger: a Reveal or Reset_Shroud of the
-        // current house during such a building's buildup or after such a
-        // capture. Effect: VERA shows that area only once the building opens,
-        // or not at all after the capture. The other callers of `0x004ADCD0`
-        // reveal it again with no release first: MakeAlly (`0x004F9F4F`) and
-        // MakeEnemy (`0x004FA1E3`), which VERA does not port (no in-match
-        // diplomacy), the first House update (`0x004F935A`; a second count
-        // for a building the map placed) and the trigger reshroud
-        // `0x00577C90`.
-        let alternates: std::collections::BTreeSet<u64> = self
-            .alternate_sight_admissions
-            .keys()
-            .filter(|key| key.1 == owner && !source_ids.contains(&key.0))
-            .map(|key| key.0)
-            .collect();
+        // `0x004ADEE0` has no `RevealToAll=` branch: an alternate admission
+        // keeps its source count through the bulk store.
         let ids: std::collections::BTreeSet<_> = sources
             .keys()
             .copied()
             .chain(gaps_by_id.keys().copied())
             .chain(reentry_by_id.keys().copied())
-            .chain(alternates.iter().copied())
+            .chain(alternates.keys().copied())
             .collect();
         let width = usize::from(self.width);
         let height = usize::from(self.height);
@@ -178,9 +161,8 @@ impl FogState {
             if let Some(source) = sources.get(&id) {
                 self.reconcile_sight_admission(id, owner, source.clone(), false);
             }
-            if alternates.contains(&id) {
-                let admission = self.alternate_sight_admissions[&(id, owner)].clone();
-                self.apply_sight(owner, &admission, SightApply::Rereveal);
+            if let Some(footprint) = alternates.get(&id) {
+                self.admit_alternate_sight(id, owner, footprint.clone());
             }
             for &gap in reentry_by_id.get(&id).into_iter().flatten() {
                 let vis = self.by_owner.get_mut(&owner).unwrap();

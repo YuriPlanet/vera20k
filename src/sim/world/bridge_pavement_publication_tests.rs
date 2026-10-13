@@ -93,7 +93,7 @@ fn retail_plain_pavement_native_entry_draw_selection_and_snapshot() {
     restored.resolved_terrain = Some(initial.clone());
     restored.restore_after_snapshot_load().unwrap();
     restored
-        .restore_map_authority_after_snapshot_load(live.rules, live.registry.unwrap())
+        .restore_map_authority_after_snapshot_load(live.rules, live.registry.unwrap(), None)
         .unwrap();
     for &p in &expected_radar {
         let terrain = restored.resolved_terrain.as_ref().unwrap();

@@ -229,7 +229,7 @@ Run from the checkout with the recorded native/Python environment and the
 external extraction directory:
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 export PYTHONDONTWRITEBYTECODE=1
 export VERA20K_BUILDING_DEATH_ASSETS=/path/to/joined-assets/extract
 python -m tools.spatial_oracle.building_death_anims --joined --check

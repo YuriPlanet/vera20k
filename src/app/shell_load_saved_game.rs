@@ -145,17 +145,17 @@ impl App {
         }
     }
 
-    /// Load (`0x00559051`): retail hides `0xB7`, shows the Loading panel
-    /// `0xF0` and runs `Load_Game` `0x0067E440`, entering the game on success.
-    /// VERA20k restores saves only into a running scenario, so a load from
-    /// the main menu reports the failure message box
-    /// (`0x00559539..0x00559599`) and keeps the dialog up; retail re-hides it
-    /// after the box.
+    /// 559D60 shares Load67E440 with the in-game browser. Failure keeps
+    /// the existing sorted rows/selection; it never rescans the directory.
     fn load_saved_game_from_menu(state: &mut AppState, path: &std::path::Path) {
-        log::warn!(
-            "Load Saved Game: {}: saved games cannot be started from the main menu yet",
-            path.display()
-        );
+        match crate::app::persistence::commands::try_load_save_file(state, path) {
+            Ok(()) => {
+                state.frontend.load_saved_game = None;
+                state.platform.window.request_redraw();
+                return;
+            }
+            Err(error) => log::warn!("Load Saved Game: {}: {error}", path.display()),
+        }
         let body = Self::csf_label(state, "TXT_ERROR_LOADING_GAME", "Error loading game.");
         let affirmative = Self::csf_label(state, "TXT_OK", "OK");
         if let Some(browser) = state.frontend.load_saved_game.as_mut() {
@@ -202,10 +202,10 @@ impl App {
             .into_iter()
             .map(
                 |(entry, last_write_time)| crate::ui::skirmish_shell::SavedSeedBrowserRow {
+                    visible: entry.header.is_current_version(),
                     file_name: Some(entry.path),
                     description: entry.header.description.into(),
                     last_write_time,
-                    visible: true,
                 },
             )
             .collect();

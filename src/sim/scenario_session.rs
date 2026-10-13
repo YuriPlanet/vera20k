@@ -102,6 +102,19 @@ impl From<crate::map::lighting::LightingProfileUnits> for ScenarioLightProfileUn
     }
 }
 
+impl From<ScenarioLightProfileUnits> for crate::map::lighting::LightingProfileUnits {
+    fn from(units: ScenarioLightProfileUnits) -> Self {
+        Self {
+            ambient_percent: units.ambient_percent,
+            red_percent: units.red_percent,
+            green_percent: units.green_percent,
+            blue_percent: units.blue_percent,
+            ground_units: units.ground_units,
+            level_units: units.level_units,
+        }
+    }
+}
+
 impl Default for ScenarioLightProfileUnits {
     fn default() -> Self {
         Self::normal_default()
@@ -532,6 +545,12 @@ pub struct ScenarioSession {
     /// Persisted native `ScenarioClass` flags bit `0x80` (`TiberiumSpreads`).
     #[serde(default)]
     pub tiberium_spreads_flag: bool,
+    /// Scenario+11E0: a computer slot has a team. Cleared at `0x00683A3A`;
+    /// `Create_Houses` sets it for a computer slot whose team (`+0x60`) is
+    /// not -1 (`0x006881F5..0x00688209`). Computer_Paranoid is its only
+    /// reader (`0x0050166D`).
+    #[serde(default)]
+    computer_slot_has_team: bool,
     /// Persistent fixed-integer global-light configuration and transition state.
     pub lighting: ScenarioLightingState,
     /// Saved match authority for Building and Tile animation coordinates.
@@ -610,6 +629,14 @@ impl ScenarioSession {
                 rx: rx as u16,
                 ry: ry as u16,
             })
+    }
+
+    pub(crate) const fn computer_slot_has_team(&self) -> bool {
+        self.computer_slot_has_team
+    }
+
+    pub(crate) fn set_computer_slot_has_team(&mut self) {
+        self.computer_slot_has_team = true;
     }
 
     pub(crate) const fn input_locked(&self) -> bool {
@@ -722,6 +749,9 @@ impl ScenarioSession {
         if s.tiberium_spreads_flag {
             b"scenario-tiberium-spreads-v1".hash(hasher);
         }
+        if s.computer_slot_has_team {
+            b"scenario-computer-slot-team-v1".hash(hasher);
+        }
         (s.map_width, s.map_height).hash(hasher);
         s.mp_start_waypoints.len().hash(hasher);
         for (idx, cell) in &s.mp_start_waypoints {
@@ -823,6 +853,7 @@ impl ScenarioSession {
             ignore_global_ai_triggers: desc.ignore_global_ai_triggers,
             tiberium_grows_flag: desc.tiberium_grows_flag,
             tiberium_spreads_flag: desc.tiberium_spreads_flag,
+            computer_slot_has_team: false,
             lighting: desc.lighting,
             pixel_conversion_bounds: desc.pixel_conversion_bounds,
             map_width: desc.map_width,

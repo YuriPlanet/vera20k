@@ -697,10 +697,12 @@ pub(super) fn dispatch_sim_sound_events(
                 }
             }
             SimSoundEvent::HouseEva { owner, event } => {
-                // `HouseClass::Update 0x004F8BA0` / `0x004F8D14`:
-                // `PlayEVA(name, -1)` — the entry's own `Type=` and
-                // `Priority=` route it (stock: `EVA_InsufficientFunds`
-                // STANDARD NORMAL, `EVA_LowPower` QUEUE IMPORTANT).
+                // `HouseClass::Update 0x004F8BA0` / `0x004F8D14`, the Robot
+                // Tank lines (`0x0050E0D0`, `0x0050E19B`, `0x00502776`) and
+                // the others: `PlayEVA(name, -1)` for the player's house —
+                // the entry's own `Type=` and `Priority=` route it (stock:
+                // `EVA_InsufficientFunds` STANDARD NORMAL, `EVA_LowPower`
+                // QUEUE IMPORTANT).
                 if !owner_is_local(&sim.interner, owner, local_owner_name) {
                     continue;
                 }

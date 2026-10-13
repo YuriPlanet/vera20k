@@ -335,17 +335,15 @@ impl Simulation {
     /// 0x004694C6`): no firer or no target ends it; a Foot outside the ground
     /// layer is not warped (`0x0046946C`, InWhichLayer `!= 2`); a Unit in a
     /// Tank Bunker hands the firer its bunker, which the firer retargets and
-    /// warps instead (`0x0046946B..0x004694A5`).
+    /// warps instead (`0x0046946B..0x004694A5`). The layer is the Foot's
+    /// locomotor answer ([`entity_layer`]): an aircraft taking off or landing
+    /// below two levels already answers Top, so it is not warped.
     ///
-    /// RESIDUALS:
-    /// - The layer test forwards to the Foot's locomotor (`vt+0x78` ->
-    ///   locomotor `+0x74`), which VERA does not model; `IsHighFlying` stands
-    ///   in, as for GetFireError's Foot-layer gate (`combat_weapon`). Trigger:
-    ///   a Rocketeer or Kirov just after lift-off. Effect: VERA warps it where
-    ///   native misses. Frequency: brief windows per flight.
-    /// - `0x004694C1` calls through `+0x274` with no null test, so a Temporal
-    ///   warhead on a firer without a link would crash natively; no stock
-    ///   firer lacks one, and VERA does nothing.
+    /// RESIDUAL: `0x004694C1` calls through `+0x274` with no null test, so a
+    /// Temporal warhead on a firer without a link would crash natively; no
+    /// stock firer lacks one, and VERA does nothing.
+    ///
+    /// [`entity_layer`]: crate::sim::world::entity_layer
     pub(crate) fn temporal_detonation(
         &mut self,
         firer: u64,
@@ -369,11 +367,11 @@ impl Simulation {
                     EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
                 );
                 if foot
-                    && crate::sim::movement::air_movement::is_high_flying(
+                    && crate::sim::world::entity_layer(
                         entity,
                         self.resolved_terrain.as_ref(),
                         Some((rules, &self.interner)),
-                    )
+                    ) != crate::sim::world::display_layers::DisplayLayer::GROUND
                 {
                     return;
                 }

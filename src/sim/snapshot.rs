@@ -13,6 +13,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+#[path = "snapshot/saved_local_view.rs"]
+pub(crate) mod saved_local_view;
+#[path = "snapshot/scenario_resources.rs"]
+pub(crate) mod scenario_resources;
+
+use saved_local_view::SavedLocalView;
+use scenario_resources::{SavedScenarioResources, SavedScenarioResourcesRef};
+
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 
@@ -958,7 +966,19 @@ use crate::sim::world::Simulation;
 // each building whether it counts there. Version 333 records lack them.
 // 334 -> 335: ordinary Teleport delay uses a global-frame CdTimer, and
 // a cargo owner retains its independent boarding/inside carrier relation.
-const SNAPSHOT_VERSION: u32 = 335;
+// 335 -> 336: save the processed Rules/resource inputs and the local view
+// (bookmarks, selection, groups, Follow, cursor modes) needed to restore through the same
+// owners from a cold menu or another map; the Tactical view keeps its
+// committed center instead of the window-dependent top-left. Version 335
+// records lack these inputs.
+// 336 -> 337: objects keep the Magnetron's links and drop credit
+// (Techno+2AC/+2B0/+427/+428, Foot+6AE), and the warp credit house (+42C)
+// moves from the Chrono Warp payload to the object. Version 336 records
+// carry the payload's house.
+// 337 -> 338: objects keep the deactivated latch (Techno+1C8), buildings
+// whether they count as a powered center (+662), and houses that count
+// (+2D8). Version 337 records lack them.
+const SNAPSHOT_VERSION: u32 = 338;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1020,7 +1040,10 @@ impl SavedSidebarOrder {
 /// scroll is deliberately absent from this neutral presentation transport.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct SavedTacticalView {
-    pub(crate) view_world_pixels: [f32; 2],
+    /// Committed tactical center in VERA world pixels, including its existing
+    /// projection bias. UpdateViewport6D8B30 derives the viewport from it and
+    /// the current viewport size at load, so the window size is not saved.
+    pub(crate) view_center_world_pixels: [f32; 2],
     pub(crate) zoom: f32,
     pub(crate) focus_start: [i32; 2],
     pub(crate) focus_target: [i32; 2],
@@ -1062,6 +1085,8 @@ pub struct GameSnapshot {
     /// simulation hash. The app validates/hydrates it before committing a load.
     sidebar_order: Option<SavedSidebarOrder>,
     tactical_view: Option<SavedTacticalView>,
+    local_view: Option<SavedLocalView>,
+    scenario_resources: Option<SavedScenarioResources>,
 }
 
 /// Lightweight header extracted from a save file without deserializing the
@@ -1090,6 +1115,10 @@ struct GameSnapshotPreamble {
 /// Errors that can occur during snapshot deserialization.
 #[derive(Debug, thiserror::Error)]
 pub enum SnapshotError {
+    #[error("save has no bound scenario resource inputs")]
+    MissingScenarioResources,
+    #[error("save has no retained local view")]
+    MissingLocalView,
     #[error("snapshot product identity {found:?} is not a VERA20k save")]
     ProductMismatch { found: [u8; 8] },
     #[error("snapshot envelope version {found} does not match expected {expected}")]
@@ -1254,6 +1283,8 @@ pub enum SnapshotRestoreError {
     RetainedWallNeighborStorageMismatch { expected: usize, found: usize },
     #[error("snapshot navigation could not be published from retained map authority")]
     NavigationAuthorityPublicationFailed,
+    #[error("snapshot terrain assets could not be prepared: {reason}")]
+    TerrainAssetPreparationFailed { reason: String },
     #[error("snapshot real-cell bridge flags do not match restored CellClass allocation")]
     RealCellBridgeFlagAuthorityMismatch,
     #[error(
@@ -1268,6 +1299,24 @@ pub(crate) struct SnapshotMapRestoreOutput {
     pub occupied_overlays: Vec<crate::map::overlay::OverlayEntry>,
     pub native_tiberium_stats: crate::sim::ore_growth::NativeTiberiumRebuildStats,
 }
+
+/// Retail asset admission on restored live cells, before derived map publication.
+/// The callback can advance Main without obtaining seed/replacement authority.
+pub(crate) type SnapshotTerrainAssetPreparation<'a> = dyn FnMut(
+        &mut crate::map::resolved_terrain::ResolvedTerrainGrid,
+        crate::sim::rng::MainRngDraws,
+        i32,
+    ) -> Result<(), String>
+    + 'a;
+
+/// The app presentation saved beside the simulation, in `GameSnapshotRef` order.
+type SavedPresentationRef<'a> = (
+    &'a [(u64, i16)],
+    Option<&'a SavedSidebarOrder>,
+    Option<&'a SavedTacticalView>,
+    Option<&'a SavedLocalView>,
+    Option<&'a SavedScenarioResourcesRef<'a>>,
+);
 
 /// Internal borrow-based envelope for serialization (avoids cloning Simulation).
 #[derive(Serialize)]
@@ -1285,6 +1334,8 @@ struct GameSnapshotRef<'a> {
     sinking_waterlines: &'a [(u64, i16)],
     sidebar_order: Option<&'a SavedSidebarOrder>,
     tactical_view: Option<&'a SavedTacticalView>,
+    local_view: Option<&'a SavedLocalView>,
+    scenario_resources: Option<&'a SavedScenarioResourcesRef<'a>>,
 }
 
 impl GameSnapshot {
@@ -1295,11 +1346,7 @@ impl GameSnapshot {
         map_name: &str,
         description: &str,
         save_timestamp: u64,
-        presentation: (
-            &[(u64, i16)],
-            Option<&SavedSidebarOrder>,
-            Option<&SavedTacticalView>,
-        ),
+        presentation: SavedPresentationRef<'_>,
     ) -> Vec<u8> {
         // Retail provenance: Save_Game_To_File @ 0x0067CEF0 supplies a distinct
         // outer file identity; Write_Savegame_Metadata_To_Storage @ 0x006812E0
@@ -1307,7 +1354,8 @@ impl GameSnapshot {
         // Description. The active list admits only an exact internal-version
         // match at 0x00559ED0..0x0055A04A. VERA keeps its Rust-native bincode
         // body while making the same load-bearing envelope identities explicit.
-        let (sinking_waterlines, sidebar_order, tactical_view) = presentation;
+        let (sinking_waterlines, sidebar_order, tactical_view, local_view, scenario_resources) =
+            presentation;
         let snapshot = GameSnapshotRef {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
@@ -1322,6 +1370,8 @@ impl GameSnapshot {
             sinking_waterlines,
             sidebar_order,
             tactical_view,
+            local_view,
+            scenario_resources,
         };
         bincode::serialize(&snapshot).expect("snapshot serialization should not fail")
     }
@@ -1348,6 +1398,8 @@ impl GameSnapshot {
             &[],
             None,
             None,
+            None,
+            None,
         )
     }
 
@@ -1362,6 +1414,8 @@ impl GameSnapshot {
         sinking_waterlines: &[(u64, i16)],
         sidebar_order: Option<&SavedSidebarOrder>,
         tactical_view: Option<&SavedTacticalView>,
+        local_view: Option<&SavedLocalView>,
+        scenario_resources: Option<&SavedScenarioResourcesRef<'_>>,
     ) -> Vec<u8> {
         Self::serialize(
             sim,
@@ -1370,7 +1424,13 @@ impl GameSnapshot {
             &sim.session.map_name,
             description,
             save_timestamp,
-            (sinking_waterlines, sidebar_order, tactical_view),
+            (
+                sinking_waterlines,
+                sidebar_order,
+                tactical_view,
+                local_view,
+                scenario_resources,
+            ),
         )
     }
 
@@ -1380,6 +1440,14 @@ impl GameSnapshot {
 
     pub(crate) fn tactical_view(&self) -> Option<&SavedTacticalView> {
         self.tactical_view.as_ref()
+    }
+
+    pub(crate) fn take_local_view(&mut self) -> Option<SavedLocalView> {
+        self.local_view.take()
+    }
+
+    pub(crate) fn take_scenario_resources(&mut self) -> Option<SavedScenarioResources> {
+        self.scenario_resources.take()
     }
 
     /// Test-only constructor for deliberately synthetic envelope metadata.
@@ -1398,14 +1466,15 @@ impl GameSnapshot {
             map_name,
             map_name,
             save_timestamp,
-            (&[], None, None),
+            (&[], None, None, None, None),
         )
     }
 
     /// Deserialize a current-version snapshot without content validation.
     ///
     /// This exists for internal tests and diagnostics. Production restoration
-    /// must use [`Self::load_validated`]. Like retail's post-read Scenario
+    /// uses [`Self::load_with_resources`] and validates the incoming resources.
+    /// Like retail's post-read Scenario
     /// reinitializer, full deserialization resets the embedded Scenario RNG to
     /// `Random__Seed(0)` even though its saved bytes remain in the wire layout.
     #[cfg(test)]
@@ -1455,6 +1524,32 @@ impl GameSnapshot {
             });
         }
 
+        Self::deserialize_admitted(bytes)
+    }
+
+    /// Production cold/cross-map admission. Compatibility is checked against
+    /// the saved resource owner and its rebuilt RuleSet, never the outgoing
+    /// match or header values passed back as their own expected content.
+    pub(crate) fn load_with_resources(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
+        Self::read_header(bytes)?;
+        let snapshot = Self::deserialize_admitted(bytes)?;
+        let resources = snapshot
+            .scenario_resources
+            .as_ref()
+            .ok_or(SnapshotError::MissingScenarioResources)?;
+        if resources.map().map_hash() != snapshot.map_hash {
+            return Err(SnapshotError::MapMismatch {
+                expected: resources.map().map_hash(),
+                found: snapshot.map_hash,
+            });
+        }
+        if snapshot.local_view.is_none() {
+            return Err(SnapshotError::MissingLocalView);
+        }
+        Ok(snapshot)
+    }
+
+    fn deserialize_admitted(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
         let snapshot: GameSnapshot = bincode::deserialize(bytes)?;
         if snapshot.tick != snapshot.sim.session.tick {
             return Err(SnapshotError::TickMetadataMismatch {
@@ -1471,9 +1566,31 @@ impl GameSnapshot {
         Ok(snapshot)
     }
 
-    /// Read only the header fields from a save file without deserializing the
-    /// full Simulation. Useful for listing saves in the UI.
+    /// Admit a current-version header without deserializing Simulation. The
+    /// fixed preamble rejects incompatible schemas before any variable-length
+    /// header fields; browser metadata has a separate compatibility policy.
     pub fn read_header(bytes: &[u8]) -> Result<GameSnapshotHeader, SnapshotError> {
+        let preamble = Self::read_preamble(bytes)?;
+        if preamble.version != SNAPSHOT_VERSION {
+            return Err(SnapshotError::VersionMismatch {
+                expected: SNAPSHOT_VERSION,
+                found: preamble.version,
+            });
+        }
+        Ok(bincode::deserialize(bytes)?)
+    }
+
+    /// SaveInfo681840/559ED0 reads metadata even when its internal version is
+    /// incompatible. Browser5596A0 sorts those rows before5599DF hides them;
+    /// full load still requires the strict current-version header above.
+    pub(crate) fn read_metadata(bytes: &[u8]) -> Result<GameSnapshotHeader, SnapshotError> {
+        Self::read_preamble(bytes)?;
+        Ok(bincode::deserialize(bytes)?)
+    }
+
+    /// Product and public-envelope admission shared by strict loading and the
+    /// browser's readable-but-incompatible rows.
+    fn read_preamble(bytes: &[u8]) -> Result<GameSnapshotPreamble, SnapshotError> {
         let preamble: GameSnapshotPreamble = bincode::deserialize(bytes)?;
         if preamble.product_magic != SNAPSHOT_PRODUCT_MAGIC {
             return Err(SnapshotError::ProductMismatch {
@@ -1486,13 +1603,13 @@ impl GameSnapshot {
                 found: preamble.envelope_version,
             });
         }
-        if preamble.version != SNAPSHOT_VERSION {
-            return Err(SnapshotError::VersionMismatch {
-                expected: SNAPSHOT_VERSION,
-                found: preamble.version,
-            });
-        }
-        Ok(bincode::deserialize(bytes)?)
+        Ok(preamble)
+    }
+}
+
+impl GameSnapshotHeader {
+    pub(crate) fn is_current_version(&self) -> bool {
+        self.version == SNAPSHOT_VERSION
     }
 }
 
@@ -2480,6 +2597,7 @@ impl Simulation {
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+        prepare_terrain_assets: Option<&mut SnapshotTerrainAssetPreparation<'_>>,
     ) -> Result<SnapshotMapRestoreOutput, SnapshotRestoreError> {
         let (overlay_width, overlay_height, overlay_cell_count, retained_wall_count) = self
             .overlay_grid
@@ -2540,6 +2658,27 @@ impl Simulation {
                     return Err(SnapshotRestoreError::DynamicTerrainCellMissing { rx, ry });
                 }
             }
+        }
+
+        // MouseClass::Load @ 0x005BE657 calls the restored-cell TMP admission
+        // pass @ 0x00546DA0 before publishing the loaded map. Admission must
+        // see saved live replacements, not the baseline terrain. The optional
+        // app callback binds retail assets and can consume only this candidate's
+        // Main draws; legacy/headless callers already carry their catalogs.
+        if let Some(prepare_terrain_assets) = prepare_terrain_assets {
+            let (size_width, _) = self.map_size_diamond().ok_or(
+                SnapshotRestoreError::MissingMapAuthorityComponent {
+                    component: "Map Size",
+                },
+            )?;
+            prepare_terrain_assets(
+                self.resolved_terrain
+                    .as_mut()
+                    .expect("validated terrain cache"),
+                self.main_rng.draws(),
+                size_width,
+            )
+            .map_err(|reason| SnapshotRestoreError::TerrainAssetPreparationFailed { reason })?;
         }
 
         // Native CellClass::Load restores allocated real-cell flag words as
@@ -2958,7 +3097,7 @@ mod tests {
 
             let rng_before = restored.rng_state();
             let restore_output = restored
-                .restore_map_authority_after_snapshot_load(&rules, &registry)
+                .restore_map_authority_after_snapshot_load(&rules, &registry, None)
                 .expect("all map-authority rebuild dependencies");
             assert_eq!(
                 restored.rng_state(),
@@ -3056,7 +3195,7 @@ mod tests {
             );
             assert_eq!(restored.session.map_width, 12);
             let output = restored
-                .restore_map_authority_after_snapshot_load(&rules, &registry)
+                .restore_map_authority_after_snapshot_load(&rules, &registry, None)
                 .expect("all map-authority rebuild dependencies");
             assert_eq!(output.native_tiberium_stats.growth_entries, 2);
             assert_eq!(output.native_tiberium_stats.spread_entries, 2);
@@ -3088,7 +3227,7 @@ mod tests {
             let mut restored = restore_before_map_authority(&sim);
             assert_eq!(restored.production.ore_growth_state.native_rect(), (0, 0));
             let output = restored
-                .restore_map_authority_after_snapshot_load(&rules, &registry)
+                .restore_map_authority_after_snapshot_load(&rules, &registry, None)
                 .expect("all map-authority rebuild dependencies");
             assert_eq!(output.native_tiberium_stats.growth_entries, 2);
             assert_eq!(restored.production.ore_growth_state.native_rect(), (8, 8));
@@ -3143,7 +3282,7 @@ mod tests {
             seed_serialized_queue_state(&mut sim, &rules, &registry, (4, 5));
             let mut restored = restore_before_map_authority(&sim);
             restored
-                .restore_map_authority_after_snapshot_load(&rules, &registry)
+                .restore_map_authority_after_snapshot_load(&rules, &registry, None)
                 .expect("all map-authority rebuild dependencies");
             restored.resolve_type_handles(&rules);
 
@@ -3191,7 +3330,7 @@ mod tests {
 
             let overlays = sim.overlay_grid.take();
             assert!(matches!(
-                sim.restore_map_authority_after_snapshot_load(&rules, &registry),
+                sim.restore_map_authority_after_snapshot_load(&rules, &registry, None),
                 Err(SnapshotRestoreError::MissingMapAuthorityComponent {
                     component: "OverlayGrid",
                 })
@@ -3199,7 +3338,7 @@ mod tests {
             sim.overlay_grid = overlays;
             sim.resolved_terrain = None;
             assert!(matches!(
-                sim.restore_map_authority_after_snapshot_load(&rules, &registry),
+                sim.restore_map_authority_after_snapshot_load(&rules, &registry, None),
                 Err(SnapshotRestoreError::MissingMapAuthorityComponent {
                     component: "ResolvedTerrainGrid",
                 })
@@ -3320,7 +3459,7 @@ mod tests {
         // `OverlayClass::Mark` increments.
         sim.overlay_grid = Some(runtime_overlays);
         sim.install_resolved_terrain_for_new_map(map_terrain.clone());
-        sim.restore_map_authority_after_snapshot_load(&rules, &registry)
+        sim.restore_map_authority_after_snapshot_load(&rules, &registry, None)
             .expect("publish the live runtime overlay navigation before saving");
         // Original Scenario full-load resets this stream to Seed(0). Match
         // that retained load policy when comparing the published live fixture.
@@ -3348,7 +3487,7 @@ mod tests {
         );
 
         let restore_output = restored
-            .restore_map_authority_after_snapshot_load(&rules, &registry)
+            .restore_map_authority_after_snapshot_load(&rules, &registry, None)
             .expect("restored overlay and navigation authority");
         let terrain = restored
             .resolved_terrain
@@ -3409,6 +3548,114 @@ mod tests {
         assert_eq!(restored.state_hash(), authoritative_hash);
     }
 
+    fn terrain_asset_restore_fixture() -> (
+        Simulation,
+        crate::rules::ruleset::RuleSet,
+        crate::rules::overlay_types::OverlayTypeRegistry,
+    ) {
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [OverlayTypes]\n0=WALL\n[WALL]\nWall=yes\nStrength=100\n",
+        );
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
+        let mut sim = Simulation::new();
+        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+            base: 2,
+            off_fc: -8,
+            off_100: -8,
+            off_104: 16,
+            off_108: 16,
+        });
+        sim.playfield_size_height = Some(2);
+        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
+        sim.overlay_grid.as_mut().unwrap().place_overlay(2, 2, 0, 0);
+        sim.install_resolved_terrain_for_new_map(flat_terrain(4, 4));
+        let mut replaced = sim
+            .resolved_terrain
+            .as_ref()
+            .unwrap()
+            .cell(1, 2)
+            .unwrap()
+            .clone();
+        replaced.final_tile_index = 71;
+        sim.dynamic_terrain_cells.insert(
+            (1, 2),
+            crate::map::resolved_terrain::DynamicTerrainCellState::capture(&replaced),
+        );
+        sim.real_cell_bridge_flags_0x1180.set_allocated_cell(
+            2 * 4 + 1,
+            crate::map::bridge_facts::BRIDGE_FLAG_DIRECTION_ZERO,
+        );
+        (sim, rules, registry)
+    }
+
+    #[test]
+    fn snapshot_restore_prepares_live_terrain_assets_before_map_publication() {
+        let (mut sim, rules, registry) = terrain_asset_restore_fixture();
+        let rng_before = sim.rng_state();
+        let mut expected_main = sim.main_rng.snapshot_for_test();
+        let expected_word = expected_main.next_u32();
+        let mut calls = 0;
+        let mut prepare = |terrain: &mut ResolvedTerrainGrid,
+                           main: crate::sim::rng::MainRngDraws,
+                           size_width: i32| {
+            calls += 1;
+            assert_eq!(
+                size_width, 2,
+                "the native iterator uses Size, not grid width"
+            );
+            assert_eq!(terrain.cell(1, 2).unwrap().final_tile_index, 71);
+            assert_eq!(terrain.cell(1, 2).unwrap().bridge_facts.raw_flags, 0);
+            assert!(!terrain.cell(2, 2).unwrap().overlay_blocks);
+            assert_eq!(main.next_u32(), expected_word);
+            Ok(())
+        };
+
+        sim.restore_map_authority_after_snapshot_load(&rules, &registry, Some(&mut prepare))
+            .expect("prepare assets from dynamic cells before final map publication");
+
+        assert_eq!(calls, 1);
+        assert_eq!(sim.main_rng.logical_state(), expected_main.logical_state());
+        assert_eq!(sim.rng_state().scenario, rng_before.scenario);
+        assert_eq!(sim.rng_state().mapgen, rng_before.mapgen);
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        assert_eq!(
+            terrain.cell(1, 2).unwrap().bridge_facts.raw_flags,
+            crate::map::bridge_facts::BRIDGE_FLAG_DIRECTION_ZERO,
+        );
+        assert!(terrain.cell(2, 2).unwrap().overlay_blocks);
+        assert!(!sim.path_grid().unwrap().is_walkable(2, 2));
+    }
+
+    #[test]
+    fn snapshot_restore_terrain_asset_error_stops_map_publication() {
+        let (mut sim, rules, registry) = terrain_asset_restore_fixture();
+        let mut expected_main = sim.main_rng.snapshot_for_test();
+        let expected_word = expected_main.next_u32();
+        let mut prepare =
+            |terrain: &mut ResolvedTerrainGrid, main: crate::sim::rng::MainRngDraws, _: i32| {
+                assert_eq!(terrain.cell(1, 2).unwrap().final_tile_index, 71);
+                assert_eq!(main.next_u32(), expected_word);
+                Err("missing selected TMP".to_string())
+            };
+
+        let error = sim
+            .restore_map_authority_after_snapshot_load(&rules, &registry, Some(&mut prepare))
+            .expect_err("a rejected candidate must not publish map authority");
+
+        assert!(matches!(
+            error,
+            SnapshotRestoreError::TerrainAssetPreparationFailed { reason }
+                if reason == "missing selected TMP"
+        ));
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        assert_eq!(terrain.cell(1, 2).unwrap().bridge_facts.raw_flags, 0);
+        assert!(!terrain.cell(2, 2).unwrap().overlay_blocks);
+        assert!(sim.path_grid().is_none());
+        assert_eq!(sim.main_rng.logical_state(), expected_main.logical_state());
+    }
+
     #[test]
     fn snapshot_restore_rejects_truncated_overlay_cell_storage() {
         use crate::rules::ini_parser::IniFile;
@@ -3443,7 +3690,7 @@ mod tests {
         sim.resolved_terrain = Some(flat_terrain(2, 1));
 
         assert!(matches!(
-            sim.restore_map_authority_after_snapshot_load(&rules, &registry),
+            sim.restore_map_authority_after_snapshot_load(&rules, &registry, None),
             Err(SnapshotRestoreError::MapAuthorityCellStorageMismatch {
                 expected: 2,
                 found: 1,
@@ -3485,7 +3732,7 @@ mod tests {
         sim.resolved_terrain = Some(flat_terrain(2, 1));
 
         assert!(matches!(
-            sim.restore_map_authority_after_snapshot_load(&rules, &registry),
+            sim.restore_map_authority_after_snapshot_load(&rules, &registry, None),
             Err(SnapshotRestoreError::RetainedWallNeighborStorageMismatch {
                 expected: 2,
                 found: 1,
@@ -4097,7 +4344,10 @@ mod tests {
         // 332 -> 333: the fog's RevealToAll alternate-house sight.
         // 333 -> 334: the house's war factory count.
         // 334 -> 335: global Teleport delay and independent carrier relation.
-        assert_eq!(super::SNAPSHOT_VERSION, 335);
+        // 335 -> 336: saved world resources, local view and Tactical center.
+        // 336 -> 337: Magnetron links and the object's warp credit house.
+        // 337 -> 338: the deactivated latch and the powered-center counts.
+        assert_eq!(super::SNAPSHOT_VERSION, 338);
     }
 
     #[test]
@@ -7535,7 +7785,8 @@ mod tests {
         assert_eq!(cold.shared_cell_dummy.neighbor_count(), 0);
 
         let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
-        restored.retain_in_scenario_process_state_from(&live);
+        restored
+            .retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&live));
         assert_eq!(
             restored.substrate.raw_cell_occupation.dummy_for_hash(),
             live.substrate.raw_cell_occupation.dummy_for_hash()
@@ -7690,7 +7941,8 @@ mod tests {
         live.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&live, 0, 0, "bridge-dummy.map", 0);
         let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
-        restored.retain_in_scenario_process_state_from(&live);
+        restored
+            .retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&live));
         restored
             .restore_after_snapshot_load()
             .expect("snapshot references restore");
@@ -7730,7 +7982,7 @@ mod tests {
         );
         let rules = RuleSet::from_ini(&ini).expect("empty map-authority rules");
         restored
-            .restore_map_authority_after_snapshot_load(&rules, &OverlayTypeRegistry::empty())
+            .restore_map_authority_after_snapshot_load(&rules, &OverlayTypeRegistry::empty(), None)
             .expect("serialized real CellClass values restore directly");
 
         let candidate_dummy = restored.effective_shared_cell_dummy();

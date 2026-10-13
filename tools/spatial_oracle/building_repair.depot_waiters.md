@@ -9,7 +9,7 @@ Original text and the four actual Unit/UnitType/Building/BuildingType vtables
 remain unchanged. Expected values come from native execution.
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 VERA20K_DEPOT_SERVICE_INPUTS=.local-audit/war-miner-attack/inputs/extract \
   python -m tools.spatial_oracle.building_repair --depot-waiters --check
 ```

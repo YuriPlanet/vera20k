@@ -323,8 +323,9 @@ impl Placements {
 struct OwnerView {
     /// Changed since this owner's product was last brought current.
     dirty: Dirty,
-    /// `are_houses_friendly(owner, other)` under the alliance graph the index
-    /// last saw; the index drops every view when that graph changes.
+    /// `is_allied_with(owner, other)`, Can_Enter_Cell's question of the
+    /// mover's house (`0x0073FB53`), under the alliance graph the index last
+    /// saw; the index drops every view when that graph changes.
     friendly: BTreeMap<InternedId, bool>,
     /// `None` while a movement pass holds it.
     product: Option<OwnerBlockSet>,
@@ -364,7 +365,7 @@ impl OwnerView {
                     continue;
                 };
                 let friendly = *self.friendly.entry(unit.owner).or_insert_with(|| {
-                    crate::map::houses::are_houses_friendly(
+                    crate::map::houses::is_allied_with(
                         alliances,
                         owner,
                         interner.resolve(unit.owner),
@@ -411,7 +412,7 @@ pub(crate) fn build_owner_block_set(
             Some(Contribution::Structure(blocked)) => product.0.extend(blocked),
             Some(Contribution::Unit(unit)) => {
                 let friendly = *friendly_to.entry(unit.owner).or_insert_with(|| {
-                    crate::map::houses::are_houses_friendly(
+                    crate::map::houses::is_allied_with(
                         alliances,
                         owner,
                         interner.resolve(unit.owner),

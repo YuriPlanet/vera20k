@@ -2931,5 +2931,3034 @@
       }
     }
   ],
+  "name_cases": [
+    {
+      "after": {
+        "buildings_killed": [
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "buildings_lost": 456,
+        "built": [
+          {
+            "capacity": 3,
+            "items": [
+              1,
+              2,
+              3
+            ],
+            "total": 6
+          },
+          {
+            "capacity": 3,
+            "items": [
+              2,
+              3,
+              4
+            ],
+            "total": 9
+          },
+          {
+            "capacity": 3,
+            "items": [
+              3,
+              4,
+              5
+            ],
+            "total": 12
+          },
+          {
+            "capacity": 3,
+            "items": [
+              4,
+              5,
+              6
+            ],
+            "total": 15
+          }
+        ],
+        "display_name_utf16_hex": "480061006c0076006f007200000000000000000000000000000000000000000000000000000000000000",
+        "score": -789,
+        "units_killed": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "units_lost": 123
+      },
+      "after_noinit_only": {
+        "buildings_killed": [
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "buildings_lost": 456,
+        "built": [
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          }
+        ],
+        "display_name_utf16_hex": "480061006c0076006f007200000000000000000000000000000000000000000000000000000000000000",
+        "score": -789,
+        "units_killed": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "units_lost": 123
+      },
+      "after_normal_constructor_statistics_blocks": {
+        "buildings_killed": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "buildings_lost": 0,
+        "built": [
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          }
+        ],
+        "display_name_utf16_hex": "480061006c0076006f007200000000000000000000000000000000000000000000000000000000000000",
+        "score": 0,
+        "units_killed": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "units_lost": 0
+      },
+      "before": {
+        "buildings_killed": [
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "buildings_lost": 456,
+        "built": [
+          {
+            "capacity": 3,
+            "items": [
+              1,
+              2,
+              3
+            ],
+            "total": 6
+          },
+          {
+            "capacity": 3,
+            "items": [
+              2,
+              3,
+              4
+            ],
+            "total": 9
+          },
+          {
+            "capacity": 3,
+            "items": [
+              3,
+              4,
+              5
+            ],
+            "total": 12
+          },
+          {
+            "capacity": 3,
+            "items": [
+              4,
+              5,
+              6
+            ],
+            "total": 15
+          }
+        ],
+        "display_name_utf16_hex": "480061006c0076006f007200000000000000000000000000000000000000000000000000000000000000",
+        "score": -789,
+        "units_killed": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "units_lost": 123
+      },
+      "events": [
+        "0x504080",
+        "0x410320",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x4f5190",
+        "0x503040",
+        "0x410380",
+        "0x6cf2c0",
+        "0x4f5190",
+        "0x6cf240",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf2c0",
+        "0x6cf230",
+        "0x6cf350"
+      ],
+      "initial_receiver": null,
+      "input_text": "Halvor",
+      "io": [
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x41034b"
+        },
+        {
+          "bytes": 90296,
+          "kind": "write",
+          "source_return": "0x410361"
+        },
+        {
+          "bytes": 120,
+          "kind": "write",
+          "source_return": "0x42f087"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x42f0a5"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x42f0f3"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x42f135"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50415c"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5041a9"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5041f6"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x504246"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x504293"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5042dd"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50432a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50437a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5043ca"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50441a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50446a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5044ba"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50450a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50455a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5045aa"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5045fa"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50467d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x4103a1"
+        },
+        {
+          "bytes": 90296,
+          "kind": "read",
+          "source_return": "0x4103d0"
+        },
+        {
+          "bytes": 120,
+          "kind": "read",
+          "source_return": "0x42ee49"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x42eead"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x42ef4d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x42efd4"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503386"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503423"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x5034b7"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50358f"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50366d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503701"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503795"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503832"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x5038cf"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50396c"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503a09"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503aa6"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503b43"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503be0"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503c7d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503d1a"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50404c"
+        }
+      ],
+      "kind": "mixed_counters",
+      "load_result": 0,
+      "native_size": 90296,
+      "original_executable_bytes_unchanged": true,
+      "payload_bytes": 90644,
+      "payload_sha256": "f1872e5bcddc296ee12a873bd3a16a72708812e6de7db0633dacf4d766ac804b",
+      "retained_live_1c": "0x11223344",
+      "rng_after": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "scenario": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "rng_after_continuation": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "scenario": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "rng_before": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "scenario": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "save_result": 0,
+      "swizzle": {
+        "before": {
+          "mappings": 2,
+          "requests": 1
+        },
+        "house_type_restored": true,
+        "mappings_after": 0,
+        "requests_after": 0
+      },
+      "writer_name_utf16_hex": "480061006c0076006f007200000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "after": {
+        "buildings_killed": [
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "buildings_lost": 456,
+        "built": [
+          {
+            "capacity": 3,
+            "items": [
+              1,
+              2,
+              3
+            ],
+            "total": 6
+          },
+          {
+            "capacity": 3,
+            "items": [
+              2,
+              3,
+              4
+            ],
+            "total": 9
+          },
+          {
+            "capacity": 3,
+            "items": [
+              3,
+              4,
+              5
+            ],
+            "total": 12
+          },
+          {
+            "capacity": 3,
+            "items": [
+              4,
+              5,
+              6
+            ],
+            "total": 15
+          }
+        ],
+        "display_name_utf16_hex": "c5006e006700730074007200f6006d0020001804330440043e043a040000000000000000000000000000",
+        "score": -789,
+        "units_killed": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "units_lost": 123
+      },
+      "after_noinit_only": {
+        "buildings_killed": [
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "buildings_lost": 456,
+        "built": [
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          }
+        ],
+        "display_name_utf16_hex": "c5006e006700730074007200f6006d0020001804330440043e043a040000000000000000000000000000",
+        "score": -789,
+        "units_killed": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "units_lost": 123
+      },
+      "after_normal_constructor_statistics_blocks": {
+        "buildings_killed": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "buildings_lost": 0,
+        "built": [
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          }
+        ],
+        "display_name_utf16_hex": "c5006e006700730074007200f6006d0020001804330440043e043a040000000000000000000000000000",
+        "score": 0,
+        "units_killed": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "units_lost": 0
+      },
+      "before": {
+        "buildings_killed": [
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "buildings_lost": 456,
+        "built": [
+          {
+            "capacity": 3,
+            "items": [
+              1,
+              2,
+              3
+            ],
+            "total": 6
+          },
+          {
+            "capacity": 3,
+            "items": [
+              2,
+              3,
+              4
+            ],
+            "total": 9
+          },
+          {
+            "capacity": 3,
+            "items": [
+              3,
+              4,
+              5
+            ],
+            "total": 12
+          },
+          {
+            "capacity": 3,
+            "items": [
+              4,
+              5,
+              6
+            ],
+            "total": 15
+          }
+        ],
+        "display_name_utf16_hex": "c5006e006700730074007200f6006d0020001804330440043e043a040000000000000000000000000000",
+        "score": -789,
+        "units_killed": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "units_lost": 123
+      },
+      "events": [
+        "0x504080",
+        "0x410320",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x4f5190",
+        "0x503040",
+        "0x410380",
+        "0x6cf2c0",
+        "0x4f5190",
+        "0x6cf240",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf2c0",
+        "0x6cf230",
+        "0x6cf350"
+      ],
+      "initial_receiver": null,
+      "input_text": "\u00c5ngstr\u00f6m \u0418\u0433\u0440\u043e\u043a",
+      "io": [
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x41034b"
+        },
+        {
+          "bytes": 90296,
+          "kind": "write",
+          "source_return": "0x410361"
+        },
+        {
+          "bytes": 120,
+          "kind": "write",
+          "source_return": "0x42f087"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x42f0a5"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x42f0f3"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x42f135"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50415c"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5041a9"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5041f6"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x504246"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x504293"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5042dd"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50432a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50437a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5043ca"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50441a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50446a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5044ba"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50450a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50455a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5045aa"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5045fa"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50467d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x4103a1"
+        },
+        {
+          "bytes": 90296,
+          "kind": "read",
+          "source_return": "0x4103d0"
+        },
+        {
+          "bytes": 120,
+          "kind": "read",
+          "source_return": "0x42ee49"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x42eead"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x42ef4d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x42efd4"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503386"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503423"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x5034b7"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50358f"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50366d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503701"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503795"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503832"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x5038cf"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50396c"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503a09"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503aa6"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503b43"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503be0"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503c7d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503d1a"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50404c"
+        }
+      ],
+      "kind": "mixed_counters",
+      "load_result": 0,
+      "native_size": 90296,
+      "original_executable_bytes_unchanged": true,
+      "payload_bytes": 90644,
+      "payload_sha256": "5ab917393051e38b8dbd5ff39c4e0d8f5c9c16b236c8082d7531369ba9d4da90",
+      "retained_live_1c": "0x11223344",
+      "rng_after": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "scenario": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "rng_after_continuation": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "scenario": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "rng_before": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "scenario": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "save_result": 0,
+      "swizzle": {
+        "before": {
+          "mappings": 2,
+          "requests": 1
+        },
+        "house_type_restored": true,
+        "mappings_after": 0,
+        "requests_after": 0
+      },
+      "writer_name_utf16_hex": "c5006e006700730074007200f6006d0020001804330440043e043a040000000000000000000000000000"
+    },
+    {
+      "after": {
+        "buildings_killed": [
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "buildings_lost": 456,
+        "built": [
+          {
+            "capacity": 3,
+            "items": [
+              1,
+              2,
+              3
+            ],
+            "total": 6
+          },
+          {
+            "capacity": 3,
+            "items": [
+              2,
+              3,
+              4
+            ],
+            "total": 9
+          },
+          {
+            "capacity": 3,
+            "items": [
+              3,
+              4,
+              5
+            ],
+            "total": 12
+          },
+          {
+            "capacity": 3,
+            "items": [
+              4,
+              5,
+              6
+            ],
+            "total": 15
+          }
+        ],
+        "display_name_utf16_hex": "4100420043004400450046004700480049004a004b004c004d004e004f00500051005200530054000000",
+        "score": -789,
+        "units_killed": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "units_lost": 123
+      },
+      "after_noinit_only": {
+        "buildings_killed": [
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "buildings_lost": 456,
+        "built": [
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          }
+        ],
+        "display_name_utf16_hex": "4100420043004400450046004700480049004a004b004c004d004e004f00500051005200530054000000",
+        "score": -789,
+        "units_killed": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "units_lost": 123
+      },
+      "after_normal_constructor_statistics_blocks": {
+        "buildings_killed": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "buildings_lost": 0,
+        "built": [
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          },
+          {
+            "capacity": 0,
+            "items": [],
+            "total": 0
+          }
+        ],
+        "display_name_utf16_hex": "4100420043004400450046004700480049004a004b004c004d004e004f00500051005200530054000000",
+        "score": 0,
+        "units_killed": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "units_lost": 0
+      },
+      "before": {
+        "buildings_killed": [
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "buildings_lost": 456,
+        "built": [
+          {
+            "capacity": 3,
+            "items": [
+              1,
+              2,
+              3
+            ],
+            "total": 6
+          },
+          {
+            "capacity": 3,
+            "items": [
+              2,
+              3,
+              4
+            ],
+            "total": 9
+          },
+          {
+            "capacity": 3,
+            "items": [
+              3,
+              4,
+              5
+            ],
+            "total": 12
+          },
+          {
+            "capacity": 3,
+            "items": [
+              4,
+              5,
+              6
+            ],
+            "total": 15
+          }
+        ],
+        "display_name_utf16_hex": "4100420043004400450046004700480049004a004b004c004d004e004f00500051005200530054000000",
+        "score": -789,
+        "units_killed": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "units_lost": 123
+      },
+      "events": [
+        "0x504080",
+        "0x410320",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x49fb70",
+        "0x4f5190",
+        "0x503040",
+        "0x410380",
+        "0x6cf2c0",
+        "0x4f5190",
+        "0x6cf240",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x49fbe0",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf240",
+        "0x6cf2c0",
+        "0x6cf230",
+        "0x6cf350"
+      ],
+      "initial_receiver": null,
+      "input_text": "ABCDEFGHIJKLMNOPQRSTUV",
+      "io": [
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x41034b"
+        },
+        {
+          "bytes": 90296,
+          "kind": "write",
+          "source_return": "0x410361"
+        },
+        {
+          "bytes": 120,
+          "kind": "write",
+          "source_return": "0x42f087"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x42f0a5"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x42f0f3"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x42f135"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fb87"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fba1"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x49fbc0"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50415c"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5041a9"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5041f6"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x504246"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x504293"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5042dd"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50432a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50437a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5043ca"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50441a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50446a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5044ba"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50450a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50455a"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5045aa"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x5045fa"
+        },
+        {
+          "bytes": 4,
+          "kind": "write",
+          "source_return": "0x50467d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x4103a1"
+        },
+        {
+          "bytes": 90296,
+          "kind": "read",
+          "source_return": "0x4103d0"
+        },
+        {
+          "bytes": 120,
+          "kind": "read",
+          "source_return": "0x42ee49"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x42eead"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x42ef4d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x42efd4"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc13"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc25"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x49fc60"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503386"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503423"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x5034b7"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50358f"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50366d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503701"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503795"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503832"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x5038cf"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50396c"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503a09"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503aa6"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503b43"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503be0"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503c7d"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x503d1a"
+        },
+        {
+          "bytes": 4,
+          "kind": "read",
+          "source_return": "0x50404c"
+        }
+      ],
+      "kind": "mixed_counters",
+      "load_result": 0,
+      "native_size": 90296,
+      "original_executable_bytes_unchanged": true,
+      "payload_bytes": 90644,
+      "payload_sha256": "d6c19c088ebc5a973b0d5e2e37ee25a32c118239f3c76bebfab3305aad651ffa",
+      "retained_live_1c": "0x11223344",
+      "rng_after": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "scenario": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "rng_after_continuation": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "scenario": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "rng_before": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "scenario": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "save_result": 0,
+      "swizzle": {
+        "before": {
+          "mappings": 2,
+          "requests": 1
+        },
+        "house_type_restored": true,
+        "mappings_after": 0,
+        "requests_after": 0
+      },
+      "writer_name_utf16_hex": "4100420043004400450046004700480049004a004b004c004d004e004f00500051005200530054000000"
+    }
+  ],
   "schema": 1
 }

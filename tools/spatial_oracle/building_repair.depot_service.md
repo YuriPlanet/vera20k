@@ -19,7 +19,7 @@ No Rust values or hand arithmetic generate the expected results.
 Use the configured native Python environment and retained retail extraction:
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 VERA20K_DEPOT_SERVICE_INPUTS=.local-audit/war-miner-attack/inputs/extract \
   python -m tools.spatial_oracle.building_repair --depot-service --check
 python -m tools.spatial_oracle.building_repair --check
@@ -327,7 +327,8 @@ this sparse supplied scene. The failed exploratory call remains ignored audit
 evidence; no expected output is invented for it. Retained saved-order/tube work,
 waiter admission, earlier real-track occupation and full-frame scheduling are
 outside this section. Existing depot histories, legacy building self-repair,
-legacy420 slot rows, current expiry results and replay packages are preserved.
+legacy420 slot rows and current expiry results are preserved; the replay packages
+are in git at 1b1a8b43e.
 Native `--depot-service --write` followed by independent `--check` passed.
 Legacy building-repair, legacy slot-replacement and current expiry checks also
 passed. Removing only `arrival_terminal` reproduces the complete previous depot

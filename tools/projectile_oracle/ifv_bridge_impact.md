@@ -5,11 +5,11 @@ the earlier five-case launch and full-impact evidence unchanged. Independent
 `--check` passes for three controls, each with 17 full original Bullet AI visits.
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 \
 VERA20K_PROJECTILE_RENDER_ASSETS=/tmp/bridge-ifv-assets-1dDM9D/extract \
 VERA20K_BRIDGE_ANIM_ASSETS=/tmp/bridge-debris-input-assets/extract \
-/Users/halvor/Documents/vera20k-dev/.venv/bin/python \
+~/Documents/vera20k-dev/.venv/bin/python \
 tools/projectile_oracle/ifv_bridge_impact.py --check
 ```
 

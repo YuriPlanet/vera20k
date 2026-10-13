@@ -109,7 +109,7 @@ scenario/render regression evidence; images cannot establish sound parity.
 
 ### Validated candidate
 
-The [validation receipt](audio_catalog_owner.validation.json) records the exact
+The validation receipt (`tools/audio_catalog_owner.validation.json`, in git at 1b1a8b43e) records the exact
 Rust file hashes, preserved release manifest, native packet commands/hashes and
 checked witness metadata. Strict retail library tests passed (9,592; 213
 explicitly ignored), the additional retail loading-preparation test passed,

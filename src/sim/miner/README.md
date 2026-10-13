@@ -64,7 +64,7 @@ existing [map observation tool](../../../tools/map_observation.md). Its numeric
 type/actor handles belong to the saved launch; verify them if the population
 changes. Runtime observation is separate from a native comparison.
 
-The [validation receipt](../../../tools/spatial_oracle/harvest_attack_return.validation.json)
+The validation receipt (`tools/spatial_oracle/harvest_attack_return.validation.json`, in git at 1b1a8b43e)
 binds the final Rust source, native output, test logs and release binary. In the
 ordinary run, ore stayed at density 4 for all 226 Attack observations
 (steps 2502..2727). Combat killed the target at 2725; Harvest returned at 2728
@@ -103,7 +103,7 @@ observes cargo, House payment, radio release and resumed harvesting through
 the normal loader and synchronized commands. The packet records the exact
 boundaries of its repair, movement, scheduling and rendering evidence.
 
-The [docking validation receipt](../../../tools/spatial_oracle/refinery_dock.validation.json)
+The docking validation receipt (`tools/spatial_oracle/refinery_dock.validation.json`, in git at 1b1a8b43e)
 binds the final Rust hashes, native comparisons and release run. That ordinary
 run observed two 40-bale deposits paying 1,000 credits each, with radio release
 and collection resuming after each deposit. The final GPU frame was inspected;

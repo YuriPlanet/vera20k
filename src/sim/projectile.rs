@@ -706,26 +706,25 @@ pub fn projectile_shrapnel_count(
 /// same bullet detonating (every stock special weapon but the dog's and the
 /// Terror Drone's jump is Inviso).
 ///
-/// RESIDUAL — **four special effect bodies are not implemented in VERA.**
+/// RESIDUAL — **three special effect bodies are not implemented in VERA.**
 /// MindControl (`capture_manager`), IvanBomb and BombDisarm (`bomb`), Parasite
 /// (`combat/parasite.rs`; the Giant Squid's grapple is its own residual there),
 /// Temporal (`temporal`) and MakesDisguise (`cloak_disguise`, whose Unit body
-/// is its own residual there) run their bodies, and NukeMaker
-/// (`combat::world_receiver`) drops the nuclear warhead. ElectricAssault,
-/// Locomotor, Airstrike and DirectRocker claim the detonation, suppress damage
-/// and shrapnel exactly as native does, and then run the shared tail without
-/// performing their effect.
+/// is its own residual there) run their bodies, NukeMaker
+/// (`combat::world_receiver`) drops the nuclear warhead and Locomotor
+/// (`locomotor_lift`) lifts the vehicle. ElectricAssault, Airstrike and
+/// DirectRocker claim the detonation, suppress damage and shrapnel exactly as
+/// native does, and then run the shared tail without performing their effect.
 /// - Trigger: a stock weapon whose warhead carries one of those flags: the
-///   Tesla Trooper's `[AssaultBolt]` at its own coil, the Magnetron's
-///   `[MagneticBeam]`/`[MagneticBeamE]` and Boris's `[Flare]` (DirectRocker
-///   has no live stock line).
+///   Tesla Trooper's `[AssaultBolt]` at its own coil and Boris's `[Flare]`
+///   (DirectRocker has no live stock line).
 /// - Player effect: the shot lands, plays its animation and leaves its crater,
-///   but no coil is charged, no vehicle lifted and no airstrike called, and
-///   the target takes no damage from that shot.
-/// - Frequency: every game with Magnetrons (Yuri) or Boris.
+///   but no coil is charged and no airstrike called, and the target takes no
+///   damage from that shot.
+/// - Frequency: every game with Boris or Tesla Troopers.
 /// - Downstream risk: each port adds snapshotted, hashed state (the charger
-///   vector, the piggyback lift links, the AirstrikeClass manager) with its
-///   own `SNAPSHOT_VERSION` bump.
+///   vector, the AirstrikeClass manager) with its own `SNAPSHOT_VERSION`
+///   bump.
 ///
 /// The ordinary-arm AreaDamage return2 means near-center Iron Curtain
 /// isolation (489968/489B3B), covered by ifv_area_receipt.json. The shared
@@ -757,7 +756,7 @@ pub enum SpecialDetonationAction {
     Temporal,
     /// `IsLocomotor=` (`+0x15b`), test `0x004694cb` -> the Magnetron's lift,
     /// `TechnoClass::ImbueLocomotor @ 0x00710000` with the warhead's
-    /// `Locomotor=` CLSID. UNIMPLEMENTED.
+    /// `Locomotor=` CLSID (`sim::locomotor_lift`).
     Locomotor,
     /// `Airstrike=` (`+0x16c`), test `0x00469705` ->
     /// `AirstrikeClass::SetTarget @ 0x0041d830`. UNIMPLEMENTED.

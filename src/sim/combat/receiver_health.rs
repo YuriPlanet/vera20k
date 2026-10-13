@@ -20,6 +20,10 @@ pub(super) struct ReceiverHealthCommit {
     pub(super) latch_hostile_hit: bool,
     pub(super) uncloak_after_damage: bool,
     pub(super) threat_feedback: Option<(InternedId, InternedId, i32, i32, i32)>,
+    /// The Psychedelic arm returned result 1 (`0x00701DBA`) before
+    /// TechnoClass's own tail: only the Foot, Infantry and Unit receivers'
+    /// tails follow, and they read the result, not `*damage`.
+    pub(super) psychedelic: bool,
 }
 
 pub(super) fn commit_receiver_health(
@@ -49,21 +53,42 @@ pub(super) fn commit_receiver_health(
     let mut latch_hostile_hit = false;
     let mut uncloak_after_damage = false;
     let mut threat_feedback: Option<(InternedId, InternedId, i32, i32, i32)> = None;
+    // A source not allied with the target's owner.
+    let hostile_source = |target: &GameEntity| {
+        attacker_id != RAD_NO_ATTACKER
+            && attacker_owner.is_some_and(|source_owner| {
+                !crate::map::houses::is_allied_with(
+                    alliances,
+                    interner.resolve(target.owner()),
+                    interner.resolve(source_owner),
+                )
+            })
+    };
     if let Some(target) = entities.get_mut(target_id) {
         let receive_outcome = receiver_outcome?.outcome;
         if let Some(value) = receive_outcome.psychedelic_value {
-            // TechnoClass writes the signed kernel result first. The
-            // first inactive->active transition then runs its callbacks
-            // in order: team-member removal (done by the caller before
-            // this commit), target clear, deferred Hunt queue. Passenger
-            // cargo is unrelated and remains intact.
-            target.berserk.timer = value;
-            if !target.berserk.active {
-                target.berserk.active = true;
-                represented_assign_target(target, None);
-                queue_entity_mission_deferred(target, MissionId::from_known(MissionType::Hunt));
-            }
-            return None;
+            // TechnoClass writes the signed kernel result first, then the
+            // flag. The first activation's callbacks (team removal, target
+            // clear, Hunt) run in the caller, around this commit. Passenger
+            // cargo is unrelated and remains intact. Result 1 follows, new
+            // or already berserk (`0x00701DBA`).
+            target.berserk.start(value);
+            return Some(ReceiverHealthCommit {
+                building_entry_frame,
+                state: damage::DamageState::Damaged,
+                entered_techno_death,
+                reached_exact_zero,
+                postmortem_candidate,
+                fatal_category,
+                positive_postlude: Some((value, true, hostile_source(target))),
+                synchronous_retaliation,
+                smoke_maintenance,
+                healing_only,
+                latch_hostile_hit,
+                uncloak_after_damage,
+                threat_feedback,
+                psychedelic: true,
+            });
         }
         let reached_survivor_postlude = receive_outcome.reached_survivor_postlude;
         let target_type = rules.object(interner.resolve(target.type_ref()))?;
@@ -137,14 +162,7 @@ pub(super) fn commit_receiver_health(
         }
         let survivor_tail = reached_survivor_postlude && !already_dead && !entered_techno_death;
         uncloak_after_damage = survivor_tail;
-        let hostile_source = attacker_id != RAD_NO_ATTACKER
-            && attacker_owner.is_some_and(|source_owner| {
-                !crate::map::houses::is_allied_with(
-                    alliances,
-                    interner.resolve(target.owner()),
-                    interner.resolve(source_owner),
-                )
-            });
+        let hostile_source = hostile_source(target);
         if reached_survivor_postlude && let Some(source_owner) = live_source_owner {
             threat_feedback = Some((
                 target.owner(),
@@ -188,5 +206,6 @@ pub(super) fn commit_receiver_health(
         latch_hostile_hit,
         uncloak_after_damage,
         threat_feedback,
+        psychedelic: false,
     })
 }

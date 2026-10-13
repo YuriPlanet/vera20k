@@ -25,7 +25,7 @@ receipts remain in each Mission row. See [the physical packet](README.md) and
 [input owner](inputs.py) for preparation; retail assets are not stored here.
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.anytown_damage.mission --unit-unlimbo --check
 PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.unit_entry --counter-mode --check
 PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.unit_entry_boundary --check

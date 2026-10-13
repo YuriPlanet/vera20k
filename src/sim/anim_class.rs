@@ -3712,7 +3712,9 @@ mod tests {
                     restored
                         .restore_after_snapshot_load()
                         .expect("live Anim references restore");
-                    restored.retain_in_scenario_process_state_from(&runtime.simulation);
+                    restored.retain_process_state_for_load(
+                        crate::sim::world::SnapshotProcessState::Live(&runtime.simulation),
+                    );
                     assert_eq!(restored.rng_state(), runtime.simulation.rng_state());
                     runtime.replace_simulation(restored);
                     assert_eq!(runtime.simulation.state_hash(), before);

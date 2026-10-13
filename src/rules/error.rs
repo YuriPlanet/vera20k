@@ -9,6 +9,9 @@ use thiserror::Error;
 /// Errors that can occur when parsing INI files or game data definitions.
 #[derive(Debug, Error)]
 pub enum RulesError {
+    #[error("Invalid saved Rules state: {0}")]
+    InvalidSavedState(&'static str),
+
     /// The INI data is not valid UTF-8.
     #[error("INI data is not valid UTF-8: {0}")]
     InvalidUtf8(#[from] std::str::Utf8Error),

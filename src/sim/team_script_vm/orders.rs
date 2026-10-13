@@ -82,9 +82,8 @@ impl Simulation {
         }
     }
 
-    /// `vt+0x480` `Set_Destination(target, 1)`: Infantry `0x0051AA40` (with
-    /// that owner's Jumpjet limitations), Unit `0x00741970` (Jumpjet
-    /// included), Aircraft `0x0041AA80`.
+    /// `vt+0x480` `Set_Destination(target, 1)`: Infantry `0x0051AA40` and Unit
+    /// `0x00741970` (Jumpjet included), Aircraft `0x0041AA80`.
     pub(super) fn team_member_set_destination(
         &mut self,
         id: u64,

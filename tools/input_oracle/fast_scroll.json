@@ -1363,6 +1363,968 @@
       ]
     }
   ],
+  "camera_save_load": [
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "map_editor": 0,
+        "map_rect_width": 100,
+        "name": "interior_pending_discarded",
+        "resize": null,
+        "saved_center": [
+          0,
+          2500
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          640,
+          480
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          0,
+          2500
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          0,
+          2500
+        ],
+        "top_left": [
+          -320,
+          2260
+        ],
+        "visible_cells": [
+          68,
+          80,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "map_editor": 0,
+        "map_rect_width": 100,
+        "name": "west_new_map_clamp",
+        "resize": null,
+        "saved_center": [
+          -9999,
+          2500
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          640,
+          480
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          -2680,
+          2500
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          -2680,
+          2500
+        ],
+        "top_left": [
+          -3000,
+          2260
+        ],
+        "visible_cells": [
+          23,
+          125,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "map_editor": 0,
+        "map_rect_width": 100,
+        "name": "north_new_map_clamp",
+        "resize": null,
+        "saved_center": [
+          0,
+          -9999
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          640,
+          480
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          0,
+          1665
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          0,
+          1665
+        ],
+        "top_left": [
+          -320,
+          1425
+        ],
+        "visible_cells": [
+          40,
+          52,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "map_editor": 0,
+        "map_rect_width": 100,
+        "name": "south_east_new_map_clamp",
+        "resize": null,
+        "saved_center": [
+          9999,
+          9999
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          640,
+          480
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          2680,
+          4320
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          2680,
+          4320
+        ],
+        "top_left": [
+          2360,
+          4080
+        ],
+        "visible_cells": [
+          173,
+          96,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          5,
+          7,
+          60,
+          70
+        ],
+        "map_editor": 0,
+        "map_rect_width": 90,
+        "name": "offset_local_rectangle",
+        "resize": null,
+        "saved_center": [
+          -9000,
+          9999
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          800,
+          600
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          -2000,
+          3420
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          -2000,
+          3420
+        ],
+        "top_left": [
+          -2400,
+          3120
+        ],
+        "visible_cells": [
+          62,
+          144,
+          15,
+          44
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "map_editor": 1,
+        "map_rect_width": 100,
+        "name": "map_editor_retains_outside",
+        "resize": null,
+        "saved_center": [
+          -9999,
+          9999
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          640,
+          480
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          -9999,
+          9999
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          -9999,
+          9999
+        ],
+        "top_left": [
+          -10319,
+          9759
+        ],
+        "visible_cells": [
+          151,
+          497,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "map_editor": 0,
+        "map_rect_width": 100,
+        "name": "viewport_resize_reclamps_saved_center",
+        "resize": [
+          1024,
+          768
+        ],
+        "saved_center": [
+          -9999,
+          2500
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          640,
+          480
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          -2680,
+          2500
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          -2680,
+          2500
+        ],
+        "top_left": [
+          -3000,
+          2260
+        ],
+        "visible_cells": [
+          23,
+          125,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": {
+        "committed": [
+          -2488,
+          2500
+        ],
+        "redraw": 1,
+        "refresh_calls": 2,
+        "requested": [
+          -2488,
+          2500
+        ],
+        "top_left": [
+          -3000,
+          2116
+        ],
+        "visible_cells": [
+          18,
+          120,
+          19,
+          55
+        ]
+      },
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "map_editor": 0,
+        "map_rect_width": 100,
+        "name": "odd_viewport_halves",
+        "resize": null,
+        "saved_center": [
+          0,
+          2500
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          641,
+          481
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          0,
+          2500
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          0,
+          2500
+        ],
+        "top_left": [
+          -320,
+          2260
+        ],
+        "visible_cells": [
+          68,
+          80,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "map_editor": 0,
+        "map_rect_width": 100,
+        "name": "odd_viewport_west_clamp",
+        "resize": null,
+        "saved_center": [
+          -9999,
+          2500
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          641,
+          481
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          -2680,
+          2500
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          -2680,
+          2500
+        ],
+        "top_left": [
+          -3000,
+          2260
+        ],
+        "visible_cells": [
+          23,
+          125,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "map_editor": 0,
+        "map_rect_width": 100,
+        "name": "odd_viewport_east_clamp",
+        "resize": null,
+        "saved_center": [
+          9999,
+          2500
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          641,
+          481
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          2679,
+          2500
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          2679,
+          2500
+        ],
+        "top_left": [
+          2359,
+          2260
+        ],
+        "visible_cells": [
+          112,
+          36,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "map_editor": 0,
+        "map_rect_width": 100,
+        "name": "odd_viewport_south_clamp",
+        "resize": null,
+        "saved_center": [
+          0,
+          9999
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          641,
+          481
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          0,
+          4319
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          0,
+          4319
+        ],
+        "top_left": [
+          -320,
+          4079
+        ],
+        "visible_cells": [
+          128,
+          141,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          2,
+          5,
+          96,
+          89
+        ],
+        "map_editor": 0,
+        "map_rect_width": 100,
+        "name": "normalized_fields_north_clamp",
+        "resize": null,
+        "saved_center": [
+          0,
+          -9999
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          640,
+          480
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          0,
+          1815
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          0,
+          1815
+        ],
+        "top_left": [
+          -320,
+          1575
+        ],
+        "visible_cells": [
+          45,
+          57,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    },
+    {
+      "code_unchanged": true,
+      "input": {
+        "local_size": [
+          2,
+          5,
+          96,
+          89
+        ],
+        "map_editor": 0,
+        "map_rect_width": 100,
+        "name": "normalized_fields_south_clamp",
+        "resize": null,
+        "saved_center": [
+          0,
+          9999
+        ],
+        "saved_requested": [
+          678,
+          901
+        ],
+        "viewport": [
+          640,
+          480
+        ]
+      },
+      "io": [
+        {
+          "bytes": 4,
+          "operation": "write"
+        },
+        {
+          "bytes": 3608,
+          "operation": "write"
+        },
+        {
+          "bytes": 4,
+          "operation": "read"
+        },
+        {
+          "bytes": 3608,
+          "operation": "read"
+        }
+      ],
+      "loaded": {
+        "committed": [
+          0,
+          4140
+        ],
+        "redraw": 1,
+        "refresh_calls": 1,
+        "requested": [
+          0,
+          4140
+        ],
+        "top_left": [
+          -320,
+          3900
+        ],
+        "visible_cells": [
+          122,
+          135,
+          12,
+          36
+        ]
+      },
+      "pointer_registration": [
+        "0x6cf2c0"
+      ],
+      "resized": null,
+      "stream_bytes": 3612
+    }
+  ],
   "camera_sequences": [
     {
       "drag_anchor": [

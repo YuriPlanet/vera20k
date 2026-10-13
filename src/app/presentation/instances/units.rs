@@ -400,10 +400,17 @@ pub(crate) fn build_unit_instances(
         // `[ColorAdd]` colour, and a Berzerk unit the `BerserkColor=` one,
         // into the colour word the composite's blit ORs into each pixel
         // (retail IronCurtainColor=0 selects None, whose OR is zero); VERA
-        // hands that blit no colour word. A Deactivated unit (`+0x1C8`,
-        // `0x0070FBD0`) draws at half the intensity.
-        let (body_tint, body_light) =
-            crate::app::presentation::lighting::techno_effect_light(entity, tint, palette_light, sim);
+        // hands that blit no colour word. A deactivated unit then draws at
+        // half the intensity.
+        let (body_tint, body_light) = crate::app::presentation::lighting::techno_effect_light(
+            entity,
+            tint,
+            palette_light,
+            sim,
+        );
+        let (body_tint, body_light) = crate::app::presentation::lighting::deactivated_unit_light(
+            entity, body_tint, body_light,
+        );
         let center_x: f32 = sx;
         let center_y: f32 = sy;
 
@@ -1734,11 +1741,13 @@ mod tests {
     use crate::sim::world::Simulation;
 
     /// Each `curtain_draw_arm` row (DrawVoxelBody `0x0073BF7B..0x0073C166`
-    /// run natively) whose other arms are idle: not Berzerk
-    /// or Deactivated, no caller colour word and retail's IronCurtainColor=0
-    /// in the active RGB565 format. The intensity the composite takes, at the
-    /// row's frame as the committed `binary_frame`, is the brightness
+    /// run natively) whose colour arms are idle: not Berzerk, no caller
+    /// colour word and retail's IronCurtainColor=0 in the active RGB565
+    /// format. The intensity the composite takes, at the row's frame as the
+    /// committed `binary_frame`, is the brightness
     /// [`crate::app::presentation::lighting::techno_effect_light`] gives the body,
+    /// halved for a Deactivated row
+    /// ([`crate::app::presentation::lighting::deactivated_unit_light`]),
     /// and the colour word VERA does
     /// not draw has no bit in its 16-bit pixel lane (above it the conversion
     /// leaves stale ECX bits, `0x0073BFFD`). VERA's compatibility tint takes
@@ -1757,7 +1766,6 @@ mod tests {
         let mut compared = 0;
         for row in rows {
             if row["berzerk"].as_bool().unwrap()
-                || row["deactivated"].as_bool().unwrap()
                 || int(&row["word"]) != 0
                 || int(&row["iron_color"]) != 0
                 || int(&row["pixel_format"]) != 2
@@ -1766,6 +1774,7 @@ mod tests {
             }
             let mut unit = GameEntity::test_default(1, "HTNK", "Russians", 10, 10);
             unit.elite_flash_frames = int(&row["flash"]);
+            unit.deactivated = row["deactivated"].as_bool().unwrap();
             unit.invulnerability = Some(
                 crate::sim::superweapon::invulnerability::InvulnerabilityState::with_tint(
                     CdTimer::from_raw(int(&row["curtain"][0]), int(&row["curtain"][1])),
@@ -1780,6 +1789,8 @@ mod tests {
             sim.session.binary_frame = int(&row["frame"]) as u32;
             let (lit_tint, lit) =
                 crate::app::presentation::lighting::techno_effect_light(&unit, tint, light, &sim);
+            let (lit_tint, lit) =
+                crate::app::presentation::lighting::deactivated_unit_light(&unit, lit_tint, lit);
             let out = int(&row["out_intensity"]);
             assert_eq!(lit.brightness(), out, "{row}");
             assert_eq!(lit.rows(), light.rows(), "{row}");
@@ -1788,7 +1799,7 @@ mod tests {
             assert_eq!(row["out_word"].as_u64().unwrap() & 0xFFFF, 0, "{row}");
             compared += 1;
         }
-        assert_eq!(compared, 44);
+        assert_eq!(compared, 46);
     }
 
     /// Retail `[AudioVisual] IronCurtainColor=0;4` reads 0 through ReadInt

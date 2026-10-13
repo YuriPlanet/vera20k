@@ -85,17 +85,10 @@ impl ScatterRequests {
     }
 }
 
-/// The current mission's MissionControl `Scatter=` (`0x005B3A00` indexes the
-/// table at `0x00A8E3A8` by `+0xAC`). No mission (-1) reads the byte before
-/// the table, `0x00A8E391`: the second byte of the vtable pointer
-/// `0x007E9E64` the static initializer stores at `0x00A8E390`
-/// (`0x004E6BFD`), which is nonzero, so it reads as permitted.
+/// The current mission's MissionControl `Scatter=` (`0x005B3A00`, `+9`). No
+/// mission (-1) reads it set.
 pub(super) fn mission_permits_scatter(entity: &GameEntity, rules: &RuleSet) -> bool {
-    entity
-        .mission
-        .current()
-        .known()
-        .and_then(|mission| rules.mission_control.entry(mission))
+    crate::sim::mission::control::current_control(rules, &entity.mission)
         .is_none_or(|entry| entry.scatter)
 }
 

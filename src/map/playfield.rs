@@ -33,7 +33,7 @@ impl PlayfieldBounds {
     /// reproduces signed `ClipRect @ 0x00421B60` followed by
     /// `MapClass::Set_Clipped_LocalSize @ 0x00567230`, including wrapping
     /// arithmetic for malformed headers and no post-cap saturation.
-    pub(crate) fn from_map_header(header: &MapHeader) -> Self {
+    pub fn from_map_header(header: &MapHeader) -> Self {
         Self::from_raw_local_size(
             header.width as i32,
             header.height as i32,

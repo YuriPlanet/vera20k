@@ -266,6 +266,13 @@ pub(crate) fn retail_battle_rules() -> Option<RetailBattleRules> {
 /// selection and reader order; this does not load the app's asset bindings.
 #[cfg(test)]
 pub(crate) fn retail_battle_rules_for_map(map_name: &str) -> Option<RetailBattleRules> {
+    retail_mode_rules_for_map(1, map_name)
+}
+
+/// [`retail_battle_rules_for_map`] for another retail skirmish mode, by its
+/// roster id.
+#[cfg(test)]
+pub(crate) fn retail_mode_rules_for_map(mode_id: i32, map_name: &str) -> Option<RetailBattleRules> {
     use crate::rules::retail_sources::select_ini;
 
     let (root, mut assets) = retail_assets()?;
@@ -282,7 +289,7 @@ pub(crate) fn retail_battle_rules_for_map(map_name: &str) -> Option<RetailBattle
     .expect("register retail scenario archives");
     let modes = crate::skirmish_modes::skirmish_modes_from_assets(&assets)
         .expect("load retail mode roster");
-    let mode = crate::skirmish_modes::mode_by_id(&modes, 1).expect("stock Battle mode");
+    let mode = crate::skirmish_modes::mode_by_id(&modes, mode_id).expect("stock skirmish mode");
     let map = crate::map::source::load_map_by_name_or_path_with_assets(&root, map_name, &assets)
         .expect("load requested retail Battle fixture");
     crate::map::theater::load_theater(&mut assets, &map.map.header.theater)

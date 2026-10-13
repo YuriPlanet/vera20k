@@ -1,0 +1,3172 @@
+{
+  "hover_power_off": [
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            25
+          ],
+          [
+            0,
+            99,
+            46
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          -25
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": -1,
+      "name": "powered, on the ground, mission None",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 0,
+      "name": "powered, on the ground, mission Sleep",
+      "path_head": 2,
+      "powered": true,
+      "seed": 2,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            21
+          ],
+          [
+            0,
+            99,
+            34
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          -21
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, on the ground, mission Guard",
+      "path_head": 2,
+      "powered": true,
+      "seed": 3,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 7,
+      "name": "powered, on the ground, mission Enter",
+      "path_head": 2,
+      "powered": true,
+      "seed": 4,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            29
+          ],
+          [
+            0,
+            99,
+            46
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          3,
+          106
+        ],
+        "shove": [
+          true,
+          -29
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 2,
+      "name": "powered, on the ground, mission Move",
+      "path_head": 2,
+      "powered": true,
+      "seed": 5,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            29
+          ],
+          [
+            0,
+            99,
+            34
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          -29
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 1,
+      "mission": -1,
+      "name": "unpowered, one lepton up, mission None",
+      "path_head": 2,
+      "powered": false,
+      "seed": 6,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 1,
+      "mission": 0,
+      "name": "unpowered, one lepton up, mission Sleep",
+      "path_head": 2,
+      "powered": false,
+      "seed": 7,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            20
+          ],
+          [
+            0,
+            99,
+            70
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          20
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 1,
+      "mission": 5,
+      "name": "unpowered, one lepton up, mission Guard",
+      "path_head": 2,
+      "powered": false,
+      "seed": 8,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 1,
+      "mission": 7,
+      "name": "unpowered, one lepton up, mission Enter",
+      "path_head": 2,
+      "powered": false,
+      "seed": 9,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            22
+          ],
+          [
+            0,
+            99,
+            97
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          22
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 1,
+      "mission": 2,
+      "name": "unpowered, one lepton up, mission Move",
+      "path_head": 2,
+      "powered": false,
+      "seed": 10,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": -1,
+      "name": "unpowered, on the ground, mission None",
+      "path_head": 2,
+      "powered": false,
+      "seed": 11,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 0,
+      "name": "unpowered, on the ground, mission Sleep",
+      "path_head": 2,
+      "powered": false,
+      "seed": 12,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "unpowered, on the ground, mission Guard",
+      "path_head": 2,
+      "powered": false,
+      "seed": 13,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 7,
+      "name": "unpowered, on the ground, mission Enter",
+      "path_head": 2,
+      "powered": false,
+      "seed": 14,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 2,
+      "name": "unpowered, on the ground, mission Move",
+      "path_head": 2,
+      "powered": false,
+      "seed": 15,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": -8,
+      "mission": -1,
+      "name": "unpowered, below the ground, mission None",
+      "path_head": 2,
+      "powered": false,
+      "seed": 16,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": -8,
+      "mission": 0,
+      "name": "unpowered, below the ground, mission Sleep",
+      "path_head": 2,
+      "powered": false,
+      "seed": 17,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": -8,
+      "mission": 5,
+      "name": "unpowered, below the ground, mission Guard",
+      "path_head": 2,
+      "powered": false,
+      "seed": 18,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": -8,
+      "mission": 7,
+      "name": "unpowered, below the ground, mission Enter",
+      "path_head": 2,
+      "powered": false,
+      "seed": 19,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": -8,
+      "mission": 2,
+      "name": "unpowered, below the ground, mission Move",
+      "path_head": 2,
+      "powered": false,
+      "seed": 20,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            27
+          ],
+          [
+            0,
+            99,
+            82
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          3,
+          106
+        ],
+        "shove": [
+          true,
+          27
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 240,
+      "mission": -1,
+      "name": "powered, high, mission None",
+      "path_head": 2,
+      "powered": true,
+      "seed": 21,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 240,
+      "mission": 0,
+      "name": "powered, high, mission Sleep",
+      "path_head": 2,
+      "powered": true,
+      "seed": 22,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            30
+          ],
+          [
+            0,
+            99,
+            78
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          3,
+          106
+        ],
+        "shove": [
+          true,
+          30
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 240,
+      "mission": 5,
+      "name": "powered, high, mission Guard",
+      "path_head": 2,
+      "powered": true,
+      "seed": 23,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 240,
+      "mission": 7,
+      "name": "powered, high, mission Enter",
+      "path_head": 2,
+      "powered": true,
+      "seed": 24,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            22
+          ],
+          [
+            0,
+            99,
+            99
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          3,
+          106
+        ],
+        "shove": [
+          true,
+          22
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 240,
+      "mission": 2,
+      "name": "powered, high, mission Move",
+      "path_head": 2,
+      "powered": true,
+      "seed": 25,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            25
+          ],
+          [
+            0,
+            99,
+            94
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          25
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, on the ground, Guard, still",
+      "path_head": 2,
+      "powered": true,
+      "seed": 26,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            23
+          ],
+          [
+            0,
+            99,
+            12
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          3,
+          106
+        ],
+        "shove": [
+          true,
+          -23
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, on the ground, Guard, a destination",
+      "path_head": 2,
+      "powered": true,
+      "seed": 27,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            29
+          ],
+          [
+            0,
+            99,
+            8
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          3,
+          106
+        ],
+        "shove": [
+          true,
+          -29
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, on the ground, Guard, a head",
+      "path_head": 2,
+      "powered": true,
+      "seed": 28,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2944,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          2944,
+          3200,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            25
+          ],
+          [
+            0,
+            99,
+            66
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          6,
+          109
+        ],
+        "shove": [
+          true,
+          25
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, on the ground, Guard, the destination its head",
+      "path_head": 2,
+      "powered": true,
+      "seed": 29,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            27
+          ],
+          [
+            0,
+            99,
+            64
+          ]
+        ],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          6,
+          109
+        ],
+        "shove": [
+          true,
+          27
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, on the ground, Guard, a destination and another head",
+      "path_head": 2,
+      "powered": true,
+      "seed": 30,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "unpowered, on the ground, Guard, still",
+      "path_head": 2,
+      "powered": false,
+      "seed": 31,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "unpowered, on the ground, Guard, a destination",
+      "path_head": 2,
+      "powered": false,
+      "seed": 32,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "unpowered, on the ground, Guard, a head",
+      "path_head": 2,
+      "powered": false,
+      "seed": 33,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2944,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          2944,
+          3200,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "unpowered, on the ground, Guard, the destination its head",
+      "path_head": 2,
+      "powered": false,
+      "seed": 34,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        2688,
+        3200,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          2944,
+          3200,
+          0
+        ],
+        "path_head": -1,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          false,
+          0
+        ]
+      },
+      "head": [
+        2944,
+        3200,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "unpowered, on the ground, Guard, a destination and another head",
+      "path_head": 2,
+      "powered": false,
+      "seed": 35,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            23
+          ],
+          [
+            0,
+            99,
+            36
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          -23
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 1,
+      "mission": 5,
+      "name": "unpowered, one lepton up, Guard, an earlier spin",
+      "path_head": 2,
+      "powered": false,
+      "seed": 36,
+      "shove": [
+        true,
+        -7
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "shove": [
+          true,
+          -7
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": -8,
+      "mission": 5,
+      "name": "unpowered, below the ground, Guard, an earlier spin",
+      "path_head": 2,
+      "powered": false,
+      "seed": 37,
+      "shove": [
+        true,
+        -7
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            24
+          ],
+          [
+            0,
+            99,
+            65
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          24
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1000",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1000,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            28
+          ],
+          [
+            0,
+            99,
+            80
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          3,
+          106
+        ],
+        "shove": [
+          true,
+          28
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1001",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1001,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            28
+          ],
+          [
+            0,
+            99,
+            21
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          -28
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1002",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1002,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            29
+          ],
+          [
+            0,
+            99,
+            86
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          29
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1003",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1003,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            28
+          ],
+          [
+            0,
+            99,
+            82
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          28
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1004",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1004,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            22
+          ],
+          [
+            0,
+            99,
+            44
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          3,
+          106
+        ],
+        "shove": [
+          true,
+          -22
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1005",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1005,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            29
+          ],
+          [
+            0,
+            99,
+            65
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          3,
+          106
+        ],
+        "shove": [
+          true,
+          29
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1006",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1006,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            27
+          ],
+          [
+            0,
+            99,
+            79
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          3,
+          106
+        ],
+        "shove": [
+          true,
+          27
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1007",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1007,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            29
+          ],
+          [
+            0,
+            99,
+            29
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          4,
+          107
+        ],
+        "shove": [
+          true,
+          -29
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1008",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1008,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            25
+          ],
+          [
+            0,
+            99,
+            66
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          25
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1009",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1009,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            23
+          ],
+          [
+            0,
+            99,
+            38
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          3,
+          106
+        ],
+        "shove": [
+          true,
+          -23
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1010",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1010,
+      "shove": [
+        false,
+        0
+      ]
+    },
+    {
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "draws": [
+          [
+            20,
+            30,
+            21
+          ],
+          [
+            0,
+            99,
+            15
+          ]
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "path_head": 2,
+        "powered": false,
+        "rng_indices": [
+          2,
+          105
+        ],
+        "shove": [
+          true,
+          -21
+        ]
+      },
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "height": 0,
+      "mission": 5,
+      "name": "powered, Guard, seed 1011",
+      "path_head": 2,
+      "powered": true,
+      "seed": 1011,
+      "shove": [
+        false,
+        0
+      ]
+    }
+  ],
+  "sparks": [
+    {
+      "deactivated": false,
+      "expected": {
+        "draws": [],
+        "rng_indices": [
+          0,
+          103
+        ],
+        "systems": []
+      },
+      "frame": 3025,
+      "id": 17,
+      "location": [
+        10368,
+        13376,
+        0
+      ],
+      "name": "online",
+      "seed": 1
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            74
+          ],
+          [
+            -100,
+            100,
+            -51
+          ]
+        ],
+        "rng_indices": [
+          3,
+          106
+        ],
+        "systems": [
+          {
+            "coords": [
+              10317,
+              13450,
+              0
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 3085,
+      "id": 17,
+      "location": [
+        10368,
+        13376,
+        0
+      ],
+      "name": "offline, a spark frame, seed 1",
+      "seed": 1
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            -82
+          ],
+          [
+            -100,
+            100,
+            17
+          ]
+        ],
+        "rng_indices": [
+          4,
+          107
+        ],
+        "systems": [
+          {
+            "coords": [
+              10385,
+              13294,
+              0
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 3145,
+      "id": 17,
+      "location": [
+        10368,
+        13376,
+        0
+      ],
+      "name": "offline, a spark frame, seed 2",
+      "seed": 2
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            -35
+          ],
+          [
+            -100,
+            100,
+            -66
+          ]
+        ],
+        "rng_indices": [
+          2,
+          105
+        ],
+        "systems": [
+          {
+            "coords": [
+              10302,
+              13341,
+              0
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 3205,
+      "id": 17,
+      "location": [
+        10368,
+        13376,
+        0
+      ],
+      "name": "offline, a spark frame, seed 3",
+      "seed": 3
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            -7
+          ],
+          [
+            -100,
+            100,
+            26
+          ]
+        ],
+        "rng_indices": [
+          2,
+          105
+        ],
+        "systems": [
+          {
+            "coords": [
+              10394,
+              13369,
+              0
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 3265,
+      "id": 17,
+      "location": [
+        10368,
+        13376,
+        0
+      ],
+      "name": "offline, a spark frame, seed 4",
+      "seed": 4
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            10
+          ],
+          [
+            -100,
+            100,
+            -27
+          ]
+        ],
+        "rng_indices": [
+          2,
+          105
+        ],
+        "systems": [
+          {
+            "coords": [
+              10341,
+              13386,
+              0
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 3325,
+      "id": 17,
+      "location": [
+        10368,
+        13376,
+        0
+      ],
+      "name": "offline, a spark frame, seed 5",
+      "seed": 5
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            69
+          ],
+          [
+            -100,
+            100,
+            -66
+          ]
+        ],
+        "rng_indices": [
+          2,
+          105
+        ],
+        "systems": [
+          {
+            "coords": [
+              10302,
+              13445,
+              0
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 3385,
+      "id": 17,
+      "location": [
+        10368,
+        13376,
+        0
+      ],
+      "name": "offline, a spark frame, seed 6",
+      "seed": 6
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [],
+        "rng_indices": [
+          0,
+          103
+        ],
+        "systems": []
+      },
+      "frame": 3026,
+      "id": 17,
+      "location": [
+        10368,
+        13376,
+        0
+      ],
+      "name": "offline, phase remainder 1",
+      "seed": 1
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [],
+        "rng_indices": [
+          0,
+          103
+        ],
+        "systems": []
+      },
+      "frame": 3024,
+      "id": 17,
+      "location": [
+        10368,
+        13376,
+        0
+      ],
+      "name": "offline, phase remainder 29",
+      "seed": 1
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            10
+          ],
+          [
+            -100,
+            100,
+            69
+          ]
+        ],
+        "rng_indices": [
+          2,
+          105
+        ],
+        "systems": [
+          {
+            "coords": [
+              3146,
+              2052,
+              536
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 110,
+      "id": 9,
+      "location": [
+        3077,
+        2042,
+        536
+      ],
+      "name": "offline, its height above the ground",
+      "seed": 7
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            -4
+          ],
+          [
+            -100,
+            100,
+            -30
+          ]
+        ],
+        "rng_indices": [
+          2,
+          105
+        ],
+        "systems": [
+          {
+            "coords": [
+              -1264,
+              2300,
+              0
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 520,
+      "id": 3,
+      "location": [
+        -1234,
+        2304,
+        0
+      ],
+      "name": "offline, a negative X divides toward zero",
+      "seed": 8
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            -89
+          ],
+          [
+            -100,
+            100,
+            -56
+          ]
+        ],
+        "rng_indices": [
+          2,
+          105
+        ],
+        "systems": [
+          {
+            "coords": [
+              2248,
+              -4410,
+              0
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 529,
+      "id": 3,
+      "location": [
+        2304,
+        -4321,
+        0
+      ],
+      "name": "offline, a negative Y",
+      "seed": 9
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [],
+        "rng_indices": [
+          0,
+          103
+        ],
+        "systems": []
+      },
+      "frame": 528,
+      "id": 3,
+      "location": [
+        2304,
+        -4321,
+        0
+      ],
+      "name": "offline, a negative phase, remainder -1",
+      "seed": 1
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [],
+        "rng_indices": [
+          0,
+          103
+        ],
+        "systems": []
+      },
+      "frame": 500,
+      "id": 3,
+      "location": [
+        2304,
+        -4321,
+        0
+      ],
+      "name": "offline, a negative phase, remainder -29",
+      "seed": 1
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            -66
+          ],
+          [
+            -100,
+            100,
+            -3
+          ]
+        ],
+        "rng_indices": [
+          2,
+          105
+        ],
+        "systems": [
+          {
+            "coords": [
+              25597,
+              4999939,
+              0
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 928,
+      "id": 40,
+      "location": [
+        25600,
+        5000005,
+        0
+      ],
+      "name": "offline, Y shifted past 32 bits",
+      "seed": 10
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            68
+          ],
+          [
+            -100,
+            100,
+            -98
+          ]
+        ],
+        "rng_indices": [
+          5,
+          108
+        ],
+        "systems": [
+          {
+            "coords": [
+              10270,
+              13444,
+              0
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 4294967051,
+      "id": 17,
+      "location": [
+        10368,
+        13376,
+        0
+      ],
+      "name": "offline, a frame past 2^31",
+      "seed": 11
+    },
+    {
+      "deactivated": true,
+      "expected": {
+        "draws": [
+          [
+            -100,
+            100,
+            18
+          ],
+          [
+            -100,
+            100,
+            -98
+          ]
+        ],
+        "rng_indices": [
+          2,
+          105
+        ],
+        "systems": [
+          {
+            "coords": [
+              10270,
+              13394,
+              0
+            ],
+            "house": 0,
+            "owner": 0,
+            "target": 0,
+            "target_coords": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "frame": 96,
+      "id": 2147483632,
+      "location": [
+        10368,
+        13376,
+        0
+      ],
+      "name": "offline, an ID near 2^31",
+      "seed": 12
+    }
+  ]
+}

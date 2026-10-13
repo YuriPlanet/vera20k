@@ -145,13 +145,16 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
     }
 
     fn store_score_volume(&mut self, value: f32) {
-        self.state.persistence.options_profile.score_volume = value;
+        self.state
+            .persistence
+            .options_profile
+            .set_score_volume(f64::from(value));
     }
 
-    fn apply_score_output(&mut self, value: f32) {
-        if let Some(player) = self.state.audio.music_player.as_mut() {
-            player.set_volume(f64::from(value));
-        }
+    fn apply_score_output(&mut self, _value: f32) {
+        self.state
+            .audio
+            .set_score_volume(self.state.persistence.options_profile.score_volume);
     }
 
     fn queue_then_stop_score_zero(&mut self) {

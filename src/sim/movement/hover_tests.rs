@@ -1,6 +1,8 @@
 //! Hover arithmetic against original execution:
 //! `tools/spatial_oracle/hover_speed_altitude.{py,json,meta.json}` runs
-//! SpeedUpdate (0x00515ED0) and the altitude controller (0x00513D20).
+//! SpeedUpdate (0x00515ED0) and the altitude controller (0x00513D20), and
+//! `tools/robot_offline_oracle.{py,json,meta.json}` runs Power_Off
+//! (0x00516BF0).
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
@@ -167,4 +169,87 @@ fn altitude_step_matches_original_controller() {
         rows += 1;
     }
     assert_eq!(rows, 800);
+}
+
+/// Power_Off (0x00516BF0) through [`Simulation::hover_power_off`]: the spin
+/// of a powered Foot (byte or height) neither sleeping nor entering, with
+/// its two Scenario draws, then Stop_Moving (0x00516320) and the base
+/// Power_Off. With no terrain, GetHeight (0x005F5F40) is the Location's Z.
+#[test]
+fn power_off_matches_original_execution() {
+    use crate::sim::world::Simulation;
+
+    let vectors: serde_json::Value =
+        serde_json::from_str(crate::test_fixture::text("tools/robot_offline_oracle.json"))
+            .expect("robot offline oracle vectors");
+    let null = DriveCoord { x: 0, y: 0, z: 0 };
+    let slot = |value: &serde_json::Value| Some(coord(value)).filter(|coord| *coord != null);
+    let mut rows = 0;
+    for row in vectors["hover_power_off"].as_array().unwrap() {
+        let name = row["name"].as_str().unwrap();
+        let mut entity =
+            crate::sim::game_entity::GameEntity::test_default(1, "ROBO", "Americans", 10, 12);
+        let mut locomotor = super::super::locomotor::LocomotorState::for_test_kind(
+            crate::rules::locomotor_type::LocomotorKind::Hover,
+        );
+        locomotor.powered = row["powered"].as_bool().unwrap();
+        locomotor.runtime_payload =
+            super::super::locomotion::piggyback::LocomotorRuntimePayload::Hover(HoverRuntime {
+                destination: slot(&row["destination"]),
+                head: slot(&row["head"]),
+                shove_turning: row["shove"][0].as_bool().unwrap(),
+                shove_steps: int(&row["shove"][1]),
+                ..HoverRuntime::default()
+            });
+        entity.locomotor = Some(locomotor);
+        entity.position.exact_z_leptons = Some(int(&row["height"]));
+        entity.mission.set_current_for_test(
+            crate::sim::mission::MissionId::from_raw(int(&row["mission"])),
+            0,
+        );
+        entity.navigation.path_replay.directions = vec![int(&row["path_head"]) as u8];
+        let mut sim = Simulation::new();
+        sim.substrate.entities.insert(entity);
+        let seed = row["seed"].as_u64().unwrap();
+        sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
+        assert!(sim.hover_power_off(1), "{name}");
+
+        let mut expected = row["expected"].clone();
+        let draws = expected.as_object_mut().unwrap().remove("draws").unwrap();
+        let entity = sim.substrate.entities.get(1).unwrap();
+        let locomotor = entity.locomotor.as_ref().unwrap();
+        let hover = locomotor.hover_runtime().unwrap();
+        let rng = sim.scenario_rng.logical_view();
+        let unslot = |coord: Option<DriveCoord>| {
+            let coord = coord.unwrap_or(null);
+            serde_json::json!([coord.x, coord.y, coord.z])
+        };
+        let actual = serde_json::json!({
+            "shove": [hover.shove_turning, hover.shove_steps],
+            "powered": locomotor.powered,
+            "destination": unslot(hover.destination),
+            "head": unslot(hover.head),
+            "path_head": entity
+                .navigation
+                .path_replay
+                .remaining_directions()
+                .first()
+                .map_or(-1, |&word| i32::from(word)),
+            "rng_indices": [rng.index_a, rng.index_b],
+        });
+        assert_eq!(actual, expected, "{name}");
+        // The recorded draws, replayed from the same seed, end where the
+        // port's did.
+        let mut replay = crate::sim::rng::SimRng::new(seed);
+        for draw in draws.as_array().unwrap() {
+            assert_eq!(
+                replay.next_range_i32_inclusive(int(&draw[0]), int(&draw[1])),
+                int(&draw[2]),
+                "{name}"
+            );
+        }
+        assert_eq!(replay.state(), sim.scenario_rng.state(), "{name}");
+        rows += 1;
+    }
+    assert_eq!(rows, 49);
 }

@@ -3,6 +3,7 @@
 //! they do not claim a full native scenario run. Arithmetic expectations come
 //! from original56BC50/4FA2E0 execution, never from this Rust kernel.
 use super::*;
+use crate::map::houses::HouseAllianceMap;
 use crate::sim::house_state::HouseState;
 use crate::sim::world::{ConcealOutcome, PlacementEvidence};
 
@@ -330,7 +331,7 @@ fn diplomacy_rebuild_preserves_native_foot_and_building_filter_asymmetry() {
         .or_default()
         .insert("AMERICANS".into());
     sim.install_house_alliances(
-        super::HouseAllianceAdmission::Admitted(alliances.clone()),
+        crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(alliances.clone()),
         &rules,
     );
     assert_eq!(

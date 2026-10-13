@@ -40978,7 +40978,7 @@
       ],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "83aa60796fe19650da9e42fe91027b80b36aed50b904b1f7f5b390691c9cec17",
+        "capture_sha256": "b5ad4debd26b73f05a32429131dbf664557f639e6a0c58d3c6993ab2f5b515eb",
         "crop_origin": [
           176,
           336
@@ -41378,7 +41378,7 @@
       "pixels": [],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "f3f576b47e3fc0b0e5e8352561ec5e3f1ef671c734d9f30726dd3bd7bb644813",
+        "capture_sha256": "af6fae9d87079eab1fe2b806c96bfb8a5238672b9fa7e93c0cf9d837b31b94cf",
         "crop_origin": [
           176,
           336
@@ -43256,7 +43256,7 @@
       ],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "f313660a560a2e3ee588f96b91c1d179f37b5654ac72a6bad9daa9b0f1229bb4",
+        "capture_sha256": "39f371fe384b8a2a195b5feda270fcad239034216d33d2ca6aa97d01931fac58",
         "crop_origin": [
           176,
           336
@@ -43691,7 +43691,7 @@
       "pixels": [],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "b600f0f044abaa9861700b1660a3400320bb885943a97a30dd5e89a58abe68e6",
+        "capture_sha256": "5bc1ad074618cb826a3643be68db22e355fc67a581792632b6a0363128d59106",
         "crop_origin": [
           176,
           336
@@ -517230,7 +517230,7 @@
       ],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "eeea2c5c791ebe5ba7042b149ffb66518c40a8f75cdf068ada43bfc0228688bc",
+        "capture_sha256": "2599ebae9de0fb55abcdc5f6be8424149db60a7f6e3f9a72cdca1c80d185749f",
         "crop_origin": [
           176,
           336
@@ -517349,7 +517349,7 @@
       "pixels": [],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "4e23ad1e73664a15cf376660d7c792d90e95576e9a53bd514959b396f15844c0",
+        "capture_sha256": "cce4b814129d3276acd57bf66176fc1b94846830daac6f60f5f9fe90b80fe2e6",
         "crop_origin": [
           176,
           336
@@ -518866,7 +518866,7 @@
       ],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "48707e591e9468e1999c6387f49857bf951ecdc427d7c7cc55477d73fa1a2226",
+        "capture_sha256": "5235733500a35959c7f4442d0c946d01409fdb2d7b3b8542cf9009281207a567",
         "crop_origin": [
           176,
           336
@@ -518985,7 +518985,7 @@
       "pixels": [],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "4c90dcdfad51b53fb496f22ce882435011bb3eb8fee4d3ae168c2799dd291bc9",
+        "capture_sha256": "b6de4f522b7f83ee3e205a89935247bf741ff163b3ea48ccdea883e16aeab3c8",
         "crop_origin": [
           176,
           336
@@ -520457,7 +520457,7 @@
       ],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "9781d6094b079673915cdc564e23755211d95835a931918cddc67e0aa19f45f6",
+        "capture_sha256": "49e316a32647b9924bf0dbd4c13948bfbf68e217d7e228f0c807fec4f1764d5a",
         "crop_origin": [
           176,
           336
@@ -520576,7 +520576,7 @@
       "pixels": [],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "ef0e2b87a16dd055fcc755024220c0e9abfa47362edf5b880eed762cec25b14a",
+        "capture_sha256": "e059f9cb391740c675843006bd631be0ad4325e96cf0a0b6ac458dcbe7e40186",
         "crop_origin": [
           176,
           336
@@ -520693,7 +520693,7 @@
       "pixels": [],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "14afdd1c63a4adba9ad190084a1c02228546a965c9b2ae45995aa700b14284fc",
+        "capture_sha256": "1ef48063a908f799977e5d83bee211d3f62d0fdfc77b1985e947de961ae9d816",
         "crop_origin": [
           176,
           336
@@ -522140,7 +522140,7 @@
       ],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "3e74ca085d6b6d938c711c39d3b74fd2ff9b5f2a04441a3b7676d15838d7f96e",
+        "capture_sha256": "1d14588cdd5ee746f7bb645247776f94357a47190e575faf4712a99707dc34ad",
         "crop_origin": [
           176,
           336
@@ -522240,7 +522240,7 @@
       "pixels": [],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "bbd841d1fca7828eb5b1892602c4d0513cf026ac9a146867f0ca4c69406c6678",
+        "capture_sha256": "c63d4a409c4cdfe0ad0a4e85d9965fda70480eb8d0a6f181036e95edcf5bb804",
         "crop_origin": [
           176,
           336
@@ -523532,7 +523532,7 @@
       ],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "f458a8c4f34d08e4c4ba3b89be8314ab524acfd0d5b98a9c20e261df914d3e71",
+        "capture_sha256": "30799cbbcbe7a83b1980e3a5e4271535b42223bdfc8a99f21b36c3fa2189d1f2",
         "crop_origin": [
           80,
           336
@@ -523651,7 +523651,7 @@
       "pixels": [],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "9bbcc82e4146285cb234f61225b315552b9afb32206a98a60cc4b31deb676028",
+        "capture_sha256": "6e894702f7f6f1bad8831927a2ac867123ff0fa4696f893ebad98421ac433c62",
         "crop_origin": [
           176,
           336
@@ -523768,7 +523768,7 @@
       "pixels": [],
       "production": {
         "actor_id": 1374,
-        "capture_sha256": "1262353de7d469ebe07474271821d61582d94756e071e66bb771b0915e7e172f",
+        "capture_sha256": "3d8f5e546b4d8e48d8e8182fffe9fa2fb222698c9de0c8ed0fe3a5233bac77a3",
         "crop_origin": [
           176,
           336

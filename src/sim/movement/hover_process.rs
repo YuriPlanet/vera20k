@@ -2,7 +2,8 @@
 //! with SpeedUpdate (0x00515ED0), the path/arrival continuation
 //! (0x005164D0), ProcessMovement (0x00514F70) and the path trim
 //! (0x005163B0), plus the Move_To (0x00514D90) and Stop_Moving (0x00516320)
-//! state writes the Foot setter reaches.
+//! state writes the Foot setter reaches and the Power_Off override
+//! (0x00516BF0) that Deactivate and the Unit's docks reach.
 //!
 //! Hover shares the Foot's path words (+0x5E0), timers and latches with
 //! Walk, Drive and Ship, and asks the one `Find_Path` (0x004D3920) and
@@ -33,10 +34,16 @@
 //!   gated on the Hover's Is_Moving_Now), not from this Process tail. WAKE1
 //!   draws no RNG; the residual is the anim's creation order (its AbstractClass
 //!   ID) relative to the objects after this one.
-//! - The vein tag (0x00486920) and DropIn over water below one level
-//!   (vt+0xEC, 0x00514C0C) are not ported: the vein cell has no retail user;
-//!   DropIn needs an unpowered Hover, and nothing in YR powers one off
-//!   (Move_To's ion-storm test 0x0053A130 is constant false).
+//! - The vein tag (0x00486920) is not ported: the vein cell has no retail
+//!   user.
+//! - DropIn over water below one level (vt+0xEC, 0x00514BB7..0x00514C0C) is
+//!   not ported: it is `ObjectClass::DropAsBomb @ 0x005F4160`, the unported
+//!   bridge-fall mechanism (`crew_survival`, #1492). Trigger: an unpowered
+//!   Hover that settles over water, an offline Robot Tank
+//!   (`sim::powered_unit`; Move_To's ion-storm test 0x0053A130 is constant
+//!   false). Effect: it floats at the surface where native's falls in and
+//!   dies. Frequency: uncommon (a Robot Tank over water when its house loses
+//!   its last powered center).
 //! - An explicit map tube word (direction 8, 0x0051503B..0x005152CE) is
 //!   answered as the invalid-tube arm: VERA's tube entry is bound to the Drive
 //!   route adapter. Trigger: a Hover route through a map `[Tubes]` tube.
@@ -230,6 +237,48 @@ impl Simulation {
         }
         self.set_unit_null_destination(id, Some(rules), None, effects);
         self.hover_halt(id);
+    }
+
+    /// `Power_Off` 0x00516BF0, Hover's override of ILocomotion+0x5C: a
+    /// powered Hover (its Is_Powered, 0x00516C70: the powered byte, or any
+    /// height) whose Foot's mission (`+0xAC`, read raw) is neither Sleep nor
+    /// Enter spins as it settles, a Shove of `Random(20, 30)` steps negated
+    /// when `Random(0, 99) < 50` (0x00516C11..0x00516C4B), which Process pays
+    /// back while it stays aloft; a moving one stops (0x00516C4E..0x00516C5B,
+    /// Stop_Moving 0x00516320, which keeps the head); then the base
+    /// Power_Off (0x0055A910) clears the powered byte. Returns false when
+    /// `id` is not on Hover.
+    pub(crate) fn hover_power_off(&mut self, id: u64) -> bool {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if runtime(entity).is_none() {
+            return false;
+        }
+        let powered = hover_is_powered(entity, self.resolved_terrain.as_ref());
+        let settled = matches!(
+            entity.mission.current().known(),
+            Some(MissionType::Sleep | MissionType::Enter)
+        );
+        if powered && !settled {
+            let steps = self.scenario_rng.next_range_i32_inclusive(20, 30);
+            let negate = self.scenario_rng.next_range_i32_inclusive(0, 99) < 50;
+            let hover = self.hover_mut(id).expect("same Hover Foot");
+            hover.shove_turning = true;
+            hover.shove_steps = if negate { steps.wrapping_neg() } else { steps };
+        }
+        let entity = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .expect("same Hover Foot");
+        if runtime(entity).is_some_and(HoverRuntime::is_moving) {
+            hover_stop_moving(entity);
+        }
+        if let Some(locomotor) = entity.locomotor.as_mut() {
+            locomotor.power_off();
+        }
+        true
     }
 
     /// `if (head) { Unit vt+0xF4(head); head = null; }`.

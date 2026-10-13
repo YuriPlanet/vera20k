@@ -23,8 +23,7 @@ use crate::rules::ini_parser::IniSection;
 /// UnitType registry. ART is fixed, but Image/Turret and current reader defaults
 /// can change between reached Rules passes. The final image metadata alone
 /// cannot reconstruct this state. Native controls: mirage_disguise.json.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(test, derive(serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct UnitShpReadState {
     walk_frames: i8,
     firing_frames: i8,

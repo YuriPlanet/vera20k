@@ -333,8 +333,11 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         mask: 1,
         scan_coord: [0, 0, 0],
         standing: ScannerStanding::resolve(Some(&world), &snapshot),
-        attacks_allies: false,
-        scans_allies: false,
+        cells: &world.substrate.occupancy,
+        healer: false,
+        engineer: false,
+        berserk: false,
+        controller_house: None,
         fire_world: Some(&world),
     };
     let walk = WalkArgs {

@@ -152,7 +152,7 @@ fn live_avoid_threats_membership_reads_admitted_house_grid_through_search_and_sn
         &rules,
     );
     restored
-        .restore_map_authority_after_snapshot_load(&rules, &registry)
+        .restore_map_authority_after_snapshot_load(&rules, &registry, None)
         .unwrap();
     assert_eq!(
         restored

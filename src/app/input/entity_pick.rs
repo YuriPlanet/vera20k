@@ -1041,20 +1041,17 @@ fn entities_in_rect(
 /// the link into an approach marker and an installed link, and only the
 /// installed link is treated as linked.
 ///
-/// The powered-down clause reads byte `+0x1C8`, and it is NOT a deploy-transition
-/// flag. An exhaustive instruction search finds exactly three writers —
-/// `TechnoClass__Constructor` 0x006F2C9A initialises it,
-/// `TechnoClass__OnDeployBegin` 0x0070FD62 raises it, and
-/// `TechnoClass__OnUndeployComplete` 0x0070FC6D/0x0070FC7A clear it — and
-/// neither handler has a vtable or DATA reference. Their only callers are
-/// `HouseClass__LostPoweredCenter`, `HouseClass__Removed_From_Game`,
-/// `UnitClass__PerCellProcess` and `HouseClass__RobotTanksBackOnline`. So it is
-/// a *latch* held for as long as a Robot Tank is offline for want of a Robot
-/// Control Center — never raised by an infantry deploy toggle or an ordinary MCV
-/// deploy. VERA previously refused every mid-deploy object here, which is a gate
-/// gamemd does not have: it silently dropped GIs out of a box dragged over them
-/// during their deploy animation. That gate is gone; the offline latch itself
-/// waits on the Robot Control Center mechanism, which has no owner yet.
+/// The powered-down clause reads byte `+0x1C8` (`0x006FC041`), and it is NOT a
+/// deploy-transition flag. An exhaustive instruction search finds exactly three
+/// writers — the `TechnoClass` constructor (`0x006F2C9A`), Deactivate
+/// (`0x0070FD62`, Ghidra's `OnDeployBegin`) and Reactivate
+/// (`0x0070FC6D`/`0x0070FC7A`, Ghidra's `OnUndeployComplete`), reached only from
+/// `HouseClass::LostPoweredCenter`, `Removed_From_Game`,
+/// `UnitClass::Per_Cell_Process` and `RobotTanksBackOnline`. So it is a *latch*
+/// held for as long as a Robot Tank is offline for want of a Robot Control
+/// Center (`GameEntity::deactivated`, owned by `sim::powered_unit`), never
+/// raised by an infantry deploy toggle or an ordinary MCV deploy: a GI in its
+/// deploy animation stays band-selectable.
 pub(crate) fn selection_dynamic_prefix(
     entity: &crate::sim::game_entity::GameEntity,
     entities: &EntityStore,
@@ -1066,7 +1063,7 @@ pub(crate) fn selection_dynamic_prefix(
     if entity.category == EntityCategory::Structure {
         return false;
     }
-    if entity.slave.owner().is_some() {
+    if entity.slave.owner().is_some() || entity.deactivated {
         return false;
     }
     if entity.bunker_link.installed_in().is_some() {
@@ -1433,11 +1430,10 @@ mod tests {
     }
 
     /// `CanBeSelectedNow`'s byte `+0x1C8` is the Robot-Tank-offline latch, not a
-    /// deploy-transition flag: its only writers are `TechnoClass__OnDeployBegin`
-    /// 0x0070FD62 and `TechnoClass__OnUndeployComplete` 0x0070FC6D/0x0070FC7A,
-    /// reached only from the powered-center and robot-tank paths. A GI part-way
-    /// through its deploy toggle therefore stays band-selectable in gamemd, and
-    /// must here too.
+    /// deploy-transition flag: its only writers are Deactivate 0x0070FD62 and
+    /// Reactivate 0x0070FC6D/0x0070FC7A, reached only from the powered-center
+    /// and robot-tank paths. A GI part-way through its deploy toggle therefore
+    /// stays band-selectable in gamemd, and must here too.
     #[test]
     fn item83_a_deploying_object_is_still_band_selectable() {
         let rules = item83_rules();

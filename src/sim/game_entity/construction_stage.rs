@@ -2,7 +2,9 @@
 //! byte. World scheduling/effects use these owner APIs without writable views.
 
 use super::GameEntity;
-use crate::sim::building_construction::{BuildingBodyMode, BuildingDown, BuildingUp, PackUpFrame};
+#[cfg(test)]
+use crate::sim::building_construction::BuildingUp;
+use crate::sim::building_construction::{BuildingBodyMode, BuildingDown, PackUpFrame};
 use crate::sim::game_options::GameOptions;
 #[cfg(test)]
 use crate::sim::mission::MissionId;
@@ -15,6 +17,7 @@ impl GameEntity {
             .expect("building body requires Structure")
             .bind_control(control);
     }
+    #[cfg(test)]
     pub(crate) fn install_building_up(&mut self, entry: BuildingUp, now: i32) {
         entry.install(self, now);
     }

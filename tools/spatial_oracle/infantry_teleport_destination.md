@@ -197,7 +197,7 @@ closure; this owner repair and the native caller comparisons resolve it.
 After incoming main1024, the same-binary absent-tag control recovers its
 CDA10AEE6EA0AE46 hash. All601 complete rows match after removing only
 `tick_result.state_hash`; the new Rust baseline is534C7788BB49A3D8. The
-[retained control](infantry_teleport_replay/main1024/README.md) supports an
+retained control (`tools/spatial_oracle/infantry_teleport_replay/main1024/README.md`, in git at 1b1a8b43e) supports an
 independent strict row check. Main1025 subsequently changes only Ghidra
 exporter tools/docs;45 tool tests pass and every Rust file plus all other
 frozen Python files remain exact. No native coverage is extended by that merge.

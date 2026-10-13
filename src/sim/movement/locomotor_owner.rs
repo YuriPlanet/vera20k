@@ -6,10 +6,15 @@
 //! Constructor4AF540 initializes its own destination/head/track/speed state.
 //! END4AF930 transfers the stashed object; owner742587 / FootAI4DAEC3 then
 //! release the displaced complete instance, including its private retained
-//! state. The generic piggyback gate and other class policies stay with
+//! state. The END owner is [`Simulation::try_end_piggyback`] /
+//! [`Simulation::end_admitted_piggyback`]; other class policies stay with
 //! their existing owners. These helpers do not mutate Cell occupation.
+//!
+//! [`Simulation::try_end_piggyback`]: crate::sim::world::Simulation::try_end_piggyback
+//! [`Simulation::end_admitted_piggyback`]: crate::sim::world::Simulation::end_admitted_piggyback
 
 use crate::rules::locomotor_type::LocomotorKind;
+use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 
 /// The Unit setter's Drive for a Teleporter (`0x007425E6..0x0074277E`): the
@@ -19,6 +24,9 @@ use crate::sim::game_entity::GameEntity;
 /// whatever is active without the setter asking its class again: a miner
 /// whose Chrono Warp Teleport ends onto the Drive it suspended gets a second
 /// Drive over that one.
+///
+/// The Teleporter arm is skipped while a Magnetron holds the object
+/// (`0x007423E1..0x00742405`), so the END here is never a lift's.
 pub(crate) fn begin_drive_for_teleporter(entity: &mut GameEntity, binary_frame: u32) -> bool {
     let Some(locomotor) = entity.locomotor.as_ref() else {
         return false;
@@ -30,7 +38,8 @@ pub(crate) fn begin_drive_for_teleporter(entity: &mut GameEntity, binary_frame: 
         return true;
     }
     if piggyback_end_admitted(entity) {
-        end_admitted_piggyback(entity);
+        let ended = end_piggyback(entity);
+        debug_assert!(!ended.lift_ended, "a lifted object takes no Teleporter arm");
     }
     entity
         .locomotor
@@ -38,24 +47,29 @@ pub(crate) fn begin_drive_for_teleporter(entity: &mut GameEntity, binary_frame: 
         .is_some_and(|locomotor| locomotor.begin_piggyback(LocomotorKind::Drive, binary_frame))
 }
 
-/// The callers that QueryInterface the active locomotor for IPiggyback and
-/// END it when its `Is_Ok_To_End` allows, whatever its class: Foot
-/// Enter_Idle_Mode (`0x004D831A..0x004D8376`), the Foot setter's NavQueue arm
-/// (`0x004D9309..0x004D937C`) and the Unit setter's pad arm
-/// (`0x0074250E..0x0074258A`, which asks `Is_Piggybacking` first; the gates
-/// below include the stash).
-pub(crate) fn try_end_piggyback(entity: &mut GameEntity) -> bool {
-    piggyback_end_admitted(entity) && end_admitted_piggyback(entity)
-}
-
-/// The active locomotor's END gate for an entity-level caller. VERA installs
-/// two piggybacks, each over whatever is active: a Drive (the Unit setter's
-/// Teleporter arm), behind the Drive's own gate, and the Chrono Warp's
-/// Teleport (`SuperClass::Launch @ 0x006CCB4A`), behind Teleport's
-/// ([`teleport_end_admitted`]). Each END restores the next object of the
+/// The active locomotor's END gate (`IPiggyback::Is_Ok_To_End`). VERA
+/// installs three piggybacks, each over whatever is active: a Drive (the
+/// Unit setter's Teleporter arm), behind the Drive's own gate, the Chrono
+/// Warp's Teleport (`SuperClass::Launch @ 0x006CCB4A`), behind Teleport's
+/// ([`teleport_end_admitted`]), and the Magnetron's Jumpjet
+/// (`TechnoClass::ImbueLocomotor @ 0x00710000`), behind Jumpjet's
+/// ([`jumpjet_end_admitted`]). Each END restores the next object of the
 /// chain.
 pub(crate) fn piggyback_end_admitted(entity: &GameEntity) -> bool {
-    drive_end_admitted(entity) || teleport_end_admitted(entity)
+    drive_end_admitted(entity) || teleport_end_admitted(entity) || jumpjet_end_admitted(entity)
+}
+
+/// `JumpjetLocomotionClass::Is_Ok_To_End @ 0x0054DB00`: not moving (its
+/// Is_Moving, the moving byte), a stash (`+0x94`), the constructor-only
+/// `+0x91` clear, and no lift or one that may end (Foot `+0x6AD` without
+/// `+0x6AE`, `0x0054DB24..0x0054DB36`).
+fn jumpjet_end_admitted(entity: &GameEntity) -> bool {
+    entity.locomotor.as_ref().is_some_and(|locomotor| {
+        locomotor.piggyback.is_some()
+            && locomotor
+                .jumpjet_runtime()
+                .is_some_and(|runtime| !runtime.moving())
+    }) && (!entity.foot_locomotor_swap_active || entity.lift_may_end)
 }
 
 /// `TeleportLocomotionClass::Is_Ok_To_End @ 0x00719F30`: not moving (its
@@ -90,25 +104,113 @@ fn drive_end_admitted(entity: &GameEntity) -> bool {
         && !entity.foot_locomotor_swap_active
 }
 
-/// END of the active piggyback, restoring the object it suspended: one link
-/// of the chain. The caller has already evaluated its END gate, at its own
-/// required point in the callback sequence. Keep that timing separate from
-/// the instance transfer.
-pub(crate) fn end_admitted_piggyback(entity: &mut GameEntity) -> bool {
+/// What one END did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PiggybackEnd {
+    /// The stash became active again (`S_OK`); without one, `S_FALSE`.
+    restored: bool,
+    /// Jumpjet's END ended a Magnetron lift (`+0x6AD` or `+0x6AE` was up).
+    lift_ended: bool,
+}
+
+/// `End_Piggyback` of the active class, its owner writes then the transfer
+/// of the object it suspended: one link of the chain. Drive's
+/// (`0x004AF930`) only transfers. Teleport's (`0x00719EE0`) first clears the
+/// drop and warp credits (`+0x428`, `+0x42C`). Jumpjet's (`0x0054DA50`)
+/// first ends a Magnetron lift (`+0x6AD`, `+0x6AE`) and then clears the
+/// credits. The caller has already evaluated its END gate, at its own
+/// required point in the callback sequence.
+fn end_piggyback(entity: &mut GameEntity) -> PiggybackEnd {
     let physical = super::foot_coordinate::current_coordinate(entity);
-    let Some(locomotor) = entity.locomotor.as_mut() else {
-        return false;
+    let Some(kind) = entity
+        .locomotor
+        .as_ref()
+        .map(|locomotor| locomotor.active_kind())
+    else {
+        return PiggybackEnd {
+            restored: false,
+            lift_ended: false,
+        };
     };
-    let restored = locomotor.end_piggyback();
+    let mut lift_ended = false;
+    if kind == LocomotorKind::Jumpjet && (entity.foot_locomotor_swap_active || entity.lift_may_end)
+    {
+        entity.foot_locomotor_swap_active = false;
+        entity.lift_may_end = false;
+        lift_ended = true;
+    }
+    if matches!(kind, LocomotorKind::Jumpjet | LocomotorKind::Teleport) {
+        entity.manipulated_by = None;
+        entity.warped_by_house = None;
+    }
+    let restored = entity
+        .locomotor
+        .as_mut()
+        .is_some_and(|locomotor| locomotor.end_piggyback());
     if restored {
         // END transfers the controller without moving Object+9C. Restored
         // altitude is controller state, not an addition to this exact XYZ.
         entity.position.exact_z_leptons = Some(physical.z);
     }
-    restored
+    PiggybackEnd {
+        restored,
+        lift_ended,
+    }
 }
 
 impl crate::sim::world::Simulation {
+    /// The callers that QueryInterface the active locomotor for IPiggyback
+    /// and END it when its `Is_Ok_To_End` allows, whatever its class: Foot
+    /// AI's tail (`0x004DAE5F..0x004DAEC3`), Foot Enter_Idle_Mode
+    /// (`0x004D831A..0x004D8376`), the Foot setter's NavQueue arm
+    /// (`0x004D9309..0x004D937C`) and the Unit setter's pad arm
+    /// (`0x0074250E..0x0074258A`, which asks `Is_Piggybacking` first; the
+    /// gates include the stash).
+    pub(crate) fn try_end_piggyback(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
+        self.substrate
+            .entities
+            .get(id)
+            .is_some_and(piggyback_end_admitted)
+            && self.end_admitted_piggyback(id, rules)
+    }
+
+    /// END of the active piggyback ([`end_piggyback`]) for a caller that has
+    /// evaluated its gate. Jumpjet's END that ends a lift also sends a
+    /// computer house's `ResourceGatherer=` back to Harvest (`0x0054DA92..
+    /// 0x0054DABB`, `Queue_Mission(Harvest, 0)`), before the transfer
+    /// natively; the two touch separate state. Returns whether the stash
+    /// became active.
+    pub(crate) fn end_admitted_piggyback(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
+        let Some(entity) = self.substrate.entities.get_mut(id) else {
+            return false;
+        };
+        let ended = end_piggyback(entity);
+        if ended.lift_ended
+            && let Some(entity) = self.substrate.entities.get(id)
+        {
+            let computer = self
+                .houses
+                .get(&entity.owner())
+                .is_some_and(|house| !house.is_human);
+            let gatherer = rules
+                .and_then(|rules| self.object_type(entity.type_ref(), rules))
+                .is_some_and(|object| object.resource_gatherer);
+            if computer && gatherer {
+                let now = self.session.binary_frame;
+                let _ = self.mission_queue_exact(
+                    id,
+                    crate::sim::mission::MissionId::from_known(
+                        crate::sim::mission::MissionType::Harvest,
+                    ),
+                    0,
+                    now,
+                    &crate::sim::mission::authority::EntityReadyInputProvider,
+                );
+            }
+        }
+        ended.restored
+    }
+
     /// The active locomotor's `Mark_All_Occupation_Bits(0)` (ILocomotion
     /// `+0x9C`): Drive `0x004B48D0` / Ship `0x006A3F00` release their track
     /// occupation, Walk `0x0075CA30`, Teleport `0x0071A090` and Jumpjet

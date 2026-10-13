@@ -166,8 +166,20 @@ pub struct WarheadType {
     pub temporal: bool,
     /// Changes target's locomotor (magnetron). `WarheadTypeClass+0x15B`
     /// (ReadINI `0x0075D87C`), read by
-    /// `TechnoClass::What_Weapon_Should_I_Use @ 0x006F352E`.
+    /// `TechnoClass::What_Weapon_Should_I_Use @ 0x006F352E` and by the
+    /// detonation's locomotor arm (`BulletClass::DetonateAtCoord @
+    /// 0x004694CB`, `sim::locomotor_lift`).
     pub is_locomotor: bool,
+    /// `Locomotor=`: the class an `IsLocomotor=` hit installs on its victim.
+    /// `WarheadTypeClass+0x15C`, read at `0x0075D88F` (key string
+    /// `0x0084444C`) by `INIClass::ReadCLSID @ 0x00527920` (`char[128]`,
+    /// trimmed), whose default is the field's constructor value: the Teleport
+    /// GUID copied from `0x007E9A90` at `0x0075CFE8`. An absent or unparseable
+    /// value keeps it ([`resolve_installed_kind`]). Stock `LocomotorBeam`
+    /// names the Jumpjet.
+    ///
+    /// [`resolve_installed_kind`]: crate::rules::locomotor_type::resolve_installed_kind
+    pub locomotor: crate::rules::locomotor_type::LocomotorKind,
     /// Terror drone / attack dog / squid attach. `WarheadTypeClass+0x159`
     /// (ReadINI `0x0075D84E`, key string `0x0081717C`), tested by the
     /// detonation chain at `BulletClass::DetonateAtCoord @ 0x004693d3`.
@@ -385,6 +397,9 @@ impl WarheadType {
             wall_absolute_destroyer: section.read_bool("WallAbsoluteDestroyer", false),
             temporal: section.read_bool("Temporal", false),
             is_locomotor: section.read_bool("IsLocomotor", false),
+            locomotor: crate::rules::locomotor_type::resolve_installed_kind(
+                section.read_name("Locomotor", 0x80),
+            ),
             parasite: section.read_bool("Parasite", false),
             psychedelic: section.read_bool("Psychedelic", false),
             ivan_bomb: section.read_bool("IvanBomb", false),

@@ -34,7 +34,7 @@ Rust projection, promotion guard and input/evidence file stays byte-identical.
 The earlier ResidentRepair compatibility records, including their then-current
 sidecar hashes, remain unchanged historical records.
 
-The receipt intentionally excludes `bridge_wood_validation.json`, whose owner
+The receipt intentionally excludes `bridge_wood_validation.json` (in git at 1b1a8b43e), whose owner
 records the final integrated Rust/production candidate separately. This loader
 proof does not establish compatibility for other binary or harness changes.
 

@@ -110,6 +110,9 @@ impl Simulation {
         }
         // `0x0043FB6D..0x0043FBE3`: the working sound precedes the dispatcher.
         self.building_working_sound_edge(id, operational, rules, frame_effects);
+        // The dispatcher opens with its `PowersUnit=` arms
+        // (`sim::powered_unit`).
+        self.powered_center_edge(id, operational, rules, frame_effects);
         // The `0x004549B0` off edge frees a Psychic Tower's captives
         // (`0x00454B3D`) before its gap and power slots.
         if !operational {
@@ -222,14 +225,7 @@ impl Simulation {
         }
         self.fog.alliances = self.house_alliances.clone();
         let config = self.sight_reveal_config(rules);
-        let heights = config
-            .reveal_by_height()
-            .then(|| {
-                self.path_grid
-                    .as_ref()
-                    .map(|grid| grid.ground_height_grid())
-            })
-            .flatten();
+        let heights = self.sight_height_grid(&config);
         let ability = vision::entity_has_sight_ability(entity, &self.interner, rules);
         vision::reveal_entity_vision(
             &mut self.fog,

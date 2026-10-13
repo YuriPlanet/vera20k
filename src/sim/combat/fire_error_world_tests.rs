@@ -569,5 +569,36 @@ fn a_natural_scanner_passes_over_an_unnatural_candidate() {
     assert_eq!(scan("HOUND"), None);
 }
 
+/// T39 (`0x006FC73C`): a Foot target whose layer query (vt+0x78) is not the
+/// ground is ILLEGAL to a weapon without `AA=`. An aircraft landing below two
+/// levels is not high flying, so T38 lets it through, but its Fly already
+/// answers Top (`0x004CFCF0`): a tank's gun cannot shoot it until it is down.
+#[test]
+fn a_tank_gun_cannot_shoot_an_aircraft_landing() {
+    let rules = rules();
+    let mut sim = bridge_scene("TANK");
+    let target = sim.substrate.entities.get_mut(2).unwrap();
+    target.category = EntityCategory::Aircraft;
+    target.locomotor = Some(
+        crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+            crate::rules::locomotor_type::LocomotorKind::Fly,
+        ),
+    );
+    target.lifecycle.cell_marked = true;
+    target.position.exact_z_leptons = Some(100);
+    assert_eq!(
+        bridge_code(&sim, &rules, "TANK"),
+        FireError::Illegal,
+        "landing"
+    );
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .position
+        .exact_z_leptons = Some(0);
+    assert_eq!(bridge_code(&sim, &rules, "TANK"), FireError::Ok, "landed");
+}
+
 #[path = "fire_error_cell_tests.rs"]
 mod cell_queries;

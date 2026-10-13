@@ -1471,18 +1471,25 @@ fn check_initialized_no_order_contexts(names: &[&str]) {
                 .any(|call| call["kind"] == "Event_Construct")
         );
         let owner = sim.interner.get("Americans").unwrap();
-        assert_eq!(
-            sim.ordinary_ground_foot_cell_input(
-                owner,
-                id,
-                fixture_cell(&row["inputs"][0]["clicked"]),
-                &rules
-            )
-            .unwrap()
-            .unwrap(),
-            None,
-            "{name}: original input emits no Move event"
-        );
+        // Production order: the click producer keeps only the objects whose
+        // ClickedAction can send (`click_order_receivers`, the Berserk
+        // refusal), then asks the move query.
+        let berserk_refused = sim.click_order_receivers(&[id]).is_empty();
+        assert_eq!(berserk_refused, name.contains("berserk"), "{name}");
+        if !berserk_refused {
+            assert_eq!(
+                sim.ordinary_ground_foot_cell_input(
+                    owner,
+                    id,
+                    fixture_cell(&row["inputs"][0]["clicked"]),
+                    &rules
+                )
+                .unwrap()
+                .unwrap(),
+                None,
+                "{name}: original input emits no Move event"
+            );
+        }
         assert_ground_command_fields(&sim, id, row, &click["after"]);
     }
 }

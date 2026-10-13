@@ -12,7 +12,7 @@ import struct
 from unicorn import Uc, UC_ARCH_X86, UC_HOOK_CODE, UC_MODE_32
 from unicorn.x86_const import (
     UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESP,
-    UC_X86_REG_FPCW,
+    UC_X86_REG_FPCW, UC_X86_REG_EBX, UC_X86_REG_ESI,
 )
 
 from tools import native_oracle
@@ -854,6 +854,134 @@ def camera_lifecycle_inputs() -> list[dict]:
     return [{**base, "name": name, "steps": steps} for name, steps in cases]
 
 
+def code_guard(u):
+    return [(native_oracle.IMAGE_BASE + rva, bytes(u.mem_read(native_oracle.IMAGE_BASE + rva, size)))
+            for rva, _raw, size, _virtual, flags in native_oracle._sections(native_oracle.image_bytes())
+            if flags & 0x20000000 and size]
+
+
+def check_code(u, guard):
+    assert all(bytes(u.mem_read(at, len(raw))) == raw for at, raw in guard)
+
+
+class SavedViewFixture(CameraFixture):
+    def sink(self, u, pc, size, data):
+        if pc == 0x6D8B30:
+            # Deliberately remove the existing camera fixture's refresh sink.
+            # The original updater and projection arithmetic now run.
+            self.refresh_calls += 1
+            return
+        if pc == 0x6C8C40:
+            return_from_sink(u, 0, 123)
+            return
+        if pc in (0x6CF240, 0x6CF2C0):
+            self.registrations.append(hex(pc))
+            return_from_sink(u, 8 if pc == 0x6CF240 else 12, 0)
+            return
+        if pc in (SCRATCH + 0x20200, SCRATCH + 0x20210):
+            sp = u.reg_read(UC_X86_REG_ESP)
+            receiver, pointer, length, out = struct.unpack('<4I', u.mem_read(sp + 4, 16))
+            assert receiver == self.stream
+            self.io.append(dict(operation='read' if pc == SCRATCH + 0x20200 else 'write', bytes=length))
+            if pc == SCRATCH + 0x20210:
+                self.payload.extend(u.mem_read(pointer, length))
+            else:
+                assert self.cursor + length <= len(self.payload)
+                u.mem_write(pointer, bytes(self.payload[self.cursor:self.cursor + length]))
+                self.cursor += length
+            if out:
+                put32(u, out, length)
+            return_from_sink(u, 16, 0)
+            return
+        super().sink(u, pc, size, data)
+
+
+def native_saved_view(spec):
+    setup = dict(camera_inputs()[0])
+    setup['name'] = spec['name']
+    setup['initial_center_seed'] = [0, 2500]
+    setup['viewport'] = spec['viewport']
+    setup['map_rect_width'] = spec['map_rect_width']
+    setup['local_size'] = spec['local_size']
+    f = SavedViewFixture(setup)
+    u, obj = f.machine, f.tactical
+    u.mem_map(SCRATCH + 0x20000, 0x1000)
+    f.registrations, f.payload, f.io, f.cursor = [], bytearray(), [], 0
+    f.stream = SCRATCH + 0x20000
+    put32(u, f.stream, SCRATCH + 0x20100)
+    put32(u, SCRATCH + 0x2010C, SCRATCH + 0x20200)
+    put32(u, SCRATCH + 0x20110, SCRATCH + 0x20210)
+    guard = code_guard(u)
+    u.reg_write(UC_X86_REG_ESI, obj)
+    u.reg_write(UC_X86_REG_EBX, 0)
+    native_oracle.run_checked(u, 0x6D1DC5, 0x6D1E24)
+    put32(u, obj, 0x7F4348)
+    put32(u, obj + 0xE0, 0)  # Empty unidentified saved pointer region.
+    put32(u, 0xB0CE30, spec['viewport'][0])
+    put32(u, 0xB0CE34, spec['viewport'][1])
+    u.mem_write(0xA8ED6B, bytes([spec['map_editor']]))
+    u.mem_write(obj + 0xD64, struct.pack('<ii', *spec['saved_center']))
+    u.mem_write(obj + 0xD74, struct.pack('<ii', *spec['saved_requested']))
+    u.mem_write(obj + 0xB0, struct.pack('<ii', 123456, -123456))
+    u.mem_write(obj + 0xD80, b'\x5A' * 16)
+    f.invoke(0x6DBE00, [obj, f.stream, 0])
+    saved_size = len(f.payload)
+    # Distinct outgoing view, overwritten by actual native IStream Load.
+    u.mem_write(obj + 0xD64, struct.pack('<ii', 6789, 8765))
+    u.mem_write(obj + 0xD74, struct.pack('<ii', -6789, -8765))
+    f.refresh_calls = 0
+    f.invoke(0x6DBD20, [obj, f.stream])
+
+    def state():
+        return dict(committed=[i32(u, obj + 0xD64), i32(u, obj + 0xD68)],
+                    requested=[i32(u, obj + 0xD74), i32(u, obj + 0xD78)],
+                    top_left=[i32(u, obj + 0xB0), i32(u, obj + 0xB4)],
+                    visible_cells=list(struct.unpack('<4i', u.mem_read(obj + 0xD80, 16))),
+                    redraw=u.mem_read(obj + 0xD7D, 1)[0],
+                    refresh_calls=f.refresh_calls)
+
+    loaded = state()
+    resized = None
+    if spec.get('resize'):
+        width, height = spec['resize']
+        put32(u, 0x886FA8, width)
+        put32(u, 0x886FAC, height)
+        rect = SCRATCH + 0x20300
+        u.mem_write(rect, struct.pack('<4i', 0, 0, width, height))
+        f.invoke(0x6D5F60, [rect])
+        resized = state()
+    check_code(u, guard)
+    assert saved_size == 0xE1C and f.cursor == saved_size
+    return dict(input=spec, loaded=loaded, resized=resized, stream_bytes=saved_size,
+                io=f.io, pointer_registration=f.registrations,
+                code_unchanged=True)
+
+
+def saved_view_inputs():
+    cases = []
+    for name, center, editor, width, local, viewport, resize in [
+        ('interior_pending_discarded', [0, 2500], 0, 100, [0,0,100,100], [640,480], None),
+        ('west_new_map_clamp', [-9999,2500], 0, 100, [0,0,100,100], [640,480], None),
+        ('north_new_map_clamp', [0,-9999], 0, 100, [0,0,100,100], [640,480], None),
+        ('south_east_new_map_clamp', [9999,9999], 0, 100, [0,0,100,100], [640,480], None),
+        ('offset_local_rectangle', [-9000,9999], 0, 90, [5,7,60,70], [800,600], None),
+        ('map_editor_retains_outside', [-9999,9999], 1, 100, [0,0,100,100], [640,480], None),
+        ('viewport_resize_reclamps_saved_center', [-9999,2500], 0, 100, [0,0,100,100], [640,480], [1024,768]),
+        ('odd_viewport_halves', [0,2500], 0, 100, [0,0,100,100], [641,481], None),
+        ('odd_viewport_west_clamp', [-9999,2500], 0, 100, [0,0,100,100], [641,481], None),
+        ('odd_viewport_east_clamp', [9999,2500], 0, 100, [0,0,100,100], [641,481], None),
+        ('odd_viewport_south_clamp', [0,9999], 0, 100, [0,0,100,100], [641,481], None),
+        ('normalized_fields_north_clamp', [0,-9999], 0, 100, [2,5,96,89], [640,480], None),
+        ('normalized_fields_south_clamp', [0,9999], 0, 100, [2,5,96,89], [640,480], None),
+    ]:
+        cases.append(dict(name=name, saved_center=center,
+                          saved_requested=[678,901], map_editor=editor,
+                          map_rect_width=width, local_size=local,
+                          viewport=viewport, resize=resize))
+    return cases
+
+
+
 def generate() -> dict:
     cases = []
     for case in input_cases():
@@ -873,14 +1001,15 @@ def generate() -> dict:
             "focus_sequences": [native_camera_sequence(case) for case in focus_inputs()],
             "camera_lifecycle_sequences": [native_camera_sequence(case) for case in camera_lifecycle_inputs()],
             "throttle_cases": [{**case, "expected": native_throttle(case)}
-                               for case in throttle_inputs()]}
+                               for case in throttle_inputs()],
+            "camera_save_load": [native_saved_view(case) for case in saved_view_inputs()]}
 
 
 if __name__ == "__main__":
     finish_vectors(
         generate, Path(__file__).with_suffix(".json"),
         provenance=lambda: provenance(
-            scope="Full original Tactical_RightDrag_Pan: supplied cursor/viewport/OS metrics and scroll settings; original gate, threshold, edge boost, arithmetic, call order and cursor table",
+            scope="Full original Tactical_RightDrag_Pan: supplied cursor/viewport/OS metrics and scroll settings; original gate, threshold, edge boost, arithmetic, call order and cursor table; thirteen original Tactical Save/Load/resize controls with derived viewport projection",
             assumptions=[
                 "Fixture Display singleton fields model explicit anchor/crossed/engaged/band-box inputs; constructors and Windows delivery are outside these vectors",
                 "Windows initial x87 PC53/nearest 0x027F is supplied; original WinMain 0x6BBFB7..0x6BBFCE executes controlfp and cache, establishing live/cached 0x0E3F (reserved bit6 clear, PC53/chop)",
@@ -891,6 +1020,9 @@ if __name__ == "__main__":
                 "Camera sequence Tactical+A8 and global frame are both0, bypassing unrelated animation/timer work while retaining full original request commit; original clamp determines initial centers from supplied seeds",
                 "Focus sequences execute original FocusOn6D2420 and full TacticalAI6D2540, float stores/interpolation75F5C0/clamp/cleanup for velocities0..4, all four clipping edges, nonzero/small LocalSize, repeated/wrapping frame gates, retarget, zero target, absolute SetView, ScenarioStarted/replay gates and pending scrolls. Original waypoint animation is kept stopped with remaining time1; geometry, subcell coordinates and Z=-104/0/727/728/1500 are explicit supplied inputs, not a stock mission timing or terrain ground-height comparison",
                 "Original throttle entry 0x55E160 through 0x55E33B observes supplied clocks and session modes 0..6; later FPS bookkeeping is outside scope",
+                "Saved view rows supply restored map/local rectangle and current viewport; input centers/requests are explicit pre-save state, not camera-command outputs or retail-map provenance",
+                "Saved view rows execute original constructor matrix stores6D1DC5..6D1E24, TacticalSave/AbstractSave and TacticalLoad/AbstractLoad/no-init/clamp/6D8B30 viewport update; optional resize executes6D5F60",
+                "Saved Tactical pointer region+E0 is empty and isolated identity registration succeeds; no world swizzle, Ole/COM loading, ordinary selection or Follow execution is claimed",
                 "No original executable instructions are replaced; fresh original image per independent row, retained state only within the explicitly listed sequence",
             ],
             substitutions=[
@@ -902,6 +1034,7 @@ if __name__ == "__main__":
                 "Camera sequence keyboard distances are supplied producer outputs; the21 distance is the original constant at0x82A030, while drag25 is produced by original method0 for100 pixels at rate3; keyboard producer/follow-target selection is not emulated",
                 "Camera SetView Z=0 rows supply the standard original projection multiplier from existing bridge_click_oracle; no new height or terrain coverage is claimed",
                 "Camera lifecycle rows execute the full original Tactical constructor, Abstract/Tactical Save and Load, no-init constructor, size leaf, native clamp and subsequent AI. IStream retains exactly original requested bytes; Here_I_Am records the identity token without reconstructing the global Swizzle manager. VisibleCellCount is zero; pointer swizzling, complete scenario reload and serialization wire equivalence to Rust are excluded. The unrelated waypoint-display clock is supplied bucket0 and stopped during AI visits.",
+                "Saved view rows replace the ordinary camera fixture's6D8B30 sink with the original updater and projection; exact in-memory IStream transfer,6C8C40 clock123 and recorded successful isolated identity registration are the only new seams",
                 "Display vtable+0x48 records cursor, +0xC4 records band-box cancel argument without engagement mutation",
                 "ClientToScreen adds fixture origin 101/202, SetCursorPos records requested OS coordinates; tactical offsets are 11/23",
             ],
@@ -917,7 +1050,10 @@ if __name__ == "__main__":
                           "FocusOn": 0x006D2420, "InterpolatePoint": 0x0075F5C0,
                           "TacticalConstructor": 0x006D1C20, "TacticalNoInit": 0x006D1E30,
                           "TacticalSave": 0x006DBE00, "TacticalLoad": 0x006DBD20,
-                          "AbstractSave": 0x00410320, "AbstractLoad": 0x00410380},
+                          "AbstractSave": 0x00410320, "AbstractLoad": 0x00410380,
+                          "TacticalResize": 0x006D5F60, "UpdateViewport": 0x006D8B30,
+                          "ConstructorMatrixStart": 0x006D1DC5,
+                          "ConstructorMatrixEnd": 0x006D1E24},
         ),
         source_paths={"producer": Path(__file__), "shared_runner": Path(native_oracle.__file__),
                       "projection_fixture": Path(native_oracle.__file__).with_name("bridge_click_oracle.py")},

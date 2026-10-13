@@ -331,7 +331,7 @@ fn native_house_statistics_survive_snapshot_and_retained_ship_terminal_record() 
         let mut restored = GameSnapshot::load_validated(&bytes, 1, 2, "HOUSE-STATS.MAP")
             .unwrap()
             .sim;
-        restored.retain_in_scenario_process_state_from(&sim);
+        restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(
             house_totals(&restored.houses[&owner]),
@@ -378,7 +378,7 @@ fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
     let mut restored = GameSnapshot::load_validated(&bytes, 1, 2, "SCORE.MAP")
         .unwrap()
         .sim;
-    restored.retain_in_scenario_process_state_from(&sim);
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     restored.restore_after_snapshot_load().unwrap();
     let before_rng = sim.rng_state();
     assert!(sim.finalize_terminal_score_snapshot());

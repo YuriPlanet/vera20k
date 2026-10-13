@@ -345,10 +345,13 @@ struct AttackDispatch {
 /// existing owners. Shift and one selected object's self action precede
 /// the native repair arm. Saved caller/output controls: bunker_attack_action
 /// repair_rows; Unit738890 converts Repair29 to the ordinary Attack mission.
+/// The self gate and DetermineAction read `current_objects`, the whole
+/// selection; only `receivers` (`click_order_receivers`) get orders.
 fn unit_repair_branch_orders(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
-    selected: &[u64],
+    current_objects: &[u64],
+    receivers: &[u64],
     target: &HoverTargetKindWithId,
     issuing_house: InternedId,
     modifier: OrderModifier,
@@ -362,7 +365,7 @@ fn unit_repair_branch_orders(
         select_fallback: false,
     };
     if modifier == OrderModifier::Queue
-        || selected == [target.stable_id]
+        || current_objects == [target.stable_id]
         || target.kind == HoverTargetKind::HiddenEnemy
     {
         return output;
@@ -375,30 +378,19 @@ fn unit_repair_branch_orders(
     // repair-capable member must not turn the whole group's Select into Repair.
     if friendly
         && matches!(modifier, OrderModifier::Normal | OrderModifier::AttackMove)
-        && !cursor_owner(sim, rules, selected, target.stable_id).is_some_and(|id| {
+        && !cursor_owner(sim, rules, current_objects, target.stable_id).is_some_and(|id| {
             sim.unit_repair_action(id, target.stable_id, issuing_house, rules)
                 == Some(UnitRepairAction::Repair)
         })
     {
         return output;
     }
-    for &id in selected {
+    for &id in receivers {
         let Some(action) = sim.unit_repair_action(id, target.stable_id, issuing_house, rules)
         else {
             continue;
         };
         output.receivers.insert(id);
-        // UnitClass::ClickedAction 0x00738890 refuses actor+0x298 berserk
-        // before PlayerSendCommand. DetermineAction still returns Repair29;
-        // bunker_attack_action repair_rows/berserk_friend executes both.
-        if sim
-            .entities()
-            .get(id)
-            .is_some_and(|actor| actor.berserk.active)
-        {
-            output.consumed = true;
-            continue;
-        }
         let payload = match action {
             UnitRepairAction::Select => {
                 output.select_fallback = true;
@@ -998,6 +990,78 @@ pub(crate) fn object_click_payload(
     }
 }
 
+/// What a left release does when every selected object is berserk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BerserkSelectionClick {
+    /// An action that dispatches: every ClickedAction refuses, and the
+    /// action-line timer still starts (`0x004ABFA9`).
+    Dispatch,
+    /// Action 0 on the ground: nothing (`0x004AC294`).
+    Nothing,
+    /// Select, or action 0 over an object: the ordinary selection click.
+    Select,
+}
+
+/// The left release for a selection whose every object is berserk.
+/// DetermineAction's best object is then berserk too (rank 0, `0x00535435`),
+/// and its What_Action base answers 0 whatever the modifiers (`0x006FFEC9`,
+/// cell `0x00700609`). The class rungs decide the rest:
+/// - Infantry: NoMove for a human owner (`0x0051F05E`), on the ground too
+///   unless `JumpJet=` (`0x0051FAAB`).
+/// - Unit: NoMove over an object (`0x007403EB`), 0 on the ground
+///   (`0x007404B0`). A healer's repair arm still runs (`0x0073FD7C`), so a
+///   berserk repair IFV may answer Select or Repair.
+/// - Aircraft: 0, over an object through its cell action (`0x00417D7C`).
+fn berserk_selection_click(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    current_objects: &[u64],
+    hover: Option<&HoverTargetKindWithId>,
+    cell: (u16, u16),
+    issuing_house: InternedId,
+) -> BerserkSelectionClick {
+    use crate::app::input::cursor::ActionDistanceTarget;
+    let target = hover.map_or(ActionDistanceTarget::CellCentre(cell.0, cell.1), |target| {
+        ActionDistanceTarget::Object(target.stable_id)
+    });
+    let Some((best_id, best)) = crate::app::input::cursor::select_best_for_action(
+        sim,
+        current_objects,
+        target,
+        Some(rules),
+    )
+    .and_then(|id| Some((id, sim.entities().get(id)?))) else {
+        return BerserkSelectionClick::Dispatch;
+    };
+    let action_zero = match best.category {
+        EntityCategory::Aircraft => true,
+        EntityCategory::Unit => hover.is_none(),
+        EntityCategory::Infantry => {
+            hover.is_none()
+                && rules
+                    .object(sim.interner.resolve(best.type_ref()))
+                    .is_some_and(|object| object.jumpjet)
+        }
+        EntityCategory::Structure => false,
+    };
+    if action_zero {
+        return if hover.is_some() {
+            BerserkSelectionClick::Select
+        } else {
+            BerserkSelectionClick::Nothing
+        };
+    }
+    let repair_select = hover.is_some_and(|target| {
+        sim.unit_repair_action(best_id, target.stable_id, issuing_house, rules)
+            == Some(crate::sim::world::UnitRepairAction::Select)
+    });
+    if repair_select {
+        BerserkSelectionClick::Select
+    } else {
+        BerserkSelectionClick::Dispatch
+    }
+}
+
 /// Attempt to issue a context-sensitive order at the given screen point.
 ///
 /// Returns `true` when context dispatch consumed the click, including a refused
@@ -1065,6 +1129,11 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             return false;
         }
         speaker_id = selected_ids.first().copied();
+        // `CurrentObjects`: DetermineAction and the gates that read the
+        // selection's size see every selected object. Orders go only to the
+        // objects whose ClickedAction can still send one.
+        let current_objects = selected_ids;
+        let selected_ids = sim.click_order_receivers(&current_objects);
 
         let mut selected_units: Vec<u64> = Vec::new();
         let mut selected_miner_ids: Vec<u64> = Vec::new();
@@ -1084,7 +1153,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         // selected object can accept an attack-move order. The walk covers the
         // whole selection, so a selected building or aircraft kills the chord.
         if modifier == OrderModifier::AttackMove
-            && !selection_can_attack_move(sim, Some(&resources.rules), &selected_ids)
+            && !selection_can_attack_move(sim, Some(&resources.rules), &current_objects)
         {
             modifier = OrderModifier::Normal;
         }
@@ -1128,12 +1197,27 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             &state.match_state.match_presentation.height_map,
             crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
         );
+        if selected_ids.is_empty() {
+            return match berserk_selection_click(
+                sim,
+                &resources.rules,
+                &current_objects,
+                hover.as_ref(),
+                (target_rx, target_ry),
+                owner_id,
+            ) {
+                BerserkSelectionClick::Dispatch => finish_order(state, queued, speaker_id),
+                BerserkSelectionClick::Nothing => true,
+                BerserkSelectionClick::Select => false,
+            };
+        }
 
         let mut selected_ids = selected_ids;
         let repair_dispatch = hover.as_ref().map(|target| {
             unit_repair_branch_orders(
                 sim,
                 &resources.rules,
+                &current_objects,
                 &selected_ids,
                 target,
                 owner_id,
@@ -1330,7 +1414,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                     sim,
                     &resources.rules,
                     owner_id,
-                    &selected_ids,
+                    &current_objects,
                     hover.as_ref(),
                 )
             {
@@ -1689,7 +1773,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                     sim,
                     &resources.rules,
                     owner_id,
-                    &selected_ids,
+                    &current_objects,
                     hover.as_ref(),
                 )
             {
@@ -1703,8 +1787,13 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 && !force_move
                 && let Some(target) = hover.as_ref()
             {
-                let ivans =
-                    friendly_bomb_ivans(sim, &resources.rules, &selected_units, target.stable_id);
+                let ivans = friendly_bomb_ivans(
+                    sim,
+                    &resources.rules,
+                    &selected_units,
+                    current_objects.len(),
+                    target.stable_id,
+                );
                 if cursor_owner(sim, &resources.rules, &selected_ids, target.stable_id)
                     .is_some_and(|best| ivans.contains(&best))
                 {
@@ -2162,11 +2251,13 @@ fn cursor_owner(
 /// without a bomb (0x0051EB24), and `FootClass::ClickedAction_Object`
 /// (0x004D74E0) sends that as Attack. A bombed friend stays a selection click.
 /// A lone selected Ivan over himself has the self action (4) instead; in a
-/// larger selection nothing stops him bombing himself, as natively.
+/// larger selection nothing stops him bombing himself, as natively. The count
+/// is the whole selection's (`[0xA8ECC8]`), berserk objects included.
 fn friendly_bomb_ivans(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     selected: &[u64],
+    selection_count: usize,
     target: u64,
 ) -> Vec<u64> {
     let bombable = sim.entities().get(target).is_some_and(|entity| {
@@ -2182,7 +2273,7 @@ fn friendly_bomb_ivans(
         .iter()
         .copied()
         .filter(|&id| {
-            (id != target || selected.len() > 1)
+            (id != target || selection_count > 1)
                 && sim.entities().get(id).is_some_and(|e| {
                     rules
                         .object(sim.interner.resolve(e.type_ref()))
@@ -2281,6 +2372,75 @@ mod tests {
     use crate::sim::components::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::world::Simulation;
+
+    /// An all-berserk selection's left release follows the best object's
+    /// class rung: Infantry NoMove (`0x0051F05E`, cell `0x0051FAAB`), Unit
+    /// NoMove over an object (`0x007403EB`) but 0 on the ground
+    /// (`0x007404B0`), JumpJet infantry 0 on the ground, and Aircraft 0
+    /// (`0x00417D7C`). The best is the nearest berserk object.
+    #[test]
+    fn an_all_berserk_click_follows_the_best_objects_class() {
+        use BerserkSelectionClick::{Dispatch, Nothing, Select};
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[InfantryTypes]\n0=GI\n1=JUMPJET\n[VehicleTypes]\n0=MTNK\n\
+                 [AircraftTypes]\n0=ORCA\n[GI]\nStrength=125\n\
+                 [JUMPJET]\nStrength=125\nJumpJet=yes\n[MTNK]\nStrength=300\n\
+                 [ORCA]\nStrength=200\n",
+            ))
+            .unwrap();
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        let mut spawn = |kind: &str, rx: u16, berserk: bool| {
+            let id = sim
+                .spawn_object(kind, "Americans", rx, 5, 0, &rules)
+                .unwrap();
+            sim.entities_mut().get_mut(id).unwrap().berserk.active = berserk;
+            id
+        };
+        let gi = spawn("GI", 3, true);
+        let jumpjet = spawn("JUMPJET", 4, true);
+        let tank = spawn("MTNK", 6, true);
+        let orca = spawn("ORCA", 8, true);
+        let friend = spawn("GI", 10, false);
+        let over_friend = HoverTargetKindWithId {
+            kind: HoverTargetKind::FriendlyUnit,
+            stable_id: friend,
+        };
+        let click = |selection: &[u64], hover: Option<&HoverTargetKindWithId>, cell| {
+            berserk_selection_click(&sim, &rules, selection, hover, cell, owner)
+        };
+        assert_eq!(click(&[gi], None, (3, 5)), Dispatch);
+        assert_eq!(click(&[gi], Some(&over_friend), (3, 5)), Dispatch);
+        assert_eq!(click(&[jumpjet], None, (3, 5)), Nothing);
+        assert_eq!(click(&[jumpjet], Some(&over_friend), (3, 5)), Dispatch);
+        assert_eq!(click(&[tank], None, (3, 5)), Nothing);
+        assert_eq!(click(&[tank], Some(&over_friend), (3, 5)), Dispatch);
+        assert_eq!(click(&[orca], None, (3, 5)), Nothing);
+        assert_eq!(click(&[orca], Some(&over_friend), (3, 5)), Select);
+        // Equal rank 0: the object nearer the clicked cell decides.
+        assert_eq!(click(&[tank, gi], None, (3, 5)), Dispatch);
+        assert_eq!(click(&[gi, tank], None, (6, 5)), Nothing);
+    }
+
+    /// The Ivan's self-bomb gate counts the whole selection (`[0xA8ECC8]`):
+    /// a calm Ivan clicked with a berserk escort still bombs himself, though
+    /// he is the only object that can send the order.
+    #[test]
+    fn the_ivan_self_bomb_gate_counts_the_whole_selection() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[InfantryTypes]\n0=IVAN\n[IVAN]\nStrength=100\nIvan=yes\n\
+                 AttackCursorOnFriendlies=yes\nBombable=yes\n",
+            ))
+            .unwrap();
+        let mut sim = Simulation::new();
+        let ivan = sim
+            .spawn_object("IVAN", "Americans", 3, 5, 0, &rules)
+            .unwrap();
+        assert!(friendly_bomb_ivans(&sim, &rules, &[ivan], 1, ivan).is_empty());
+        assert_eq!(friendly_bomb_ivans(&sim, &rules, &[ivan], 2, ivan), [ivan]);
+    }
 
     /// A spy's click on a building its flags admit is Capture: it takes the
     /// Engineer's capture order and leaves the rest of the selection to their
@@ -3101,7 +3261,7 @@ mod tests {
         let selected = [ivan, engineer];
 
         assert_eq!(
-            friendly_bomb_ivans(&sim, &rules, &selected, own_tank),
+            friendly_bomb_ivans(&sim, &rules, &selected, selected.len(), own_tank),
             vec![ivan]
         );
         assert!(disarm_bomb_engineers(&sim, &rules, &selected, own_tank, americans).is_empty());
@@ -3121,11 +3281,11 @@ mod tests {
             "an unseen bomb"
         );
         assert!(
-            friendly_bomb_ivans(&sim, &rules, &selected, own_tank).is_empty(),
+            friendly_bomb_ivans(&sim, &rules, &selected, selected.len(), own_tank).is_empty(),
             "a bombed friend stays a selection click"
         );
         assert_eq!(
-            friendly_bomb_ivans(&sim, &rules, &selected, spare_tank),
+            friendly_bomb_ivans(&sim, &rules, &selected, selected.len(), spare_tank),
             vec![ivan]
         );
         assert!(ivan_cannot_bomb(&sim, &rules, ivan, own_tank));

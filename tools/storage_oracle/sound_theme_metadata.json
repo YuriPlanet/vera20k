@@ -1,4 +1,530 @@
 {
+  "ai_volume_cases": [
+    {
+      "after_ai": {
+        "events": [
+          {
+            "event": "device_gate",
+            "result": 1
+          }
+        ],
+        "fading": false,
+        "slots": [
+          -1,
+          -1,
+          7
+        ],
+        "stream_playing": false,
+        "supplied_main_bytes_unchanged": true
+      },
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "ai_volume_-1",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": false,
+        "stream_playing": false,
+        "volume": -1
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        -1,
+        -1,
+        7
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": false,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "after_ai": {
+        "events": [
+          {
+            "event": "device_gate",
+            "result": 1
+          }
+        ],
+        "fading": false,
+        "slots": [
+          -1,
+          -1,
+          7
+        ],
+        "stream_playing": false,
+        "supplied_main_bytes_unchanged": true
+      },
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "ai_volume_0",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": false,
+        "stream_playing": false,
+        "volume": 0
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        -1,
+        -1,
+        7
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": false,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "after_ai": {
+        "events": [
+          {
+            "event": "device_gate",
+            "result": 1
+          },
+          {
+            "address": "0x720bb0",
+            "argument": 7,
+            "event": "entry",
+            "slots": [
+              -1,
+              6,
+              7
+            ]
+          },
+          {
+            "event": "device_gate",
+            "result": 1
+          },
+          {
+            "event": "device_gate",
+            "result": 1
+          }
+        ],
+        "fading": false,
+        "slots": [
+          -1,
+          7,
+          -2
+        ],
+        "stream_playing": false,
+        "supplied_main_bytes_unchanged": true
+      },
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "ai_volume_1",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": false,
+        "stream_playing": false,
+        "volume": 1
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        -1,
+        6,
+        7
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": false,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "after_ai": {
+        "events": [
+          {
+            "event": "device_gate",
+            "result": 1
+          },
+          {
+            "address": "0x720bb0",
+            "argument": 7,
+            "event": "entry",
+            "slots": [
+              -1,
+              6,
+              7
+            ]
+          },
+          {
+            "event": "device_gate",
+            "result": 1
+          },
+          {
+            "event": "device_gate",
+            "result": 1
+          }
+        ],
+        "fading": false,
+        "slots": [
+          -1,
+          7,
+          -2
+        ],
+        "stream_playing": false,
+        "supplied_main_bytes_unchanged": true
+      },
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "ai_volume_255",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": false,
+        "stream_playing": false,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        -1,
+        6,
+        7
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": false,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    }
+  ],
   "cases": [
     {
       "archive": "thememd.mix",
@@ -431,5 +957,2753 @@
       "sound": -1
     }
   ],
-  "source": "unicorn/gamemd.exe"
+  "save_load_cases": [
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "argument": 1,
+          "event": "play_file",
+          "filename": "Track6.WAV"
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "volume_target_zero"
+        }
+      ],
+      "fading": true,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "replace_menu_then_queue",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        6,
+        6,
+        7
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            -2
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "feffffff",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "argument": 1,
+          "event": "play_file",
+          "filename": "Track6.WAV"
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "pending_auto",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          -2
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        6,
+        6,
+        -2
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        -2
+      ],
+      "wire_hex": "06000000feffffff"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            -1
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "ffffffff",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "argument": 1,
+          "event": "play_file",
+          "filename": "Track6.WAV"
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "pending_none",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          -1
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        6,
+        6,
+        -1
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        -1
+      ],
+      "wire_hex": "06000000ffffffff"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            0,
+            0
+          ]
+        },
+        {
+          "bytes": "00000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "00000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 0,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "same_retained",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          0,
+          0
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        0,
+        0,
+        0
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        0,
+        0
+      ],
+      "wire_hex": "0000000000000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            -1,
+            -1
+          ]
+        },
+        {
+          "bytes": "ffffffff",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "ffffffff",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 4294967295,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "saved_none",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          -1,
+          -1
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        -1,
+        -1,
+        -1
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": false,
+      "wire": [
+        -1,
+        -1
+      ],
+      "wire_hex": "ffffffffffffffff"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            -3,
+            -3
+          ]
+        },
+        {
+          "bytes": "fdffffff",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "fdffffff",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 4294967293,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": false
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "saved_hold",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          -3,
+          -3
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        -1,
+        -1,
+        -3
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": false,
+      "wire": [
+        -3,
+        -3
+      ],
+      "wire_hex": "fdfffffffdffffff"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            -2,
+            -2
+          ]
+        },
+        {
+          "bytes": "feffffff",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "feffffff",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 4294967294,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "saved_auto",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          -2,
+          -2
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        -1,
+        -1,
+        -2
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": false,
+      "wire": [
+        -2,
+        -2
+      ],
+      "wire_hex": "fefffffffeffffff"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 0,
+        "interpolating": false,
+        "name": "disabled_music",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        0,
+        0,
+        0
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "scores_absent",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 0,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        0,
+        0,
+        0
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 0
+        },
+        {
+          "event": "device_gate",
+          "result": 0
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 0,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "device_absent",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        0,
+        0,
+        0
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "startup_suppressed",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 1,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        0,
+        0,
+        0
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "no_stream",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": false,
+        "stream_playing": false,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        -1,
+        6,
+        7
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": false,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": false
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "zero_volume",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 0
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        -1,
+        -1,
+        7
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": false,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": -1,
+          "position": 0
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "read_score_failure",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "read_hresult": [
+          -1,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": -1,
+      "loaded_slots": [
+        0,
+        0,
+        0
+      ],
+      "read_bytes": 0,
+      "read_count": 1,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": -1,
+          "position": 4
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 0,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "read_pending_failure",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "read_hresult": [
+          0,
+          -1
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": -1,
+      "loaded_slots": [
+        0,
+        0,
+        0
+      ],
+      "read_bytes": 4,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "interpolating",
+          "result": false
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "event": "stream_playing",
+          "result": false
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "argument": 1,
+          "event": "play_file",
+          "filename": "Track6.WAV"
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "volume_target_zero"
+        }
+      ],
+      "fading": true,
+      "input": {
+        "device": 1,
+        "fading": 1,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "fading_finished",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        6,
+        6,
+        7
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 6,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "interpolating",
+          "result": true
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "argument": 1,
+          "event": "play_file",
+          "filename": "Track6.WAV"
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stream_playing",
+          "result": true
+        },
+        {
+          "event": "volume_target_zero"
+        }
+      ],
+      "fading": true,
+      "input": {
+        "device": 1,
+        "fading": 1,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": true,
+        "name": "fading_live",
+        "outgoing_slots": [
+          0,
+          0,
+          0
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        6,
+        6,
+        7
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            7
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        }
+      ],
+      "fading": true,
+      "input": {
+        "device": 1,
+        "fading": 1,
+        "global_repeat": 0,
+        "in_game_music": 0,
+        "interpolating": true,
+        "name": "disabled_music_fading",
+        "outgoing_slots": [
+          0,
+          0,
+          7
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        0,
+        0,
+        7
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            0,
+            0
+          ]
+        },
+        {
+          "bytes": "00000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "00000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            7
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        },
+        {
+          "address": "0x720bb0",
+          "argument": 0,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            7
+          ]
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "interpolating",
+          "result": false
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "event": "stream_playing",
+          "result": false
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        },
+        {
+          "event": "stop_stream"
+        },
+        {
+          "argument": 1,
+          "event": "play_file",
+          "filename": "Track0.WAV"
+        },
+        {
+          "event": "device_gate",
+          "result": 1
+        }
+      ],
+      "fading": false,
+      "input": {
+        "device": 1,
+        "fading": 1,
+        "global_repeat": 0,
+        "in_game_music": 1,
+        "interpolating": false,
+        "name": "same_retained_finished_fade",
+        "outgoing_slots": [
+          0,
+          0,
+          7
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          0,
+          0
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        0,
+        0,
+        0
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        0,
+        0
+      ],
+      "wire_hex": "0000000000000000"
+    }
+  ],
+  "score_volume_cases": [
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 3212836864,
+      "stored_f32_bits": 3212836864,
+      "stream_targets": [
+        -16384
+      ],
+      "theme_volume": -255,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 2147483649,
+      "stored_f32_bits": 2147483649,
+      "stream_targets": [
+        0
+      ],
+      "theme_volume": 0,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 2147483648,
+      "stored_f32_bits": 2147483648,
+      "stream_targets": [
+        0
+      ],
+      "theme_volume": 0,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 0,
+      "stored_f32_bits": 0,
+      "stream_targets": [
+        0
+      ],
+      "theme_volume": 0,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 1,
+      "stored_f32_bits": 1,
+      "stream_targets": [
+        0
+      ],
+      "theme_volume": 0,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 998277248,
+      "stored_f32_bits": 998277248,
+      "stream_targets": [
+        64
+      ],
+      "theme_volume": 0,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 998277249,
+      "stored_f32_bits": 998277249,
+      "stream_targets": [
+        64
+      ],
+      "theme_volume": 1,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 998277250,
+      "stored_f32_bits": 998277250,
+      "stream_targets": [
+        64
+      ],
+      "theme_volume": 1,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 1053609165,
+      "stored_f32_bits": 1053609165,
+      "stream_targets": [
+        6553
+      ],
+      "theme_volume": 102,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 1056964608,
+      "stored_f32_bits": 1056964608,
+      "stream_targets": [
+        8192
+      ],
+      "theme_volume": 127,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 1065353215,
+      "stored_f32_bits": 1065353215,
+      "stream_targets": [
+        16383
+      ],
+      "theme_volume": 254,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 1065353216,
+      "stored_f32_bits": 1065353216,
+      "stream_targets": [
+        16384
+      ],
+      "theme_volume": 255,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 1069547520,
+      "stored_f32_bits": 1065353216,
+      "stream_targets": [
+        16384
+      ],
+      "theme_volume": 255,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 2139095040,
+      "stored_f32_bits": 1065353216,
+      "stream_targets": [
+        16384
+      ],
+      "theme_volume": 255,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 4286578688,
+      "stored_f32_bits": 4286578688,
+      "stream_targets": [
+        0
+      ],
+      "theme_volume": 0,
+      "x87_control_word": 3711
+    },
+    {
+      "code_unchanged": true,
+      "constructor_volume": 255,
+      "input_f32_bits": 2143289344,
+      "stored_f32_bits": 2143289344,
+      "stream_targets": [
+        0
+      ],
+      "theme_volume": 0,
+      "x87_control_word": 3711
+    }
+  ],
+  "settle_cases": [
+    {
+      "after_settle_consumer": {
+        "arguments": [],
+        "consumer": "query",
+        "entry": 7475152,
+        "events": [
+          {
+            "event": "interpolating",
+            "result": false
+          },
+          {
+            "event": "stop_stream"
+          },
+          {
+            "event": "stream_playing",
+            "result": false
+          }
+        ],
+        "fading": true,
+        "query_playing": false,
+        "slots": [
+          0,
+          0,
+          -3
+        ],
+        "stream_playing": false,
+        "supplied_main_bytes_unchanged": true
+      },
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            -3
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        }
+      ],
+      "fading": true,
+      "input": {
+        "device": 1,
+        "fading": 1,
+        "global_repeat": 0,
+        "in_game_music": 0,
+        "interpolating": false,
+        "name": "query_finished_fade",
+        "outgoing_slots": [
+          0,
+          0,
+          -3
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        0,
+        0,
+        -3
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "after_settle_consumer": {
+        "arguments": [
+          7
+        ],
+        "consumer": "queue",
+        "entry": 7473952,
+        "events": [
+          {
+            "event": "device_gate",
+            "result": 1
+          },
+          {
+            "event": "interpolating",
+            "result": false
+          },
+          {
+            "event": "stop_stream"
+          },
+          {
+            "event": "stream_playing",
+            "result": false
+          }
+        ],
+        "fading": true,
+        "query_playing": null,
+        "slots": [
+          0,
+          0,
+          7
+        ],
+        "stream_playing": false,
+        "supplied_main_bytes_unchanged": true
+      },
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            -3
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        }
+      ],
+      "fading": true,
+      "input": {
+        "device": 1,
+        "fading": 1,
+        "global_repeat": 0,
+        "in_game_music": 0,
+        "interpolating": false,
+        "name": "queue_finished_fade",
+        "outgoing_slots": [
+          0,
+          0,
+          -3
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        0,
+        0,
+        -3
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "after_settle_consumer": {
+        "arguments": [
+          1
+        ],
+        "consumer": "stop",
+        "entry": 7474848,
+        "events": [
+          {
+            "event": "device_gate",
+            "result": 1
+          },
+          {
+            "event": "interpolating",
+            "result": false
+          },
+          {
+            "event": "stop_stream"
+          },
+          {
+            "event": "stream_playing",
+            "result": false
+          },
+          {
+            "event": "stop_stream"
+          }
+        ],
+        "fading": true,
+        "query_playing": null,
+        "slots": [
+          -1,
+          -1,
+          -1
+        ],
+        "stream_playing": false,
+        "supplied_main_bytes_unchanged": true
+      },
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            -3
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        }
+      ],
+      "fading": true,
+      "input": {
+        "device": 1,
+        "fading": 1,
+        "global_repeat": 0,
+        "in_game_music": 0,
+        "interpolating": false,
+        "name": "stop_finished_fade",
+        "outgoing_slots": [
+          0,
+          0,
+          -3
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        0,
+        0,
+        -3
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    },
+    {
+      "after_settle_consumer": {
+        "arguments": [],
+        "consumer": "ai_hold",
+        "entry": 7473616,
+        "events": [
+          {
+            "event": "device_gate",
+            "result": 1
+          },
+          {
+            "event": "interpolating",
+            "result": false
+          },
+          {
+            "event": "stop_stream"
+          },
+          {
+            "event": "stream_playing",
+            "result": false
+          }
+        ],
+        "fading": true,
+        "query_playing": null,
+        "slots": [
+          0,
+          0,
+          -3
+        ],
+        "stream_playing": false,
+        "supplied_main_bytes_unchanged": true
+      },
+      "code_unchanged": true,
+      "events": [
+        {
+          "address": "0x721010",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "bytes": "06000000",
+          "event": "write",
+          "source_offset": 4
+        },
+        {
+          "bytes": "07000000",
+          "event": "write",
+          "source_offset": 8
+        },
+        {
+          "address": "0x721040",
+          "argument": 536871168,
+          "event": "entry",
+          "slots": [
+            0,
+            0,
+            -3
+          ]
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 4
+        },
+        {
+          "event": "read",
+          "hresult": 0,
+          "position": 8
+        }
+      ],
+      "fading": true,
+      "input": {
+        "device": 1,
+        "fading": 1,
+        "global_repeat": 0,
+        "in_game_music": 0,
+        "interpolating": false,
+        "name": "ai_hold_finished_fade",
+        "outgoing_slots": [
+          0,
+          0,
+          -3
+        ],
+        "repeat_entries": [],
+        "saved_slots": [
+          5,
+          6,
+          7
+        ],
+        "scores_present": 1,
+        "startup_suppressed": 0,
+        "stream_exists": true,
+        "stream_playing": true,
+        "volume": 255
+      },
+      "load_hresult": 0,
+      "loaded_slots": [
+        0,
+        0,
+        -3
+      ],
+      "read_bytes": 8,
+      "read_count": 2,
+      "stream_playing": true,
+      "wire": [
+        6,
+        7
+      ],
+      "wire_hex": "0600000007000000"
+    }
+  ],
+  "source": "unicorn/gamemd.exe",
+  "volume_setter_cases": [
+    {
+      "code_unchanged": true,
+      "input": -2147483648,
+      "stored": -2147483648
+    },
+    {
+      "code_unchanged": true,
+      "input": -255,
+      "stored": -255
+    },
+    {
+      "code_unchanged": true,
+      "input": -1,
+      "stored": -1
+    },
+    {
+      "code_unchanged": true,
+      "input": 0,
+      "stored": 0
+    },
+    {
+      "code_unchanged": true,
+      "input": 1,
+      "stored": 1
+    },
+    {
+      "code_unchanged": true,
+      "input": 254,
+      "stored": 254
+    },
+    {
+      "code_unchanged": true,
+      "input": 255,
+      "stored": 255
+    },
+    {
+      "code_unchanged": true,
+      "input": 256,
+      "stored": 255
+    },
+    {
+      "code_unchanged": true,
+      "input": 2147483647,
+      "stored": 255
+    }
+  ]
 }

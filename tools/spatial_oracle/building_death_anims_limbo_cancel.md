@@ -47,7 +47,7 @@ This is a destructor-consumer comparison, not whole GAPOWR certification.
 Reproduce from the checkout after copying the companion:
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 VERA20K_BUILDING_DEATH_ASSETS=/path/to/recorded/extract \
   python tools/spatial_oracle/building_death_anims.py --constructed-cancellation --check
 ```

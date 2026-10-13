@@ -252,12 +252,11 @@ impl IsoTileFloodHost for LiveTileFlood<'_, '_> {
             coord,
         )?;
         self.publication.retain_real_write(cell);
-        self.publication
-            .sim
-            .resolved_terrain
+        let sim = &mut self.publication.sim;
+        sim.resolved_terrain
             .as_mut()
             .unwrap()
-            .refresh_resident_bridge_presentation(index)
+            .refresh_resident_bridge_presentation(index, &mut || sim.main_rng.next_u32())
             .map_err(|error| error.to_string())?;
         self.publication.retain_real_write(cell);
         Ok(())

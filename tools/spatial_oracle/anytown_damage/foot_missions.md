@@ -3,7 +3,7 @@
 Run the existing mission owner with the separate mode:
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 VERA20K_SHRAPNEL_INPUTS=/path/to/physical/shrapnel/extract \
 VERA20K_ANYTOWN_INPUTS=/path/to/physical/anytown/extract \
 VERA20K_FOOT_EMISSION_INPUTS=/path/to/physical/foot-emission/extract \
@@ -693,7 +693,7 @@ calculation inputs and outputs, not SHP drawing or renderer/pixel parity.
 Reproduce through the same owner and already extracted physical assets:
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 VERA20K_SHRAPNEL_INPUTS=/tmp/vera20k-rescue-shrapnel-inputs-20260930 \
 VERA20K_ANYTOWN_INPUTS=/tmp/vera20k-rescue-anytown-inputs-20260930 \
 VERA20K_FOOT_EMISSION_INPUTS=/tmp/vera-e1-emission-retail-20260930/extract \

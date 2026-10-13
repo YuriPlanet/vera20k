@@ -64,6 +64,9 @@ enum NativeRulesRegistryOwner {
     /// Later P/P_preview events have transferred to their numeric-ID consumer;
     /// only the continuing registry identity remains process-resident.
     Live(NativeRulesRegistryState),
+    /// Completed scenario Rules inputs and their same live registry. Constructor
+    /// events have transferred to Scenario; save reads this owner by reference.
+    Scenario(Box<ProcessedRulesLayers>),
 }
 
 /// The one move-only native Rules authority for a process.
@@ -229,6 +232,34 @@ impl NativeRulesProcessOwner {
         ]
     }
 
+    /// RulesLoad675210/type hierarchy581F50 restore the reached native fields.
+    /// The VERA envelope stores the existing processed state, including fields
+    /// that cannot be recovered by parsing a merged INI or replaying Full_Init.
+    pub(crate) fn saved_scenario_rules(&self) -> Option<&ProcessedRulesLayers> {
+        match self.registry.as_ref()? {
+            NativeRulesRegistryOwner::Scenario(processed) => Some(processed.as_ref()),
+            NativeRulesRegistryOwner::ColdStartup(_) | NativeRulesRegistryOwner::Live(_) => None,
+        }
+    }
+
+    /// Prepare the compatibility projection without mutating process authority.
+    /// The shared app loader subsequently binds current ART/theater assets.
+    pub(crate) fn project_saved_scenario_rules(
+        &self,
+        processed: &ProcessedRulesLayers,
+    ) -> Result<RuleSet, RulesError> {
+        processed.validate_saved_state()?;
+        let mut rules = RuleSet::from_processed_rules(processed)?;
+        self.bind_type_sound_references(&mut rules, processed);
+        Ok(rules)
+    }
+
+    /// Commit the validated saved registry, replacing the outgoing authority.
+    /// Deserialization excludes constructor receipts, so load cannot replay IDs.
+    pub(crate) fn install_saved_scenario_rules(&mut self, processed: ProcessedRulesLayers) {
+        self.registry = Some(NativeRulesRegistryOwner::Scenario(Box::new(processed)));
+    }
+
     /// Build the shell-facing compatibility projection without changing the
     /// one native registry owner.
     pub(crate) fn startup_compatibility_projection(
@@ -260,6 +291,10 @@ impl NativeRulesProcessOwner {
                 trace.into_registry_state_discarding_events()
             }
             NativeRulesRegistryOwner::Live(state) => state,
+            NativeRulesRegistryOwner::Scenario(processed) => (*processed)
+                .into_ini_and_native_type_construction_trace()
+                .1
+                .into_registry_state_discarding_events(),
         };
 
         let (pre_reset_trace, mode_rules_override) = match prefix {
@@ -292,7 +327,7 @@ impl NativeRulesProcessOwner {
         let post_reset_state = pre_reset_state.destructive_reset();
 
         let layers = self.scenario_layers(mode_rules_override, map_rules_overrides);
-        let processed = match layers.process_with_fixed_art_and_registry_state_recovering(
+        let mut processed = match layers.process_with_fixed_art_and_registry_state_recovering(
             &self.sources.fixed_art,
             post_reset_state,
         ) {
@@ -316,11 +351,9 @@ impl NativeRulesProcessOwner {
         };
         self.bind_type_sound_references(&mut rules, &processed);
         debug_assert_eq!(rules.source_ini_hash(), processed.content_hash());
-        let (processed_ini, post_reset_trace) =
-            processed.into_ini_and_native_type_construction_trace();
-        let (post_reset_events, post_reset_super_count, post_reset_state) =
-            post_reset_trace.into_parts();
-        self.registry = Some(NativeRulesRegistryOwner::Live(post_reset_state));
+        let processed_ini = processed.ini().clone();
+        let (post_reset_events, post_reset_super_count) = processed.take_constructor_events();
+        self.registry = Some(NativeRulesRegistryOwner::Scenario(Box::new(processed)));
 
         Ok(NativeScenarioRulesLoad {
             rules,
@@ -365,6 +398,9 @@ impl NativeRulesProcessOwner {
         match self.registry.as_ref().expect("registry is resident") {
             NativeRulesRegistryOwner::ColdStartup(trace) => trace.registry_state(),
             NativeRulesRegistryOwner::Live(state) => state,
+            NativeRulesRegistryOwner::Scenario(processed) => {
+                processed.native_type_construction_trace().registry_state()
+            }
         }
     }
 }
@@ -463,6 +499,57 @@ mod tests {
                 .family_len(NativeTypeConstructorFamily::BuildingType),
             2,
             "ROOTBLDG and PARTIAL both remain in the post-reset native registry"
+        );
+    }
+
+    #[test]
+    fn saved_rules_restore_reached_fields_without_replaying_constructor_events() {
+        let root = ini("[BuildingTypes]\n0=ROOTBLDG\n[ROOTBLDG]\nStrength=200\n\
+            [General]\nPrismSupportModifier=1.75\n");
+        let map = ini("[BuildingTypes]\n1=MAPONLY\n[General]\n");
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            root,
+            None,
+            ini(""),
+            std::sync::Arc::default(),
+        )
+        .unwrap();
+        let original = owner
+            .load_scenario(super::NativeScenarioRulesPrefix::NonCampaign(None), &map)
+            .unwrap();
+        assert!(original.receipt.post_reset.event_count() > 0);
+        let saved = owner.saved_scenario_rules().unwrap();
+        assert_eq!(saved.native_type_construction_trace().event_count(), 0);
+        let saved_hash = original.rules.simulation_config_hash();
+        let saved_modifier = original.rules.general.prism_support.modifier;
+        let bytes = bincode::serialize(saved).unwrap();
+        let restored = bincode::deserialize(&bytes).unwrap();
+
+        // Loading does not re-read RULESMD or construct the saved type vector.
+        // Different cold-process source values must not replace saved fields.
+        let mut cold = NativeRulesProcessOwner::from_cold_start_sources(
+            ini("[BuildingTypes]\n0=OTHER\n[General]\nPrismSupportModifier=9.0\n"),
+            None,
+            ini(""),
+            std::sync::Arc::default(),
+        )
+        .unwrap();
+        let projected = cold.project_saved_scenario_rules(&restored).unwrap();
+        assert_eq!(projected.simulation_config_hash(), saved_hash);
+        assert_eq!(projected.general.prism_support.modifier, saved_modifier);
+        assert_eq!(restored.native_type_construction_trace().event_count(), 0);
+        cold.install_saved_scenario_rules(restored);
+        assert_eq!(
+            cold.live_registry()
+                .family_len(NativeTypeConstructorFamily::BuildingType),
+            2,
+        );
+        assert_eq!(
+            owner
+                .live_registry()
+                .family_len(NativeTypeConstructorFamily::BuildingType),
+            2,
+            "serialization did not consume or replace the original process owner",
         );
     }
 }

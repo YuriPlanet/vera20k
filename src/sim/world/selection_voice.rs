@@ -6,12 +6,13 @@
 //! executed comparisons: tools/input_oracle/selection_navigation.json.
 //! Main886B88 is excluded from lockstep hashes and snapshot bytes. Fresh
 //! loading advances it before gameplay; in-scenario restore retains its live
-//! continuation through `retain_in_scenario_process_state_from`.
+//! continuation through `retain_process_state_for_load`.
 //!
 //! VoiceSelect708EB5 checks the existing SlaveOwner+2DC before choosing
-//! type+430 instead of the normal+414 list. Both paths use this one owner.
-//! RESIDUAL: offline Robot receivers choose type+44C; their power lifecycle
-//! and separate voice list remain outside this path. The process audio service
+//! type+430, then the deactivated latch +1C8 (708EFD, `sim::powered_unit`)
+//! before type+44C, instead of the normal+414 list. All three use this one
+//! owner; a click can select an offline Robot Tank (Select5F4520 does not
+//! test +1C8), so its line is reachable. The process audio service
 //! borrows this same Main continuation through Simulation's RNG capability.
 //! These selection controls alone do not establish its device/queue behavior.
 
@@ -46,6 +47,8 @@ impl Simulation {
         let object = rules.object(self.interner.resolve(entity.type_ref()))?;
         let voices = if entity.slave.owner().is_some() {
             &object.voice_select_enslaved
+        } else if entity.deactivated {
+            &object.voice_select_deactivated
         } else {
             &object.voice_select
         };

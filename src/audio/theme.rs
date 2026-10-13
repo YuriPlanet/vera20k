@@ -26,6 +26,7 @@ use crate::assets::asset_manager::AssetManager;
 use crate::assets::aud_file;
 use crate::audio::sfx::decode_wav;
 use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::util::native_x87::X87Chop53;
 
 /// Theme fade length. Native is rate-based, not duration-based: the stream's
 /// own `VolumeInterp` (`stream+0x14 -> +0x10`) is initialised by
@@ -50,6 +51,10 @@ const RA2_THEME_INI_NAME: &str = "theme.ini";
 const MENU_THEME_SECTION: &str = "INTRO";
 /// `Next_Song` shuffle rejection budget (`CMP EDI,0x3E8` @ `0x00720AC6`).
 const SHUFFLE_TRIES: u32 = 1_000;
+
+#[cfg(test)]
+#[path = "theme_saved_tests.rs"]
+mod saved_tests;
 
 /// Native slot sentinels (`g_Theme+0x0/+0x4/+0x8`).
 pub(crate) const THEME_NONE: i32 = -1;
@@ -172,11 +177,14 @@ pub(crate) struct ThemeAllowContext {
 /// Process-lifetime logical Theme owner.
 /// Constructor720960 defaults: ThemeSlots keeps its -1 sentinels; repeat,
 /// fading and shuffle start false.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct ThemeRuntime {
     catalog_loaded: bool,
     entries: Vec<ThemeEntry>,
     slots: ThemeSlots,
+    /// Signed +0x0C gate; derived from Options' stored f32, independent of
+    /// the physical stream's separate gain. Ctor72096F initializes 255.
+    score_volume: i32,
     /// +0x10 `IsScoreRepeat`.
     global_repeat: bool,
     /// +0x11 fading flag plus the interpolator start time.
@@ -189,7 +197,40 @@ pub(crate) struct ThemeRuntime {
     allow_context: ThemeAllowContext,
 }
 
+impl Default for ThemeRuntime {
+    fn default() -> Self {
+        Self {
+            catalog_loaded: false,
+            entries: Vec::new(),
+            slots: ThemeSlots::default(),
+            score_volume: 255,
+            global_repeat: false,
+            fading: false,
+            fade_started_at_ms: None,
+            shuffle: false,
+            scenario_owns_pending: false,
+            allow_context: ThemeAllowContext::default(),
+        }
+    }
+}
+
 impl ThemeRuntime {
+    /// Options5FA4A0/ReadFromINI5FAAE6/apply5FB251 derive this gate from
+    /// the already stored, upper-clamped Options f32 times double255.0.
+    /// The product is exact in f64 (at most 32 significand bits); reuse
+    /// Math::ftol's signed64/low32 and masked-invalid conversion owner.
+    /// Executed controls: tools/storage_oracle/sound_theme_metadata.
+    pub(crate) fn set_score_volume(&mut self, stored_volume: f32) {
+        self.set_volume(X87Chop53::ftol_f64_low_masked(
+            f64::from(stored_volume) * 255.0,
+        ));
+    }
+
+    /// ThemeSetVolume721290 clamps only the signed upper side.
+    fn set_volume(&mut self, volume: i32) {
+        self.score_volume = volume.min(255);
+    }
+
     /// Catalog load `0x00720590` + scan `0x007207F0`, once per process, with
     /// the requested RA2 gameplay playlist extension appended afterwards.
     pub(crate) fn initialize_catalog(&mut self, assets: &AssetManager) {
@@ -241,6 +282,40 @@ impl ThemeRuntime {
     #[cfg(test)]
     pub(crate) fn slots(&self) -> ThemeSlots {
         self.slots
+    }
+
+    /// ThemeSave721010 writes +4 then +8. The active output slot and stream
+    /// position are process state, not part of the native eight-byte record.
+    pub(crate) fn saved_slots(&self) -> [i32; 2] {
+        [self.slots.retained, self.slots.pending]
+    }
+
+    /// ThemeLoad721040, reached by LoadContent67F79A. InGameMusic gates both
+    /// Play(saved +4) and Queue(saved +8). Reuse those same owners and observe
+    /// the physical output after Play before Queue decides whether to fade.
+    /// Native controls: tools/storage_oracle/sound_theme_metadata.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "native load inputs plus physical output handoff"
+    )]
+    pub(crate) fn restore_saved_slots(
+        &mut self,
+        saved: [i32; 2],
+        in_game_music: bool,
+        assets: &AssetManager,
+        gates: ThemeGates,
+        physical: MusicOutputState,
+        wall_ms: u64,
+        mut apply_output: impl FnMut(ThemeAction) -> MusicOutputState,
+    ) {
+        if !in_game_music {
+            return;
+        }
+        let mut prepare = |stem: &str| prepare_track(stem, assets);
+        let played = self.play_song(saved[0], gates, physical, wall_ms, &mut prepare);
+        let physical = apply_output(played);
+        let queued = self.queue_song(saved[1], gates, physical, wall_ms);
+        apply_output(queued);
     }
 
     /// Native current query: retained (+4), or pending (+8) when retained is
@@ -471,7 +546,9 @@ impl ThemeRuntime {
         }
         let saved_shuffle = std::mem::replace(&mut self.shuffle, true);
         if lobby_music {
-            if !self.still_playing(physical, wall_ms) || self.current_song() == intro {
+            let (playing, settled) = self.still_playing(physical, wall_ms);
+            action = action.then(settled);
+            if !playing || self.current_song() == intro {
                 action = action.then(self.stop(gates, false, physical, wall_ms));
                 action = action.then(self.queue_song(THEME_AUTO, gates, physical, wall_ms));
             }
@@ -488,35 +565,28 @@ impl ThemeRuntime {
         self.shuffle = saved_shuffle;
     }
 
-    /// Fade bookkeeping shared by AI/Queue/Play/Stop: when fading and the
-    /// interpolator reached its target (`0x004080D0 == 0`), `StreamPlayer__Stop`.
-    fn settle_fade(&mut self, wall_ms: u64) -> ThemeAction {
+    /// `Still_Playing @ 0x00720FD0..0x00721005`, also inlined in
+    /// Queue/Stop/Play/AI. A completed fade stops the stream before querying
+    /// playback; it does not clear Theme's fading flag. Play clears it later
+    /// at720C6D. Return the resulting observation with the deferred output
+    /// action so callers cannot reuse a stale Playing observation after Stop.
+    fn still_playing(&self, physical: MusicOutputState, wall_ms: u64) -> (bool, ThemeAction) {
         let mut action = ThemeAction::default();
-        if self.fading
+        if physical.stream_exists()
+            && self.fading
             && let Some(started) = self.fade_started_at_ms
             && wall_ms.saturating_sub(started) >= THEME_FADE_MS
         {
             action.stop_output = true;
             action.theme_scale = Some(1.0);
-            self.fading = false;
-            self.fade_started_at_ms = None;
+            return (false, action);
         }
-        action
+        (physical == MusicOutputState::Playing, action)
     }
 
     fn start_fade(&mut self, wall_ms: u64) {
         self.fading = true;
         self.fade_started_at_ms = Some(wall_ms);
-    }
-
-    /// Whether the stream is still audible from Theme's point of view: a
-    /// physically playing source, or a fade that has not reached its target.
-    fn still_playing(&self, physical: MusicOutputState, wall_ms: u64) -> bool {
-        physical == MusicOutputState::Playing
-            && !(self.fading
-                && self
-                    .fade_started_at_ms
-                    .is_some_and(|started| wall_ms.saturating_sub(started) >= THEME_FADE_MS))
     }
 
     /// `ThemeClass__Queue_Song @ 0x00720B20`.
@@ -538,8 +608,9 @@ impl ThemeRuntime {
             && index != self.slots.retained
             && physical.stream_exists()
         {
-            action = self.settle_fade(wall_ms);
-            if self.still_playing(physical, wall_ms) {
+            let playing;
+            (playing, action) = self.still_playing(physical, wall_ms);
+            if playing {
                 self.start_fade(wall_ms);
             }
         }
@@ -600,7 +671,7 @@ impl ThemeRuntime {
     /// immediate path (`fade == 0`, or nothing playing) only issues
     /// `StreamPlayer__Stop` and leaves `+0x11` as it stands — `Play_Song`
     /// clears it — so a stale flag survives here too; its only later effect is
-    /// one redundant stop/scale-reset from `settle_fade`.
+    /// redundant stop/scale-reset actions from `still_playing`.
     pub(crate) fn stop(
         &mut self,
         gates: ThemeGates,
@@ -613,8 +684,9 @@ impl ThemeRuntime {
         }
         let mut action = ThemeAction::default();
         if fade && physical.stream_exists() {
-            action = self.settle_fade(wall_ms);
-            if self.still_playing(physical, wall_ms) {
+            let playing;
+            (playing, action) = self.still_playing(physical, wall_ms);
+            if playing {
                 self.start_fade(wall_ms);
                 self.slots = ThemeSlots::default();
                 self.scenario_owns_pending = false;
@@ -656,11 +728,9 @@ impl ThemeRuntime {
         self.ai(gates, physical, wall_ms, &mut prepare, draw_main)
     }
 
-    /// `ThemeClass__AI @ 0x007209D0`.
-    ///
-    /// VERA-internal: with no stream object native consumes the pending slot
-    /// every poll (silently cycling `Play_Song`); Rust idles instead so an
-    /// audio-less process does not churn the catalog.
+    /// `ThemeClass__AI @ 0x007209D0`. Signed volume gate7209FF precedes
+    /// stream/fade/pending/RNG work. An absent stream still consumes pending
+    /// when the common device gate admits this owner and volume is positive.
     fn ai(
         &mut self,
         gates: ThemeGates,
@@ -669,23 +739,18 @@ impl ThemeRuntime {
         prepare: &mut impl FnMut(&str) -> Option<PreparedTrack>,
         draw_main: &mut impl FnMut(i32, i32) -> i32,
     ) -> ThemeAction {
-        if !self.admitted(gates) || !physical.stream_exists() {
+        if !self.admitted(gates) || self.score_volume <= 0 {
             return ThemeAction::default();
         }
-        let mut action = ThemeAction::default();
-        if physical == MusicOutputState::Playing {
+        let (playing, mut action) = self.still_playing(physical, wall_ms);
+        if playing {
             if self.fading
                 && let Some(started) = self.fade_started_at_ms
             {
                 let elapsed = wall_ms.saturating_sub(started);
-                if elapsed < THEME_FADE_MS {
-                    action.theme_scale = Some(1.0 - elapsed as f64 / THEME_FADE_MS as f64);
-                    return action;
-                }
-                action = self.settle_fade(wall_ms);
-            } else {
-                return action;
+                action.theme_scale = Some(1.0 - elapsed as f64 / THEME_FADE_MS as f64);
             }
+            return action;
         }
 
         let pending = self.slots.pending;
@@ -698,16 +763,22 @@ impl ThemeRuntime {
         } else {
             pending
         };
-        // Play_Song sees the stream released (fade stop or natural end).
-        action =
-            action.then(self.play_song(index, gates, MusicOutputState::Idle, wall_ms, prepare));
+        // A released source is idle; an absent stream remains absent. Play's
+        // retained/pending writes still run without decoding physical audio.
+        let physical = if physical.stream_exists() {
+            MusicOutputState::Idle
+        } else {
+            MusicOutputState::Unavailable
+        };
+        action = action.then(self.play_song(index, gates, physical, wall_ms, prepare));
         // AI unconditionally restores -2 after attempting Play.
         self.slots.pending = THEME_AUTO;
         action
     }
 
-    /// `ThemeClass__Play_Song @ 0x00720BB0`. The score-volume gate (`+0xC`)
-    /// and the dead CD-check branch are not modelled.
+    /// `ThemeClass__Play_Song @ 0x00720BB0`. The CD-check branch remains
+    /// outside this port; ordinary loaded-song controls execute the body in
+    /// tools/storage_oracle/sound_theme_metadata.
     fn play_song(
         &mut self,
         index: i32,
@@ -721,8 +792,9 @@ impl ThemeRuntime {
         }
         let mut action = ThemeAction::default();
         if physical.stream_exists() {
-            action = self.settle_fade(wall_ms);
-            if self.still_playing(physical, wall_ms) && self.slots.retained == index {
+            let playing;
+            (playing, action) = self.still_playing(physical, wall_ms);
+            if playing && self.slots.retained == index {
                 return action;
             }
         }
@@ -737,7 +809,9 @@ impl ThemeRuntime {
         if index == THEME_NONE || index == THEME_HOLD {
             return action;
         }
-        if index >= 0 {
+        // Signed volume720C8E is checked after same-song admission, inline
+        // Stop and sentinels. A muted request only replaces Pending.
+        if index >= 0 && self.score_volume > 0 {
             self.slots.retained = index;
             if physical.stream_exists() {
                 let stem = self.entry(index).map(|entry| entry.sound.clone());
@@ -1719,7 +1793,7 @@ mod tests {
     }
 
     #[test]
-    fn ai_ignores_none_hold_and_unavailable_and_restores_auto_after_failure() {
+    fn ai_ignores_none_hold_and_device_gate_and_restores_auto_after_failure() {
         let mut theme = stock_runtime();
         let mut ok = prepared;
         theme.slots = ThemeSlots {
@@ -1753,7 +1827,7 @@ mod tests {
         assert_eq!(theme.slots().pending, THEME_HOLD);
         theme.slots.pending = THEME_AUTO;
         theme.ai(
-            gates(true),
+            gates(false),
             MusicOutputState::Unavailable,
             3,
             &mut ok,

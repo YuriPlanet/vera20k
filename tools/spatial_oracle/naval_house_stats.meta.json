@@ -12,6 +12,7 @@
     "Actual original repair-neighbor sinking produces UnitsLost1 in the first row. Full House504080Save,410320AbstractSave,503040Load,410380AbstractLoad and no-init4F5190 execute; empty object/vector/COM services are supplied. Mixed inline statistics and four valid capacity3 Counter arrays are supplied controls, not native production of those values.",
     "Original Swizzle constructor/registration/conversion run. The retained external HouseType has an explicit identity mapping, and the actor owner link is rebound to the restored House; complete scenario/object reload is excluded. A direct original Unit RecordKill after restore proves loss1\u21922, not the full restored AI cadence.",
     "A copied mixed House executes no-init4F5190 separately, demonstrating inline retention and reset built Counter owners; full House Load restores those owners from appended Counter streams. Normal constructor statistics blocks4F5A2A..4F5B39 and4F629A..4F62B8 execute with explicit EBP=this,EBX0,ESI-1/0 caller registers, proving zero initialization only for those blocks.",
+    "Name cases execute original ordinary local-player writer688092..6880AD with supplied UTF16 input, then the same full House storage/noinit/swizzle owner. All42bytes at+1602A are retained; ASCII, non-ASCII and overlong inputs expose zero-fill and the20-code-unit terminator. This is not every House name writer or a complete saved scenario.",
     "Native combined score54E8 is preserved as raw signed bits. This is not a new proof of the Rust split score or aggregate per-house/category representation. All three complete RNG states are unchanged."
   ],
   "substitutions": [
@@ -31,7 +32,8 @@
     "swizzle_register": "0x006CF2C0",
     "swizzle_convert": "0x006CF230",
     "constructor_losses_score_counters": "0x004F5A2A",
-    "constructor_kill_tables": "0x004F629A"
+    "constructor_kill_tables": "0x004F629A",
+    "local_player_name_writer": "0x00688092"
   },
-  "payload_sha256": "1ccdec7152f5a50bd397b88b8e07a3395bbdd64d5ac8a512d6da6c330fd5b187"
+  "payload_sha256": "5b79c9153cec38c07dceb20fd08512963e7deb340c2a055ad39c3599142ac3a4"
 }

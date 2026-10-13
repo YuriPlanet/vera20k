@@ -196,7 +196,7 @@ impl ProjectileCollisionWorld<'_> {
                     ground_layer: super::display_registry::entity_layer(
                         target,
                         self.terrain,
-                        self.rules,
+                        self.rules.map(|rules| (rules, self.interner)),
                     ) == super::display_layers::DisplayLayer::GROUND,
                     distance: self.target_distance(location, target),
                     building_offset: false,
@@ -1364,6 +1364,7 @@ mod tests {
                 .restore_map_authority_after_snapshot_load(
                     &make_rules(),
                     &runtime.resources.overlay_registry,
+                    None,
                 )
                 .unwrap();
             let mut resumed = SimRuntime::from_simulation(restored);
@@ -1696,6 +1697,7 @@ mod tests {
                 .restore_map_authority_after_snapshot_load(
                     &make_rules(),
                     &runtime.resources.overlay_registry,
+                    None,
                 )
                 .unwrap();
             let mut resumed = SimRuntime::from_simulation(restored);

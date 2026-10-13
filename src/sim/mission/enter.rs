@@ -120,13 +120,16 @@ fn pop_nav_queue(
     id: u64,
     effects: FrameEffects<'_>,
 ) -> bool {
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+    let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
     if entity.navigation.nav_com.is_some() || entity.navigation.nav_queue.is_empty() {
         return false;
     }
-    let _ = crate::sim::movement::locomotor_owner::try_end_piggyback(entity);
+    let _ = sim.try_end_piggyback(id, Some(rules));
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
     let queue = entity.navigation.nav_queue.clone();
     if let NavTargetRef::Cell { rx, ry } = queue[0] {
         sim.set_unit_destination(

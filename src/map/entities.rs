@@ -31,6 +31,13 @@ pub enum EntityCategory {
     Aircraft,
 }
 
+impl EntityCategory {
+    /// AbstractFlags bit 2 (`+0x14 & 4`): the object is a FootClass.
+    pub(crate) const fn is_foot(self) -> bool {
+        matches!(self, Self::Unit | Self::Infantry | Self::Aircraft)
+    }
+}
+
 impl From<crate::rules::object_type::ObjectCategory> for EntityCategory {
     /// The class of object a type of each registry constructs.
     fn from(category: crate::rules::object_type::ObjectCategory) -> Self {

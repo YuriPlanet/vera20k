@@ -116,11 +116,8 @@ impl Simulation {
                 Some(rules),
                 effects,
             );
-            if let Some(unit) = self.substrate.entities.get_mut(id)
-                && let Some(locomotor) = unit.locomotor.as_mut()
-            {
-                locomotor.power_off();
-            }
+            // `0x0073A52B`: ILoco+0x5C, Hover's override included.
+            self.locomotor_power_off(id);
             return true;
         }
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -181,6 +178,9 @@ impl Simulation {
         if let Some(rules) = rules
             && reason == PerCellReason::Arrival
         {
+            // 0x00739F21..0x00739F59 come first: a `PoweredUnit=` type whose
+            // house has no powered center goes offline off a building.
+            self.powered_unit_arrival(id, rules, effects);
             // The object-destination docking arm73A31F..A547 completes
             // Foot's tail and returns before the later factory clearance.
             if self.unit_dock_now(id, rules, registry, effects) {
@@ -735,8 +735,8 @@ impl Simulation {
     /// tools/spatial_oracle/walk_percell_stop.{py,json,meta.json}.
     ///
     /// A Unit whose approach its mission's Approach carries
-    /// (`mission_owns_approach`: a Drive, Ship or Hover unit, or a crush
-    /// charge) takes the whole stop here, as natively; the pursuit stage
+    /// (`mission_owns_approach`) takes the whole stop here, as natively, a
+    /// Jumpjet one from its descent; the pursuit stage
     /// leaves it alone. For any other Unit that stage's in-range halt
     /// (`world_orders.rs`) stands in for the InRange arm, tested each frame,
     /// and only the `OpenTopped=` arm runs here. Every infantryman takes Infantry

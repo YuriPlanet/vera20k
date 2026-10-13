@@ -111,6 +111,56 @@ mod tests {
         }
     }
 
+    /// Deactivate683EB0/4AEAD0's teardown (the pause-overlay path): drop the
+    /// tactical capture, band drag and minimap gesture, but keep an armed
+    /// building placement / superweapon targeting and the physical button
+    /// record — the overlay cancels a drag, never a pending placement.
+    #[test]
+    fn pause_teardown_cancels_drag_but_keeps_targeting_modes() {
+        let mut interner = crate::sim::intern::StringInterner::new();
+        let owner = interner.intern("FixtureHouse");
+        for building in [true, false] {
+            let mut input =
+                MatchInputState::new(crate::app::input::hotkeys::HotkeyBindings::load(None));
+            if building {
+                assert!(input.begin_building_placement("FixtureBuilding", 23, owner,));
+            } else {
+                input.targeting_mode = Some(TargetingMode::SuperWeapon("FixtureSuper".to_owned()));
+            }
+            input.building_placement_preview =
+                Some(crate::sim::production::BuildingPlacementPreview {
+                    rx: 10,
+                    ry: 11,
+                    width: 1,
+                    height: 1,
+                    valid: true,
+                    reason: None,
+                    cell_valid: vec![true],
+                    wall_autofill_cells: vec![],
+                });
+            // All three latches the swallowed release used to strand.
+            input.minimap_dragging = true;
+            input.selection_state.begin_drag(10.0, 20.0);
+            input.selection_state.update_drag(40.0, 50.0);
+            assert!(input.tactical_mouse.begin_left_press());
+
+            input.cancel_tactical_drag();
+
+            assert!(!input.minimap_dragging);
+            assert!(!input.selection_state.is_dragging());
+            assert!(!input.tactical_mouse.captured);
+            assert!(
+                input.tactical_mouse.left_held(),
+                "physical button state survives — the OS still holds it",
+            );
+            assert!(
+                input.targeting_mode.is_some(),
+                "the armed cursor mode must survive the pause teardown",
+            );
+            assert!(input.building_placement_preview.is_some());
+        }
+    }
+
     #[test]
     fn native_input_histories_preserve_cursor_depth_and_scenario_prior_gate() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(

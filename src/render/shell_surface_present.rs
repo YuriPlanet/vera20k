@@ -40,7 +40,7 @@ impl SurfaceEffects {
 
 /// GPU resources for the active-retail shell presentation boundary.
 pub(crate) struct ShellSurfacePresenter {
-    _source_texture: wgpu::Texture,
+    source_texture: wgpu::Texture,
     source_render_view: wgpu::TextureView,
     _source_encoded_view: wgpu::TextureView,
     presented_texture: wgpu::Texture,
@@ -108,7 +108,7 @@ impl ShellSurfacePresenter {
         );
 
         Ok(Self {
-            _source_texture: targets.source_texture,
+            source_texture: targets.source_texture,
             source_render_view: targets.source_render_view,
             _source_encoded_view: targets.source_encoded_view,
             presented_texture: targets.presented_texture,
@@ -132,6 +132,43 @@ impl ShellSurfacePresenter {
         self.source_render_view.clone()
     }
 
+    /// Retain a completed shell composition at the same pre-cursor boundary as
+    /// tactical rendering. The app's ordinary present commit publishes it.
+    /// `frame` is the composed top-left corner: a zoomed match frame's source
+    /// size, else the whole source.
+    pub(crate) fn stage_cursor_free_composition(
+        &self,
+        cache: &super::screenshot::PresentedFrameCache,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        frame: (u32, u32),
+    ) {
+        cache.stage_pre_cursor_composition(
+            device,
+            encoder,
+            &self.source_texture,
+            self.surface_format,
+            frame.0,
+            frame.1,
+            self.width,
+            self.height,
+        );
+    }
+
+    /// Load the shared last-presented backing for an overlay-only modal
+    /// painting a `frame`-sized corner. This also projects a tactical source
+    /// through its existing upscale owner when the frame is the whole source.
+    pub(crate) fn restore_cursor_free_composition(
+        &self,
+        cache: &super::screenshot::PresentedFrameCache,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        frame: (u32, u32),
+        upscale: Option<&super::upscale_pass::UpscalePass>,
+    ) -> Result<bool> {
+        cache.encode_previous_composition(device, encoder, &self.source_texture, frame, upscale)
+    }
+
     /// Recreate only surface-sized resources after a swapchain resize.
     pub(crate) fn resize(&mut self, gpu: &GpuContext) {
         if self.width == gpu.config.width && self.height == gpu.config.height {
@@ -150,7 +187,7 @@ impl ShellSurfacePresenter {
             gpu.config.width,
             gpu.config.height,
         );
-        self._source_texture = targets.source_texture;
+        self.source_texture = targets.source_texture;
         self.source_render_view = targets.source_render_view;
         self._source_encoded_view = targets.source_encoded_view;
         self.presented_texture = targets.presented_texture;
@@ -290,7 +327,10 @@ fn create_targets(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: surface_format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST,
         view_formats: &[encoded_format],
     });
     let source_render_view = source_texture.create_view(&wgpu::TextureViewDescriptor {

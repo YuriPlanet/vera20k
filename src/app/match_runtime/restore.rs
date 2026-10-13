@@ -1,14 +1,15 @@
-//! Successful same-content world replacement and its presentation lifecycle.
+//! Successful saved-world adoption and its route-specific presentation state.
 
 use crate::app::AppState;
 
-/// Apply the enumerated post-prepare replacement bundle. This function has no
-/// recoverable failure path; best-effort presentation rebuilds retain their
-/// prior valid resources when replacement is unavailable.
+/// Apply the validated world/resources and the already-prepared asset bundle.
+/// Recoverable preparation has finished before any outgoing state is cleared.
+/// Menu and in-game loading share this commit; fresh startup admission is not run.
 pub(crate) fn commit_prepared_load(
     state: &mut AppState,
     path: &std::path::Path,
-    prepared: crate::app::persistence::PreparedLoad,
+    prepared: crate::app::persistence::PreparedSavedGame,
+    from_menu: bool,
 ) {
     let native_tiberium_stats = prepared.native_tiberium_stats();
     log::info!(
@@ -30,101 +31,107 @@ pub(crate) fn commit_prepared_load(
     crate::app::input::dispatch::selection_navigation::reset_for_world_replacement(
         &mut state.match_state.input,
     );
-    state.match_state.input.reset_targeting_for_new_world();
-    // F10 lifecycle: a successful in-scenario load closes the outgoing
-    // timeline's diagnostic segment BEFORE the restored simulation commits;
-    // the restored timeline lazily opens its own segment on the next frame.
-    // A failed close discards rather than retains (no mixed-header artifact).
+    // The outgoing replay closes before the process dummy and runtime change.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
+    let committed = prepared.commit_into(
+        &mut state.process_assets,
+        &state.frontend.frontend_main_rng,
+        &mut state.match_state.sim_runtime,
+    );
+    // All preparation has succeeded. Surface allocation and saved camera
+    // conversion now use the tactical upscaler dimensions on either route.
+    state.frontend.screen = crate::ui::game_screen::GameScreen::InGame;
+    // A validated saved timeline replaces the outgoing fresh-L0 evidence and
+    // remains available to the ordinary pump and exact diagnostic stepping.
+    state.match_state.startup.acknowledge_saved_load();
+    if from_menu {
+        crate::app::loading::pump::present_game_mode_blank(state);
+    }
+
+    // Saved native identity is session.current_house. Never borrow an outgoing
+    // sandbox preference or another match's human display handle.
+    state.match_state.local_owner_override = None;
+    state.match_state.match_presentation.local_player_handle =
+        committed.map.local_player_name().map(str::to_owned);
+    state.match_state.scenario_elapsed_clock = committed.elapsed_clock;
+    state.match_state.sandbox_full_visibility = false;
     let runtime = state
         .match_state
         .sim_runtime
-        .as_mut()
-        .expect("prepared load requires a live runtime");
-    // The close above reads the outgoing tick and its pre-recorded replay only;
-    // it never observes the shared CellClass dummy reconstructed by this commit.
-    let committed = prepared.commit_into(runtime);
+        .as_ref()
+        .expect("prepared saved game installs a runtime");
+    let terrain = runtime
+        .view()
+        .resolved_terrain()
+        .expect("prepared saved game installs resolved terrain");
+    let theater_name = runtime.simulation.session.theater.clone();
+    let theater_ext = crate::app::loading::init_helpers::theater_ext_for(&theater_name).to_owned();
+    let binary_frame = runtime.simulation.session.binary_frame;
+    let map = crate::app::loading::transitions::MapPresentationInputs {
+        basic: committed.map.basic().clone(),
+        source: committed.map.source().clone(),
+        map_hash: Some(committed.map.map_hash()),
+        terrain_grid: committed.terrain_grid,
+        overlays: committed.details.occupied_overlays,
+        terrain_objects: committed.map.terrain_objects().to_vec(),
+        house_roster: committed.map.house_roster().clone(),
+        lighting_config: committed.map.lighting().clone(),
+        theater_name,
+        theater_ext,
+        height_map: terrain.build_height_map(),
+        bridge_height_map: terrain.build_bridge_height_map(),
+    };
+    crate::app::loading::transitions::install_world_presentation(
+        state,
+        map,
+        committed.presentation,
+    );
+
+    crate::app::audio_runtime::bind_match_theme_context(state);
+    let music_now_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
+        state,
+        std::time::Instant::now(),
+    );
+    if let Some(assets) = state.process_assets.manager() {
+        state.audio.restore_saved_theme(
+            committed.map.theme_slots(),
+            state.persistence.options_profile.in_game_music,
+            assets,
+            music_now_ms,
+        );
+    }
+
     // Successful-load685167..6851A1 reduces the retained action-line timer
     // against the restored binary frame, then reanchors that remainder.
-    // This does not introduce timer serialization or a new 25-frame flash.
     // The ordinary globals streams67F7E0/67F9C0 exclude this process timer.
-    // Their restored frame precedes the685120 tail. Original stream layouts
-    // and executed reanchor controls: tools/procedural_drawing_oracle/action_lines.
+    // Executed reanchor controls: tools/procedural_drawing_oracle/action_lines.
     state
         .match_state
         .match_presentation
         .target_lines
-        .reanchor_after_load(runtime.simulation.session.binary_frame);
-    crate::app::input::camera::restore_tactical_view(state, committed.tactical_view);
+        .reanchor_after_load(binary_frame);
     state
         .match_state
         .match_presentation
         .sinking_waterlines
         .borrow_mut()
-        .restore(committed.sinking_waterlines);
-    state
-        .match_state
-        .match_presentation
-        .barrel_image_pitches
-        .borrow_mut()
-        .clear();
-    crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
-    state.match_state.match_presentation.combat_lights.clear();
-    state.match_state.match_presentation.lasers.clear_on_load();
-    state
-        .match_state
-        .match_presentation
-        .electric_bolts
-        .clear_on_load();
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
-        state
-            .match_state
-            .match_presentation
-            .detail
-            .borrow_mut()
-            .configure_normal(&runtime.resources.rules.general.detail);
-    }
-    state
-        .match_state
-        .match_presentation
-        .line_trails
-        .clear_on_load();
-    state
-        .match_state
-        .match_presentation
-        .hidden_super_anims
-        .clear();
-    state
-        .match_state
-        .match_presentation
-        .super_timer_blinks
-        .clear();
-    // MouseLoad5BDF70->no-init5BE9B0 preserves the saved entry lists rather
-    // than re-sorting the current types. Their keys are refreshed from live
-    // rules/CSF below without changing surviving order. A headless snapshot
-    // has no saved strip and keeps the existing silent first-seed behavior.
+        .restore(committed.details.sinking_waterlines);
+    // MouseLoad5BDF70->no-init5BE9B0 preserves the saved entry lists; their
+    // display keys refresh below against incoming rules/CSF without reordering.
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .restore_order(committed.sidebar_order);
-    crate::app::match_runtime::sim_tick::upsert_occupied_overlay_render_entries(
-        state,
-        committed.occupied_overlays,
-    );
+        .restore_order(committed.details.sidebar_order);
 
-    // F10: prepare the restored session.current_house's view BEFORE the first
-    // tactical render (the owner query derives from the committed simulation),
-    // and invalidate the render dirty-gates: the view generation restarts from
-    // zero, so an equal counter no longer proves an unchanged view.
-    if let Some(owner) = crate::app::input::commands::preferred_local_owner_name(state)
-        && let Some(sim) = state
+    if let Some(owner) = state.match_state.local_player_owner().map(str::to_owned) {
+        state
             .match_state
             .sim_runtime
             .as_mut()
-            .map(|rt| &mut rt.simulation)
-    {
-        sim.prepare_fog_view_for(&owner);
+            .expect("prepared saved game installs a runtime")
+            .simulation
+            .prepare_fog_view_for(&owner);
     }
     if let Some(shroud) = state.match_state.match_presentation.shroud_buffer.as_mut() {
         shroud.mark_stale();
@@ -132,34 +139,16 @@ pub(crate) fn commit_prepared_load(
     if let Some(minimap) = state.match_state.match_presentation.minimap.as_mut() {
         minimap.mark_stale();
     }
-    state
-        .match_state
-        .match_presentation
-        .installed_playfield_authority = None;
+    // Replaces every outgoing cursor mode, including the targeting and
+    // Repair/Sell modes, with the saved Display's.
+    committed.local_view.commit_into(
+        &mut state.match_state.input,
+        &mut state.match_state.match_presentation.sidebar_gadget_state,
+    );
+    crate::app::input::camera::restore_tactical_view(state, committed.details.tactical_view);
 
-    // Rebuild sprite/unit atlases so all entity types in the loaded save have
-    // atlas entries before the first render frame.
-    crate::app::match_runtime::sim_tick::refresh_entity_atlases(state);
-
-    // The presentation owner cancels the old timeline's pending light samples.
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref()
-        && let Some(terrain) = runtime.resources.terrain_template.as_ref()
-    {
-        let presentation = &mut state.match_state.match_presentation;
-        presentation.lighting.restore(
-            terrain,
-            &runtime.simulation,
-            &runtime.resources.rules,
-            presentation.in_game_options.detail_level,
-        );
-    }
-
-    // Reset timing to prevent a burst of ticks after the load.
+    // Reset pacing, not saved simulation input delay or elapsed score time.
     state.platform.frame_pacer.reset_for_immediate_frame();
-
-    // Close the save/load panel after loading.
-
-    // Same-content restoration leaves match-owned startup admission untouched.
     state.persistence.last_loaded_save_path = Some(path.to_path_buf());
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
     log::info!("Load: restored simulation from {}", path.display());

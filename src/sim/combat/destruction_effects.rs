@@ -353,10 +353,10 @@ impl Simulation {
         let owner = entity.owner();
 
         // 5. `0x00441702..0x0044172F`: a computer house's `RevealToAll=`
-        // building releases the sight its opening showed the current house
+        // building releases its sight for the current house
         // (`ReReveal(0, 0, 1, PlayerPtr)`).
         if object.reveal_to_all && !self.house_is_human_player(owner) {
-            self.fog.release_alternate_sight(building_id);
+            self.rereveal_sight_to_current_house(building_id, rules);
         }
 
         // 7. `0x0044177E..0x004418E7`.

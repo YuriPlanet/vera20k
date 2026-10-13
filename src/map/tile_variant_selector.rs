@@ -4,6 +4,8 @@
 //! Main-stream draw callback. This keeps map asset resolution independent of
 //! simulation RNG ownership and preserves the original one-time table lifetime.
 
+use std::sync::{Arc, OnceLock};
+
 const TABLE_SIDE: usize = 8;
 const TABLE_LEN: usize = TABLE_SIDE * TABLE_SIDE;
 const MAX_CANDIDATE_DRAWS: usize = 64;
@@ -29,7 +31,7 @@ const MOORE_NEIGHBORS: [(i32, i32); 8] = [
 /// Process-lifetime owner of the lazily generated 8x8 selector table.
 #[derive(Debug, Default)]
 pub struct TileVariantSelectorCache {
-    table8: Option<[u8; TABLE_LEN]>,
+    selector: TileVariantSelector,
     /// `g_ClearTile`/`g_WaterSet` survive scenario loads. Both executable BSS
     /// values start at zero; each completed theater registry load publishes
     /// values for a later map's pre-IsoMapPack Fill pass.
@@ -37,7 +39,98 @@ pub struct TileVariantSelectorCache {
     cached_water_set_base: i32,
 }
 
+/// Shared identity of the native process table at89E620/initialized89E7C7.
+/// Catalog clones retain this handle; the table is initialized only by the
+/// existing4814F0 selector, using the Main callback of its current caller.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct TileVariantSelector {
+    table8: Arc<OnceLock<[u8; TABLE_LEN]>>,
+}
+
+impl TileVariantSelector {
+    fn from_table(table: Option<[u8; TABLE_LEN]>) -> Self {
+        let selector = Self::default();
+        if let Some(table) = table {
+            selector.table8.set(table).expect("new selector is empty");
+        }
+        selector
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_initialized(table: [u8; TABLE_LEN]) -> Self {
+        Self::from_table(Some(table))
+    }
+
+    pub(crate) fn initialized_table(&self) -> Option<[u8; TABLE_LEN]> {
+        self.table8.get().copied()
+    }
+
+    pub(crate) fn select_variant(
+        &self,
+        cell: (i32, i32),
+        sub_tile: u8,
+        dimensions: (u32, u32),
+        total_file_count: u8,
+        raw_draw: &mut dyn FnMut() -> u32,
+    ) -> u8 {
+        let table = self.table8.get_or_init(|| generate_table(raw_draw));
+        select_from_initialized_table(
+            table,
+            cell.0,
+            cell.1,
+            sub_tile,
+            dimensions.0,
+            dimensions.1,
+            total_file_count,
+        )
+    }
+}
+
 impl TileVariantSelectorCache {
+    /// Prepare a saved-load candidate without changing the live process
+    /// table. Its matching Main cursor is committed with this candidate.
+    pub(crate) fn detached(&self) -> Self {
+        Self {
+            selector: TileVariantSelector::from_table(self.selector.initialized_table()),
+            cached_clear_tile_base: self.cached_clear_tile_base,
+            cached_water_set_base: self.cached_water_set_base,
+        }
+    }
+
+    /// Adopt a successful candidate into the retained process identity.
+    /// Divergence means another load initialized the table after preparation;
+    /// its Main continuation cannot be silently paired with this candidate.
+    pub(crate) fn adopt_prepared(&mut self, prepared: Self) -> Result<(), &'static str> {
+        match (
+            self.selector.initialized_table(),
+            prepared.selector.initialized_table(),
+        ) {
+            (Some(current), Some(candidate)) if current == candidate => {}
+            (None, Some(candidate)) => self
+                .selector
+                .table8
+                .set(candidate)
+                .map_err(|_| "terrain selector changed during saved-load commit")?,
+            (None, None) => {}
+            _ => return Err("terrain selector diverged after saved-load preparation"),
+        }
+        self.cached_clear_tile_base = prepared.cached_clear_tile_base;
+        self.cached_water_set_base = prepared.cached_water_set_base;
+        Ok(())
+    }
+
+    pub(crate) fn selector(&self) -> TileVariantSelector {
+        self.selector.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn initialized_for_test(table: [u8; TABLE_LEN]) -> Self {
+        Self {
+            selector: TileVariantSelector::from_initialized(table),
+            ..Self::default()
+        }
+    }
+
     /// Start one scenario load without initializing the table yet.
     pub fn begin_load<'cache, 'draw>(
         &'cache mut self,
@@ -78,7 +171,7 @@ impl TileVariantSelectorCache {
     }
 
     pub fn is_initialized(&self) -> bool {
-        self.table8.is_some()
+        self.selector.table8.get().is_some()
     }
 }
 
@@ -127,22 +220,29 @@ impl TileVariantSelectionContext<'_, '_> {
         template_height: u32,
         total_file_count: u8,
     ) -> u8 {
-        self.ensure_table();
-
-        select_from_initialized_table(
-            &self.cache.table8.expect("selector table initialized"),
-            cell_x,
-            cell_y,
+        let was_initialized = self.cache.is_initialized();
+        let selected = self.cache.selector.select_variant(
+            (cell_x, cell_y),
             sub_tile,
-            template_width,
-            template_height,
+            (template_width, template_height),
             total_file_count,
-        )
+            &mut || {
+                self.raw_draw_count += 1;
+                (self.raw_draw)()
+            },
+        );
+        self.generated_table |= !was_initialized;
+        selected
     }
 
     /// Copy the existing process table without initializing it or drawing RNG.
+    #[cfg(test)]
     pub(crate) fn initialized_table(&self) -> Option<[u8; TABLE_LEN]> {
-        self.cache.table8
+        self.cache.selector.initialized_table()
+    }
+
+    pub(crate) fn selector(&self) -> TileVariantSelector {
+        self.cache.selector()
     }
 
     /// True only for the load that performed the process-global table build.
@@ -160,38 +260,34 @@ impl TileVariantSelectionContext<'_, '_> {
     pub fn raw_draw_count(&self) -> usize {
         self.raw_draw_count
     }
+}
 
-    fn ensure_table(&mut self) {
-        if self.cache.table8.is_some() {
-            return;
-        }
-
-        let mut table = [0u8; TABLE_LEN];
-        let mut filled = [false; TABLE_LEN];
-        for cell_index in 0..TABLE_LEN {
-            for attempt in 0..MAX_CANDIDATE_DRAWS {
-                let candidate = (self.raw_draw)() as u8 & 7;
-                self.raw_draw_count += 1;
-                let collides = MOORE_NEIGHBORS.iter().any(|&(dx, dy)| {
-                    let mut neighbor = cell_index as i32 + dy * TABLE_SIDE as i32 + dx;
-                    if neighbor < 0 {
-                        neighbor += TABLE_LEN as i32;
-                    } else if neighbor >= TABLE_LEN as i32 {
-                        neighbor -= TABLE_LEN as i32;
-                    }
-                    let neighbor = neighbor as usize;
-                    filled[neighbor] && table[neighbor] == candidate
-                });
-                if !collides || attempt + 1 == MAX_CANDIDATE_DRAWS {
-                    table[cell_index] = candidate;
-                    filled[cell_index] = true;
-                    break;
+/// Original48150F..481570: one process table, native Moore-neighbor order and
+/// at most64 Main candidates per slot. Loading and runtime share this body.
+fn generate_table(raw_draw: &mut dyn FnMut() -> u32) -> [u8; TABLE_LEN] {
+    let mut table = [0u8; TABLE_LEN];
+    let mut filled = [false; TABLE_LEN];
+    for cell_index in 0..TABLE_LEN {
+        for attempt in 0..MAX_CANDIDATE_DRAWS {
+            let candidate = raw_draw() as u8 & 7;
+            let collides = MOORE_NEIGHBORS.iter().any(|&(dx, dy)| {
+                let mut neighbor = cell_index as i32 + dy * TABLE_SIDE as i32 + dx;
+                if neighbor < 0 {
+                    neighbor += TABLE_LEN as i32;
+                } else if neighbor >= TABLE_LEN as i32 {
+                    neighbor -= TABLE_LEN as i32;
                 }
+                let neighbor = neighbor as usize;
+                filled[neighbor] && table[neighbor] == candidate
+            });
+            if !collides || attempt + 1 == MAX_CANDIDATE_DRAWS {
+                table[cell_index] = candidate;
+                filled[cell_index] = true;
+                break;
             }
         }
-        self.cache.table8 = Some(table);
-        self.generated_table = true;
     }
+    table
 }
 
 /// Native4814F0 coordinate arithmetic after one-time process initialization.
@@ -249,9 +345,66 @@ mod tests {
             *value = (index & 7) as u8;
         }
         TileVariantSelectorCache {
-            table8: Some(table),
+            selector: TileVariantSelector::from_initialized(table),
             ..TileVariantSelectorCache::default()
         }
+    }
+
+    #[test]
+    fn rejected_saved_candidate_leaves_retained_selector_cold() {
+        let live = TileVariantSelectorCache::default();
+        let retained = live.selector();
+        let mut candidate = live.detached();
+        let mut main = SimRng::new(0);
+        {
+            let mut draw = || main.next_u32();
+            candidate
+                .begin_load(&mut draw)
+                .select_variant(1, 2, 0, 1, 1, 8);
+        }
+        assert!(candidate.is_initialized());
+        assert!(!live.is_initialized());
+        assert!(retained.initialized_table().is_none());
+        drop(candidate);
+        assert!(!live.is_initialized());
+    }
+
+    #[test]
+    fn successful_saved_candidate_adopts_into_existing_selector_identity() {
+        let mut live = TileVariantSelectorCache::default();
+        let retained = live.selector();
+        let mut candidate = live.detached();
+        candidate.complete_theater_registry_load(Some(23), Some(41));
+        let mut main = SimRng::new(0);
+        {
+            let mut draw = || main.next_u32();
+            candidate
+                .begin_load(&mut draw)
+                .select_variant(1, 2, 0, 1, 1, 8);
+        }
+        let expected = candidate.selector.initialized_table();
+        live.adopt_prepared(candidate).unwrap();
+        assert_eq!(retained.initialized_table(), expected);
+        assert_eq!(live.cached_clear_tile_base(), 23);
+        assert_eq!(live.cached_water_set_base(), 41);
+        let mut no_draw = || panic!("adopted process selector is warm");
+        let mut next_load = live.begin_load(&mut no_draw);
+        assert_eq!(next_load.select_variant(1, 2, 0, 1, 1, 8), 4);
+        assert_eq!(next_load.raw_draw_count(), 0);
+    }
+
+    #[test]
+    fn saved_candidate_cannot_overwrite_a_diverged_process_selector() {
+        let mut live = TileVariantSelectorCache::default();
+        let candidate = live.detached();
+        let mut main = SimRng::new(7);
+        {
+            let mut draw = || main.next_u32();
+            live.begin_load(&mut draw).select_variant(1, 2, 0, 1, 1, 8);
+        }
+        let before = live.selector.initialized_table();
+        assert!(live.adopt_prepared(candidate).is_err());
+        assert_eq!(live.selector.initialized_table(), before);
     }
 
     #[test]
@@ -307,7 +460,7 @@ mod tests {
             3, 5, 0, 1, 4, 0, 1, 2, //
             4, 7, 2, 6, 2, 3, 7, 5,
         ];
-        assert_eq!(cache.table8, Some(expected));
+        assert_eq!(cache.selector.initialized_table(), Some(expected));
         assert!(
             cache.is_initialized(),
             "closing or discarding the preview owner must not clear it"

@@ -871,11 +871,7 @@ pub(crate) fn ordinary_cell_move_goal(
 ) -> Option<CellMoveGoal> {
     if native_ground_receiver
         && (!queued_input
-            || sim.infantry_setter_receiver(
-                entity_id,
-                crate::sim::components::NavTargetRef::cell(clicked.0, clicked.1),
-                rules,
-            )
+            || sim.infantry_setter_receiver(entity_id, rules)
             || sim.drive_unit_setter_receiver(entity_id))
         && let Some(result) = sim.ordinary_ground_foot_cell_input(viewer, entity_id, clicked, rules)
     {

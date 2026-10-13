@@ -7,22 +7,37 @@
     1,
     33621247
   ],
-  "scope": "Random seed and first 16 draws for five selected seeds, plus seven mixed raw/ranged histories (98 calls) at ordinary audio bounds. Includes equal/reversed bounds, rejection and cursor-wrap continuation; not exhaustive signed-range or full generator parity.",
+  "scope": "Random seed and first 16 draws for five selected seeds, plus seven mixed raw/ranged histories (98 calls) at ordinary audio bounds. Includes equal/reversed bounds, rejection and cursor-wrap continuation; nine original Scenario load/menu reseed controls. Not exhaustive signed-range, full world-load or whole-loop RNG parity.",
   "assumptions": [
     "A zero-initialized 0x3f4-byte generator is supplied to Random__Seed.",
     "Legacy raw calls use fresh emulators and carry only generator bytes forward.",
     "Each mixed history retains one emulator and native-produced RNG state; optional 146/249 raw prefixes execute before the recorded initial state.",
     "Source RNG initialization and supplied bounds are fixture inputs, not a whole application audio/theme scheduling claim.",
     "Raw draw counts and values are observed at native word stores65C79D/65C84B; RandomRanged inlines the draw instead of calling65C780.",
-    "Disabled RNG objects and signed spans at or above 0x7fffffff are outside these controls."
+    "Disabled RNG objects and signed spans at or above 0x7fffffff are outside these controls.",
+    "Menu rows reuse ScenarioFixture Save/Load/post-read with supplied stopped timer, empty arrays and false11F8; each incoming RNG state is produced by original Seed/Next.",
+    "Original RandomStraw6616B0 constructor executes; mode, gate globals, seed override and two OS clocks are supplied inputs, not captured startup values.",
+    "52E619..52E61E executes the actual menu call into52FC20; separate52E623..52E97D observes the loaded flag. Intervening6370B0 and later common continuation are excluded.",
+    "Logical RNG comparison excludes only padding bytes1..3; MapGen retention compares all bytes at this bounded boundary, not every full-load consumer.",
+    "The in-game caller bypasses52FC20 by original caller/control-flow evidence, not by an emulated complete options/game loop."
   ],
-  "substitutions": [],
+  "substitutions": [
+    "Shared Scenario in-memory IStream transport,4068E0 diagnostic return and6C8C40 clock0.",
+    "GetSystemTime supplies the declared8-word SYSTEMTIME; GetTickCount supplies each explicit tick. No RNG routine or original executable instruction is substituted."
+  ],
   "entry_points": {
     "Random__Seed": "0x0065C6D0",
     "Random__Next": "0x0065C780",
-    "Random__RandomRanged": "0x0065C7E0"
+    "Random__RandomRanged": "0x0065C7E0",
+    "ScenarioSave": "0x00689310",
+    "ScenarioLoad": "0x00689470",
+    "ScenarioPostRead": "0x00683560",
+    "MenuCall": "0x0052E619",
+    "InitRandom": "0x0052FC20",
+    "MenuLoadedFlag": "0x0052E623",
+    "RandomStrawConstructor": "0x006616B0"
   },
   "command": "python -m tools.rmg_oracle.gen_rng_vectors --check",
-  "payload_sha256": "bc37db27193f5618884245f91b96a200c92d25a73d760616a836d2a39577468c",
-  "replay_command": "python -m tools.rmg_oracle.gen_rng_vectors"
+  "replay_command": "python -m tools.rmg_oracle.gen_rng_vectors",
+  "payload_sha256": "4d4a1073e2fad7c519ddd25be8619ac82665d24ce796331488d8f67a9f894100"
 }

@@ -68,7 +68,7 @@ root-only terrain input and startup tech-building projection from that retained
 owner. Replacing a loose INI after startup therefore cannot change those inputs.
 The app-local Rules composer and source rereader have been removed.
 
-[Recorded validation](ini_lookup.validation.json) includes strict-retail library
+Recorded validation (`tools/ini_lookup.validation.json`, in git at 1b1a8b43e) includes strict-retail library
 and Clippy results, explicit random-map/reader witnesses, three reproduced native
 corpora, release CLI cases, a headless Hills run and an unchanged production frame.
 Reproduce the additional production witnesses with the existing tools:

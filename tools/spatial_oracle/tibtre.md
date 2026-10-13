@@ -135,7 +135,7 @@ the relevant rows and verify their connection through the live object turn.
 
 ## Rust integration and release observations
 
-The [validation receipt](tibtre.validation.json) records the exact candidate,
+The validation receipt (`tools/spatial_oracle/tibtre.validation.json`, in git at 1b1a8b43e) records the exact candidate,
 retained build manifests/binary hashes, native payload hashes and production
 observations. `sim::world::tibtre_oracle_tests` replays all 660 original AI visits
 and all 24 direct spread rows, comparing stage, rate, timer, cell bytes, growth

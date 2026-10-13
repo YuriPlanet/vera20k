@@ -304,7 +304,7 @@ fn native_foot_load_reset_runs_through_snapshot_restore_then_the_next_visit() {
             expected_state(&row["before"]),
             "{name}: raw snapshot fields reach the restore owner"
         );
-        loaded.retain_in_scenario_process_state_from(&sim);
+        loaded.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
         loaded.restore_after_snapshot_load().unwrap();
         loaded.resolve_type_handles(&rules);
         assert_eq!(

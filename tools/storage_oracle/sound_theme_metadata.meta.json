@@ -7,17 +7,26 @@
     1,
     33621247
   ],
-  "scope": "Eight original YR music WAV metadata inputs, sixteen PCM seconds-boundary cases, four retained-or-pending cases for each original caller",
+  "scope": "Eight original YR WAV metadata inputs, sixteen PCM boundary cases, four retained-or-pending queries, nineteen Theme Save/Load controls, sixteen score-volume conversions, nine signed setters, four AI volume controls and four completed-fade consumers",
   "assumptions": [
     "Retail inputs explicitly thememd.mix; mount precedence independently inspected with asset browser, not emulated",
     "Python supplies fmt pointer ESI, zeroed descriptor EBX, declared data length EDX, valid stack and destination; original RIFF file I/O/chunk walk not executed",
     "PCM positive mono/stereo 8/16-bit at22050/44100Hz; bytes immediately before/at60seconds, no overflow/malformed/zero-rate scope",
     "Original duration helper and its CRT arithmetic execute completely; descriptor rate and whole-second store execute bounded original blocks",
     "Supplied x87 control027F; scoped stored integer seconds are exactly representable and independent of rounding",
-    "Current-song comparisons supply three global slots and stop before Queue; no playback/output or complete dialog execution"
+    "Current-song comparisons supply three global slots and stop before Queue; no playback/output or complete dialog execution",
+    "Storage executes full721010Save/721040Load/720BB0Play and Load's inline Queue. Original8-byte stream writes receiver+4 retained then+8 pending; active+0 and playback position are not serialized",
+    "Storage inputs supply eight synthetic entries, positive/default or zero volume, outgoing slots, InGameMusicA8EBA5, ScoresPresentA8EC74, startupA8ED64 and device/stream states. Byte89E3A0=1 bypasses CD detection. These controls do not choose a retail/RA2 catalog or model full LoadContent order",
+    "Storage controls cover menu replacement, pending/retained sentinels, same song, absent stream, three admission gates, disabled music, read failures and existing fades. Stream state changes are explicit transport results; time-dependent interpolation, media decoding and output-device behavior are not emulated",
+    "Two additional incoming-fade controls preserve disabled outgoing Theme state and execute same-retained finished-fade restart. They begin at ThemeLoad; original load-prefix scalar cleanup is instruction-established separately, not substituted for a whole world-load execution",
+    "Score-volume controls execute full720960 constructor,5FA4A0 Options setter, actual7C5F00 conversion and721290 setter with process x87 control0E7F. Supplied f32 bits include the first positive quantization boundary, upper clamp, signed zero, negatives and nonfinite values. Separate int setter rows bound its signed upper-only clamp",
+    "Four AI controls continue original7209D0 after bounded no-stream load at volume-1/0/1/255. Pending is a real index7, so these do not cover NextSong selection or claim a random-song history. Supplied Main bytes remain unchanged",
+    "Four completed-fade consumers continue original Still_Playing720FD0, Queue720B20, Stop720EA0 or AI7209D0 after disabled ThemeLoad retains outgoing slots/fading. Queue requests7, Stop requests fade, and AI pending-3 avoids NextSong; this is not elapsed interpolation execution or a whole audio process"
   ],
   "substitutions": [
-    "File I/O/chunk parsing and allocations replaced by supplied original fmt/data metadata and writable scratch; no native instructions patched"
+    "File I/O/chunk parsing and allocations replaced by supplied original fmt/data metadata and writable scratch; no native instructions patched",
+    "Theme storage uses an in-memory IStream. Audio device407000, playing408070, interpolating4080D0, Stop407F40, PlayFile407B60 and target-zero4080C0 are bounded transports with recorded arguments/results; diagnostic4068E0 returns zero. Original CRT_makepath executes",
+    "Score-volume407150 records the scalar target and returns without emulating stream interpolation; original Options field storage, multiplications, ftol and Theme clamp execute"
   ],
   "entry_points": {
     "catalog": "0x007207F0",
@@ -25,7 +34,21 @@
     "milliseconds": "0x00408560",
     "seconds": "0x007208D3",
     "launcher_current": "0x0055FBE5",
-    "sound_current": "0x006B6918"
+    "sound_current": "0x006B6918",
+    "theme_save": "0x00721010",
+    "theme_load": "0x00721040",
+    "theme_play": "0x00720BB0",
+    "load_content_call": "0x0067F79A",
+    "theme_constructor": "0x00720960",
+    "score_volume": "0x005FA4A0",
+    "theme_set_volume": "0x00721290",
+    "ftol": "0x007C5F00",
+    "theme_ai": "0x007209D0",
+    "theme_still_playing": "0x00720FD0",
+    "theme_queue": "0x00720B20",
+    "theme_stop": "0x00720EA0"
   },
-  "payload_sha256": "445681154dc4366839506262f8986a3966d533174c280c50b490fe2d8712474a"
+  "command": "python -m tools.storage_oracle.sound_theme_metadata --check",
+  "replay_command": "python -m tools.storage_oracle.sound_theme_metadata",
+  "payload_sha256": "2faeb40db4d48875635384dedfc4a70f6cb41e8e9a4dc52ebdf1b454a30dad24"
 }

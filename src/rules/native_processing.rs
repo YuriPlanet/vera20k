@@ -339,7 +339,7 @@ fn process_native_noncampaign_rules_prepass_inner(
 /// tools/rules_oracle/bridge_anim_lists.{py,json}. WeatherConClouds
 /// (`+0x2BC`, `0x0066DD28`) and WeatherConBolts (`+0x2D8`, `0x0066DE2B`) take
 /// the same ReadString128/FindOrAllocate body.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct GeneralTypeLists {
     metallic_debris: Vec<String>,
     bridge_explosions: Vec<String>,
@@ -372,7 +372,7 @@ const PARADROP_INFANTRY_KEYS: [&str; 4] = [
 ];
 
 /// Result of applying an ordered rules stack.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ProcessedRulesLayers {
     ini: IniFile,
     crate_rules: CrateRules,
@@ -386,6 +386,40 @@ pub struct ProcessedRulesLayers {
 impl ProcessedRulesLayers {
     pub fn ini(&self) -> &IniFile {
         &self.ini
+    }
+
+    /// Transfer constructor chronology once, retaining the same processed
+    /// Rules/type authority for save and later process transitions.
+    pub(crate) fn take_constructor_events(&mut self) -> (Vec<NativeTypeConstructionEvent>, usize) {
+        (
+            std::mem::take(&mut self.native_type_construction_trace.events),
+            self.native_type_construction_trace
+                .allocated_super_weapon_type_count,
+        )
+    }
+
+    /// RulesLoad675210 and the type hierarchy restore live fields, rather than
+    /// executing fresh Full_Init/Process. VERA persists this existing processed
+    /// state and rebuilds its RuleSet projection; no constructors or IDs replay.
+    /// Reject indexes before any projection can dereference a saved type slot.
+    pub(crate) fn validate_saved_state(&self) -> Result<(), RulesError> {
+        let families = &self.native_type_construction_trace.registry_state.families;
+        let projectile_count = families
+            .get(&RulesTypeFamily::Projectile)
+            .map_or(0, Vec::len);
+        if families.values().flatten().any(|member| {
+            usize::from(member.building_foundation)
+                >= crate::rules::foundation::FOUNDATION_TABLE.len()
+                || member
+                    .weapon
+                    .projectile
+                    .is_some_and(|index| index >= projectile_count)
+        }) {
+            return Err(RulesError::InvalidSavedState(
+                "type reference is outside its registry",
+            ));
+        }
+        Ok(())
     }
 
     /// Allocated AnimTypes and whether their fixed-ART body has actually been
@@ -808,8 +842,9 @@ impl NativeTypeConstructionEvent {
 /// This is chronology, not a final-registry recount. It must therefore travel
 /// with the processed Rules result and may not be cloned into a second prefix
 /// authority.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct NativeTypeConstructionTrace {
+    #[serde(skip)]
     events: Vec<NativeTypeConstructionEvent>,
     allocated_super_weapon_type_count: usize,
     registry_state: NativeRulesRegistryState,
@@ -867,7 +902,7 @@ impl NativeTypeConstructionTrace {
 /// fresh Full_Init must hand off one authority instead of recounting a merged
 /// INI. Tiberium slots are included even though their constructors spend no ID.
 /// RulesClass scalars share this process lifetime and survive Type resets.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct NativeRulesRegistryState {
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
     tiberiums: Vec<ProcessedType>,
@@ -984,7 +1019,7 @@ impl NativeRulesRegistryState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 enum RulesTypeFamily {
     Country,
     Side,
@@ -1084,7 +1119,7 @@ impl RulesTypeFamily {
 /// Resolved names preserve native factory spelling and vector order. These
 /// pointer bindings belong to the retained Rules object, not merged INI text.
 /// Native reader corpus: tools/rules_oracle/select_anim_inputs.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct SelectAnimRulesState {
     lightning_warhead: String,
     weather_con_bolt_explosion: String,
@@ -1092,14 +1127,14 @@ struct SelectAnimRulesState {
     splash_list: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 struct WarheadAnimReadState {
     conventional: bool,
     em_effect: bool,
     anim_list: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ProcessedType {
     native_stored_id: String,
     body: IniSection,
@@ -1138,7 +1173,7 @@ struct ProcessedType {
 /// Fields needed by Weapon7729F0, retained on the same live Weapon object.
 /// The projectile handle is an allocation index, not a relookup of a truncated
 /// name: repeated names longer than 24 bytes can allocate distinct native types.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 struct WeaponReadState {
     speed: i32,
     range_leptons: i32,

@@ -331,8 +331,10 @@ pub(crate) struct ExactStepReceipt {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum ExactStepError {
-    #[error("exact tactical step requires an accepted match or installed campaign")]
-    MissingInstalledStartup,
+    #[error(
+        "exact tactical step requires an accepted match, installed campaign or committed saved world"
+    )]
+    MissingAdmittedWorld,
     #[error("exact tactical step requires the InGame screen")]
     ScreenNotInGame,
     #[error("exact tactical step requires a live simulation")]
@@ -636,7 +638,7 @@ pub(crate) fn advance_in_game_runtime_exact_step(
 ) -> Result<ExactStepReceipt, ExactStepError> {
     let admitted = state.match_state.startup.admits_exact_step();
     if !admitted {
-        return Err(ExactStepError::MissingInstalledStartup);
+        return Err(ExactStepError::MissingAdmittedWorld);
     }
     if state.frontend.screen != GameScreen::InGame {
         return Err(ExactStepError::ScreenNotInGame);

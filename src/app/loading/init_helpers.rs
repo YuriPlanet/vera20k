@@ -21,7 +21,6 @@ use crate::render::sidebar_cameo_atlas::{self, SidebarCameoAtlas};
 use crate::render::sprite_atlas::{self, SpriteAtlas};
 use crate::render::tile_atlas::{self, TileAtlas};
 use crate::render::unit_atlas::{self, UnitAtlas};
-#[cfg(test)]
 use crate::rules::ini_parser::IniFile;
 use crate::rules::process_owner::NativeRulesProcessOwner;
 #[cfg(test)]
@@ -387,6 +386,48 @@ pub(crate) fn scheduler_anim_roots(
     roots.into_iter().collect()
 }
 
+/// Install the process-selected ART metadata before terrain construction or
+/// saved-cell rebinding. RulesLoad675210 restores type state, while the
+/// hierarchy/theater loaders rebind resident images (LoadContent67E730).
+/// Keep the same gameplay ART projection and marking dimensions on both routes.
+pub(crate) fn bind_rules_art_metadata(
+    rules: &mut RuleSet,
+    fixed_art: &IniFile,
+    assets: &AssetManager,
+    theater_ext: &str,
+    theater_name: &str,
+) {
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(fixed_art));
+    let (populated, fallback) = rules.populate_anim_frame_dims(assets, theater_ext, theater_name);
+    log::info!("Anim frame dims: {populated} populated, {fallback} fallback (defaults to 30x30)");
+}
+
+/// The common post-terrain asset binding order. Saved loading supplies the
+/// complete retained scheduler closure, including authored animations that
+/// have since expired, rather than constructing their objects again.
+pub(crate) fn bind_rules_asset_closure(
+    rules: &mut RuleSet,
+    processed_ini: &IniFile,
+    fixed_art: &IniFile,
+    roots: &[String],
+    assets: &AssetManager,
+    theater_ext: &str,
+    theater_name: &str,
+) -> anyhow::Result<()> {
+    rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)?;
+    // The strict pass replaces the scheduler set; tolerant bindings must follow.
+    let tolerant_roots = tolerant_anim_class_roots(rules);
+    let unbound = rules.bind_anim_class_assets(&tolerant_roots, assets, theater_ext, theater_name);
+    crate::rules::effect_asset_catalog::log_unbound_combat_explosion_roots(unbound);
+    rules.bind_effect_assets(assets, theater_ext, theater_name);
+    rules.bind_building_buildup_assets(assets, theater_name);
+    rules.bind_building_rubble_assets(assets, theater_ext, theater_name);
+    rules.bind_terrain_spawner_assets(processed_ini, assets, theater_ext, theater_name);
+    let sequences = crate::rules::infantry_sequence::parse_infantry_sequence_registry(fixed_art);
+    rules.bind_animation_sequences(&sequences);
+    Ok(())
+}
+
 /// Palette variants reachable from scenario-start crate CellAnim before the
 /// post-map placer has constructed those AnimObjects. Initial atlases are built
 /// earlier in the loading funnel, so live-object discovery alone is too late.
@@ -586,6 +627,88 @@ pub(crate) fn build_presentation_manifest(
         unit_atlas,
         sprite_atlas: shp_atlas,
         palette_set,
+    }
+}
+
+/// Complete the common presentation preparation after the caller's world is
+/// ready. Fresh loading builds terrain/entity/overlay parts at its existing
+/// milestones, then finishes here after its post-map tail; saved loading can
+/// prepare all parts from its validated incoming world without constructors.
+/// No simulation state, HVA metadata, AI registry or overlay frame is written.
+/// Optional missing assets retain the ordinary fresh-load fallback policy;
+/// all returned resources belong to the incoming world, never the outgoing one.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "combines prepared world projections without owning gameplay"
+)]
+pub(crate) fn finish_presentation_assets(
+    gpu: &GpuContext,
+    batch: &BatchRenderer,
+    asset_manager: &mut AssetManager,
+    simulation: &Simulation,
+    rules: &RuleSet,
+    resolved_terrain: &ResolvedTerrainGrid,
+    lighting_config: &crate::map::lighting::LightingConfig,
+    detail_level: u32,
+    tile_atlas: Option<TileAtlas>,
+    manifest: PresentationManifest,
+    overlays: crate::app::frontend::skirmish::OverlayPresentationAssets,
+    house_color_map: HouseColorMap,
+    csf: Option<crate::assets::csf_file::CsfFile>,
+) -> crate::app::loading::init::PresentationLoadAssets {
+    // These nested MIXes live inside local.mix/localmd.mix and are not
+    // auto-extracted by the two-level archive discovery pass.
+    for cameo_mix in ["cameomd.mix", "cameo.mix"] {
+        match asset_manager.load_nested(cameo_mix) {
+            Ok(()) => log::info!("Loaded nested {cameo_mix} for sidebar cameo icons"),
+            Err(_) => log::debug!("{cameo_mix} not found (optional)"),
+        }
+    }
+    let sidebar_cameo_atlas = build_sidebar_cameo_atlas(gpu, batch, asset_manager, Some(rules));
+    let sidebar_chrome =
+        crate::render::sidebar_chrome::build_sidebar_chrome_set(gpu, batch, asset_manager);
+    let fnt_file = asset_manager.get_ref("GAME.FNT").and_then(|data| {
+        crate::assets::fnt_file::FntFile::from_bytes(data)
+            .map_err(|error| log::warn!("Failed to parse GAME.FNT: {error}"))
+            .ok()
+    });
+    let building_zshape =
+        crate::render::building_zshape::BuildingZShape::load(gpu, batch, asset_manager);
+    if building_zshape.is_none() {
+        log::warn!("BUILDNGZ.SHA not loaded: building bodies write flat depth");
+    }
+    let software_cursor =
+        crate::render::cursor_atlas::build_software_cursor(gpu, batch, asset_manager);
+    if software_cursor.is_some() {
+        log::info!("Software cursor loaded from mouse.sha — OS cursor will be hidden");
+    } else {
+        log::warn!("Software cursor NOT loaded (mouse.sha missing?) — using OS cursor");
+    }
+    let lighting_grid = crate::app::presentation::lighting::rebuild_lighting_grid_from_sim(
+        resolved_terrain,
+        lighting_config,
+        Some(simulation),
+        Some(rules),
+        detail_level,
+    );
+    crate::app::loading::init::PresentationLoadAssets {
+        tile_atlas,
+        building_zshape,
+        unit_atlas: manifest.unit_atlas,
+        palette_set: manifest.palette_set,
+        sprite_atlas: manifest.sprite_atlas,
+        overlay_atlas: overlays.overlay_atlas,
+        bridge_atlas: overlays.bridge_atlas,
+        bridge_railing_atlas: overlays.bridge_railing_atlas,
+        sidebar_cameo_atlas,
+        sidebar_chrome,
+        software_cursor,
+        overlay_names: overlays.overlay_names,
+        overlay_radar_colors: overlays.overlay_radar_colors,
+        house_color_map,
+        lighting_grid,
+        csf,
+        fnt_file,
     }
 }
 

@@ -7,10 +7,12 @@
     1,
     33621247
   ],
-  "scope": "Scenario+214 ID cursor through original Scenario save/load and subsequent increment",
+  "scope": "Scenario+214 ID cursor and four packed cell bookmarks+348E through original Scenario save/load/post-read, followed by the native ID increment",
   "assumptions": [
     "Valid stopped elapsed timer, three empty dynamic arrays, false11F8 string flag",
-    "Supplied in-memory IStream; no native file chooser, disk transport or complete game save claim"
+    "Supplied in-memory IStream; no native file chooser, disk transport or complete game save claim",
+    "Three bookmark rows overwrite outgoing bytes before Load; signed extremes are raw persistence witnesses, not valid-map recall or command admission claims",
+    "ScenarioFixture is reused by menu RNG controls; this owner does not seed or emulate their RNG state"
   ],
   "substitutions": [
     "IStream Read/Write byte transport",
@@ -23,5 +25,7 @@
     "post_read": "0x00683560",
     "next_id": "0x0068BCB0"
   },
-  "payload_sha256": "efd52a5446ed3afd970b7cf02e407702832cf38bf6f498252654c8eb578062a0"
+  "command": "python -m tools.spatial_oracle.native_id_snapshot --check",
+  "replay_command": "python -m tools.spatial_oracle.native_id_snapshot",
+  "payload_sha256": "c87a3d6e606ee7e54b41c13cdd896fb92a52324c02c71559fa07111c738b4842"
 }

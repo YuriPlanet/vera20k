@@ -89,7 +89,7 @@ fn restore_saved_scenario(
     // The simulation-owned portion of the app's PreparedLoad transaction:
     // detached Resize dummy, stable-reference fixups, pristine map caches,
     // then saved overlay/bridge authority and canonical navigation.
-    restored.retain_in_scenario_process_state_from(live);
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(live));
     restored.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
     restored.reconstruct_cellclass_dummy_for_map_resize();
     restored
@@ -103,7 +103,11 @@ fn restore_saved_scenario(
         &resources.rules,
     );
     restored
-        .restore_map_authority_after_snapshot_load(&resources.rules, &resources.overlay_registry)
+        .restore_map_authority_after_snapshot_load(
+            &resources.rules,
+            &resources.overlay_registry,
+            None,
+        )
         .expect("saved map and bridge authority restore");
     restored.resolve_type_handles(&resources.rules);
     restored.rebuild_lighting_sources_after_load(&resources.rules);

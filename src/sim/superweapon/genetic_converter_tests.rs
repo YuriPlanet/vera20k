@@ -512,11 +512,13 @@ fn the_mutation_arm_matches_native() {
 /// ([`Simulation::anim_make_infantry`]), on a map whose cell under the
 /// Location stands at level 2 (its GetCoords Z 208) and carries the row's
 /// bridge bit. The houses are the row's (side, Defeated, IsHuman) in
-/// HouseClass::Array order; `[Sides]` lacks `Civilian` where the row's
-/// Find_Index answers -1. `AnimToInfantry=` lists `count` types. A refused
-/// Unlimbo comes from a vehicle's raw bit on the cell. Compared: whether the
-/// anim ends or retries (and its stage), the infantryman created (its type
-/// and house), the anim's owner, the bridge lift and the Hunt queue.
+/// HouseClass::Array order, each of the type `[Sides]` lists as its side
+/// (HouseType `+0xBC`); where the row's Find_Index answers -1, side 3 keeps
+/// its index under another name. `AnimToInfantry=` lists `count` types. A
+/// refused Unlimbo comes from a vehicle's raw bit on the cell. Compared:
+/// whether the anim ends or retries (and its stage), the infantryman created
+/// (its type and house), the anim's owner, the bridge lift and the Hunt
+/// queue.
 ///
 /// Left out: the rows whose `MakeInfantry=` equals the count or is below -1,
 /// which read outside the vector (the RESIDUAL), and the -1 row, which never
@@ -535,10 +537,16 @@ fn the_make_infantry_end_matches_native() {
         let civilian = int(&row["civilian_side"]) != -1;
         let kinds: Vec<String> = (0..count.max(4)).map(|n| format!("INF{n}")).collect();
         let ini = format!(
-            "[Sides]\nAllied=Americans\nSoviet=Russians\nThirdSide=YuriCountry\n{}\
+            "[Countries]\n0=Americans\n1=Russians\n2=YuriCountry\n3=Neutral\n\
+             [Americans]\n[Russians]\n[YuriCountry]\n[Neutral]\n\
+             [Sides]\nAllied=Americans\nSoviet=Russians\nThirdSide=YuriCountry\n{}\
              [General]\n{}\n[InfantryTypes]\n{}\n[VehicleTypes]\n[AircraftTypes]\n\
              [BuildingTypes]\n{}",
-            if civilian { "Civilian=Neutral\n" } else { "" },
+            if civilian {
+                "Civilian=Neutral\n"
+            } else {
+                "Other=Neutral\n"
+            },
             if count > 0 {
                 format!("AnimToInfantry={}", kinds[..count as usize].join(","))
             } else {
@@ -574,8 +582,11 @@ fn the_make_infantry_end_matches_native() {
             .enumerate()
             .map(|(n, house)| {
                 let id = sim.interner.intern(&format!("House{n}"));
-                let mut state =
-                    HouseState::new(id, int(&house[0]) as u8, None, house[2] == true, 0, 10);
+                let side = int(&house[0]) as u8;
+                let country =
+                    ["Americans", "Russians", "YuriCountry", "Neutral"][usize::from(side)];
+                let country = sim.interner.intern(country);
+                let mut state = HouseState::new(id, side, Some(country), house[2] == true, 0, 10);
                 state.is_defeated = house[1] == true;
                 sim.houses.insert(id, state);
                 sim.session.house_order.push(id);

@@ -2268,11 +2268,8 @@ fn foot_idle_ends_a_warp_teleport_like_original_end_rows() {
             super::super::locomotor::LocomotorState::for_test_kind(LocomotorKind::Drive);
         assert!(locomotor.begin_piggyback(LocomotorKind::Teleport, 20));
         if row["input"]["end"] == "denied" {
-            let warp = super::super::teleport_movement::ChronoWarp::new(
-                DriveCoord::cell(12, 8, 0),
-                actor.owner(),
-                20,
-            );
+            let warp =
+                super::super::teleport_movement::ChronoWarp::new(DriveCoord::cell(12, 8, 0), 20);
             locomotor.teleport_runtime_mut().unwrap().arm_chrono(warp);
         }
         actor.locomotor = Some(locomotor);

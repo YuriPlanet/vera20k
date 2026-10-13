@@ -20,6 +20,10 @@
 //!   `UnitClass::ReceiveDamage 0x00738530` → under-attack family (combat).
 //! - `HouseClass::Update 0x004F8BA0/0x004F8D14` → funds / low power
 //!   (`sim::house_eva`).
+//! - `HouseClass::RobotTanksBackOnline 0x0050E0D0` →
+//!   `EVA_RobotTanksBackOnline`; `LostPoweredCenter 0x0050E19B`,
+//!   `Removed_From_Game 0x00502776` → `EVA_RobotTanksOffline` (each behind
+//!   `[0xA8E7AC]==0`; `sim::powered_unit`).
 //! - `StripClass::AI 0x006A8E2F` → `EVA_ConstructionComplete`;
 //!   `HouseClass::Place_Production 0x004FB644` → `EVA_UnitReady`
 //!   (production queue).
@@ -72,9 +76,6 @@
 //! - `HouseClass::MakeAlly 0x004F9F35` (`EVA_AllianceRequested` string
 //!   `0x82479C`), `MakeEnemy 0x004FA1D5` (`EVA_AllianceBroken`) (no in-match
 //!   diplomacy).
-//! - `HouseClass::RobotTanksBackOnline 0x0050E0D0`, `LostPoweredCenter
-//!   0x0050E19B`, `Removed_From_Game 0x00502776` (`EVA_RobotTanksOffline`,
-//!   `[0xA8E7AC]==0`) (no robot control centre).
 //! - Crate handlers `0x00482EBB/0x004830AA/0x0048328A` (`EVA_UnitArmor|Speed|
 //!   FirePowerUpgraded`, spoken when a local-player unit's multiplier was
 //!   exactly `1.0`, `0x00482E61..0x00482E8D`): the sim's crate pickup

@@ -450,14 +450,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             .attacking_aircraft_sight_range
             .clamp(0, i32::from(u16::MAX)) as u16;
         let config = world.sight_reveal_config(Some(strike.rules));
-        let heights = config
-            .reveal_by_height()
-            .then(|| {
-                world
-                    .path_grid()
-                    .map(crate::sim::pathfinding::PathGrid::ground_height_grid)
-            })
-            .flatten();
+        let heights = world.sight_height_grid(&config);
         world.reveal_area(
             &[owner],
             (

@@ -165,7 +165,7 @@ pub struct ParsedOverlayPacks {
 ///
 /// These come from the [Terrain] INI section. Unlike overlays (which are
 /// ID-indexed), terrain objects are named directly (e.g., "INTREE01").
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TerrainObject {
     /// Isometric X coordinate.
     pub rx: u16,

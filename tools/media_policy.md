@@ -35,5 +35,5 @@ Capture validation uses [map observation](map_observation.md), comparing the
 same profile with ordinary and mixed-case `-Cd` output paths. Headless and asset
 CLI runs use the preserved release binaries, including `-Cd` in path arguments.
 
-[Recorded validation](media_policy.validation.json) bounds the preserved builds,
+Recorded validation (`tools/media_policy.validation.json`, in git at 1b1a8b43e) bounds the preserved builds,
 source inventory, Rust checks and production comparisons.

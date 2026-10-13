@@ -49,6 +49,15 @@ pub struct CombatDamageDefaults {
     /// Global `DeathWeapon=` used only when a dying type has neither an
     /// explicit death weapon nor a live current-weapon fallback.
     pub death_weapon: Option<String>,
+    /// `FallingDamageMultiplier=` (`RulesClass+0xF64`, ReadDouble at
+    /// `0x0066C9CB` stored as a float; constructor 1.0): scales the damage a
+    /// Unit dropped by a Magnetron deals where it lands
+    /// (`UnitClass` notice `0x0074623E`).
+    pub falling_damage_multiplier: f32,
+    /// `CurrentStrengthDamage=` (`RulesClass+0xF68`, ReadBool at `0x0066C9EB`;
+    /// constructor 1): that damage starts from the dropped Unit's current
+    /// Health rather than its type's `Strength=` (`0x0074621D`).
+    pub current_strength_damage: bool,
     /// `IvanWarhead=` (`RulesClass+0xFC8`, ReadINI `0x0066C52A`; constructor
     /// null): the warhead of an Ivan bomb's blast (`BombClass::Detonate @
     /// 0x00438720`). Stock `IvanWH`.
@@ -97,6 +106,8 @@ impl CombatDamageDefaults {
             crush: section.read_range("Crush", 0x180),
             open_topped_warp_distance: section.read_int("OpenToppedWarpDistance", 5),
             death_weapon: section.read_name("DeathWeapon", 0x80).map(str::to_string),
+            falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
+            current_strength_damage: section.read_bool("CurrentStrengthDamage", true),
             ivan_warhead: section.read_name("IvanWarhead", 0x80).map(str::to_string),
             ivan_damage: section.read_int("IvanDamage", 100),
             ivan_timed_delay: section.read_int("IvanTimedDelay", 450),
@@ -145,6 +156,8 @@ impl Default for CombatDamageDefaults {
             crush: 0x180,
             open_topped_warp_distance: 5,
             death_weapon: None,
+            falling_damage_multiplier: 1.0,
+            current_strength_damage: true,
             ivan_warhead: None,
             ivan_damage: 100,
             ivan_timed_delay: 450,

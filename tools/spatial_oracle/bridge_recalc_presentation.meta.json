@@ -7,24 +7,42 @@
     1,
     33621247
   ],
-  "scope": "Original pristine Recalc plus independent radar file/pointer and tactical selected-entry lookup; synthetic sources and NewUrban Wood03 retail bytes",
+  "scope": "Original pristine Recalc plus independent radar file/pointer and tactical selected-entry lookup; synthetic sources and NewUrban Wood03 retail bytes; eight original saved-MouseLoad tile scan/cull controls with cold/warm process selector",
   "assumptions": [
     "Registered tile100, supplied relocated TMP heads and variant chain; original TMP loader excluded",
-    "Existing process selector table supplied with initialization flag set; table generation/RNG lifetime excluded",
+    "Historical presentation groups supply initialized process selector table; added load_selector_cases separately execute cold/warm initialization and Main continuation",
     "Recalc cases use real16,16 in16x16 map, level6, no overlay/objects, CliffBack0 and supplied Wheel/LAT policies",
     "Radar runs original47C24A prefix,5471F0,4814F0,544E00; no brightness/minimap composition claim",
     "Tactical runs original547F9D selected-template division/table fetch; raw RGB identifies selected entry, stored origin is not decoded canvas offset; no full drawing/GPU claim",
     "Two sentinelFFFF cases retain Cell subtile1 for radar/coordinate selection and use tactical subtile0; supplied ClearTile100 has damaged gate true",
-    "Retail NewUrban Wood damaged OOB pointers fault in original RGB read; no authored retail-map reachability claim"
+    "Retail NewUrban Wood damaged OOB pointers fault in original RGB read; no authored retail-map reachability claim",
+    "Load controls reuse resident TMP fixture and one/two supplied restored cells; original5BE653 clearsCL/DL and calls full546DA0, returning5BE65C after real iterator, variant selection, use counts and file culling",
+    "Load controls supply type+2F4 and filenames with all TMPs initially resident; used files need no547020 reload. Cell fixture0x200 bytes are bracketed unchanged; no native SAV/complete theater registry or full resource IO claim",
+    "Incoming Main is native Seed/Next; actual draw order is independently replayed. Scenario/MapGen are separately bracketed. Cold flag0 uses poisoned table; warm flag1 uses declared retained process table"
   ],
-  "substitutions": [],
+  "substitutions": [
+    "Load controls only:6C8C40 clock0,4068E0 diagnostic return and7C8B3D free transport recording supplied file pointers; native cull clears type+A4/+A8 itself"
+  ],
   "entry_points": {
     "recalc": "0x0047D2B0",
     "radar_prefix": "0x0047C24A",
     "damaged_gate": "0x005471F0",
     "selector": "0x004814F0",
     "file_chain": "0x00544E00",
-    "tactical_entry": "0x00547F9D"
+    "tactical_entry": "0x00547F9D",
+    "mouse_load_call": "0x005BE653",
+    "tile_scan_cull": "0x00546DA0",
+    "iterator_reset": "0x00578350",
+    "iterator_next": "0x00578290",
+    "main_next": "0x0065C780",
+    "return_to_mouse_load": "0x005BE65C"
   },
-  "payload_sha256": "8f3c8b889831c47bbba30bc30e734d573828d25e919793da0c1980d0d0465915"
+  "source_normalized_lf_sha256": {
+    "producer": "9cee10b0bc1b6fcfb15055cf7e8da057fd7580cb0e541fba1d75bdd437aeda83",
+    "native": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb",
+    "rng_owner": "ea176f7040a39a9bc3578c6f7f68562f8dda1526001a0148f66ce4133b8ab3c4",
+    "map_fixture": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
+    "lat_fixture": "6c28a1ab004aa2fbfbfec58382bc8653b451514e21daab802cc0666b7bb8c80c"
+  },
+  "payload_sha256": "669e16e2d1d0f89a62e03c21525ccb0c939d79b46b57a36c069f9841d7b0f646"
 }

@@ -8,7 +8,7 @@ exact JSON bytes and canonical hashes. The companion records those identities
 and rejects drift before and after generation.
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
+source ~/Documents/vera20k-dev/env.sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.infantry_deploy_action --deployed-guard --write
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.infantry_deploy_action --deployed-guard --check
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.infantry_deploy_action --check

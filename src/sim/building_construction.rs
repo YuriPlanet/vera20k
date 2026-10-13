@@ -160,22 +160,46 @@ impl BuildingBody {
     }
 }
 
+/// Presentation ledger only. Original stock human route completes at
+/// N+2+(count-1)*rate, or N+3 for rate0. One-frame nonzero-rate controls never
+/// land on their last frame after a step. Native route rows validate this
+/// estimate; it never participates in simulation admission.
+pub(crate) fn player_placement_frames_to_complete(
+    control: [i32; 3],
+    _options: &GameOptions,
+) -> Option<i32> {
+    let [_, count, rate] = control;
+    if rate == 0 {
+        Some(3)
+    } else if count > 1 && rate > 0 {
+        Some(2i32.saturating_add(count.saturating_sub(1).saturating_mul(rate)))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
 #[derive(Debug, Clone, Copy)]
 enum ConstructionEntry {
     Queued,
     Commenced,
     DeployReady,
-    #[cfg(test)]
     WatchingReady,
 }
 
-/// Transient Unlimbo/ExitObject/Deploy packet, never stored, hashed or serialized.
+/// Test fixture: the state a placement route leaves a building in once its
+/// Unlimbo queued Construction (`Simulation::building_enter_idle_mode`) —
+/// still queued after a player's PLACE, commenced by a computer yard's exit
+/// (`0x00445329..0x0044533F`), or queued with the ready byte set by a deploy
+/// (`0x0073984E`) — composed from the production verbs.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BuildingUp {
     control: [i32; 3],
     entry: ConstructionEntry,
 }
 
+#[cfg(test)]
 impl BuildingUp {
     pub(crate) const fn placed_by_player(control: [i32; 3], _now: i32) -> Self {
         Self {
@@ -209,7 +233,6 @@ impl BuildingUp {
                 crate::sim::mission::authority::commence_entity_mission(entity, now as u32);
             }
             ConstructionEntry::DeployReady => entity.mission_leaf.set_building_ready_latch(1),
-            #[cfg(test)]
             ConstructionEntry::WatchingReady => {
                 crate::sim::mission::authority::commence_entity_mission(entity, now as u32);
                 entity.mission.set_handler_state(1);
@@ -217,24 +240,6 @@ impl BuildingUp {
             }
         }
     }
-    /// Presentation ledger only. Original stock human route completes at
-    /// N+2+(count-1)*rate, or N+3 for rate0. One-frame nonzero-rate controls never
-    /// land on their last frame after a step. Native route rows validate this
-    /// estimate; it never participates in simulation admission.
-    pub(crate) fn player_placement_frames_to_complete(
-        control: [i32; 3],
-        _options: &GameOptions,
-    ) -> Option<i32> {
-        let [_, count, rate] = control;
-        if rate == 0 {
-            Some(3)
-        } else if count > 1 && rate > 0 {
-            Some(2i32.saturating_add(count.saturating_sub(1).saturating_mul(rate)))
-        } else {
-            None
-        }
-    }
-    #[cfg(test)]
     pub(crate) fn completing_in_ticks(ticks: i32, current_frame: i32) -> Self {
         assert!(ticks >= 1);
         if ticks == 1 {
@@ -277,6 +282,83 @@ impl BuildingDown {
             _ if ready => PackUpFrame::Complete,
             _ => PackUpFrame::Waiting,
         }
+    }
+}
+
+/// Test support: the native construction `route` rows
+/// (`tools/spatial_oracle/building_construction.json`) and one visited frame's
+/// comparison, shared by the route test and the production placement tests.
+#[cfg(test)]
+pub(crate) mod native_route {
+    use serde_json::Value;
+
+    /// The rows of one entry route (`player`, `computer`, `deploy`, `sale`).
+    pub(crate) fn rows(route: &str) -> Vec<Value> {
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_construction.json",
+        ))
+        .unwrap();
+        corpus["route"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["input"]["route"] == route)
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn control(row: &Value) -> [i32; 3] {
+        serde_json::from_value(row["input"]["control"].clone()).unwrap()
+    }
+
+    /// Compare the building after one frame's visit with that frame's row.
+    /// Answers whether it has opened.
+    pub(crate) fn assert_frame(
+        entity: &crate::sim::game_entity::GameEntity,
+        frame: &Value,
+        context: &str,
+    ) -> bool {
+        assert_eq!(
+            i64::from(entity.mission.current().raw()),
+            frame["mission"].as_i64().unwrap(),
+            "{context}: mission"
+        );
+        assert_eq!(
+            i64::from(entity.mission.queued().raw()),
+            frame["queue"].as_i64().unwrap(),
+            "{context}: queue"
+        );
+        assert_eq!(
+            u64::from(entity.mission.handler_state()),
+            frame["status"].as_u64().unwrap(),
+            "{context}: status"
+        );
+        assert_eq!(
+            entity.building_body_state().map(i64::from),
+            frame["bstate"].as_i64(),
+            "{context}: BState"
+        );
+        assert_eq!(
+            entity.queued_building_body_state().map(i64::from),
+            frame["queued_bstate"].as_i64(),
+            "{context}: queued BState"
+        );
+        assert_eq!(
+            entity.building_actually_placed,
+            frame["grand_opening"].as_bool().unwrap(),
+            "{context}: opening is visible to the next object"
+        );
+        assert_eq!(
+            u64::from(entity.building_ready_latch()),
+            frame["done"].as_u64().unwrap(),
+            "{context}: sole ready byte"
+        );
+        assert_eq!(
+            i64::from(entity.construction_stage_value()),
+            frame["stage"].as_i64().unwrap(),
+            "{context}: stage"
+        );
+        entity.building_actually_placed
     }
 }
 

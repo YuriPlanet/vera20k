@@ -18,7 +18,7 @@ use crate::rules::ruleset::RuleSet;
 
 /// Ordered map-side BasePlan node, installed into House simulation state before
 /// map objects are spawned.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScenarioBasePlanNode {
     pub type_or_control: i32,
     pub packed_cell: u32,
@@ -26,7 +26,7 @@ pub struct ScenarioBasePlanNode {
     pub retry_count: i32,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScenarioBasePlanDefinition {
     pub percent_built: i32,
     pub nodes: Vec<ScenarioBasePlanNode>,
@@ -45,7 +45,7 @@ pub type HouseColorMap = HashMap<String, HouseColorIndex>;
 pub type HouseAllianceMap = BTreeMap<String, BTreeSet<String>>;
 
 /// Parsed metadata for one active house listed in `[Houses]`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HouseDefinition {
     /// House section name as referenced by entities and triggers.
     pub name: String,
@@ -105,7 +105,7 @@ impl HouseDefinition {
 }
 
 /// Ordered active-house list from the map's `[Houses]` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HouseRoster {
     /// Houses in the same order they appear in `[Houses]`.
     pub houses: Vec<HouseDefinition>,
@@ -169,9 +169,8 @@ pub fn are_houses_friendly(alliances: &HouseAllianceMap, a: &str, b: &str) -> bo
 ///
 /// gamemd's `HouseClass::IsAlliedWith` reads only the *asker's* own ally
 /// bitfield, so alliance is one-way until both sides set their bit; a house is
-/// always allied with itself. [`are_houses_friendly`] deliberately keeps its
-/// symmetric OR for the many "don't shoot / don't crush / don't block" call
-/// sites; use this one where the native code needs the asymmetric answer.
+/// always allied with itself. [`are_houses_friendly`] keeps its symmetric OR
+/// for the call sites not yet traced to their native asker (#582).
 pub fn is_allied_with(alliances: &HouseAllianceMap, asker: &str, other: &str) -> bool {
     if asker.eq_ignore_ascii_case(other) {
         return true;
@@ -190,7 +189,8 @@ pub fn are_houses_mutually_allied(alliances: &HouseAllianceMap, a: &str, b: &str
     is_allied_with(alliances, a, b) && is_allied_with(alliances, b, a)
 }
 
-fn normalize_house_name(name: &str) -> String {
+/// The ally graph's key for a house name.
+pub(crate) fn normalize_house_name(name: &str) -> String {
     name.trim().to_ascii_uppercase()
 }
 
