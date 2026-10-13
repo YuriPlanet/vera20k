@@ -863,10 +863,26 @@
    "hotspot_y": 12345
   }
  ],
+ "table_extent": {
+  "how": "records read until one fails the layout (frame and count inside MOUSE.SHA's 517 frames, rate <= 8, both hotspot fields in {0, 12345, 54321})",
+  "first_rejected_row": 86,
+  "dwords": [
+   "0x65727453",
+   "0x69686374",
+   "0x6D20676E",
+   "0x6569766F",
+   "0x78642520",
+   "0x2D206425",
+   "0x6425203E"
+  ],
+  "as_text": "Stretching movie %dx%d -> %d"
+ },
  "action_switch": {
   "function": "0x004AAE90",
   "dispatch": "0x004AB449",
   "jump_table": "0x004AB884",
+  "entry_count": 72,
+  "count_how": "the dispatch's own `cmp eax, <bound>`; `ja` leaves the bound inclusive, so the table holds bound + 1 entries",
   "entries": [
    {
     "action": 1,
@@ -1292,6 +1308,12 @@
     "action": 71,
     "row": 82,
     "block": "0x004AB5E5",
+    "note": "second argument eax"
+   },
+   {
+    "action": 72,
+    "row": 84,
+    "block": "0x004AB735",
     "note": "second argument eax"
    }
   ]

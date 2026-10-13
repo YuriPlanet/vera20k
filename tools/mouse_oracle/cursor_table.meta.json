@@ -16,6 +16,7 @@
  "limits": [
   "Row semantics (which game state selects which action) are not established here; only action -> row and row -> frames.",
   "A row with count > 1 and rate 0 is recorded as stored; how the original advances such a row is not established.",
-  "Two switch entries derive their row from a call (0x00731CC0, 0x00731CB0); the callee's result is not recorded."
+  "Two switch entries derive their row from a call (0x00731CC0, 0x00731CB0); the callee's result is not recorded.",
+  "The descriptor table has no stored length: the row count comes from the layout check above, and the action count from the dispatch's own bound. Both are recorded with the derived value, not assumed."
  ]
 }

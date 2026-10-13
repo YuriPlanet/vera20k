@@ -875,4 +875,63 @@ mod tests {
             "MinimapMove must stay row 18's mini set"
         );
     }
+
+    /// The actions `input::cursor` cites by number must reach the row whose
+    /// frames this table gives to the named `CursorId`. It ties the three links
+    /// the original separates — action, descriptor row, frame set — so a citation
+    /// in a comment cannot drift away from either table.
+    #[test]
+    fn cited_actions_reach_the_row_the_named_cursor_uses() {
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/mouse_oracle/cursor_table.json",
+        ))
+        .unwrap();
+        let by_row: HashMap<usize, &serde_json::Value> = native["rows"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .map(|record| (record["row"].as_u64().expect("row") as usize, record))
+            .collect();
+        let entries = native["action_switch"]["entries"]
+            .as_array()
+            .expect("entries");
+        assert_eq!(
+            entries.len(),
+            native["action_switch"]["entry_count"]
+                .as_u64()
+                .expect("entry count") as usize,
+            "the fixture must carry as many entries as the dispatch's bound"
+        );
+
+        for (action, id) in [
+            (1u32, CursorId::Move),
+            (2, CursorId::NoMove),
+            (9, CursorId::Enter),
+            (16, CursorId::Demolish),
+            (53, CursorId::IvanBomb),
+            (57, CursorId::Disarm),
+        ] {
+            let entry = entries
+                .iter()
+                .find(|entry| entry["action"].as_u64() == Some(u64::from(action)))
+                .unwrap_or_else(|| panic!("the switch records no entry for action {action}"));
+            let row_number = entry["row"].as_u64().expect("entry row") as usize;
+            let record = by_row
+                .get(&row_number)
+                .unwrap_or_else(|| panic!("action {action} reaches missing row {row_number}"));
+            let (start, count, _) = CURSOR_DEFS
+                .iter()
+                .find(|(cursor, ..)| *cursor == id)
+                .map(|&(_, start, count, interval, _)| (start, count, interval))
+                .expect("cursor row");
+            assert_eq!(
+                (
+                    record["frame"].as_u64().expect("frame") as usize,
+                    record["count"].as_u64().expect("count") as usize
+                ),
+                (start, count),
+                "action {action} reaches row {row_number}, which is not {id:?}'s frame set"
+            );
+        }
+    }
 }

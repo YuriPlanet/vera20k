@@ -2,7 +2,7 @@
 
 Two structures, both compiled into the executable and not INI-driven:
 
-* The cursor descriptor table at ``0x0082D028``: 86 records of 7 dwords.
+* The cursor descriptor table at ``0x0082D028``: records of 7 dwords.
   ``Set_Mouse_Cursor_Shape`` (``0x005BDC80``) indexes it as ``base + 28 * row``:
 
   ===== ============================================================
@@ -16,11 +16,19 @@ Two structures, both compiled into the executable and not INI-driven:
         (``0x005BDD27``/``0x005BDD44`` turn those sentinels into the offset)
   ===== ============================================================
 
+  The table carries no length, so the extent is derived: records are read until
+  one stops satisfying the layout above, and the first rejected record is
+  reported. On the stock layout this yields 86 rows, after which the bytes are
+  unrelated string data.
+
 * The action-to-row switch in ``DisplayClass::SetCursorFromAction``
   (``0x004AAE90``): the block at ``0x004AB449`` dispatches on ``action - 1``
-  through the jump table at ``0x004AB884`` (0x47 entries). Each target pushes a
-  cursor row and calls the display's ``+0x48`` virtual; the default target
-  pushes row 0. Two targets derive the row from a call instead of an immediate.
+  through the jump table at ``0x004AB884``. The entry count is read from that
+  block's own ``cmp eax, <bound>`` (``ja`` is strictly above, so the bound is
+  inclusive and the table holds ``bound + 1`` entries; 0x47 gives 72 actions).
+  Each target pushes a cursor row and calls the display's ``+0x48`` virtual; the
+  default target pushes row 0. Two targets derive the row from a call instead of
+  an immediate.
 
 The executable identity is recorded in the sidecar. The anchor checks below must
 pass before anything is written, so a binary whose code does not match the
@@ -47,14 +55,21 @@ FIXTURE = Path("tools/mouse_oracle/cursor_table.json")
 SIDECAR = Path("tools/mouse_oracle/cursor_table.meta.json")
 
 TABLE_BASE = 0x0082D028
-TABLE_ROWS = 86
 RECORD_BYTES = 28
 SETTER = 0x005BDC80
 ACTION_SWITCH = 0x004AAE90
 ACTION_DISPATCH = 0x004AB449
 ACTION_TABLE = 0x004AB884
-ACTION_COUNT = 0x47
 SET_CURSOR_VIRTUAL = 0x48
+
+# MOUSE.SHA carries 517 frames, so no record may start past it.
+MOUSE_SHA_FRAMES = 517
+HOTSPOT_MODES = (0, 12345, 54321)
+# A record is table data only if every field satisfies the layout the setter
+# itself assumes. Rates above 8 never appear in the stock table.
+MAX_RATE = 8
+# The scan stops at the first record that fails, so this only bounds the search.
+MAX_ROW_SCAN = 256
 
 # Stock retail gamemd.exe. A launcher-patched copy is only accepted with
 # --accept-patched, and its identity is recorded in the sidecar.
@@ -98,29 +113,59 @@ def check_anchors(image: Image) -> list[str]:
     return problems
 
 
-def read_table(image: Image) -> list[dict]:
-    rows = []
-    for row in range(TABLE_ROWS):
-        base = TABLE_BASE + row * RECORD_BYTES
-        fields = struct.unpack("<7I", image.bytes_at(base, RECORD_BYTES))
-        signed = [0xFFFFFFFF if v is None else v for v in fields]
+def _record(fields: tuple[int, ...]) -> dict:
+    def value(v: int) -> int | None:
+        return None if v == 0xFFFFFFFF else v
 
-        def value(v: int) -> int | None:
-            return None if v == 0xFFFFFFFF else v
+    return {
+        "frame": fields[0],
+        "count": fields[1],
+        "rate": fields[2],
+        "mini_frame": value(fields[3]),
+        "mini_count": value(fields[4]),
+        "hotspot_x": fields[5],
+        "hotspot_y": fields[6],
+    }
 
-        rows.append(
-            {
-                "row": row,
-                "frame": signed[0],
-                "count": signed[1],
-                "rate": signed[2],
-                "mini_frame": value(signed[3]),
-                "mini_count": value(signed[4]),
-                "hotspot_x": signed[5],
-                "hotspot_y": signed[6],
-            }
+
+def _is_record(fields: tuple[int, ...]) -> bool:
+    """Whether a 28-byte block can be a descriptor record at all."""
+    frame, count, rate, mini, mini_count, hx, hy = fields
+    if not (0 < count <= MOUSE_SHA_FRAMES and frame < MOUSE_SHA_FRAMES - count + 1):
+        return False
+    if rate > MAX_RATE:
+        return False
+    if hx not in HOTSPOT_MODES or hy not in HOTSPOT_MODES:
+        return False
+    if mini is None:
+        return mini_count is None
+    return mini == 0xFFFFFFFF or mini < MOUSE_SHA_FRAMES
+
+
+def read_table(image: Image) -> tuple[list[dict], dict]:
+    """The descriptor records, plus how the scan decided where the table ends."""
+    rows: list[dict] = []
+    rejected: dict | None = None
+    for row in range(MAX_ROW_SCAN):
+        fields = struct.unpack(
+            "<7I", image.bytes_at(TABLE_BASE + row * RECORD_BYTES, RECORD_BYTES)
         )
-    return rows
+        if not _is_record(fields):
+            rejected = {
+                "first_rejected_row": row,
+                "dwords": ["0x%08X" % v for v in fields],
+                "as_text": "".join(
+                    chr(c) if 32 <= c < 127 else "." for c in struct.pack("<7I", *fields)
+                ),
+            }
+            break
+        rows.append(dict(row=row, **_record(fields)))
+    if rejected is None or len(rows) < 80:
+        raise SystemExit(
+            "descriptor table scan stopped after %d records; the layout this tool "
+            "assumes does not hold for this executable" % len(rows)
+        )
+    return rows, rejected
 
 
 def _row_of_block(image: Image, target: int) -> tuple[int | None, str]:
@@ -149,15 +194,49 @@ def _row_of_block(image: Image, target: int) -> tuple[int | None, str]:
     return None, "no row"
 
 
-def read_action_rows(image: Image) -> list[dict]:
+def read_dispatch(image: Image) -> tuple[int, int]:
+    """The jump table address and its entry count, read from the dispatch block.
+
+    ``dec eax`` (``action - 1``), ``cmp eax, <bound>``, ``ja default``, then
+    ``jmp [eax*4 + <table>]``. ``ja`` is strictly above, so indices ``0..bound``
+    are all reachable and the table holds ``bound + 1`` entries.
+    """
+    insns = image.disasm(ACTION_DISPATCH, 24)
+    bound = None
+    table = None
+    for index, ins in enumerate(insns):
+        if ins.mnemonic == "cmp" and bound is None:
+            digits = re.findall(r"0x([0-9a-f]+)", ins.op_str)
+            if digits:
+                bound = int(digits[-1], 16)
+        if ins.mnemonic == "jmp" and "*4" in ins.op_str:
+            digits = re.findall(r"0x([0-9a-f]+)", ins.op_str)
+            if digits:
+                table = int(digits[-1], 16)
+            break
+    if bound is None or table is None:
+        raise SystemExit(
+            "could not read the action switch bound and jump table at %X; this "
+            "executable does not match the expected layout" % ACTION_DISPATCH
+        )
+    return table, bound + 1
+
+
+def read_action_rows(image: Image) -> tuple[list[dict], int]:
+    table, count = read_dispatch(image)
+    if table != ACTION_TABLE:
+        raise SystemExit(
+            "the action dispatch jumps through %X, not the %X this tool documents"
+            % (table, ACTION_TABLE)
+        )
     out = []
-    for index in range(ACTION_COUNT):
-        target = image.dword(ACTION_TABLE + 4 * index)
+    for index in range(count):
+        target = image.dword(table + 4 * index)
         row, note = _row_of_block(image, target)
         out.append(
             {"action": index + 1, "row": row, "block": "0x%08X" % target, "note": note}
         )
-    return out
+    return out, count
 
 
 def extract(exe: Path, accept_patched: bool) -> tuple[dict, dict]:
@@ -175,16 +254,27 @@ def extract(exe: Path, accept_patched: bool) -> tuple[dict, dict]:
     problems = check_anchors(image)
     if problems:
         raise SystemExit("anchor checks failed:\n  " + "\n  ".join(problems))
-    table = read_table(image)
-    actions = read_action_rows(image)
+    rows, rejected = read_table(image)
+    actions, entries = read_action_rows(image)
     payload = {
         "descriptor_table_base": "0x%08X" % TABLE_BASE,
         "record_bytes": RECORD_BYTES,
-        "rows": table,
+        "rows": rows,
+        "table_extent": {
+            "how": (
+                "records read until one fails the layout (frame and count inside "
+                "MOUSE.SHA's 517 frames, rate <= %d, both hotspot fields in "
+                "{0, 12345, 54321})" % MAX_RATE
+            ),
+            **rejected,
+        },
         "action_switch": {
             "function": "0x%08X" % ACTION_SWITCH,
             "dispatch": "0x%08X" % ACTION_DISPATCH,
             "jump_table": "0x%08X" % ACTION_TABLE,
+            "entry_count": entries,
+            "count_how": "the dispatch's own `cmp eax, <bound>`; `ja` leaves the "
+            "bound inclusive, so the table holds bound + 1 entries",
             "entries": actions,
         },
     }
@@ -209,6 +299,9 @@ def extract(exe: Path, accept_patched: bool) -> tuple[dict, dict]:
             "original advances such a row is not established.",
             "Two switch entries derive their row from a call (0x00731CC0, "
             "0x00731CB0); the callee's result is not recorded.",
+            "The descriptor table has no stored length: the row count comes from "
+            "the layout check above, and the action count from the dispatch's own "
+            "bound. Both are recorded with the derived value, not assumed.",
         ],
     }
     return payload, sidecar
@@ -241,7 +334,14 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8")
     (REPO / SIDECAR).write_text(json.dumps(sidecar, indent=1) + "\n", encoding="utf-8")
-    print("wrote %s (%d rows, %d action entries)" % (out, len(payload["rows"]), ACTION_COUNT))
+    print(
+        "wrote %s (%d rows, %d action entries)"
+        % (
+            out,
+            len(payload["rows"]),
+            payload["action_switch"]["entry_count"],
+        )
+    )
     return 0
 
 

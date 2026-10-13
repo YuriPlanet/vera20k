@@ -15,7 +15,7 @@ is given; the sidecar then records the hash that was actually read.
 
 ## What it extracts
 
-**The cursor descriptor table** at `0x0082D028`: 86 records of 28 bytes, indexed
+**The cursor descriptor table** at `0x0082D028`: records of 28 bytes, indexed
 by `Set_Mouse_Cursor_Shape` (`0x005BDC80`) as `base + 28 * row`. Each record is
 
 | field | meaning |
@@ -25,12 +25,20 @@ by `Set_Mouse_Cursor_Shape` (`0x005BDC80`) as `base + 28 * row`. Each record is
 | `mini_frame`, `mini_count` | a second frame set, `-1` when the row has none |
 | `hotspot_x`, `hotspot_y` | `0` near edge, `12345` centre, `54321` far edge (`0x005BDD27`, `0x005BDD44`) |
 
+The table stores no length, so the extent is derived: records are read until one
+fails the layout above, and the first rejected record is written to
+`table_extent` with its bytes. On the stock layout that is 86 rows, after which
+the bytes are an unrelated string (`Stretching movie %dx%d -> %d`).
+
 **The action-to-row switch** in `DisplayClass::SetCursorFromAction`
 (`0x004AAE90`): the dispatch at `0x004AB449` indexes the jump table at
-`0x004AB884` with `action - 1` over 71 entries. Each target pushes a cursor row
-and calls the display's `+0x48` virtual; the default target pushes row 0. Two
-targets (`0x004AB4D2`, `0x004AB765`) take their row from a call (`0x00731CC0`,
-`0x00731CB0`) instead of an immediate, and are recorded as such.
+`0x004AB884` with `action - 1`. The entry count is read from that block's own
+`cmp eax, 0x47` — `ja` is strictly above, so the bound is inclusive and the
+table holds **72** entries (action 72 reaches row 84; index 72 onward is
+`0x90909090` padding). Each target pushes a cursor row and calls the display's
+`+0x48` virtual; the default target pushes row 0. Two targets (`0x004AB4D2`,
+`0x004AB765`) take their row from a call (`0x00731CC0`, `0x00731CB0`) instead of
+an immediate, and are recorded as such.
 
 ## What it does not establish
 
