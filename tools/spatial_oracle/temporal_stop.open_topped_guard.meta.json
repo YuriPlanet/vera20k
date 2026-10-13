@@ -37,15 +37,6 @@
     "enter_idle": 7379520
   },
   "write_trace_policy": "UC_HOOK_MEM_WRITE values are masked to the actual store width; high bits outside the written byte/word/dword are not native state.",
-  "harness_sha256": "db6e1e4cffb6a1a6f41fd352ae8fdc58406b315fdad26fcafd2f2a6ddf835537",
-  "source_pins": {
-    "tools/native_oracle.py": "6cb7b9517890a916eabfde2269774ae49cadbb699f4105532bed0234ba778ad1",
-    "tools/projectile_oracle/bridge_render_inputs.py": "2f05d2e7e917aef585553502830947ea8ca121eab2d886d2c9ba4df7c935727d",
-    "tools/rules_oracle/bridge_anim_inputs.py": "fc0d267d9c8453ba3090bfacd056af5207f47cb1170651cce5b0c41c80e90a2e",
-    "tools/rules_oracle/bridge_anim_lists.py": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
-    "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-    "tools/projectile_oracle/flat_art.py": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6"
-  },
   "replay_command": "python -m tools.spatial_oracle.temporal_stop --open-topped-guard",
   "payload_sha256": "69b0c65fb231ce618ee53d4b1a560f97ff18fcf0699748d5d0ad23f7fff4dc10"
 }
