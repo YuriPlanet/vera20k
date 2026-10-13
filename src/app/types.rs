@@ -294,7 +294,8 @@ mod tests {
 }
 
 /// Eight compass directions used for edge-scroll cursor selection.
-/// Maps directly to the MoveN..MoveNW frames in mouse.sha (reference §4).
+/// Each direction selects one row of the compiled cursor descriptor table:
+/// rows 1..8 while the view can still scroll, rows 9..16 when it cannot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ScrollDir {
     N,

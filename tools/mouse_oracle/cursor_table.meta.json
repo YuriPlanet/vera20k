@@ -1,0 +1,21 @@
+{
+ "schema_version": 1,
+ "native_sha256": "7b8a068535d6af06845edf95ae829b113d00c02909330e16f197426cd7db94b6",
+ "stock_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+ "binary_is_stock": false,
+ "binary_size": 4813072,
+ "command": "py -3 -m tools.mouse_oracle.cursor_table --exe <path> --write",
+ "scope": "Compiled mouse-cursor descriptor table and the DisplayClass::SetCursorFromAction action-to-row switch. Static reads of the executable; no native execution and no rendered pixels.",
+ "anchor_checks": [
+  "0x4AB43C",
+  "0x4AB453",
+  "0x5BDC95",
+  "0x7E4300",
+  "0x7E43A0"
+ ],
+ "limits": [
+  "Row semantics (which game state selects which action) are not established here; only action -> row and row -> frames.",
+  "A row with count > 1 and rate 0 is recorded as stored; how the original advances such a row is not established.",
+  "Two switch entries derive their row from a call (0x00731CC0, 0x00731CB0); the callee's result is not recorded."
+ ]
+}

@@ -112,8 +112,13 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     if state.match_state.input.minimap_dragging
         || crate::app::presentation::sidebar_render::is_cursor_over_minimap(state)
     {
-        // Show the minimap-specific Move cursor when hovering over the minimap
-        // (reference §7.4 — MiniFrame/MiniCount for the Move cursor = frames 42–51).
+        // The minimap's Move cursor is row 18's second frame set (`miniFrame` 42
+        // and `miniCount` 10 in its descriptor record;
+        // tools/mouse_oracle/cursor_table.json). RESIDUAL: which caller the
+        // original sets that record's mini flag is unestablished, and the
+        // radar-region setter calls at 0x006538B4 and 0x00653EEB pass row 0, the
+        // plain arrow. Trigger: hovering the minimap. Player effect: VERA shows
+        // the green Move cluster where those calls would show an arrow.
         return Some(CursorFeedbackKind::MinimapMove);
     }
     if current_sidebar_view_hit(state) {
