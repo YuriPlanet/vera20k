@@ -19,6 +19,400 @@ fn native_rng_hash(hex: &str) -> String {
     crate::util::sha256::sha256_hex(&bytes)
 }
 
+#[test]
+fn native_damage_at_waypoint_dispatch_matches_original_controls() {
+    use crate::map::waypoints::Waypoint;
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_damage_at_waypoint.json",
+    ))
+    .unwrap();
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[CombatDamage]\nC4Warhead=Super\n[Warheads]\n0=Super\n[Super]\nCellSpread=0\n",
+    ))
+    .unwrap();
+    let controls = corpus["dispatch_controls"].as_array().unwrap();
+    assert_eq!(controls.len(), 6);
+    for row in controls {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let x = integer(&input["cell"][0]) as u16;
+        let y = integer(&input["cell"][1]) as u16;
+        let level = input["level"].as_i64().unwrap_or(0) as u8;
+        let slope = input["slope"].as_i64().unwrap_or(0) as u8;
+        let flags = input["flags"].as_u64().unwrap_or(0) as u32;
+        let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
+            let mut cell = crate::map::resolved_terrain::test_clear_cell(rx, ry);
+            if (rx, ry) == (x, y) {
+                cell.level = level;
+                cell.slope_type = slope;
+                cell.bridge_facts.raw_flags = flags;
+            }
+            cell
+        });
+        let identity = terrain.native_cell_identity((x as i16, y as i16));
+        terrain.write_native_cell_flags(identity, flags);
+        let mut sim = Simulation::with_seed(31);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.install_resolved_terrain_for_new_map(terrain);
+        let index = integer(&row["read"]["value"]) as u32;
+        sim.session.install_waypoints(&HashMap::from([
+            (
+                index,
+                Waypoint {
+                    index,
+                    rx: x,
+                    ry: y,
+                },
+            ),
+            (
+                0,
+                Waypoint {
+                    index: 0,
+                    rx: 20,
+                    ry: 20,
+                },
+            ),
+        ]));
+        let mut definitions = RuntimeDefinitions::default();
+        let typ = definitions.trigger_type("DAMAGE").unwrap();
+        let ini = IniFile::from_str(&format!(
+            "[Actions]\nDAMAGE=1,{}\n",
+            row["read"]["raw"].as_str().unwrap()
+        ));
+        let entry = crate::map::actions::parse_actions(&ini)
+            .remove("DAMAGE")
+            .unwrap()
+            .entries
+            .remove(0);
+        let action = definitions.resolve_action(entry, None, None);
+        assert_eq!(json!(action.value), row["read"]["value"], "{name}: +90");
+        sim.trigger_runtime.definitions = definitions;
+        let before = (
+            sim.main_rng.native_state_hex(),
+            sim.scenario_rng.native_state_hex(),
+            sim.mapgen_rng.native_state_hex(),
+        );
+        let (returned, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
+            sim.apply_live_trigger_action(
+                &action,
+                typ,
+                &mut Vec::new(),
+                Some(&rules),
+                None,
+                FrameEffects::default(),
+            )
+        });
+        assert_eq!(
+            u8::from(returned),
+            row["returned"].as_u64().unwrap() as u8,
+            "{name}"
+        );
+        let native: Vec<_> = row["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|call| call["kind"] == "area")
+            .collect();
+        assert_eq!(visits.len(), native.len(), "{name}");
+        for (actual, expected) in visits.iter().zip(native) {
+            assert_eq!(actual["coord"], expected["coord"], "{name}");
+            assert_eq!(actual["damage"], expected["damage"], "{name}");
+            assert_eq!(actual["warhead"], "Super", "{name}");
+            assert_eq!(actual["no_source"], true, "{name}");
+            assert_eq!(actual["no_source_house"], true, "{name}");
+        }
+        // Native downstream damage/bridge answers are explicit seams in this
+        // dispatch family. Real NANRCT receivers are compared in the next test.
+        assert_eq!(row["rng_before"], row["rng_after"], "{name}");
+        assert_eq!(
+            before,
+            (
+                sim.main_rng.native_state_hex(),
+                sim.scenario_rng.native_state_hex(),
+                sim.mapgen_rng.native_state_hex()
+            ),
+            "{name}: empty world RNG"
+        );
+    }
+}
+
+#[test]
+fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
+    use crate::map::entities::EntityCategory;
+    use crate::map::waypoints::Waypoint;
+    use crate::rules::{
+        ini_parser::IniFile,
+        native_processing::{RulesLayerKind, RulesLayerStack},
+        ruleset::RuleSet,
+    };
+    use crate::sim::{
+        building_construction::BuildingBodyMode, components::Health, game_entity::GameEntity,
+        house_state::HouseState, native_identity::NativeUniqueIdCursor, rng::SimRng,
+    };
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_damage_at_waypoint.json",
+    ))
+    .unwrap();
+    let Some(raw_rules) = crate::rules::retail_ini_fixture::retail_ini_bytes("rulesmd.ini") else {
+        return;
+    };
+    let Some(raw_art) = crate::rules::retail_ini_fixture::retail_ini_bytes("artmd.ini") else {
+        return;
+    };
+    let Some(raw_map) = crate::rules::retail_ini_fixture::retail_archive_bytes("ALL01UMD.MAP")
+    else {
+        return;
+    };
+    let map = crate::map::map_file::MapFile::from_bytes(&raw_map).unwrap();
+    for (name, raw) in [("RULESMD.INI", &raw_rules), ("ALL01UMD.MAP", &raw_map)] {
+        let native = corpus["retail_inputs"]["layers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["file"] == name)
+            .unwrap();
+        assert_eq!(
+            crate::util::sha256::sha256_hex(raw),
+            native["sha256"],
+            "{name}"
+        );
+    }
+    assert_eq!(
+        crate::util::sha256::sha256_hex(&raw_art),
+        corpus["retail_inputs"]["artmd"]["sha256"]
+    );
+    let mut layers = RulesLayerStack::new(IniFile::from_bytes(&raw_rules).unwrap());
+    let lang = std::path::PathBuf::from(std::env::var("RA2_DIR").unwrap()).join("LANGRULE.INI");
+    if lang.is_file() {
+        layers.push(
+            RulesLayerKind::LangRule,
+            IniFile::from_bytes(&std::fs::read(lang).unwrap()).unwrap(),
+        );
+    } else {
+        assert!(
+            corpus["retail_inputs"]["layers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["file"] == "LANGRULE.INI" && row["absent"] == true)
+        );
+    }
+    layers.push(RulesLayerKind::Scenario, map.ini.clone());
+    let processed = layers
+        .process_with_fixed_art(&IniFile::from_bytes(&raw_art).unwrap())
+        .unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let object = rules.object("NANRCT").unwrap();
+    let dimensions = crate::rules::foundation::foundation_dimensions(&object.foundation);
+    assert_eq!(
+        json!([dimensions.0, dimensions.1]),
+        corpus["retail_inputs"]["foundation_dimensions"]
+    );
+    let authored = map
+        .entities
+        .iter()
+        .find(|entity| entity.type_id == "NANRCT" && entity.owner == "Confederation")
+        .unwrap();
+    let native = corpus["receiver_controls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["route"] == "area")
+        .unwrap();
+    assert_eq!(
+        json!(authored.health),
+        native["authored_health_native"]["input"]["authored"]
+    );
+    assert_eq!(
+        json!(object.strength),
+        native["authored_health_native"]["input"]["strength"]
+    );
+    let initial = integer(&native["authored_health_native"]["output"]["actual"]);
+
+    // Match the native control's translated, already-admitted single reactor
+    // at10,10, null Tag and empty animation slots. This is a receiver/power
+    // comparison, not full campaign admission, difficulty or rendered parity.
+    let mut sim = Simulation::with_seed(31);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
+        32,
+        32,
+        crate::map::resolved_terrain::test_clear_cell,
+    ));
+    sim.session.binary_frame = integer(&native["frame"]) as u32;
+    let owner = sim.interner.intern(&authored.owner);
+    sim.houses
+        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+    let type_id = sim.interner.intern(&authored.type_id);
+    assert_eq!(sim.allocate_stable_id(), 1);
+    let mut entity = GameEntity::new_at_frame_zero_for_test(
+        1,
+        10,
+        10,
+        0,
+        0,
+        owner,
+        Health { current: initial },
+        type_id,
+        EntityCategory::Structure,
+        0,
+        0,
+        false,
+    );
+    entity.native_unique_id = integer(&native["reactor_native_unique_id"]);
+    entity.foundation = object.foundation.clone();
+    entity.begin_building_body(BuildingBodyMode::Idle, 0);
+    sim.substrate.entities.insert(entity);
+    sim.add_entity_occupancy(1);
+    sim.sample_building_health_for_house_update(1);
+    crate::sim::power_system::assess_house_power(
+        sim.power_states.get_mut(&owner).unwrap(),
+        &sim.substrate.entities,
+        &rules,
+        owner,
+        &sim.interner,
+        sim.session.binary_frame,
+    );
+    assert_eq!(
+        json!(sim.power_states[&owner].total_output),
+        native["power_consumer"]["initial_power"]
+    );
+    sim.session.install_waypoints(&HashMap::from([(
+        364,
+        Waypoint {
+            index: 364,
+            rx: 10,
+            ry: 10,
+        },
+    )]));
+    let mut definitions = RuntimeDefinitions::default();
+    let typ = definitions.trigger_type("DAMAGE").unwrap();
+    let entry = map.actions["087857CC"]
+        .entries
+        .iter()
+        .find(|entry| entry.kind == ACTION_DAMAGE_AT_WAYPOINT)
+        .unwrap()
+        .clone();
+    let action = definitions.resolve_action(entry, None, None);
+    sim.trigger_runtime.definitions = definitions;
+    // Import the original post-constructor boundary. Damage crossing yellow
+    // must retain the shared smoke owner's one Scenario selection draw.
+    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(integer(
+        &native["reactor_native_unique_id"],
+    ) as u32));
+    let rng_before = &native["rng_state_before"];
+    sim.main_rng =
+        SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap()).into();
+    sim.scenario_rng =
+        SimRng::from_native_state_hex_for_test(rng_before["scenario"].as_str().unwrap());
+    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
+    let (returned, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
+        sim.apply_live_trigger_action(
+            &action,
+            typ,
+            &mut Vec::new(),
+            Some(&rules),
+            None,
+            FrameEffects::default(),
+        )
+    });
+    assert!(returned);
+    let rows = native["rows"].as_array().unwrap();
+    assert_eq!(visits.len(), rows.len());
+    for (index, visit) in visits.iter().enumerate() {
+        let prior = if index == 0 {
+            initial
+        } else {
+            integer(&rows[index - 1]["health"])
+        };
+        assert_eq!(
+            visit["health_before"],
+            json!([[1, prior]]),
+            "native receiver visit{}",
+            index + 1
+        );
+    }
+    let last = rows.last().unwrap();
+    let reactor = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(json!(reactor.health.current), last["health"]);
+    assert_eq!(json!(reactor.estimated_health.get()), last["estimated"]);
+    assert_eq!(
+        u8::from(reactor.building_damage_state_active),
+        last["damaged_mode"].as_u64().unwrap() as u8
+    );
+    assert_eq!(
+        json!(reactor.building_power_health_sample()),
+        native["power_consumer"]["before_sample"]["sampled_health"]
+    );
+    assert_eq!(
+        json!(sim.power_states[&owner].total_output),
+        native["power_consumer"]["before_sample"]["house_power"]
+    );
+    sim.sample_building_health_for_house_update(1);
+    assert_eq!(
+        json!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .building_power_health_sample()
+        ),
+        native["power_consumer"]["after_sample"]["sampled_health"]
+    );
+    assert!(sim.power_states[&owner].power_recheck_for_test());
+    crate::sim::power_system::assess_house_power(
+        sim.power_states.get_mut(&owner).unwrap(),
+        &sim.substrate.entities,
+        &rules,
+        owner,
+        &sim.interner,
+        sim.session.binary_frame,
+    );
+    assert_eq!(
+        json!(sim.power_states[&owner].total_output),
+        native["power_consumer"]["after_power"]["house_power"]
+    );
+    assert!(!sim.power_states[&owner].power_recheck_for_test());
+    let smoke = &last["damage_smoke"];
+    assert_eq!(
+        json!(sim.particle_systems().len()),
+        smoke["registered_count"]
+    );
+    let (id, system) = sim.particle_systems().iter().next().unwrap();
+    assert_eq!(
+        system.type_id,
+        rules
+            .ps_type_id_by_name(smoke["type_name"].as_str().unwrap())
+            .unwrap()
+    );
+    assert_eq!(json!(system.coords.to_array()), smoke["coordinate"]);
+    assert_eq!(json!(system.native_unique_id()), smoke["native_unique_id"]);
+    assert_eq!(system.owner_entity, Some(1));
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .damage_smoke_system_id,
+        Some(*id)
+    );
+    assert!(system.particles.is_empty(), "no particle AI visit yet");
+    for (stream, actual) in [
+        ("main", sim.main_rng.native_state_hex()),
+        ("scenario", sim.scenario_rng.native_state_hex()),
+        ("mapgen", sim.mapgen_rng.native_state_hex()),
+    ] {
+        assert_eq!(
+            actual,
+            native["rng_state_after"][stream].as_str().unwrap(),
+            "{stream}"
+        );
+    }
+}
+
 /// Original Execute17→6E0FE0→5678E0→653830→4A9CA0 with the native
 /// constructor's empty-resident, FogOfWar-clear cell priors. The production
 /// action uses the retained+90 waypoint, current PlayerPtr and Fog+240 owner;

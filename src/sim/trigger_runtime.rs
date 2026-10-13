@@ -34,6 +34,7 @@ const ACTION_ENABLE_TRIGGER: i32 = 53;
 const ACTION_DISABLE_TRIGGER: i32 = 54;
 const ACTION_SET_LOCAL: i32 = 56;
 const ACTION_CLEAR_LOCAL: i32 = 57;
+const ACTION_DAMAGE_AT_WAYPOINT: i32 = 63;
 const ACTION_ANNOUNCE_WIN: i32 = 67;
 const ACTION_ANNOUNCE_LOSE: i32 = 68;
 const ACTION_END_SCENARIO: i32 = 69;
@@ -75,6 +76,9 @@ pub enum TriggerEffect {
         title: String,
         detail: String,
     },
+    /// A synchronous trigger receiver already published changed bridge state.
+    /// The frame owner includes this receipt in its existing terrain refresh.
+    BridgeStateChanged,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -2055,6 +2059,23 @@ impl Simulation {
                         index,
                         matches!(action.kind, ACTION_SET_GLOBAL | ACTION_SET_LOCAL),
                     );
+                }
+            }
+            ACTION_DAMAGE_AT_WAYPOINT => {
+                let (Some(rules), Some(waypoint)) = (rules, value) else {
+                    return false;
+                };
+                let Some(changed) = crate::sim::world::bridge_orchestrator::damage_at_waypoint(
+                    self,
+                    rules,
+                    waypoint,
+                    overlay_registry,
+                    frame_effects,
+                ) else {
+                    return false;
+                };
+                if changed {
+                    effects.push(TriggerEffect::BridgeStateChanged);
                 }
             }
             ACTION_CHANGE_VISIBLE_MAP_AREA => {

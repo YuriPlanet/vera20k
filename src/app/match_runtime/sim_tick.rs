@@ -1292,6 +1292,8 @@ fn refresh_cell_lighting(state: &mut AppState) {
 fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffect]) {
     for effect in effects {
         match effect {
+            // Consumed by the frame's existing bridge/terrain refresh.
+            TriggerEffect::BridgeStateChanged => {}
             TriggerEffect::CameraAtCoord { coord, velocity } => {
                 crate::app::input::camera::apply_trigger_camera(state, *coord, *velocity);
             }

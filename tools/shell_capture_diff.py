@@ -43,6 +43,8 @@ CAMPAIGN_CHECKPOINTS = {
     for phase in ("loading-first-frame", "first-live-frame", "abort-return")
 }
 CAMPAIGN_CHECKPOINTS["campaign-back-return"] = (None, "campaign-back-return")
+CAMPAIGN_CHECKPOINTS["campaign-all1-opening-load-unlocked"] = (
+    "all1", "opening-load-unlocked-while-locked")
 for phase in ("opening-locked", "opening-pan", "opening-flash", "opening-arrows",
               "opening-unlocked", "opening-restore-unlocked"):
     CAMPAIGN_CHECKPOINTS[f"campaign-sov1-{phase}"] = ("sov1", phase)
@@ -286,7 +288,8 @@ def _validate_campaign_opening(manifest, phase, runtime):
     initial = opening["initial_runtime"]
     _require(initial["tick"] == 0 and initial["game_mode_nonzero"] is False,
              "opening skipped the ordinary tick-zero installation")
-    restores = phase == "opening-restore-unlocked"
+    in_lock_load = phase == "opening-load-unlocked-while-locked"
+    restores = phase == "opening-restore-unlocked" or in_lock_load
     for observation, admission in ((initial, CAMPAIGN_INSTALLED),
                                    (runtime, SAVED_WORLD_RESTORED if restores else CAMPAIGN_INSTALLED)):
         _require(observation.get("scenario_started") is True,
@@ -294,15 +297,32 @@ def _validate_campaign_opening(manifest, phase, runtime):
         _require(observation.get("startup_admission") == admission,
                  "opening has no checked campaign installation or saved-world admission")
     steps = opening["exact_steps"]
-    _require(isinstance(steps, list) and 0 < len(steps) <= 2500,
+    _require(isinstance(steps, list) and 0 < len(steps) <= (6000 if in_lock_load else 2500),
              "opening has no bounded production step sequence")
     tick, frame = initial["tick"], initial["binary_frame"]
-    for step in steps:
+    loads = []
+    unlocked_clock = None
+    clock_segments = [{(tick, frame)}]
+    for index, step in enumerate(steps):
+        before = step["tick_before"], step["binary_frame_before"]
+        if in_lock_load and before != (tick, frame):
+            if not loads:
+                unlocked_clock = tick, frame
+                expected = initial["tick"], initial["binary_frame"]
+            else:
+                expected = unlocked_clock
+            _require(len(loads) < 2 and before == expected,
+                     "ALL01 load contains an unexplained runtime clock replacement")
+            loads.append(index)
+            tick, frame = before
+            clock_segments.append(set())
+        clock_segments[-1].add(before)
         _require(step["tick_before"] == tick and step["tick_after"] == tick + 1
                  and step["binary_frame_before"] == frame
                  and step["binary_frame_after"] == (frame + 1) & 0xFFFFFFFF,
                  "opening production steps contain a gap or a repeated frame")
         tick, frame = step["tick_after"], step["binary_frame_after"]
+        clock_segments[-1].add((tick, frame))
     current = opening["current"]
     _require(tick == runtime["tick"] == current["tick"]
              and frame == runtime["binary_frame"] == current["binary_frame"],
@@ -310,10 +330,19 @@ def _validate_campaign_opening(manifest, phase, runtime):
     _require(current.get("fog_viewer") == runtime["current_house"]["name"],
              "opening shroud observation does not belong to the installed player")
     observations = opening["observations"]
+    clock_boundaries = set().union(*clock_segments)
     _require(isinstance(observations, list) and observations
-             and all(_integer(row["tick"]) and 0 <= row["tick"] <= tick for row in observations)
-             and all(a["tick"] <= b["tick"] for a, b in zip(observations, observations[1:])),
+             and all(_integer(row["tick"]) and _integer(row["binary_frame"])
+                     and 0 <= row["tick"] <= tick
+                     and (row["tick"], row["binary_frame"]) in clock_boundaries
+                     for row in observations),
              "opening owner observations are not ordered within the captured run")
+    rewinds = [index for index in range(1, len(observations))
+               if observations[index - 1]["tick"] > observations[index]["tick"]]
+    _require((len(rewinds) == 1
+              and (observations[rewinds[0]]["tick"], observations[rewinds[0]]["binary_frame"])
+              == (initial["tick"], initial["binary_frame"])) if in_lock_load else not rewinds,
+             "opening observations contain an unexplained saved-world rewind")
     probe = opening["locked_arrow_probe"]
     _require(isinstance(probe, dict) and probe["locked"] is True
              and (probe["custom_binding"] is True or (
@@ -352,15 +381,48 @@ def _validate_campaign_opening(manifest, phase, runtime):
             "released_buttons_admit_right_pan": True, "capture_released": True,
             "camera_request_committed": False,
         }, "opening did not exercise live button priority and release after unlock")
-        _require(any(any(actor.get("cell_shrouded") is False for actor in row["flashing"])
+        _require(in_lock_load or (any(any(actor.get("cell_shrouded") is False for actor in row["flashing"])
                      for row in observations)
                  and any(row["messages"] for row in observations)
                  and any(any(anim["type"] == "ARRWSE" and anim.get("cell_shrouded") is False
                              for anim in row["no_effects_anims"])
-                         for row in observations),
+                         for row in observations)),
                  "opening missed a required flash/message/arrow consumer before unlock")
     restored = opening["save_restore"]
-    if phase == "opening-restore-unlocked":
+    if in_lock_load:
+        _require(len(loads) == 2 and len(steps) - loads[1] >= 45,
+                 "ALL01 did not observe both loads and the post-load production steps")
+        _require(all(isinstance(opening.get(key), str) and opening[key]
+                     for key in ("pre_lock_save", "unlocked_save")),
+                 "ALL01 load omitted one of its ordinary saved-world paths")
+        load = opening.get("load_while_locked")
+        _require(isinstance(load, dict) and _integer(load.get("depth_before"))
+                 and load["depth_before"] < 0 and load.get("locked_after") is False
+                 and load.get("depth_after") == 0 and load.get("cursor_instances_after") == 1
+                 and load.get("right_drag_pans_after") is True and restored is None,
+                 "ALL01 in-lock load did not restore ordinary pointer/input admission")
+        # Readbacks must follow the two actual step-clock replacements. The
+        # summary's depth_before alone cannot establish a locked replay owner.
+        replay_start = rewinds[0]
+        forward_load = next((index for index in range(replay_start + 1, len(observations))
+                             if (observations[index]["tick"], observations[index]["binary_frame"])
+                             == unlocked_clock), None)
+        _require(forward_load is not None,
+                 "ALL01 load omitted its forward saved-world observation")
+        segments = (observations[:replay_start], observations[replay_start:forward_load],
+                    observations[forward_load:])
+        _require(all((row["tick"], row["binary_frame"]) in clocks
+                     for rows, clocks in zip(segments, clock_segments) for row in rows),
+                 "ALL01 owner observation belongs to a different production segment")
+        replay_owner = segments[1][-1]
+        replay_step = steps[loads[1] - 1]
+        _require((replay_owner["tick"], replay_owner["binary_frame"])
+                 == (replay_step["tick_after"], replay_step["binary_frame_after"])
+                 and replay_owner.get("input_locked") is True
+                 and _integer(replay_owner.get("cursor_depth"))
+                 and replay_owner["cursor_depth"] == load["depth_before"],
+                 "ALL01 forward load has no matching locked replay owner")
+    elif phase == "opening-restore-unlocked":
         _require(isinstance(restored, dict)
                  and restored["view_before"] == restored["view_after"]
                  and restored["cursor_depth_before"] == restored["cursor_depth_after"],

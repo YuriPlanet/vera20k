@@ -139,6 +139,8 @@ pub(crate) fn apply_area_damage(
     origin: (u64, Option<InternedId>, InternedId),
     effects: FrameEffects<'_>,
 ) -> bool {
+    #[cfg(test)]
+    super::receiver_fixture::observe_area_visit(world, impact, damage, warhead, origin);
     let area = collect_area_at(
         world,
         rules,

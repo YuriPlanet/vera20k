@@ -6879,6 +6879,10 @@ impl Simulation {
             effects,
         );
         spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);
+        bridge_state_changed |= self
+            .trigger_effects
+            .iter()
+            .any(|effect| matches!(effect, TriggerEffect::BridgeStateChanged));
         self.frame_overlay_updates = self.finalize_frame_overlays_and_navigation(
             rules,
             overlay_registry,

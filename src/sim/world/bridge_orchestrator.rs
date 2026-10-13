@@ -102,6 +102,57 @@ pub(crate) fn apply_bridge_damage_events_with_overlay_registry(
     collapsed
 }
 
+/// `TActionClass::Execute`63 (`0x006DDDC9`) -> DamageAtWaypoint6E0490.
+/// Five synchronous AreaDamage489280 visits precede the direct587180 tail.
+/// Re-query the waypoint before each visit: an earlier bridge collapse can
+/// change the following height. +90 is the waypoint, not the trailing+44.
+/// Original dispatch/geometry and NANRCT receiver controls:
+/// `tools/spatial_oracle/trigger_damage_at_waypoint.json` (+ metadata).
+/// Receiver and bridge state remain with their existing shared owners.
+pub(crate) fn damage_at_waypoint(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    waypoint: i32,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) -> Option<bool> {
+    use crate::sim::combat::{RAD_NO_ATTACKER, world_receiver::apply_area_damage};
+    use crate::sim::projectile::ProjectileCoord;
+
+    let warhead = rules.warhead(&rules.bridge_warheads.c4_name)?;
+    let warhead_id = sim.interner.intern(&rules.bridge_warheads.c4_name);
+    let mut changed = false;
+    for (dx, dy) in [(0, 0), (85, 85), (-85, 85), (85, -85), (-85, -85)] {
+        let [x, y, z] = sim.trigger_waypoint_coord(waypoint)?;
+        changed |= apply_area_damage(
+            sim,
+            rules,
+            overlay_registry,
+            ProjectileCoord::new(x.wrapping_add(dx), y.wrapping_add(dy), z),
+            100,
+            warhead,
+            (RAD_NO_ATTACKER, None, warhead_id),
+            frame_effects,
+        );
+    }
+    // IsWaypointValid68BD80 gates only the tail, after all five area visits.
+    // The retained unset coordinate is zero; the shared session bounds the index.
+    if let Some(cell) = sim.session.waypoint_cell(waypoint)
+        && cell != (0, 0)
+    {
+        let mut drivers = BridgeDamageDrivers::new(sim, rules, overlay_registry, frame_effects);
+        for _ in 0..4 {
+            if drivers.apply_damage_to_cell(cell) {
+                break;
+            }
+        }
+        changed |= drivers.collapsed;
+        // 6E0705..6E077A invalidates a256px tactical rectangle. VERA redraws
+        // the whole tactical scene each frame; no retained screen pixels exist.
+    }
+    Some(changed)
+}
+
 fn apply_one_bridge_damage_event(
     sim: &mut Simulation,
     rules: &RuleSet,

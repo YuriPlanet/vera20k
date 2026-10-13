@@ -1,0 +1,2600 @@
+{
+  "dispatch_controls": [
+    {
+      "calls": [
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2773,
+            2773,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2603,
+            2773,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2773,
+            2603,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2603,
+            2603,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            416
+          ],
+          "kind": "project"
+        },
+        {
+          "flag": 0,
+          "kind": "dirty",
+          "rectangle": [
+            872,
+            1872,
+            256,
+            256
+          ]
+        }
+      ],
+      "constants": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "scenario_initializers": [
+          6828144,
+          6828192,
+          6828224,
+          6828256,
+          6828288,
+          6828320,
+          6828352,
+          6828416,
+          6828464,
+          6828512,
+          6828560,
+          6828576,
+          6828608,
+          6828640,
+          6828672
+        ],
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd",
+        "waypoint_bridge_height": 416
+      },
+      "input": {
+        "cell": [
+          10,
+          10
+        ],
+        "name": "flat_all_bridge_attempts_fail"
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 63,
+        "raw": "63,0,364,0,0,0,0,A",
+        "read": "1,63,0,364,0,0,0,0,A",
+        "value": 364,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "calls": [
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2773,
+            2773,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2603,
+            2773,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2773,
+            2603,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2603,
+            2603,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": true
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            416
+          ],
+          "kind": "project"
+        },
+        {
+          "flag": 0,
+          "kind": "dirty",
+          "rectangle": [
+            872,
+            1872,
+            256,
+            256
+          ]
+        }
+      ],
+      "constants": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "scenario_initializers": [
+          6828144,
+          6828192,
+          6828224,
+          6828256,
+          6828288,
+          6828320,
+          6828352,
+          6828416,
+          6828464,
+          6828512,
+          6828560,
+          6828576,
+          6828608,
+          6828640,
+          6828672
+        ],
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd",
+        "waypoint_bridge_height": 416
+      },
+      "input": {
+        "bridge_success_at": 0,
+        "cell": [
+          10,
+          10
+        ],
+        "name": "flat_bridge_first_succeeds"
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 63,
+        "raw": "63,0,364,0,0,0,0,A",
+        "read": "1,63,0,364,0,0,0,0,A",
+        "value": 364,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "calls": [
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2773,
+            2773,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2603,
+            2773,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2773,
+            2603,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2603,
+            2603,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": true
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            416
+          ],
+          "kind": "project"
+        },
+        {
+          "flag": 0,
+          "kind": "dirty",
+          "rectangle": [
+            872,
+            1872,
+            256,
+            256
+          ]
+        }
+      ],
+      "constants": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "scenario_initializers": [
+          6828144,
+          6828192,
+          6828224,
+          6828256,
+          6828288,
+          6828320,
+          6828352,
+          6828416,
+          6828464,
+          6828512,
+          6828560,
+          6828576,
+          6828608,
+          6828640,
+          6828672
+        ],
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd",
+        "waypoint_bridge_height": 416
+      },
+      "input": {
+        "bridge_success_at": 3,
+        "cell": [
+          10,
+          10
+        ],
+        "name": "flat_bridge_last_succeeds"
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 63,
+        "raw": "63,0,364,0,0,0,0,A",
+        "read": "1,63,0,364,0,0,0,0,A",
+        "value": 364,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "calls": [
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2688,
+            2688,
+            260
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2773,
+            2773,
+            260
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2603,
+            2773,
+            260
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2773,
+            2603,
+            260
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2603,
+            2603,
+            260
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            416
+          ],
+          "kind": "project"
+        },
+        {
+          "flag": 0,
+          "kind": "dirty",
+          "rectangle": [
+            872,
+            1872,
+            256,
+            256
+          ]
+        }
+      ],
+      "constants": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "scenario_initializers": [
+          6828144,
+          6828192,
+          6828224,
+          6828256,
+          6828288,
+          6828320,
+          6828352,
+          6828416,
+          6828464,
+          6828512,
+          6828560,
+          6828576,
+          6828608,
+          6828640,
+          6828672
+        ],
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd",
+        "waypoint_bridge_height": 416
+      },
+      "input": {
+        "cell": [
+          10,
+          10
+        ],
+        "level": 2,
+        "name": "slope_level2",
+        "slope": 1
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 63,
+        "raw": "63,0,364,0,0,0,0,A",
+        "read": "1,63,0,364,0,0,0,0,A",
+        "value": 364,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "calls": [
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2688,
+            2688,
+            624
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2773,
+            2773,
+            624
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2603,
+            2773,
+            624
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2773,
+            2603,
+            624
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            2603,
+            2603,
+            624
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "cell": [
+            10,
+            10
+          ],
+          "kind": "bridge",
+          "result": false
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            416
+          ],
+          "kind": "project"
+        },
+        {
+          "flag": 0,
+          "kind": "dirty",
+          "rectangle": [
+            872,
+            1872,
+            256,
+            256
+          ]
+        }
+      ],
+      "constants": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "scenario_initializers": [
+          6828144,
+          6828192,
+          6828224,
+          6828256,
+          6828288,
+          6828320,
+          6828352,
+          6828416,
+          6828464,
+          6828512,
+          6828560,
+          6828576,
+          6828608,
+          6828640,
+          6828672
+        ],
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd",
+        "waypoint_bridge_height": 416
+      },
+      "input": {
+        "cell": [
+          10,
+          10
+        ],
+        "flags": 256,
+        "level": 2,
+        "name": "bridge_100"
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 63,
+        "raw": "63,0,364,0,0,0,0,A",
+        "read": "1,63,0,364,0,0,0,0,A",
+        "value": 364,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "calls": [
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            128,
+            128,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            213,
+            213,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            43,
+            213,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            213,
+            43,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        },
+        {
+          "args": [
+            0,
+            "C4Warhead",
+            1,
+            0
+          ],
+          "coord": [
+            43,
+            43,
+            0
+          ],
+          "damage": 100,
+          "kind": "area"
+        }
+      ],
+      "constants": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "scenario_initializers": [
+          6828144,
+          6828192,
+          6828224,
+          6828256,
+          6828288,
+          6828320,
+          6828352,
+          6828416,
+          6828464,
+          6828512,
+          6828560,
+          6828576,
+          6828608,
+          6828640,
+          6828672
+        ],
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd",
+        "waypoint_bridge_height": 416
+      },
+      "input": {
+        "cell": [
+          0,
+          0
+        ],
+        "name": "unset_waypoint"
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 63,
+        "raw": "63,0,364,0,0,0,0,A",
+        "read": "1,63,0,364,0,0,0,0,A",
+        "value": 364,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    }
+  ],
+  "receiver_controls": [
+    {
+      "authored_health_native": {
+        "input": {
+          "authored": 197,
+          "kind": "building",
+          "strength": 1000
+        },
+        "output": {
+          "actual": 769,
+          "authored_after": 197,
+          "estimated": 769,
+          "writes": [
+            {
+              "field": "actual",
+              "instruction": "0044FB9F",
+              "value": 769
+            },
+            {
+              "field": "estimated",
+              "instruction": "0044FBCF",
+              "value": 769
+            }
+          ]
+        }
+      },
+      "ctor_health": 1000,
+      "frame": 15,
+      "power_consumer": {
+        "after_power": {
+          "house_dirty": [
+            0,
+            1
+          ],
+          "house_drain": 0,
+          "house_power": 537,
+          "sampled_health": 269
+        },
+        "after_sample": {
+          "house_dirty": [
+            1,
+            1
+          ],
+          "house_power": 1537,
+          "sampled_health": 269
+        },
+        "before_sample": {
+          "house_dirty": [
+            0,
+            1
+          ],
+          "house_power": 1537,
+          "sampled_health": 769
+        },
+        "initial_power": 1537
+      },
+      "reactor_native_unique_id": 1,
+      "rng_advances": [
+        {
+          "frame": 15,
+          "masked": 1,
+          "range": 1,
+          "raw": 2287577493,
+          "rejected": false,
+          "stream": "scenario"
+        }
+      ],
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "43e065a41f10e9bdd6e501fe207f1fa527ee3dbfef26ddfe1e9170ce32ecf603"
+      },
+      "rng_calls": [
+        {
+          "args": [
+            0,
+            1
+          ],
+          "caller": "007029DC",
+          "kind": "rng_ranged",
+          "pc": "0065C7E0",
+          "stream": "scenario"
+        }
+      ],
+      "rng_state_after": {
+        "main": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+        "mapgen": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "scenario": "0000000002000000690000005379c37895a95988b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49"
+      },
+      "rng_state_before": {
+        "main": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+        "mapgen": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "scenario": "0000000001000000680000005379c37874572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49"
+      },
+      "route": "direct",
+      "rows": [
+        {
+          "calls": [
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "building_receive",
+              "pc": "00442230",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "techno_receive",
+              "pc": "00701900",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "object_receive",
+              "pc": "005F5390",
+              "source_null": true
+            },
+            {
+              "kind": "power_output",
+              "pc": "0044E7B0"
+            }
+          ],
+          "damage_smoke": null,
+          "damaged_mode": 0,
+          "estimated": 769,
+          "health": 669,
+          "native_return": 1,
+          "observed_techno_timer": {
+            "duration": 21,
+            "start": 15
+          },
+          "offset": [
+            0,
+            0
+          ],
+          "power_output": 1337,
+          "sampled_health": 769,
+          "visit": 1
+        },
+        {
+          "calls": [
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "building_receive",
+              "pc": "00442230",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "techno_receive",
+              "pc": "00701900",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "object_receive",
+              "pc": "005F5390",
+              "source_null": true
+            },
+            {
+              "kind": "power_output",
+              "pc": "0044E7B0"
+            }
+          ],
+          "damage_smoke": null,
+          "damaged_mode": 0,
+          "estimated": 769,
+          "health": 569,
+          "native_return": 1,
+          "observed_techno_timer": {
+            "duration": 21,
+            "start": 15
+          },
+          "offset": [
+            85,
+            85
+          ],
+          "power_output": 1137,
+          "sampled_health": 769,
+          "visit": 2
+        },
+        {
+          "calls": [
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "building_receive",
+              "pc": "00442230",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "techno_receive",
+              "pc": "00701900",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "object_receive",
+              "pc": "005F5390",
+              "source_null": true
+            },
+            {
+              "args": [
+                0,
+                1
+              ],
+              "caller": "007029DC",
+              "kind": "rng_ranged",
+              "pc": "0065C7E0",
+              "stream": "scenario"
+            },
+            {
+              "coordinate": [
+                3098,
+                2788,
+                165
+              ],
+              "kind": "particle_system_constructor",
+              "pc": "0062DC50",
+              "type_name": "SmallGreySSys"
+            },
+            {
+              "kind": "power_output",
+              "pc": "0044E7B0"
+            }
+          ],
+          "damage_smoke": {
+            "coordinate": [
+              3098,
+              2788,
+              165
+            ],
+            "lifetime": 4294967295,
+            "native_unique_id": 2,
+            "owner_is_building": true,
+            "registered_count": 1,
+            "spawn_timer_bits": "00002041",
+            "type_name": "SmallGreySSys"
+          },
+          "damaged_mode": 1,
+          "estimated": 769,
+          "health": 469,
+          "native_return": 2,
+          "observed_techno_timer": {
+            "duration": 21,
+            "start": 15
+          },
+          "offset": [
+            -85,
+            85
+          ],
+          "power_output": 937,
+          "sampled_health": 769,
+          "visit": 3
+        },
+        {
+          "calls": [
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "building_receive",
+              "pc": "00442230",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "techno_receive",
+              "pc": "00701900",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "object_receive",
+              "pc": "005F5390",
+              "source_null": true
+            },
+            {
+              "kind": "power_output",
+              "pc": "0044E7B0"
+            }
+          ],
+          "damage_smoke": {
+            "coordinate": [
+              3098,
+              2788,
+              165
+            ],
+            "lifetime": 4294967295,
+            "native_unique_id": 2,
+            "owner_is_building": true,
+            "registered_count": 1,
+            "spawn_timer_bits": "00002041",
+            "type_name": "SmallGreySSys"
+          },
+          "damaged_mode": 1,
+          "estimated": 769,
+          "health": 369,
+          "native_return": 1,
+          "observed_techno_timer": {
+            "duration": 21,
+            "start": 15
+          },
+          "offset": [
+            85,
+            -85
+          ],
+          "power_output": 737,
+          "sampled_health": 769,
+          "visit": 4
+        },
+        {
+          "calls": [
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "building_receive",
+              "pc": "00442230",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "techno_receive",
+              "pc": "00701900",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "object_receive",
+              "pc": "005F5390",
+              "source_null": true
+            },
+            {
+              "kind": "power_output",
+              "pc": "0044E7B0"
+            }
+          ],
+          "damage_smoke": {
+            "coordinate": [
+              3098,
+              2788,
+              165
+            ],
+            "lifetime": 4294967295,
+            "native_unique_id": 2,
+            "owner_is_building": true,
+            "registered_count": 1,
+            "spawn_timer_bits": "00002041",
+            "type_name": "SmallGreySSys"
+          },
+          "damaged_mode": 1,
+          "estimated": 769,
+          "health": 269,
+          "native_return": 1,
+          "observed_techno_timer": {
+            "duration": 21,
+            "start": 15
+          },
+          "offset": [
+            -85,
+            -85
+          ],
+          "power_output": 537,
+          "sampled_health": 769,
+          "visit": 5
+        }
+      ],
+      "writes": [
+        {
+          "offset": "5778",
+          "pc": "00508C79",
+          "size": 1,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A4",
+          "pc": "00508C7F",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A8",
+          "pc": "00508C85",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A4",
+          "pc": "00508D01",
+          "size": 4,
+          "target": "house",
+          "value": 1537
+        },
+        {
+          "offset": "53A8",
+          "pc": "00508D18",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "577B",
+          "pc": "00508D4A",
+          "size": 1,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "5779",
+          "pc": "00508DE0",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        },
+        {
+          "offset": "5779",
+          "pc": "004F84EA",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        },
+        {
+          "offset": "6C",
+          "pc": "005F550D",
+          "size": 4,
+          "target": "building",
+          "value": 669
+        },
+        {
+          "offset": "174",
+          "pc": "00701FBD",
+          "size": 4,
+          "target": "building",
+          "value": 15
+        },
+        {
+          "offset": "17C",
+          "pc": "00701FC8",
+          "size": 4,
+          "target": "building",
+          "value": 21
+        },
+        {
+          "offset": "6C",
+          "pc": "005F550D",
+          "size": 4,
+          "target": "building",
+          "value": 569
+        },
+        {
+          "offset": "174",
+          "pc": "00701FBD",
+          "size": 4,
+          "target": "building",
+          "value": 15
+        },
+        {
+          "offset": "17C",
+          "pc": "00701FC8",
+          "size": 4,
+          "target": "building",
+          "value": 21
+        },
+        {
+          "offset": "6C",
+          "pc": "005F550D",
+          "size": 4,
+          "target": "building",
+          "value": 469
+        },
+        {
+          "offset": "174",
+          "pc": "00701FBD",
+          "size": 4,
+          "target": "building",
+          "value": 15
+        },
+        {
+          "offset": "17C",
+          "pc": "00701FC8",
+          "size": 4,
+          "target": "building",
+          "value": 21
+        },
+        {
+          "offset": "310",
+          "pc": "007029FE",
+          "size": 4,
+          "target": "building",
+          "value": 671228256
+        },
+        {
+          "offset": "6E6",
+          "pc": "00442AD4",
+          "size": 1,
+          "target": "building",
+          "value": 1
+        },
+        {
+          "offset": "80",
+          "pc": "00442B4A",
+          "size": 1,
+          "target": "building",
+          "value": 1
+        },
+        {
+          "offset": "6C",
+          "pc": "005F550D",
+          "size": 4,
+          "target": "building",
+          "value": 369
+        },
+        {
+          "offset": "174",
+          "pc": "00701FBD",
+          "size": 4,
+          "target": "building",
+          "value": 15
+        },
+        {
+          "offset": "17C",
+          "pc": "00701FC8",
+          "size": 4,
+          "target": "building",
+          "value": 21
+        },
+        {
+          "offset": "6C",
+          "pc": "005F550D",
+          "size": 4,
+          "target": "building",
+          "value": 269
+        },
+        {
+          "offset": "174",
+          "pc": "00701FBD",
+          "size": 4,
+          "target": "building",
+          "value": 15
+        },
+        {
+          "offset": "17C",
+          "pc": "00701FC8",
+          "size": 4,
+          "target": "building",
+          "value": 21
+        },
+        {
+          "offset": "5778",
+          "pc": "00440055",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        },
+        {
+          "offset": "5779",
+          "pc": "00440062",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        },
+        {
+          "offset": "544",
+          "pc": "0044006C",
+          "size": 4,
+          "target": "building",
+          "value": 269
+        },
+        {
+          "offset": "5778",
+          "pc": "00508C79",
+          "size": 1,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A4",
+          "pc": "00508C7F",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A8",
+          "pc": "00508C85",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A4",
+          "pc": "00508D01",
+          "size": 4,
+          "target": "house",
+          "value": 537
+        },
+        {
+          "offset": "53A8",
+          "pc": "00508D18",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "577B",
+          "pc": "00508D4A",
+          "size": 1,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "5779",
+          "pc": "00508DE0",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        },
+        {
+          "offset": "5779",
+          "pc": "004F84EA",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "authored_health_native": {
+        "input": {
+          "authored": 197,
+          "kind": "building",
+          "strength": 1000
+        },
+        "output": {
+          "actual": 769,
+          "authored_after": 197,
+          "estimated": 769,
+          "writes": [
+            {
+              "field": "actual",
+              "instruction": "0044FB9F",
+              "value": 769
+            },
+            {
+              "field": "estimated",
+              "instruction": "0044FBCF",
+              "value": 769
+            }
+          ]
+        }
+      },
+      "ctor_health": 1000,
+      "frame": 15,
+      "power_consumer": {
+        "after_power": {
+          "house_dirty": [
+            0,
+            1
+          ],
+          "house_drain": 0,
+          "house_power": 537,
+          "sampled_health": 269
+        },
+        "after_sample": {
+          "house_dirty": [
+            1,
+            1
+          ],
+          "house_power": 1537,
+          "sampled_health": 269
+        },
+        "before_sample": {
+          "house_dirty": [
+            0,
+            1
+          ],
+          "house_power": 1537,
+          "sampled_health": 769
+        },
+        "initial_power": 1537
+      },
+      "reactor_native_unique_id": 1,
+      "rng_advances": [
+        {
+          "frame": 15,
+          "masked": 1,
+          "range": 1,
+          "raw": 2287577493,
+          "rejected": false,
+          "stream": "scenario"
+        }
+      ],
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "43e065a41f10e9bdd6e501fe207f1fa527ee3dbfef26ddfe1e9170ce32ecf603"
+      },
+      "rng_calls": [
+        {
+          "args": [
+            0,
+            1
+          ],
+          "caller": "007029DC",
+          "kind": "rng_ranged",
+          "pc": "0065C7E0",
+          "stream": "scenario"
+        }
+      ],
+      "rng_state_after": {
+        "main": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+        "mapgen": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "scenario": "0000000002000000690000005379c37895a95988b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49"
+      },
+      "rng_state_before": {
+        "main": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+        "mapgen": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "scenario": "0000000001000000680000005379c37874572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49"
+      },
+      "route": "area",
+      "rows": [
+        {
+          "calls": [
+            {
+              "kind": "area_damage",
+              "pc": "00489280"
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "building_receive",
+              "pc": "00442230",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "techno_receive",
+              "pc": "00701900",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "object_receive",
+              "pc": "005F5390",
+              "source_null": true
+            },
+            {
+              "kind": "power_output",
+              "pc": "0044E7B0"
+            }
+          ],
+          "damage_smoke": null,
+          "damaged_mode": 0,
+          "estimated": 769,
+          "health": 669,
+          "native_return": 0,
+          "observed_techno_timer": {
+            "duration": 21,
+            "start": 15
+          },
+          "offset": [
+            0,
+            0
+          ],
+          "power_output": 1337,
+          "sampled_health": 769,
+          "visit": 1
+        },
+        {
+          "calls": [
+            {
+              "kind": "area_damage",
+              "pc": "00489280"
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "building_receive",
+              "pc": "00442230",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "techno_receive",
+              "pc": "00701900",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "object_receive",
+              "pc": "005F5390",
+              "source_null": true
+            },
+            {
+              "kind": "power_output",
+              "pc": "0044E7B0"
+            }
+          ],
+          "damage_smoke": null,
+          "damaged_mode": 0,
+          "estimated": 769,
+          "health": 569,
+          "native_return": 0,
+          "observed_techno_timer": {
+            "duration": 21,
+            "start": 15
+          },
+          "offset": [
+            85,
+            85
+          ],
+          "power_output": 1137,
+          "sampled_health": 769,
+          "visit": 2
+        },
+        {
+          "calls": [
+            {
+              "kind": "area_damage",
+              "pc": "00489280"
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "building_receive",
+              "pc": "00442230",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "techno_receive",
+              "pc": "00701900",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "object_receive",
+              "pc": "005F5390",
+              "source_null": true
+            },
+            {
+              "args": [
+                0,
+                1
+              ],
+              "caller": "007029DC",
+              "kind": "rng_ranged",
+              "pc": "0065C7E0",
+              "stream": "scenario"
+            },
+            {
+              "coordinate": [
+                3098,
+                2788,
+                165
+              ],
+              "kind": "particle_system_constructor",
+              "pc": "0062DC50",
+              "type_name": "SmallGreySSys"
+            },
+            {
+              "kind": "power_output",
+              "pc": "0044E7B0"
+            }
+          ],
+          "damage_smoke": {
+            "coordinate": [
+              3098,
+              2788,
+              165
+            ],
+            "lifetime": 4294967295,
+            "native_unique_id": 2,
+            "owner_is_building": true,
+            "registered_count": 1,
+            "spawn_timer_bits": "00002041",
+            "type_name": "SmallGreySSys"
+          },
+          "damaged_mode": 1,
+          "estimated": 769,
+          "health": 469,
+          "native_return": 0,
+          "observed_techno_timer": {
+            "duration": 21,
+            "start": 15
+          },
+          "offset": [
+            -85,
+            85
+          ],
+          "power_output": 937,
+          "sampled_health": 769,
+          "visit": 3
+        },
+        {
+          "calls": [
+            {
+              "kind": "area_damage",
+              "pc": "00489280"
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "building_receive",
+              "pc": "00442230",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "techno_receive",
+              "pc": "00701900",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "object_receive",
+              "pc": "005F5390",
+              "source_null": true
+            },
+            {
+              "kind": "power_output",
+              "pc": "0044E7B0"
+            }
+          ],
+          "damage_smoke": {
+            "coordinate": [
+              3098,
+              2788,
+              165
+            ],
+            "lifetime": 4294967295,
+            "native_unique_id": 2,
+            "owner_is_building": true,
+            "registered_count": 1,
+            "spawn_timer_bits": "00002041",
+            "type_name": "SmallGreySSys"
+          },
+          "damaged_mode": 1,
+          "estimated": 769,
+          "health": 369,
+          "native_return": 0,
+          "observed_techno_timer": {
+            "duration": 21,
+            "start": 15
+          },
+          "offset": [
+            85,
+            -85
+          ],
+          "power_output": 737,
+          "sampled_health": 769,
+          "visit": 4
+        },
+        {
+          "calls": [
+            {
+              "kind": "area_damage",
+              "pc": "00489280"
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "building_receive",
+              "pc": "00442230",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "techno_receive",
+              "pc": "00701900",
+              "source_null": true
+            },
+            {
+              "attacking_house_null": true,
+              "damage": 100,
+              "distance": 0,
+              "kind": "object_receive",
+              "pc": "005F5390",
+              "source_null": true
+            },
+            {
+              "kind": "power_output",
+              "pc": "0044E7B0"
+            }
+          ],
+          "damage_smoke": {
+            "coordinate": [
+              3098,
+              2788,
+              165
+            ],
+            "lifetime": 4294967295,
+            "native_unique_id": 2,
+            "owner_is_building": true,
+            "registered_count": 1,
+            "spawn_timer_bits": "00002041",
+            "type_name": "SmallGreySSys"
+          },
+          "damaged_mode": 1,
+          "estimated": 769,
+          "health": 269,
+          "native_return": 0,
+          "observed_techno_timer": {
+            "duration": 21,
+            "start": 15
+          },
+          "offset": [
+            -85,
+            -85
+          ],
+          "power_output": 537,
+          "sampled_health": 769,
+          "visit": 5
+        }
+      ],
+      "writes": [
+        {
+          "offset": "5778",
+          "pc": "00508C79",
+          "size": 1,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A4",
+          "pc": "00508C7F",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A8",
+          "pc": "00508C85",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A4",
+          "pc": "00508D01",
+          "size": 4,
+          "target": "house",
+          "value": 1537
+        },
+        {
+          "offset": "53A8",
+          "pc": "00508D18",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "577B",
+          "pc": "00508D4A",
+          "size": 1,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "5779",
+          "pc": "00508DE0",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        },
+        {
+          "offset": "5779",
+          "pc": "004F84EA",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        },
+        {
+          "offset": "6C",
+          "pc": "005F550D",
+          "size": 4,
+          "target": "building",
+          "value": 669
+        },
+        {
+          "offset": "174",
+          "pc": "00701FBD",
+          "size": 4,
+          "target": "building",
+          "value": 15
+        },
+        {
+          "offset": "17C",
+          "pc": "00701FC8",
+          "size": 4,
+          "target": "building",
+          "value": 21
+        },
+        {
+          "offset": "6C",
+          "pc": "005F550D",
+          "size": 4,
+          "target": "building",
+          "value": 569
+        },
+        {
+          "offset": "174",
+          "pc": "00701FBD",
+          "size": 4,
+          "target": "building",
+          "value": 15
+        },
+        {
+          "offset": "17C",
+          "pc": "00701FC8",
+          "size": 4,
+          "target": "building",
+          "value": 21
+        },
+        {
+          "offset": "6C",
+          "pc": "005F550D",
+          "size": 4,
+          "target": "building",
+          "value": 469
+        },
+        {
+          "offset": "174",
+          "pc": "00701FBD",
+          "size": 4,
+          "target": "building",
+          "value": 15
+        },
+        {
+          "offset": "17C",
+          "pc": "00701FC8",
+          "size": 4,
+          "target": "building",
+          "value": 21
+        },
+        {
+          "offset": "310",
+          "pc": "007029FE",
+          "size": 4,
+          "target": "building",
+          "value": 671228544
+        },
+        {
+          "offset": "6E6",
+          "pc": "00442AD4",
+          "size": 1,
+          "target": "building",
+          "value": 1
+        },
+        {
+          "offset": "80",
+          "pc": "00442B4A",
+          "size": 1,
+          "target": "building",
+          "value": 1
+        },
+        {
+          "offset": "6C",
+          "pc": "005F550D",
+          "size": 4,
+          "target": "building",
+          "value": 369
+        },
+        {
+          "offset": "174",
+          "pc": "00701FBD",
+          "size": 4,
+          "target": "building",
+          "value": 15
+        },
+        {
+          "offset": "17C",
+          "pc": "00701FC8",
+          "size": 4,
+          "target": "building",
+          "value": 21
+        },
+        {
+          "offset": "6C",
+          "pc": "005F550D",
+          "size": 4,
+          "target": "building",
+          "value": 269
+        },
+        {
+          "offset": "174",
+          "pc": "00701FBD",
+          "size": 4,
+          "target": "building",
+          "value": 15
+        },
+        {
+          "offset": "17C",
+          "pc": "00701FC8",
+          "size": 4,
+          "target": "building",
+          "value": 21
+        },
+        {
+          "offset": "5778",
+          "pc": "00440055",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        },
+        {
+          "offset": "5779",
+          "pc": "00440062",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        },
+        {
+          "offset": "544",
+          "pc": "0044006C",
+          "size": 4,
+          "target": "building",
+          "value": 269
+        },
+        {
+          "offset": "5778",
+          "pc": "00508C79",
+          "size": 1,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A4",
+          "pc": "00508C7F",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A8",
+          "pc": "00508C85",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "53A4",
+          "pc": "00508D01",
+          "size": 4,
+          "target": "house",
+          "value": 537
+        },
+        {
+          "offset": "53A8",
+          "pc": "00508D18",
+          "size": 4,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "577B",
+          "pc": "00508D4A",
+          "size": 1,
+          "target": "house",
+          "value": 0
+        },
+        {
+          "offset": "5779",
+          "pc": "00508DE0",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        },
+        {
+          "offset": "5779",
+          "pc": "004F84EA",
+          "size": 1,
+          "target": "house",
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "retail_inputs": {
+    "artmd": {
+      "bytes": 336535,
+      "file": "ARTMD.INI",
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    },
+    "damage_particle_system_layers": [
+      {
+        "file": "RULESMD.INI",
+        "particles": [
+          {
+            "behaves_like": 1,
+            "name": "SmallGreySmoke",
+            "native_read": 1
+          },
+          {
+            "behaves_like": 1,
+            "name": "LargeGreySmoke",
+            "native_read": 1
+          }
+        ],
+        "systems": [
+          {
+            "behaves_like": 0,
+            "holds_what": "SmallGreySmoke",
+            "lifetime": 4294967295,
+            "name": "SmallGreySSys",
+            "native_read": 1,
+            "particle_cap": 7,
+            "slowdown_bits": "0ad7233b",
+            "spawn_cutoff_bits": "00005041",
+            "spawn_frames": 10,
+            "spawn_radius": 5,
+            "spawns": true
+          },
+          {
+            "behaves_like": 0,
+            "holds_what": "LargeGreySmoke",
+            "lifetime": 4294967295,
+            "name": "BigGreySmokeSys",
+            "native_read": 1,
+            "particle_cap": 20,
+            "slowdown_bits": "0ad7233b",
+            "spawn_cutoff_bits": "00007041",
+            "spawn_frames": 10,
+            "spawn_radius": 10,
+            "spawns": true
+          }
+        ]
+      },
+      {
+        "file": "ALL01UMD.MAP",
+        "particles": [
+          {
+            "behaves_like": 1,
+            "name": "SmallGreySmoke",
+            "native_read": 0
+          },
+          {
+            "behaves_like": 1,
+            "name": "LargeGreySmoke",
+            "native_read": 0
+          }
+        ],
+        "systems": [
+          {
+            "behaves_like": 0,
+            "holds_what": "SmallGreySmoke",
+            "lifetime": 4294967295,
+            "name": "SmallGreySSys",
+            "native_read": 0,
+            "particle_cap": 7,
+            "slowdown_bits": "0ad7233b",
+            "spawn_cutoff_bits": "00005041",
+            "spawn_frames": 10,
+            "spawn_radius": 5,
+            "spawns": true
+          },
+          {
+            "behaves_like": 0,
+            "holds_what": "LargeGreySmoke",
+            "lifetime": 4294967295,
+            "name": "BigGreySmokeSys",
+            "native_read": 0,
+            "particle_cap": 20,
+            "slowdown_bits": "0ad7233b",
+            "spawn_cutoff_bits": "00007041",
+            "spawn_frames": 10,
+            "spawn_radius": 10,
+            "spawns": true
+          }
+        ]
+      }
+    ],
+    "foundation_dimensions": [
+      4,
+      4
+    ],
+    "foundation_offsets": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        3
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        3
+      ]
+    ],
+    "layers": [
+      {
+        "armor": 8,
+        "c4_warhead": "Super",
+        "condition_yellow_bits": "000000000000e03f",
+        "file": "RULESMD.INI",
+        "foundation": 18,
+        "native_building_read": 1,
+        "native_warhead_read": 1,
+        "power_drain": 0,
+        "power_output": 2000,
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+        "strength": 1000,
+        "super_cellspread_bits": "00000000",
+        "super_verses_bits": [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000"
+        ]
+      },
+      {
+        "absent": true,
+        "file": "LANGRULE.INI"
+      },
+      {
+        "armor": 8,
+        "c4_warhead": "Super",
+        "condition_yellow_bits": "000000000000e03f",
+        "file": "ALL01UMD.MAP",
+        "foundation": 18,
+        "native_building_read": 0,
+        "native_warhead_read": 0,
+        "power_drain": 0,
+        "power_output": 2000,
+        "sha256": "dee38769f2247a85908705486c175ef14a4cf90437899defe7c8b4c0d1c51fb0",
+        "strength": 1000,
+        "super_cellspread_bits": "00000000",
+        "super_verses_bits": [
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000",
+          "3ff0000000000000"
+        ]
+      }
+    ]
+  },
+  "schema_version": 1
+}

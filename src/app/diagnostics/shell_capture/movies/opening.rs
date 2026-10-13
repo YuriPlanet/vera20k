@@ -391,6 +391,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
     };
     let mut active_types = std::collections::BTreeMap::<String, usize>::new();
     let mut flashing = Vec::new();
+    let mut building_receivers = Vec::new();
     for (_, entity) in sim
         .entities()
         .iter_sorted()
@@ -398,6 +399,24 @@ fn opening_observation(state: &AppState) -> Result<Value> {
     {
         let name = sim.interner.resolve(entity.type_ref()).to_owned();
         *active_types.entry(name.clone()).or_default() += 1;
+        if entity.category == crate::map::entities::EntityCategory::Structure {
+            // Observe existing damage/power owners after exact production
+            // frames; this must never substitute a receiver or recalculate power.
+            building_receivers.push(json!({
+                "id": entity.stable_id(), "type": name,
+                "owner": sim.interner.resolve(entity.owner()),
+                "cell": [entity.position.rx, entity.position.ry],
+                "health": entity.health.current,
+                "estimated_health": entity.estimated_health.get(),
+                "sampled_power_health": entity.building_power_health_sample(),
+                "damaged_mode": entity.building_damage_state_active,
+                "damage_smoke_system": entity.damage_smoke_system_id,
+                "house_power": sim.power_states.get(&entity.owner()).map(|power| json!({
+                    "output": power.total_output, "drain": power.total_drain,
+                    "low_power": power.is_low_power,
+                })),
+            }));
+        }
         if entity.elite_flash_frames & 2 != 0 {
             let cell = (entity.position.rx, entity.position.ry);
             flashing.push(json!({"id": entity.stable_id(), "type": name,
@@ -439,6 +458,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
         "camera": camera::saved_tactical_view(state),
         "fog_viewer": viewer.map(|viewer| sim.interner.resolve(viewer)),
         "active_types": active_types, "flashing": flashing, "no_effects_anims": markers,
+        "building_receivers": building_receivers,
         "teams": teams, "messages": messages,
         "eva_active": state.audio.sfx_player.as_ref().is_some_and(|sfx| sfx.voices_active()),
     }))

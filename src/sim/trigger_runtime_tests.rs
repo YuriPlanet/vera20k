@@ -114,6 +114,76 @@ fn spawn_type(sim: &mut Simulation, type_id: &str) -> u64 {
 }
 
 #[test]
+fn damage_at_waypoint_reaches_the_shared_building_receiver() {
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+    use crate::sim::house_state::HouseState;
+
+    // ALL01's Damage_Reactor uses +90=364. The trailing waypoint token is
+    // deliberately different so it cannot accidentally supply the impact.
+    // Native Execute63 -> 6E0490 -> AreaDamage489280 establishes that this
+    // action damages a present building; numeric parity is tested separately.
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=REACTOR\n[REACTOR]\nStrength=1000\nArmor=concrete\n\
+         [CombatDamage]\nC4Warhead=Super\n[Warheads]\n0=Super\n\
+         [Super]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(31);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
+    let owner = sim.interner.intern("Neutral");
+    sim.houses
+        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+    let type_id = sim.interner.intern("REACTOR");
+    let building = GameEntity::new_at_frame_zero_for_test(
+        1,
+        10,
+        10,
+        0,
+        0,
+        owner,
+        crate::sim::components::Health { current: 769 },
+        type_id,
+        EntityCategory::Structure,
+        0,
+        5,
+        false,
+    );
+    sim.substrate.entities.insert(building);
+    sim.add_entity_occupancy(1);
+    let mut waypoints = HashMap::new();
+    waypoints.insert(
+        364,
+        crate::map::waypoints::Waypoint {
+            index: 364,
+            rx: 10,
+            ry: 10,
+        },
+    );
+    sim.session.install_waypoints(&waypoints);
+    let mut definitions = RuntimeDefinitions::default();
+    let typ = definitions.trigger_type("DAMAGE").unwrap();
+    let ini = IniFile::from_str("[Actions]\nDAMAGE=1,63,0,364,0,0,0,0,A\n");
+    let entry = crate::map::actions::parse_actions(&ini)
+        .remove("DAMAGE")
+        .unwrap()
+        .entries
+        .remove(0);
+    let action = definitions.resolve_action(entry, None, None);
+    sim.trigger_runtime.definitions = definitions;
+    assert!(sim.apply_live_trigger_action(
+        &action,
+        typ,
+        &mut Vec::new(),
+        Some(&rules),
+        None,
+        FrameEffects::default(),
+    ));
+    assert!(sim.substrate.entities.get(1).unwrap().health.current < 769);
+}
+
+#[test]
 fn parsed_event_records_match_native_list_and_production_predicates() {
     #[derive(serde::Deserialize)]
     struct NativeCondition {

@@ -6,7 +6,51 @@ use crate::sim::world::Simulation;
 
 thread_local! {
     static FIRE_VISIT_TRACE: std::cell::RefCell<Option<Vec<serde_json::Value>>> = const { std::cell::RefCell::new(None) };
+    static AREA_VISIT_TRACE: std::cell::RefCell<Option<Vec<serde_json::Value>>> = const { std::cell::RefCell::new(None) };
     static BUILDING_FIRE_STUB: std::cell::RefCell<Option<BuildingFireStub>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Observe the shared area's actual caller inputs without replacing receivers,
+/// return values, RNG or world state. Each thread retains only its own trace.
+pub(crate) fn trace_area_visits<T>(run: impl FnOnce() -> T) -> (T, Vec<serde_json::Value>) {
+    AREA_VISIT_TRACE.with_borrow_mut(|trace| {
+        assert!(trace.is_none(), "nested area damage traces");
+        *trace = Some(Vec::new());
+    });
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            AREA_VISIT_TRACE.with_borrow_mut(|trace| *trace = None);
+        }
+    }
+    let reset = Reset;
+    let result = run();
+    let trace = AREA_VISIT_TRACE.with_borrow_mut(|trace| trace.take().unwrap());
+    drop(reset);
+    (result, trace)
+}
+
+pub(crate) fn observe_area_visit(
+    world: &Simulation,
+    impact: ProjectileCoord,
+    damage: i32,
+    warhead: &WarheadType,
+    origin: (u64, Option<InternedId>, InternedId),
+) {
+    AREA_VISIT_TRACE.with_borrow_mut(|trace| {
+        if let Some(observations) = trace {
+            observations.push(serde_json::json!({
+                "coord": [impact.x, impact.y, impact.z],
+                "damage": damage,
+                "warhead": warhead.id,
+                "no_source": origin.0 == RAD_NO_ATTACKER,
+                "no_source_house": origin.1.is_none(),
+                "health_before": world.substrate.entities.values()
+                    .map(|entity| (entity.stable_id(), entity.health.current))
+                    .collect::<Vec<_>>(),
+            }));
+        }
+    });
 }
 
 /// The older building-handler oracles replace FireAt itself. Preserve that

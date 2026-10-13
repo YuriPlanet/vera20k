@@ -191,6 +191,36 @@ def abort_bundle(directory, campaign="all1"):
     return receipt
 
 
+def all01_load_bundle(directory):
+    opening = opening_bundle(directory)["opening"]
+    receipt = campaign_bundle(directory, "all1")
+    phase = "opening-load-unlocked-while-locked"
+    receipt.update(checkpoint="campaign-all1-opening-load-unlocked",
+                   checkpoint_phase=phase, capture_frame=100, opening=opening)
+    opening.update(target=phase, pre_lock_save="pre-lock.bin", unlocked_save="unlocked.bin",
+                   load_while_locked={"depth_before": -1, "locked_after": False,
+                       "depth_after": 0, "cursor_instances_after": 1,
+                       "right_drag_pans_after": True})
+    # Two real load boundaries: replay frame0, then load the frame3 unlock
+    # while frame1 of that replay is locked. Following steps are ordinary.
+    opening["exact_steps"] = [
+        {"tick_before": tick, "tick_after": tick + 1,
+         "binary_frame_before": tick, "binary_frame_after": tick + 1}
+        for tick in [0, 1, 2, 0, *range(3, 49)]
+    ]
+    opening["current"].update(tick=49, binary_frame=49)
+    observed = copy.deepcopy(opening["current"])
+    opening["observations"] = []
+    for tick in (0, 1, 3, 0, 1, 3, 49):
+        row = copy.deepcopy(observed)
+        row.update(tick=tick, binary_frame=tick,
+                   input_locked=tick == 1, cursor_depth=-1 if tick == 1 else 0)
+        opening["observations"].append(row)
+    receipt["runtime"].update(tick=49, binary_frame=49, scenario_started=True,
+                             startup_admission=dict(diff.SAVED_WORLD_RESTORED))
+    return receipt
+
+
 class PngDecodeTests(unittest.TestCase):
     def test_every_filter_reconstructs_rgb(self):
         # Row 1 (target 1..6 under row 0 = 10..60) encoded by hand with each
@@ -409,6 +439,55 @@ class CampaignReceiptTests(unittest.TestCase):
                 lambda value: value["opening"]["save_restore"]["loaded_runtime"]["rng"]["main"].update(index_a=1),
                 lambda value: value["opening"]["save_restore"]["loaded_runtime"].update(
                     startup_admission=dict(diff.CAMPAIGN_INSTALLED)),
+                lambda value: value["runtime"].update(startup_admission=dict(diff.CAMPAIGN_INSTALLED)),
+            ):
+                invalid = copy.deepcopy(receipt)
+                mutate(invalid)
+                with self.assertRaises(diff.InputError):
+                    diff.validate_campaign_capture(invalid)
+
+    def test_all01_registered_load_checkpoint_accepts_its_two_load_boundaries(self):
+        with tempfile.TemporaryDirectory() as temp:
+            receipt = all01_load_bundle(Path(temp))
+            self.assertEqual(diff.validate_campaign_capture(receipt)["phase"],
+                             "opening-load-unlocked-while-locked")
+
+    def test_all01_load_requires_a_locked_replay_owner_before_forward_load(self):
+        with tempfile.TemporaryDirectory() as temp:
+            receipt = all01_load_bundle(Path(temp))
+            for remove_witness in (False, True):
+                invalid = copy.deepcopy(receipt)
+                rows = invalid["opening"]["observations"]
+                if remove_witness:
+                    del rows[4]
+                else:
+                    rows[4].update(input_locked=False, cursor_depth=0)
+                with self.assertRaises(diff.InputError):
+                    diff.validate_campaign_capture(invalid)
+
+    def test_opening_observations_belong_to_their_actual_production_segment(self):
+        with tempfile.TemporaryDirectory() as temp:
+            receipt = all01_load_bundle(Path(temp))
+            for change in ({"binary_frame": 90000}, {"binary_frame": 2},
+                           {"tick": 2, "binary_frame": 2}):
+                invalid = copy.deepcopy(receipt)
+                invalid["opening"]["observations"][4].update(change)
+                with self.assertRaises(diff.InputError):
+                    diff.validate_campaign_capture(invalid)
+            invalid = opening_bundle(Path(temp))
+            invalid["opening"]["observations"][0]["binary_frame"] = 90000
+            with self.assertRaises(diff.InputError):
+                diff.validate_campaign_capture(invalid)
+
+    def test_all01_load_checkpoint_rejects_unexplained_jumps_and_hidden_cursor(self):
+        with tempfile.TemporaryDirectory() as temp:
+            receipt = all01_load_bundle(Path(temp))
+            for mutate in (
+                lambda value: value["opening"]["exact_steps"][3].update(tick_before=2),
+                lambda value: value["opening"]["exact_steps"][4].update(binary_frame_before=4),
+                lambda value: value["opening"]["load_while_locked"].update(depth_after=-1),
+                lambda value: value["opening"]["load_while_locked"].update(locked_after=True),
+                lambda value: value["opening"]["load_while_locked"].update(right_drag_pans_after=False),
                 lambda value: value["runtime"].update(startup_admission=dict(diff.CAMPAIGN_INSTALLED)),
             ):
                 invalid = copy.deepcopy(receipt)
