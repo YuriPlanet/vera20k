@@ -201,7 +201,8 @@ fn object_damage_tags_spring_before_techno_and_reread_the_source_house_index() {
             .entities
             .get(victim)
             .unwrap()
-            .was_attacked_by_enemy,
+            .ai_sell_repair
+            .was_attacked_by_enemy(),
         "the Techno continuation must consume the changed, now-allied owners"
     );
 }
@@ -231,7 +232,7 @@ fn object_damage_tag_owner_change_precedes_the_hostile_hit_latch() {
     let victim = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(victim.owner(), houses[1]);
     assert!(
-        !victim.was_attacked_by_enemy,
+        !victim.ai_sell_repair.was_attacked_by_enemy(),
         "capturing pre-Tag hostility would latch an enemy hit after ownership changed"
     );
 }
