@@ -988,13 +988,13 @@
    },
    {
     "action": 18,
-    "row": null,
+    "row": 0,
     "block": "0x004AB781",
     "note": "second argument eax"
    },
    {
     "action": 19,
-    "row": null,
+    "row": 0,
     "block": "0x004AB781",
     "note": "second argument eax"
    },
@@ -1006,31 +1006,31 @@
    },
    {
     "action": 21,
-    "row": null,
+    "row": 0,
     "block": "0x004AB781",
     "note": "second argument eax"
    },
    {
     "action": 22,
-    "row": null,
+    "row": 0,
     "block": "0x004AB781",
     "note": "second argument eax"
    },
    {
     "action": 23,
-    "row": null,
+    "row": 0,
     "block": "0x004AB781",
     "note": "second argument eax"
    },
    {
     "action": 24,
-    "row": null,
+    "row": 0,
     "block": "0x004AB781",
     "note": "second argument eax"
    },
    {
     "action": 25,
-    "row": null,
+    "row": 0,
     "block": "0x004AB781",
     "note": "second argument eax"
    },
@@ -1050,7 +1050,7 @@
     "action": 28,
     "row": null,
     "block": "0x004AB78F",
-    "note": "no row"
+    "note": "returns without touching the cursor"
    },
    {
     "action": 29,
@@ -1096,7 +1096,7 @@
    },
    {
     "action": 36,
-    "row": null,
+    "row": 0,
     "block": "0x004AB781",
     "note": "second argument eax"
    },
@@ -1168,7 +1168,7 @@
    },
    {
     "action": 48,
-    "row": null,
+    "row": 0,
     "block": "0x004AB781",
     "note": "second argument eax"
    },
@@ -1228,13 +1228,13 @@
    },
    {
     "action": 58,
-    "row": null,
+    "row": 0,
     "block": "0x004AB781",
     "note": "second argument eax"
    },
    {
     "action": 59,
-    "row": null,
+    "row": 0,
     "block": "0x004AB781",
     "note": "second argument eax"
    },

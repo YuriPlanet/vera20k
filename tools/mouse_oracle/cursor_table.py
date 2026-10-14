@@ -60,6 +60,9 @@ SETTER = 0x005BDC80
 ACTION_SWITCH = 0x004AAE90
 ACTION_DISPATCH = 0x004AB449
 ACTION_TABLE = 0x004AB884
+# One dispatch target is the shared epilogue: it returns without calling the
+# cursor virtual at all.
+NO_ROW_EPILOGUE = 0x004AB78F
 SET_CURSOR_VIRTUAL = 0x48
 
 # MOUSE.SHA carries 517 frames, so no record may start past it.
@@ -173,17 +176,21 @@ def _row_of_block(image: Image, target: int) -> tuple[int | None, str]:
 
     Arguments go right to left, so the row is the last immediate pushed before
     the ``call [x+0x48]``; the register push ahead of it carries the object the
-    display virtual receives.
+    display virtual receives. Capstone prints small immediates in decimal, so
+    ``push 0`` is the default row rather than a missing value.
     """
+    if target == NO_ROW_EPILOGUE:
+        return None, "returns without touching the cursor"
     row: int | None = None
     note = ""
     for ins in image.disasm(target, 96):
         if ins.mnemonic == "push":
             text = ins.op_str
-            if re.fullmatch(r"0x[0-9a-f]+", text):
-                row = int(text, 16)
-            elif not note:
-                note = "second argument %s" % text
+            try:
+                row = int(text, 0)
+            except ValueError:
+                if not note:
+                    note = "second argument %s" % text
         elif ins.mnemonic == "call":
             if "+ 0x48]" in ins.op_str:
                 return row, note
