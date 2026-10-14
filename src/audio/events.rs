@@ -226,8 +226,16 @@ pub enum GameSoundEvent {
     /// Selected damage callers702760/7027A9/442706 use this route.
     VocAtCoord {
         sound_id: String,
+        /// Immutable signed native XYZ in leptons, retained by750E20.
+        /// The projected `source` is only a derived spatial-audio cache.
+        coordinate: [i32; 3],
+        /// Native request-node +2C, tested as a bit mask by750F40.
+        flags: u32,
         source: SoundSource,
     },
+    /// `VocClass::StopAtCoord750F40`: detach matching retained requests.
+    /// This is not an actor Stop or a hard stop of a device buffer.
+    VocStopAtCoord { coordinate: [i32; 3], flags: u32 },
 
     /// Positional SFX from [AudioVisual] BuildingGarrisonedSound — plays at
     /// the building's screen position when the first occupant enters.
@@ -366,6 +374,7 @@ impl GameSoundEvent {
             Self::AnimationStopped { stop_sound_id, .. } => stop_sound_id.as_deref().unwrap_or(""),
             Self::AnimationReleased { .. }
             | Self::AnimationDetached { .. }
+            | Self::VocStopAtCoord { .. }
             | Self::UnitVoiceVisit { .. }
             | Self::UnitVoiceDestroyed { .. }
             | Self::TriggerEva { .. } => "",

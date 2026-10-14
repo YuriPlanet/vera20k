@@ -108,13 +108,11 @@ impl Simulation {
             // for the killer's house (no attacker: the loss alone), then
             // `0x004DEC72` zeroes Health unless a Magnetron lifted the object
             // (Foot+6AD, `0x004DEC68`).
-            let killer = attacker.and_then(|a| self.substrate.entities.get(a).map(|k| k.owner()));
             self.record_the_kill(
                 id,
-                attacker,
-                killer,
+                crate::sim::combat::KillSource::Techno(attacker),
                 crate::sim::combat::KillCallback::Terminal,
-                rules,
+                UninitContext::new(Some(rules), registry).with_effects(frame_effects),
             );
             if let Some(entity) = self.substrate.entities.get_mut(id)
                 && !entity.foot_locomotor_swap_active
@@ -417,7 +415,11 @@ impl Simulation {
             bullet(crush, coords.z.wrapping_sub(height)).as_slice(),
             effects,
         );
-        self.record_manipulated_kill(id, id, rules);
+        self.record_manipulated_kill(
+            id,
+            id,
+            UninitContext::new(Some(rules), registry).with_effects(effects),
+        );
         bridge_state_changed |= self.commit_logic_projectile_detonations(
             rules,
             registry,
@@ -637,16 +639,14 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let killer = attacker.and_then(|a| self.substrate.entities.get(a).map(|k| k.owner()));
         if let Some(entity) = self.substrate.entities.get_mut(victim) {
             entity.health.current = 0;
         }
         self.record_the_kill(
             victim,
-            attacker,
-            killer,
+            crate::sim::combat::KillSource::Techno(attacker),
             crate::sim::combat::KillCallback::Terminal,
-            rules,
+            UninitContext::new(Some(rules), registry).with_effects(frame_effects),
         );
         self.uninit_with_context(
             victim,

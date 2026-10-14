@@ -853,27 +853,6 @@ impl Simulation {
         }
     }
 
-    /// FootLimbo4DB260 calls active ILocomotion+9C(mode0) before TechnoLimbo.
-    /// Drive4B48D0 / Ship6A3F00 forward the live head to Apply0; instance
-    /// retirement must not erase that descriptor/head before this receiver.
-    pub(crate) fn release_track_occupation_before_foot_limbo(&mut self, id: u64) {
-        let family = self.substrate.entities.get(id).and_then(|entity| {
-            // Foot4DB266..26E skips Apply0 when already in limbo. A second
-            // conceal must not destructively clear a newer owner's raw claim.
-            if entity.lifecycle.in_limbo {
-                return None;
-            }
-            match entity.locomotor.as_ref()?.kind {
-                crate::rules::locomotor_type::LocomotorKind::Drive => Some(TrackFamily::Drive),
-                crate::rules::locomotor_type::LocomotorKind::Ship => Some(TrackFamily::Ship),
-                _ => None,
-            }
-        });
-        if let Some(family) = family {
-            self.track_apply_occupation(id, family, false);
-        }
-    }
-
     fn track_try_chain(
         &mut self,
         id: u64,

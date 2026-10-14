@@ -1127,11 +1127,13 @@ mod tests {
         sim.session.house_order = vec![local, enemy];
         sim.session.game_options.short_game = false;
         sim.session.tick = 41;
+        sim.session.binary_frame = 42;
+        sim.session.current_house = Some(local);
         assert!(
             sim.houses
                 .get_mut(&local)
                 .expect("local house")
-                .flag_to_win(41, 1)
+                .accept_win_result(41, 1, false)
         );
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Local", Command::ExitMatch),
@@ -1141,7 +1143,7 @@ mod tests {
         let due = sim.take_due_commands();
         let result = sim.advance_tick(&due, None, None, None, 33);
         let local_outcome_exit_ready = sim.houses[&local]
-            .outcome_state
+            .outcome()
             .is_some_and(|outcome| outcome.exit_ready);
 
         assert!(!result.frame_committed);

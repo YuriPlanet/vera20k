@@ -10,6 +10,10 @@ selected call frame; Process rows stop before the owner current-speed getter.
 --bunker-install additionally executes the original installation's coordinate,
 facing and selector producers before its Force_Track call. This is a bounded
 two-state continuation, not full bunker admission or Drive Process execution.
+
+--hover-mark-all separately executes Hover5171C0 through its actual head getter
+and Unit raw-clear receiver on this same mapped-cell fixture. Legacy modes and
+their references are unchanged.
 """
 from pathlib import Path
 import hashlib
@@ -23,8 +27,8 @@ from unicorn.x86_const import (
     UC_X86_REG_FPCW,
 )
 from tools.native_oracle import (
-    RET_MAGIC, SCRATCH, STACK_BASE, STACK_SIZE, finish_vectors, load_image,
-    provenance, run_checked,
+    NativeCallTrace, RET_MAGIC, SCRATCH, STACK_BASE, STACK_SIZE, finish_vectors,
+    image_sha256, load_image, provenance, run_checked,
 )
 from tools.spatial_oracle.map_queries import dwords, packed
 
@@ -33,6 +37,8 @@ SP = STACK_BASE + STACK_SIZE - 0x1000
 MAP, TABLE, DUMMY = 0x87F7E8, 0xC00000, 0xABDC50
 UNIT_VTABLE = 0x7F5C70
 FORCE, APPLY, RAW_PUT, SPEED_SET = 0x4B0C40, 0x4B0AD0, 0x7441B0, 0x4D3710
+HOVER_VTABLE, HOVER_HEAD, HOVER_MARK_ALL, HOVER_STOP = 0x7EACFC, 0x514D10, 0x5171C0, 0x516320
+RAW_CLEAR = 0x744210
 # ShipLocomotionClass: constructor, Force_Track, Apply_Track_Occupation_Mode,
 # its null coordinate, and the Force stages that match Drive's.
 SHIP_CONSTRUCTOR, SHIP_FORCE, SHIP_APPLY, SHIP_NULL = 0x69EC50, 0x6A0310, 0x6A01A0, 0xB077F8
@@ -122,6 +128,126 @@ class OriginalForceTrack:
 
     def double_bits(self, address):
         return f'{struct.unpack("<Q", self.uc.mem_read(address, 8))[0]:016x}'
+
+    def invoke(self, address, receiver, args=()):
+        u = self.uc
+        u.mem_write(SP, dwords(RET_MAGIC, *args))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ECX, receiver)
+        run_checked(u, address, RET_MAGIC, count=100000)
+        assert u.reg_read(UC_X86_REG_ESP) == SP + 4 + len(args) * 4
+        return u.reg_read(UC_X86_REG_EAX)
+
+    def hover_mark_all(self, row):
+        """Supplied Hover state; original getter, clear, map and ground bodies.
+
+        Reuse this owner's map/Unit/raw-write fixture and checked call runner.
+        The inherited Drive setup is not a Hover constructor claim: its bytes
+        are replaced by the explicit supplied Hover object before measurement.
+        """
+        u = self.uc
+        interface = LOCO + 4
+        u.mem_write(LOCO, bytes(0x100))
+        u.mem_write(interface, dwords(HOVER_VTABLE))
+        u.mem_write(LOCO + 0xC, dwords(FOOT))
+        u.mem_write(LOCO + 0x18, dwords(*row['destination']))
+        u.mem_write(LOCO + 0x24, dwords(*row['head']))
+        u.mem_write(FOOT + 0x9C, dwords(*row['location']))
+        u.mem_write(FOOT + 0x8C, bytes((int(row['on_bridge']),)))
+        u.mem_write(FOOT + 0x6B6, b'\0')
+        u.mem_write(FOOT + 0x5E0, dwords(2))
+        u.mem_write(0xA8F180, dwords(0, 0, 0))
+        assert self.unsigned(HOVER_VTABLE + 0x18) == HOVER_HEAD
+        assert self.unsigned(HOVER_VTABLE + 0x48) == HOVER_STOP
+        assert self.unsigned(HOVER_VTABLE + 0x9C) == HOVER_MARK_ALL
+        assert self.unsigned(UNIT_VTABLE + 0xF4) == RAW_CLEAR
+        observed_cells = [(9, 10), (10, 10)]
+        for x, y in observed_cells:
+            u.mem_write(self.cell_address(x, y) + 0x124, dwords(0x421, 0x821))
+        scenario = SCRATCH + 0x4000
+        u.mem_write(0xA8B230, dwords(scenario))
+        rngs = {'scenario': scenario + 0x218, 'main': 0x886B88, 'mapgen': 0xABE890}
+        for seed, address in enumerate(rngs.values(), 31):
+            self.invoke(0x65C6D0, address, (seed,))
+
+        def state():
+            return dict(head=self.ints(LOCO + 0x24, 3),
+                        destination=self.ints(LOCO + 0x18, 3),
+                        location=self.ints(FOOT + 0x9C, 3),
+                        path_head=self.ints(FOOT + 0x5E0)[0],
+                        occupation_enabled=bool(u.mem_read(FOOT + 0x6B6, 1)[0]),
+                        raw_cells=[dict(cell=[x, y], ground=self.unsigned(self.cell_address(x, y) + 0x124),
+                                        deck=self.unsigned(self.cell_address(x, y) + 0x128))
+                                   for x, y in observed_cells])
+
+        calls, watched, visited, clear_coordinates = [], [], set(), []
+        trace = NativeCallTrace(u, self.unsigned, calls)
+        specs = {HOVER_MARK_ALL: ('hover_mark_all', 2, 8), HOVER_HEAD: ('hover_head', 2, 8),
+                 HOVER_STOP: ('hover_stop', 1, 4), RAW_CLEAR: ('unit_raw_clear', 1, 4),
+                 0x565730: ('map_cell_from_xyz', 1, 4), 0x578080: ('map_ground_height', 1, 4)}
+
+        def observe(_u, pc, _size, _data):
+            sp = u.reg_read(UC_X86_REG_ESP)
+            trace.returned(pc, sp)
+            visited.add(pc)
+            if pc in specs:
+                index = trace.entered(pc, sp, specs[pc])
+                calls[index]['phase'] = phase
+                if pc == RAW_CLEAR:
+                    coordinate = self.ints(self.unsigned(sp + 4), 3)
+                    clear_coordinates.append(coordinate)
+                    calls[index]['coordinate'] = coordinate
+            if pc in (0x65C770, 0x65C7E0, 0x7258D0):
+                watched.append(hex(pc))
+
+        hook = u.hook_add(UC_HOOK_CODE, observe)
+        phase = 'stop_prefix'
+        self.writes.clear()
+        self.marked_cells.clear()
+        before_prefix = state()
+        rng_before = {name: bytes(u.mem_read(address, 1012)).hex() for name, address in rngs.items()}
+        original_text = bytes(u.mem_read(0x401000, 0x3E0000))
+        if row['stop_first']:
+            self.invoke(HOVER_STOP, 0, (interface,))
+            trace.returned(RET_MAGIC, u.reg_read(UC_X86_REG_ESP))
+        before_mark = state()
+        before_loco = bytes(u.mem_read(LOCO, 0x100))
+        before_owner = bytes(u.mem_read(FOOT, 0x800))
+        prefix_writes = list(self.writes)
+        self.writes.clear()
+        self.marked_cells.clear()
+        visited.clear()
+        phase = 'mark_all'
+        self.invoke(HOVER_MARK_ALL, 0, (interface, row['mode']))
+        trace.returned(RET_MAGIC, u.reg_read(UC_X86_REG_ESP))
+        after = state()
+        rng_after = {name: bytes(u.mem_read(address, 1012)).hex() for name, address in rngs.items()}
+        assert not trace.pending
+        assert bytes(u.mem_read(LOCO, 0x100)) == before_loco
+        assert bytes(u.mem_read(FOOT, 0x800)) == before_owner
+        assert bytes(u.mem_read(0x401000, 0x3E0000)) == original_text
+        assert not self.writes  # No locomotor/owner field, hence no timer, is written.
+        assert all(write['offset'] in (0x18, 0x1C, 0x20) if write['owner'] == 'drive'
+                   else write['owner'] == 'foot' and write['offset'] == 0x5E0
+                   for write in prefix_writes)
+        assert rng_after == rng_before
+        assert not watched
+        if row['mode'] == 0:
+            assert {HOVER_MARK_ALL, HOVER_HEAD, RAW_CLEAR, 0x565730, 0x578080} <= visited
+            assert len(clear_coordinates) == 1
+        else:
+            assert row['mode'] == 1 and not clear_coordinates
+            assert HOVER_HEAD not in visited and RAW_CLEAR not in visited
+            assert after == before_mark
+        u.hook_del(hook)
+        return dict(input=row, before=before_prefix, before_mark=before_mark,
+                    output=after, clear_coordinates=clear_coordinates, calls=calls,
+                    stop_prefix_writes=prefix_writes, mark_writes=list(self.writes),
+                    changed_cell_indices=sorted(self.marked_cells),
+                    full_locomotor_preserved=True, full_owner_preserved=True,
+                    original_text_sha256=hashlib.sha256(original_text).hexdigest(),
+                    rng_before=rng_before, rng_after=rng_after,
+                    rng_calls=[], timer_writes=[], detach_calls=[])
 
     def state(self):
         return dict(
@@ -298,15 +424,6 @@ class OriginalBunkerInstall(OriginalForceTrack):
         self.before = self.state()
         u.hook_add(UC_HOOK_CODE, self.observe_install)
 
-    def invoke(self, address, receiver, args=()):
-        u = self.uc
-        u.mem_write(SP, dwords(RET_MAGIC, *args))
-        u.reg_write(UC_X86_REG_ESP, SP)
-        u.reg_write(UC_X86_REG_ECX, receiver)
-        run_checked(u, address, RET_MAGIC, count=100000)
-        assert u.reg_read(UC_X86_REG_ESP) == SP + 4 + len(args) * 4
-        return u.reg_read(UC_X86_REG_EAX)
-
     def observe_install(self, u, address, _size, _data):
         if address in (0x447AC0, 0x45EC90, 0x45ECA0, 0x5F65A0,
                        0x4CAE30, 0x7C5F00, 0x4C9220, 0x4C9480, 0x4C93D0):
@@ -480,6 +597,39 @@ def bunker_install_metadata():
     )
 
 
+def generate_hover_mark_all():
+    rows = []
+    scenes = [('retained_head_ground', [2688, 2688, 312], False, True),
+              ('retained_head_deck', [2688, 2688, 731], True, False),
+              ('head_null_location_fallback', [0, 0, 0], False, True),
+              ('height_boundary_deck_without_bridge_flag', [2688, 2688, 624], False, False)]
+    for name, head, structural, on_bridge in scenes:
+        for stop_first in (False, True):
+            for mode in (0, 1):
+                row = dict(name=name, head=head, location=[2432, 2688, 312],
+                           destination=[2944, 2688, 417], structural=structural,
+                           on_bridge=on_bridge, stop_first=stop_first, mode=mode)
+                native = OriginalForceTrack(dict(bridge=structural))
+                rows.append(native.hover_mark_all(row))
+    return dict(schema=1, native_sha256=image_sha256(), cases=rows)
+
+
+def hover_mark_all_metadata():
+    return provenance(
+        scope='Sixteen bounded original Hover5171C0 mode0/1 calls, actual514D10 head getter, Unit744210 and native map/ground queries; eight have an original516320 Stop_Moving prefix',
+        assumptions=[
+            'Reuses OriginalForceTrack mapped32x32 flat level2 map and real Unit vtable. Before measurement, inherited Drive bytes are replaced by explicitly supplied Hover interface7EACFC state; full Hover/Unit construction, movement admission and head production are excluded',
+            'Supplied current Location(2432,2688,312), a distinct nonzero or null retained head, destination and path direction2. The whole real516320 prefix is optional; FootLimbo caller and full lifecycle do not execute',
+            'Two relevant cells start raw ground0x421/deck0x821, so unrelated low/high bits survive the actual unit clear. Mode0 follows original virtual+18 ->514D10 and owner virtual+F4 ->744210; mode1 follows original no-op return',
+            'Ground step104 and Unit raw bridge offset416 are retained supplied runtime inputs of this oracle. Ground/deck selection is measured from actual XYZ/578080, including exact624 threshold and opposing OnBridge/structural flags; no expected plane or clear coordinate is supplied',
+            'All three RNG objects are seeded by original65C6D0 outside measurement and bracketed by their entire1012 bytes; no RNG call, timer write or detach occurs in the executed selected bodies',
+            'Read-only NativeCallTrace and write hooks preserve original code/dispatch. Mark_All retains complete0x100-byte locomotor and0x800-byte owner state; optional Stop first may clear destination and path word but retains head',
+        ], substitutions=[], entry_points=dict(hover_mark_all=HOVER_MARK_ALL,
+            hover_head=HOVER_HEAD, hover_stop=HOVER_STOP, unit_raw_clear=RAW_CLEAR,
+            map_cell_from_xyz=0x565730, map_ground_height=0x578080,
+            rng_seed=0x65C6D0))
+
+
 def generate():
     direct = []
     # All retail Drive TurnTrack selectors with both retained short choices.
@@ -604,7 +754,13 @@ def metadata():
 
 
 if __name__ == '__main__':
-    if '--bunker-install' in sys.argv:
+    if '--hover-mark-all' in sys.argv:
+        args = [arg for arg in sys.argv[1:] if arg != '--hover-mark-all']
+        finish_vectors(generate_hover_mark_all,
+                       Path(__file__).with_suffix('.hover_mark_all.json'),
+                       provenance=hover_mark_all_metadata, argv=args,
+                       source_paths={'harness': Path(__file__)})
+    elif '--bunker-install' in sys.argv:
         args = [arg for arg in sys.argv[1:] if arg != '--bunker-install']
         finish_vectors(generate_bunker_install,
                        Path(__file__).with_suffix('.bunker_install.json'),

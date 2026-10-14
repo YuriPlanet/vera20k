@@ -10,6 +10,18 @@ use std::hash::{Hash, Hasher};
 
 use super::Simulation;
 
+// Rust-only attribution of the retired global initializer's empty Super map.
+// The production registry remains untouched; no control exists in release.
+#[cfg(test)]
+std::thread_local! {
+    static LEGACY_EMPTY_SUPER_OWNER_HASH_CONTROL: std::cell::Cell<Option<crate::sim::intern::InternedId>> = const {
+        std::cell::Cell::new(None)
+    };
+    static LEGACY_ABSENT_REAL_CELL_HASH_CONTROL: std::cell::Cell<bool> = const {
+        std::cell::Cell::new(false)
+    };
+}
+
 #[cfg(test)]
 mod retained_cell_hash_tests {
     use super::*;
@@ -437,6 +449,108 @@ fn hash_mission_leaf(leaf: &crate::sim::mission::MissionLeafState, hasher: &mut 
 }
 
 impl Simulation {
+    /// Attribute a formerly bare fixture grid's absent saved real-cell feed.
+    /// The fixture now installs its map through the existing map owner. This
+    /// control changes only the Hash feed, retaining the correctly captured
+    /// 64x64 zero-flag authority and the actual gameplay/persistence state.
+    #[cfg(test)]
+    pub(crate) fn state_hash_with_legacy_absent_real_cell_authority_for_test(&self) -> u64 {
+        let terrain = self.resolved_terrain.as_ref().expect("fixture map");
+        assert_eq!((terrain.width(), terrain.height()), (64, 64));
+        assert_eq!(terrain.cells().len(), 64 * 64);
+        assert!(terrain.iter().all(|cell| cell.bridge_facts.raw_flags
+            & crate::map::bridge_facts::RETAINED_CELLCLASS_BRIDGE_FLAG_MASK
+            == 0));
+        assert_eq!(
+            self.real_cell_bridge_flags_0x1180,
+            terrain.capture_real_cell_bridge_flags_0x1180()
+        );
+        struct Restore(bool);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                LEGACY_ABSENT_REAL_CELL_HASH_CONTROL.with(|control| control.set(self.0));
+            }
+        }
+        let prior = LEGACY_ABSENT_REAL_CELL_HASH_CONTROL.with(|control| control.replace(true));
+        let _restore = Restore(prior);
+        self.state_hash()
+    }
+
+    /// Attribute the owner-only feed from the former global Super initializer.
+    /// Its refresh inserted an empty map even when no Building provided a Super.
+    /// Only an empty actual registry is admitted, so no instance/order is hidden.
+    #[cfg(test)]
+    pub(crate) fn state_hash_with_legacy_empty_super_owner_for_test(
+        &self,
+        owner: crate::sim::intern::InternedId,
+    ) -> u64 {
+        assert!(self.super_weapons.is_empty());
+        struct Restore(Option<crate::sim::intern::InternedId>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                LEGACY_EMPTY_SUPER_OWNER_HASH_CONTROL.with(|control| control.set(self.0));
+            }
+        }
+        let prior =
+            LEGACY_EMPTY_SUPER_OWNER_HASH_CONTROL.with(|control| control.replace(Some(owner)));
+        let _restore = Restore(prior);
+        self.state_hash()
+    }
+
+    /// Read-only Rust diagnostic projections through the existing hash owners.
+    /// These are attribution receipts, never gameplay/native golden inputs.
+    #[cfg(test)]
+    pub(crate) fn hash_owner_diagnostics_for_test(&self) -> [(&'static str, u64); 13] {
+        fn digest(fold: impl FnOnce(&mut std::collections::hash_map::DefaultHasher)) -> u64 {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            fold(&mut hasher);
+            hasher.finish()
+        }
+        [
+            ("houses", digest(|h| self.hash_houses(h))),
+            ("entities", digest(|h| self.hash_entities(h))),
+            (
+                "raw_occupation",
+                digest(|h| self.substrate.fold_raw_cell_occupation(h)),
+            ),
+            (
+                "cell_memberships",
+                digest(|h| self.substrate.occupancy.hash_memberships(h)),
+            ),
+            (
+                "hidden_occupation",
+                digest(|h| self.substrate.fold_hidden_occupation(h)),
+            ),
+            ("air_slots", digest(|h| self.substrate.fold_air_slots(h))),
+            (
+                "base_reservations",
+                digest(|h| self.substrate.fold_base_reservations(h)),
+            ),
+            (
+                "navigation_history",
+                digest(|h| {
+                    if let Some(zones) = &self.zone_grid {
+                        zones.fold_navigation_history(h);
+                    }
+                }),
+            ),
+            (
+                "trigger_runtime",
+                digest(|h| self.trigger_runtime.hash_state(h)),
+            ),
+            (
+                "team_script_vm",
+                digest(|h| {
+                    self.team_script_vm
+                        .hash_state(self.session.binary_frame as i32, h)
+                }),
+            ),
+            ("fog_alliances", digest(|h| self.hash_fog_and_alliances(h))),
+            ("power", digest(|h| self.hash_power_states(h))),
+            ("projectiles", digest(|h| self.hash_projectiles(h))),
+        ]
+    }
+
     /// Deterministic state hash over canonicalized simulation state.
     ///
     /// Hashes clocks, Scenario RNG, production, fog, alliances, and all entity
@@ -507,6 +621,13 @@ impl Simulation {
         // Historical pre-v28/pre-v29 provenance probes must omit both this
         // schema tag and the value authority introduced at snapshot v90.
         b"real-cell-bridge-flags-v2".hash(&mut hasher);
+        #[cfg(test)]
+        if LEGACY_ABSENT_REAL_CELL_HASH_CONTROL.with(std::cell::Cell::get) {
+            crate::map::resolved_terrain::RealCellBridgeFlags0x1180::default().hash(&mut hasher);
+        } else {
+            self.real_cell_bridge_flags_0x1180.hash(&mut hasher);
+        }
+        #[cfg(not(test))]
         self.real_cell_bridge_flags_0x1180.hash(&mut hasher);
         b"dynamic-terrain-cells-v1".hash(&mut hasher);
         self.dynamic_terrain_cells.hash(&mut hasher);
@@ -825,6 +946,9 @@ impl Simulation {
     fn hash_houses(&self, hasher: &mut impl Hasher) {
         for (owner, house) in &self.houses {
             owner.hash(hasher);
+            //House50D610/50D320 history survives object death and affects
+            //future restoration. The House owns its ordered private records.
+            house.hash_initial_records(hasher);
             // Retained509400/481870 values affect future path/AI decisions.
             // The all-zero constructor state preserves historical hashes.
             let threat = house.spatial_threat_values();
@@ -850,9 +974,9 @@ impl Simulation {
             (house.difficulty as i32).hash(hasher);
             house.rof_bias().bits().hash(hasher);
             house.is_defeated.hash(hasher);
-            house.has_won.hash(hasher);
-            house.has_lost.hash(hasher);
-            house.outcome_state.hash(hasher);
+            house.has_won().hash(hasher);
+            house.has_lost().hash(hasher);
+            house.outcome().hash(hasher);
             house.map_is_clear.hash(hasher);
             house.spy_sat_active.hash(hasher);
             house.tracking.hash_defeat_counters(hasher);
@@ -931,6 +1055,7 @@ impl Simulation {
             house.hash_difficulty_biases(hasher);
             house.hash_scenario_parameters(hasher);
             house.hash_allow_win_tags(hasher);
+            house.hash_tech_tree_recheck(hasher);
             house.hash_super_weapon_cells(hasher);
             house.repair_delay().to_bits().hash(hasher);
             house.repair_start_latch.hash(hasher);
@@ -1240,6 +1365,12 @@ impl Simulation {
 
     /// Hash per-house superweapon state and active lightning storm.
     fn hash_super_weapons(&self, hasher: &mut impl Hasher) {
+        #[cfg(test)]
+        if let Some(owner) = LEGACY_EMPTY_SUPER_OWNER_HASH_CONTROL.with(std::cell::Cell::get) {
+            // HEAD's global tick -> refresh_super_weapons_for_owner inserted
+            // this owner even with no granted types, before this unchanged fold.
+            owner.hash(hasher);
+        }
         for (owner, weapons) in &self.super_weapons {
             owner.hash(hasher);
             for (type_id, inst) in weapons {
@@ -1487,9 +1618,9 @@ impl Simulation {
             entity.veterancy_rank_cache.hash(hasher);
             // Folded only while armed so the legacy default-zero hash stream
             // is preserved (the `no_damage` pattern).
-            if entity.elite_flash_frames != 0 {
+            if entity.flash_countdown() != 0 {
                 b"elite-flash-v1".hash(hasher);
-                entity.elite_flash_frames.hash(hasher);
+                entity.flash_countdown().hash(hasher);
             }
             entity.armor_multiplier.bits().hash(hasher);
             // Folded only once a Firepower crate changed it, so the legacy

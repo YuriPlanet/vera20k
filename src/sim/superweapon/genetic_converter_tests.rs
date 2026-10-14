@@ -48,7 +48,7 @@ Verses=100%,100%,100%,0%,0%,0%,0%,0%,0%,0%,0%\n";
 /// [`RULES`] with `extra` merged over it, and RING1 and GENDEATH (retail's
 /// `MakeInfantry=0`) bound.
 fn rules(extra: &str) -> RuleSet {
-    let mut ini = IniFile::from_str(RULES);
+    let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
     ini.merge(&IniFile::from_str(extra));
     let mut rules = RuleSet::from_ini(&ini).expect("genetic mutator fixture rules");
     let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
@@ -389,7 +389,16 @@ fn the_mutation_arm_matches_native() {
             terrain.cells[index].speed_costs.foot = Some((foot * 100.0) as u8);
         }
         let victim = sim
-            .construct_object_limbo_at_height("E1", "Americans", cell.0, cell.1, 0, level, &rules)
+            .construct_object_limbo_at_height(
+                "E1",
+                "Americans",
+                cell.0,
+                cell.1,
+                0,
+                level,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         {
             let entity = sim.substrate.entities.get_mut(victim).unwrap();

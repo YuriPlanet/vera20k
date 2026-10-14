@@ -75,7 +75,7 @@ MakesDisguise=yes
 
 fn rules() -> RuleSet {
     RuleSet::from_ini_with_fixed_art_for_test(
-        &IniFile::from_str(RULES),
+        &crate::sim::arena_fixture::clear_ground_ini(RULES),
         &IniFile::from_str("[PLANT]\nFoundation=2x2\n"),
     )
     .unwrap()

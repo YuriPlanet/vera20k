@@ -1,0 +1,922 @@
+{
+  "controls": [
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "assign",
+          "cell"
+        ],
+        [
+          "move",
+          "cell"
+        ]
+      ],
+      "first": true,
+      "focus": "cell",
+      "frame": 1,
+      "initial_focus": null,
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": "cell",
+      "period": 14,
+      "placement_scope": false,
+      "threat": false,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "assign",
+          "cell"
+        ],
+        [
+          "move",
+          "cell"
+        ]
+      ],
+      "first": false,
+      "focus": "cell",
+      "frame": 1,
+      "initial_focus": null,
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": "cell",
+      "period": 14,
+      "placement_scope": false,
+      "threat": false,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          702
+        ],
+        [
+          "move",
+          null
+        ]
+      ],
+      "first": false,
+      "focus": null,
+      "frame": 1,
+      "initial_focus": null,
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": null,
+      "period": 14,
+      "placement_scope": false,
+      "threat": false,
+      "waypoint": 702
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "scan",
+          1,
+          1,
+          [
+            3200,
+            3456,
+            512
+          ],
+          0
+        ],
+        [
+          "assign",
+          "threat"
+        ],
+        [
+          "attack",
+          "threat"
+        ]
+      ],
+      "first": false,
+      "focus": "threat",
+      "frame": 14,
+      "initial_focus": "cell",
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": "threat",
+      "period": 14,
+      "placement_scope": false,
+      "threat": true,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "scan",
+          1,
+          1,
+          [
+            3200,
+            3456,
+            512
+          ],
+          0
+        ],
+        [
+          "assign",
+          null
+        ],
+        [
+          "move",
+          null
+        ]
+      ],
+      "first": false,
+      "focus": null,
+      "frame": 14,
+      "initial_focus": "old",
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": null,
+      "period": 14,
+      "placement_scope": false,
+      "threat": false,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "scan",
+          1,
+          1,
+          [
+            3200,
+            3456,
+            512
+          ],
+          0
+        ],
+        [
+          "move",
+          "cell"
+        ]
+      ],
+      "first": false,
+      "focus": "cell",
+      "frame": 14,
+      "initial_focus": "cell",
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": "cell",
+      "period": 14,
+      "placement_scope": false,
+      "threat": false,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "scan",
+          1,
+          1,
+          [
+            3200,
+            3456,
+            512
+          ],
+          0
+        ],
+        [
+          "assign",
+          "threat"
+        ],
+        [
+          "attack",
+          "threat"
+        ]
+      ],
+      "first": false,
+      "focus": "threat",
+      "frame": -14,
+      "initial_focus": "cell",
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": "threat",
+      "period": 14,
+      "placement_scope": false,
+      "threat": true,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "scan",
+          1,
+          1,
+          [
+            3200,
+            3456,
+            512
+          ],
+          0
+        ],
+        [
+          "assign",
+          "threat"
+        ],
+        [
+          "attack",
+          "threat"
+        ]
+      ],
+      "first": false,
+      "focus": "threat",
+      "frame": 9,
+      "initial_focus": "cell",
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f847ae147ae147b",
+      "mission_target": "threat",
+      "period": 9,
+      "placement_scope": false,
+      "threat": true,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "scan",
+          0,
+          1,
+          [
+            2688,
+            2944,
+            256
+          ],
+          0
+        ],
+        [
+          "move",
+          "cell"
+        ]
+      ],
+      "first": false,
+      "focus": "cell",
+      "frame": 14,
+      "initial_focus": "cell",
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": false,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": "cell",
+      "period": 14,
+      "placement_scope": false,
+      "threat": false,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "scan",
+          1,
+          1,
+          [
+            3200,
+            3456,
+            512
+          ],
+          0
+        ],
+        [
+          "move",
+          "cell"
+        ]
+      ],
+      "first": false,
+      "focus": "cell",
+      "frame": 14,
+      "initial_focus": "cell",
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": true,
+          "health": 100,
+          "initiated": false,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": "cell",
+      "period": 14,
+      "placement_scope": false,
+      "threat": false,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "scan",
+          0,
+          1,
+          [
+            2688,
+            2944,
+            256
+          ],
+          0
+        ],
+        [
+          "move",
+          "cell"
+        ]
+      ],
+      "first": false,
+      "focus": "cell",
+      "frame": 14,
+      "initial_focus": "cell",
+      "members": [
+        {
+          "active": false,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 0,
+          "initiated": true,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": "cell",
+      "period": 14,
+      "placement_scope": false,
+      "threat": false,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "scan",
+          1,
+          1,
+          [
+            3200,
+            3456,
+            512
+          ],
+          0
+        ],
+        [
+          "move",
+          "cell"
+        ]
+      ],
+      "first": false,
+      "focus": "cell",
+      "frame": 14,
+      "initial_focus": "cell",
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": true,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 10,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": "cell",
+      "period": 14,
+      "placement_scope": true,
+      "threat": false,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "scan",
+          0,
+          1,
+          [
+            2688,
+            2944,
+            256
+          ],
+          0
+        ],
+        [
+          "move",
+          "cell"
+        ]
+      ],
+      "first": false,
+      "focus": "cell",
+      "frame": 14,
+      "initial_focus": "cell",
+      "members": [
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            2688,
+            2944,
+            256
+          ]
+        },
+        {
+          "active": true,
+          "aircraft": false,
+          "health": 100,
+          "initiated": true,
+          "limbo": false,
+          "rating": 5,
+          "xyz": [
+            3200,
+            3456,
+            512
+          ]
+        }
+      ],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": "cell",
+      "period": 14,
+      "placement_scope": false,
+      "threat": false,
+      "waypoint": 11
+    },
+    {
+      "events": [
+        [
+          "waypoint",
+          11
+        ],
+        [
+          "move",
+          "cell"
+        ]
+      ],
+      "first": false,
+      "focus": "cell",
+      "frame": 14,
+      "initial_focus": "cell",
+      "members": [],
+      "minutes_bits": "3f90624de0000000",
+      "mission_target": "cell",
+      "period": 14,
+      "placement_scope": false,
+      "threat": false,
+      "waypoint": 11
+    }
+  ],
+  "default_bits": "3f90624dd2f1a9fc",
+  "rules": [
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3f90624dd2f1a9fc",
+      "raw": null,
+      "ticks": 14
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3f90624de0000000",
+      "raw": "0.016",
+      "ticks": 14
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3f847ae140000000",
+      "raw": "0.01",
+      "ticks": 8
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3f847ae147ae147b",
+      "raw": "1%",
+      "ticks": 9
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "bf847ae147ae147b",
+      "raw": "-1%",
+      "ticks": -9
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "0000000000000000",
+      "raw": "0",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "8000000000000000",
+      "raw": "-0",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3fd0000000000000",
+      "raw": "0.25junk",
+      "ticks": 225
+    },
+    {
+      "initial_bits": "3f90624dd2f1a9fc",
+      "output_bits": "3f50624de0000000",
+      "raw": "1e-3",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3fb999999999999a",
+      "raw": null,
+      "ticks": 90
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3f90624de0000000",
+      "raw": "0.016",
+      "ticks": 14
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3f847ae140000000",
+      "raw": "0.01",
+      "ticks": 8
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3f847ae147ae147b",
+      "raw": "1%",
+      "ticks": 9
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "bf847ae147ae147b",
+      "raw": "-1%",
+      "ticks": -9
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "0000000000000000",
+      "raw": "0",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "8000000000000000",
+      "raw": "-0",
+      "ticks": 0
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3fd0000000000000",
+      "raw": "0.25junk",
+      "ticks": 225
+    },
+    {
+      "initial_bits": "3fb999999999999a",
+      "output_bits": "3f50624de0000000",
+      "raw": "1e-3",
+      "ticks": 0
+    }
+  ]
+}

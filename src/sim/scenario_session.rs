@@ -523,6 +523,8 @@ pub struct ScenarioSession {
     /// presentation reads it and applies the ordered mouse/keyboard effects.
     #[serde(default)]
     input_locked: bool,
+    /// Native ChronoScreenEffect globals; GPU surface/handle remain app-local.
+    chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState,
     /// Process scenario-active byte A8ED5C. StartScenario683E75 publishes1;
     /// MainGame48CEBF clears it on exit, and LoadGame67E6C4 republishes1.
     /// It is reconstructed by the committed load/start route, not inferred
@@ -605,10 +607,11 @@ impl ScenarioSession {
         waypoints: &std::collections::HashMap<u32, crate::map::waypoints::Waypoint>,
     ) {
         self.waypoints.clear();
-        self.waypoints.extend(waypoints.iter().filter_map(|(&index, waypoint)| {
-            (index < crate::map::waypoints::WAYPOINT_SLOT_COUNT)
-                .then_some((index, (waypoint.rx as i16, waypoint.ry as i16)))
-        }));
+        self.waypoints
+            .extend(waypoints.iter().filter_map(|(&index, waypoint)| {
+                (index < crate::map::waypoints::WAYPOINT_SLOT_COUNT)
+                    .then_some((index, (waypoint.rx as i16, waypoint.ry as i16)))
+            }));
     }
 
     /// Scenario::GetWaypointCoords68BCC0 copies the packed signed words. An
@@ -645,6 +648,32 @@ impl ScenarioSession {
 
     pub(crate) fn set_input_locked(&mut self, locked: bool) {
         self.input_locked = locked;
+    }
+
+    pub(crate) fn chrono_screen(
+        &self,
+    ) -> &crate::sim::superweapon::chrono_screen::ChronoScreenState {
+        &self.chrono_screen
+    }
+
+    pub(crate) fn start_chrono_screen_state(&mut self, duration: i32) -> bool {
+        let admitted = self.chrono_screen.start(duration, self.input_locked);
+        if admitted {
+            self.input_locked = true;
+        }
+        admitted
+    }
+
+    pub(crate) fn step_chrono_screen_state(
+        &mut self,
+    ) -> Vec<crate::sim::superweapon::chrono_screen::ChronoScreenCommand> {
+        let commands = self.chrono_screen.step();
+        if commands.contains(&crate::sim::superweapon::chrono_screen::ChronoScreenCommand::Finish)
+            && !self.chrono_screen.prior_input_locked()
+        {
+            self.input_locked = false;
+        }
+        commands
     }
 
     pub(crate) const fn started(&self) -> bool {
@@ -719,6 +748,10 @@ impl ScenarioSession {
         }
         if s.input_locked {
             b"scenario-input-lock-v1".hash(hasher);
+        }
+        if s.chrono_screen.active() {
+            b"scenario-chrono-screen-v1".hash(hasher);
+            s.chrono_screen.hash(hasher);
         }
         if !s.waypoints.is_empty() {
             b"scenario-waypoints-v1".hash(hasher);
@@ -847,6 +880,7 @@ impl ScenarioSession {
             game_mode_nonzero: desc.game_mode_nonzero,
             campaign: None,
             input_locked: false,
+            chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState::default(),
             started: false,
             no_damage: desc.no_damage,
             free_radar: desc.free_radar,

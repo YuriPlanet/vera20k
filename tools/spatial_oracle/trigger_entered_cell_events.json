@@ -1,0 +1,1161 @@
+{
+  "actor": 538464256,
+  "arrival_body_sha256": "578c3c12e2e2ea77c246119a0003375e1598bfe553842b081d93eab3f2f38257",
+  "arrival_controls": [
+    {
+      "calls": [
+        {
+          "actor": 538464256,
+          "cell": [
+            3,
+            4
+          ],
+          "force": 0,
+          "kind": 1,
+          "source": 0,
+          "tag": 538488832
+        },
+        {
+          "actor": 538464256,
+          "cell": [
+            3,
+            4
+          ],
+          "force": 0,
+          "kind": 59,
+          "source": 0,
+          "tag": 538488832
+        }
+      ],
+      "inputs": {
+        "flags": 0,
+        "mutation": "none",
+        "on_bridge": false,
+        "tag": true
+      },
+      "lookups": [
+        [
+          3,
+          4
+        ]
+      ],
+      "name": "ordinary",
+      "stop": "0x4d8a14"
+    },
+    {
+      "calls": [],
+      "inputs": {
+        "flags": 0,
+        "mutation": "none",
+        "on_bridge": false,
+        "tag": false
+      },
+      "lookups": [
+        [
+          3,
+          4
+        ]
+      ],
+      "name": "no_tag",
+      "stop": "0x4d8a70"
+    },
+    {
+      "calls": [],
+      "inputs": {
+        "flags": 256,
+        "mutation": "none",
+        "on_bridge": false,
+        "tag": true
+      },
+      "lookups": [
+        [
+          3,
+          4
+        ]
+      ],
+      "name": "bridge_ground",
+      "stop": "0x4d8a70"
+    },
+    {
+      "calls": [
+        {
+          "actor": 538464256,
+          "cell": [
+            3,
+            4
+          ],
+          "force": 0,
+          "kind": 1,
+          "source": 0,
+          "tag": 538488832
+        },
+        {
+          "actor": 538464256,
+          "cell": [
+            3,
+            4
+          ],
+          "force": 0,
+          "kind": 59,
+          "source": 0,
+          "tag": 538488832
+        }
+      ],
+      "inputs": {
+        "flags": 256,
+        "mutation": "none",
+        "on_bridge": true,
+        "tag": true
+      },
+      "lookups": [
+        [
+          3,
+          4
+        ]
+      ],
+      "name": "bridge_on",
+      "stop": "0x4d8a14"
+    },
+    {
+      "calls": [],
+      "inputs": {
+        "flags": 1024,
+        "mutation": "none",
+        "on_bridge": false,
+        "tag": true
+      },
+      "lookups": [
+        [
+          3,
+          4
+        ]
+      ],
+      "name": "alternate_bridge_ground",
+      "stop": "0x4d8a70"
+    },
+    {
+      "calls": [
+        {
+          "actor": 538464256,
+          "cell": [
+            3,
+            4
+          ],
+          "force": 0,
+          "kind": 1,
+          "source": 0,
+          "tag": 538488832
+        },
+        {
+          "actor": 538464256,
+          "cell": [
+            3,
+            4
+          ],
+          "force": 0,
+          "kind": 59,
+          "source": 0,
+          "tag": 538488832
+        }
+      ],
+      "inputs": {
+        "flags": 0,
+        "mutation": "detach_after1",
+        "on_bridge": false,
+        "tag": true
+      },
+      "lookups": [
+        [
+          3,
+          4
+        ]
+      ],
+      "name": "cached_after_detach",
+      "stop": "0x4d8a14"
+    },
+    {
+      "calls": [
+        {
+          "actor": 538464256,
+          "cell": [
+            3,
+            4
+          ],
+          "force": 0,
+          "kind": 1,
+          "source": 0,
+          "tag": 538488832
+        },
+        {
+          "actor": 538464256,
+          "cell": [
+            8,
+            9
+          ],
+          "force": 0,
+          "kind": 59,
+          "source": 0,
+          "tag": 538488832
+        }
+      ],
+      "inputs": {
+        "flags": 0,
+        "mutation": "move_after1",
+        "on_bridge": false,
+        "tag": true
+      },
+      "lookups": [
+        [
+          3,
+          4
+        ]
+      ],
+      "name": "reread_cell_after_move",
+      "stop": "0x4d8a14"
+    },
+    {
+      "calls": [
+        {
+          "actor": 538464256,
+          "cell": [
+            3,
+            4
+          ],
+          "force": 0,
+          "kind": 1,
+          "source": 0,
+          "tag": 538488832
+        },
+        {
+          "actor": 538464256,
+          "cell": [
+            3,
+            4
+          ],
+          "force": 0,
+          "kind": 59,
+          "source": 0,
+          "tag": 538488832
+        }
+      ],
+      "inputs": {
+        "flags": 0,
+        "mutation": "clear_alive_after1",
+        "on_bridge": false,
+        "tag": true
+      },
+      "lookups": [
+        [
+          3,
+          4
+        ]
+      ],
+      "name": "no_alive_gate_between_raises",
+      "stop": "0x4d8a14"
+    }
+  ],
+  "code_unchanged": true,
+  "houses": [
+    537985024,
+    538116096,
+    538247168
+  ],
+  "native_fpcw": "0xE7F",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "predicate_controls": [
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DB0"
+        },
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DC0"
+        }
+      ],
+      "event54": 537985024,
+      "inputs": {
+        "actor_owner": 0,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 1,
+        "scenario_init": false
+      },
+      "name": "entered1_actor0",
+      "persistence": 1,
+      "raw": "1,1,0,0",
+      "read": {
+        "kind": 1,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DB0"
+        },
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": 1,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 1,
+        "scenario_init": false
+      },
+      "name": "entered1_actor1",
+      "persistence": 0,
+      "raw": "1,1,0,0",
+      "read": {
+        "kind": 1,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DB0"
+        },
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": 2,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 1,
+        "scenario_init": false
+      },
+      "name": "entered1_actor2",
+      "persistence": 0,
+      "raw": "1,1,0,0",
+      "read": {
+        "kind": 1,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 1,
+        "scenario_init": false
+      },
+      "name": "entered1_actorNone",
+      "persistence": 0,
+      "raw": "1,1,0,0",
+      "read": {
+        "kind": 1,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DC0"
+        }
+      ],
+      "event54": 538116096,
+      "inputs": {
+        "actor_owner": 1,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 1,
+        "scenario_init": false
+      },
+      "name": "entered1_wildcard",
+      "persistence": 1,
+      "raw": "1,1,0,-1",
+      "read": {
+        "kind": 1,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": -1
+      },
+      "result": 1
+    },
+    {
+      "calls": [],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": 0,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 59,
+        "scenario_init": false
+      },
+      "name": "entered1_wrong_raise",
+      "persistence": 0,
+      "raw": "1,1,0,0",
+      "read": {
+        "kind": 1,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": 0,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 1,
+        "scenario_init": true
+      },
+      "name": "entered1_buildup",
+      "persistence": 0,
+      "raw": "1,1,0,0",
+      "read": {
+        "kind": 1,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DB0"
+        },
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DC0"
+        }
+      ],
+      "event54": 537985024,
+      "inputs": {
+        "actor_owner": 0,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": null,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 1,
+        "scenario_init": false
+      },
+      "name": "entered1_null_incoming",
+      "persistence": 1,
+      "raw": "1,1,0,0",
+      "read": {
+        "kind": 1,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DB0"
+        },
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DC0"
+        }
+      ],
+      "event54": 537985024,
+      "inputs": {
+        "actor_owner": 0,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 59,
+        "scenario_init": false
+      },
+      "name": "entered59_actor0",
+      "persistence": 1,
+      "raw": "1,59,0,0",
+      "read": {
+        "kind": 59,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DB0"
+        },
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": 1,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 59,
+        "scenario_init": false
+      },
+      "name": "entered59_actor1",
+      "persistence": 0,
+      "raw": "1,59,0,0",
+      "read": {
+        "kind": 59,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DB0"
+        },
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": 2,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 59,
+        "scenario_init": false
+      },
+      "name": "entered59_actor2",
+      "persistence": 0,
+      "raw": "1,59,0,0",
+      "read": {
+        "kind": 59,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 59,
+        "scenario_init": false
+      },
+      "name": "entered59_actorNone",
+      "persistence": 0,
+      "raw": "1,59,0,0",
+      "read": {
+        "kind": 59,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DC0"
+        }
+      ],
+      "event54": 538116096,
+      "inputs": {
+        "actor_owner": 1,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 59,
+        "scenario_init": false
+      },
+      "name": "entered59_wildcard",
+      "persistence": 1,
+      "raw": "1,59,0,-1",
+      "read": {
+        "kind": 59,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": -1
+      },
+      "result": 1
+    },
+    {
+      "calls": [],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": 0,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 1,
+        "scenario_init": false
+      },
+      "name": "entered59_wrong_raise",
+      "persistence": 0,
+      "raw": "1,59,0,0",
+      "read": {
+        "kind": 59,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": 0,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 59,
+        "scenario_init": true
+      },
+      "name": "entered59_buildup",
+      "persistence": 0,
+      "raw": "1,59,0,0",
+      "read": {
+        "kind": 59,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DB0"
+        },
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538464256,
+          "pc": "0x006F9DC0"
+        }
+      ],
+      "event54": 537985024,
+      "inputs": {
+        "actor_owner": 0,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": null,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 59,
+        "scenario_init": false
+      },
+      "name": "entered59_null_incoming",
+      "persistence": 1,
+      "raw": "1,59,0,0",
+      "read": {
+        "kind": 59,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    }
+  ],
+  "schema_version": 1,
+  "tag": 538488832
+}

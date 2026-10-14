@@ -9,7 +9,8 @@
 //!
 //! The class overrides (`UnitClass` `0x00739EC0`, `InfantryClass`
 //! `0x00519630`) run their own work, then `FootClass` `0x004D85D0`, which
-//! ends in the Techno tail `0x006F5090`. Fly has no caller.
+//! ends in the Techno tail `0x006F5090`. An ordinary Fly arrival caller
+//! has not been established; parachute landing is a separate Object caller.
 
 use super::ground_pose::position_world_coord;
 use super::locomotor::MovementLayer;
@@ -21,7 +22,7 @@ use crate::sim::lifecycle_request::{LifecycleRequest, UninitReason};
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::radio::{self, RadioMessage, RadioPayload};
-use crate::sim::world::{FrameAdvanceError, FrameEffects, Simulation};
+use crate::sim::world::{FrameAdvanceError, FrameEffects, Simulation, UninitContext};
 
 /// The reason a `Per_Cell_Process` call passes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -267,16 +268,14 @@ impl Simulation {
                         &mut self.sound_events,
                     );
                 }
-                let owner = self.substrate.entities.get(id).map(|entity| entity.owner());
                 if let Some(entity) = self.substrate.entities.get_mut(victim) {
                     entity.health.current = 0;
                 }
                 self.record_the_kill(
                     victim,
-                    Some(id),
-                    owner,
+                    crate::sim::combat::KillSource::Techno(Some(id)),
                     crate::sim::combat::KillCallback::Terminal,
-                    rules,
+                    UninitContext::new(Some(rules), registry).with_effects(effects),
                 );
                 self.apply_lifecycle_request_with_rules(
                     LifecycleRequest::Uninit {
@@ -621,7 +620,8 @@ impl Simulation {
     ///
     /// RESIDUAL: the building's attached Tag is told it was entered
     /// (`TagClass::Raise_Event(1, ...)`, `0x00519710..0x00519725`) before
-    /// the infantryman goes in; VERA attaches no Tags to objects. Trigger: a
+    /// the infantryman goes in; this garrison ingress does not raise event 1 yet.
+    /// Trigger: a
     /// map building with a Tag garrisoned this way. Effect: its "entered by"
     /// trigger does not spring. A building a house builds has no Tag.
     fn infantry_per_cell_occupy(
@@ -692,13 +692,16 @@ impl Simulation {
     /// (`0x004D882F..0x004D896E`) and the Techno tail's Temporal release
     /// (`0x006F50A3..0x006F50B4`) and playfield promote (`0x006F511A`).
     ///
-    /// RESIDUAL: the cell tag events (`0x004D8978..0x004D8D99`), the
+    /// Cell-attached 1/59 run in their original `0x004D8978..0x004D8A14`
+    /// slot, followed by Map line 25/26 at `0x004D8A70..0x004D8B66`.
+    /// Ordinary Fly ingress remains unproven.
+    /// RESIDUAL: MCV 53/54 and Map zone 24 (`0x004D8A14..0x004D8D99`), the
     /// `+0x83` / `0x00586360` step (`0x004D8DA7..0x004D8DF5`), the
     /// planning-waypoint upkeep (`0x004D8DFF..0x004D8F1D`) and the Techno
     /// tail's `+0x420` call, tag event 0x22, `+0x198` call and cell
-    /// `0x00486920` are not ported. Trigger: every arrival. Effect: cell-tag
+    /// `0x00486920` are not ported. Trigger: every arrival. Effect: zone
     /// triggers and planning waypoints do not fire from movement. Risk: maps
-    /// with cell triggers.
+    /// with those trigger families.
     pub(super) fn foot_per_cell_process(
         &mut self,
         id: u64,
@@ -725,6 +728,10 @@ impl Simulation {
             );
             self.per_cell_range_stop(id, rules, registry, effects);
         }
+        self.dispatch_foot_cell_tag_events(
+            id,
+            crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+        );
         // `0x006F5090`'s head lets a held Temporal target go.
         self.temporal_release_if_warping(id);
         self.promote_entity_playfield_membership_after_move(id);

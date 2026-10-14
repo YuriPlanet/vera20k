@@ -119,7 +119,16 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
     sim.bridge_state = Some(BridgeRuntimeState::default());
     let mut construct = |name: &str, x: u16, marked: bool| {
         let id = sim
-            .construct_object_limbo_at_height(name, "Americans", x, 4, 0, 4, &rules)
+            .construct_object_limbo_at_height(
+                name,
+                "Americans",
+                x,
+                4,
+                0,
+                4,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         {
             let actor = sim.substrate.entities.get_mut(id).unwrap();

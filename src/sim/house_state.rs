@@ -166,13 +166,12 @@ pub enum HouseOutcomeKind {
 
 /// Persistent HouseClass result transition.
 ///
-/// The absolute target keeps the remaining SavourDelay frame count stable
-/// across save/load. The wall-clock Vox drain that follows `exit_ready` belongs
-/// to the app and is deliberately not represented here.
+/// The countdown is the existing private House+298 CdTimer, shared with
+/// AllowWin-tag teardown. This is a result/exit latch, never a second timer.
+/// The wall-clock Vox drain that follows `exit_ready` belongs to the app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct HouseOutcomeState {
     pub kind: HouseOutcomeKind,
-    pub savour_until_tick: u64,
     pub exit_ready: bool,
 }
 
@@ -385,16 +384,29 @@ pub struct HouseState {
     native_construction: Option<NativeHouseConstruction>,
     #[serde(default)]
     scenario_parameters: HouseScenarioParameters,
+    /// House+16C's retained initial Techno records. ReadScenario684C1B calls
+    /// 50D610 after fresh population; 50D320 later replays them in reverse.
+    /// They retain type identity and signed map-cell words, not live objects
+    /// or BaseClass nodes. Save5045E1/Load503D08 preserve order and duplicates.
+    #[serde(default)]
+    initial_techno_records: Vec<(InternedId, (i16, i16))>,
     /// Native House+27C count of TagTypes carrying AllowWin(action15).
     /// Constructor4F57F6 writes zero; Fill684EC3 counts definition families,
     /// and active Tag destructor6E509B decrements a nonzero count.
     #[serde(default)]
     allow_win_tags: i32,
-    /// House+298 timer. Constructor4F5825/4F582B writes (-1,0); destruction
-    /// of an AllowWin Tag starts 60 frames at6E50B1. Native replay controls:
+    /// The sole House+298 result timer. Constructor4F5825/4F582B writes
+    /// (-1,0); AllowWin-tag destruction starts60 at6E50B1, and FlagWin/Lose
+    /// normally replaces it with SavourDelay. Actions67/68 preserve it;
+    /// 69 resumes the same paused timer. Native replay controls:
     /// tools/spatial_oracle/tag_lifecycle (active_cleanup histories).
     #[serde(default)]
     allow_win_timer: CdTimer,
+    /// House+1FC: constructor4F5746 requests the first tech-tree tail;
+    /// House4F927C/4F92ED consumes it before hold/revoke50AF10 and grant50B1D0.
+    /// Lifecycle/discovery writers and changed Super status request it again.
+    #[serde(default = "initial_tech_tree_recheck")]
+    tech_tree_recheck: bool,
     /// Stable rules-owned side index. Stock YR uses 0=Allied, 1=Soviet,
     /// 2=Yuri, 3=Civilian, and 4=Mutant.
     pub side_index: u8,
@@ -448,13 +460,13 @@ pub struct HouseState {
     /// Whether this player has been eliminated.
     pub is_defeated: bool,
     /// Victory flag.
-    pub has_won: bool,
+    has_won: bool,
     /// Defeat flag. Note: Flag_To_Lose clears HasWon first.
-    pub has_lost: bool,
+    has_lost: bool,
     /// Accepted win/loss transition plus the deterministic SavourDelay target.
     /// App-owned wall waits and audio teardown are intentionally excluded.
     #[serde(default)]
-    pub outcome_state: Option<HouseOutcomeState>,
+    outcome_state: Option<HouseOutcomeState>,
     /// HouseClass+0x241 map-clear byte folded by the retail multiplayer
     /// checksum. Distinct from the fog owner's+0x240 reveal guard, which
     /// TAction17 reads (6E0FE8) and gap re-admission clears independently.
@@ -733,7 +745,53 @@ impl Default for HouseSuperWeaponCells {
     }
 }
 
+fn initial_tech_tree_recheck() -> bool {
+    true
+}
+
 impl HouseState {
+    /// Original50D610 appends even when an earlier snapshot already exists.
+    pub(crate) fn retain_initial_techno(&mut self, type_id: InternedId, cell: (i16, i16)) {
+        self.initial_techno_records.push((type_id, cell));
+    }
+
+    /// 50D326 captures the count; 50D33A re-reads the selected record after
+    /// each synchronous repair/creation callback. Appends do not extend a pass.
+    pub(crate) fn initial_techno_record_count(&self) -> usize {
+        self.initial_techno_records.len()
+    }
+
+    pub(crate) fn initial_techno_record(&self, index: usize) -> Option<(InternedId, (i16, i16))> {
+        self.initial_techno_records.get(index).copied()
+    }
+
+    pub(crate) fn hash_initial_records(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if !self.initial_techno_records.is_empty() {
+            b"house-initial-techno-records-v1".hash(hasher);
+            self.initial_techno_records.hash(hasher);
+        }
+    }
+
+    pub(crate) fn recheck_tech_tree(&mut self) {
+        self.tech_tree_recheck = true;
+    }
+
+    pub(crate) fn take_tech_tree_recheck(&mut self) -> bool {
+        std::mem::take(&mut self.tech_tree_recheck)
+    }
+
+    pub(crate) fn hash_tech_tree_recheck(&self, hasher: &mut impl std::hash::Hasher) {
+        // As with the other retained House fields, constructor state does not
+        // change older fixture hashes. Consuming the pending 0x1FC tail is a
+        // simulation transition, so its non-constructor value must be folded.
+        use std::hash::Hash;
+        if !self.tech_tree_recheck {
+            b"house-tech-tree-recheck-v1".hash(hasher);
+            self.tech_tree_recheck.hash(hasher);
+        }
+    }
+
     pub(crate) fn register_allow_win_tag_type(&mut self) {
         self.allow_win_tags = self.allow_win_tags.wrapping_add(1);
     }
@@ -1297,6 +1355,12 @@ impl HouseState {
         self.ai_activation.auto_base_building = true;
     }
 
+    /// Action3 ->6E45E0 writes only House+1EE; it does not enable either
+    /// AutocreateAllowed/AITriggersActive/AutoBaseBuilding sibling latch.
+    pub(crate) fn enable_scripted_production(&mut self) {
+        self.ai_activation.production = true;
+    }
+
     /// Run the early `HouseClass__Update` AI-activation transition.
     ///
     /// gamemd-derived: `HouseClass__Update @ 0x004F8440`, block
@@ -1315,55 +1379,103 @@ impl HouseState {
         self.ai_activation.autocreate_allowed = true;
     }
 
-    /// Accept a victory and arm its deterministic grace interval.
-    ///
-    /// gamemd provenance: HouseClass::Flag_To_Win @ `0x004FC9E0` accepts only
-    /// while Win/Draw/Lose are clear, sets HasWon, announces victory, and sets
-    /// the house timer to `ftol(SavourDelay * 900)`.
-    pub(crate) fn flag_to_win(&mut self, current_tick: u64, savour_frames: u64) -> bool {
+    pub(crate) const fn has_won(&self) -> bool {
+        self.has_won
+    }
+
+    pub(crate) const fn has_lost(&self) -> bool {
+        self.has_lost
+    }
+
+    pub(crate) const fn outcome(&self) -> Option<HouseOutcomeState> {
+        self.outcome_state
+    }
+
+    /// Read the sole House+298 countdown in the native signed frame domain.
+    pub(crate) const fn outcome_timer(&self) -> CdTimer {
+        self.allow_win_timer
+    }
+
+    /// Numeric state block4FC9EE..4FCA59. The complete Flag_To_Win port
+    /// (including input/audio effects) belongs to world::house_defeat.
+    /// +1F6 is Flag_To_Die, not Draw; its unported network/DESTRUCT producer
+    /// is outside this offline campaign/skirmish route.
+    pub(crate) fn accept_win_result(
+        &mut self,
+        frame: i32,
+        savour_frames: i32,
+        skip_timer: bool,
+    ) -> bool {
         if self.has_won || self.has_lost {
             return false;
         }
         self.has_won = true;
+        if !skip_timer {
+            self.allow_win_timer.start(frame, savour_frames);
+        }
         self.outcome_state = Some(HouseOutcomeState {
             kind: HouseOutcomeKind::Victory,
-            savour_until_tick: current_tick.saturating_add(savour_frames),
             exit_ready: false,
         });
         true
     }
 
-    /// Accept a defeat, replacing an earlier pending victory when present.
-    ///
-    /// gamemd provenance: HouseClass::Flag_To_Lose @ `0x004FCBD0` clears
-    /// HasWon unconditionally, then (unless already Draw/Lost) sets HasLost,
-    /// announces defeat, and re-arms the full SavourDelay interval.
-    pub(crate) fn flag_to_lose(&mut self, current_tick: u64, savour_frames: u64) -> bool {
+    /// Numeric state block4FCBDE..4FCC42: clear Win before the Lost test,
+    /// then accept/re-arm only once. Actions68 preserve the existing timer.
+    pub(crate) fn accept_lose_result(
+        &mut self,
+        frame: i32,
+        savour_frames: i32,
+        skip_timer: bool,
+    ) -> bool {
         self.has_won = false;
         if self.has_lost {
             return false;
         }
         self.has_lost = true;
+        if !skip_timer {
+            self.allow_win_timer.start(frame, savour_frames);
+        }
         self.outcome_state = Some(HouseOutcomeState {
             kind: HouseOutcomeKind::Defeat,
-            savour_until_tick: current_tick.saturating_add(savour_frames),
             exit_ready: false,
         });
         true
     }
 
-    /// Advance the HouseClass result timer at the late house-update boundary.
-    ///
-    /// gamemd provenance: HouseClass::Update @ `0x004F8440` keeps the scenario
-    /// running until this timer expires, then enters the bounded Vox wait.
-    pub(crate) fn advance_outcome_savour(&mut self, current_tick: u64) -> bool {
+    ///69/4FCDDC resumes+298 only when its native anchor is -1.
+    pub(crate) fn resume_result_timer(&mut self, frame: i32) {
+        self.allow_win_timer.resume(frame);
+    }
+
+    /// House4F85BE/4F86FE: exact zero on+298 admits the result's Vox wait.
+    /// Campaign Win also requires AllowWin-tags+27C<=0; Lose does not.
+    pub(crate) fn advance_outcome_savour(&mut self, frame: i32, game_mode_nonzero: bool) -> bool {
         let Some(outcome) = self.outcome_state.as_mut() else {
             return false;
         };
-        if current_tick >= outcome.savour_until_tick {
+        if self.allow_win_timer.expired(frame)
+            && (outcome.kind == HouseOutcomeKind::Defeat
+                || game_mode_nonzero
+                || self.allow_win_tags <= 0)
+        {
             outcome.exit_ready = true;
         }
         outcome.exit_ready
+    }
+
+    #[cfg(test)]
+    pub(crate) fn supply_outcome_state_for_test(
+        &mut self,
+        won: bool,
+        lost: bool,
+        state: Option<HouseOutcomeState>,
+        timer: CdTimer,
+    ) {
+        self.has_won = won;
+        self.has_lost = lost;
+        self.outcome_state = state;
+        self.allow_win_timer = timer;
     }
 
     pub fn new(
@@ -1378,6 +1490,7 @@ impl HouseState {
             name,
             native_construction: None,
             scenario_parameters: HouseScenarioParameters::default(),
+            initial_techno_records: Vec::new(),
             side_index,
             country,
             is_human,
@@ -1393,6 +1506,7 @@ impl HouseState {
             outcome_state: None,
             allow_win_tags: 0,
             allow_win_timer: CdTimer::default(),
+            tech_tree_recheck: true,
             map_is_clear: false,
             spy_sat_active: false,
             tracking: Default::default(),
@@ -1867,13 +1981,13 @@ mod outcome_tests {
     #[test]
     fn gsi_01_04_savour_gates_exact_frame_and_defeat_restarts_pending_victory() {
         let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
-        assert!(house.flag_to_win(100, 90));
-        assert!(!house.advance_outcome_savour(189));
-        assert!(house.advance_outcome_savour(190));
+        assert!(house.accept_win_result(100, 90, false));
+        assert!(!house.advance_outcome_savour(189, true));
+        assert!(house.advance_outcome_savour(190, true));
 
         let mut replaced = HouseState::new(Default::default(), 0, None, true, 0, 10);
-        assert!(replaced.flag_to_win(100, 90));
-        assert!(replaced.flag_to_lose(150, 90));
+        assert!(replaced.accept_win_result(100, 90, false));
+        assert!(replaced.accept_lose_result(150, 90, false));
         assert!(!replaced.has_won);
         assert!(replaced.has_lost);
         assert_eq!(
@@ -1881,20 +1995,41 @@ mod outcome_tests {
             HouseOutcomeKind::Defeat
         );
         assert_eq!(
-            replaced
-                .outcome_state
-                .expect("restarted defeat outcome")
-                .savour_until_tick,
-            240
+            replaced.outcome_timer(),
+            crate::sim::timer::CdTimer::started(150, 90)
         );
-        assert!(!replaced.flag_to_win(160, 90));
-        assert!(!replaced.flag_to_lose(170, 90));
+        assert!(!replaced.accept_win_result(160, 90, false));
+        assert!(!replaced.accept_lose_result(170, 90, false));
         assert_eq!(
-            replaced
-                .outcome_state
-                .expect("unchanged defeat outcome")
-                .savour_until_tick,
-            240
+            replaced.outcome_timer(),
+            crate::sim::timer::CdTimer::started(150, 90)
+        );
+    }
+
+    #[test]
+    fn announce_preserves_the_shared_timer_and_campaign_allow_win_gate() {
+        let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
+        let paused = crate::sim::timer::CdTimer::from_raw(-1, 60);
+        house.supply_allow_win_tag_state(1, paused);
+        assert!(house.accept_win_result(100, 90, true));
+        assert_eq!(house.outcome_timer(), paused, "67 must not write a timer");
+        assert!(!house.advance_outcome_savour(1000, false));
+        house.resume_result_timer(1000);
+        assert_eq!(house.outcome_timer().duration(), 60);
+        assert!(
+            !house.advance_outcome_savour(1060, false),
+            "AllowWin count blocks Win"
+        );
+        house.removed_allow_win_tag(1060);
+        assert!(!house.advance_outcome_savour(1119, false));
+        assert!(house.advance_outcome_savour(1120, false));
+
+        let mut loss = HouseState::new(Default::default(), 0, None, true, 0, 10);
+        loss.supply_allow_win_tag_state(5, crate::sim::timer::CdTimer::default());
+        assert!(loss.accept_lose_result(0, 90, true));
+        assert!(
+            loss.advance_outcome_savour(0, false),
+            "68 preserves expired ctor timer; no AllowWin gate"
         );
     }
 }

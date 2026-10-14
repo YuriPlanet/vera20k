@@ -16,8 +16,8 @@
 //! (`SuperClass::SetReadiness @ 0x006CB820`) and releases its anim
 //! (`SuperClass::StopPreclickAnim @ 0x006CB830`), which restarts its
 //! recharge. Every house holds one Super per `[SuperWeaponTypes]` entry from
-//! its constructor (`0x004F620E..0x004F6290`); VERA creates an entry on its
-//! first grant or click ([`super_instance`]).
+//! its constructor (`0x004F620E..0x004F6290`); the scenario bootstrap owns
+//! that construction. A click never constructs missing instance state.
 //!
 //! RESIDUALS:
 //! - A `PostClick=` type whose `PreDependent=` is unset or past the list
@@ -57,13 +57,21 @@ impl Simulation {
         let Some(sw) = rules.super_weapon(self.interner.resolve(sw_type_id)) else {
             return false;
         };
+        if super_instance(self, owner, sw_type_id).is_none() {
+            return false;
+        }
         let paired = sw
             .post_click
             .then(|| pre_dependent(self, rules, sw))
             .flatten();
         if let Some((pre_type, _)) = paired {
-            let cell = super_instance(self, owner, pre_type).chrono_cell();
-            super_instance(self, owner, sw_type_id).chrono_cell = cell;
+            let Some(pre) = super_instance(self, owner, pre_type) else {
+                return false;
+            };
+            let cell = pre.chrono_cell();
+            super_instance(self, owner, sw_type_id)
+                .expect("retained fired Super")
+                .chrono_cell = cell;
         }
         let called_launch = click_fire(
             self,
@@ -77,10 +85,14 @@ impl Simulation {
         );
         if let Some((pre_type, pre_sw)) = paired {
             // `0x004FAEA6..0x004FAEC1`.
-            super_instance(self, owner, pre_type).is_ready = false;
+            super_instance(self, owner, pre_type)
+                .expect("retained paired Super")
+                .is_ready = false;
             self.release_super_anim(owner, pre_type);
             let frame = self.session.binary_frame;
-            super_instance(self, owner, pre_type).stop_preclick(pre_sw, frame);
+            super_instance(self, owner, pre_type)
+                .expect("retained paired Super")
+                .stop_preclick(pre_sw, frame);
         }
         // `0x004FAEC6..0x004FAEF2`: every house, last to first.
         let houses: Vec<InternedId> = self.session.house_order.iter().rev().copied().collect();
@@ -113,7 +125,9 @@ fn click_fire(
     if sw.use_charge_drain {
         return false;
     }
-    let instance = super_instance(sim, owner, sw_type_id);
+    let Some(instance) = super_instance(sim, owner, sw_type_id) else {
+        return false;
+    };
     if !instance.click_fire_admits() && !sw.post_click {
         return false;
     }
@@ -250,18 +264,14 @@ fn launch(
     }
 }
 
-/// `owner`'s Super of `sw_type`, created inactive on first use: native
-/// constructs every house's Supers with the house.
+/// The retained Super constructed by the scenario House owner. Native valid
+/// scenarios hold every type; incomplete external fixtures can safely miss it.
 fn super_instance(
     sim: &mut Simulation,
     owner: InternedId,
     sw_type: InternedId,
-) -> &mut super::SuperWeaponInstance {
-    sim.super_weapons
-        .entry(owner)
-        .or_default()
-        .entry(sw_type)
-        .or_insert_with(|| super::SuperWeaponInstance::new(sw_type, owner, 0))
+) -> Option<&mut super::SuperWeaponInstance> {
+    sim.super_weapons.get_mut(&owner)?.get_mut(&sw_type)
 }
 
 /// The Super Fire_SW pairs a `PostClick=` type with: the `[SuperWeaponTypes]`

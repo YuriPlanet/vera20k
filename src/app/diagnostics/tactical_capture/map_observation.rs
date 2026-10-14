@@ -3101,7 +3101,7 @@ impl TacticalCaptureSession {
                     "health": entity.health.current, "active": entity.is_active(),
                     "veterancy_raw_bits": entity.veterancy_raw.bits(),
                     "veterancy_rank_cache": entity.veterancy_rank_cache,
-                    "elite_flash_frames": entity.elite_flash_frames,
+                    "elite_flash_frames": entity.flash_countdown(),
                     "object_alive": entity.is_object_alive(),
                     "in_limbo": entity.lifecycle.in_limbo, "dying": entity.dying,
                     // Techno +0x1C8, the offline latch (`sim::powered_unit`).

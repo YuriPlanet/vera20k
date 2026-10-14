@@ -55,13 +55,14 @@ fn test_body_rotation_matches_native_frame_duration() {
     // count at which it completes (ReadyToMove with the exact target reached).
     fn frames_to_turn(from: u8, to: u8, rot: i32) -> u32 {
         let target = u16::from(to) << 8;
-        let mut body_facing = crate::sim::movement::FacingClass::new(u16::from(from) << 8, rot);
-        let mut desired = Some(target);
+        let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
+        entity.body_facing = crate::sim::movement::FacingClass::new(u16::from(from) << 8, rot);
+        crate::sim::movement::drive_do_turn(&mut entity, target, 0);
         for frame in 0..1000u32 {
-            match handle_vehicle_rotation(&mut body_facing, desired.take(), frame) {
+            match handle_vehicle_rotation(&entity.body_facing, frame) {
                 RotationResult::ReadyToMove => {
                     assert_eq!(
-                        body_facing.current(frame),
+                        entity.body_facing.current(frame),
                         target,
                         "rotation must land exactly on the target"
                     );

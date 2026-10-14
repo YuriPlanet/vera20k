@@ -1,0 +1,1119 @@
+{
+  "banner_centers": [
+    {
+      "canvas": [
+        400,
+        80
+      ],
+      "origin": [
+        120,
+        200
+      ],
+      "view": [
+        640,
+        480
+      ]
+    },
+    {
+      "canvas": [
+        641,
+        483
+      ],
+      "origin": [
+        0,
+        -1
+      ],
+      "view": [
+        640,
+        480
+      ]
+    }
+  ],
+  "constructor_bits": "3f9eb851eb851eb8",
+  "flag_controls": [
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 100,
+          "stack": [
+            8539264,
+            100
+          ]
+        },
+        {
+          "address": "0x684240",
+          "ecx": 100,
+          "stack": [
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539244,
+          "name": "TXT_SCENARIO_WON",
+          "stack": [
+            8537892,
+            5639
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            0
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539220,
+          "name": "EVA_MissionAccomplished",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "delay": "constructor",
+        "name": "win_ctor",
+        "operation": "win"
+      },
+      "lost": 0,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        100,
+        0,
+        26
+      ],
+      "won": 1
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 100,
+          "stack": [
+            8539264,
+            100
+          ]
+        },
+        {
+          "address": "0x684240",
+          "ecx": 100,
+          "stack": [
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539244,
+          "name": "TXT_SCENARIO_WON",
+          "stack": [
+            8537892,
+            5639
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            0
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539220,
+          "name": "EVA_MissionAccomplished",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "delay": "retail",
+        "name": "win_retail",
+        "operation": "win"
+      },
+      "lost": 0,
+      "savour_bits": "3fb99999a0000000",
+      "timer": [
+        100,
+        0,
+        90
+      ],
+      "won": 1
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 100,
+          "stack": [
+            8539264,
+            100
+          ]
+        },
+        {
+          "address": "0x684240",
+          "ecx": 100,
+          "stack": [
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539328,
+          "name": "TXT_SCENARIO_LOST",
+          "stack": [
+            8537892,
+            5694
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            1
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539308,
+          "name": "EVA_MissionFailed",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "delay": "retail",
+        "name": "lose_retail",
+        "operation": "lose"
+      },
+      "lost": 1,
+      "savour_bits": "3fb99999a0000000",
+      "timer": [
+        100,
+        0,
+        90
+      ],
+      "won": 0
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 100,
+          "stack": [
+            8539264,
+            100
+          ]
+        },
+        {
+          "address": "0x684240",
+          "ecx": 100,
+          "stack": [
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539244,
+          "name": "TXT_SCENARIO_WON",
+          "stack": [
+            8537892,
+            5639
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            0
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539220,
+          "name": "EVA_MissionAccomplished",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "delay": ".03",
+        "name": "win_read_point03",
+        "operation": "win"
+      },
+      "lost": 0,
+      "savour_bits": "3f9eb851e0000000",
+      "timer": [
+        100,
+        0,
+        26
+      ],
+      "won": 1
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 100,
+          "stack": [
+            8539264,
+            100
+          ]
+        },
+        {
+          "address": "0x684240",
+          "ecx": 100,
+          "stack": [
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539244,
+          "name": "TXT_SCENARIO_WON",
+          "stack": [
+            8537892,
+            5639
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            0
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539220,
+          "name": "EVA_MissionAccomplished",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "delay": "-.03",
+        "name": "win_signed_delay",
+        "operation": "win"
+      },
+      "lost": 0,
+      "savour_bits": "bf9eb851e0000000",
+      "timer": [
+        100,
+        0,
+        -26
+      ],
+      "won": 1
+    },
+    {
+      "al": 1,
+      "calls": [],
+      "input": {
+        "name": "win_already_won",
+        "operation": "win",
+        "timer": [
+          17,
+          0,
+          41
+        ],
+        "won": 1
+      },
+      "lost": 0,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        17,
+        0,
+        41
+      ],
+      "won": 1
+    },
+    {
+      "al": 0,
+      "calls": [],
+      "input": {
+        "lost": 1,
+        "name": "win_already_lost",
+        "operation": "win",
+        "timer": [
+          17,
+          0,
+          41
+        ]
+      },
+      "lost": 1,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        17,
+        0,
+        41
+      ],
+      "won": 0
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 100,
+          "stack": [
+            8539264,
+            100
+          ]
+        },
+        {
+          "address": "0x684240",
+          "ecx": 100,
+          "stack": [
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539328,
+          "name": "TXT_SCENARIO_LOST",
+          "stack": [
+            8537892,
+            5694
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            1
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539308,
+          "name": "EVA_MissionFailed",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "name": "lose_replaces_win",
+        "operation": "lose",
+        "won": 1
+      },
+      "lost": 1,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        100,
+        0,
+        26
+      ],
+      "won": 0
+    },
+    {
+      "al": 1,
+      "calls": [],
+      "input": {
+        "lost": 1,
+        "name": "lose_already_lost_clears_win",
+        "operation": "lose",
+        "timer": [
+          17,
+          0,
+          41
+        ],
+        "won": 1
+      },
+      "lost": 1,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        17,
+        0,
+        41
+      ],
+      "won": 0
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x684240",
+          "ecx": 536870912,
+          "stack": [
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539244,
+          "name": "TXT_SCENARIO_WON",
+          "stack": [
+            8537892,
+            5639
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            0
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539220,
+          "name": "EVA_MissionAccomplished",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "name": "announce67_preserves_running",
+        "operation": "win",
+        "skip_timer": true,
+        "timer": [
+          17,
+          0,
+          41
+        ]
+      },
+      "lost": 0,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        17,
+        0,
+        41
+      ],
+      "won": 1
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x684240",
+          "ecx": 536870912,
+          "stack": [
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539328,
+          "name": "TXT_SCENARIO_LOST",
+          "stack": [
+            8537892,
+            5694
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            1
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539308,
+          "name": "EVA_MissionFailed",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "name": "announce68_preserves_paused",
+        "operation": "lose",
+        "skip_timer": true,
+        "timer": [
+          -1,
+          0,
+          41
+        ]
+      },
+      "lost": 1,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        -1,
+        0,
+        41
+      ],
+      "won": 0
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x684240",
+          "ecx": 536870912,
+          "stack": [
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539328,
+          "name": "TXT_SCENARIO_LOST",
+          "stack": [
+            8537892,
+            5694
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            1
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539308,
+          "name": "EVA_MissionFailed",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "name": "announce68_ctor_zero",
+        "operation": "lose",
+        "skip_timer": true
+      },
+      "lost": 1,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        -1,
+        0,
+        0
+      ],
+      "won": 0
+    },
+    {
+      "al": 100,
+      "calls": [],
+      "input": {
+        "name": "end69_paused_win",
+        "operation": "end",
+        "timer": [
+          -1,
+          0,
+          41
+        ],
+        "won": 1
+      },
+      "lost": 0,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        100,
+        0,
+        41
+      ],
+      "won": 1
+    },
+    {
+      "al": 1,
+      "calls": [],
+      "input": {
+        "lost": 1,
+        "name": "end69_running_lose",
+        "operation": "end",
+        "timer": [
+          17,
+          0,
+          41
+        ]
+      },
+      "lost": 1,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        17,
+        0,
+        41
+      ],
+      "won": 0
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 100,
+          "stack": [
+            8539264,
+            100
+          ]
+        },
+        {
+          "address": "0x684240",
+          "ecx": 100,
+          "stack": [
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539244,
+          "name": "TXT_SCENARIO_WON",
+          "stack": [
+            8537892,
+            5639
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            0
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539220,
+          "name": "EVA_MissionAccomplished",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "delay": "retail",
+        "name": "end69_no_result",
+        "operation": "end"
+      },
+      "lost": 0,
+      "savour_bits": "3fb99999a0000000",
+      "timer": [
+        100,
+        0,
+        90
+      ],
+      "won": 1
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 100,
+          "stack": [
+            8539264,
+            100
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539204,
+          "name": "TXT_VICTORIOUS",
+          "stack": [
+            8537892,
+            5642
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            2
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539180,
+          "name": "EVA_YouAreVictorious",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "delay": "retail",
+        "game_mode": 5,
+        "name": "win_offline_mode5",
+        "operation": "win"
+      },
+      "lost": 0,
+      "savour_bits": "3fb99999a0000000",
+      "timer": [
+        100,
+        0,
+        90
+      ],
+      "won": 1
+    }
+  ],
+  "result_gates": [
+    {
+      "gate": "continue",
+      "input": {
+        "allow_win": 0,
+        "frame": 189,
+        "game_mode": 0,
+        "lost": 0,
+        "name": "win_mode0_tags0_timer100_90_frame189",
+        "operation": "win_gate",
+        "timer": [
+          100,
+          0,
+          90
+        ],
+        "won": 1
+      }
+    },
+    {
+      "gate": "result_wait",
+      "input": {
+        "allow_win": 0,
+        "frame": 190,
+        "game_mode": 0,
+        "lost": 0,
+        "name": "win_mode0_tags0_timer100_90_frame190",
+        "operation": "win_gate",
+        "timer": [
+          100,
+          0,
+          90
+        ],
+        "won": 1
+      }
+    },
+    {
+      "gate": "continue",
+      "input": {
+        "allow_win": 1,
+        "frame": 190,
+        "game_mode": 0,
+        "lost": 0,
+        "name": "win_mode0_tags1_timer100_90_frame190",
+        "operation": "win_gate",
+        "timer": [
+          100,
+          0,
+          90
+        ],
+        "won": 1
+      }
+    },
+    {
+      "gate": "result_wait",
+      "input": {
+        "allow_win": 1,
+        "frame": 190,
+        "game_mode": 5,
+        "lost": 0,
+        "name": "win_mode5_tags1_timer100_90_frame190",
+        "operation": "win_gate",
+        "timer": [
+          100,
+          0,
+          90
+        ],
+        "won": 1
+      }
+    },
+    {
+      "gate": "continue",
+      "input": {
+        "allow_win": 0,
+        "frame": 190,
+        "game_mode": 0,
+        "lost": 0,
+        "name": "win_mode0_tags0_timer-1_1_frame190",
+        "operation": "win_gate",
+        "timer": [
+          -1,
+          0,
+          1
+        ],
+        "won": 1
+      }
+    },
+    {
+      "gate": "result_wait",
+      "input": {
+        "allow_win": 0,
+        "frame": 190,
+        "game_mode": 0,
+        "lost": 0,
+        "name": "win_mode0_tags0_timer-1_0_frame190",
+        "operation": "win_gate",
+        "timer": [
+          -1,
+          0,
+          0
+        ],
+        "won": 1
+      }
+    },
+    {
+      "gate": "continue",
+      "input": {
+        "allow_win": 0,
+        "frame": 190,
+        "game_mode": 0,
+        "lost": 0,
+        "name": "win_mode0_tags0_timer-1_-1_frame190",
+        "operation": "win_gate",
+        "timer": [
+          -1,
+          0,
+          -1
+        ],
+        "won": 1
+      }
+    },
+    {
+      "gate": "continue",
+      "input": {
+        "allow_win": 0,
+        "frame": 189,
+        "game_mode": 0,
+        "lost": 1,
+        "name": "lose_mode0_tags0_timer100_90_frame189",
+        "operation": "lose_gate",
+        "timer": [
+          100,
+          0,
+          90
+        ],
+        "won": 0
+      }
+    },
+    {
+      "gate": "result_wait",
+      "input": {
+        "allow_win": 0,
+        "frame": 190,
+        "game_mode": 0,
+        "lost": 1,
+        "name": "lose_mode0_tags0_timer100_90_frame190",
+        "operation": "lose_gate",
+        "timer": [
+          100,
+          0,
+          90
+        ],
+        "won": 0
+      }
+    },
+    {
+      "gate": "result_wait",
+      "input": {
+        "allow_win": 1,
+        "frame": 190,
+        "game_mode": 0,
+        "lost": 1,
+        "name": "lose_mode0_tags1_timer100_90_frame190",
+        "operation": "lose_gate",
+        "timer": [
+          100,
+          0,
+          90
+        ],
+        "won": 0
+      }
+    },
+    {
+      "gate": "result_wait",
+      "input": {
+        "allow_win": 1,
+        "frame": 190,
+        "game_mode": 5,
+        "lost": 1,
+        "name": "lose_mode5_tags1_timer100_90_frame190",
+        "operation": "lose_gate",
+        "timer": [
+          100,
+          0,
+          90
+        ],
+        "won": 0
+      }
+    },
+    {
+      "gate": "continue",
+      "input": {
+        "allow_win": 0,
+        "frame": 190,
+        "game_mode": 0,
+        "lost": 1,
+        "name": "lose_mode0_tags0_timer-1_1_frame190",
+        "operation": "lose_gate",
+        "timer": [
+          -1,
+          0,
+          1
+        ],
+        "won": 0
+      }
+    },
+    {
+      "gate": "result_wait",
+      "input": {
+        "allow_win": 0,
+        "frame": 190,
+        "game_mode": 0,
+        "lost": 1,
+        "name": "lose_mode0_tags0_timer-1_0_frame190",
+        "operation": "lose_gate",
+        "timer": [
+          -1,
+          0,
+          0
+        ],
+        "won": 0
+      }
+    },
+    {
+      "gate": "continue",
+      "input": {
+        "allow_win": 0,
+        "frame": 190,
+        "game_mode": 0,
+        "lost": 1,
+        "name": "lose_mode0_tags0_timer-1_-1_frame190",
+        "operation": "lose_gate",
+        "timer": [
+          -1,
+          0,
+          -1
+        ],
+        "won": 0
+      }
+    }
+  ],
+  "retail": {
+    "file": "rulesmd.ini",
+    "reader_bits": "3fb99999a0000000",
+    "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+    "token": ".1"
+  }
+}

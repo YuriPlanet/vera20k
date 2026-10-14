@@ -39,7 +39,7 @@ fn rules(advanced_prerequisite: &str) -> RuleSet {
          [WALL]\nWall=yes\n[GUARDED]\nStrength=500\nProtectWithWall=yes\n"
     );
     RuleSet::from_ini_with_fixed_art_for_test(
-        &IniFile::from_str(&text),
+        &crate::sim::arena_fixture::clear_ground_ini(&text),
         &IniFile::from_str("[GUARDED]\nFoundation=2x2\n"),
     )
     .unwrap()
@@ -442,7 +442,16 @@ fn exit_fixture() -> (Simulation, RuleSet, InternedId, u64, u64) {
             .reserve(sim.resolved_terrain.as_ref(), x, y, 0);
     }
     let product = sim
-        .construct_object_limbo_at_height("PLAIN", "AIHouse", 0, 0, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "PLAIN",
+            "AIHouse",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     (sim, rules, owner, yard, product)
 }

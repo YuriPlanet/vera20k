@@ -89,11 +89,20 @@ fn world_with_cells(
         sim.houses
             .insert(id, HouseState::new(id, side, None, human, 0, 10));
         sim.session.house_order.push(id);
+        // The native scenario constructs every stock Super for each House
+        // before its map objects; provider passes never construct lazily.
+        for name in &rules.super_weapon_order {
+            let type_id = sim.interner.intern(name);
+            sim.super_weapons
+                .entry(id)
+                .or_default()
+                .insert(type_id, super::SuperWeaponInstance::new(type_id, id, 0));
+        }
     }
     sim.session.game_options.super_weapons = true;
     sim.session.map_width = size;
     sim.session.map_height = size;
-    sim.resolved_terrain = Some(test_grid(size, size, cell));
+    sim.install_resolved_terrain_for_new_map(test_grid(size, size, cell));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     (rules, sim, americans)
 }
@@ -155,7 +164,16 @@ pub(crate) fn place(
 ) -> u64 {
     let deck = if bridge { 4 } else { 0 };
     let id = sim
-        .construct_object_limbo_at_height(kind, "Americans", x, y, 0, level + deck, rules)
+        .construct_object_limbo_at_height(
+            kind,
+            "Americans",
+            x,
+            y,
+            0,
+            level + deck,
+            rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap_or_else(|| panic!("{kind} constructs at {x},{y}"));
     let frame = sim.session.binary_frame;
     let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -182,7 +200,7 @@ pub(crate) fn place(
             ));
     }
     assert!(matches!(
-        sim.reveal(id),
+        sim.reveal_entity_with_rules(id, rules),
         crate::sim::world::RevealOutcome::Revealed { .. }
     ));
     assert_eq!(
@@ -192,12 +210,27 @@ pub(crate) fn place(
     id
 }
 
-/// A charged Super of type `name` for `owner`, replacing any it has: its
-/// recharge timer has run out.
+/// Supply a charged Super and an already-consumed House tech-tree tail.
+/// These sparse launch/effect fixtures do not compare provider grant provenance.
+/// Native4F927C clears1FC before its passes; a clean tail does not run50AF10
+/// again until an actual dirty writer. Production grant/power fixtures supply
+/// real providers and exercise that separate admission chain instead.
 pub(crate) fn charge_super(sim: &mut Simulation, owner: InternedId, name: &str) -> InternedId {
+    // Sparse launch-only controls still supply a native Super owner House.
+    // Do not append it to House AI order: these cases do not test provider
+    // grants, Strategy, natural defeat, or an additional House update.
+    sim.houses
+        .entry(owner)
+        .or_insert_with(|| crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10));
+    sim.houses
+        .get_mut(&owner)
+        .expect("supplied launcher's House")
+        .take_tech_tree_recheck();
     let sw_type = sim.interner.intern(name);
     let mut instance = SuperWeaponInstance::new(sw_type, owner, 0);
-    instance.activate(6300, sim.session.binary_frame);
+    instance.is_active = true;
+    instance.charge_start_tick = (sim.session.binary_frame) as i32;
+    instance.charge_duration = 6300;
     instance.charge_start_tick -= 6300;
     instance.is_ready = true;
     sim.super_weapons

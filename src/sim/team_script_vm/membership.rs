@@ -520,6 +520,34 @@ impl Simulation {
         self.team_script_vm.forget_team_to_rejoin(team_id);
     }
 
+    /// TeamTypeClass::DestroyAll6F0A70, called by TAction5 at6DEB9A.
+    /// The original walks the live array forward and revisits the index
+    /// after deletion. Member release and AI feedback stay with destroy_team.
+    /// This caller adds no RNG draws, timer writes or object-detach calls.
+    pub(crate) fn destroy_teams_of_type(
+        &mut self,
+        team_type: crate::sim::intern::InternedId,
+        rules: &RuleSet,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let mut index = 0;
+        loop {
+            let Some((id, type_id)) = self
+                .team_script_vm
+                .teams_in_order()
+                .nth(index)
+                .map(|team| (team.id, team.team_type_id()))
+            else {
+                break;
+            };
+            if type_id == Some(team_type) {
+                self.destroy_team(id, rules, frame_effects);
+            } else {
+                index += 1;
+            }
+        }
+    }
+
     /// `0x006EC250`, called by `TechnoClass::RespondToBaseAttack @
     /// 0x007081A9`: every team of `owner`, in team order, whose TeamType's
     /// `Priority=` is below `priority` (signed) loses all its members, is

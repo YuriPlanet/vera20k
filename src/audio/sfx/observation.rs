@@ -1130,11 +1130,13 @@ impl PcmObserver {
                         HandleOwner::Positional(id)
                         | HandleOwner::UnitVoice(id)
                         | HandleOwner::Coordinate(id) => id,
+                        HandleOwner::Global(id) => u64::from(id),
                     }),
                     owner_role: output.owner.map(|owner| match owner {
                         HandleOwner::Positional(_) => "positional",
                         HandleOwner::UnitVoice(_) => "unit_voice",
                         HandleOwner::Coordinate(_) => "coordinate_request",
+                        HandleOwner::Global(_) => "global_handle",
                     }),
                     sound_id: output.sound_id,
                     resolved_samples,

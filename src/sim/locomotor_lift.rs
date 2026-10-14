@@ -48,7 +48,9 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::combat_aoe::AreaDamageReceiver;
-use crate::sim::combat::{EntityDamageEvent, KillCallback, ReceiverCallFlags, TerrainDamageEvent};
+use crate::sim::combat::{
+    EntityDamageEvent, KillCallback, KillSource, ReceiverCallFlags, TerrainDamageEvent,
+};
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::lifecycle_request::{LifecycleRequest, UninitReason};
 use crate::sim::mission::authority::EntityReadyInputProvider;
@@ -296,7 +298,7 @@ impl Simulation {
             }
             return;
         }
-        self.locomotor_mark_all_occupation_bits_up(target);
+        self.locomotor_mark_all_occupation_bits(target, false);
         let _ = self.force_track(
             target,
             -1,
@@ -588,29 +590,28 @@ impl Simulation {
         &mut self,
         victim: u64,
         dropped: u64,
-        rules: &RuleSet,
+        context: UninitContext<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(dropped) else {
             return false;
         };
         match (entity.manipulated_by, entity.warped_by_house) {
             (Some(killer), _) => {
-                let killer_owner = self
-                    .substrate
-                    .entities
-                    .get(killer)
-                    .map(|killer| killer.owner());
                 self.record_the_kill(
                     victim,
-                    Some(killer),
-                    killer_owner,
+                    KillSource::Techno(Some(killer)),
                     KillCallback::Terminal,
-                    rules,
+                    context,
                 );
                 true
             }
             (None, Some(house)) => {
-                self.record_the_kill(victim, None, Some(house), KillCallback::Terminal, rules);
+                self.record_the_kill(
+                    victim,
+                    KillSource::House(Some(house)),
+                    KillCallback::Terminal,
+                    context,
+                );
                 true
             }
             (None, None) => false,
@@ -710,7 +711,6 @@ impl Simulation {
                 return;
             };
             let location = crate::sim::movement::ground_pose::position_world_coord(&owner.position);
-            let owner_house = owner.owner();
             if let Some(entity) = self.substrate.entities.get(victim) {
                 crate::sim::movement::bump_crush::emit_crush_kill_sounds_at(
                     entity,
@@ -720,13 +720,13 @@ impl Simulation {
                     &mut self.sound_events,
                 );
             }
-            if !self.record_manipulated_kill(victim, id, rules) {
+            let context = UninitContext::new(Some(rules), registry).with_effects(effects);
+            if !self.record_manipulated_kill(victim, id, context) {
                 self.record_the_kill(
                     victim,
-                    Some(id),
-                    Some(owner_house),
+                    KillSource::Techno(Some(id)),
                     KillCallback::Terminal,
-                    rules,
+                    context,
                 );
             }
             self.apply_lifecycle_request_with_rules(
@@ -821,7 +821,11 @@ impl Simulation {
             .get(id)
             .and_then(|entity| entity.manipulated_by);
         self.free_slaves(id, killer, None, rules, registry, effects);
-        self.record_manipulated_kill(id, id, rules);
+        self.record_manipulated_kill(
+            id,
+            id,
+            UninitContext::new(Some(rules), registry).with_effects(effects),
+        );
     }
 }
 

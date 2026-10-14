@@ -51,8 +51,11 @@ fn cell(value: &Value) -> (u16, u16) {
 
 fn rules() -> RuleSet {
     let art = IniFile::from_str(ART);
-    let mut rules =
-        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(RULES), &art).unwrap();
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(RULES),
+        &art,
+    )
+    .unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     rules
 }
@@ -75,6 +78,7 @@ fn sim(rules: &RuleSet, human: bool, levels: &[((u16, u16), u8)]) -> Simulation 
         ..test_terrain_cell(x, y)
     }));
     sim.playfield_bounds = Some(test_playfield_bounds());
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim
 }
 
@@ -307,16 +311,17 @@ fn a_charged_nuke_held_for_low_power_does_not_launch() {
     let nuke = sim.interner.intern("NukeSpecial");
     let sw = rules.super_weapon("NukeSpecial").unwrap();
     let mut instance = SuperWeaponInstance::new(nuke, owner, 0);
-    instance.activate(10, 0);
+    instance.is_active = true;
+    instance.charge_start_tick = (0) as i32;
+    instance.charge_duration = 10;
     instance.is_ready = true;
     sim.super_weapons
         .entry(owner)
         .or_default()
         .insert(nuke, instance);
-    sim.super_weapons_initialized = true;
     sim.session.binary_frame = 20;
     sim.power_states.entry(owner).or_default().is_low_power = true;
-    super::super::tick_superweapon_instances(&mut sim, &rules);
+    super::super::update_owned_supers(&mut sim, &rules, owner);
     let held = &sim.super_weapons[&owner][&nuke];
     assert_eq!(
         (held.is_ready, held.is_suspended, held.charge_start_tick),
@@ -334,7 +339,7 @@ fn a_charged_nuke_held_for_low_power_does_not_launch() {
     ));
     sim.power_states.get_mut(&owner).unwrap().is_low_power = false;
     sim.session.binary_frame = 30;
-    super::super::tick_superweapon_instances(&mut sim, &rules);
+    super::super::update_owned_supers(&mut sim, &rules, owner);
     assert!(click_fire(
         &mut sim,
         &rules,

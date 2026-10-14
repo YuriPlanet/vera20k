@@ -106,6 +106,16 @@ pub(super) fn record_replay_diagnostic(
             "factories":sim.production.factories.holders_insertion_ordered().into_iter()
                 .map(|(holder,factory)|serde_json::json!({"holder":holder,"factory":factory})).collect::<Vec<_>>(),
         },
+        // Only the global fixture kills a Unit. Preserve the shared cleanup
+        // owners around that death without inventing or draining any state.
+        "lifecycle_hash_attribution":{
+            "raw_occupation":format!("{:?}",sim.substrate.raw_cell_occupation),
+            "shared_dummy":format!("{:?}",sim.effective_shared_cell_dummy().snapshot()),
+            "shared_dummy_raw_occupation":sim.substrate.raw_cell_occupation.dummy_for_hash(),
+            "houses":sim.houses.iter().map(|(owner,house)|serde_json::json!({
+                "owner":sim.resolve(*owner),"retained":house,
+            })).collect::<Vec<_>>(),
+        },
     });
     serde_json::to_writer(
         &mut *writer,
@@ -151,8 +161,31 @@ pub(super) fn print_replay_summary(name: &str, sim: &Simulation) {
             "next_frame":sim.session.binary_frame,"hash":sim.state_hash(),
             "streams":[sim.scenario_rng.state(),sim.main_rng.state(),sim.mapgen_rng.state()],
             "actors":actors,"fire_count":sim.fire_events.len(),
+            "hash_owners":sim.hash_owner_diagnostics_for_test(),
         })
     );
+}
+
+/// Same-binary Rust hash attribution, independent of gameplay/native goldens.
+/// Only the removed TriggerRuntime last_announcement=None delimiter is fed.
+pub(super) fn assert_announcement_feed_retirement_hash_control(
+    name: &str,
+    sim: &Simulation,
+    incoming_pin: u64,
+) {
+    let current = sim.state_hash();
+    let control =
+        crate::sim::trigger_runtime::with_legacy_announcement_hash_control_for_test(|| {
+            sim.state_hash()
+        });
+    println!(
+        "[announcement hash attribution {name}] current={current:016X} control={control:016X}"
+    );
+    assert_eq!(
+        control, incoming_pin,
+        "restoring only the retired None feed must recover the incoming Rust pin"
+    );
+    assert_eq!(sim.state_hash(), current, "the diagnostic feed is scoped");
 }
 
 const HARNESS_SEED: u64 = 0xC0FFEE1234;
@@ -593,7 +626,14 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // Snapshot332 drops the C4 walk-up intent, whose empty value every entity's
 // fold hashed. This fixture has no C4 infantry; per-frame replay, combat/mining
 // and all three RNG gates remain unchanged.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x0D69_4099_AD39_5D63;
+// Snapshot345 retires TriggerRuntime's duplicate last_announcement=None
+// feed and the global Super initializer. This fixture's empty house_order
+// runs no House AI; the old initializer nevertheless inserted an empty
+// Americans Super registry, whose owner ID alone reached the hash. The
+// same-binary control below restores only those two feeds to recover the
+// previous Rust pin; gameplay, stream and replay checks remain independent.
+const GLOBAL_HARNESS_INCOMING_HASH: u64 = 0x0D69_4099_AD39_5D63;
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x488E_0917_87DF_8E1A;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -1155,6 +1195,55 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             .map(|tank| tank.health.current),
         Some(12),
         "tank 6 takes six 105mm hits (65 * 75% heavy)"
+    );
+    let legacy_super_owner = rep.interner.get("Americans").expect("building owner");
+    assert!(
+        rep.session.house_order.is_empty(),
+        "this fixture runs no House AI"
+    );
+    assert!(
+        rep.super_weapons.is_empty(),
+        "the fixture constructs no Supers"
+    );
+    assert!(
+        rep.substrate
+            .entities
+            .values()
+            .filter(|entity| entity.category == EntityCategory::Structure)
+            .all(|entity| entity.owner() == legacy_super_owner),
+        "the retired initializer visited only this building owner"
+    );
+    let retained_authority = bincode::serialize(&rep).expect("retained replay authority");
+    let retained_dummy = rep.effective_shared_cell_dummy().snapshot();
+    let retained_streams = (
+        rep.scenario_rng.state(),
+        rep.main_rng.state(),
+        rep.mapgen_rng.state(),
+    );
+    let incoming_hash_control =
+        crate::sim::trigger_runtime::with_legacy_announcement_hash_control_for_test(|| {
+            rep.state_hash_with_legacy_empty_super_owner_for_test(legacy_super_owner)
+        });
+    println!(
+        "[global retired hash feeds] current={final_hash:016X} control={incoming_hash_control:016X}"
+    );
+    assert_eq!(
+        incoming_hash_control, GLOBAL_HARNESS_INCOMING_HASH,
+        "restoring only the retired None and empty Super owner feeds must recover the incoming Rust pin"
+    );
+    assert_eq!(rep.state_hash(), final_hash, "diagnostic feeds stay scoped");
+    assert!(
+        retained_authority == bincode::serialize(&rep).expect("unchanged replay authority"),
+        "diagnostic feeds cannot alter serialized gameplay state"
+    );
+    assert_eq!(rep.effective_shared_cell_dummy().snapshot(), retained_dummy);
+    assert_eq!(
+        (
+            rep.scenario_rng.state(),
+            rep.main_rng.state(),
+            rep.mapgen_rng.state()
+        ),
+        retained_streams
     );
     assert_eq!(
         final_hash, GLOBAL_HARNESS_FINAL_HASH,

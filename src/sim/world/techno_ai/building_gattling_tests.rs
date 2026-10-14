@@ -69,7 +69,7 @@ fn rules(delay: i64, rate_down: i64, reports: bool) -> RuleSet {
             }
         }
     }
-    RuleSet::from_ini(&IniFile::from_str(&format!(
+    RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[General]\nGuardAreaTargetingDelay={delay}\n\
          [Guard]\nRate=.030\nAARate=.016\n\
          [Sticky]\nRate=.016\nAARate=.016\n\
@@ -620,6 +620,7 @@ fn gattling_cadence_matches_the_original() {
         let rules = row_rules(input);
         let mut sim = Simulation::new();
         sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(16));
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
         let building = sim
             .spawn_object("GAT", "Americans", 5, 5, 0, &rules)
             .unwrap();

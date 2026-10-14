@@ -122,7 +122,7 @@ impl OpeningCapture {
                 OpeningTarget::Flash => sim
                     .entities()
                     .iter_sorted()
-                    .any(|(_, entity)| entity.is_active() && entity.elite_flash_frames & 2 != 0),
+                    .any(|(_, entity)| entity.is_active() && entity.flash_countdown() & 2 != 0),
                 OpeningTarget::Arrows => sim.anims().any(|(_, anim)| anim.no_effects()),
                 OpeningTarget::Unlocked => self.saw_unlock && !locked,
                 OpeningTarget::RestoreUnlocked => {
@@ -326,6 +326,26 @@ impl OpeningCapture {
             .as_object_mut()
             .expect("camera object")
             .remove("last_ai_frame");
+        for building in projection["building_receivers"]
+            .as_array_mut()
+            .expect("building observations")
+        {
+            for slot in building["anim_slots"]
+                .as_array_mut()
+                .expect("animation slot observations")
+            {
+                slot.as_object_mut().expect("slot object").remove("frame");
+            }
+        }
+        for timer in projection["super_timers"]
+            .as_array_mut()
+            .expect("super timer observations")
+        {
+            timer
+                .as_object_mut()
+                .expect("timer object")
+                .remove("remaining");
+        }
         if self.previous_projection.as_ref() != Some(&projection) {
             self.previous_projection = Some(projection);
             self.observations.push(facts);
@@ -411,13 +431,22 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                 "sampled_power_health": entity.building_power_health_sample(),
                 "damaged_mode": entity.building_damage_state_active,
                 "damage_smoke_system": entity.damage_smoke_system_id,
+                "anim_slots": entity.building_anim_slots.iter().enumerate()
+                    .filter_map(|(slot, id)| {
+                        let id = (*id)?;
+                        let anim = sim.anim(id)?;
+                        Some(json!({"slot": slot, "id": id,
+                            "type": sim.interner.resolve(anim.type_id),
+                            "frame": anim.runtime.current_frame,
+                            "paused": anim.runtime.paused}))
+                    }).collect::<Vec<_>>(),
                 "house_power": sim.power_states.get(&entity.owner()).map(|power| json!({
                     "output": power.total_output, "drain": power.total_drain,
                     "low_power": power.is_low_power,
                 })),
             }));
         }
-        if entity.elite_flash_frames & 2 != 0 {
+        if entity.flash_countdown() & 2 != 0 {
             let cell = (entity.position.rx, entity.position.ry);
             flashing.push(json!({"id": entity.stable_id(), "type": name,
                 "cell": cell, "cell_shrouded": cell_shrouded(cell)}));
@@ -459,6 +488,13 @@ fn opening_observation(state: &AppState) -> Result<Value> {
         "fog_viewer": viewer.map(|viewer| sim.interner.resolve(viewer)),
         "active_types": active_types, "flashing": flashing, "no_effects_anims": markers,
         "building_receivers": building_receivers,
+        "super_timers": state.rules().map(|rules|
+            crate::sim::superweapon::super_timer_views(sim, rules).into_iter().map(|view|
+                json!({"owner": sim.interner.resolve(view.owner()),
+                    "type": sim.interner.resolve(view.sw_type()),
+                    "remaining": view.frames_left(), "held": view.on_hold(),
+                    "recharge": view.recharge_frames(), "place": view.place()}))
+                .collect::<Vec<_>>()).unwrap_or_default(),
         "teams": teams, "messages": messages,
         "eva_active": state.audio.sfx_player.as_ref().is_some_and(|sfx| sfx.voices_active()),
     }))

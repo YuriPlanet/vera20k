@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Full offline HouseFlagWin4FC9E0/FlagLose4FCBD0/EndScenario4FCDC0 and exact-zero/AllowWin result heads4F85BE/4F86FE",
+  "assumptions": [
+    "FlagToDie+1F6 supplied zero; campaign mode0 and offline nonzero mode5 only; current PlayerPtr and human bytes supplied",
+    "Constructor66731D..667331 original stores establish Rules+14C8 bits; physical AudioVisual SavourDelay token is passed through existing original5283D0 Reader; FPCW0E7F",
+    "House+298/+29C/+2A0 raw timer and +27C AllowWin count are independent supplied inputs; original branches and arithmetic execute"
+  ],
+  "substitutions": [
+    "Record and return UI/input/audio/dirty sinks684240,734E60,6D4DB0,752700,4F42F0,4068E0; no media device, localized text IO, rendering or actual sound",
+    "Result heads stop before6C8C40 WallClock/Vox wait at4F860B/4F8732; no completion, teardown or postgame/campaign-next-scene claim",
+    "No Windows startup, full House constructor/world, network ten-frame alignment, FlagToDie producer or RNG path"
+  ],
+  "entry_points": {
+    "win": "0x004FC9E0",
+    "lose": "0x004FCBD0",
+    "end": "0x004FCDC0",
+    "win_gate": "0x004F85BE",
+    "lose_gate": "0x004F86FE",
+    "constructor_savour": "0x0066731D",
+    "read_double": "0x005283D0",
+    "banner_center": "0x006D4E95"
+  },
+  "replay_command": "python -m tools.spatial_oracle.house_defeat_gate --outcomes",
+  "payload_sha256": "889d480e4c12c7467e631a67c411fb1ef3db326b8661efba953b34a832743e76"
+}

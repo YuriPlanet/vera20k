@@ -211,22 +211,46 @@ impl crate::sim::world::Simulation {
         ended.restored
     }
 
-    /// The active locomotor's `Mark_All_Occupation_Bits(0)` (ILocomotion
+    /// The active locomotor's `Mark_All_Occupation_Bits(mode)` (ILocomotion
     /// `+0x9C`): Drive `0x004B48D0` / Ship `0x006A3F00` release their track
-    /// occupation, Walk `0x0075CA30`, Teleport `0x0071A090` and Jumpjet
+    /// occupation, Hover `0x005171C0`, Walk `0x0075CA30`, Teleport `0x0071A090` and Jumpjet
     /// `0x0054D930` clear the owner's raw occupation at their head; Fly and
     /// Rocket take the empty base (`0x004B6620`). Foot Limbo calls it on the
     /// first Limbo (`0x004DB324`), the Chrono Warp on a Unit it arms
-    /// (`0x006CCA65`); each body is skipped for an object already in Limbo.
+    /// (`0x006CCA65`), and Unit Deploy739692/739A94. The represented
+    /// live callers skip an object already in Limbo. Drive/Ship share their
+    /// existing Apply_Track_Occupation_Mode owner for both modes.
     ///
-    /// RESIDUAL: Hover's body (`0x005171C0`, a clear at its Head_To_Coord) is
-    /// not ported. Trigger: a Hover Unit limboed or chronoshifted. Effect: its
-    /// raw occupation at its head stays until its next Mark.
-    pub(crate) fn locomotor_mark_all_occupation_bits_up(&mut self, id: u64) {
-        self.release_track_occupation_before_foot_limbo(id);
-        self.release_walk_occupation_before_foot_limbo(id);
-        self.release_teleport_occupation_before_foot_limbo(id);
-        self.release_jumpjet_occupation_before_foot_limbo(id);
+    /// Hover's mode1 is an empty return. Mode1 for Walk/Teleport/Jumpjet
+    /// remains unported: selected retail MCV and
+    /// Slave Miner Deploy use Drive; modded other-class Deploy failure can
+    /// miss that class's head claim before its ordinary Foot Mark(DOWN).
+    pub(crate) fn locomotor_mark_all_occupation_bits(&mut self, id: u64, put: bool) {
+        let kind = self.substrate.entities.get(id).and_then(|entity| {
+            (!entity.lifecycle.in_limbo)
+                .then(|| entity.locomotor.as_ref().map(|loco| loco.kind))
+                .flatten()
+        });
+        match kind {
+            Some(crate::rules::locomotor_type::LocomotorKind::Drive) => {
+                self.track_apply_occupation(id, super::track_process::TrackFamily::Drive, put);
+            }
+            Some(crate::rules::locomotor_type::LocomotorKind::Ship) => {
+                self.track_apply_occupation(id, super::track_process::TrackFamily::Ship, put);
+            }
+            Some(crate::rules::locomotor_type::LocomotorKind::Hover) => {
+                self.hover_mark_all_occupation_bits(id, put);
+            }
+            _ if !put => {
+                self.release_walk_occupation_before_foot_limbo(id);
+                self.release_teleport_occupation_before_foot_limbo(id);
+                self.release_jumpjet_occupation_before_foot_limbo(id);
+            }
+            Some(kind) => {
+                log::debug!("unported {kind:?} Mark_All_Occupation_Bits(1) for {id}");
+            }
+            None => {}
+        }
     }
 }
 

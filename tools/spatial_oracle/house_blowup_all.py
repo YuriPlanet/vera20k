@@ -33,6 +33,10 @@ RULES = SCRATCH + 0x1000
 C4 = SCRATCH + 0x1800
 VT = SCRATCH + 0x2000
 RECEIVE_STUB = SCRATCH + 0x2800
+RTTI_STUB = RECEIVE_STUB + 0x10
+TYPE_STUB = RECEIVE_STUB + 0x20
+TYPES = SCRATCH + 0x60000
+SUBSET_ENTRIES = {"buildings": 0x4FC790, "land": 0x4FC820, "naval": 0x4FC8D0}
 ARRAY = SCRATCH + 0x3000
 HOUSES = SCRATCH + 0x4000           # house n at HOUSES + n * 0x400; its type at +0x200
 HOUSE_ARRAY = SCRATCH + 0x7000
@@ -98,16 +102,25 @@ class Fixture:
         elif pc == TEMPORAL_RELEASE:
             self.events.append(["temporal_release", self.name_of(this)])
             self.ret(0, 0)
+        elif pc == RTTI_STUB:
+            self.ret(self.object_rtti[this], 0)
+        elif pc == TYPE_STUB:
+            self.ret(self.object_types[this], 0)
 
     def execute(self, case):
         u = self.u
         u.mem_write(SCRATCH, bytes(REGION))
         u.reg_write(UC_X86_REG_FPCW, NATIVE_FPCW)
         self.events, self.names = [], {}
+        self.object_rtti, self.object_types = {}, {}
         self.remove_on_damage = {}
         self.civilian_side = case.get("civilian_side", 99)
         u.mem_write(RECEIVE_STUB, b"\xCC")
         u.mem_write(VT + RECEIVE_DAMAGE, dwords(RECEIVE_STUB))
+        u.mem_write(RTTI_STUB, b"\xCC")
+        u.mem_write(TYPE_STUB, b"\xCC")
+        u.mem_write(VT + 0x2C, dwords(RTTI_STUB))
+        u.mem_write(VT + 0x84, dwords(TYPE_STUB))
         u.mem_write(RULES_PTR, dwords(RULES))
         u.mem_write(RULES + 0xFA8, dwords(C4))
         self.names["c4"] = C4
@@ -128,6 +141,10 @@ class Fixture:
             u.mem_write(t, dwords(VT))
             u.mem_write(t + 0x21C, dwords(house(obj["owner"])))
             u.mem_write(t + 0x6C, struct.pack("<i", obj.get("health", 100)))
+            self.object_rtti[t] = obj.get("rtti", 1)
+            self.object_types[t] = TYPES + n * 0x1000
+            u.mem_write(self.object_types[t] + 0xCCE, bytes([int(obj.get("naval", False))]))
+            u.mem_write(t + 0x81, bytes([int(obj.get("limbo", False))]))
             if obj.get("warped"):
                 u.mem_write(t + 0x278, dwords(t + 0x700))
                 self.names[f"head{n}"] = t + 0x700
@@ -155,7 +172,8 @@ class Fixture:
         u.mem_write(SP, dwords(RET_MAGIC))
         u.reg_write(UC_X86_REG_ESP, SP)
         u.reg_write(UC_X86_REG_ECX, house(case["house"]))
-        run_checked(u, BLOWUP_ALL, RET_MAGIC, count=500_000)
+        entry = SUBSET_ENTRIES.get(case.get("subset"), BLOWUP_ALL)
+        run_checked(u, entry, RET_MAGIC, count=500_000)
         nodes = {}
         for c, (controller, entries) in enumerate(case.get("controllers", {}).items()):
             m = manager(c)
@@ -211,5 +229,53 @@ def metadata():
                       "capture_original_owner": 0x4722F0, "set_original_owner_to_civilian": 0x472330})
 
 
+def generate_subsets():
+    # One mixed registry tests real original admission and slot rereading:
+    # building6, Unit1, Infantry15, Aircraft2, foreign owner and limbo.
+    objects = [
+        dict(owner=0, rtti=6, health=90),
+        dict(owner=0, rtti=1, health=80),
+        dict(owner=0, rtti=1, health=70, naval=True),
+        dict(owner=0, rtti=15, health=60),
+        dict(owner=0, rtti=2, health=50),
+        dict(owner=1, rtti=6, health=40),
+        dict(owner=0, rtti=6, health=30, limbo=True),
+        dict(owner=0, rtti=1, health=20, naval=True, limbo=True),
+        dict(owner=0, rtti=1, health=0),
+    ]
+    fixture = Fixture()
+    cases = []
+    for subset in SUBSET_ENTRIES:
+        for removal in (False, True):
+            rows = [dict(obj, remove=removal) for obj in objects]
+            cases.append(dict(name=f"{subset}_mixed_registry_remove_{int(removal)}",
+                              subset=subset, house=0, houses=[0, 1], objects=rows))
+        # Unlike Blowup_All, typed sweeps kill the original owner's captive;
+        # they never redirect its CaptureManager node to Civilian.
+        cases.append(dict(name=f"{subset}_captured_original_owner",
+                          subset=subset, house=0, houses=[0, 1, 2], civilian_side=2,
+                          objects=[dict(owner=1, rtti=1),
+                                   dict(owner=1, rtti=6 if subset == "buildings" else 1,
+                                        naval=subset == "naval", health=33)],
+                          controllers={"0": [[1, 0]]}))
+    return [fixture.execute(case) for case in cases]
+
+
+def subset_metadata():
+    result = provenance(
+        scope="Original House4FC790/4FC820/4FC8D0 typed cleanup; shared70F820/4722F0 owner lookup",
+        assumptions=["Synthetic ordered Techno registry; live/limbo byte81, Health6C, supplied real category RTTI and Type NavalCCE; native predicates and loops execute"],
+        substitutions=["ReceiveDamage recorded, optionally removes current registry slot; RTTI/type-getter return supplied fixture data; Temporal release recorded; Civilian side lookup supplied"],
+        entry_points=SUBSET_ENTRIES)
+    return result
+
+
 if __name__ == "__main__":
-    finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=metadata)
+    import sys
+    if "--subsets" in sys.argv:
+        finish_vectors(generate_subsets,
+                       Path(__file__).with_name("house_blowup_subsets.json"),
+                       provenance=subset_metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--subsets"])
+    else:
+        finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=metadata)

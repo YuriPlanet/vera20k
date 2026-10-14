@@ -108,6 +108,142 @@ impl Simulation {
         true
     }
 
+    /// Original RevealZone6E11C0, Execute18 at6DE37B: +90 selects a Crusher
+    /// raw zone, then local578850/578710 members reveal literal-radius2 pairs
+    /// through the shared5678E0 knowledge/discovery owner. PlayerPtr is read
+    /// at entry and before each pass, independently of the trigger House.
+    /// Executed synthetic controls: tools/spatial_oracle/trigger_reveal_zone.
+    /// No own RNG, timer or detach; occupied discovery/Tag effects retain
+    /// their existing owners. Retail topology and aircraft drawing parity
+    /// are not established by these empty-cell controls.
+    pub(crate) fn trigger_reveal_zone_at_waypoint(
+        &mut self,
+        index: i32,
+        context: UninitContext<'_>,
+    ) -> bool {
+        use crate::map::resolved_terrain::{NativeCellQuery, NativeLocalCellCursor};
+        use crate::rules::locomotor_type::MovementZone;
+
+        let Some(viewer) = self.session.current_house else {
+            return false;
+        };
+        if self.fog.whole_map_revealed_for_owner(viewer) {
+            return true;
+        }
+        let (Some(rules), Some(waypoint), Some(bounds)) = (
+            context.rules(),
+            self.session.waypoint_cell(index),
+            self.playfield_bounds,
+        ) else {
+            return false;
+        };
+        let target_zone = {
+            let (Some(terrain), Some(zones)) = (
+                context.terrain().or(self.resolved_terrain.as_ref()),
+                self.zone_grid.as_ref(),
+            ) else {
+                return false;
+            };
+            let query = NativeCellQuery::canonical(terrain);
+            let Some(zone) = zones.get_zone_id_native_in_query(
+                terrain,
+                (waypoint.0 as u16, waypoint.1 as u16),
+                MovementZone::Crusher,
+                false,
+                Some(&query),
+            ) else {
+                return false;
+            };
+            zone
+        };
+        self.native_local_cell_cursor = Some(NativeLocalCellCursor::reset(bounds));
+        let mut height_source = self.path_grid.clone();
+        let mut height_grid = self.sight_height_grid(&self.sight_reveal_config(Some(rules)));
+        loop {
+            // No borrow/cursor snapshot spans a reveal callback. A nested18
+            // resets this same cursor; a nested40 changes the next bounds.
+            let identity = {
+                let (Some(terrain), Some(bounds), Some(cursor)) = (
+                    context.terrain().or(self.resolved_terrain.as_ref()),
+                    self.playfield_bounds,
+                    self.native_local_cell_cursor.as_mut(),
+                ) else {
+                    return false;
+                };
+                cursor.next_in_query(bounds, &NativeCellQuery::canonical(terrain))
+            };
+            let Some(identity) = identity else {
+                return true;
+            };
+            let half_level = {
+                let (Some(terrain), Some(zones)) = (
+                    context.terrain().or(self.resolved_terrain.as_ref()),
+                    self.zone_grid.as_ref(),
+                ) else {
+                    return false;
+                };
+                let query = NativeCellQuery::canonical(terrain);
+                let coord = query.coord(identity);
+                let Some(zone) = zones.get_zone_id_native_in_query(
+                    terrain,
+                    (coord.0 as u16, coord.1 as u16),
+                    MovementZone::Crusher,
+                    false,
+                    Some(&query),
+                ) else {
+                    return false;
+                };
+                if zone != target_zone {
+                    continue;
+                }
+                i32::from(query.ground_fields(identity).0 as i8) / 2
+            };
+            let quarter_level = (half_level / 2) as i16;
+            for final_pass in [false, true] {
+                //6E12B1/6E12B4 reread retained Cell+24 after final0; an
+                // intervening miss may have changed a retained Dummy's XY.
+                // ESI/EDI retain half/quarter, even if its level changed.
+                let center = {
+                    let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
+                        return false;
+                    };
+                    let coord = NativeCellQuery::canonical(terrain).coord(identity);
+                    (
+                        coord.0.wrapping_sub(quarter_level) as u16,
+                        coord.1.wrapping_sub(quarter_level) as u16,
+                    )
+                };
+                let Some(viewer) = self.session.current_house else {
+                    return false;
+                };
+                let config = self.sight_reveal_config(Some(rules));
+                // Navigation publishes a new immutable Arc when heights
+                // change. Reuse its snapshot across small radius2 passes;
+                // a synchronous discovery callback can republish it, so
+                // invalidate before the very next pass, not just next tick.
+                let same_heights = match (&height_source, &self.path_grid) {
+                    (Some(before), Some(current)) => std::sync::Arc::ptr_eq(before, current),
+                    (None, None) => true,
+                    _ => false,
+                };
+                if !same_heights {
+                    height_grid = self.sight_height_grid(&config);
+                    height_source = self.path_grid.clone();
+                }
+                self.reveal_area(
+                    &[viewer],
+                    center,
+                    half_level * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+                    2,
+                    height_grid.as_deref(),
+                    final_pass,
+                    &config,
+                    context,
+                );
+            }
+        }
+    }
+
     /// Original MapClass::RevealArea5678E0, ordinary no-outline/no-unreveal
     /// route. Geometry stays with the shared native spiral/height owner;
     /// MapCell4A9CA0 publishes each write and its synchronous discovery
@@ -238,29 +374,102 @@ impl Simulation {
         if house.is_some_and(|house| house != player) || !self.fog.admit_whole_map_reveal(player) {
             return;
         }
-        let cells: Vec<(u16, u16)> = match (
-            context.terrain().or(self.resolved_terrain.as_ref()),
-            self.map_size_diamond(),
-        ) {
-            (Some(terrain), Some((width, _))) => terrain
-                .native_cell_iterator(width)
-                .map(|cell| (cell.rx, cell.ry))
-                .collect(),
-            // Synthetic fixtures without a map Size walk their allocated cells.
-            (Some(terrain), None) => terrain.iter().map(|cell| (cell.rx, cell.ry)).collect(),
-            (None, _) => self.fog.rectangular_cells(),
+        self.reveal_allocated_map_cells(false, context);
+    }
+
+    /// Execute16 at6DE3A8: local House240 gate/set,578350/578290, then
+    ///653810->Display4A9890 per allocated cell and final redraw. House241,
+    /// sight/gap counters and sustained sources are untouched. Current
+    /// PlayerPtr is reread for every receiver after synchronous callbacks.
+    pub(crate) fn trigger_reveal_entire_map(&mut self, context: UninitContext<'_>) -> bool {
+        let Some(player) = self.session.current_house else {
+            return false;
+        };
+        if self.fog.whole_map_revealed_for_owner(player) {
+            return false;
+        }
+        if context
+            .terrain()
+            .or(self.resolved_terrain.as_ref())
+            .is_none()
+            || self.map_size_diamond().is_none()
+        {
+            return false;
+        }
+        self.fog.admit_whole_map_reveal(player);
+        self.reveal_allocated_map_cells(true, context);
+        true
+    }
+
+    /// The simulation's one578350/578290 traversal host.16 and577F30 use
+    ///different cell receivers; neither precollects cells before callbacks.
+    ///Nested simulation reveals reset this same cursor, not an outer copy.
+    fn reveal_allocated_map_cells(&mut self, forced: bool, context: UninitContext<'_>) {
+        if self.reset_allocated_map_cell_cursor() {
+            while let Some(cell) = self.next_allocated_map_cell(context) {
+                self.reveal_allocated_map_cell(cell, forced, context);
+            }
+            return;
+        }
+        // Preserve the explicit synthetic-fixture fallback; no native map
+        //or shared578350 cursor is claimed without Size fields.
+        let cells: Vec<(u16, u16)> = match context.terrain().or(self.resolved_terrain.as_ref()) {
+            Some(terrain) => terrain.iter().map(|cell| (cell.rx, cell.ry)).collect(),
+            None => self.fog.rectangular_cells(),
         };
         for cell in cells {
-            let notify = {
-                let native_cells = context
-                    .terrain()
-                    .or(self.resolved_terrain.as_ref())
-                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-                self.fog.reveal_cell(player, cell, native_cells.as_ref())
-            };
-            if let Some(notify) = notify {
-                self.notify_cell_change(notify.cell, player, notify.fresh, context);
+            self.reveal_allocated_map_cell(cell, forced, context);
+        }
+    }
+
+    pub(super) fn reset_allocated_map_cell_cursor(&mut self) -> bool {
+        let Some((width, _)) = self.map_size_diamond() else {
+            return false;
+        };
+        self.native_allocated_cell_cursor =
+            Some(crate::map::resolved_terrain::NativeAllocatedCellCursor::reset(width));
+        true
+    }
+
+    /// No simulation borrow spans a cell receiver. Native next578290 reads
+    /// the shared cursor after callbacks, including an inner completed scan.
+    pub(super) fn next_allocated_map_cell(
+        &mut self,
+        context: UninitContext<'_>,
+    ) -> Option<(u16, u16)> {
+        let (width, _) = self.map_size_diamond()?;
+        let terrain = context.terrain().or(self.resolved_terrain.as_ref())?;
+        let identity = self
+            .native_allocated_cell_cursor
+            .as_mut()?
+            .next_in_terrain(terrain, width)?;
+        let coord = terrain.native_cell_coord(identity);
+        Some((coord.0 as u16, coord.1 as u16))
+    }
+
+    fn reveal_allocated_map_cell(
+        &mut self,
+        cell: (u16, u16),
+        forced: bool,
+        context: UninitContext<'_>,
+    ) {
+        let Some(player) = self.session.current_house else {
+            return;
+        };
+        let notify = {
+            let cells = context
+                .terrain()
+                .or(self.resolved_terrain.as_ref())
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            if forced {
+                self.fog
+                    .reveal_forced_map_cell(player, cell, cells.as_ref())
+            } else {
+                self.fog.reveal_cell(player, cell, cells.as_ref())
             }
+        };
+        if let Some(notify) = notify {
+            self.notify_cell_change(notify.cell, player, notify.fresh, context);
         }
     }
 
@@ -273,7 +482,7 @@ impl Simulation {
         owner: crate::sim::intern::InternedId,
         rules: &RuleSet,
     ) {
-        self.transition_house_map(owner, false, rules);
+        self.transition_house_map(owner, vision::MapTransition::Reveal, rules);
     }
 
     /// `MapClass::Reset_Shroud @ 0x00577AB0` for `owner`: it clears the
@@ -286,7 +495,27 @@ impl Simulation {
         owner: crate::sim::intern::InternedId,
         rules: &RuleSet,
     ) {
-        self.transition_house_map(owner, true, rules);
+        self.transition_house_map(owner, vision::MapTransition::ResetShroud, rules);
+    }
+
+    /// Execute51 -> Map577C90. Its nonnull House loses241 even when it is
+    /// not PlayerPtr; only null/current Player changes the local map. The
+    /// allocated-cell receiver leaves487690 counters rather than overwriting
+    /// them as577AB0 does. Steam3e81a617..08600,577C90..577D89.
+    pub(crate) fn trigger_reshroud_map(
+        &mut self,
+        incoming: Option<crate::sim::intern::InternedId>,
+        rules: &RuleSet,
+    ) {
+        if let Some(owner) = incoming.and_then(|owner| self.houses.get_mut(&owner)) {
+            owner.map_is_clear = false;
+        }
+        if incoming.is_some() && incoming != self.session.current_house {
+            return;
+        }
+        if let Some(player) = self.session.current_house {
+            self.transition_house_map(player, vision::MapTransition::Reshroud, rules);
+        }
     }
 
     /// The bulk store that `Reveal` and `Reset_Shroud` share. It is bracketed
@@ -301,17 +530,43 @@ impl Simulation {
     fn transition_house_map(
         &mut self,
         owner: crate::sim::intern::InternedId,
-        reset: bool,
+        transition: vision::MapTransition,
         rules: &RuleSet,
     ) {
+        let reset = transition != vision::MapTransition::Reveal;
+        //577AB0/577D90 store241 before both bracket callbacks. Reshroud
+        //577C90 does so only for its nonnull incoming House, already handled
+        //by trigger_reshroud_map; the null path must retain Player241.
+        if transition != vision::MapTransition::Reshroud
+            && let Some(house) = self.houses.get_mut(&owner)
+        {
+            house.map_is_clear = !reset;
+        }
         if self.fog.width != 0
             && self.fog.height != 0
             && (reset || !self.fog.whole_map_revealed_for_owner(owner))
         {
-            let cells = self.resolved_terrain.as_ref().map_or_else(
-                || self.fog.rectangular_cells(),
-                |terrain| terrain.iter().map(|cell| (cell.rx, cell.ry)).collect(),
-            );
+            //577AB0/577D90/577C90 initialize the same allocated cursor as16
+            //and577F30.51's scalar Cell487690 leave receiver cannot dispatch
+            //discovery; the other two only store cell fields. Their cell list
+            //may be passed to the existing Fog release/store/put owner.
+            //That owner's represented release/put callbacks do not
+            //dispatch simulation Tags; full4ADEE0/4ADCD0 discovery remains
+            //its existing residual, not a claim of reentrant equivalence.
+            let cells = if self.reset_allocated_map_cell_cursor() {
+                let mut cells = Vec::new();
+                while let Some(cell) =
+                    self.next_allocated_map_cell(UninitContext::with_rules(rules))
+                {
+                    cells.push(cell);
+                }
+                cells
+            } else {
+                self.resolved_terrain.as_ref().map_or_else(
+                    || self.fog.rectangular_cells(),
+                    |terrain| terrain.iter().map(|cell| (cell.rx, cell.ry)).collect(),
+                )
+            };
             //4ADEE0/4ADCD0 do not release allied mobile sight. The represented
             //multiplayer known-own branch and stock AllyReveal=yes directional
             //allied Building arm select callbacks; untouched admissions survive
@@ -346,16 +601,18 @@ impl Simulation {
             // with `0x004ADEE0`, which has no `RevealToAll=` branch; VERA's
             // (`sim::house_diplomacy`) run without the bracket, a residual
             // recorded there. The first House update (`0x004F935A`) runs on the
-            // first frame, before any such building stands (no retail
-            // skirmish map places one); Fill_In_Data's call (`0x00684F89`)
-            // skips buildings; the trigger reshroud (`0x00577C90`, action 51)
-            // runs in no retail skirmish map.
+            // first frame; stock skirmish maps place no such building, which
+            // bounds those samples rather than proving campaign absence.
+            // Fill_In_Data's call (`0x00684F89`) skips buildings. ALL01's live
+            // SpySat_Boom061FF03C uses action51/577C90, so its represented
+            // release/store/reentry path runs here; occupied discovery and
+            // nested Tags in the original bracket remain the stated residual.
             let mut alternates = self.reveal_to_all_footprints(owner, rules);
             alternates.retain(|id, _| !sources.contains(id));
             self.fog.transition_whole_map_with_gap_reentry(
                 owner,
                 cells,
-                reset,
+                transition,
                 old_spy_sat_active,
                 &sources,
                 Some(&gaps),
@@ -366,9 +623,6 @@ impl Simulation {
             if admitted_gap {
                 self.fog.invalidate_whole_map_reveal_for_owner(owner);
             }
-        }
-        if let Some(house) = self.houses.get_mut(&owner) {
-            house.map_is_clear = !reset;
         }
     }
 

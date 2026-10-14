@@ -4,7 +4,7 @@
 //! natural endpoint. Rust sources are paused after admission and endpoint405A00
 //! is invoked explicitly. Production captures separately cover actual pulls.
 
-use super::coordinate_sound_tests::{cue, gain, source, with_player};
+use super::coordinate_sound_tests::{coordinate, cue, gain, request_flags, source, with_player};
 use super::unit_voice_tests::{recorded_draws, retained_draws};
 use super::*;
 use crate::audio::arbiter::coordinate_tests::{control, native};
@@ -138,6 +138,8 @@ fn assert_requests(player: &mut SfxPlayer, state: &Value, owners: &[(u64, u64)])
         let Some(expected) = expected else { continue };
         let actual = actual.unwrap();
         assert_eq!(actual["suspend_depth"], expected["suspend_depth"]);
+        assert_eq!(actual["coordinate_leptons"], expected["location"]);
+        assert_eq!(actual["flags"], expected["caller_argument"]);
         let expected_event = state["events"].as_array().unwrap().iter().find(|event| {
             event["pointer"] == expected["handle"][0]
                 && event["serial"] == expected["handle"][1]
@@ -185,7 +187,14 @@ fn assert_requests(player: &mut SfxPlayer, state: &Value, owners: &[(u64, u64)])
 fn admit_request(player: &mut SfxPlayer, registry: &SoundRegistry, label: &str) -> (u64, u64) {
     let sound = cue("sound_index");
     let expected = boundary(label);
-    assert!(player.play_sound_at_coord(sound, source(), gain(label, sound, registry), registry));
+    assert!(player.play_sound_at_coord(
+        sound,
+        coordinate(),
+        request_flags(),
+        source(),
+        gain(label, sound, registry),
+        registry,
+    ));
     let actual_owner = player.coordinate_sound_observation().last().unwrap()["request_id"]
         .as_u64()
         .unwrap();

@@ -1000,7 +1000,16 @@ fn hut_repair_scatters_a_jumpjet_occupant_through_its_air_destination_owner() {
     // seam. This corridor does not establish an ordinary infantry Unlimbo
     // inside a marked Building (Cell481180 correctly refuses that request).
     let rocketeer = sim
-        .construct_object_limbo_at_height("JUMPJET", "Americans", 16, 15, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "JUMPJET",
+            "Americans",
+            16,
+            15,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     crate::sim::movement::ground_pose::put_location(
         &mut sim.substrate.entities.get_mut(rocketeer).unwrap().position,

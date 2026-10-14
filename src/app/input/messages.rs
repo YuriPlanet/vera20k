@@ -19,9 +19,6 @@ const MESSAGE_WIDTH_INSET: i32 = 14;
 /// Interim system-message color (native rows use a color-scheme index whose
 /// mapping is a plan deferred item).
 const MESSAGE_RGB_SYSTEM: [f32; 3] = [1.0, 1.0, 1.0];
-/// The existing synthetic mission-announcement banner retains its 4 s
-/// lifetime. Native action11 uses the separate Rules MessageDelay read below.
-const MISSION_TEXT_TIMEOUT_MS: u64 = 4_000;
 /// `0xF0` native 16 ms timer buckets.
 const TYPE_SELECT_MESSAGE_TIMEOUT_MS: u64 = 3_840;
 /// The Supers' lines' `0x96` native 16 ms timer buckets.
@@ -41,35 +38,6 @@ pub(crate) fn message_now_ms(state: &AppState) -> u64 {
         .match_presentation
         .message_clock
         .now(crate::app::input::tooltips::now_ms(state))
-}
-
-/// Post a system message (mission/trigger text, future house notifications).
-pub(crate) fn post_system_message(state: &mut AppState, text: &str) {
-    sync_view(state);
-    let now = message_now_ms(state);
-    let font = &state.renderer.bit_font;
-    let measure = |s: &str| font.text_width(s) as i32;
-    let outcome = state
-        .match_state
-        .match_presentation
-        .message_list
-        .add_message(
-            &crate::ui::messages::MessagePost {
-                prefix: None,
-                text,
-                rgb: MESSAGE_RGB_SYSTEM,
-                timeout_ms: Some(MISSION_TEXT_TIMEOUT_MS),
-                silent: false,
-            },
-            now,
-            &measure,
-        );
-    if outcome.play_sound {
-        let sound = state
-            .rules()
-            .and_then(|r| r.general.incoming_message_sound.clone());
-        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
-    }
 }
 
 /// Original TAction11 6DE0B0..6DE122 resolves its CSF label, selects the

@@ -349,7 +349,7 @@ fn a_grant_keeps_the_countdown_and_releases_the_anim() {
     sim.spawn_object_at_height("NATECH", "Russians", 20, 20, 0, 0, &rules)
         .unwrap();
 
-    super::super::refresh_super_weapons_for_owner(&mut sim, &rules, russians);
+    super::super::grant_provided_supers(&mut sim, &rules, russians);
 
     let instance = &sim.super_weapons[&russians][&sw_type];
     assert!(instance.is_active);

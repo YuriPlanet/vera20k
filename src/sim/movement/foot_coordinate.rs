@@ -1,5 +1,7 @@
 //! Foot4DBDF0 navigation coordinates and the active locomotor's retained head.
 //! Native witnesses: tools/spatial_oracle/foot_navigation_coordinate.{py,json}.
+//! Hover Head_To514D10 uses this same retained-head/null-current projection;
+//! locomotor_force_track.hover_mark_all executes it through the actual+9C caller.
 //! These are read projections; paths, selectors and lifecycle do not own them.
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;

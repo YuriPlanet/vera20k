@@ -1,6 +1,10 @@
 """Original Team creation and selected normal reinforcement prerequisites.
 
 Run: python -m tools.spatial_oracle.team_creation [--check | --write]
+Selected Full member/cargo/scalar controls:
+python -m tools.spatial_oracle.team_creation --full-transport [--check | --write]
+Selected Droppod/transport-input controls:
+python -m tools.spatial_oracle.team_creation --paradrop-transport [--check | --write]
 
 The legacy39 rows retain full Trigger4/CreateTeam and empty constructors.
 Additive rows execute shared6EC300, signed script50/countdown, recent-cell660B80,
@@ -396,15 +400,22 @@ def prepare_reinforcement_case(q, case):
     scenario=m.read32(0xA8B230)
     typ=m.alloc(0x100);m.invoke(0x6F06E0,typ,(m.cstring(case['name']),))
     script=m.alloc(0x234);u.mem_write(script,bytes(0x234))
-    u.mem_write(script+0xA0,dwords(1,3,4))
+    steps=case.get('script_steps',[(3,4)])
+    u.mem_write(script+0xA0,dwords(len(steps),*(value for step in steps for value in step)))
     task_force=m.alloc(0x100);u.mem_write(task_force,bytes(0x100))
     u.mem_write(task_force+0x9C,dwords(len(case['entries'])))
     for index,(name,amount) in enumerate(case['entries']):
         u.mem_write(task_force+0xA4+index*8,dwords(amount,{'MTNK':q.typ,'E1':q.e1_type,'ORCA':q.orca_type}[name]))
     u.mem_write(typ+0xA0,dwords(case.get('veteran',1)))
+    u.mem_write(typ+0xA5,bytes([case.get('full',False)]))
+    u.mem_write(typ+0xB0,bytes([case.get('droppod',False)]))
+    u.mem_write(typ+0xB1,bytes([case.get('use_transport_origin',False)]))
+    u.mem_write(typ+0xD8,dwords(case.get('transport_waypoint',-1)))
     u.mem_write(typ+0xC4,dwords(q.house));u.mem_write(typ+0xD4,dwords(4))
     u.mem_write(typ+0xE0,dwords(script,task_force))
     u.mem_write(scenario+0x632+4*4,packed(*case['origin']))
+    if 'transport_origin' in case:
+        u.mem_write(scenario+0x632+5*4,packed(*case['transport_origin']))
     u.mem_write(q.house+0x1E0,dwords(case.get('edge',0)))
     u.mem_write(0xA83D4C,dwords(q.house if case.get('allied',True) else q.enemy))
     u.mem_write(0xA8E7AC,dwords(0))
@@ -495,8 +506,8 @@ def execute_reinforcement_rows(fixture=None, cases=None):
     return rows
 
 
-def initialize_aircraft(q):
-    """Physical ORCA41CC20 reader and original Fly6C4A90 COM factory.
+def initialize_aircraft(q, name='ORCA'):
+    """Physical aircraft41CC20 reader and original Fly6C4A90 COM factory.
 
     The activation/OleRun boundary follows the composed Drive/Walk owner's
     convention: route the parsed GUID to its original class factory, whose
@@ -511,33 +522,41 @@ def initialize_aircraft(q):
         for offset in (0x553C,0x558C):
             if not m.read32(house+offset):
                 u.mem_write(house+offset,dwords(0x7EB6D4,m.alloc(4096),1024,1,0,10))
-    if hasattr(q,'orca_type'):return
+    field={'ORCA':'orca_type','PDPLANE':'pdplane_type'}[name]
+    if hasattr(q,field):return
     for base in (0xA8B218,0xA8E390):
         if not m.read32(base):u.mem_write(base,dwords(0x7EB6D4,m.alloc(4096),1024,1,0,10))
-    q.orca_type=m.alloc(0x1900)
+    type_pointer=m.alloc(0x1900);setattr(q,field,type_pointer)
     q.phase='setup'
-    m.invoke(0x41C8B0,q.orca_type,(m.cstring('ORCA'),))
+    m.invoke(0x41C8B0,type_pointer,(m.cstring(name),))
     art_raw=(Path(os.environ['VERA20K_SHRAPNEL_INPUTS'])/'ARTMD.INI').read_bytes()
-    art,art_lines=lexical(art_raw,{'ORCA','FALC'})
-    q.orca_art_inputs=dict(file='ARTMD.INI',sha256=hashlib.sha256(art_raw).hexdigest(),
-        inputs=art,lines=art_lines)
+    art,art_lines=lexical(art_raw,{name,'FALC'})
+    setattr(q,field+'_art_inputs',dict(file='ARTMD.INI',sha256=hashlib.sha256(art_raw).hexdigest(),
+        inputs=art,lines=art_lines))
     m.make_ini(art)
-    q.orca_reads=[]
-    for name,path in native_owner.base.layers():
+    reads=[]
+    for layer_name,path in native_owner.base.layers():
         if not path.exists():continue
-        raw=path.read_bytes();selected,lines=lexical(raw,{'ORCA'})
+        raw=path.read_bytes();selected,lines=lexical(raw,{name})
         m.rules_cache(selected)
-        returned=m.invoke(0x41CC20,q.orca_type,(RULES,))&255
-        q.orca_reads.append(dict(file=name,sha256=hashlib.sha256(raw).hexdigest(),inputs=selected,
-            lines=lines,reader_al=returned,locomotor=bytes(u.mem_read(q.orca_type+0x34C,16)).hex(),
-            flight_level=i32(u,q.orca_type+0x618),speed_type=i32(u,q.orca_type+0x67C)))
+        returned=m.invoke(0x41CC20,type_pointer,(RULES,))&255
+        reads.append(dict(file=layer_name,sha256=hashlib.sha256(raw).hexdigest(),inputs=selected,
+            lines=lines,reader_al=returned,locomotor=bytes(u.mem_read(type_pointer+0x34C,16)).hex(),
+            flight_level=i32(u,type_pointer+0x618),speed_type=i32(u,type_pointer+0x67C)))
+    setattr(q,field+'_reads',reads)
+    # Keep legacy ORCA receipt keys byte-for-byte compatible.
+    if field=='orca_type':
+        q.orca_art_inputs=getattr(q,field+'_art_inputs');q.orca_reads=reads
+    if not hasattr(q,'native_fly_types'):q.native_fly_types=[]
+    q.native_fly_types.append(type_pointer)
     # 6C4ACC directly calls original Fly ctor4CC9A0; COM class registration
     # binds its parsed CLSID. No Fly ctor or gameplay result is supplied.
     def transport(_u,pc,_size,_data):
         if pc==0x413DE2:
             sp=u.reg_read(UC_X86_REG_ESP)
             clsid,outer,context,iid,ppv=struct.unpack('<5I',u.mem_read(sp,20))
-            assert bytes(u.mem_read(clsid,16))==bytes(u.mem_read(q.orca_type+0x34C,16))
+            assert any(bytes(u.mem_read(clsid,16))==bytes(u.mem_read(typ+0x34C,16))
+                for typ in q.native_fly_types)
             assert (outer,context)==(0,7)
             u.mem_write(sp,dwords(pc+6,0,outer,iid,ppv));u.reg_write(UC_X86_REG_EIP,0x6C4A90)
             q.events.append(dict(kind='COM_Fly_original_factory',factory='0x006C4A90',
@@ -546,7 +565,8 @@ def initialize_aircraft(q):
             sp=u.reg_read(UC_X86_REG_ESP)
             q.events.append(dict(kind='OS_OleRun',interface=hex(m.read32(sp))))
             u.reg_write(UC_X86_REG_EAX,0);u.reg_write(UC_X86_REG_ESP,sp+4);u.reg_write(UC_X86_REG_EIP,pc+6)
-    q.orca_transport_hook=u.hook_add(UC_HOOK_CODE,transport)
+    if not hasattr(q,'orca_transport_hook'):
+        q.orca_transport_hook=u.hook_add(UC_HOOK_CODE,transport)
     q.phase='logic'
 
 
@@ -931,7 +951,7 @@ def source_paths():
     from tools.spatial_oracle.anytown_damage.foot_missions import source_paths as foot_sources
     paths=foot_sources();repo=Path(__file__).resolve().parents[2]
     for relative in ('tools/spatial_oracle/team_creation.py','tools/spatial_oracle/aircraft_fire_location.py',
-                     'tools/spatial_oracle/map_queries.py'):
+                     'tools/spatial_oracle/map_queries.py','tools/rules_oracle/bridge_anim_inputs.py'):
         paths[relative]=repo/relative
     from tools.spatial_oracle.tag_lifecycle import source_paths as tag_sources
     for path in tag_sources().values():
@@ -990,5 +1010,190 @@ def metadata():
     return record
 
 
+def full_transport_generate():
+    """Selected complete65DD30 plus two scalar-placement boundaries.
+
+    Existing real MTNK/E1 constructors are retained. Passengers16 is an
+    explicit MTNK Type prior, not a YHVR retail read or hover topology claim.
+    No constructor, cargo operation, class deletion or member call is a sink.
+    """
+    rows=[]
+    for stage in ('members','null_placement','scalar_scope1'):
+        q=reinforcement_fixture();m,u=q.m,q.u
+        initialize_aircraft(q)
+        for entry in (0x6E8A20,0x6F0610):m.invoke(entry,0)
+        for base in (*REGISTRIES.values(),0xA8ECA0,0xAC4C78):
+            if not m.read32(base):u.mem_write(base,dwords(0x7EB6D4,m.alloc(4096),1024,1,0,10))
+        u.mem_write(q.typ+0x5E0,dwords(16))
+        u.mem_write(0xA8E9A0,b'\1')
+        case=dict(name='Full transport control',full=True,entries=[('E1',3),('MTNK',1)],
+            origin=[0,0],script_steps=[(3,4),(8,2)],stage=stage)
+        typ=prepare_reinforcement_case(q,case)
+        created=[];teams=[];calls=[]
+        def observe(vm,pc,_size,_data):
+            if pc==0x65DE3C and vm.reg_read(UC_X86_REG_EAX):
+                created.append(vm.reg_read(UC_X86_REG_EAX))
+            elif pc==0x6E8A90:teams.append(vm.reg_read(UC_X86_REG_ECX))
+            if pc in (0x4733A0,0x473430,0x4FF550,0x6EA870,0x7258D0,0x65C780,0x65C7E0):
+                calls.append(f'{pc:08X}')
+        scenario=m.read32(0xA8B230)
+        id_before=i32(u,scenario+0x214)
+        before={key:bytes(u.mem_read(ptr,0x3F4)).hex() for key,ptr in q.resident.rngs.items()}
+        hook=u.hook_add(UC_HOOK_CODE,observe)
+        try:
+            head=m.invoke(0x65DD30,typ)
+            def chain(pointer,offset):
+                result=[]
+                while pointer:
+                    result.append(i32(u,pointer+0x10))
+                    pointer=m.read32(pointer+offset);assert len(result)<32
+                return result
+            cargo_before=chain(m.read32(head+0x118),0x30)
+            team=teams[0]
+            members_before=chain(m.read32(team+0x54),0x5D8)
+            creation_rng={key:bytes(u.mem_read(ptr,0x3F4)).hex() for key,ptr in q.resident.rngs.items()}
+            create_count=i32(u,scenario+0x214)
+            returned=None
+            if stage=='null_placement':
+                point=m.alloc(4);u.mem_write(point,dwords(0));u.reg_write(UC_X86_REG_EDX,head)
+                returned=m.invoke(0x65E010,typ,(point,0))&255
+            elif stage=='scalar_scope1':
+                u.mem_write(0xA8E7AC,dwords(1))
+                scalar=m.read32(m.read32(head)+0x20)
+                m.invoke(scalar,head,(1,))
+            present=[]
+            for pointer in created:
+                base=REGISTRIES['abstract']
+                present.append(pointer in [m.read32(m.read32(base+4)+index*4)
+                    for index in range(i32(u,base+16))])
+            rows.append(dict(input=case,created_ids=[i32(u,p+0x10) for p in created],
+                head_id=i32(u,head+0x10),cargo_before=cargo_before,members_before=members_before,
+                created_present=present,members_after=chain(m.read32(team+0x54),0x5D8),
+                returned=returned,creation_depth=i32(u,0xA8E7AC),
+                id_before=id_before,id_after=create_count,rng_before=before,
+                rng_after_creation=creation_rng,
+                rng_after={key:bytes(u.mem_read(ptr,0x3F4)).hex() for key,ptr in q.resident.rngs.items()},
+                calls=calls))
+        finally:u.hook_del(hook)
+        assert hashlib.sha256(bytes(u.mem_read(0x401000,0x3E0000))).hexdigest()==q.resident.code_hash
+    return rows
+
+
+def full_transport_metadata():
+    return provenance(
+        scope='Three bounded Full65DD30/cargo4733A0 controls and original null65E010/scope1 Unit scalar cleanup boundaries',
+        assumptions=[
+            'Existing FootMissions original MTNK/E1 type/weapon readers and concrete constructors/crop/House transport are reused. MTNK Passengers+5E0=16 is a declared prior, not a retail YHVR or complete Rules Process result.',
+            'Resolved TeamType/Script/TaskForce priors explicitly supply Full1, threeE1 then oneMTNK, script3/8, original House and zero waypoint. No campaign startup or Full hover movement/rendering claim.',
+            'Members case calls whole65DD30; null-placement subsequently calls whole65E010 at Cell0 with scope0; scalar_scope1 directly calls the genuine Unit scalar destructor with A8E7AC1. That third row establishes its gate, not a reachable whole refusal history.',
+            'Created IDs, cargo/member head order, registry presence, scalar call order and three RNG streams are native outputs; freed allocation bytes are used only for retained native ID identity, never live object state.',
+            'Storage0 and non-Naval type priors leave Full storage fill and aircraft/native naval transport selection outside these controls. Production ALL01 rules and those source branch decisions need their own narrow integration checks.'],
+        substitutions=[
+            'Inherited FootMissions platform/asset/INI transports and declared prior type/Team fields only; original create65DD30, Cargo4733A0/473430, placement65E010, constructors, membership, tracking and class scalar destructors execute unchanged.'],
+        entry_points=dict(create_members=0x65DD30,cargo_add=0x4733A0,
+            cargo_remove_head=0x473430,place_members=0x65E010,unit_destructor=0x735780))
+
+
+def paradrop_transport_generate():
+    """Whole65D8E0 Droppod branch on real Team/member/PDPLANE objects."""
+    from tools.spatial_oracle.building_body_rules import RULES, SP
+    rows=[]
+    for use_origin in (True,False):
+        q=reinforcement_fixture();m,u=q.m,q.u
+        execute_reinforcement_rows(q,[])
+        initialize_aircraft(q,'PDPLANE')
+        format_calls=m.install_waypoint_character_format_transport()
+        case=dict(name='Droppod transport control',entries=[['E1',2]],origin=[87,50],
+            droppod=True,use_transport_origin=use_origin,transport_waypoint=5,
+            transport_origin=[86,49],edge=0)
+        case['transport_waypoint_letters']=m.string(m.invoke(0x763610,5))
+        typ=prepare_reinforcement_case(q,case)
+        created=[];teams=[];planes=[];calls=[]
+        def observe(vm,pc,_size,_data):
+            if pc==0x65DE3C and vm.reg_read(UC_X86_REG_EAX):created.append(vm.reg_read(UC_X86_REG_EAX))
+            elif pc==0x6E8A90:teams.append(vm.reg_read(UC_X86_REG_ECX))
+            elif pc==0x65DBE5 and vm.reg_read(UC_X86_REG_EAX):planes.append(vm.reg_read(UC_X86_REG_EAX))
+            if pc in (0x413D20,0x414310,0x4733A0,0x41B870,0x4AA440,0x65C780,0x65C7E0):
+                calls.append(f'{pc:08X}')
+        def rng():return {key:bytes(u.mem_read(ptr,0x3F4)).hex() for key,ptr in q.resident.rngs.items()}
+        def chain(pointer,offset):
+            result=[]
+            while pointer:
+                result.append(i32(u,pointer+0x10));pointer=m.read32(pointer+offset);assert len(result)<32
+            return result
+        scenario=m.read32(0xA8B230);before=rng();id_before=i32(u,scenario+0x214)
+        hook=u.hook_add(UC_HOOK_CODE,observe);q.phase='placement';q.events.clear();q.pending.clear()
+        try:
+            u.reg_write(UC_X86_REG_EDX,0xFFFFFFFF)
+            returned=m.invoke(0x65D8E0,typ)&255
+        finally:u.hook_del(hook)
+        assert len(planes)==1 and len(teams)==1 and len(created)==2
+        plane,team=planes[0],teams[0];created.append(plane)
+        target=m.read32(plane+0x2B4)
+        rows.append(dict(case_kind='droppod_transport',input=case,returned=returned,
+            id_before=id_before,id_after=i32(u,scenario+0x214),created_ids=[i32(u,p+0x10) for p in created],
+            plane=dict(native_id=i32(u,plane+0x10),xyz=list(struct.unpack('<3i',u.mem_read(plane+0x9C,12))),
+                mission=i32(u,plane+0xAC),queued=i32(u,plane+0xB4),limbo=bool(u.mem_read(plane+0x81,1)[0]),
+                mission_only=bool(u.mem_read(plane+0x3D4,1)[0]),team_present=bool(m.read32(plane+0x5D4)),
+                nav_present=bool(m.read32(plane+0x5A4)),target_cell=list(struct.unpack('<hh',u.mem_read(target+0x24,4))),
+                cargo=chain(m.read32(plane+0x118),0x30),payload_latch=bool(u.mem_read(plane+0x6C9,1)[0])),
+            members=chain(m.read32(team+0x54),0x5D8),member_limbo=[bool(u.mem_read(p+0x81,1)[0]) for p in created[:-1]],
+            recent_counter=i32(u,0xB04D88),recent_cell=list(struct.unpack('<hh',u.mem_read(0xB04D48+4,4))),
+            creation_depth=i32(u,0xA8E7AC),rng_before=before,rng_after=rng(),calls=calls,
+            plane_rules_reads=q.pdplane_type_reads,plane_art_inputs=q.pdplane_type_art_inputs,
+            windows_character_formats=list(format_calls)))
+        assert hashlib.sha256(bytes(u.mem_read(0x401000,0x3E0000))).hexdigest()==q.resident.code_hash
+
+    # Two newly represented inputs use their original retained-field readers.
+    # Reuse one concrete TeamType and physical lexical-cache transport; no
+    # Boolean, ToLetters, ReadString or FromLetters output is supplied.
+    q=reinforcement_fixture();m,u=q.m,q.u;execute_reinforcement_rows(q,[])
+    format_calls=m.install_waypoint_character_format_transport()
+    typ=prepare_reinforcement_case(q,dict(name='TRANSPORT_INPUT',entries=[['E1',1]],origin=[87,50]))
+    transactions=[{'UseTransportOrigin':'yes','TransportWaypoint':'EN'}, {},
+        {'UseTransportOrigin':'junk'}, {'UseTransportOrigin':'no','TransportWaypoint':'CI'}]
+    def rng():return {key:bytes(u.mem_read(ptr,0x3F4)).hex() for key,ptr in q.resident.rngs.items()}
+    def state():
+        value=i32(u,typ+0xD8);letters=m.string(m.invoke(0x763610,value&0xFFFFFFFF))
+        return dict(use_transport_origin=bool(u.mem_read(typ+0xB1,1)[0]),transport_waypoint=value,letters=letters)
+    for fields in transactions:
+        format_start=len(format_calls)
+        before=state();rng_before=rng();m.rules_cache({'TRANSPORT_INPUT':fields})
+        for lo,hi,required in ((0x6F121A,0x6F123A,(0x5295F0,)),
+                (0x6F1446,0x6F1479,(0x763610,0x528A10))):
+            u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_ESI,typ)
+            u.reg_write(UC_X86_REG_EBX,RULES);u.reg_write(UC_X86_REG_EDI,m.cstring('TRANSPORT_INPUT'))
+            run_checked(u,lo,hi,required_addresses=required)
+        rows.append(dict(case_kind='transport_input',fields=fields,before=before,after=state(),
+            rng_before=rng_before,rng_after=rng(),
+            windows_character_formats=format_calls[format_start:]))
+    assert hashlib.sha256(bytes(u.mem_read(0x401000,0x3E0000))).hexdigest()==q.resident.code_hash
+    return rows
+
+
+def paradrop_transport_metadata():
+    return provenance(scope='Two whole original65D8E0 Droppod transport controls and four retained TeamType input reads',
+        assumptions=[
+            'Existing original MTNK/E1/ORCA/PDPLANE type readers, concrete constructors, partial House and physical FootMissions crop are reused. Resolved TeamType/TaskForce priors are twoE1, Droppod1, waypoint87/50, TransportWaypoint5 at86/49 and UseTransportOrigin1/0. This is not actual ENGINEER/INIT TaskForce construction, full ALL01 map, scene/rendering or complete rules registry parity.',
+            'Whole65D8E0 executes original65DD30, PDPLANE41CAA0/type factory, origin selection, class mission/target/destination/Unlimbo, Cargo4733A0 and Commence. No gameplay receiver result is supplied; same-frame aircraft flight AI and later drops are outside these creation controls.',
+            'Four reader controls retain one genuinely constructed TeamType+B1/D8 and execute original exact-case ReadBool and ToLetters/ReadString64/FromLetters blocks with physical-cache transactions. ToLetters calculates characters in original instructions; only Windows wsprintfA at763635/763671 is supplied for its exact %c/%c%c format arguments, with per-row calls/arguments/bytes recorded. IDs, members/cargo, plane mission/position/targets, review admission and three RNG states are native outputs.',
+            'Native Aircraft+6C9 payload latch is observed but remains the established paradrop module residual: selected retail PDPLANE is unselectable and missions26/27 do not consume its fire gate.'],
+        substitutions=['Inherited existing platform/asset/INI/partial House/crop boundary and resolved Team definition inputs; Reader supplies the unresolved USER32!wsprintfA IAT7E14B0 at the two original ToLetters character-format call sites. Each input/output is retained; cdecl caller stack cleanup executes. No constructor, cargo, placement, mission, origin, numeric ToLetters arithmetic or field-reader return is supplied.'],
+        entry_points=dict(spawn=0x65D8E0,create_members=0x65DD30,plane_find=0x41CAA0,
+            aircraft_reader=0x41CC20,transport_origin_read=0x6F121A,transport_waypoint_read=0x6F1446,
+            transport_waypoint_get=0x6F18E0,cargo_add=0x4733A0,commence=0x41B870))
+
+
 if __name__=='__main__':
-    finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata,source_paths=source_paths())
+    import sys
+    args=sys.argv[1:]
+    if '--full-transport' in args:
+        args.remove('--full-transport')
+        finish_vectors(full_transport_generate,Path(__file__).with_name('team_full_transport.json'),
+            provenance=full_transport_metadata,source_paths=source_paths(),argv=args)
+    elif '--paradrop-transport' in args:
+        args.remove('--paradrop-transport')
+        finish_vectors(paradrop_transport_generate,Path(__file__).with_name('team_paradrop_transport.json'),
+            provenance=paradrop_transport_metadata,source_paths=source_paths(),argv=args)
+    else:
+        finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata,source_paths=source_paths())

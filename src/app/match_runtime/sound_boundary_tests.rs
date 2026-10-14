@@ -37,6 +37,7 @@ fn coordinate_request_sources_match_executed_native_projection_controls() {
                     y: axis(1),
                     z: axis(2),
                 },
+                flags: 0,
             }],
             &sim,
             &rules,
@@ -65,6 +66,47 @@ fn coordinate_request_sources_match_executed_native_projection_controls() {
         );
     }
     assert_eq!(sim.rng_state(), before_rng);
+}
+
+#[test]
+fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let sim = Simulation::new();
+    let coordinate = crate::sim::components::DriveCoord {
+        x: -257,
+        y: 1537,
+        z: 104,
+    };
+    let mut output = SoundEventQueue::new();
+    dispatch_sim_sound_events(
+        [
+            SimSoundEvent::VocAtCoord {
+                sound_id: "First".into(),
+                coordinate,
+                flags: 3,
+            },
+            SimSoundEvent::VocStopAtCoord {
+                coordinate,
+                flags: 1,
+            },
+            SimSoundEvent::VocAtCoord {
+                sound_id: "Later".into(),
+                coordinate,
+                flags: 0,
+            },
+        ],
+        &sim,
+        &rules,
+        None,
+        &mut |_| panic!("coordinate stop has no radar or owner gate"),
+        &mut output,
+    );
+    let events = output.drain();
+    assert!(matches!(events.as_slice(), [
+        crate::audio::events::GameSoundEvent::VocAtCoord { sound_id: first, coordinate: a, flags: 3, .. },
+        crate::audio::events::GameSoundEvent::VocStopAtCoord { coordinate: b, flags: 1 },
+        crate::audio::events::GameSoundEvent::VocAtCoord { sound_id: later, coordinate: c, flags: 0, .. },
+    ] if first == "First" && later == "Later" && *a == [-257, 1537, 104] && a == b && b == c));
 }
 
 #[test]

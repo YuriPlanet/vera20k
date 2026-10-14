@@ -829,8 +829,7 @@ impl ScanContext<'_> {
                         candidate_obj,
                         cargo,
                         self.rules,
-                        &world.houses,
-                        world.path_grid(),
+                        world,
                     )
                 }))
     }

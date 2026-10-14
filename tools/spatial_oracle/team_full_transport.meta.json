@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Three bounded Full65DD30/cargo4733A0 controls and original null65E010/scope1 Unit scalar cleanup boundaries",
+  "assumptions": [
+    "Existing FootMissions original MTNK/E1 type/weapon readers and concrete constructors/crop/House transport are reused. MTNK Passengers+5E0=16 is a declared prior, not a retail YHVR or complete Rules Process result.",
+    "Resolved TeamType/Script/TaskForce priors explicitly supply Full1, threeE1 then oneMTNK, script3/8, original House and zero waypoint. No campaign startup or Full hover movement/rendering claim.",
+    "Members case calls whole65DD30; null-placement subsequently calls whole65E010 at Cell0 with scope0; scalar_scope1 directly calls the genuine Unit scalar destructor with A8E7AC1. That third row establishes its gate, not a reachable whole refusal history.",
+    "Created IDs, cargo/member head order, registry presence, scalar call order and three RNG streams are native outputs; freed allocation bytes are used only for retained native ID identity, never live object state.",
+    "Storage0 and non-Naval type priors leave Full storage fill and aircraft/native naval transport selection outside these controls. Production ALL01 rules and those source branch decisions need their own narrow integration checks."
+  ],
+  "substitutions": [
+    "Inherited FootMissions platform/asset/INI transports and declared prior type/Team fields only; original create65DD30, Cargo4733A0/473430, placement65E010, constructors, membership, tracking and class scalar destructors execute unchanged."
+  ],
+  "entry_points": {
+    "create_members": "0x0065DD30",
+    "cargo_add": "0x004733A0",
+    "cargo_remove_head": "0x00473430",
+    "place_members": "0x0065E010",
+    "unit_destructor": "0x00735780"
+  },
+  "replay_command": "python -m tools.spatial_oracle.team_creation --full-transport",
+  "payload_sha256": "2ca29410cccf4e9a1856daf24e66774fa93e0bfc6bce601642e0831e914ce5c7"
+}

@@ -509,7 +509,7 @@ pub struct GameEntity {
     /// The shared late TechnoAI countdown owns updates; presentation reads
     /// the native phase bit from this same counter. No separate flash clock.
     #[serde(default)]
-    pub elite_flash_frames: i32,
+    elite_flash_frames: i32,
     /// Mutable Techno instance armor multiplier (`Techno+0x158`). Native
     /// construction seeds this double to 1.0; the Armor crate
     /// (`crates::effects`) is its only writer, exactly once per object.
@@ -1634,8 +1634,20 @@ impl GameEntity {
             .as_ref()
             .is_some_and(|disguise| disguise.is_disguised())
         {
-            self.elite_flash_frames = frames;
+            self.start_flash_countdown(frames);
         }
+    }
+
+    /// The raw Techno+F0 write shared by Script50 (6E9CF7..6E9D12) and
+    /// TAction131 (6E45C5..6E45CB). Those callers bypass Building::Flash's
+    /// disguise gate; the existing tick_elite_flash owns the countdown.
+    pub(crate) fn start_flash_countdown(&mut self, frames: i32) {
+        self.elite_flash_frames = frames;
+    }
+
+    /// Retained Techno+F0 countdown, also used by presentation's parity bit.
+    pub fn flash_countdown(&self) -> i32 {
+        self.elite_flash_frames
     }
 
     /// Apply the native `SetFromPercent @ 0x007500E0` to the single raw

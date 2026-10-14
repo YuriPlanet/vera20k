@@ -103,8 +103,8 @@ fn one_command_turns_and_converts_all_stock_mcv_types() {
     }
 }
 /// Deploy lifts the MCV (`Mark(UP)`, `0x00739670`) before the yard is built
-/// and marked. VERA lifts it after, at its UnInit; the cell the MCV stood on
-/// must still end like every other yard cell.
+/// and marked. Its own cell must admit Building449440 and end like every
+/// other yard cell, with no surviving raw vehicle claim.
 #[test]
 fn the_cell_the_mcv_stood_on_ends_as_a_yard_cell() {
     let (mut sim, rules, id) = fixture("AMCV", 128, 5, 4);
@@ -328,9 +328,11 @@ fn placement_is_rechecked_on_turn_completion() {
     let (mut sim, rules, id) = fixture("AMCV", 64, 5, 4);
     tick(&mut sim, &rules, Some(Command::DeployMcv { entity_id: id }));
     tick(&mut sim, &rules, None);
-    // A structure arrives after the initial attempt has already accepted the turn.
+    // A structure arrives after the initial attempt has already accepted the
+    // turn. Its foundation overlaps the requested yard, but excludes the live
+    // MCV at20,22 so the blocker's own ordinary placement is legal.
     let blocker = sim
-        .spawn_object("YARD", "Americans", 19, 21, 0, &rules)
+        .spawn_object("YARD", "Americans", 21, 21, 0, &rules)
         .unwrap();
     for _ in 0..35 {
         tick(&mut sim, &rules, None);
@@ -638,7 +640,9 @@ fn blocked_or_unconfigured_mcv_deploy_does_not_emit_deploy_sound() {
         tick(&mut sim, &rules, Some(Command::DeployMcv { entity_id: id }));
         tick(&mut sim, &rules, None);
         if blocked {
-            sim.spawn_object("YARD", "Americans", 19, 21, 0, &rules)
+            // Overlap the requested deployment footprint without covering
+            // the still-live MCV at20,22 during blocker construction.
+            sim.spawn_object("YARD", "Americans", 21, 21, 0, &rules)
                 .unwrap();
         }
         for _ in 0..50 {

@@ -4142,7 +4142,7 @@ fn successful_placement_requests_building_slam_once() {
 #[test]
 fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
     use crate::sim::movement::ground_pose;
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+    let mut rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
         "[Countries]\n0=Americans\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n0=ORCA\n\
          [BuildingTypes]\n0=GAAIRC\n\
          [ORCA]\nCost=1200\nStrength=150\nSpeed=14\nTechLevel=1\nOwner=Americans\nAmmo=1\n\

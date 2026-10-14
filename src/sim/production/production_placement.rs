@@ -407,8 +407,7 @@ pub(crate) fn place_production_with_overlays(
     // (`Simulation::building_enter_idle_mode`); the HELLO above kept its
     // cell-put discovery from opening it. A computer house's yard places its
     // own through `sim::ai_base_building::exit_building`.
-    // Refresh superweapon grants — newly placed building may provide a SW.
-    crate::sim::superweapon::refresh_super_weapons_for_owner(sim, rules, owner_id);
+    // Shared Building Unlimbo requested the owner's native1FC House tail.
 
     held.release_after_placement(sim, rules, effects);
     crate::sim::radio::transmit(

@@ -5466,6 +5466,7 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
                 SimSoundEvent::VocAtCoord {
                     sound_id,
                     coordinate,
+                    flags: 0,
                 } if sound_id == "BuildingDamaged" => Some(*coordinate),
                 _ => None,
             })
@@ -5478,6 +5479,7 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
                 SimSoundEvent::VocAtCoord {
                     sound_id,
                     coordinate,
+                    flags: 0,
                 } if sound_id == "BuildingMetalDamaged" => Some(*coordinate),
                 _ => None,
             })

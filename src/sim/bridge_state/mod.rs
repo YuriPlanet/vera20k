@@ -27,9 +27,12 @@
 //! - `FUN_0056A080` — bridge code with zero xrefs. Whether that is genuine
 //!   dead code or a lost indirect reference is unresolved; either way nothing
 //!   reaches it at runtime, so there is nothing to be faithful to.
-//! - `MapClass::IncrementBridgeCounter` 0x00578AC0 — single caller
-//!   `FUN_004F42F0`, itself untraced, so no trigger is established. No
-//!   counterpart here.
+//! - `MapClass::IncrementBridgeCounter` 0x00578AC0 — **drawing cache epoch,
+//!   not bridge simulation.**4F42F0(1), reached by Execute1186E2C20, increments
+//!   Map+1158; overlay drawing47F77B/47F843 compares/stamps Cell+118 against
+//!   it to suppress cached blits. Current rendering rebuilds/uploads each
+//!   frame and needs no simulation counterpart. Original Steam byte/caller
+//!   evidence: ALL01 action118-redraw-original packet.
 //! - `ShipLocomotionClass::Compute_BridgeZOffset` 0x0069EBB0 — no CALL xrefs.
 //!   Its Drive-side analogue `DriveLocomotionClass::ComputeBridgeZOffset`
 //!   0x004AF4A0 is a one-shot constant initializer and is bound in

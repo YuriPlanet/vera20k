@@ -129,7 +129,6 @@ use crate::sim::world::{
 
 /// Infantry actions the slave machine requests (`InfantryClass::Do_Action`).
 const DO_READY: i32 = 0;
-const DO_CHEER: i32 = 32;
 const DO_SHOVEL: i32 = 38;
 
 /// The manager's own state (`SlaveManagerClass+0x5C`, jump table `0x006B0238`).
@@ -410,7 +409,12 @@ impl Simulation {
     /// TechnoClass constructor's Scenario draw) and left in limbo with the
     /// master as its SlaveOwner. Runs after the master's own constructor, in
     /// the constructor-owned children order.
-    pub(crate) fn create_slave_manager(&mut self, master: u64, rules: &RuleSet) {
+    pub(crate) fn create_slave_manager(
+        &mut self,
+        master: u64,
+        rules: &RuleSet,
+        frame_effects: FrameEffects<'_>,
+    ) {
         let Some((slave_type, count, regen, reload, owner, cell, facing, z)) =
             self.substrate.entities.get(master).and_then(|parent| {
                 let object = self.object_type(parent.type_ref(), rules)?;
@@ -443,6 +447,7 @@ impl Simulation {
                 facing,
                 z,
                 rules,
+                frame_effects,
             );
             if let Some(entity) = slave.and_then(|slave| self.substrate.entities.get_mut(slave)) {
                 entity.slave.owner = Some(master);
@@ -1443,8 +1448,16 @@ impl Simulation {
         else {
             return;
         };
-        let slave =
-            self.construct_object_limbo_at_height(&slave_type, &owner, cell.0, cell.1, 0, z, rules);
+        let slave = self.construct_object_limbo_at_height(
+            &slave_type,
+            &owner,
+            cell.0,
+            cell.1,
+            0,
+            z,
+            rules,
+            frame_effects,
+        );
         node.slave = slave;
         let Some(slave) = slave else {
             return;
@@ -1509,8 +1522,8 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
-        // Mission_Harvest (`0x00522E87`, `0x00522EEB`, `0x00522F90`) and the
-        // cheer (`0x00522C19`) push force 0.
+        // Mission_Harvest (`0x00522E87`, `0x00522EEB`, `0x00522F90`)
+        // pushes force0. Cheer uses the shared Infantry virtual388 owner.
         if let Err(cause) = self.infantry_do_action(slave, action, false, rules, frame_effects) {
             log::debug!("slave {slave} Do_Action({action}): {cause}");
         }
@@ -1671,7 +1684,7 @@ impl Simulation {
             };
             self.change_owner_with_rules(slave, new_house, rules, registry, frame_effects);
             self.reset_orders_to_guard(slave, rules, frame_effects);
-            self.slave_cheers(slave, rules, frame_effects);
+            self.infantry_cheer(slave, true, rules, frame_effects);
             first_freed.get_or_insert(slave);
         }
         if let (Some(slave), Some(sound)) = (first_freed, rules.general.slaves_free_sound.clone())
@@ -1692,15 +1705,11 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let killer_owner = killer
-            .and_then(|id| self.substrate.entities.get(id))
-            .map(|entity| entity.owner());
         self.record_the_kill(
             slave,
-            killer,
-            killer_owner,
+            crate::sim::combat::KillSource::Techno(killer),
             crate::sim::combat::KillCallback::Terminal,
-            rules,
+            UninitContext::new(Some(rules), registry).with_effects(frame_effects),
         );
         self.uninit_with_context(
             slave,
@@ -1738,11 +1747,6 @@ impl Simulation {
             },
         );
         self.commit_direct_damage_receiver(rules, registry, event, frame_effects);
-    }
-
-    /// `InfantryClass vt+0x388(1)` (`0x00522C00`): Do_Action(0x20), the cheer.
-    fn slave_cheers(&mut self, slave: u64, rules: &RuleSet, frame_effects: FrameEffects<'_>) {
-        self.slave_do_action(slave, DO_CHEER, rules, frame_effects);
     }
 
     /// The hand-off (`0x006B0D10`, and `0x006B0D60`, the same body): an idle
@@ -1813,7 +1817,16 @@ mod tests {
     fn slave_unlimbo_uses_shared_priority_and_preserves_facing_on_refusal() {
         let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture();
         let slave = sim
-            .construct_object_limbo_at_height("ENGINEER", "Americans", 15, 15, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                "ENGINEER",
+                "Americans",
+                15,
+                15,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         sim.substrate
             .entities

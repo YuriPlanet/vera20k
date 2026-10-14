@@ -1578,9 +1578,16 @@ impl Simulation {
         };
         let owner_name = self.interner.resolve(owner).to_string();
         let (rx, ry, _, _, _) = location.to_cell_sub_z();
-        let Some(infantry) =
-            self.construct_object_limbo_at_height(kind, &owner_name, rx, ry, 0, 0, rules)
-        else {
+        let Some(infantry) = self.construct_object_limbo_at_height(
+            kind,
+            &owner_name,
+            rx,
+            ry,
+            0,
+            0,
+            rules,
+            frame_effects,
+        ) else {
             log::debug!("MakeInfantry anim {id}: [{kind}] did not construct");
             return true;
         };

@@ -92,7 +92,7 @@ pub(super) fn finish_fresh_head(
             head.x.wrapping_sub(current.x),
             head.y.wrapping_sub(current.y),
         );
-        entity.body_facing.snap(facing, native_frame);
+        super::locomotor_turn::walk_do_turn(entity, facing, native_frame);
         entity
             .foot_speed
             .set_speed_fraction(crate::util::fixed_math::SIM_ONE);

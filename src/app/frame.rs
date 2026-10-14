@@ -93,6 +93,7 @@ impl App {
         // foreground. It therefore sits here, outside every screen and
         // simulation gate, and carries its own `> 33 ms` rate limit.
         crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
+        crate::app::radar_movie::service(state, scenario_now_ms);
 
         // Deactivated windows do not simulate when `pause_on_focus_loss` is
         // configured. gamemd parks its main tick in a sleep-and-network-only
@@ -521,6 +522,15 @@ impl App {
                 );
             }
             GameScreen::InGame => {
+                //53B460 copies the already-composed surface, before this
+                //frame's world replaces it. The effect owns the retained copy.
+                let chrono_tactical = crate::app::input::camera::tactical_viewport_px(state);
+                state.match_state.match_presentation.chrono_screen.before_frame(
+                    &state.renderer.gpu,
+                    &mut encoder,
+                    state.renderer.combat_light_renderer.composition_texture(),
+                    [chrono_tactical.0, chrono_tactical.1, chrono_tactical.2, chrono_tactical.3],
+                );
                 let times = render::GameRenderTimes {
                     radar_ms: state.radar_presentation_ms(Instant::now()),
                     tooltip_ms,

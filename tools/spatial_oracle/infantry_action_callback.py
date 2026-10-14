@@ -82,5 +82,70 @@ def metadata():
     return out
 
 
+class CheerFixture(Base):
+    """Reuse the original Infantry/type/sequence transport for virtual388."""
+    def __init__(self):
+        super().__init__()
+        self.bypass = False
+        self.cheer_code = bytes(self.u.mem_read(0x522BC0, 0x68))
+
+    def prepare_execution(self, row):
+        self.bypass = row.get('bypass_admission', False)
+        self.u.mem_write(ACTOR+0x90, bytes([row.get('alive', 1)]))
+        self.u.mem_write(ACTOR+0x81, bytes([row.get('limbo', 0)]))
+        #5B3040 uses the queued selector only when current Mission is-1.
+        self.u.mem_write(ACTOR+0xB4, dwords(row.get('queued', -1)))
+
+    def call(self, address, owner, args=()):
+        if address == 0x51D6F0:
+            address, args = 0x522C00, [int(self.bypass)]
+        return super().call(address, owner, args)
+
+    def execute(self, row):
+        output = super().execute(row)
+        assert self.cheer_code == bytes(self.u.mem_read(0x522BC0, 0x68))
+        return output
+
+
+def cheer_generate():
+    base = dict(kind='action', health=100, pending=0, prone=0, moving=0,
+                motion=0, doing=0, mission=5)
+    rows = [dict(base, doing=doing, mission=mission, bypass_admission=bypass)
+            for bypass in (False, True) for mission in (5, 11, 2)
+            for doing in (-1, 0, 9, 10, 11, 32)]
+    rows += [dict(base, mission=-1, queued=mission) for mission in (5, 11, 2)]
+    rows += [dict(base, alive=0, limbo=1),
+             dict(base, counts=[[32, 0]]),
+             dict(base, doing=11, bypass_admission=True)]
+    fixture = CheerFixture()
+    return [fixture.execute(row) for row in rows]
+
+
+def cheer_metadata():
+    return provenance(
+        scope='Infantry virtual388522C00 and CanCheer522BC0 through original DoAction/Stage, contrasting House argument0 with SlaveFree argument1',
+        assumptions=[
+            'Infantry/type/sequence/Mission/Walk prior state uses the existing infantry_deploy_action transport; no House50C8C0 array scan or TAction113 dispatcher executes in this corpus.',
+            'Original Mission5B3040, CanCheer522BC0, Cheer522C00, DoAction51D6F0 and native Stage/action record bodies and vtables execute unchanged.',
+            'Health100, ordinary land and no falling/loaded/wet remap. Refused unchanged, absent-sequence and uninterruptible controls retain Doing/Stage. Current-1 controls expose original queued-Mission fallback.',
+            'No sequence sound entries. Existing disabled audio gate and OS interlocked transport are inherited; full rendered animation/audio/campaign progression remain outside coverage.'],
+        substitutions=[
+            'Existing infantry_deploy_action OS interlocked import support and explicit actor/type/sequence priors only; no Cheer, CanCheer, Mission or DoAction receiver replacement.'],
+        entry_points=dict(can_cheer=0x522BC0, cheer=0x522C00,
+                          get_mission=0x5B3040, do_action=0x51D6F0,
+                          house_caller=0x50C8C0, slave_caller=0x6B0BD1))
+
+
 if __name__ == '__main__':
-    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata)
+    import argparse
+    selector = argparse.ArgumentParser(add_help=False)
+    selector.add_argument('--cheer', action='store_true')
+    selected, remaining = selector.parse_known_args()
+    if selected.cheer:
+        finish_vectors(cheer_generate, Path(__file__).with_name('infantry_cheer.json'),
+            provenance=cheer_metadata, argv=remaining,
+            source_paths={'producer': Path(__file__),
+                          'infantry_transport': Path(__file__).with_name('infantry_deploy_action.py')})
+    else:
+        finish_vectors(generate, Path(__file__).with_suffix('.json'),
+                       provenance=metadata, argv=remaining)

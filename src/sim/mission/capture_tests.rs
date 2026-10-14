@@ -45,7 +45,7 @@ Strength=750
 
 fn rules() -> RuleSet {
     RuleSet::from_ini_with_fixed_art_for_test(
-        &IniFile::from_str(RULES),
+        &crate::sim::arena_fixture::clear_ground_ini(RULES),
         &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
     )
     .expect("capture rules")
@@ -205,9 +205,13 @@ fn a_capturing_infantryman_heads_for_its_building_target() {
 fn a_capturer_left_on_a_building_scatters_off_it() {
     let rules = rules();
     let (mut sim, _) = arena(&rules);
-    let on = capturer(&mut sim, &rules, "ENGINEER", "Americans", 14);
-    let off = capturer(&mut sim, &rules, "ENGINEER", "Americans", 18);
     let _hut = spawn(&mut sim, &rules, "GAPOWR", "Russians", 10, 14);
+    // Supply the native initial-map infantry prior on the building's cell.
+    // ScenarioFullInit686B4F..687C44 holds A8E7AC through InfantryRead51FB00;
+    // ordinary runtime building placement correctly rejects occupied ground.
+    let on =
+        sim.with_object_placement_scope(|sim| capturer(sim, &rules, "ENGINEER", "Americans", 14));
+    let off = capturer(&mut sim, &rules, "ENGINEER", "Americans", 18);
 
     let _ = capture(&mut sim, &rules, on);
     let _ = capture(&mut sim, &rules, off);

@@ -68,7 +68,7 @@ fn fixture_rules(input: &Value) -> RuleSet {
     } else {
         ("LaserProbe", String::new())
     };
-    let rules_ini = IniFile::from_str(&format!(
+    let rules_ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[General]\nPrismType=ATESLA\nPrismSupportDuration={support_duration}\nPrismSupportDelay=45\n\
          [VehicleTypes]\n0=UNIT\n1=TARGET\n\
          [BuildingTypes]\n0=ATESLA\n1=OTHER\n2=GAPOWR\n\
@@ -294,7 +294,15 @@ fn production_frame_orders_laser_update_before_delayed_support_birth() {
     });
     sim.lifecycle_outputs.clear();
     let frame = sim
-        .advance_app_frame(&[], Some(&rules), None, 67, TickLane::Ordinary, None, crate::sim::world::FrameEffects::default())
+        .advance_app_frame(
+            &[],
+            Some(&rules),
+            None,
+            67,
+            TickLane::Ordinary,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     let relevant = frame
         .lifecycle_outputs
@@ -391,7 +399,15 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
         });
         sim.lifecycle_outputs.clear();
         let frame = sim
-            .advance_app_frame(&[], Some(rules), None, 67, TickLane::Ordinary, None, crate::sim::world::FrameEffects::default())
+            .advance_app_frame(
+                &[],
+                Some(rules),
+                None,
+                67,
+                TickLane::Ordinary,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         let update = frame
             .lifecycle_outputs

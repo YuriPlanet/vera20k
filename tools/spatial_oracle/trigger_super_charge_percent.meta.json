@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Independent Action129 native constructor/read/Execute dispatch, Super percentage arithmetic and bounded Grant/Suspend/AI histories.",
+  "assumptions": [
+    "The separate --super-charge mode generates/checks only trigger_super_charge_percent and leaves legacy and Action63 payloads unchanged. Existing physical/ordered-INI and native type-reader transports are reused; original Rules6725F0 registers the actual retail SuperWeaponTypes list, original SuperWeaponType constructor and6CEA20 consume PsychicDominatorSpecial in physical RULESMD, optional LANGRULE, optional ALL01UMD.INI, then ALL01 map order. Constructor recharge4500 and retail recharge9000 are native outputs, not hand goldens. Absent supplemental layers denote the selected extracted fixture, not every retail/mod installation; production normal asset resolution independently binds that absence. Fixed ART is separate and not layered. Whole MIX/INI IO, full Rules::Process and country/difficulty admission are excluded.",
+    "Action129 controls execute original6DD000/6DD5B0/6DD8B0 including active switch6DFB06 and6E42D0. Parameter type11 puts stock index7 at+90 and token8 percentage90 at+48; the real ALL01 action supplies the stock case. Null House, negative index, index>count, ungranted and percentage outside0..100 returnAL0. Original index==count uses a supplied mapped spare; a null slot faults. Those two native_edge_controls record native bugs rather than establish safe Rust collection semantics.",
+    "Setter6CC1E0 runs unchanged with native x87 PC53 and original_ftol7C5F00. The exact native f32 constant at7EAAE0 has bits3C23D70A; the two multiplies, conversion and signed wrapping subtraction are executed. Custom+24 values exercise the existing native getter choice, including i32 extrema; they are resolved arithmetic controls, not Action128 or custom-charge lifecycle parity. Timer padding+34 is unused stack data and excluded. Ready is only set when remaining==0; held is retained; valid percentages restart the timer even when held.",
+    "Each history uses one native image/state: concrete Super initializer6CAF99..6CB011 after the excluded Abstract constructor, full Grant6CB560, real Action129, first/repeated Suspend6CB4D0 and full AI6CBCA0. Physical Type flags, including ShowTimer, remain intact; native Grant inserts the Super into prepared empty timer-vector storage. The history uses supplied one House, frame0/1 grant then15/16/100/1001 visits and explicit low-power argument, not an executed full House power/scheduler or a certified ALL01 firing frame. Release/expiration rows include original charge-stage and ready transitions; local-owner announcement is false. ChargeDrain, full Super/House registration/retirement, animations and rendering remain outside this bounded chain.",
+    "Three house_refresh_controls add complete original50AF10 after Grant/Action129 in the same state: normal Grant then first power drop at frame15 or16, and initially held Grant followed by set/repeated hold. Real layered YAPPET BuildingType45FE50 supplies primary/secondary SW indexes and power fields. A supplied already-admitted alive/nonlimbo/online Building and original House identity vtable expose unchanged410220/457630/457690; remaining Supers are explicitly ungranted. Native hold/release decisions read retained1537/537 output and1000 drain. These numbers are retained-power boundary priors from separate reactor evidence, not power recomputation within this control. Successful hold/release writes House+1FC; repeated hold does not. A8E9A0/A8B263 enable gates and a nonlocal, nondefeated House are supplied. Initial grants50B1D0, full House AI, Building online updates, dirty5778/5779 consumption, and cross-object scheduling remain outside the reached50AF10 boundary.",
+    "Three RNG streams are seeded through original65C6D0. Raw incoming original-layout states, before/after hashes and observed original Random/RandomRanged entries record the comparison boundary. No RNG draw, detach or anim call occurs in these admitted controls; this is not a whole House AI or future fire/cleanup claim."
+  ],
+  "substitutions": [
+    "Reuse the existing ActionFixture vector/heap, ordered INI and CRT per-thread TLS platform transports. No original gameplay bytes or retail vtables are changed; original Grant, Suspend, SetPercentage, GetRechargeTime and AI are never replaced.",
+    "Already-admitted native House/Super pointers and prepared capacity supply registry/storage priors. Original concrete constructor, type materialization, actual Grant timer insertion and selected consumers run within those priors; full Abstract object identity, asset playback and global scenario lifecycle are excluded.",
+    "Successful original calls use run_checked and inherited ActionFixture ABI/stack checks. Canonical vectors retain compact caller/callee/order observations and numeric states. Detailed NativeCallTrace stack/register/return receipts are optional external audit data, written by this same generator when requested; they are neither repository artifacts nor Rust-test inputs. The separately identified null-slot fault is not a successful ABI result."
+  ],
+  "entry_points": {
+    "action_constructor": "0x006DD000",
+    "action_read": "0x006DD5B0",
+    "action_execute": "0x006DD8B0",
+    "execute129": "0x006E42D0",
+    "registry_read": "0x006725F0",
+    "super_type_read": "0x006CEA20",
+    "concrete_super_ctor": "0x006CAF99",
+    "building_type_ctor": "0x0045DD90",
+    "building_type_read": "0x0045FE50",
+    "grant": "0x006CB560",
+    "suspend": "0x006CB4D0",
+    "super_ai": "0x006CBCA0",
+    "house_refresh": "0x0050AF10",
+    "building_primary_super": "0x00457630",
+    "building_secondary_super": "0x00457690",
+    "house_identity": "0x00410220",
+    "charge_stage": "0x006CBEE0",
+    "set_percentage": "0x006CC1E0",
+    "recharge_time": "0x006CC260",
+    "rng_constructor": "0x0065C6D0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --super-charge",
+  "payload_sha256": "f2aa2a247f5518732304a9b093acdeca23cd350f231c377e75b1c6598d2f7833"
+}

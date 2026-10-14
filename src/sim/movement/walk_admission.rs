@@ -13,6 +13,7 @@ use super::block_index::HeldBlockSets;
 use super::foot_path::{FindPathResult, coord_cell};
 use super::ground_pose;
 use super::infantry_entry::InfantryEntryArgs;
+use super::locomotor::MovementLayer;
 use super::movement_tick::{FootPathRequest, WalkAdmissionRequest};
 use super::track_fresh::BlockingObject;
 use crate::map::cell_index::NativeCellIdentity;
@@ -190,7 +191,8 @@ impl Simulation {
                     .as_ref()
                     .unwrap()
                     .native_cell_coord(native);
-                let blocker = self.find_blocking_object((at.0 as u16, at.1 as u16));
+                let blocker =
+                    self.find_blocking_object((at.0 as u16, at.1 as u16), MovementLayer::Ground);
                 if request.allows_retry() {
                     return self.walk_retry_admission(request);
                 }
@@ -242,9 +244,13 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Result<Option<FootPathRequest>, String> {
-        let request =
-            WalkAdmissionRequest::for_response_test(&self.substrate.entities, id, allow_retry, rules)
-                .ok_or("missing Walk corpus receiver")?;
+        let request = WalkAdmissionRequest::for_response_test(
+            &self.substrate.entities,
+            id,
+            allow_retry,
+            rules,
+        )
+        .ok_or("missing Walk corpus receiver")?;
         self.finish_walk_admission_response(
             request,
             candidate,

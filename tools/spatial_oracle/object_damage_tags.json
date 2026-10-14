@@ -1,0 +1,438 @@
+[
+  {
+    "input": {
+      "alive": 1,
+      "callback": "none",
+      "can_c4": true,
+      "current": 80,
+      "damage": 1,
+      "kind": "unit",
+      "strength": 100,
+      "tag_context": {
+        "mutation": "none",
+        "source": true,
+        "tag": true
+      }
+    },
+    "name": "ordinary",
+    "output": {
+      "actual": 79,
+      "alive": 1,
+      "branches": [
+        "005F53AA",
+        "005F53B7",
+        "005F550D",
+        "005F5830"
+      ],
+      "callbacks": [],
+      "damage_packet": 1,
+      "estimated": -987654321,
+      "result": 1,
+      "tag_calls": [
+        {
+          "actor": 536870912,
+          "alive": 1,
+          "cell": 0,
+          "force": 0,
+          "health": 79,
+          "kind": 6,
+          "source": 536911872
+        },
+        {
+          "actor": 536870912,
+          "alive": 1,
+          "cell": 0,
+          "force": 0,
+          "health": 79,
+          "kind": 44,
+          "source": 536911872
+        }
+      ],
+      "writes": [
+        {
+          "field": "actual",
+          "instruction": "005F550D",
+          "value": 79
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "alive": 1,
+      "callback": "none",
+      "can_c4": true,
+      "current": 80,
+      "damage": 1,
+      "kind": "unit",
+      "strength": 100,
+      "tag_context": {
+        "mutation": "none",
+        "source": false,
+        "tag": true
+      }
+    },
+    "name": "no_source",
+    "output": {
+      "actual": 79,
+      "alive": 1,
+      "branches": [
+        "005F53AA",
+        "005F53B7",
+        "005F550D",
+        "005F5830"
+      ],
+      "callbacks": [],
+      "damage_packet": 1,
+      "estimated": -987654321,
+      "result": 1,
+      "tag_calls": [],
+      "writes": [
+        {
+          "field": "actual",
+          "instruction": "005F550D",
+          "value": 79
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "alive": 1,
+      "callback": "none",
+      "can_c4": true,
+      "current": 80,
+      "damage": 1,
+      "kind": "unit",
+      "strength": 100,
+      "tag_context": {
+        "mutation": "none",
+        "source": true,
+        "tag": false
+      }
+    },
+    "name": "no_tag",
+    "output": {
+      "actual": 79,
+      "alive": 1,
+      "branches": [
+        "005F53AA",
+        "005F53B7",
+        "005F550D",
+        "005F5830"
+      ],
+      "callbacks": [],
+      "damage_packet": 1,
+      "estimated": -987654321,
+      "result": 1,
+      "tag_calls": [],
+      "writes": [
+        {
+          "field": "actual",
+          "instruction": "005F550D",
+          "value": 79
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "alive": 1,
+      "callback": "none",
+      "can_c4": true,
+      "current": 80,
+      "damage": 0,
+      "kind": "unit",
+      "strength": 100,
+      "tag_context": {
+        "mutation": "none",
+        "source": true,
+        "tag": true
+      }
+    },
+    "name": "no_damage",
+    "output": {
+      "actual": 80,
+      "alive": 1,
+      "branches": [
+        "005F53AA",
+        "005F53B7",
+        "005F5830"
+      ],
+      "callbacks": [],
+      "damage_packet": 0,
+      "estimated": -987654321,
+      "result": 0,
+      "tag_calls": [],
+      "writes": []
+    }
+  },
+  {
+    "input": {
+      "alive": 1,
+      "callback": "none",
+      "can_c4": true,
+      "current": 80,
+      "damage": -1,
+      "kind": "unit",
+      "strength": 100,
+      "tag_context": {
+        "mutation": "none",
+        "source": true,
+        "tag": true
+      }
+    },
+    "name": "healing",
+    "output": {
+      "actual": 81,
+      "alive": 1,
+      "branches": [
+        "005F53AA",
+        "005F53B7",
+        "005F546A",
+        "005F5480",
+        "005F548C"
+      ],
+      "callbacks": [
+        {
+          "alive_after": 1,
+          "alive_before": 1,
+          "argument": 7,
+          "health_after": 81,
+          "health_before": 81,
+          "slot": "148",
+          "supplied_writes": []
+        }
+      ],
+      "damage_packet": -1,
+      "estimated": -987654321,
+      "result": 0,
+      "tag_calls": [],
+      "writes": [
+        {
+          "field": "actual",
+          "instruction": "005F5473",
+          "value": 81
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "alive": 1,
+      "callback": "none",
+      "can_c4": true,
+      "current": 80,
+      "damage": 80,
+      "kind": "unit",
+      "strength": 100,
+      "tag_context": {
+        "mutation": "none",
+        "source": true,
+        "tag": true
+      }
+    },
+    "name": "lethal",
+    "output": {
+      "actual": 0,
+      "alive": 1,
+      "branches": [
+        "005F53AA",
+        "005F53B7",
+        "005F54C2",
+        "005F54F9",
+        "005F550D",
+        "005F579A",
+        "005F57AF",
+        "005F5830"
+      ],
+      "callbacks": [
+        {
+          "alive_after": 1,
+          "alive_before": 1,
+          "argument": 536911872,
+          "health_after": 0,
+          "health_before": 0,
+          "slot": "0E0",
+          "supplied_writes": []
+        },
+        {
+          "alive_after": 1,
+          "alive_before": 1,
+          "argument": 1,
+          "health_after": 0,
+          "health_before": 0,
+          "slot": "0DC",
+          "supplied_writes": []
+        }
+      ],
+      "damage_packet": 80,
+      "estimated": -987654321,
+      "result": 4,
+      "tag_calls": [
+        {
+          "actor": 536870912,
+          "alive": 1,
+          "cell": 0,
+          "force": 0,
+          "health": 0,
+          "kind": 40,
+          "source": 0
+        },
+        {
+          "actor": 536870912,
+          "alive": 1,
+          "cell": 0,
+          "force": 0,
+          "health": 0,
+          "kind": 43,
+          "source": 0
+        }
+      ],
+      "writes": [
+        {
+          "field": "actual",
+          "instruction": "005F550D",
+          "value": 0
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "alive": 0,
+      "callback": "none",
+      "can_c4": true,
+      "current": 80,
+      "damage": 1,
+      "kind": "unit",
+      "strength": 100,
+      "tag_context": {
+        "mutation": "none",
+        "source": true,
+        "tag": true
+      }
+    },
+    "name": "already_not_alive",
+    "output": {
+      "actual": 79,
+      "alive": 0,
+      "branches": [
+        "005F53AA",
+        "005F53B7",
+        "005F550D",
+        "005F583E"
+      ],
+      "callbacks": [],
+      "damage_packet": 1,
+      "estimated": -987654321,
+      "result": 5,
+      "tag_calls": [],
+      "writes": [
+        {
+          "field": "actual",
+          "instruction": "005F550D",
+          "value": 79
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "alive": 1,
+      "callback": "none",
+      "can_c4": true,
+      "current": 80,
+      "damage": 1,
+      "kind": "unit",
+      "strength": 100,
+      "tag_context": {
+        "mutation": "detach_after6",
+        "source": true,
+        "tag": true
+      }
+    },
+    "name": "tag_detach",
+    "output": {
+      "actual": 79,
+      "alive": 1,
+      "branches": [
+        "005F53AA",
+        "005F53B7",
+        "005F550D",
+        "005F5830"
+      ],
+      "callbacks": [],
+      "damage_packet": 1,
+      "estimated": -987654321,
+      "result": 1,
+      "tag_calls": [
+        {
+          "actor": 536870912,
+          "alive": 1,
+          "cell": 0,
+          "force": 0,
+          "health": 79,
+          "kind": 6,
+          "source": 536911872
+        }
+      ],
+      "writes": [
+        {
+          "field": "actual",
+          "instruction": "005F550D",
+          "value": 79
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "alive": 1,
+      "callback": "none",
+      "can_c4": true,
+      "current": 80,
+      "damage": 1,
+      "kind": "unit",
+      "strength": 100,
+      "tag_context": {
+        "mutation": "clear_alive_after6",
+        "source": true,
+        "tag": true
+      }
+    },
+    "name": "alive_clear",
+    "output": {
+      "actual": 79,
+      "alive": 0,
+      "branches": [
+        "005F53AA",
+        "005F53B7",
+        "005F550D",
+        "005F5830"
+      ],
+      "callbacks": [],
+      "damage_packet": 1,
+      "estimated": -987654321,
+      "result": 1,
+      "tag_calls": [
+        {
+          "actor": 536870912,
+          "alive": 1,
+          "cell": 0,
+          "force": 0,
+          "health": 79,
+          "kind": 6,
+          "source": 536911872
+        }
+      ],
+      "writes": [
+        {
+          "field": "actual",
+          "instruction": "005F550D",
+          "value": 79
+        }
+      ]
+    }
+  }
+]

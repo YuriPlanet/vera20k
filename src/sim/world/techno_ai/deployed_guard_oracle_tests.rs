@@ -201,6 +201,7 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
             0,
             0,
             &rules,
+            crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, |x, y| {

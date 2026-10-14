@@ -321,6 +321,8 @@ pub enum HandleOwner {
     UnitVoice(u64),
     /// A Voc750E20 request owns its handle independently of the source object.
     Coordinate(u64),
+    /// A process-global VocHandle, distinct from any object or coordinate.
+    Global(u32),
 }
 
 impl From<u64> for HandleOwner {

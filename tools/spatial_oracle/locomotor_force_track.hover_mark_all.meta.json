@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Sixteen bounded original Hover5171C0 mode0/1 calls, actual514D10 head getter, Unit744210 and native map/ground queries; eight have an original516320 Stop_Moving prefix",
+  "assumptions": [
+    "Reuses OriginalForceTrack mapped32x32 flat level2 map and real Unit vtable. Before measurement, inherited Drive bytes are replaced by explicitly supplied Hover interface7EACFC state; full Hover/Unit construction, movement admission and head production are excluded",
+    "Supplied current Location(2432,2688,312), a distinct nonzero or null retained head, destination and path direction2. The whole real516320 prefix is optional; FootLimbo caller and full lifecycle do not execute",
+    "Two relevant cells start raw ground0x421/deck0x821, so unrelated low/high bits survive the actual unit clear. Mode0 follows original virtual+18 ->514D10 and owner virtual+F4 ->744210; mode1 follows original no-op return",
+    "Ground step104 and Unit raw bridge offset416 are retained supplied runtime inputs of this oracle. Ground/deck selection is measured from actual XYZ/578080, including exact624 threshold and opposing OnBridge/structural flags; no expected plane or clear coordinate is supplied",
+    "All three RNG objects are seeded by original65C6D0 outside measurement and bracketed by their entire1012 bytes; no RNG call, timer write or detach occurs in the executed selected bodies",
+    "Read-only NativeCallTrace and write hooks preserve original code/dispatch. Mark_All retains complete0x100-byte locomotor and0x800-byte owner state; optional Stop first may clear destination and path word but retains head"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "hover_mark_all": "0x005171C0",
+    "hover_head": "0x00514D10",
+    "hover_stop": "0x00516320",
+    "unit_raw_clear": "0x00744210",
+    "map_cell_from_xyz": "0x00565730",
+    "map_ground_height": "0x00578080",
+    "rng_seed": "0x0065C6D0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.locomotor_force_track --hover-mark-all",
+  "payload_sha256": "dd5505cd658e291ed79c58890fd3e4f6f9dfbcd649f87c0083056280a91d3262"
+}

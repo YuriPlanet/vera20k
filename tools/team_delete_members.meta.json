@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original TeamAI Script37 inline6E954D..6E957B: cache Foot+5D8, Limbo thenUnInit in member order, set advance+80",
+  "assumptions": [
+    "Supplied synthetic linked members/head, initially advance0; native Script37 control flow runs unchanged",
+    "TeamEmu existing49F2F0 adjacent-cell initializer remains shared transport; no new VM model"
+  ],
+  "substitutions": [
+    "vtD4 Limbo records and unlinks current head/clears next; vtF8 UnInit records only; no class lifecycle, damage, RNG, audio/device, raw scalar destructor or full TeamAI timing claim"
+  ],
+  "entry_points": {
+    "script37": "0x006E954D",
+    "stop_before_epilogue": "0x006E957B"
+  },
+  "replay_command": "python -m tools.team_recruit_oracle --delete-members",
+  "payload_sha256": "8c4081bb01f2b9536d77551115a0d9ef2e1f3a7b99a5530cc1e1fe9a5d6f9368"
+}

@@ -46,7 +46,7 @@ fn fixture_with_art(extra: &str, art: Option<&IniFile>) -> (Simulation, RuleSet)
          [BRUTE]\nImage=GI\nStrength=200\nSpeed=4\n\
          [MTNK]\nStrength=300\nSpeed=6\n\
          [GAPILE]\nStrength=1000\nFoundation=1x1\nFactory=InfantryType\nOwner=Americans\n";
-    let mut ini = IniFile::from_str(base);
+    let mut ini = crate::sim::arena_fixture::clear_ground_ini(base);
     ini.merge(&IniFile::from_str(extra));
     let mut rules = if let Some(art) = art {
         RuleSet::from_ini_with_fixed_art_for_test(&ini, art).unwrap()
@@ -83,6 +83,7 @@ fn fixture_with_art(extra: &str, art: Option<&IniFile>) -> (Simulation, RuleSet)
         test_terrain_cell(x, y)
     }));
     sim.playfield_bounds = Some(test_playfield_bounds());
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim.spawn_object_at_height("GAPILE", "Americans", 10, 10, 0, 0, &rules)
         .unwrap();
     (sim, rules)
@@ -93,7 +94,9 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
     let sw_type_id = sim.interner.intern(name);
     // Charged on a running timer: ClickFire refuses a stopped one.
     let mut instance = SuperWeaponInstance::new(sw_type_id, owner, 0);
-    instance.activate(1, sim.session.binary_frame);
+    instance.is_active = true;
+    instance.charge_start_tick = (sim.session.binary_frame) as i32;
+    instance.charge_duration = 1;
     instance.is_ready = true;
     sim.super_weapons
         .entry(owner)
@@ -138,7 +141,16 @@ fn held_infantry_survives_launch(name: &str) {
         .entity_id
         .unwrap();
     let twin = sim
-        .construct_object_limbo_at_height("E1", "Americans", 0, 0, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "E1",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     // Supplied unmarked Cell0,0 pose, independent of the fresh constructor.
     ground_pose::put_location(
@@ -549,7 +561,16 @@ fn genetic_converter_command_uses_selected_bridge_membership() {
     let mut deck = Vec::new();
     for _ in 0..2 {
         let id = sim
-            .construct_object_limbo_at_height("E1", "Americans", 5, 5, 0, 4, &rules)
+            .construct_object_limbo_at_height(
+                "E1",
+                "Americans",
+                5,
+                5,
+                0,
+                4,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         {
             let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -603,10 +624,28 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
         .spawn_object_at_height("MTNK", "Americans", 5, 5, 0, 0, &rules)
         .unwrap();
     let over_strength = sim
-        .construct_object_limbo_at_height("E1", "Soviet", 5, 5, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "E1",
+            "Soviet",
+            5,
+            5,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     let wounded = sim
-        .construct_object_limbo_at_height("E1", "Soviet", 5, 5, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "E1",
+            "Soviet",
+            5,
+            5,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     // Supplied already-present mixed membership isolates the IC damage
     // receiver. Ordinary Infantry Unlimbo refuses a tank's raw vehicle bit;
@@ -686,7 +725,16 @@ fn iron_curtain_command_selects_deck_members_and_overlapping_foundation() {
         cell.bridge_deck_level = 4;
     }
     let deck = sim
-        .construct_object_limbo_at_height("MTNK", "Americans", 5, 5, 0, 4, &rules)
+        .construct_object_limbo_at_height(
+            "MTNK",
+            "Americans",
+            5,
+            5,
+            0,
+            4,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     {
         let actor = sim.substrate.entities.get_mut(deck).unwrap();
@@ -709,7 +757,16 @@ fn iron_curtain_command_selects_deck_members_and_overlapping_foundation() {
         .spawn_object_at_height("MTNK", "Americans", 7, 7, 0, 0, &rules)
         .unwrap();
     let twin = sim
-        .construct_object_limbo_at_height("MTNK", "Americans", 4, 4, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "MTNK",
+            "Americans",
+            4,
+            4,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     ground_pose::put_location(
         &mut sim.substrate.entities.get_mut(twin).unwrap().position,
@@ -888,7 +945,16 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
     sim.bridge_state = Some(state);
     // Older deck recipient is visited only after the newer Infantry's callback.
     let tank = sim
-        .construct_object_limbo_at_height("MTNK", "Americans", 5, 5, 0, 7, &rules)
+        .construct_object_limbo_at_height(
+            "MTNK",
+            "Americans",
+            5,
+            5,
+            0,
+            7,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     {
         let actor = sim.substrate.entities.get_mut(tank).unwrap();
@@ -907,7 +973,16 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
     // Keep it alive through the nested DeathWeapon without setting IC first.
     sim.substrate.entities.get_mut(tank).unwrap().health.current = 10_000;
     let boomer = sim
-        .construct_object_limbo_at_height("BOOM", "Americans", 5, 5, 0, 7, &rules)
+        .construct_object_limbo_at_height(
+            "BOOM",
+            "Americans",
+            5,
+            5,
+            0,
+            7,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     {
         let actor = sim.substrate.entities.get_mut(boomer).unwrap();
@@ -932,7 +1007,16 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
         vec![boomer, tank]
     );
     let unmarked = sim
-        .construct_object_limbo_at_height("MTNK", "Americans", 5, 5, 0, 7, &rules)
+        .construct_object_limbo_at_height(
+            "MTNK",
+            "Americans",
+            5,
+            5,
+            0,
+            7,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     {
         let actor = sim.substrate.entities.get_mut(unmarked).unwrap();

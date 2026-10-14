@@ -83,7 +83,7 @@ fn rules(support_range: i32, elite_range: Option<i32>) -> RuleSet {
         "Image=TWRART\nStrength=600\nArmor=steel\nFoundation=1x1\nPowered=yes\nPower=-75\n\
          Primary=PrismShot\nSecondary=PrismSupport\n{elite_key}"
     );
-    let rules_ini = IniFile::from_str(&format!(
+    let rules_ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[General]\nPrismType=TWR\nPrismSupportModifier=150%\nPrismSupportMax=8\n\
          PrismSupportDelay=45\n\
          [Guard]\nRate=.030\nAARate=.016\n\
@@ -166,6 +166,7 @@ impl Fixture {
         );
         let mut sim = Simulation::new();
         sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(48));
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
         let owner = sim.interner.intern("Americans");
         sim.houses.insert(
             owner,

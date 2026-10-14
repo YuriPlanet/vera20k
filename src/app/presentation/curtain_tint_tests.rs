@@ -41,7 +41,7 @@ fn curtained(row: &Value) -> GameEntity {
     };
     let mut entity =
         GameEntity::test_default_of_category(1, "GAPOWR", "Americans", 10, 10, category);
-    entity.elite_flash_frames = int(&row["flash"]);
+    entity.start_flash_countdown(int(&row["flash"]));
     entity.invulnerability = Some(InvulnerabilityState::with_tint(
         timer(&row["curtain"]),
         InvulnKind::ForceShield,

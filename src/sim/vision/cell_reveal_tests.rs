@@ -2,6 +2,7 @@
 //! expected values are executed bytes, never a second edge-frame algorithm.
 use super::*;
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_clear_cell};
+use crate::sim::vision::MapTransition;
 use serde_json::{Value, json};
 
 pub(crate) fn discovery_corpus() -> Value {
@@ -116,6 +117,109 @@ fn seed_cell(view: &mut OwnerVisibility, key: VisibilityCell, input: &Value) {
     }
 }
 
+#[test]
+fn native_forced_map_frontier_cache_and_notifications_preserve_counters() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_forced_map.json",
+    ))
+    .unwrap();
+    let viewer = crate::sim::intern::test_intern("Player");
+    let (mut fog, terrain) = native_map_cell_fixture(&corpus["topology"], viewer);
+    for row in corpus["controls"].as_array().unwrap() {
+        let query = NativeCellQuery::canonical(&terrain);
+        let notification = fog.reveal_forced_map_cell(viewer, pair(&row["cell"]), Some(&query));
+        assert_eq!(
+            notification.is_some(),
+            row["returned_al"] == 1,
+            "{}",
+            row["name"]
+        );
+        let expected = row["notifications"].as_array().unwrap().first();
+        assert_eq!(
+            notification
+                .as_ref()
+                .map(|event| json!([event.cell.0, event.cell.1, event.fresh])),
+            expected.map(|event| json!([event["cell"][0], event["cell"][1], event["fresh"] == 1])),
+            "{}",
+            row["name"]
+        );
+        for cell in row["cells"].as_array().unwrap() {
+            assert_native_cell_history(&fog, viewer, cell, &terrain, false);
+        }
+        //5865F0's later empty-cell discovery stamps the Dummy after this leaf
+        //returns its notification. Compare the retained coordinate only in
+        //the unchanged case, which executes no notification receiver.
+        if notification.is_none() {
+            assert_native_cell_history(&fog, viewer, &row["dummy"], &terrain, true);
+        }
+        assert_eq!(row["rng_before"], row["rng_after"]);
+        assert!(row["rng_calls"].as_array().unwrap().is_empty());
+        let restored: FogState = bincode::deserialize(&bincode::serialize(&fog).unwrap()).unwrap();
+        for cell in row["cells"].as_array().unwrap() {
+            assert_native_cell_history(&restored, viewer, cell, &terrain, false);
+        }
+    }
+}
+
+#[test]
+fn bulk_map_store_shares_forced_reveal_admission_without_changing_frame_bytes() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_forced_map.json",
+    ))
+    .unwrap();
+    let viewer = crate::sim::intern::test_intern("Player");
+    let (mut fog, terrain) = native_map_cell_fixture(&corpus["topology"], viewer);
+    let query = NativeCellQuery::canonical(&terrain);
+    fog.reveal_forced_map_cell(viewer, (9, 10), Some(&query));
+    let frames = fog.by_owner[&viewer]
+        .map_cell_edge_cache_for_test((9, 10))
+        .0;
+    for cell in corpus["topology"]["allocated_cells"].as_array().unwrap() {
+        fog.by_owner
+            .get_mut(&viewer)
+            .unwrap()
+            .store_bulk_map_cell(pair(&cell["cell"]), false);
+    }
+    //577ED1/577EE0 writes bits18/3, leaving120/121 and pending20.
+    let view = &fog.by_owner[&viewer];
+    assert_eq!(view.map_cell_edge_cache_for_test((9, 10)), (frames, 3));
+    assert!(view.shroud_knowledge[view.index(9, 10).unwrap()].pending);
+    let notification = fog
+        .reveal_forced_map_cell(viewer, (9, 10), Some(&query))
+        .unwrap();
+    assert!(!notification.fresh);
+    let native_center = corpus["controls"][2]["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|cell| pair(&cell["cell"]) == (9, 10))
+        .unwrap();
+    assert_eq!(
+        fog.by_owner[&viewer]
+            .map_cell_edge_cache_for_test((9, 10))
+            .0,
+        [
+            native_center["cache"][0].as_i64().unwrap() as i8,
+            native_center["cache"][1].as_i64().unwrap() as i8
+        ]
+    );
+    fog.by_owner
+        .get_mut(&viewer)
+        .unwrap()
+        .store_bulk_map_cell((9, 10), true);
+    assert_eq!(
+        fog.by_owner[&viewer]
+            .map_cell_edge_cache_for_test((9, 10))
+            .1,
+        0
+    );
+    assert!(
+        fog.reveal_forced_map_cell(viewer, (9, 10), Some(&query))
+            .unwrap()
+            .fresh
+    );
+}
+
 pub(crate) fn assert_native_cell_history(
     fog: &FogState,
     viewer: InternedId,
@@ -170,6 +274,89 @@ pub(crate) fn assert_native_cell_history(
             "canonical Dummy ordering"
         );
         assert_eq!(i64::from(actual.level), row["level"].as_i64().unwrap());
+    }
+}
+
+#[test]
+fn native_reshroud_leave_and_signed_clear_gate_preserve_gap_and_edge_bytes() {
+    // --reshroud executes487690 and the actual577D26..577D4D mask branch.
+    // Expected values are produced by that selected original run, including
+    // signed overflow; this test does not carry a second counter algorithm.
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_reshroud.json",
+    ))
+    .unwrap();
+    let viewer = crate::sim::intern::test_intern("Player");
+    for row in corpus["scalar_controls"].as_array().unwrap() {
+        let topology = json!({
+            "allocated_cells": [row["input"]],
+            "dummy_prior": corpus["controls"][0]["topology"]["dummy_prior"],
+        });
+        let (mut fog, terrain) = native_map_cell_fixture(&topology, viewer);
+        let cell = pair(&row["input"]["cell"]);
+        let view = fog.by_owner.get_mut(&viewer).unwrap();
+        let index = view.index(cell.0, cell.1).unwrap();
+        view.shroud_knowledge[index].leave();
+        assert_native_cell_history(&fog, viewer, &row["after_leave"], &terrain, false);
+
+        // Start from the same supplied native prior and call the production
+        // combined receiver. Its negative-counter branch must retain bits18/3.
+        let (mut fog, _) = native_map_cell_fixture(&topology, viewer);
+        fog.by_owner
+            .get_mut(&viewer)
+            .unwrap()
+            .store_reshrouded_map_cell(cell);
+        assert_native_cell_history(&fog, viewer, &row["stored"], &terrain, false);
+        let loaded: FogState = bincode::deserialize(&bincode::serialize(&fog).unwrap()).unwrap();
+        assert_native_cell_history(&loaded, viewer, &row["stored"], &terrain, false);
+        assert_eq!(row["rng_before"], row["rng_after"], "{}", row["name"]);
+        assert!(row["rng_calls"].as_array().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn native_reshroud_allocated_cursor_stops_on_null_and_calls_shared_receiver() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_reshroud.json",
+    ))
+    .unwrap();
+    let viewer = crate::sim::intern::test_intern("Player");
+    for name in ["current_house", "null_house", "allocated_hole"] {
+        let row = corpus["controls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["name"] == name)
+            .unwrap();
+        let (mut fog, terrain) = native_map_cell_fixture(&row["topology"], viewer);
+        let width = row["size_width"].as_i64().unwrap() as i32;
+        let cells: Vec<_> = terrain
+            .native_cell_iterator(width)
+            .map(|cell| (cell.rx, cell.ry))
+            .collect();
+        assert_eq!(json!(cells), row["visits"], "{name}");
+        assert!(fog.admit_whole_map_reveal(viewer));
+        fog.transition_whole_map_with_gap_reentry(
+            viewer,
+            cells,
+            MapTransition::Reshroud,
+            false,
+            &std::collections::BTreeSet::new(),
+            Some(&[]),
+            &std::collections::BTreeMap::new(),
+        );
+        assert_eq!(
+            fog.whole_map_revealed_for_owner(viewer),
+            row["houses"]["player"]["revealed"] == 1,
+            "{name}"
+        );
+        for cell in row["cells"].as_array().unwrap() {
+            assert_native_cell_history(&fog, viewer, cell, &terrain, false);
+        }
+        // Null allocated slots do not query or restamp the shared Dummy.
+        assert_native_cell_history(&fog, viewer, &row["dummy"], &terrain, true);
+        assert_eq!(row["rng_before"], row["rng_after"], "{name}");
+        assert!(row["rng_calls"].as_array().unwrap().is_empty());
     }
 }
 

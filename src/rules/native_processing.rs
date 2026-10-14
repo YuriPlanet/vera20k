@@ -16,6 +16,7 @@ use crate::rules::powerups::{PowerupTable, PowerupsAccumulator};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup, parse_prerequisites};
 use crate::rules::projectile_type::ProjectileArtState;
 use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules};
+use crate::util::native_x87::NativeF64Bits;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
@@ -650,6 +651,13 @@ impl ProcessedRulesLayers {
             .rules_prism_support
     }
 
+    /// ReadAI67399E..6739C5's retained Rules+1150 after all reached passes.
+    pub(crate) fn patrol_scan_minutes(&self) -> NativeF64Bits {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_patrol_scan_minutes
+    }
+
     /// `[General] PrismType=` (Rules `+0x498`), the stored ID of its type.
     pub(crate) fn prism_type(&self) -> Option<&str> {
         self.native_type_construction_trace
@@ -917,6 +925,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_safety_altitude: i32,
     rules_line_trail_override: [u8; 3],
     rules_prism_support: PrismSupportRules,
+    rules_patrol_scan_minutes: NativeF64Bits,
     rules_prism_type: Option<String>,
     rules_prerequisite_proc_alternate: Option<String>,
     /// The six `[General] Prerequisite*` lists (Rules `+0x358..+0x3E4`), in
@@ -940,6 +949,8 @@ impl Default for NativeRulesRegistryState {
             rules_safety_altitude: 500,
             rules_line_trail_override: [0; 3],
             rules_prism_support: PrismSupportRules::default(),
+            rules_patrol_scan_minutes: crate::rules::ruleset::GeneralRules::default()
+                .patrol_scan_minutes,
             rules_prism_type: None,
             rules_prerequisite_proc_alternate: None,
             rules_prerequisite_lists: Default::default(),
@@ -988,6 +999,15 @@ impl NativeRulesRegistryState {
             .unwrap_or(0)
     }
 
+    /// Supply the exact Rules+1150 prior of a bounded native ReadAI control.
+    /// This is fixture state, not a second reader or a production writer.
+    /// Native controls: tools/team_recruit_oracle.py --patrol.
+    #[cfg(test)]
+    pub(crate) fn with_patrol_scan_minutes_for_test(mut self, minutes: NativeF64Bits) -> Self {
+        self.rules_patrol_scan_minutes = minutes;
+        self
+    }
+
     /// Consume the pre-reset registry owner at Full_Init's destructive Rules
     /// reset and return an owner with empty Type registries. RulesClass itself
     /// survives 6686C0, retaining Gravity, detail thresholds and its other
@@ -1011,6 +1031,7 @@ impl NativeRulesRegistryState {
             rules_safety_altitude: self.rules_safety_altitude,
             rules_line_trail_override: self.rules_line_trail_override,
             rules_prism_support: self.rules_prism_support,
+            rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
             // Plain index vectors, so RulesClass keeps them; the next pass
             // reads them as its default.
             rules_prerequisite_lists: self.rules_prerequisite_lists,
@@ -1220,6 +1241,7 @@ struct RulesPassProcessor {
     rules_safety_altitude: i32,
     rules_line_trail_override: [u8; 3],
     rules_prism_support: PrismSupportRules,
+    rules_patrol_scan_minutes: NativeF64Bits,
     rules_prism_type: Option<String>,
     rules_prerequisite_proc_alternate: Option<String>,
     rules_prerequisite_lists: [Vec<Prerequisite>; 6],
@@ -1247,6 +1269,8 @@ impl Default for RulesPassProcessor {
             rules_line_trail_override: NativeRulesRegistryState::default()
                 .rules_line_trail_override,
             rules_prism_support: PrismSupportRules::default(),
+            rules_patrol_scan_minutes: crate::rules::ruleset::GeneralRules::default()
+                .patrol_scan_minutes,
             rules_prism_type: None,
             rules_prerequisite_proc_alternate: None,
             rules_prerequisite_lists: Default::default(),
@@ -1269,6 +1293,7 @@ impl RulesPassProcessor {
             rules_safety_altitude: registry_state.rules_safety_altitude,
             rules_line_trail_override: registry_state.rules_line_trail_override,
             rules_prism_support: registry_state.rules_prism_support,
+            rules_patrol_scan_minutes: registry_state.rules_patrol_scan_minutes,
             rules_prism_type: registry_state.rules_prism_type,
             rules_prerequisite_proc_alternate: registry_state.rules_prerequisite_proc_alternate,
             rules_prerequisite_lists: registry_state.rules_prerequisite_lists,
@@ -1578,6 +1603,12 @@ impl RulesPassProcessor {
         for key in BUILDING_LISTS {
             self.allocate_list_from(section, key, RulesTypeFamily::Building, 0x80);
         }
+        // ReadAI672AE0 has its own AI-section gate.67399E..6739C5 reads
+        // the current double as default, with no clamp, after the AI lists.
+        // RulesClass outlives the destructive Type reset, so keep this scalar
+        // in the same process-resident authority as the other retained rules.
+        self.rules_patrol_scan_minutes =
+            section.read_double_bits("PatrolScan", self.rules_patrol_scan_minutes);
     }
 
     fn allocate_general_references(&mut self, pass: &IniFile) {
@@ -2627,6 +2658,7 @@ impl RulesPassProcessor {
                     rules_safety_altitude: self.rules_safety_altitude,
                     rules_line_trail_override: self.rules_line_trail_override,
                     rules_prism_support: self.rules_prism_support,
+                    rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
                     rules_prism_type: self.rules_prism_type,
                     rules_prerequisite_proc_alternate: self.rules_prerequisite_proc_alternate,
                     rules_prerequisite_lists: self.rules_prerequisite_lists,

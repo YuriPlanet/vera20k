@@ -17,8 +17,8 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 2, 3, 5, 6, 8, 9, 11, 14, 19, 21, 24, 43, 46,
-//!   47, 49, 50, 53, 54, 55, 57, 58, 61, 62 and 63 are not ported. A team
+//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 19, 21, 24, 37, 39, 42, 43,
+//!   46, 47, 49, 50, 53, 54, 55, 57, 58, 59, 61, 62, 63 and 64 are not ported. A team
 //!   that reaches one stays on it, as a native handler that has not
 //!   finished does, and records the first as its refusal; the rest of its
 //!   update runs. Trigger: none of the 163 retail AIMD TeamTypes reaches
@@ -73,6 +73,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::ScanMission;
 use crate::sim::combat::fire_error::FireError;
 use crate::sim::components::NavTargetRef;
+use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
@@ -83,13 +84,43 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
 use super::team_ai::member_is_live_joined;
-use super::{TeamScriptAction, TeamScriptRefusal, TeamTarget, script_action_at};
+use super::{TeamScriptAction, TeamScriptRefusal, TeamScriptState, TeamTarget, script_action_at};
+
+impl TeamScriptState {
+    /// TeamFlash6EF5F0 walks +54/+5D8 head first and writes signed Techno+F0.
+    /// Script50 inlines the same loop at6E9CFF..6E9D18. Neither caller asks
+    /// TechnoFlash6F9DD0 or filters dead, limbo, disguised or foreign members.
+    /// Original Steam gamemd3e81a617..08600; trigger_flash_team's native
+    /// dispatch/member controls and team_creation's signed countdown rows.
+    fn flash_members(&self, entities: &mut EntityStore, frames: i32) {
+        for member in self.members() {
+            if let Some(entity) = entities.get_mut(member) {
+                entity.start_flash_countdown(frames);
+            }
+        }
+    }
+}
+
+impl Simulation {
+    /// TeamTypeFlash6F1F30, called by TAction104 at6DF574. Matching teams
+    /// in live registration order flash all their linked members, including
+    /// teams owned by another House. Member writes have no callback and do
+    /// not change the registry, so the existing order can be read directly.
+    pub(crate) fn flash_teams_of_type(&mut self, team_type: InternedId, frames: i32) {
+        for team in self.team_script_vm.teams_in_order() {
+            if team.team_type_id() == Some(team_type) {
+                team.flash_members(&mut self.substrate.entities, frames);
+            }
+        }
+    }
+}
 
 /// Whether the dispatch ports `action_id`'s handler.
 pub(super) const fn action_is_ported(action_id: i32) -> bool {
     matches!(
         action_id,
-        0 | 2
+        0 | 1
+            | 2
             | 3
             | 5
             | 6
@@ -97,9 +128,13 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 9
             | 11
             | 14
+            | 16
             | 19
             | 21
             | 24
+            | 37
+            | 39
+            | 42
             | 43
             | 46
             | 47
@@ -110,9 +145,11 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 55
             | 57
             | 58
+            | 59
             | 61
             | 62
             | 63
+            | 64
     )
 }
 
@@ -266,6 +303,22 @@ impl Simulation {
                 registry,
                 frame_effects,
             ),
+            1 => self.team_action_attack_waypoint(
+                team_id,
+                action.argument,
+                first,
+                rules,
+                registry,
+                frame_effects,
+            ),
+            59 => self.team_action_attack_waypoint_building(
+                team_id,
+                action.argument,
+                first,
+                rules,
+                registry,
+                frame_effects,
+            ),
             // `0x006E95AB`: returns; the team stays on the action.
             2 => {}
             3 => self.team_action_move_to_waypoint(
@@ -311,6 +364,74 @@ impl Simulation {
                 frame_effects,
             ),
             14 => self.team_action_load_onto_transport(team_id, rules, registry, frame_effects),
+            16 => self.team_action_patrol_waypoint(
+                team_id,
+                action.argument,
+                first,
+                rules,
+                registry,
+                frame_effects,
+            ),
+            37 => {
+                //Steam3e81a617:6E954D..6E957A caches Foot+5D8 before
+                //vtD4 Limbo and vtF8 UnInit, then marks+80 to advance.
+                //Neither direct deletion nor a damage/RecordKill path is
+                //this action's call. Reuse the complete class lifecycle.
+                let context = crate::sim::world::UninitContext::new(Some(rules), registry)
+                    .with_effects(frame_effects);
+                let mut member = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .and_then(|team| team.members().next());
+                while let Some(current) = member {
+                    let next = self
+                        .team_script_vm
+                        .teams
+                        .get(&team_id)
+                        .and_then(|team| team.next_member_after(current));
+                    let _ = self.techno_limbo_with_context(current, context);
+                    self.uninit_with_context(current, context);
+                    member = next;
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            64 => {
+                //6E9F0D -> each member's vt34C/Foot4DFE00. Cache the next
+                //member before its seek callback; successful entrants leave
+                //the Team via the shared6EA870 owner with no_idle=true.
+                let mut member = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .and_then(|team| team.members().next());
+                while let Some(current) = member {
+                    let next = self
+                        .team_script_vm
+                        .teams
+                        .get(&team_id)
+                        .and_then(|team| team.next_member_after(current));
+                    if self.foot_enter_nearest_occupiable(current, rules, registry, frame_effects) {
+                        self.team_remove_member(team_id, current, true, Some(rules), frame_effects);
+                    }
+                    member = next;
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Original6E9BA1..6E9BBD: SetLocal689910(argument, true),
+            // then team+80=1 even if the variable index was rejected. The
+            // existing trigger owner keeps dirty admission and timer resets.
+            39 => {
+                self.set_trigger_variable(false, action.argument, true);
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            42 => self.team_action_force_facing(team_id, action.argument),
             // `0x006E984B`: each member panics (`vt+0x518`, in list order).
             19 => {
                 let members: Vec<u64> = self
@@ -391,16 +512,8 @@ impl Simulation {
             // member's existing Techno+F0, head first, without an alive gate.
             50 => {
                 if first {
-                    let members: Vec<_> = self
-                        .team_script_vm
-                        .teams
-                        .get(&team_id)
-                        .map(|team| team.members().collect())
-                        .unwrap_or_default();
-                    for member in members {
-                        if let Some(entity) = self.substrate.entities.get_mut(member) {
-                            entity.elite_flash_frames = action.argument;
-                        }
+                    if let Some(team) = self.team_script_vm.teams.get(&team_id) {
+                        team.flash_members(&mut self.substrate.entities, action.argument);
                     }
                     if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
                         team.advance_pending = true;
@@ -568,6 +681,139 @@ impl Simulation {
         TeamTarget::Cell { x, y }
     }
 
+    /// Script42 / Team6EDCA0, dispatched at6E9C15. Every member is read
+    /// head first without alive/limbo/initiated filtering. A moving locomotor
+    /// keeps the action pending; otherwise low16(argument<<13) is compared
+    /// with PrimaryFacing::Current and a differing direction goes through
+    /// ILocomotion+4C. Completion waits for moving, not the facing timer.
+    /// Native Steam gamemd3e81a617..08600; tools/team_recruit_oracle.py
+    /// --force-facing. Missing locomotors fault natively; Rust retains the
+    /// pending action and reports the invalid state instead.
+    fn team_action_force_facing(&mut self, team_id: u64, argument: i32) {
+        let Some(team) = self.team_script_vm.teams.get(&team_id) else {
+            return;
+        };
+        let members: Vec<_> = team.members().collect();
+        let desired = argument.wrapping_shl(13) as u16;
+        let frame = self.session.binary_frame;
+        let mut finished = true;
+        for member in members {
+            let Some(entity) = self.substrate.entities.get_mut(member) else {
+                finished = false;
+                continue;
+            };
+            match crate::sim::movement::motion_query::is_moving(entity) {
+                Some(true) => finished = false,
+                Some(false) => {
+                    if entity.body_facing_current(frame) != desired {
+                        crate::sim::movement::locomotor_do_turn(entity, desired, frame);
+                    }
+                }
+                None => {
+                    log::error!("Team {team_id} Script42 member {member} has no active locomotor");
+                    finished = false;
+                }
+            }
+        }
+        if finished && let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+            team.advance_pending = true;
+        }
+    }
+
+    /// Script16 / Team6ECCE0..6ECE51, dispatched at6E962A. First takes
+    /// the waypoint's Cell; an empty focus does so again only when the
+    /// current script argument is unsigned-below702. On the global
+    /// frame modulo ftol([AI]PatrolScan*900), the shared LeadershipRating
+    /// leader asks GreatestThreat(1, its Location, false). A found object
+    /// replaces the mission target. An empty scan clears a non-waypoint
+    /// target; it does not immediately return to the waypoint in that visit.
+    /// Object focus uses CoordinateAttack; Cell/NULL uses CoordinateMove.
+    /// No RNG draw, timer write or detach in the handler; its shared setters
+    /// retain member/radio/target cleanup. Steam gamemd3e81a617..08600;
+    /// original instructions and reader, tools/team_recruit_oracle.py --patrol.
+    /// Invalid modded periods whose IDIV faults natively skip scanning here
+    /// with an error, retaining normal movement. This safety policy does not
+    /// affect retail periods and is not claimed as native parity.
+    fn team_action_patrol_waypoint(
+        &mut self,
+        team_id: u64,
+        waypoint: i32,
+        first: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        // Scenario68BCE0 resolves even a missing/out-of-range waypoint to
+        // CellStruct::Empty before asking the existing canonical Map owner.
+        let waypoint_target =
+            self.canonical_team_cell(self.session.waypoint_cell(waypoint).unwrap_or((0, 0)));
+        if first {
+            self.team_assign_mission_target(
+                team_id,
+                Some(waypoint_target),
+                rules,
+                registry,
+                effects,
+            );
+        }
+        if self.team_script_vm.teams.get(&team_id).is_some_and(|team| {
+            team.focus.is_none()
+                && script_action_at(
+                    self.team_script_vm.scripts.get(&team.script_id),
+                    team.cursor,
+                )
+                .is_some_and(|action| (action.argument as u32) < 702)
+        }) {
+            self.team_assign_mission_target(
+                team_id,
+                Some(waypoint_target),
+                rules,
+                registry,
+                effects,
+            );
+        }
+        let frame = self.session.binary_frame as i32;
+        match frame.checked_rem(rules.general.patrol_scan_frames()) {
+            Some(0) => {
+                if let Some(leader) = self.team_leader(team_id, rules) {
+                    let threat = crate::sim::world::direct_greatest_threat(
+                        self,
+                        rules,
+                        registry,
+                        leader,
+                        ScanMission::Guard,
+                    );
+                    let focus = self
+                        .team_script_vm
+                        .teams
+                        .get(&team_id)
+                        .and_then(|team| team.focus);
+                    if threat.is_some() || focus != Some(waypoint_target) {
+                        self.team_assign_mission_target(
+                            team_id,
+                            threat.map(TeamTarget::Object),
+                            rules,
+                            registry,
+                            effects,
+                        );
+                    }
+                }
+            }
+            Some(_) => {}
+            None => log::error!("Team {team_id} Script16 has an invalid PatrolScan divisor"),
+        }
+        if self
+            .team_script_vm
+            .teams
+            .get(&team_id)
+            .is_some_and(|team| matches!(team.focus, Some(TeamTarget::Object(_))))
+        {
+            self.team_coordinate_attack(team_id, rules, registry, effects);
+        } else {
+            self.team_coordinate_move(team_id, rules, registry, effects);
+        }
+    }
+
     /// Script action 11 (`0x006ED7E0`, `first` unread): each live member
     /// joins up as in `Regroup`; each live joined member not fighting takes
     /// mission `mission` (clearing its archive target, target and
@@ -647,11 +893,12 @@ impl Simulation {
     }
 
     /// Whether team `team_id`'s TaskForce has an entry of an aircraft type
-    /// with `Passengers=` above 0, which makes actions 14 and 8 take only
+    /// with `Passengers=` above 0 (6EF470), which makes actions 14 and 8 take only
     /// aircraft as transports (`0x006ED203..0x006ED258`,
     /// `0x006EF2BD..0x006EF323`); otherwise only vehicles. No retail
-    /// AircraftType has `Passengers=`.
-    fn team_air_transports(&self, team_id: u64, rules: &RuleSet) -> bool {
+    /// AircraftType has `Passengers=`. Reinforcement65DDAB uses this same
+    /// decision before separating its Full transport/member chains.
+    pub(super) fn team_air_transports(&self, team_id: u64, rules: &RuleSet) -> bool {
         let vm = &self.team_script_vm;
         vm.teams.get(&team_id).is_some_and(|team| {
             vm.task_force_entries(team).iter().any(|entry| {
@@ -1690,6 +1937,121 @@ impl Simulation {
         }
     }
 
+    /// Script1 / Team6EC9A0, dispatched at6E9605 in the supported retail
+    /// gamemd. On the first visit, Scenario68BCE0 resolves the waypoint to
+    /// its canonical Cell; Cell47C5A0 may replace it with a blocking object.
+    /// Its nearest-object query uses the structural-bridge list (Cell140
+    /// bit100), otherwise ground; the existing Aircraft/terrain fast paths
+    /// remain ground-list queries.
+    /// Later visits retain that target. An absent target or wholly spent
+    /// team clears it and finishes; otherwise the existing CoordinateAttack
+    /// owner orders the members. No RNG or timer write in this handler.
+    /// Source: original6EC9A0..6ECA64 and6E9605..6E961D; Steam identity is
+    /// recorded in tools/spatial_oracle/trigger_power_events.meta.json.
+    /// Terrain targets and retained Dummy identity remain the existing
+    /// TeamTarget residuals; ALL01 Nuke_Repair's waypoint364 names a Building.
+    fn team_action_attack_waypoint(
+        &mut self,
+        team_id: u64,
+        waypoint: i32,
+        first: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        if first {
+            let target =
+                self.team_waypoint_blocker(waypoint)
+                    .map(|(target, blocker)| match blocker {
+                        Some(BlockingObject::Entity(object)) => TeamTarget::Object(object),
+                        Some(BlockingObject::Terrain) | None => target,
+                    });
+            self.team_assign_mission_target(team_id, target, rules, registry, frame_effects);
+        }
+        let Some(team) = self.team_script_vm.teams.get(&team_id) else {
+            return;
+        };
+        if team.mission_target.is_none() || self.team_out_of_ammo(team_id, rules) {
+            self.team_assign_mission_target(team_id, None, rules, registry, frame_effects);
+            if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                team.advance_pending = true;
+            }
+            return;
+        }
+        self.team_coordinate_attack(team_id, rules, registry, frame_effects);
+    }
+
+    /// Shared Scenario68BCE0 -> Cell47C5A0 selection for Script1 and59.
+    /// Structural bridge bit100 selects the native bridge blocker list;
+    /// each action owns its distinct admission of the returned object.
+    fn team_waypoint_blocker(&self, waypoint: i32) -> Option<(TeamTarget, Option<BlockingObject>)> {
+        let cell = self.session.waypoint_cell(waypoint)?;
+        let target = self.canonical_team_cell(cell);
+        let TeamTarget::Cell { x, y } = target else {
+            unreachable!("canonical_team_cell returns a Cell target")
+        };
+        let layer = self
+            .resolved_terrain
+            .as_ref()
+            .map_or(MovementLayer::Ground, |terrain| {
+                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                if cells.flags(cells.lookup(cell)) & 0x100 != 0 {
+                    MovementLayer::Bridge
+                } else {
+                    MovementLayer::Ground
+                }
+            });
+        Some((
+            target,
+            self.find_blocking_object((x as u16, y as u16), layer),
+        ))
+    }
+
+    /// Script59 / Team6ECA70, distinct from Script1: the first waypoint
+    /// query admits only a BuildingRTTI6 returned by shared Cell47C5A0.
+    /// Empty ground, terrain and another Foot finish the action. Subsequent
+    /// visits retain the target without another waypoint query. Target plus
+    /// any unlimited/positive-ammo member invokes the sole CoordinateAttack;
+    /// otherwise AssignMissionTarget(NULL) and +80 advance, in that order.
+    /// Steam3e81a617..08600, original6ECA70..6ECB45 instructions and
+    /// team_attack_waypoint_building's bounded control corpus.
+    fn team_action_attack_waypoint_building(
+        &mut self,
+        team_id: u64,
+        waypoint: i32,
+        first: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        if first {
+            let target = self
+                .team_waypoint_blocker(waypoint)
+                .and_then(|(_, blocker)| {
+                    let Some(BlockingObject::Entity(id)) = blocker else {
+                        return None;
+                    };
+                    self.substrate
+                        .entities
+                        .get(id)
+                        .filter(|entity| entity.category == EntityCategory::Structure)
+                        .map(|_| TeamTarget::Object(id))
+                });
+            self.team_assign_mission_target(team_id, target, rules, registry, effects);
+        }
+        let Some(team) = self.team_script_vm.teams.get(&team_id) else {
+            return;
+        };
+        if team.mission_target.is_some() && !self.team_out_of_ammo(team_id, rules) {
+            self.team_coordinate_attack(team_id, rules, registry, effects);
+            return;
+        }
+        self.team_assign_mission_target(team_id, None, rules, registry, effects);
+        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+            team.advance_pending = true;
+        }
+    }
+
     /// Script action 0 (`0x006ED090`, `first` unread), attack quarry: a team
     /// with members and no mission target takes as one its leader's
     /// `Greatest_Threat` (`vt+0x3C4`) for the quarry ([`quarry_mask`]) around
@@ -1733,7 +2095,8 @@ impl Simulation {
 
     /// Every member carries ammunition (`Ammo=` above 0, type `+0x684`) and
     /// has none left (`+0x2FC`, [`member_ammo`]), as a team without members
-    /// does. Actions 0 (`0x006ED17C..0x006ED19A`) and 46
+    /// does. Actions 0 (`0x006ED17C..0x006ED19A`), 1
+    /// (`0x006ECA11..0x006ECA3E`),59 (`0x006ECAF6..0x006ECB1A`) and46
     /// (`0x006EE396..0x006EE3BC`) walk the members from the first and stop
     /// attacking only then.
     fn team_out_of_ammo(&self, team_id: u64, rules: &RuleSet) -> bool {
@@ -1968,7 +2331,7 @@ impl Simulation {
                 .and_then(|leader| self.substrate.entities.get(leader))
                 .is_some_and(|entity| entity.category != EntityCategory::Aircraft)
             && let Some(BlockingObject::Entity(object)) =
-                self.find_blocking_object((x as u16, y as u16))
+                self.find_blocking_object((x as u16, y as u16), MovementLayer::Ground)
             && let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
         {
             focus = Some(TeamTarget::Object(object));
@@ -2274,6 +2637,12 @@ pub(super) fn target_building_pick(
     if only_enemy { enemy_best } else { any_best }
 }
 
+#[cfg(test)]
+#[path = "force_facing_tests.rs"]
+mod force_facing_tests;
+#[cfg(test)]
+#[path = "removal_actions_tests.rs"]
+mod removal_tests;
 #[cfg(test)]
 #[path = "actions_tests.rs"]
 mod tests;

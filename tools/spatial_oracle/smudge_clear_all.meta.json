@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole TAction1186E2C20 -> Map588AC0 ->4F42F0(1)/578AC0 on three supplied map/type field controls; original IDIV, allocated iterator/first-null stop, identity-only footprint writes and redraw fields execute.",
+  "assumptions": [
+    "Existing Cells transport executes original Cell47BBF0 constructors; synthetic Size6x4 allocation/data and positive type fields1x1/2x2 are supplied, not derived from VERA or claimed as retail reader/campaign evidence.",
+    "Type registry consists of two supplied semantic identities. Entire SmudgeType constructor/INI read, runtime SmudgeClass lifetime, complete scenario start and rendered pixels are excluded.",
+    "Display pointer is a supplied mapped field block; Map redraw level and epoch are supplied. Actual4F42F0 and578AC0 scalar stores execute; no original rendering surface or cache blit executes.",
+    "Three cases: empty allocated map; complete1x1 and2x2 footprints; one torn2x2 boundary source with retained Dummy data and first-null iterator termination. Native results pin signed IDIV/word origin and field-preservation for these inputs only.",
+    "Full Scenario RNG bytes before/after compare equal; no seed/draw occurs between the retained states during Execute118."
+  ],
+  "substitutions": [
+    "Only inherited host stack/PE allocation and this tool's synthetic original-constructed Cell/type/global field transport. No native gameplay or redraw instruction in this selected route is hooked or changed."
+  ],
+  "entry_points": {
+    "execute118": "0x006E2C20",
+    "clear": "0x00588AC0",
+    "iterator_next": "0x00578290",
+    "cell_ctor": "0x0047BBF0",
+    "redraw": "0x004F42F0",
+    "epoch": "0x00578AC0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.smudge_can_place --clear-all-smudges",
+  "payload_sha256": "16acea9ab8cd93ba7487dc60d9aee6e78c001633324c8473abefec892015e696"
+}

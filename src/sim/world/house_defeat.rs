@@ -78,6 +78,16 @@ use crate::sim::intern::InternedId;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation, UninitContext};
 
+/// Native House cleanup leaves4FC6D0/4FC790/4FC820/4FC8D0 share the
+/// registry walk and receiver; only their admission differs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HouseBlowupSubset {
+    All,
+    Buildings,
+    Land,
+    Naval,
+}
+
 impl Simulation {
     /// The house rung with its defeat pass: see [`Self::house_rung`].
     #[cfg(test)]
@@ -99,7 +109,8 @@ impl Simulation {
     /// `sim::ai_team_creation`), its defeat gate (see the module doc), its
     /// Tags' event-8 raise (`sim::trigger_runtime`), then its strategy tick (`0x004F8FBE..0x004F9032`, `sim::house_strategy`) and
     /// production choices (`0x004F9038..0x004F9265`, `sim::ai_base_building`);
-    /// then the game-over scan and the result timers. Without `defeat_pass`
+    /// then the game-over scan. The House result head4F85BE precedes teams.
+    /// Without `defeat_pass`
     /// (VERA's first tick) the defeat gates and the game-over scan are
     /// skipped.
     pub(super) fn house_rung(
@@ -109,14 +120,6 @@ impl Simulation {
         defeat_pass: bool,
         frame_effects: FrameEffects<'_>,
     ) {
-        let outcome_tick = self.session.tick.saturating_add(1);
-        let savour_frames = crate::rules::ruleset::savour_delay_frames(
-            rules
-                .map(|rules| rules.general.savour_delay_minutes)
-                // RulesClass__Constructor @ 0x00665650 stores the exact f64
-                // default 0.03 before any optional INI ReadDouble override.
-                .unwrap_or(0.03),
-        );
         // 0x004F8E86..0x004F8EB7: not a campaign, past frame zero.
         let defeat_gate =
             defeat_pass && self.session.game_mode_nonzero && (self.session.binary_frame as i32) > 0;
@@ -144,6 +147,15 @@ impl Simulation {
                 self.assess_house_derived_state(owner, rules);
             }
             self.update_house_anger_and_activation(owner, rules);
+            // House4F85BE/4F86FE precedes team creation, defeat and this
+            // House's Tags. Result countdown and AllowWin-tag teardown share
+            // the sole private +298 CdTimer; use NativeFrame, not Rust tick+1.
+            if let Some(house) = self.houses.get_mut(&owner) {
+                house.advance_outcome_savour(
+                    self.session.binary_frame as i32,
+                    self.session.game_mode_nonzero,
+                );
+            }
             if let Some(power) = self.power_states.get_mut(&owner) {
                 power.clamp_negative_totals();
             }
@@ -155,15 +167,20 @@ impl Simulation {
                     frame_effects,
                 );
                 crate::sim::house_eva::update_house_eva(self, rules, owner);
+                crate::sim::superweapon::tick_house_superweapon_instances(self, rules, owner);
             }
             if defeat_gate && self.house_holds_nothing(owner, &base_units, build_refinery_2) {
                 if let Some(rules) = rules {
-                    self.house_blowup_all(owner, rules, registry, frame_effects);
+                    self.house_blowup(
+                        owner,
+                        HouseBlowupSubset::All,
+                        rules,
+                        registry,
+                        frame_effects,
+                    );
                 }
                 self.mplayer_defeated(
                     owner,
-                    outcome_tick,
-                    savour_frames,
                     UninitContext::new(rules, registry).with_effects(frame_effects),
                 );
             }
@@ -179,6 +196,16 @@ impl Simulation {
                 crate::sim::ai_base_building::update_production_choices(
                     self, rules, owner, registry,
                 );
+                // House4F927C/4F92ED clears1FC before either pass; a status
+                // change inside50AF10 can retain a request for the next frame.
+                if self
+                    .houses
+                    .get_mut(&owner)
+                    .is_some_and(|house| house.take_tech_tree_recheck())
+                {
+                    crate::sim::superweapon::update_owned_supers(self, rules, owner);
+                    crate::sim::superweapon::grant_provided_supers(self, rules, owner);
+                }
             }
             if let Some(house) = self.houses.get_mut(&owner) {
                 house.release_repair_latch(self.session.binary_frame);
@@ -219,14 +246,7 @@ impl Simulation {
         let automatic_victory_allowed = self.contending_house_count() > 1;
         if automatic_victory_allowed && alive.len() == 1 {
             // Last player standing.
-            if let Some(h) = self.houses.get_mut(&alive[0])
-                && h.flag_to_win(outcome_tick, savour_frames)
-            {
-                self.sound_events.push(SimSoundEvent::MatchOutcome {
-                    owner: alive[0],
-                    kind: crate::sim::house_state::HouseOutcomeKind::Victory,
-                });
-            }
+            self.flag_house_to_win(alive[0], rules, false, frame_effects);
         } else if automatic_victory_allowed && !alive.is_empty() {
             // O(n^2) mutual-alliance check. Native alliance is directional — each
             // house owns its own ally bits — and the game-over scan requires BOTH
@@ -245,23 +265,9 @@ impl Simulation {
 
             if all_allied {
                 for &owner in &alive {
-                    if let Some(h) = self.houses.get_mut(&owner)
-                        && h.flag_to_win(outcome_tick, savour_frames)
-                    {
-                        self.sound_events.push(SimSoundEvent::MatchOutcome {
-                            owner,
-                            kind: crate::sim::house_state::HouseOutcomeKind::Victory,
-                        });
-                    }
+                    self.flag_house_to_win(owner, rules, false, frame_effects);
                 }
             }
-        }
-
-        // HouseClass::Update @ 0x004F8440 advances the accepted result timer
-        // in the house rung. The expiry frame is terminal and therefore skips
-        // the wrapping frame commit below, matching Main_Tick's early return.
-        for house in self.houses.values_mut() {
-            house.advance_outcome_savour(outcome_tick);
         }
     }
 
@@ -301,13 +307,7 @@ impl Simulation {
     /// - the announcement (`0x004FC262..0x004FC2EA` for the current house,
     ///   `0x004FC343..0x004FC3BC` for another; the app decides which) and the
     ///   loss.
-    fn mplayer_defeated(
-        &mut self,
-        owner: InternedId,
-        outcome_tick: u64,
-        savour_frames: u64,
-        context: UninitContext<'_>,
-    ) {
+    fn mplayer_defeated(&mut self, owner: InternedId, context: UninitContext<'_>) {
         if let Some(house) = self.houses.get_mut(&owner) {
             house.is_defeated = true;
         }
@@ -336,16 +336,162 @@ impl Simulation {
         }
         self.sound_events
             .push(SimSoundEvent::PlayerDefeated { house: owner });
-        let accepted = self
-            .houses
-            .get_mut(&owner)
-            .is_some_and(|house| house.flag_to_lose(outcome_tick, savour_frames));
+        self.flag_house_to_lose(owner, context.rules(), false, context.effects());
+    }
+
+    /// `HouseClass::Flag_To_Win4FC9E0`, common offline campaign/skirmish path.
+    /// +298 is the same timer AllowWin Tags mutate; action67's argument1
+    /// preserves it. Numeric conversion uses the existing native minutes
+    /// reader/conversion owner. Network modes' ten-frame alignment is outside
+    /// this route (the active offline nonzero mode is5).
+    pub(crate) fn flag_house_to_win(
+        &mut self,
+        owner: InternedId,
+        rules: Option<&RuleSet>,
+        skip_timer: bool,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let savour = crate::rules::ruleset::native_minutes_to_frames(
+            rules.map_or(0.03, |rules| rules.general.savour_delay_minutes),
+        );
+        let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
+            house.accept_win_result(self.session.binary_frame as i32, savour, skip_timer)
+        });
         if accepted {
-            self.sound_events.push(SimSoundEvent::MatchOutcome {
+            self.publish_accepted_house_outcome(
                 owner,
-                kind: crate::sim::house_state::HouseOutcomeKind::Defeat,
-            });
+                crate::sim::house_state::HouseOutcomeKind::Victory,
+                rules,
+                effects,
+            );
         }
+        // Native returns the current +1F7 byte, including a repeated call.
+        self.houses.get(&owner).is_some_and(|house| house.has_won())
+    }
+
+    /// `HouseClass::Flag_To_Lose4FCBD0`: clear Win first, accept Lost only
+    /// once, then use the same timer/effect owners as Flag_To_Win.
+    pub(crate) fn flag_house_to_lose(
+        &mut self,
+        owner: InternedId,
+        rules: Option<&RuleSet>,
+        skip_timer: bool,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let savour = crate::rules::ruleset::native_minutes_to_frames(
+            rules.map_or(0.03, |rules| rules.general.savour_delay_minutes),
+        );
+        let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
+            house.accept_lose_result(self.session.binary_frame as i32, savour, skip_timer)
+        });
+        if accepted {
+            self.publish_accepted_house_outcome(
+                owner,
+                crate::sim::house_state::HouseOutcomeKind::Defeat,
+                rules,
+                effects,
+            );
+        }
+        self.houses
+            .get(&owner)
+            .is_some_and(|house| house.has_lost())
+    }
+
+    /// Shared presentation boundary of the two native Flag bodies. Their
+    /// state/timer decisions stay in HouseState; no separate trigger result
+    /// or announcement state is retained. Native684240 is campaign-only.
+    fn publish_accepted_house_outcome(
+        &mut self,
+        owner: InternedId,
+        kind: crate::sim::house_state::HouseOutcomeKind,
+        rules: Option<&RuleSet>,
+        effects: FrameEffects<'_>,
+    ) {
+        let campaign = !self.session.game_mode_nonzero;
+        let announce = if campaign {
+            self.houses
+                .get(&owner)
+                .is_some_and(|house| house.is_controlled_by_human(false))
+        } else {
+            self.session.current_house == Some(owner)
+        };
+        if !announce {
+            return;
+        }
+        if campaign {
+            let was_locked = self.session.input_locked();
+            self.session.set_input_locked(true);
+            self.publish_trigger_effects(vec![
+                crate::sim::trigger_runtime::TriggerEffect::InputLockChanged {
+                    locked: true,
+                    was_locked,
+                },
+            ]);
+        }
+        self.sound_events
+            .push(SimSoundEvent::MatchOutcome { owner, kind });
+        //752700 is reached synchronously before the Flag call returns.
+        effects.flush_sound(self, rules);
+    }
+
+    /// TAction1/2/67/68/69 dispatch6DEA37/6DEA67/6DDD77/6DDD93/6DDDAF.
+    /// All target PlayerPtr, not the Trigger's incoming House.1/2 compare
+    /// +90 with that HouseType's Country ordinal;67/68 pass skip-timer1.
+    pub(crate) fn trigger_house_outcome(
+        &mut self,
+        action_kind: i32,
+        country_index: i32,
+        rules: Option<&RuleSet>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some(owner) = self
+            .session
+            .current_house
+            .filter(|owner| self.houses.contains_key(owner))
+        else {
+            return false;
+        };
+        match action_kind {
+            1 | 2 => {
+                let Some(rules) = rules else {
+                    return false;
+                };
+                let native_country = self.houses[&owner]
+                    .country
+                    .and_then(|country| rules.country_index(self.interner.resolve(country)))
+                    .map(|index| i32::from(index.0));
+                let Some(native_country) = native_country else {
+                    return false;
+                };
+                let win = (native_country == country_index) == (action_kind == 1);
+                if win {
+                    self.flag_house_to_win(owner, Some(rules), false, effects);
+                } else {
+                    self.flag_house_to_lose(owner, Some(rules), false, effects);
+                }
+            }
+            67 => {
+                self.flag_house_to_win(owner, rules, true, effects);
+            }
+            68 => {
+                self.flag_house_to_lose(owner, rules, true, effects);
+            }
+            69 => {
+                //4FCDC0 calls the existing FlagWin(0) if neither result is
+                //set; otherwise only resume the same timer's paused anchor.
+                if self.houses[&owner].has_won() || self.houses[&owner].has_lost() {
+                    self.houses
+                        .get_mut(&owner)
+                        .unwrap()
+                        .resume_result_timer(self.session.binary_frame as i32);
+                } else {
+                    self.flag_house_to_win(owner, rules, false, effects);
+                }
+            }
+            _ => return false,
+        }
+        // Each original TAction arm returns AL1 independently of Flag AL.
+        true
     }
 
     /// Session `+0x300` (`0x00A8B538`), written when the current house is
@@ -362,69 +508,61 @@ impl Simulation {
             .is_some_and(|house| house.is_defeated)
     }
 
-    /// `HouseClass::Blowup_All @ 0x004FC6D0` (see the module doc).
-    pub(crate) fn house_blowup_all(
+    /// HouseClass cleanup4FC6D0/4FC790/4FC820/4FC8D0. Original Steam
+    ///3e81a617..08600; tools/spatial_oracle/house_blowup_all is the oracle.
+    /// One owner for defeat and trigger119..122, including limbo/RTTI/Naval
+    /// admission, dynamic registry order and same-callback receiver effects.
+    pub(crate) fn house_blowup(
         &mut self,
         house: InternedId,
+        subset: HouseBlowupSubset,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
-        // The array is re-read each step (items `0x004FC6EC`, count
-        // `0x004FC771`): an object added during the sweep is visited too,
-        // after every one that preceded it.
-        let mut visited_below = 0u64;
-        loop {
-            let mut order: Vec<u64> = self
+        //All four bodies re-read the current slot/count after ReceiveDamage.
+        //The last-pointer guard advances an unchanged slot; immediate removal
+        //exposes its successor at that same ordinal. Do not snapshot/sort IDs.
+        let mut ordinal = 0;
+        let mut last = None;
+        while ordinal < self.substrate.entities.techno_registry_len() {
+            let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+            if !self.blown_up_with(id, house, subset, rules) || last == Some(id) {
+                ordinal += 1;
+                continue;
+            }
+            //4FC731/4FC7D1/4FC879/4FC929 reads Health before Temporal
+            //release; callbacks do not replace that already captured damage.
+            let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current) else {
+                ordinal += 1;
+                continue;
+            };
+            // 0x004FC742: the chain warping it lets go first.
+            if let Some(head) = self
                 .substrate
                 .entities
-                .values()
-                .filter(|entity| entity.stable_id() >= visited_below)
-                .map(|entity| entity.stable_id())
-                .collect();
-            if order.is_empty() {
-                break;
+                .get(id)
+                .and_then(|entity| entity.temporal.chain_head())
+            {
+                self.temporal_release_chain_no_idle(head, rules, frame_effects);
             }
-            order.sort_unstable();
-            visited_below = order[order.len() - 1] + 1;
-            for id in order {
-                if !self.blown_up_with(id, house, rules) {
-                    continue;
-                }
-                // 0x004FC742: the chain warping it lets go first.
-                if let Some(head) = self
-                    .substrate
-                    .entities
-                    .get(id)
-                    .and_then(|entity| entity.temporal.chain_head())
-                {
-                    self.temporal_release_chain_no_idle(head, rules, frame_effects);
-                }
-                let Some(health) = self
-                    .substrate
-                    .entities
-                    .get(id)
-                    .map(|entity| entity.health.current)
-                else {
-                    continue;
-                };
-                let event = EntityDamageEvent::direct_receiver(
-                    id,
-                    health,
-                    0,
-                    RAD_NO_ATTACKER,
-                    None,
-                    c4,
-                    ReceiverCallFlags {
-                        ignore_defenses: true,
-                        arg6: true,
-                    },
-                );
-                #[cfg(test)]
-                BLOWUP_TRACE.with(|trace| trace.borrow_mut().push(event));
-                self.commit_direct_damage_receiver(rules, registry, event, frame_effects);
-            }
+            let event = EntityDamageEvent::direct_receiver(
+                id,
+                health,
+                0,
+                RAD_NO_ATTACKER,
+                None,
+                c4,
+                ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: true,
+                },
+            );
+            #[cfg(test)]
+            BLOWUP_TRACE.with(|trace| trace.borrow_mut().push(event));
+            self.commit_direct_damage_receiver(rules, registry, event, frame_effects);
+            last = Some(id);
         }
     }
 
@@ -432,29 +570,66 @@ impl Simulation {
     /// its original owner (`TechnoClass::GetOriginalOwner @ 0x0070F820`) is
     /// `house`, and either it still belongs to `house` or no Civilian-side
     /// house takes it over from the house controlling it.
-    fn blown_up_with(&mut self, id: u64, house: InternedId, rules: &RuleSet) -> bool {
+    fn blown_up_with(
+        &mut self,
+        id: u64,
+        house: InternedId,
+        subset: HouseBlowupSubset,
+        rules: &RuleSet,
+    ) -> bool {
+        if self.techno_original_owner(id) != Some(house) {
+            return false;
+        }
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
+        if subset != HouseBlowupSubset::All {
+            //4FC7C3/4FC857/4FC907: typed cleanup excludes limbo, not dead
+            //or unmarked objects. Building RTTI is6; other Technos use the
+            //production type's native Naval read, even Aircraft/Infantry.
+            if entity.lifecycle.in_limbo {
+                return false;
+            }
+            let building = entity.category == crate::map::entities::EntityCategory::Structure;
+            return match subset {
+                HouseBlowupSubset::Buildings => building,
+                HouseBlowupSubset::Land | HouseBlowupSubset::Naval => {
+                    !building
+                        && self
+                            .object_type(entity.type_ref(), rules)
+                            .is_some_and(|t| t.naval == (subset == HouseBlowupSubset::Naval))
+                }
+                HouseBlowupSubset::All => unreachable!(),
+            };
+        }
         let owner = entity.owner();
         let Some(controller) = entity.mind_control.controller() else {
             return owner == house;
         };
         // CaptureManagerClass::GetOriginalOwner @ 0x004722F0 (null without a
         // node).
-        let original = self
-            .substrate
-            .entities
-            .get(controller)
-            .and_then(|controller| controller.capture_manager.as_ref())
-            .and_then(|manager| manager.original_owner(id));
-        if original == Some(owner) {
-            return owner == house;
-        }
-        if original != Some(house) {
-            return false;
+        if owner == house {
+            return true;
         }
         !self.set_original_owner_to_civilian(controller, id, rules)
+    }
+
+    /// TechnoGetOriginalOwner70F820: MindControlledBy's CaptureManager is
+    /// read before the current Owner. No manager node means native NULL.
+    /// The trigger-transfer+2CC/+2E0 producer remains an explicit module
+    /// residual; ordinary ChangeOwner/Engineer capture does not set that latch.
+    pub(crate) fn techno_original_owner(&self, id: u64) -> Option<InternedId> {
+        let entity = self.substrate.entities.get(id)?;
+        if let Some(controller) = entity.mind_control.controller() {
+            self.substrate
+                .entities
+                .get(controller)?
+                .capture_manager
+                .as_ref()?
+                .original_owner(id)
+        } else {
+            Some(entity.owner())
+        }
     }
 
     /// Whether `house`'s HouseType side (`[house+0x34]+0xBC`) equals

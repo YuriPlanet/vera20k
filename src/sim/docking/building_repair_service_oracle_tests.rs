@@ -67,7 +67,10 @@ const REGISTRIES: &str = "[VehicleTypes]\n0=MTNK\n1=HTNK\n\
 
 fn stock_rules(golden: &Value, case: &Value) -> RuleSet {
     let layers = golden["inputs"]["layers"].as_array().unwrap();
-    let mut stack = RulesLayerStack::new(IniFile::from_str(&format!(
+    // The native controls supply already-admitted actors on clear ground.
+    // Their selected-key packet excludes LandType reads; this synthetic
+    // construction prior does not certify retail map/Unlimbo admission.
+    let mut stack = RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(&format!(
         "{REGISTRIES}{}\n",
         sections_text(&layers[0]["selected"]),
     )));
@@ -329,13 +332,6 @@ fn scene(golden: &Value, row: &Value) -> Scene {
             }
         }
     }
-    if let Some(cell) = row["raw_current_cell"].as_array() {
-        terrain
-            .cell_mut(int(&cell[0]) as u16, int(&cell[1]) as u16)
-            .unwrap()
-            .bridge_facts
-            .raw_flags = row["raw_current_flags"].as_u64().unwrap() as u32;
-    }
     let path = PathGrid::from_resolved_terrain(&terrain);
     sim.zone_grid = Some(
         crate::sim::pathfinding::zone_map::ZoneGrid::build_with_native_map_context(
@@ -394,6 +390,17 @@ fn scene(golden: &Value, row: &Value) -> Scene {
         )
         .expect("native auxiliary target has an admitted supplied cell")
     });
+    if let Some(cell) = row["raw_current_cell"].as_array() {
+        // The original destination controls supply already-admitted actors
+        // and then this raw current-cell prior. In high_bridge_current_cell,
+        // bit100 at8,10 lies inside the depot's6,9 3x3 foundation and must not
+        // be misused as an input to a new Building CanPlaceAt transaction.
+        let mut terrain = sim.resolved_terrain.take().unwrap();
+        let identity = terrain.native_cell_identity((int(&cell[0]) as i16, int(&cell[1]) as i16));
+        terrain
+            .write_native_cell_flags(identity, row["raw_current_flags"].as_u64().unwrap() as u32);
+        sim.install_resolved_terrain_for_new_map(terrain);
+    }
     if case["spatial_startup"] == true {
         // The native waiter scene has admitted fields but only the depot
         // is CellPUT-marked. Remove constructor-added tank/placeholder lists

@@ -1271,8 +1271,16 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         let (rx, ry, z) = (owner.position.rx, owner.position.ry, owner.position.z);
         let facing = owner.body_facing_byte(self.sim.session.binary_frame);
         let type_name = self.sim.interner.resolve(spawn_type).to_string();
-        self.sim
-            .construct_object_limbo_at_height(&type_name, &house, rx, ry, facing, z, rules)
+        self.sim.construct_object_limbo_at_height(
+            &type_name,
+            &house,
+            rx,
+            ry,
+            facing,
+            z,
+            rules,
+            self.context.effects(),
+        )
     }
 
     fn adopt(&mut self, child: u64) {

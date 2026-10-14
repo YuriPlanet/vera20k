@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original House4FC790/4FC820/4FC8D0 typed cleanup; shared70F820/4722F0 owner lookup",
+  "assumptions": [
+    "Synthetic ordered Techno registry; live/limbo byte81, Health6C, supplied real category RTTI and Type NavalCCE; native predicates and loops execute"
+  ],
+  "substitutions": [
+    "ReceiveDamage recorded, optionally removes current registry slot; RTTI/type-getter return supplied fixture data; Temporal release recorded; Civilian side lookup supplied"
+  ],
+  "entry_points": {
+    "buildings": "0x004FC790",
+    "land": "0x004FC820",
+    "naval": "0x004FC8D0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.house_blowup_all --subsets",
+  "payload_sha256": "710cb44c9ca6d159d023ea40b9fd64c5340fe3466f068600c11f9ba49a41ff31"
+}

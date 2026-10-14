@@ -12,7 +12,15 @@ building counter +0x5550 at BuildRefinery[2] (Rules +0x8E8). Blowup_All
 0x004FC6D0 and MPlayer_Defeated 0x004FC0B0 are recorded at entry and not run.
 
 Rust consumer: src/sim/world/house_defeat_tests.rs.
+
+Additive --outcomes selects the full offline result bodies and shared timer
+heads, writing house_outcomes.json with --write. It reuses this Fixture and the
+existing ReadDouble owner. VERA20K_OUTCOME_RULES selects physical RULESMD.INI
+(default ini/rulesmd.ini); file/archive IO and full scenario timing are excluded.
 """
+import argparse
+import hashlib
+import os
 import struct
 from pathlib import Path
 
@@ -153,5 +161,196 @@ def metadata():
         entry_points={"gate": GATE_BEGIN, "join": GATE_END})
 
 
+class OutcomeFixture(Fixture):
+    """Reuse the gate VM transport for full offline Flag bodies and timer heads.
+
+    UI/audio sinks record entry arguments and return; original Flag branches,
+    double multiply/ftol, timer writes and EndScenario remain instructions.
+    HouseUpdate heads stop BEFORE the wall-clock/Vox wait, never fake its end.
+    """
+    FLAGS = {"win": 0x4FC9E0, "lose": 0x4FCBD0, "end": 0x4FCDC0}
+    SINK_CLEANUP = {0x684240: 0, 0x734E60: 8, 0x6D4DB0: 8,
+                    0x752700: 4, 0x4F42F0: 4, 0x4068E0: 0}
+
+    def observe(self, u, pc, _size, _data):
+        if pc in getattr(self, "gate_stops", {}):
+            self.gate_result = self.gate_stops[pc]
+            u.emu_stop()
+        elif pc in self.SINK_CLEANUP:
+            sp = u.reg_read(UC_X86_REG_ESP)
+            event = dict(address=hex(pc), ecx=u.reg_read(UC_X86_REG_ECX),
+                         stack=[self.word(sp + n) for n in (4, 8)])
+            if pc in (0x734E60, 0x752700):
+                event["name"] = bytes(u.mem_read(event["ecx"], 80)).split(b"\0", 1)[0].decode("ascii")
+            self.events.append(event)
+            if pc == 0x734E60:
+                # Supplied CSF text storage; native string table IO excluded.
+                u.reg_write(UC_X86_REG_EAX, SCRATCH + 0xFE00)
+            u.reg_write(UC_X86_REG_EIP, self.word(sp))
+            u.reg_write(UC_X86_REG_ESP, sp + 4 + self.SINK_CLEANUP[pc])
+        else:
+            super().observe(u, pc, _size, _data)
+
+    def reset_outcome(self, case, savour_bits):
+        u = self.u
+        self.events = []
+        self.gate_stops = {}
+        u.mem_write(SCRATCH, bytes(REGION))
+        u.reg_write(UC_X86_REG_FPCW, NATIVE_FPCW)
+        u.mem_write(GAME_MODE, dwords(case.get("game_mode", 0)))
+        u.mem_write(FRAME, struct.pack("<i", case.get("frame", 100)))
+        u.mem_write(RULES_PTR, dwords(RULES))
+        u.mem_write(RULES + 0x14C8, struct.pack("<Q", savour_bits))
+        u.mem_write(0xA83D4C, dwords(HOUSE))
+        u.mem_write(0x887324, dwords(SCRATCH + 0xF000))
+        u.mem_write(HOUSE + 0x1EC, bytes([case.get("human", 1), 0]))
+        u.mem_write(HOUSE + 0x1F6, bytes([0, case.get("won", 0), case.get("lost", 0)]))
+        u.mem_write(HOUSE + 0x27C, struct.pack("<i", case.get("allow_win", 0)))
+        u.mem_write(HOUSE + 0x298, struct.pack("<iii", *case.get("timer", [-1, 0, 0])))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ECX, HOUSE)
+
+    def constructor_savour(self):
+        self.u.reg_write(UC_X86_REG_ESI, RULES)
+        run_checked(self.u, 0x66731D, 0x667331, count=2,
+                    required_addresses=(0x66731D, 0x667327))
+        return struct.unpack("<Q", self.u.mem_read(RULES + 0x14C8, 8))[0]
+
+    def flag(self, case, savour_bits):
+        self.reset_outcome(case, savour_bits)
+        fn = self.FLAGS[case["operation"]]
+        self.u.mem_write(SP, dwords(RET_MAGIC, int(case.get("skip_timer", False))))
+        run_checked(self.u, fn, RET_MAGIC, count=20_000, required_addresses=(fn,))
+        return dict(input=case, savour_bits=f"{savour_bits:016x}",
+                    won=self.u.mem_read(HOUSE + 0x1F7, 1)[0],
+                    lost=self.u.mem_read(HOUSE + 0x1F8, 1)[0],
+                    timer=list(struct.unpack("<iii", self.u.mem_read(HOUSE + 0x298, 12))),
+                    al=self.u.reg_read(UC_X86_REG_EAX) & 255, calls=self.events)
+
+    def result_gate(self, case):
+        self.reset_outcome(case, 0)
+        u = self.u
+        u.reg_write(UC_X86_REG_ESI, HOUSE)
+        u.reg_write(UC_X86_REG_EBP, 0)
+        win = case["operation"] == "win_gate"
+        begin = 0x4F85BE if win else 0x4F86FE
+        join = 0x4F86FE if win else 0x4F87C2
+        self.gate_result = "continue"
+        self.gate_stops = {0x4F860B if win else 0x4F8732: "result_wait"}
+        run_checked(u, begin, (join, *self.gate_stops), count=100,
+                    required_addresses=(begin,))
+        return dict(input=case, gate=self.gate_result)
+
+    def banner_center(self, view, canvas):
+        self.gate_stops = {}
+        self.u.mem_write(0x886FA8, struct.pack("<ii", *view))
+        self.u.mem_write(SCRATCH + 0xF002, struct.pack("<hh", *canvas))
+        self.u.reg_write(UC_X86_REG_ESI, SCRATCH + 0xF000)
+        run_checked(self.u, 0x6D4E95, 0x6D4EB9, count=30,
+                    required_addresses=(0x6D4E95, 0x6D4EB7))
+        signed = lambda reg: struct.unpack("<i", dwords(self.u.reg_read(reg)))[0]
+        return dict(view=view, canvas=canvas,
+                    origin=[signed(UC_X86_REG_EAX), signed(UC_X86_REG_ECX)])
+
+
+def outcome_inputs():
+    return [
+        dict(name="win_ctor", operation="win", delay="constructor"),
+        dict(name="win_retail", operation="win", delay="retail"),
+        dict(name="lose_retail", operation="lose", delay="retail"),
+        dict(name="win_read_point03", operation="win", delay=".03"),
+        dict(name="win_signed_delay", operation="win", delay="-.03"),
+        dict(name="win_already_won", operation="win", won=1, timer=[17, 0, 41]),
+        dict(name="win_already_lost", operation="win", lost=1, timer=[17, 0, 41]),
+        dict(name="lose_replaces_win", operation="lose", won=1),
+        dict(name="lose_already_lost_clears_win", operation="lose", won=1, lost=1,
+             timer=[17, 0, 41]),
+        dict(name="announce67_preserves_running", operation="win", skip_timer=True,
+             timer=[17, 0, 41]),
+        dict(name="announce68_preserves_paused", operation="lose", skip_timer=True,
+             timer=[-1, 0, 41]),
+        dict(name="announce68_ctor_zero", operation="lose", skip_timer=True),
+        dict(name="end69_paused_win", operation="end", won=1, timer=[-1, 0, 41]),
+        dict(name="end69_running_lose", operation="end", lost=1, timer=[17, 0, 41]),
+        dict(name="end69_no_result", operation="end", delay="retail"),
+        dict(name="win_offline_mode5", operation="win", game_mode=5, delay="retail"),
+    ]
+
+
+def _retail_savour_token(path):
+    # Input extraction only, not an INI/scalar implementation: require this
+    # unique physical AudioVisual key, then execute the existing ReadDouble.
+    raw = path.read_bytes()
+    selected = False
+    found = []
+    for line in raw.splitlines():
+        line = line.split(b";", 1)[0].strip()
+        if line.startswith(b"[") and line.endswith(b"]"):
+            selected = line == b"[AudioVisual]"
+        elif selected and b"=" in line:
+            key, value = (part.strip() for part in line.split(b"=", 1))
+            if key == b"SavourDelay":
+                found.append(value.decode("ascii"))
+    assert len(found) == 1, (path, "unique physical AudioVisual SavourDelay required", found)
+    return raw, found[0]
+
+
+def generate_outcomes():
+    from tools.rules_oracle.read_double_percent import Reader
+    from tools.spatial_oracle.building_body_rules import TYPE
+    path = Path(os.environ.get("VERA20K_OUTCOME_RULES", "ini/rulesmd.ini"))
+    raw, token = _retail_savour_token(path)
+    reader = Reader()
+    reader.u.mem_write(TYPE + 0x1F8, b"AudioVisual\0")
+    fixture = OutcomeFixture()
+    constructor = fixture.constructor_savour()
+    parsed = {value: reader.read(value, key_name="SavourDelay")
+              for value in dict.fromkeys((token, ".03", "-.03"))}
+    bits = dict(constructor=constructor, retail=parsed[token], **parsed)
+    flags = [fixture.flag(case, bits[case.get("delay", "constructor")])
+             for case in outcome_inputs()]
+    gates = []
+    for win in (True, False):
+        for mode, count, timer, frame in [(0, 0, [100, 0, 90], 189),
+                                          (0, 0, [100, 0, 90], 190),
+                                          (0, 1, [100, 0, 90], 190),
+                                          (5, 1, [100, 0, 90], 190),
+                                          (0, 0, [-1, 0, 1], 190),
+                                          (0, 0, [-1, 0, 0], 190),
+                                          (0, 0, [-1, 0, -1], 190)]:
+            case = dict(name=f"{'win' if win else 'lose'}_mode{mode}_tags{count}_timer{timer[0]}_{timer[2]}_frame{frame}",
+                        operation="win_gate" if win else "lose_gate", won=int(win),
+                        lost=int(not win), game_mode=mode, allow_win=count, timer=timer, frame=frame)
+            gates.append(fixture.result_gate(case))
+    return dict(constructor_bits=f"{constructor:016x}",
+                retail=dict(file=path.name, sha256=hashlib.sha256(raw).hexdigest(),
+                            token=token, reader_bits=f"{parsed[token]:016x}"),
+                flag_controls=flags, result_gates=gates,
+                banner_centers=[fixture.banner_center([640, 480], canvas)
+                                for canvas in ([400, 80], [641, 483])])
+
+
+def outcome_metadata():
+    return provenance(
+        scope="Full offline HouseFlagWin4FC9E0/FlagLose4FCBD0/EndScenario4FCDC0 and exact-zero/AllowWin result heads4F85BE/4F86FE",
+        assumptions=["FlagToDie+1F6 supplied zero; campaign mode0 and offline nonzero mode5 only; current PlayerPtr and human bytes supplied",
+                     "Constructor66731D..667331 original stores establish Rules+14C8 bits; physical AudioVisual SavourDelay token is passed through existing original5283D0 Reader; FPCW0E7F",
+                     "House+298/+29C/+2A0 raw timer and +27C AllowWin count are independent supplied inputs; original branches and arithmetic execute"],
+        substitutions=["Record and return UI/input/audio/dirty sinks684240,734E60,6D4DB0,752700,4F42F0,4068E0; no media device, localized text IO, rendering or actual sound",
+                       "Result heads stop before6C8C40 WallClock/Vox wait at4F860B/4F8732; no completion, teardown or postgame/campaign-next-scene claim",
+                       "No Windows startup, full House constructor/world, network ten-frame alignment, FlagToDie producer or RNG path"],
+        entry_points={**OutcomeFixture.FLAGS, "win_gate": 0x4F85BE, "lose_gate": 0x4F86FE,
+                      "constructor_savour": 0x66731D, "read_double": 0x5283D0,
+                      "banner_center": 0x6D4E95})
+
+
 if __name__ == "__main__":
-    finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=metadata)
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--outcomes", action="store_true")
+    selected, remaining = parser.parse_known_args()
+    if selected.outcomes:
+        finish_vectors(generate_outcomes, Path(__file__).with_name("house_outcomes.json"),
+                       provenance=outcome_metadata, argv=remaining)
+    else:
+        finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=metadata,
+                       argv=remaining)

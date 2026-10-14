@@ -171,10 +171,9 @@ impl Simulation {
             // retains Health1 and records two total losses across both calls.
             self.record_the_kill(
                 id,
-                None,
-                None,
+                crate::sim::combat::KillSource::Techno(None),
                 crate::sim::combat::KillCallback::Terminal,
-                rules,
+                UninitContext::new(Some(rules), registry).with_effects(frame_effects),
             );
             self.uninit_with_context(
                 id,

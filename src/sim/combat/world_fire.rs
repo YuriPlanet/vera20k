@@ -426,12 +426,9 @@ fn admit_attacker_fire<'r>(
             //52093C/520946: shared FootStop4DF0D0 then the concrete+500
             // receiver. That receiver owns any DoAction/Walk Stop callback.
             crate::sim::movement::foot_stop_moving(actor);
-            if let Err(cause) = world.run_find_path_failed_receiver(
-                snap.stable_id,
-                rules,
-                overlay_registry,
-                effects,
-            ) {
+            if let Err(cause) =
+                world.foot_stop_driver(snap.stable_id, rules, overlay_registry, effects)
+            {
                 log::debug!("infantry {} firing Stop_Driver: {cause}", snap.stable_id);
             }
         }

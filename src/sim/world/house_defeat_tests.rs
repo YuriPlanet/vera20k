@@ -42,7 +42,9 @@ C4Warhead=Super
 1=AMCV
 2=SMCV
 3=PCV
+4=SHIP
 [AircraftTypes]
+0=AIR
 [BuildingTypes]
 0=NAREFN
 1=GAREFN
@@ -58,6 +60,11 @@ Strength=1000
 [SMCV]
 Strength=1000
 [PCV]
+Strength=1000
+[SHIP]
+Strength=1000
+Naval=yes
+[AIR]
 Strength=1000
 [NAREFN]
 Strength=1000
@@ -103,6 +110,147 @@ fn sim_with_houses(sides: &[u8]) -> (Simulation, Vec<InternedId>) {
         })
         .collect();
     (sim, houses)
+}
+
+/// Added selected mode in the existing House oracle. These rows execute the
+/// whole Flag bodies (including7C5F00), excluding only recorded UI/audio
+/// sinks; the second group executes the original House timer/AllowWin heads.
+/// No renderer, wall-voice completion, full world or campaign-next-page claim.
+#[test]
+fn native_flag_result_and_savour_controls() {
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/house_outcomes.json",
+    ))
+    .unwrap();
+    for row in corpus["flag_controls"].as_array().unwrap() {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let delay = input["delay"].as_str().unwrap_or("constructor");
+        let delay_line = match delay {
+            "constructor" => String::new(),
+            "retail" => format!(
+                "SavourDelay={}\n",
+                corpus["retail"]["token"].as_str().unwrap()
+            ),
+            token => format!("SavourDelay={token}\n"),
+        };
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[Countries]\n0=Country0\n[Country0]\n[Sides]\nAllied=Country0\n[AudioVisual]\n{delay_line}"
+        ))).unwrap();
+        assert_eq!(
+            format!("{:016x}", rules.general.savour_delay_minutes.to_bits()),
+            row["savour_bits"].as_str().unwrap(),
+            "{name}: reader input"
+        );
+        let mut sim = Simulation::new();
+        sim.session.binary_frame = input["frame"].as_u64().unwrap_or(100) as u32;
+        sim.session.game_mode_nonzero = input["game_mode"].as_i64().unwrap_or(0) != 0;
+        let owner = sim.interner.intern("Player");
+        let country = sim.interner.intern("Country0");
+        let mut house = HouseState::new(owner, 0, Some(country), true, 0, 10);
+        let supplied = input["timer"].as_array();
+        let timer = crate::sim::timer::CdTimer::from_raw(
+            supplied.map_or(-1, |timer| timer[0].as_i64().unwrap() as i32),
+            supplied.map_or(0, |timer| timer[2].as_i64().unwrap() as i32),
+        );
+        house.supply_outcome_state_for_test(
+            input["won"].as_i64().unwrap_or(0) != 0,
+            input["lost"].as_i64().unwrap_or(0) != 0,
+            None,
+            timer,
+        );
+        sim.houses.insert(owner, house);
+        sim.session.current_house = Some(owner);
+        let skip = input["skip_timer"].as_bool().unwrap_or(false);
+        let returned = match input["operation"].as_str().unwrap() {
+            "win" => sim.flag_house_to_win(owner, Some(&rules), skip, Default::default()),
+            "lose" => sim.flag_house_to_lose(owner, Some(&rules), skip, Default::default()),
+            "end" => sim.trigger_house_outcome(69, 0, Some(&rules), Default::default()),
+            other => panic!("unhandled control {other}"),
+        };
+        let house = &sim.houses[&owner];
+        assert_eq!(house.has_won(), row["won"].as_u64().unwrap() != 0, "{name}");
+        assert_eq!(
+            house.has_lost(),
+            row["lost"].as_u64().unwrap() != 0,
+            "{name}"
+        );
+        assert_eq!(
+            house.outcome_timer().start_frame(),
+            row["timer"][0].as_i64().unwrap() as i32,
+            "{name}"
+        );
+        assert_eq!(
+            house.outcome_timer().duration(),
+            row["timer"][2].as_i64().unwrap() as i32,
+            "{name}"
+        );
+        if input["operation"] != "end" {
+            assert_eq!(
+                returned,
+                row["al"].as_u64().unwrap() != 0,
+                "{name}: Flag AL"
+            );
+        }
+        let sinks = row["calls"].as_array().unwrap();
+        assert_eq!(
+            sim.session.input_locked(),
+            sinks.iter().any(|call| call["address"] == "0x684240"),
+            "{name}: campaign input lock"
+        );
+        let native_eva = sinks
+            .iter()
+            .filter(|call| call["address"] == "0x752700")
+            .count();
+        assert_eq!(
+            sim.sound_events
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    crate::sim::world::SimSoundEvent::MatchOutcome { .. }
+                ))
+                .count(),
+            native_eva,
+            "{name}: accepted EVA edge"
+        );
+    }
+}
+
+#[test]
+fn native_house_result_zero_and_allow_win_heads() {
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/house_outcomes.json",
+    ))
+    .unwrap();
+    for row in corpus["result_gates"].as_array().unwrap() {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let won = input["won"].as_u64().unwrap() != 0;
+        let timer = crate::sim::timer::CdTimer::from_raw(
+            input["timer"][0].as_i64().unwrap() as i32,
+            input["timer"][2].as_i64().unwrap() as i32,
+        );
+        let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
+        house.supply_outcome_state_for_test(
+            won,
+            !won,
+            Some(crate::sim::house_state::HouseOutcomeState {
+                kind: if won {
+                    crate::sim::house_state::HouseOutcomeKind::Victory
+                } else {
+                    crate::sim::house_state::HouseOutcomeKind::Defeat
+                },
+                exit_ready: false,
+            }),
+            timer,
+        );
+        house.supply_allow_win_tag_state(input["allow_win"].as_i64().unwrap() as i32, timer);
+        let ready = house.advance_outcome_savour(
+            input["frame"].as_i64().unwrap() as i32,
+            input["game_mode"].as_i64().unwrap() != 0,
+        );
+        assert_eq!(ready, row["gate"] == "result_wait", "{name}");
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -206,6 +354,127 @@ struct NativeBlowupCase {
 /// deferred deletion never shifts the array; the removal case shows native
 /// re-reading the slot, so the call order is the same.
 #[test]
+fn native_blowup_subsets_corpus() {
+    let cases: Vec<NativeBlowupCase> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/house_blowup_subsets.json",
+    ))
+    .unwrap();
+    assert_eq!(cases.len(), 9);
+    for case in cases {
+        let input = &case.input;
+        let name = input["name"].as_str().unwrap();
+        let rules = rules(input["civilian_side"].as_u64().unwrap_or(99) as usize);
+        let sides: Vec<_> = input["houses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u8)
+            .collect();
+        let (mut sim, houses) = sim_with_houses(&sides);
+        let objects = input["objects"].as_array().unwrap();
+        let ids: Vec<_> = objects
+            .iter()
+            .enumerate()
+            .map(|(n, object)| {
+                let owner = houses[object["owner"].as_u64().unwrap() as usize];
+                let type_id = match object["rtti"].as_u64().unwrap() {
+                    6 => "NAREFN",
+                    15 => "CLEG",
+                    2 => "AIR",
+                    1 if object["naval"].as_bool() == Some(true) => "SHIP",
+                    1 => "TANK",
+                    rtti => panic!("unknown native fixture RTTI{rtti}"),
+                };
+                let owner_name = sim.resolve(owner).to_owned();
+                let id = sim
+                    .spawn_object_at_height(type_id, &owner_name, 10 + n as u16, 10, 0, 0, &rules)
+                    .expect("fixture constructor");
+                let entity = sim.substrate.entities.get_mut(id).unwrap();
+                entity.health.current = object["health"].as_i64().unwrap_or(100) as i32;
+                //The native corpus also supplies byte81 directly. This checks
+                //sweep admission, not the unrelated lifecycle producing this byte.
+                entity.lifecycle.in_limbo = object["limbo"].as_bool().unwrap_or(false);
+                id
+            })
+            .collect();
+        if let Some(controllers) = input["controllers"].as_object() {
+            for (controller, nodes) in controllers {
+                let controller = ids[controller.parse::<usize>().unwrap()];
+                let nodes: Vec<_> = nodes
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|node| {
+                        (
+                            ids[node[0].as_u64().unwrap() as usize],
+                            houses[node[1].as_u64().unwrap() as usize],
+                        )
+                    })
+                    .collect();
+                for &(victim, _) in &nodes {
+                    sim.substrate.entities.get_mut(victim).unwrap().mind_control =
+                        MindControlLink::controlled_by_for_test(controller);
+                }
+                sim.substrate
+                    .entities
+                    .get_mut(controller)
+                    .unwrap()
+                    .capture_manager = Some(CaptureManagerState::with_nodes_for_test(&nodes));
+            }
+        }
+        let subset = match input["subset"].as_str().unwrap() {
+            "buildings" => super::HouseBlowupSubset::Buildings,
+            "land" => super::HouseBlowupSubset::Land,
+            "naval" => super::HouseBlowupSubset::Naval,
+            _ => unreachable!(),
+        };
+        let _ = super::take_blowup_trace();
+        sim.house_blowup(houses[0], subset, &rules, None, Default::default());
+        let calls = super::take_blowup_trace();
+        let native: Vec<_> = case
+            .events
+            .iter()
+            .filter(|e| e[0] == "receive_damage")
+            .collect();
+        assert_eq!(calls.len(), native.len(), "{name}: count");
+        let c4 = sim.interner.intern("Super");
+        for (call, event) in calls.iter().zip(native) {
+            let n = event[1]
+                .as_str()
+                .unwrap()
+                .strip_prefix("obj")
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
+            assert_eq!(
+                (
+                    call.target_id,
+                    call.damage,
+                    call.distance_leptons,
+                    call.warhead_ref,
+                    call.attacker_id,
+                    call.source_house,
+                    call.receiver_flags
+                ),
+                (
+                    ids[n],
+                    event[2].as_i64().unwrap() as i32,
+                    event[3].as_u64().unwrap() as i32,
+                    c4,
+                    RAD_NO_ATTACKER,
+                    None,
+                    ReceiverCallFlags {
+                        ignore_defenses: true,
+                        arg6: true
+                    }
+                ),
+                "{name}: receiver"
+            );
+        }
+    }
+}
+
+#[test]
 fn native_blowup_all_corpus() {
     let cases: Vec<NativeBlowupCase> = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/house_blowup_all.json",
@@ -295,8 +564,9 @@ fn native_blowup_all_corpus() {
         let c4 = sim.interner.intern("Super");
         let _ = super::take_blowup_trace();
 
-        sim.house_blowup_all(
+        sim.house_blowup(
             blown,
+            super::HouseBlowupSubset::All,
             &rules,
             None,
             crate::sim::world::FrameEffects::default(),
@@ -426,7 +696,7 @@ fn losing_the_last_building_blows_up_the_army_next_frame() {
     );
     step(&mut sim);
     assert!(sim.houses[&houses[0]].is_defeated);
-    assert!(sim.houses[&houses[1]].has_won);
+    assert!(sim.houses[&houses[1]].has_won());
     assert!(
         sim.substrate
             .entities

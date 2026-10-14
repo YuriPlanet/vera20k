@@ -375,10 +375,28 @@ fn fixture(rules: &RuleSet, ini: &IniFile) -> Fixture {
     sim.houses
         .insert(owner, HouseState::new(owner, 0, None, true, 50_000, 10));
     let product = sim
-        .construct_object_limbo_at_height("MTNK", "Americans", 0, 0, 0, 0, rules)
+        .construct_object_limbo_at_height(
+            "MTNK",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     let producer = sim
-        .construct_object_limbo_at_height("GAWEAP", "Americans", 0, 0, 0, 0, rules)
+        .construct_object_limbo_at_height(
+            "GAWEAP",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     Fixture {
         sim,

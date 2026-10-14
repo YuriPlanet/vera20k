@@ -33,6 +33,7 @@ use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedMode};
 use crate::util::config::GameConfig;
 
 pub(crate) mod audio_runtime;
+pub(crate) mod chrono_screen;
 pub(crate) mod diagnostics;
 mod frame;
 pub mod frontend;
@@ -45,9 +46,11 @@ pub(crate) mod match_audio;
 pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
+pub(crate) mod movie_playback;
 pub(crate) mod persistence;
 pub(crate) mod presentation;
 pub(crate) mod process_assets;
+pub(crate) mod radar_movie;
 #[cfg(test)]
 mod random_map_lifecycle_tests;
 pub(crate) mod renderer_state;

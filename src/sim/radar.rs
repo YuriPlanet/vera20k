@@ -57,6 +57,35 @@ pub enum RadarEventType {
     AllyUnderAttack = 16,
 }
 
+impl TryFrom<i32> for RadarEventType {
+    type Error = ();
+
+    /// The compiled65FA70 type-table ordinal. Invalid native array indexes
+    /// are rejected rather than addressing memory outside the table.
+    fn try_from(index: i32) -> Result<Self, Self::Error> {
+        Ok(match index {
+            0 => Self::Combat,
+            1 => Self::Noncombat,
+            2 => Self::Dropzone,
+            3 => Self::BaseUnderAttack,
+            4 => Self::HarvesterUnderAttack,
+            5 => Self::EnemyObjectSensed,
+            6 => Self::UnitReady,
+            7 => Self::UnitLost,
+            8 => Self::UnitRepaired,
+            9 => Self::SpyInfiltration,
+            10 => Self::BuildingCaptured,
+            11 => Self::BeaconPlaced,
+            12 => Self::ConstructionComplete,
+            13 => Self::ImpactSilent,
+            14 => Self::BridgeRepaired,
+            15 => Self::StructureAbandoned,
+            16 => Self::AllyUnderAttack,
+            _ => return Err(()),
+        })
+    }
+}
+
 /// A `CreateRadarEvent(type, cell)` call the simulation reached.
 ///
 /// It carries no acceptance result: the live event array that dedupes it is

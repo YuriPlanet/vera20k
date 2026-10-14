@@ -658,7 +658,11 @@ impl Simulation {
             self.chrono_warp_sink(id, rules, registry, effects);
             // `0x007189BE..0x007189F5`: the kill goes to the Magnetron that
             // dropped the object, else the warping house.
-            self.record_manipulated_kill(id, id, rules);
+            self.record_manipulated_kill(
+                id,
+                id,
+                crate::sim::world::UninitContext::new(Some(rules), registry).with_effects(effects),
+            );
             return;
         }
         let code = self

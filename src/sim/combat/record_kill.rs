@@ -1,5 +1,6 @@
 //! `TechnoClass::Record_The_Kill @ 0x00702D40`: the kill's experience award
-//! and its score and House statistics.
+//! and its score and House statistics. The world owner runs its synchronous
+//! Tag prefix before the existing arithmetic/accounting continuation.
 
 use super::*;
 
@@ -101,11 +102,31 @@ pub(crate) enum KillCallback {
     OwnerChange,
 }
 
+/// Original Object virtual+E0 (Techno702D40) versus+E4 (House703230).
+/// This is the actual incoming pointer kind, not a guessed source-owner
+/// projection. Both native Tag prefixes forward a NULL source argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KillSource {
+    Techno(Option<u64>),
+    House(Option<InternedId>),
+}
+
+impl KillSource {
+    fn is_present(self) -> bool {
+        match self {
+            Self::Techno(source) => source.is_some(),
+            Self::House(source) => source.is_some(),
+        }
+    }
+}
+
 /// `TechnoClass::Record_The_Kill @ 0x00702D40` for `victim_id`, destroyed by
 /// `killer_id` (none for a death without an attacker) and credited to
 /// `killer_owner`: the kill/score record and the experience award
 /// ([`award_kill_experience`]). Every cost it reads is Cost_Of for the victim's
-/// house, which it loads once (`0x00702D61`). One award feeds both the score
+/// house. The victim's base cost is captured before Tag callbacks at702D61;
+/// recipient costs reread the victim's current House at702ED1/702F13/702FD4.
+/// One award feeds both the score
 /// (`0x0070300F`) and the experience: the victim's cost, zero when the
 /// killer's house is allied with the victim, else doubled for a veteran or
 /// tripled for an elite victim, from the rank it died at. It is not
@@ -132,20 +153,35 @@ fn record_the_kill(
     interner: &StringInterner,
     alliances: &HouseAllianceMap,
     victim_id: u64,
-    killer_id: Option<u64>,
-    killer_owner: Option<InternedId>,
+    source: KillSource,
+    victim_cost: i32,
     callback: KillCallback,
     rules: &RuleSet,
 ) {
     let Some(victim) = entities.get(victim_id) else {
         return;
     };
-    // `DontScore=` (`+0xC9F`) returns before any bookkeeping. Stock sets
+    // E0's `DontScore=` (+C9F) returns AFTER the Tag prefix and before
+    // bookkeeping. E4 has no such entry return: it awards score and victim
+    // losses, but excludes DontScore from the killer's kill counters.
+    // Stock sets
     // it on `SLAV`, `V3ROCKET`, `DMISL` and `CMISL`: without it every missile
     // shot down would promote its interceptor.
-    if victim.dont_score {
+    if matches!(source, KillSource::Techno(_)) && victim.dont_score {
         return;
     }
+    let killer_id = match source {
+        KillSource::Techno(source) => source,
+        KillSource::House(_) => None,
+    };
+    //702E64 and703009 read the incoming Techno's current Owner after the
+    //prefix. Source removal has no fabricated fallback to a captured House.
+    let killer_owner = match source {
+        KillSource::Techno(source) => source
+            .and_then(|source| entities.get(source))
+            .map(|source| source.owner()),
+        KillSource::House(house) => house,
+    };
     let victim_owner = victim.owner();
     let victim_house = houses
         .get(&victim_owner)
@@ -153,7 +189,6 @@ fn record_the_kill(
     let victim_type = rules.object(interner.resolve(victim.type_ref()));
     let insignificant_building = victim.category == EntityCategory::Structure
         && victim_type.is_some_and(|object| object.insignificant);
-    let victim_cost = victim_type.map_or(0, |object| rules.cost_of(object, victim_house.as_ref()));
     // `0x00702E64` asks the killer's house `HouseClass::IsAlly @ 0x004F9A90`,
     // which reads only the asker's own ally bits: a one-way test.
     let asker = killer_id
@@ -185,38 +220,106 @@ fn record_the_kill(
     }
     // 702FF0 awards experience before 703003..7031DC book the House fields.
     if let Some(victim) = entities.get_mut(victim_id) {
+        let count_killer = !victim.dont_score;
         record_kill_credit(
             victim,
             houses,
             killer_owner,
             points,
             insignificant_building,
+            count_killer,
             callback,
         );
     }
 }
 
 impl crate::sim::world::Simulation {
-    /// [`record_the_kill`] in this world.
+    /// Original702D40/703230 world entry. CostOf base precedes Tag callbacks;
+    /// every later owner/rank/Tag read belongs to its native continuation.
+    /// Source/control flow: active Steam3e81a617 instruction bodies; existing
+    /// object_health/house_statistics/veterancy corpora own the arithmetic.
+    /// No own RNG, timer or detach; nested Tag actions use their existing owners.
     pub(crate) fn record_the_kill(
         &mut self,
         victim_id: u64,
-        killer_id: Option<u64>,
-        killer_owner: Option<InternedId>,
+        source: KillSource,
         callback: KillCallback,
-        rules: &RuleSet,
+        context: crate::sim::world::UninitContext<'_>,
     ) {
+        let Some(rules) = context.rules() else {
+            return;
+        };
+        let Some(victim) = self.substrate.entities.get(victim_id) else {
+            return;
+        };
+        //702D50..61 /70323E..51 retain this base in EBP. Neither the House
+        //nor rank is captured here: callback-driven changes are reread below.
+        let victim_house = self
+            .houses
+            .get(&victim.owner())
+            .map(HouseState::cost_factors);
+        let victim_cost = rules
+            .object(self.interner.resolve(victim.type_ref()))
+            .map_or(0, |object| rules.cost_of(object, victim_house.as_ref()));
+        self.record_kill_tag_prefix(victim_id, source, context);
         record_the_kill(
             &mut self.substrate.entities,
             &mut self.houses,
             &self.interner,
             &self.house_alliances,
             victim_id,
-            killer_id,
-            killer_owner,
+            source,
+            victim_cost,
             callback,
             rules,
         );
+    }
+
+    /// The common Tag responsibility in E0 and E4. Incoming source pointer
+    /// presence gates6/4/7; Tag source itself is NULL at every original call.
+    /// Only the attached object's live90 byte gates these events, not HP0,
+    /// Terminal or DontScore. Each dispatch may change its owner/lifetime/Tag.
+    fn record_kill_tag_prefix(
+        &mut self,
+        victim: u64,
+        source: KillSource,
+        context: crate::sim::world::UninitContext<'_>,
+    ) {
+        if source.is_present() {
+            for kind in [6, 4] {
+                if self
+                    .substrate
+                    .entities
+                    .get(victim)
+                    .is_some_and(|victim| victim.lifecycle.object_alive)
+                {
+                    self.dispatch_object_tag_event(victim, kind, Some(victim), None, context);
+                }
+            }
+        }
+        //702DCE/7032BE query WhatAmI once: Unit1 skips7/48/29,
+        //after its earlier6/4 callbacks have already returned. Original
+        //Unit vt7F5C70+2C ->746E20 returns1; Aircraft vt7E22A4+2C
+        //->41C180 returns2 (the shared multiplayer_checksum RTTI mapping).
+        let Some(entity) = self.substrate.entities.get(victim) else {
+            return;
+        };
+        if !entity.lifecycle.object_alive || entity.category == EntityCategory::Unit {
+            return;
+        }
+        for kind in [7, 48, 29] {
+            if kind == 7 && !source.is_present() {
+                continue;
+            }
+            if self
+                .substrate
+                .entities
+                .get(victim)
+                .is_some_and(|victim| victim.lifecycle.object_alive)
+            {
+                self.dispatch_object_tag_event(victim, kind, Some(victim), None, context);
+            }
+        }
     }
 }
 
@@ -232,14 +335,15 @@ impl crate::sim::world::Simulation {
 /// RESIDUAL: sale completion44A1EF writes Building+53C=-1 before its NULL kill
 /// callback44A1F9, suppressing only BuildingsLost703054. VERA's existing sale
 /// route does not retain that field or call RecordKill; Selling alone is not
-/// its substitute. Live Tag callbacks and the radar redraw remain with those
-/// separate mechanisms. This accounting change does not certify either.
+/// its substitute. Live Tag callbacks belong to the world prefix above; the
+/// radar redraw remains a separate presentation residual.
 fn record_kill_credit(
     victim: &mut crate::sim::game_entity::GameEntity,
     houses: &mut BTreeMap<InternedId, HouseState>,
     killer_owner: Option<InternedId>,
     points: i32,
     insignificant_building: bool,
+    count_killer: bool,
     callback: KillCallback,
 ) {
     victim.killed_by = killer_owner;
@@ -260,7 +364,8 @@ fn record_kill_credit(
         if let Some(house) = houses.get_mut(&victim.owner()) {
             house.stats.record_loss(victim.category);
         }
-        if let Some(killer) = killer_owner
+        if count_killer
+            && let Some(killer) = killer_owner
             && let Some(house) = houses.get_mut(&killer)
         {
             house.stats.record_kill(victim.category);

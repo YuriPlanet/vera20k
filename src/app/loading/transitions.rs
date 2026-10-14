@@ -330,6 +330,12 @@ pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init:
 }
 
 pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadResult) {
+    let wall_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
+        state,
+        std::time::Instant::now(),
+    );
+    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(state, wall_ms);
     crate::app::input::dispatch::selection_navigation::reset_for_world_replacement(
         &mut state.match_state.input,
     );

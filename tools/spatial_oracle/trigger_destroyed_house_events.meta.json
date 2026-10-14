@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "26 original HasOccurred9/11 predicate controls, including signed independent counters, tracked Building vs active presence, Country/null/duplicate lookup and raised-event contrasts. Not a full ALL01 world or counter lifecycle comparison.",
+  "assumptions": [
+    "Reuse PowerEventControls minimal three-House arena and original counted TEvent reader. House Country bindings0/7/0, tracked Building scalar and CounterClass cached totals are supplied.",
+    "Counter getters49FB60, Country lookup502D30 and HasOccurred71E940 execute unchanged; cached totals are not obtained from executed Add/RemoveTracking or Added/RemovedFromGame.",
+    "An unchanged timer and Event+54 sentinel bound mutable-field effects. The ALL01 Apocs_Gone/Enter_Tanya tags and their gameplay actions do not run in these scalar controls."
+  ],
+  "substitutions": [
+    "Existing oracle platform/CRT/TLS transport only; no selected gameplay getter or predicate is replaced."
+  ],
+  "entry_points": {
+    "event_constructor": "0x0071E6A0",
+    "event_counted_read": "0x007274DC",
+    "has_occurred": "0x0071E940",
+    "country_house": "0x00502D30",
+    "counter_total": "0x0049FB60"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --destroyed-house-events",
+  "payload_sha256": "87a7cf032204d2370fac971b9cd2f2a1847682a8008c36770611bf617dd3d696"
+}

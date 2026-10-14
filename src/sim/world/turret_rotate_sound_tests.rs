@@ -41,7 +41,7 @@ const CUE: &str = "GrandCannonRotate";
 fn rules() -> RuleSet {
     let base = "Strength=1000\nArmor=concrete\nFoundation=1x1\n\
                 CanPassiveAquire=no\nHasStupidGuardMode=no\n";
-    let layers = RulesLayerStack::new(IniFile::from_str(&format!(
+    let layers = RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[BuildingTypes]\n0=GTGCAN\n1=NOKEY\n2=NOTURRET\n\
          [GTGCAN]\n{base}Turret=yes\nROT=1\nTurretRotateSound={CUE}\n\
          [NOKEY]\n{base}Turret=yes\nROT=1\n\
@@ -62,6 +62,7 @@ fn scene(type_name: &str) -> (Simulation, RuleSet, u64) {
     let rules = rules();
     let mut sim = Simulation::new();
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(16));
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     let id = sim
         .spawn_object(type_name, "Americans", 10, 10, 0, &rules)
         .expect("fixture building");
@@ -679,6 +680,7 @@ fn retail_grand_cannon_starts_and_releases_its_retail_cue() {
     };
     let mut sim = Simulation::new();
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(32));
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     let id = sim
         .spawn_object("GTGCAN", "French", 10, 10, 0, &rules)
         .expect("retail Grand Cannon");
@@ -720,6 +722,7 @@ fn a_retail_grand_cannons_mission_aim_starts_and_releases_the_retail_cue() {
     };
     let mut sim = Simulation::new();
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(32));
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     let id = sim
         .spawn_object("GTGCAN", "French", 8, 10, 0, &rules)
         .expect("retail Grand Cannon");

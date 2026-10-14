@@ -33,7 +33,6 @@ use crate::app::frontend::launch::TacticalCaptureRequest;
 use crate::app::match_bootstrap::{MatchSeedClock, MatchSeedSource, StartupSessionClassification};
 use crate::app::presentation::render::GameRenderOutput;
 use crate::app::types::{CursorId, SIM_TICK_MS};
-use crate::render::radar::anim::RadarAnimPhase;
 use crate::render::sidebar_chrome::SidebarTheme;
 use crate::sim::command::Command;
 use crate::sim::house_state::HouseDifficulty;
@@ -893,11 +892,11 @@ impl TacticalCaptureSession {
             .match_presentation
             .radar_anim
             .as_ref()
-            .is_some_and(|radar| radar.phase() == RadarAnimPhase::Online);
+            .is_some_and(|radar| radar.is_minimap_visible());
         let match_ended = sim
             .houses
             .get(&owner_id)
-            .is_some_and(|house| house.is_defeated || house.has_won || house.has_lost);
+            .is_some_and(|house| house.is_defeated || house.has_won() || house.has_lost());
         let wall_elapsed_ms = self
             .post_l0_started_at
             .unwrap_or(self.started_at)
@@ -999,7 +998,7 @@ impl TacticalCaptureSession {
             .match_presentation
             .radar_anim
             .as_ref()
-            .is_some_and(|radar| radar.phase() == RadarAnimPhase::Online);
+            .is_some_and(|radar| radar.is_minimap_visible());
         let radar_source = state
             .match_state
             .match_presentation

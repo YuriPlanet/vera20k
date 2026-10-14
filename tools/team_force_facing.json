@@ -1,0 +1,2016 @@
+[
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        16384,
+        "004B0EF0"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "drive",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 16384,
+          "duration_frames": 12,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            4,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            1369,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            8194,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        16384,
+        "006A05C0"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "ship",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 16384,
+          "duration_frames": 12,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            4,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            1369,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            8194,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        16384,
+        "0075AE00"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "walk",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 16384,
+          "duration_frames": 0,
+          "prev": 16384,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        16384,
+        "004CFC10"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "fly",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "secondary": {
+          "current": 16384,
+          "duration_frames": 0,
+          "prev": 16384,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            0,
+            16384
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            0,
+            16384
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            0,
+            16384
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            0,
+            16384
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            0,
+            16384
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        16384,
+        "00516370"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "hover",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 16384,
+          "duration_frames": 12,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            4,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            1369,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            8194,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        16384,
+        "0054B6E0"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "jumpjet",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 16384,
+          "duration_frames": 0,
+          "prev": 16384,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        16384,
+        "007192C0"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "teleport",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 16384,
+          "duration_frames": 12,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            4,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            1369,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            8194,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        16384,
+        "0055AC30"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "rocket",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [],
+    "output": [],
+    "samples": [
+      {
+        "frame": 100,
+        "values": []
+      },
+      {
+        "frame": 101,
+        "values": []
+      },
+      {
+        "frame": 106,
+        "values": []
+      },
+      {
+        "frame": 112,
+        "values": []
+      },
+      {
+        "frame": 125,
+        "values": []
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        true
+      ]
+    ],
+    "finished": false,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "drive",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": true,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        true
+      ]
+    ],
+    "finished": false,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "walk",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": true,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        true
+      ]
+    ],
+    "finished": false,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "ship",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": true,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            0,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        true
+      ],
+      [
+        "moving",
+        1,
+        false
+      ],
+      [
+        "turn",
+        1,
+        16384,
+        "0075AE00"
+      ]
+    ],
+    "finished": false,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "drive",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": true,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      },
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "walk",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      },
+      {
+        "body": {
+          "current": 16384,
+          "duration_frames": 0,
+          "prev": 16384,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            0,
+            8192
+          ],
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            0,
+            8192
+          ],
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            0,
+            8192
+          ],
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            0,
+            8192
+          ],
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            0,
+            8192
+          ],
+          [
+            16384,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        16384,
+        "004B0EF0"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": false,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "drive",
+        "health": 0,
+        "initiated": false,
+        "limbo": true,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 16384,
+          "duration_frames": 12,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            4,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            1369,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            8194,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 16384,
+          "duration_frames": 0,
+          "prev": 16384,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "drive",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 16384,
+          "duration_frames": 0,
+          "prev": 16384,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        16384,
+        "004B0EF0"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 32768,
+          "duration_frames": 25,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": 90
+        },
+        "family": "drive",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 16384,
+          "duration_frames": 23,
+          "prev": 52418,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            52434,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            53716,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            60126,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            2282,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 10,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        16384,
+        "004B0EF0"
+      ]
+    ],
+    "finished": true,
+    "first": true,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "drive",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 16384,
+          "duration_frames": 12,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            4,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            1369,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            8194,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            16384,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": -1,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        57344,
+        "0075AE00"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "walk",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 57344,
+          "duration_frames": 0,
+          "prev": 57344,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            57344,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            57344,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            57344,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            57344,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            57344,
+            8192
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "argument": 2147483647,
+    "events": [
+      [
+        "moving",
+        0,
+        false
+      ],
+      [
+        "turn",
+        0,
+        57344,
+        "007192C0"
+      ]
+    ],
+    "finished": true,
+    "first": false,
+    "frame": 100,
+    "members": [
+      {
+        "active": true,
+        "body": {
+          "current": 0,
+          "duration_frames": 0,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        },
+        "family": "teleport",
+        "health": 100,
+        "initiated": true,
+        "limbo": false,
+        "moving": false,
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "output": [
+      {
+        "body": {
+          "current": 57344,
+          "duration_frames": 6,
+          "prev": 0,
+          "rot_per_frame": 1280,
+          "start_frame": 100
+        },
+        "secondary": {
+          "current": 8192,
+          "duration_frames": 0,
+          "prev": 8192,
+          "rot_per_frame": 1280,
+          "start_frame": null
+        }
+      }
+    ],
+    "samples": [
+      {
+        "frame": 100,
+        "values": [
+          [
+            65534,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 101,
+        "values": [
+          [
+            64169,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 106,
+        "values": [
+          [
+            57344,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 112,
+        "values": [
+          [
+            57344,
+            8192
+          ]
+        ]
+      },
+      {
+        "frame": 125,
+        "values": [
+          [
+            57344,
+            8192
+          ]
+        ]
+      }
+    ]
+  }
+]

@@ -1,6 +1,10 @@
 """Native references for a computer team's recruitment, centre and scripts.
 
 Run python -m tools.team_recruit_oracle --check (or explicit --write).
+The bounded Script64 seek controls use --nearest-occupiable --check/--write;
+Script16 uses --patrol --check/--write; Script37 uses --delete-members for
+bounded original loop controls. Each has its own corpus; the
+ordinary reference is unchanged.
 Rust consumers: src/sim/team_script_vm/recruit_oracle_tests.rs,
 src/sim/building_entry_tests.rs (the seeks) and src/sim/docking/bunker_link.rs
 (the tank bunker admission).
@@ -66,6 +70,7 @@ loop) rests on instruction reading; see src/sim/team_script_vm/.
 from pathlib import Path
 import random
 import struct
+import sys
 
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ECX,
@@ -650,6 +655,261 @@ def attack_cadence():
     return rows
 
 
+# ---------------------------------------------------------------- patrol
+
+PATROL = 0x6ECCE0
+PATROL_READER = 0x67399E
+PATROL_READER_END = 0x6739C5
+PATROL_FIELD = 0x1150
+PATROL_KEY = 0x83D344
+PATROL_CONVERT = 0x6ECD40
+PATROL_CONVERT_END = 0x6ECD57
+PATROL_IDIV = 0x6ECD5F
+STUB_PATROL_THREAT = STUBS + 0x300
+
+
+def patrol_rule_rows():
+    """Reuse the existing native INI/CRT fixture; no second ReadDouble port.
+    Original constructor/read/multiply/ftol instructions supply every output.
+    Malformed authored floats share the reader's documented non-retail policy
+    and are deliberately outside these matching controls."""
+    from tools.spatial_oracle.path_delay_rules import DelayFixture, INI, RULES as R, SP, AI
+    f = DelayFixture()
+    f.u.reg_write(UC_X86_REG_ESI, R)
+    f.u.reg_write(UC_X86_REG_ESP, SP)
+    run_checked(f.u, 0x666E09, 0x666E24)
+    default = f'{struct.unpack("<Q", f.u.mem_read(R + PATROL_FIELD, 8))[0]:016x}'
+    rows = []
+    for initial in (default, '3fb999999999999a'):
+        for raw in (None, '0.016', '0.01', '1%', '-1%', '0', '-0', '0.25junk', '1e-3'):
+            f.ini(PATROL_KEY, raw)
+            f.write(INI + 4, AI)
+            f.u.mem_write(R + PATROL_FIELD, struct.pack('<Q', int(initial, 16)))
+            f.u.reg_write(UC_X86_REG_ESI, R)
+            f.u.reg_write(UC_X86_REG_EDI, INI)
+            f.u.reg_write(UC_X86_REG_ESP, SP)
+            run_checked(f.u, PATROL_READER, PATROL_READER_END)
+            output = f'{struct.unpack("<Q", f.u.mem_read(R + PATROL_FIELD, 8))[0]:016x}'
+            f.write(0x8871E0, R)
+            run_checked(f.u, PATROL_CONVERT, PATROL_CONVERT_END)
+            ticks = i32(f.u.reg_read(UC_X86_REG_EAX))
+            rows.append(dict(raw=raw, initial_bits=initial, output_bits=output, ticks=ticks))
+    return default, rows
+
+
+def patrol_row(*, minutes_bits, frame, members, first=False, focus='cell',
+               waypoint=11, threat=False, placement_scope=False):
+    """Original Script16 control/leader selection and arithmetic. Waypoint and
+    scan callbacks supply retained identities; assignment and coordinators are
+    bounded shared-owner interfaces, not native downstream execution."""
+    emu = TeamEmu()
+    action = SCRIPT + 0x200
+    old, found = OBJECTS + 8 * OBJECT_SIZE, OBJECTS + 9 * OBJECT_SIZE
+    refs = {0: None, CELL: 'cell', old: 'old', found: 'threat'}
+    pointers = {value: address for address, value in refs.items()}
+    emu.write32(action, 16)
+    emu.write32(action + 4, waypoint)
+    emu.write32(FRAME, frame)
+    emu.write8(SCENARIO_INIT, int(placement_scope))
+    emu.uc.mem_write(RULES + PATROL_FIELD, struct.pack('<Q', int(minutes_bits, 16)))
+    emu.write32(TEAM + 0x3C, pointers[focus])
+    emu.write32(TEAM + 0x40, pointers[focus])
+    for address in (old, found):
+        emu.write8(address + 0x14, 2)
+    previous = None
+    for index, member in enumerate(members):
+        address = emu.object(index, xyz=member['xyz'],
+                             rtti=RTTI_AIRCRAFT if member.get('aircraft') else RTTI_INFANTRY)
+        emu.write8(address + 0x90, int(member['active']))
+        emu.write32(address + 0x6C, member['health'])
+        emu.write8(address + 0x81, int(member['limbo']))
+        emu.write8(address + 0x689, int(member['initiated']))
+        type_address = emu.techno_type_at(index)
+        emu.techno_type[address] = type_address
+        emu.write32(type_address + 0x5FC, member['rating'])
+        if previous is None:
+            emu.write32(TEAM + 0x54, address)
+        else:
+            emu.write32(previous + 0x5D8, address)
+        previous = address
+    emu.write32(OBJECT_VTABLE + 0x3C4, STUB_PATROL_THREAT)
+
+    def current(e):
+        out = e.arg(0)
+        e.write32(out, 16)
+        e.write32(out + 4, waypoint)
+        return out
+
+    def assign(e):
+        target = e.arg(0)
+        e.events.append(['assign', refs[target]])
+        prior = e.read32(TEAM + 0x3C)
+        if e.read32(TEAM + 0x40) in (0, prior):
+            e.write32(TEAM + 0x40, target)
+        e.write32(TEAM + 0x3C, target)
+
+    def scan(e):
+        coord = e.arg(1)
+        e.events.append(['scan', e.index_of(e.uc.reg_read(UC_X86_REG_ECX)), e.arg(0),
+                         [i32(e.read32(coord + offset)) for offset in (0, 4, 8)], e.arg(2)])
+        return found if threat else 0
+
+    emu.hook(0x68BCE0, lambda e: e.events.append(['waypoint', i32(e.arg(0))]) or CELL, 4)
+    emu.hook(0x691500, current, 4)
+    emu.hook(0x6E9050, assign, 4)
+    emu.hook(STUB_PATROL_THREAT, scan, 12)
+    emu.hook(0x6EB490, lambda e: e.events.append(['attack', refs[e.read32(TEAM + 0x40)]]), 0)
+    emu.hook(0x6EBAD0, lambda e: e.events.append(['move', refs[e.read32(TEAM + 0x40)]]), 0)
+    periods = []
+    emu.uc.hook_add(UC_HOOK_CODE,
+        lambda uc, *_: periods.append(i32(uc.reg_read(UC_X86_REG_ECX))),
+        begin=PATROL_IDIV, end=PATROL_IDIV)
+    emu.invoke(PATROL, ecx=TEAM, args=(action, int(first)))
+    return dict(minutes_bits=minutes_bits, frame=frame, members=members, first=first,
+                initial_focus=focus, waypoint=waypoint, threat=threat,
+                placement_scope=placement_scope, period=periods[0],
+                mission_target=refs[emu.read32(TEAM + 0x3C)],
+                focus=refs[emu.read32(TEAM + 0x40)], events=emu.events)
+
+
+def patrol():
+    default, rules = patrol_rule_rows()
+    member = dict(xyz=[0xA80, 0xB80, 0x100], active=True, health=100,
+                  limbo=False, initiated=True, aircraft=False, rating=5)
+    promoted = dict(member, xyz=[0xC80, 0xD80, 0x200], rating=10)
+    decimal = next(row['output_bits'] for row in rules
+                   if row['initial_bits'] == default and row['raw'] == '0.016')
+    percent = next(row['output_bits'] for row in rules
+                   if row['initial_bits'] == default and row['raw'] == '1%')
+    controls = []
+    for args in [
+        dict(frame=1, first=True, focus=None),
+        dict(frame=1, focus=None),
+        dict(frame=1, focus=None, waypoint=702),
+        dict(frame=14, threat=True),
+        dict(frame=14, focus='old'),
+        dict(frame=14),
+        dict(frame=-14, threat=True),
+        dict(frame=9, minutes_bits=percent, threat=True),
+        dict(frame=14, members=[member, dict(promoted, initiated=False)]),
+        dict(frame=14, members=[member, dict(promoted, aircraft=True, initiated=False)]),
+        dict(frame=14, members=[dict(member, active=False), dict(promoted, health=0)]),
+        dict(frame=14, members=[dict(member, limbo=True), promoted], placement_scope=True),
+        dict(frame=14, members=[member, dict(promoted, rating=5)]),
+        dict(frame=14, members=[]),
+    ]:
+        controls.append(patrol_row(**(dict(minutes_bits=decimal, members=[member, promoted]) | args)))
+    return dict(default_bits=default, rules=rules, controls=controls)
+
+
+# --------------------------------------------------------- force-facing
+
+FORCE_FACING = 0x6EDCA0
+STUB_SCRIPT_MOVING = STUBS + 0x310
+TURN_ENTRIES = {'drive': 0x4B0EF0, 'ship': 0x6A05C0, 'walk': 0x75AE00,
+                'fly': 0x4CFC10, 'hover': 0x516370, 'jumpjet': 0x54B6E0,
+                'teleport': 0x7192C0, 'rocket': 0x55AC30}
+
+
+def facing_projection(raw):
+    """Serialized field projection, not facing arithmetic. Padding/high words
+    ignored by the original DirStruct reader are outside the Rust authority."""
+    dest, previous, start, _padding, duration, rate = struct.unpack('<IIIIII', raw)
+    return dict(current=dest & 0xFFFF, prev=previous & 0xFFFF,
+                start_frame=None if start == 0xFFFFFFFF else start,
+                duration_frames=duration & 0xFFFF, rot_per_frame=rate & 0xFFFF)
+
+
+def force_facing_row(*, argument, members, frame=100, first=False):
+    emu = TeamEmu()
+    action = SCRIPT + 0x200
+    emu.write32(action, 42)
+    emu.write32(action + 4, argument)
+    emu.write32(FRAME, frame)
+    addresses = []
+    motions = {}
+    previous = None
+    for index, member in enumerate(members):
+        address = emu.object(index)
+        addresses.append(address)
+        emu.write8(address + 0x90, int(member.get('active', True)))
+        emu.write8(address + 0x81, int(member.get('limbo', False)))
+        emu.write8(address + 0x689, int(member.get('initiated', True)))
+        emu.write32(address + 0x6C, member.get('health', 100))
+        loco, vtable = FAKE + 0x360000 + index * 0x100, FAKE + 0x361000 + index * 0x100
+        emu.write32(address + 0x674, loco)
+        emu.write32(loco, vtable)
+        emu.write32(loco + 8, address)
+        emu.write32(vtable + 0x10, STUB_SCRIPT_MOVING)
+        emu.write32(vtable + 0x4C, TURN_ENTRIES[member['family']])
+        motions[loco] = (index, member['moving'])
+        for offset, key in ((0x388, 'body'), (0x3A0, 'secondary')):
+            state = member[key]
+            raw = struct.pack('<IIIIII', state['current'], state['prev'],
+                0xFFFFFFFF if state['start_frame'] is None else state['start_frame'],
+                0, state['duration_frames'], state['rot_per_frame'])
+            emu.uc.mem_write(address + offset, raw)
+        if previous is None:
+            emu.write32(TEAM + 0x54, address)
+        else:
+            emu.write32(previous + 0x5D8, address)
+        previous = address
+
+    def moving(e):
+        index, answer = motions[e.arg(0)]
+        e.events.append(['moving', index, answer])
+        return int(answer)
+    emu.hook(STUB_SCRIPT_MOVING, moving, 4)
+    for address in set(TURN_ENTRIES.values()):
+        emu.uc.hook_add(UC_HOOK_CODE,
+            lambda uc, pc, *_: emu.events.append(['turn',
+                motions[emu.arg(0)][0], i32(emu.arg(1)) & 0xFFFF, f'{pc:08X}']),
+            begin=address, end=address)
+    emu.invoke(FORCE_FACING, ecx=TEAM, args=(action, int(first)))
+    output = [dict(body=facing_projection(bytes(emu.uc.mem_read(address + 0x388, 24))),
+                   secondary=facing_projection(bytes(emu.uc.mem_read(address + 0x3A0, 24))))
+              for address in addresses]
+    samples = []
+    for elapsed in (0, 1, 6, 12, 25):
+        emu.write32(FRAME, frame + elapsed)
+        values = []
+        for address in addresses:
+            pair = []
+            for offset in (0x388, 0x3A0):
+                out = CELL + 0x100
+                emu.invoke(0x4C93D0, ecx=address + offset, args=(out,))
+                pair.append(struct.unpack('<H', emu.uc.mem_read(out, 2))[0])
+            values.append(pair)
+        samples.append(dict(frame=(frame + elapsed) & 0xFFFFFFFF, values=values))
+    return dict(argument=argument, members=members, frame=frame, first=first,
+                finished=bool(emu.read8(TEAM + 0x80)), output=output,
+                samples=samples, events=emu.events)
+
+
+def force_facing():
+    at_rest = dict(current=0, prev=0, start_frame=None, duration_frames=0, rot_per_frame=1280)
+    second = dict(at_rest, current=0x2000, prev=0x2000)
+    member = dict(family='drive', moving=False, body=at_rest, secondary=second,
+                  active=True, health=100, limbo=False, initiated=True)
+    rows = [force_facing_row(argument=2, members=[dict(member, family=family)])
+            for family in TURN_ENTRIES]
+    rows.extend([
+        force_facing_row(argument=2, members=[]),
+        force_facing_row(argument=2, members=[dict(member, moving=True)]),
+        force_facing_row(argument=2, members=[dict(member, family='walk', moving=True)]),
+        force_facing_row(argument=2, members=[dict(member, family='ship', moving=True)]),
+        force_facing_row(argument=2, members=[dict(member, moving=True), dict(member, family='walk')]),
+        force_facing_row(argument=2, members=[dict(member, active=False, health=0, limbo=True, initiated=False)]),
+        force_facing_row(argument=2, members=[dict(member, body=dict(at_rest, current=0x4000, prev=0x4000))]),
+        force_facing_row(argument=2, members=[dict(member, body=dict(at_rest, current=0x8000, prev=0,
+                         start_frame=90, duration_frames=25))]),
+        force_facing_row(argument=10, members=[member], first=True),
+        force_facing_row(argument=-1, members=[dict(member, family='walk')]),
+        force_facing_row(argument=0x7FFFFFFF, members=[dict(member, family='teleport')]),
+    ])
+    return rows
+
+
 # ---------------------------------------------------------------- own_building
 
 FIND_OWN_BUILDING = 0x6EEEA0
@@ -916,18 +1176,23 @@ def bio_reactor():
 # ---------------------------------------------------------------- battle_bunker
 
 ENTER_BATTLE_BUNKER = 0x4DFCB0
+ENTER_NEAREST_OCCUPIABLE = 0x4DFE00
 CAN_BE_OCCUPIED_BY = 0x457CE0
 
 
-def battle_bunker_row(*, foot, bunkers, infantry=True, nav=None, mission=0, latch=False):
+def battle_bunker_row(*, foot, bunkers, infantry=True, nav=None, mission=0, latch=False,
+                      whole_map=False):
     """`bunkers`: dicts of location and CanBeOccupiedBy answer, in House+0xE0
     order; `nav`: a bunker's index as the Foot's NavCom (+0x5A4), else none;
-    `mission`: the Foot's current mission (+0xAC)."""
+    `mission`: the Foot's current mission (+0xAC). `whole_map` selects the
+    same fixture boundaries for actual4DFE00 over BuildingClass::Array,
+    rather than4DFCB0 over House+E0. No seek body is replaced."""
     emu = TeamEmu()
     house = HOUSES
     foot_address = emu.object(0, xyz=foot, rtti=RTTI_INFANTRY if infantry else RTTI_UNIT)
     emu.write32(foot_address + 0x21C, house)
-    emu.write8(foot_address + 0x690, int(latch))
+    latch_offset = 0x691 if whole_map else 0x690
+    emu.write8(foot_address + latch_offset, int(latch))
     emu.write32(foot_address + 0xAC, mission)
     for slot, stub in ((0x1E8, STUB_QUEUE_MISSION), (0x480, STUB_ASSIGN_DESTINATION)):
         emu.write32(OBJECT_VTABLE + slot, stub)
@@ -941,6 +1206,9 @@ def battle_bunker_row(*, foot, bunkers, infantry=True, nav=None, mission=0, latc
         emu.write32(ARRAYS + index * 4, address)
     emu.write32(house + 0xE4, ARRAYS)
     emu.write32(house + 0xF0, len(bunkers))
+    if whole_map:
+        emu.write32(BUILDING_ARRAY[0], ARRAYS)
+        emu.write32(BUILDING_ARRAY[1], len(bunkers))
     emu.write32(foot_address + 0x5A4, 0 if nav is None else addresses[nav])
 
     def index_of(address):
@@ -964,9 +1232,10 @@ def battle_bunker_row(*, foot, bunkers, infantry=True, nav=None, mission=0, latc
         ['queue_mission', e.arg(0), e.arg(1)]) or 1, 8)
     emu.hook(STUB_ASSIGN_DESTINATION, lambda e: e.events.append(
         ['assign_destination', index_of(e.arg(0)), e.arg(1)]), 8)
-    result = emu.invoke(ENTER_BATTLE_BUNKER, ecx=foot_address) & 0xFF
+    entry = ENTER_NEAREST_OCCUPIABLE if whole_map else ENTER_BATTLE_BUNKER
+    result = emu.invoke(entry, ecx=foot_address) & 0xFF
     return dict(foot=foot, bunkers=bunkers, infantry=infantry, nav=nav, mission=mission,
-                latch=latch, result=result, latch_after=emu.read8(foot_address + 0x690),
+                latch=latch, result=result, latch_after=emu.read8(foot_address + latch_offset),
                 events=emu.events)
 
 
@@ -1009,6 +1278,32 @@ def battle_bunker():
     rows.append(battle_bunker_row(foot=[0x2000, 0x2000, 0], bunkers=two, nav=0, mission=5))
     rows.append(battle_bunker_row(foot=[0x2000, 0x2000, 0], bunkers=two, nav=1, mission=8))
     return rows
+
+
+def nearest_occupiable():
+    """Small4DFE00 controls: global registry order, all admission calls,
+    ftol ties, NULL for a non-Infantry, latch clearing and reissue."""
+    yes = dict(answer=True)
+    two = [dict(yes, xyz=[0x2400, 0x2000, 0]),
+           dict(yes, xyz=[0x3000, 0x2000, 0])]
+    cases = [
+        dict(foot=[0x2000, 0x2000, 0], latch=True, bunkers=[]),
+        dict(foot=[0x2000, 0x2000, 0], bunkers=two),
+        dict(foot=[0x2000, 0x2000, 0], bunkers=[
+            dict(yes, xyz=[0x2100, 0x2000, 0]),
+            dict(yes, xyz=[0x2000, 0x2100, 0])]),
+        dict(foot=[0, 0, 0], bunkers=[dict(yes, xyz=[300, 400, 0]),
+                                     dict(yes, xyz=[0, 500, 1])]),
+        dict(foot=[0x2000, 0x2000, 0], bunkers=[
+            dict(yes, xyz=[0x2080, 0x2000, 0]),
+            dict(answer=False, xyz=[0x2000, 0x2040, 0]),
+            dict(yes, xyz=[0x2000, 0x2100, 0])]),
+        dict(foot=[0x2000, 0x2000, 0], infantry=False, latch=True, bunkers=two),
+        dict(foot=[0x2000, 0x2000, 0], bunkers=two, nav=0, mission=8),
+        dict(foot=[0x2000, 0x2000, 0], bunkers=two, nav=0, mission=5),
+        dict(foot=[0x2000, 0x2000, 0], bunkers=two, nav=1, mission=8),
+    ]
+    return [battle_bunker_row(**case, whole_map=True) for case in cases]
 
 
 # ---------------------------------------------------------------- tank_bunker
@@ -1516,6 +1811,106 @@ def deploy():
     return rows
 
 
+def delete_members_rows():
+    """Original Script37 inline list walk; lifecycle virtuals are receipts.
+
+    Every Limbo callback unlinks the current head and clears its next link;
+    this independently exercises the original pre-callback next cache. The
+    complete class Limbo/UnInit bodies and deferred drain are Rust integration
+    dependencies, NOT emulated by these declared sinks.
+    """
+    rows = []
+    for order in ([], [2], [2, 0, 1]):
+        emu = TeamEmu()
+        pointers = [emu.object(index, rtti=RTTI_UNIT) for index in order]
+        for current, following in zip(pointers, pointers[1:] + [0]):
+            emu.write32(current + 0x5D8, following)
+        emu.write32(TEAM + 0x54, pointers[0] if pointers else 0)
+        emu.write8(TEAM + 0x80, 0)
+        def limbo(e):
+            current = e.uc.reg_read(UC_X86_REG_ECX)
+            e.events.append(["limbo", e.index_of(current)])
+            e.write32(TEAM + 0x54, e.read32(current + 0x5D8))
+            e.write32(current + 0x5D8, 0)
+            return 1
+        def uninit(e):
+            e.events.append(["uninit", e.index_of(e.uc.reg_read(UC_X86_REG_ECX))])
+        emu.write32(OBJECT_VTABLE + 0xD4, STUBS + 0x800)
+        emu.write32(OBJECT_VTABLE + 0xF8, STUBS + 0x810)
+        emu.hook(STUBS + 0x800, limbo, 0)
+        emu.hook(STUBS + 0x810, uninit, 0)
+        emu.events = []
+        emu.uc.reg_write(UC_X86_REG_ESI, TEAM)
+        emu.start(0x6E954D, 0x6E957B, ecx=TEAM)
+        rows.append(dict(order=order, events=emu.events,
+                         head=emu.read32(TEAM + 0x54), advance=emu.read8(TEAM + 0x80)))
+    return rows
+
+
+def delete_members_metadata():
+    return provenance(
+        scope="Original TeamAI Script37 inline6E954D..6E957B: cache Foot+5D8, Limbo thenUnInit in member order, set advance+80",
+        assumptions=["Supplied synthetic linked members/head, initially advance0; native Script37 control flow runs unchanged",
+                     "TeamEmu existing49F2F0 adjacent-cell initializer remains shared transport; no new VM model"],
+        substitutions=["vtD4 Limbo records and unlinks current head/clears next; vtF8 UnInit records only; no class lifecycle, damage, RNG, audio/device, raw scalar destructor or full TeamAI timing claim"],
+        entry_points={"script37": 0x6E954D, "stop_before_epilogue": 0x6E957B})
+
+
+def attack_waypoint_building_rows():
+    """Original Script59 selector/ammunition gates, with shared-owner seams."""
+    rows=[]
+    cases=[dict(name='building_unlimited',blocker='building',first=True,type_ammo=-1,ammo=0,count=3),
+        dict(name='other_blocker',blocker='other',first=True,type_ammo=-1,ammo=0,count=3),
+        dict(name='no_blocker',blocker=None,first=True,type_ammo=-1,ammo=0,count=3),
+        dict(name='spent_building',blocker='building',first=True,type_ammo=1,ammo=0,count=3),
+        dict(name='retained_building',blocker=None,first=False,type_ammo=1,ammo=1,count=3),
+        dict(name='empty_team',blocker='building',first=True,type_ammo=-1,ammo=0,count=0)]
+    for spec in cases:
+        emu=TeamEmu();action=SCRIPT+0x200;target=OBJECTS+8*OBJECT_SIZE
+        emu.object(8,rtti=RTTI_BUILDING if spec['blocker']!='other' else RTTI_INFANTRY)
+        emu.write32(CELL,OBJECT_VTABLE);emu.rtti[CELL]=11
+        emu.write32(CELL+0x140,0)
+        emu.write32(action,59);emu.write32(action+4,11)
+        emu.write32(TEAM+0x3C,target if not spec['first'] else 0)
+        emu.write32(TEAM+0x40,emu.read32(TEAM+0x3C))
+        previous=None
+        for index in range(spec['count']):
+            actor=emu.object(index);type_pointer=emu.techno_type_at(index)
+            emu.techno_type[actor]=type_pointer
+            emu.write32(type_pointer+0x684,spec['type_ammo']);emu.write32(actor+0x2FC,spec['ammo'])
+            if previous is None:emu.write32(TEAM+0x54,actor)
+            else:emu.write32(previous+0x5D8,actor)
+            previous=actor
+        def assign(e):
+            value=e.arg(0);e.events.append(['assign',bool(value)])
+            prior=e.read32(TEAM+0x3C)
+            if e.read32(TEAM+0x40) in (0,prior):e.write32(TEAM+0x40,value)
+            e.write32(TEAM+0x3C,value)
+        def blocker(e):
+            e.events.append(['blocker',bool(e.arg(1)&255)])
+            return target if spec['blocker'] else 0
+        emu.hook(0x68BCE0,lambda e:e.events.append(['waypoint',i32(e.arg(0))]) or CELL,4)
+        emu.hook(0x47C5A0,blocker,8)
+        emu.hook(0x6E9050,assign,4)
+        emu.hook(0x6EB490,lambda e:e.events.append(['coordinate_attack']),0)
+        emu.events=[]
+        emu.invoke(0x6ECA70,ecx=TEAM,args=(action,int(spec['first'])))
+        rows.append(dict(input=spec,target_present=bool(emu.read32(TEAM+0x3C)),
+            advance=bool(emu.read8(TEAM+0x80)),coordinate_attack=any(event[0]=='coordinate_attack' for event in emu.events),
+            events=emu.events))
+    return rows
+
+
+def attack_waypoint_building_metadata():
+    return provenance(scope='Original6ECA70 Script59 first waypoint/blocker RTTI gate, member Type Ammo/current Ammo gate and retained target routing',
+        assumptions=['Declared synthetic Team/member/current target, exact signed Type Ammo and current Ammo priors; member count0/3 and first/repeat supplied. Original whole6ECA70 executes unchanged.',
+            'This is a handler control fixture, not full waypoint/map/CoordinateAttack execution, type/rules loading, TeamAI scheduling or an ALL01 scene.'],
+        substitutions=['Existing TeamEmu WhatAmI/GetTechnoType transports supply declared RTTI/type identity. Scenario68BCE0 supplies a Cell; Cell47C5A0 records bridge-list argument and supplies declared building/other/null blocker.',
+            'AssignMissionTarget6E9050 records and maintains the retained shared target view; CoordinateAttack6EB490 records only. Their production owners and original corpora are separate. No arithmetic, RNG or timer call is replaced in59 itself.'],
+        entry_points={'script59':0x6ECA70,'waypoint_cell':0x68BCE0,'blocker':0x47C5A0,
+            'assign_mission_target':0x6E9050,'coordinate_attack':0x6EB490})
+
+
 def generate():
     return dict(recalc=recalc(), center=center(), recruit=recruit(), distance=distance(),
                 guard=guard(), regroup=regroup(), own_building=own_building(),
@@ -1524,6 +1919,70 @@ def generate():
                 tank_bunker=tank_bunker(), load=load(), wait_loaded=wait_loaded(),
                 unload=unload(), deploy=deploy())
 
+
+if __name__ == '__main__' and '--attack-waypoint-building' in sys.argv:
+    finish_vectors(attack_waypoint_building_rows, Path(__file__).with_name('team_attack_waypoint_building.json'),
+                   provenance=attack_waypoint_building_metadata,
+                   argv=[arg for arg in sys.argv[1:] if arg != '--attack-waypoint-building'])
+    raise SystemExit
+
+if __name__ == '__main__' and '--delete-members' in sys.argv:
+    finish_vectors(delete_members_rows, Path(__file__).with_name('team_delete_members.json'),
+                   provenance=delete_members_metadata,
+                   argv=[arg for arg in sys.argv[1:] if arg != '--delete-members'])
+    raise SystemExit
+
+if __name__ == '__main__' and '--force-facing' in sys.argv:
+    finish_vectors(force_facing, Path(__file__).with_name('team_force_facing.json'),
+        provenance=lambda: provenance(
+            scope='Script42/6EDCA0 complete caller with original class DoTurn bodies and FacingClass Set/SetCurrent/Current, eight active locomotor families.',
+            assumptions=['Member order and retained FacingClass fields are supplied raw controls.',
+                         'Rocket interface7F0B1C+4C inherits55AC30, established from original constructor661F1F and table bytes.',
+                         'High/padding words unused by native DirStruct/timer consumers are omitted from serialized projection.',
+                         'Null locomotor COM faults are outside the native controls; Rust retains the pending step as a safety policy.'],
+            substitutions=['ILocomotion IsMoving+10 supplies fixture booleans, without executing its movement engine. Its existing Rust/native-query corpora remain independent.',
+                           'No substitutions for class DoTurn or FacingClass arithmetic/timer writes; these original instructions execute.'],
+            entry_points={'entry': FORCE_FACING, 'facing_set': 0x4C9220,
+                       'facing_snap': 0x4C9300, 'facing_current': 0x4C93D0} | TURN_ENTRIES),
+        argv=[arg for arg in sys.argv[1:] if arg != '--force-facing'])
+    raise SystemExit
+
+if __name__ == '__main__' and '--patrol' in sys.argv:
+    finish_vectors(patrol, Path(__file__).with_name('team_patrol.json'),
+        provenance=lambda: provenance(
+            scope='Script16/6ECCE0 bounded control routing, native leader selection, AI PatrolScan constructor/ReadDouble/conversion and global signed modulo.',
+            assumptions=['Fixture members retain native order, LeadershipRating and live/limbo/initiated flags.',
+                         'The supplied AI reader index and original CRT initializer come from the existing path-delay reader fixture.',
+                         'PC53/chop. Invalid zero divisors are not executed as gameplay controls.',
+                         'Malformed authored floats retain the existing non-retail reader residual.'],
+            substitutions=['Waypoint lookup and GreatestThreat return supplied identities; scanner args are recorded.',
+                           'AssignMissionTarget projects only +3C/+40 identity retention; downstream member cleanup is covered by Rust integration, not this native slice.',
+                           'CoordinateAttack/Move record which interface is selected; their movement/combat, timers and RNG are not executed.'],
+            entry_points={'entry': PATROL, 'constructor': 0x666E09,
+                       'reader': PATROL_READER, 'convert': PATROL_CONVERT,
+                       'idiv': PATROL_IDIV, 'read_double': 0x5283D0}),
+        argv=[arg for arg in sys.argv[1:] if arg != '--patrol'])
+    raise SystemExit
+
+if __name__ == '__main__' and '--nearest-occupiable' in sys.argv:
+    finish_vectors(nearest_occupiable,
+        Path(__file__).with_name('team_nearest_occupiable.json'),
+        provenance=lambda: provenance(
+            scope=('Foot4DFE00 Script64 seek over the global Building registry; '
+                   'all admission calls precede actual Sqrt_Approx4CAC40/ftol7C5F00, '
+                   'strict ties, +691 latch and Capture reissue. Nine bounded controls.'),
+            assumptions=['x87 control word0E7F (PC53,chop), the existing harness default.',
+                         'The retained Building registry order is supplied.'],
+            substitutions=['CanBeOccupiedBy457CE0 answers supplied scalar admissions '
+                           '(and refuses the NULL non-Infantry argument).',
+                           'Building GetCoords supplies fixture coordinates; Foot '
+                           'GetCoords uses original5F65A0. Destination/QueueMission '
+                           'record arguments. Their downstream path is not executed.'],
+            entry_points={'entry': ENTER_NEAREST_OCCUPIABLE,
+                       'admission': CAN_BE_OCCUPIED_BY,
+                       'sqrt_approx': 0x4CAC40, 'ftol': 0x7C5F00}),
+        argv=[arg for arg in sys.argv[1:] if arg != '--nearest-occupiable'])
+    raise SystemExit
 
 if __name__ == '__main__':
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(

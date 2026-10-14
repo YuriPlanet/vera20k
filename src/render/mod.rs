@@ -26,30 +26,27 @@ pub mod bridge_atlas;
 pub mod bridge_railing_atlas;
 pub mod building_light;
 pub mod building_zshape;
+pub(crate) mod chrono_screen;
 pub mod combat_light;
 pub mod cursor_atlas;
+#[cfg(test)]
+pub(crate) mod depth_gpu_tests;
 pub mod draw_state;
-pub(crate) mod electric_bolt;
 #[cfg(feature = "dev-ui")]
 pub mod egui_integration;
-pub mod frame_readback;
+pub(crate) mod electric_bolt;
 pub(crate) mod foot_depth;
+pub mod frame_readback;
 pub mod gpu;
-pub(crate) mod line_trail;
-pub(crate) mod laser;
 pub(crate) mod ion_blast_ripple;
-pub(crate) mod surface_line;
+pub(crate) mod laser;
+pub(crate) mod line_trail;
 pub mod loading_screen_chrome;
 pub mod locomotor_visual;
 pub mod main_menu_shell_chrome;
 pub mod native_surface_format;
 pub mod native_z;
-pub(crate) mod tactical_shader;
-pub(crate) mod terrain_draw;
-#[cfg(test)]
-pub(crate) mod terrain_draw_gpu_tests;
 pub mod overlay_assets;
-pub mod terrain_instances;
 pub mod overlay_atlas;
 pub mod palette_light;
 pub mod palette_textures;
@@ -66,15 +63,21 @@ pub mod shell_transition_pass;
 pub mod shroud_buffer;
 #[cfg(test)]
 mod shroud_gpu_tests;
-pub(crate) mod sinking;
 pub mod sidebar_cameo_atlas;
 pub mod sidebar_chrome;
 pub mod sidebar_text;
+pub(crate) mod sinking;
 pub mod skirmish_shell_chrome;
 pub mod smudge;
 pub mod sprite_atlas;
+pub(crate) mod surface_line;
 pub mod tactical_compat;
 pub mod tactical_draw_plan;
+pub(crate) mod tactical_shader;
+pub(crate) mod terrain_draw;
+#[cfg(test)]
+pub(crate) mod terrain_draw_gpu_tests;
+pub mod terrain_instances;
 pub mod tile_atlas;
 pub mod unit_atlas;
 pub mod unit_pose_cache;
@@ -85,8 +88,6 @@ mod voxel_parity_tests;
 pub mod vxl_normals;
 pub mod vxl_raster;
 pub mod wave_geometry;
-#[cfg(test)]
-pub(crate) mod depth_gpu_tests;
 
 #[cfg(test)]
 mod sidebar_gpu_tests;

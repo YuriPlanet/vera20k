@@ -270,7 +270,16 @@ impl Fixture {
         // damage before the admitted opening. Map import would open first
         // at full health, producing an extra normal ART birth.
         let building = sim
-            .construct_object_limbo_at_height("GAPOWR", "Second", 10, 10, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                "GAPOWR",
+                "Second",
+                10,
+                10,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         sim.reveal_constructed_object_at_height(
             building,

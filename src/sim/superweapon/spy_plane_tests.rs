@@ -402,7 +402,16 @@ fn mission_plane(sim: &mut Simulation, rules: &RuleSet, row: &Value) -> u64 {
     // As SendSpyPlanes builds one: mission-only before its Unlimbo.
     let id = sim
         .with_object_placement_scope(|sim| {
-            sim.construct_object_limbo_at_height("SPYP", "Americans", 0, 0, 0, 0, rules)
+            sim.construct_object_limbo_at_height(
+                "SPYP",
+                "Americans",
+                0,
+                0,
+                0,
+                0,
+                rules,
+                crate::sim::world::FrameEffects::default(),
+            )
         })
         .unwrap();
     sim.substrate
@@ -675,8 +684,12 @@ fn retail_spy_plane_flies_with_super_weapons_off() {
     let russians: InternedId = sim.interner.intern("Russians");
     sim.session.game_options.super_weapons = false;
     for (kind, owner, at) in [
+        // Native Grant pauses a fresh Super in low power even when its
+        // type is not IsPowered. This option test supplies working power.
+        ("NANRCT", "Americans", (20, 24)),
         ("NARADR", "Americans", (24, 24)),
         ("NAMISL", "Americans", (28, 24)),
+        ("NANRCT", "Russians", (20, 32)),
         ("NARADR", "Russians", (24, 32)),
     ] {
         sim.spawn_object_at_height(kind, owner, at.0, at.1, 0, 0, &rules)
@@ -692,6 +705,8 @@ fn retail_spy_plane_flies_with_super_weapons_off() {
     };
 
     step(&mut sim, &rules);
+    assert!(!sim.power_states[&americans].is_low_power);
+    assert!(!sim.power_states[&russians].is_low_power);
     assert!(granted(&sim, americans, spy_plane));
     assert!(granted(&sim, russians, spy_plane));
     assert!(!granted(&sim, americans, nuke));

@@ -7,6 +7,139 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 
+/// Original5171C0/514D10/744210 over the oracle's supplied scene. Native
+/// execution records full32-bit raw words; the Rust raw-occupation owner
+/// represents their low byte. Constructor, head production and outer Foot
+/// Limbo are outside these rows; the lifecycle regression covers that join.
+#[test]
+fn mark_all_occupation_bits_matches_original_head_and_raw_plane_controls() {
+    use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+    use crate::map::resolved_terrain::{test_clear_cell, test_grid};
+    use crate::sim::game_entity::GameEntity;
+    use crate::sim::movement::locomotor::LocomotorState;
+    use crate::sim::world::Simulation;
+
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/locomotor_force_track.hover_mark_all.json",
+    ))
+    .expect("original Hover Mark_All controls");
+    assert_eq!(
+        corpus["native_sha256"],
+        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+    );
+    let null = DriveCoord { x: 0, y: 0, z: 0 };
+    let slot = |value: &serde_json::Value| Some(coord(value)).filter(|coord| *coord != null);
+    let unslot = |value: Option<DriveCoord>| {
+        let value = value.unwrap_or(null);
+        serde_json::json!([value.x, value.y, value.z])
+    };
+    let mut rows = 0;
+    for row in corpus["cases"].as_array().unwrap() {
+        let input = &row["input"];
+        let structural = input["structural"].as_bool().unwrap();
+        let mut sim = Simulation::new();
+        sim.install_resolved_terrain_for_new_map(test_grid(32, 32, |rx, ry| {
+            let mut cell = test_clear_cell(rx, ry);
+            cell.level = 2;
+            cell.template_height = 2;
+            if structural {
+                cell.bridge_facts.raw_flags |= BRIDGE_FLAG_STRUCTURAL;
+                cell.has_bridge_deck = true;
+                cell.bridge_walkable = true;
+                cell.bridge_deck_level = 6;
+            }
+            cell
+        }));
+        let mut entity = GameEntity::test_default(1, "YHVR", "Confederation", 9, 10);
+        entity.position.exact_z_leptons = Some(int(&input["location"][2]));
+        entity.lifecycle.in_limbo = false;
+        entity.foot_occupation_enabled = false;
+        entity.on_bridge = input["on_bridge"].as_bool().unwrap();
+        let mut loco =
+            LocomotorState::for_test_kind(crate::rules::locomotor_type::LocomotorKind::Hover);
+        loco.runtime_payload =
+            super::super::locomotion::piggyback::LocomotorRuntimePayload::Hover(HoverRuntime {
+                destination: slot(&input["destination"]),
+                head: slot(&input["head"]),
+                ..HoverRuntime::default()
+            });
+        entity.locomotor = Some(loco);
+        entity.navigation.path_replay.directions = vec![2];
+        if input["stop_first"].as_bool().unwrap() {
+            assert!(super::process::hover_stop_moving(&mut entity));
+        }
+        let retained = entity
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .hover_runtime()
+            .unwrap()
+            .clone();
+        sim.substrate.entities.insert(entity);
+        for cell in row["before_mark"]["raw_cells"].as_array().unwrap() {
+            let rx = int(&cell["cell"][0]) as u16;
+            let ry = int(&cell["cell"][1]) as u16;
+            sim.substrate
+                .raw_cell_occupation
+                .mark_ground(rx, ry, int(&cell["ground"]) as u8);
+            sim.substrate
+                .raw_cell_occupation
+                .mark_deck(rx, ry, int(&cell["deck"]) as u8);
+        }
+        let streams = (
+            sim.scenario_rng.state(),
+            sim.main_rng.state(),
+            sim.mapgen_rng.state(),
+        );
+
+        sim.locomotor_mark_all_occupation_bits(1, int(&input["mode"]) != 0);
+
+        let entity = sim.substrate.entities.get(1).unwrap();
+        let hover = entity.locomotor.as_ref().unwrap().hover_runtime().unwrap();
+        assert_eq!(
+            *hover, retained,
+            "Mark_All preserves the active Hover: {input}"
+        );
+        let raw_cells: Vec<_> = row["output"]["raw_cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|cell| {
+                let rx = int(&cell["cell"][0]) as u16;
+                let ry = int(&cell["cell"][1]) as u16;
+                serde_json::json!({"cell": [rx, ry],
+                "ground": sim.substrate.raw_cell_occupation.ground_bits(rx, ry),
+                "deck": sim.substrate.raw_cell_occupation.deck_bits(rx, ry)})
+            })
+            .collect();
+        let location = super::super::foot_coordinate::current_coordinate(entity);
+        let actual = serde_json::json!({
+            "head": unslot(hover.head), "destination": unslot(hover.destination),
+            "location": [location.x, location.y, location.z],
+            "occupation_enabled": entity.foot_occupation_enabled,
+            "path_head": entity.navigation.path_replay.remaining_directions().first().map_or(-1, |&word| i32::from(word)),
+            "raw_cells": raw_cells,
+        });
+        let mut expected = row["output"].clone();
+        for cell in expected["raw_cells"].as_array_mut().unwrap() {
+            for plane in ["ground", "deck"] {
+                cell[plane] = serde_json::json!(int(&cell[plane]) as u8);
+            }
+        }
+        assert_eq!(actual, expected, "{input}");
+        assert_eq!(
+            (
+                sim.scenario_rng.state(),
+                sim.main_rng.state(),
+                sim.mapgen_rng.state()
+            ),
+            streams
+        );
+        rows += 1;
+    }
+    assert_eq!(rows, 16);
+}
+
 fn vectors() -> Vec<serde_json::Value> {
     serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/hover_speed_altitude.json",

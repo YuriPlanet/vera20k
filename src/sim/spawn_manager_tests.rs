@@ -14,7 +14,6 @@
 use std::collections::BTreeMap;
 
 use crate::map::resolved_terrain::ResolvedTerrainCell;
-use crate::rules::ini_parser::IniFile;
 use crate::rules::missile_spawn::MissileFamily;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
@@ -37,7 +36,8 @@ fn make_spawner_rules_with_hornet_strength(strength: i32) -> RuleSet {
         "[HORNET]\nName=Hornet\nStrength=75",
         &format!("[HORNET]\nName=Hornet\nStrength={strength}"),
     );
-    RuleSet::from_ini(&IniFile::from_str(&text)).expect("spawner rules should parse")
+    RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&text))
+        .expect("spawner rules should parse")
 }
 
 fn spawner_rules_text() -> &'static str {
@@ -289,6 +289,8 @@ fn flat_sim() -> Simulation {
         HEIGHT,
         flat_terrain_cell,
     ));
+    sim.playfield_size_height = Some(HEIGHT.into());
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim
 }
 
@@ -764,7 +766,7 @@ fn a_missile_that_lost_its_target_retreats_for_good() {
     use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
     use crate::sim::world::edge_cell::{Edge, find_paradrop_edge_cell};
     let text = spawner_rules_text().replace("[V3ROCKET]\n", "[V3ROCKET]\nSelectable=no\n");
-    let rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&text)).unwrap();
     let mut sim = missile_sim();
     let v3 = sim
         .spawn_object("V3", "Russians", 10, 10, 0, &rules)
@@ -2548,13 +2550,42 @@ AG=yes
 CurleyShuffle=yes
 ",
         );
-    let rules = RuleSet::from_ini(&IniFile::from_str(&text)).expect("strafing carrier rules");
-    let mut sim = flat_sim();
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&text))
+        .expect("strafing carrier rules");
+    let mut sim = Simulation::new();
+    // The sortie needs a real Size diamond as well as its LocalSize. The
+    // shared flat fixture's Size width0 admits no cell at native568300 once
+    // a height is supplied; mission-only cruising Hornets can then leave.
+    sim.session.map_width = 65;
+    sim.session.map_height = 65;
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
+        65,
+    ));
+    sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+        theater: "TEMPERATE".into(),
+        fill: "Clear".into(),
+        level: 0,
+        width: 32,
+        height: 32,
+        local_left: 2,
+        local_top: 2,
+        local_width: 28,
+        local_height: 24,
+    });
+    assert!(sim.rebuild_dynamic_navigation(&rules));
+    for cell in [(20, 20), (34, 20)] {
+        assert!(sim.map_cell_in_bounds(cell), "sortie start {cell:?}");
+        assert!(crate::sim::cell_rect::cell_is_in_playfield_height_aware(
+            (i32::from(cell.0), i32::from(cell.1)),
+            sim.playfield_bounds,
+            sim.resolved_terrain.as_ref(),
+        ));
+    }
     let carrier = sim
-        .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules)
+        .spawn_object("CARRIER", "Americans", 20, 20, 0, &rules)
         .expect("spawn CARRIER");
     let target = sim
-        .spawn_object("TARGET", "Yuri", 24, 10, 0, &rules)
+        .spawn_object("TARGET", "Yuri", 34, 20, 0, &rules)
         .expect("spawn TARGET");
     let wing: Vec<u64> = sim
         .substrate
@@ -2726,7 +2757,16 @@ fn retail_launches(
     }
     // MarkSucceeded seats a ship on this dry fixture ground.
     let owner = sim
-        .construct_object_limbo_at_height(owner_type, "Russians", 10, 10, 0x20, 4, rules)
+        .construct_object_limbo_at_height(
+            owner_type,
+            "Russians",
+            10,
+            10,
+            0x20,
+            4,
+            rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("construct owner");
     assert!(
         sim.reveal_constructed_object_at_height(

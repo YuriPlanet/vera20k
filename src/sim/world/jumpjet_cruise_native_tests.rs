@@ -243,7 +243,16 @@ fn supplied_world(
     sim.houses.insert(owner, house);
     sim.session.house_order = vec![owner];
     let id = sim
-        .construct_object_limbo_at_height("SHAD", "Americans", 10, 10, 0, 0, rules)
+        .construct_object_limbo_at_height(
+            "SHAD",
+            "Americans",
+            10,
+            10,
+            0,
+            0,
+            rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("stock SHAD constructor");
     {
         let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -323,7 +332,16 @@ fn supplied_world(
     assert_eq!(state["alive"], 1);
     let other = input["taken"].as_bool().unwrap().then(|| {
         let other = sim
-            .construct_object_limbo_at_height("SHAD", "Americans", 12, 10, 0, 0, rules)
+            .construct_object_limbo_at_height(
+                "SHAD",
+                "Americans",
+                12,
+                10,
+                0,
+                0,
+                rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("foreign supplied SHAD identity");
         {
             let foreign = sim.substrate.entities.get_mut(other).unwrap();

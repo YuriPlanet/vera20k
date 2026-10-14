@@ -516,8 +516,11 @@ fn launch_rules(types: &[(bool, i32, i32)]) -> RuleSet {
         art += &format!("[SILO{slot}]\nFoundation=1x1\n");
     }
     let art = IniFile::from_str(&art);
-    let mut rules =
-        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&rules), &art).unwrap();
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&rules),
+        &art,
+    )
+    .unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     rules
 }
@@ -533,8 +536,8 @@ fn launch_rules(types: &[(bool, i32, i32)]) -> RuleSet {
 /// - the launch event at the cell of PlayAtCoord's coordinate, for the
 ///   app's sound and line (`sound_dispatch::launch_lines_match_native`).
 ///
-/// Not compared: the player's tail (the app's, `super_selection`), the
-/// recheck flag `+0x1FC` and the mute row (module RESIDUALS).
+/// Also compared: the common-tail recheck flag `+0x1FC`. Not compared:
+/// the player's tail (the app's, `super_selection`) and the mute row.
 #[test]
 fn the_launch_matches_native() {
     let oracle = oracle();
@@ -581,7 +584,15 @@ fn the_launch_matches_native() {
             .is_ready = row["charged"] == true;
         let target = (int(&row["target"][0]) as u16, int(&row["target"][1]) as u16);
         let sw = rules.super_weapon("NukeSpecial").unwrap().clone();
+        // The native harness begins with a cleared House+1FC, independently
+        // of provider fixture construction and its ordinary Unlimbo request.
+        sim.houses.get_mut(&owner).unwrap().take_tech_tree_recheck();
         let launched = super::nuke::launch(&mut sim, &rules, owner, sw_type, &sw, target);
+        assert_eq!(
+            sim.houses.get_mut(&owner).unwrap().take_tech_tree_recheck(),
+            int(&row["recheck"]) != 0,
+            "{row}: common-tail House request",
+        );
         assert_eq!(launched, has_event(row, "queue_mission"), "{row}");
         for (slot, &id) in buildings.iter().enumerate() {
             let building = sim.substrate.entities.get(id).unwrap();
@@ -763,7 +774,9 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
         .unwrap();
     let sw_type: InternedId = sim.interner.intern("NukeSpecial");
     let mut instance = SuperWeaponInstance::new(sw_type, russians, 0);
-    instance.activate(9000, sim.session.binary_frame);
+    instance.is_active = true;
+    instance.charge_start_tick = (sim.session.binary_frame) as i32;
+    instance.charge_duration = 9000;
     instance.is_ready = true;
     sim.super_weapons
         .entry(russians)

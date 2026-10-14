@@ -529,7 +529,94 @@ def generate():
                 placer=placer, centre_mark=centre_mark, centre_mark_discard_pins=pins)
 
 
+def clear_all_smudges_generate():
+    """Three conditional field controls for whole Execute118/588AC0.
+
+    Reuses this tool's actual Cell constructors/map allocation plane. Widths
+    and identities are supplied controls, not a retail INI/type-lifetime claim.
+    No renderer or original code instruction is substituted on this route.
+    """
+    from unicorn import UC_HOOK_MEM_WRITE
+
+    types = [('ONE', 0, 0, 1, 1), ('TWO', 0, 0, 2, 2)]
+    complete = [dict(x=3+dx, y=4+dy, smudge=1, smudge_data=dx+dy*2)
+                for dy in range(2) for dx in range(2)]
+    complete.append(dict(x=5, y=3, smudge=0, smudge_data=0))
+    cases = [('empty', [], True, None, 0, 0),
+             ('complete_footprints', complete, True, None, 2, 254),
+             ('partial_boundary_first_null', [dict(x=1,y=6,smudge=1,smudge_data=3)],
+              False, dict(smudge=0,smudge_data=11), 0, 255)]
+    rows = []
+    for name, cells, allocated, dummy, redraw_level, epoch in cases:
+        machine = Machine(19)
+        spec = dict(size=[6,4], cells=cells, allocate_diamond=allocated,
+                    tile_count=1,morphable=[0],dummy=dummy)
+        machine.cells.install_map(spec)
+        machine.cells.install_smudge_types(types)
+        u = machine.uc
+        screen = CELLMEM + 0x282000
+        u.mem_write(screen, bytes(0x1000))
+        u.mem_write(0x887324, dwords(screen))
+        u.mem_write(MAP+0xC, dwords(redraw_level))
+        u.mem_write(MAP+0x1158, bytes([epoch]))
+        before = machine.rng()
+        targets = {address+0x48:(x,y) for (x,y),address in machine.cells.addresses.items()}
+        targets[DUMMY+0x48] = None
+        writes = []
+
+        def record_write(_u, _access, address, size, value, _data):
+            if address in targets and size == 4:
+                writes.append(dict(
+                    cell=list(struct.unpack('<hh',u.mem_read(address-0x48+0x24,4))),
+                    dummy=targets[address] is None,
+                    previous=signed(read32(u,address)),
+                    identity=signed(value),
+                    data=u.mem_read(address-0x48+0x11F,1)[0]))
+
+        handle = u.hook_add(UC_HOOK_MEM_WRITE, record_write)
+        u.mem_write(launch.SP-0x100, dwords(launch.STOP,0,0,0,0))
+        u.reg_write(UC_X86_REG_ESP,launch.SP-0x100)
+        u.reg_write(UC_X86_REG_ECX,0)
+        run_checked(u,0x6E2C20,launch.STOP,count=100_000)
+        u.hook_del(handle)
+        assert u.reg_read(UC_X86_REG_ESP)==launch.SP-0x100+20
+        after = machine.rng()
+        assert before == after
+        state = [dict(cell=[x,y],identity=signed(read32(u,p+0x48)),
+                      data=u.mem_read(p+0x11F,1)[0])
+                 for (x,y),p in sorted(machine.cells.addresses.items())]
+        rows.append(dict(name=name,input=spec,redraw_level_before=redraw_level,
+            redraw_epoch_before=epoch,returned=u.reg_read(UC_X86_REG_AL),
+            cells_after=state,cell_writes=writes,dummy_after=machine.cells.dummy_state(),
+            redraw_level_after=read32(u,MAP+0xC),redraw_epoch_after=u.mem_read(MAP+0x1158,1)[0],
+            display_dirty_after=u.mem_read(screen+0xD7D,1)[0],rng_unchanged=before==after))
+    return dict(schema_version=1,kind='bounded-original-clear-all-smudges',
+        supplied_types=[dict(name=n,width=w,height=h) for n,_,_,w,h in types],
+        dummy_coord_before=list(DUMMY_COORD),rows=rows)
+
+
+def clear_all_smudges_main(argv):
+    finish_vectors(clear_all_smudges_generate,
+        Path(__file__).with_name('smudge_clear_all.json'),argv=argv,
+        provenance=lambda:provenance(
+            scope='Whole TAction1186E2C20 -> Map588AC0 ->4F42F0(1)/578AC0 on three supplied map/type field controls; original IDIV, allocated iterator/first-null stop, identity-only footprint writes and redraw fields execute.',
+            assumptions=[
+                'Existing Cells transport executes original Cell47BBF0 constructors; synthetic Size6x4 allocation/data and positive type fields1x1/2x2 are supplied, not derived from VERA or claimed as retail reader/campaign evidence.',
+                'Type registry consists of two supplied semantic identities. Entire SmudgeType constructor/INI read, runtime SmudgeClass lifetime, complete scenario start and rendered pixels are excluded.',
+                'Display pointer is a supplied mapped field block; Map redraw level and epoch are supplied. Actual4F42F0 and578AC0 scalar stores execute; no original rendering surface or cache blit executes.',
+                'Three cases: empty allocated map; complete1x1 and2x2 footprints; one torn2x2 boundary source with retained Dummy data and first-null iterator termination. Native results pin signed IDIV/word origin and field-preservation for these inputs only.',
+                'Full Scenario RNG bytes before/after compare equal; no seed/draw occurs between the retained states during Execute118.'
+            ],substitutions=[
+                'Only inherited host stack/PE allocation and this tool\'s synthetic original-constructed Cell/type/global field transport. No native gameplay or redraw instruction in this selected route is hooked or changed.'
+            ],entry_points=dict(execute118=0x6E2C20,clear=0x588AC0,
+                iterator_next=0x578290,cell_ctor=CELL_CTOR,redraw=0x4F42F0,epoch=0x578AC0)))
+
+
 if __name__ == "__main__":
+    import sys
+    if '--clear-all-smudges' in sys.argv[1:]:
+        clear_all_smudges_main([arg for arg in sys.argv[1:] if arg!='--clear-all-smudges'])
+        raise SystemExit(0)
     finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=lambda: provenance(
         scope=("SmudgeTypeClass::CanPlace 0x006B5F80 over MapClass's cell table (GetCell "
                "0x005657A0, In_Bounds 0x00568300, the building lookup 0x0047C520 and the "

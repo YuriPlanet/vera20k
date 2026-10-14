@@ -1,0 +1,434 @@
+[
+  {
+    "bunkers": [],
+    "events": [],
+    "foot": [
+      8192,
+      8192,
+      0
+    ],
+    "infantry": true,
+    "latch": true,
+    "latch_after": 0,
+    "mission": 0,
+    "nav": null,
+    "result": 0
+  },
+  {
+    "bunkers": [
+      {
+        "answer": true,
+        "xyz": [
+          9216,
+          8192,
+          0
+        ]
+      },
+      {
+        "answer": true,
+        "xyz": [
+          12288,
+          8192,
+          0
+        ]
+      }
+    ],
+    "events": [
+      [
+        "can_be_occupied_by",
+        1,
+        "foot"
+      ],
+      [
+        "can_be_occupied_by",
+        0,
+        "foot"
+      ],
+      [
+        "assign_destination",
+        0,
+        1
+      ],
+      [
+        "queue_mission",
+        8,
+        1
+      ]
+    ],
+    "foot": [
+      8192,
+      8192,
+      0
+    ],
+    "infantry": true,
+    "latch": false,
+    "latch_after": 1,
+    "mission": 0,
+    "nav": null,
+    "result": 1
+  },
+  {
+    "bunkers": [
+      {
+        "answer": true,
+        "xyz": [
+          8448,
+          8192,
+          0
+        ]
+      },
+      {
+        "answer": true,
+        "xyz": [
+          8192,
+          8448,
+          0
+        ]
+      }
+    ],
+    "events": [
+      [
+        "can_be_occupied_by",
+        1,
+        "foot"
+      ],
+      [
+        "can_be_occupied_by",
+        0,
+        "foot"
+      ],
+      [
+        "assign_destination",
+        1,
+        1
+      ],
+      [
+        "queue_mission",
+        8,
+        1
+      ]
+    ],
+    "foot": [
+      8192,
+      8192,
+      0
+    ],
+    "infantry": true,
+    "latch": false,
+    "latch_after": 1,
+    "mission": 0,
+    "nav": null,
+    "result": 1
+  },
+  {
+    "bunkers": [
+      {
+        "answer": true,
+        "xyz": [
+          300,
+          400,
+          0
+        ]
+      },
+      {
+        "answer": true,
+        "xyz": [
+          0,
+          500,
+          1
+        ]
+      }
+    ],
+    "events": [
+      [
+        "can_be_occupied_by",
+        1,
+        "foot"
+      ],
+      [
+        "can_be_occupied_by",
+        0,
+        "foot"
+      ],
+      [
+        "assign_destination",
+        1,
+        1
+      ],
+      [
+        "queue_mission",
+        8,
+        1
+      ]
+    ],
+    "foot": [
+      0,
+      0,
+      0
+    ],
+    "infantry": true,
+    "latch": false,
+    "latch_after": 1,
+    "mission": 0,
+    "nav": null,
+    "result": 1
+  },
+  {
+    "bunkers": [
+      {
+        "answer": true,
+        "xyz": [
+          8320,
+          8192,
+          0
+        ]
+      },
+      {
+        "answer": false,
+        "xyz": [
+          8192,
+          8256,
+          0
+        ]
+      },
+      {
+        "answer": true,
+        "xyz": [
+          8192,
+          8448,
+          0
+        ]
+      }
+    ],
+    "events": [
+      [
+        "can_be_occupied_by",
+        2,
+        "foot"
+      ],
+      [
+        "can_be_occupied_by",
+        1,
+        "foot"
+      ],
+      [
+        "can_be_occupied_by",
+        0,
+        "foot"
+      ],
+      [
+        "assign_destination",
+        0,
+        1
+      ],
+      [
+        "queue_mission",
+        8,
+        1
+      ]
+    ],
+    "foot": [
+      8192,
+      8192,
+      0
+    ],
+    "infantry": true,
+    "latch": false,
+    "latch_after": 1,
+    "mission": 0,
+    "nav": null,
+    "result": 1
+  },
+  {
+    "bunkers": [
+      {
+        "answer": true,
+        "xyz": [
+          9216,
+          8192,
+          0
+        ]
+      },
+      {
+        "answer": true,
+        "xyz": [
+          12288,
+          8192,
+          0
+        ]
+      }
+    ],
+    "events": [
+      [
+        "can_be_occupied_by",
+        1,
+        null
+      ],
+      [
+        "can_be_occupied_by",
+        0,
+        null
+      ]
+    ],
+    "foot": [
+      8192,
+      8192,
+      0
+    ],
+    "infantry": false,
+    "latch": true,
+    "latch_after": 0,
+    "mission": 0,
+    "nav": null,
+    "result": 0
+  },
+  {
+    "bunkers": [
+      {
+        "answer": true,
+        "xyz": [
+          9216,
+          8192,
+          0
+        ]
+      },
+      {
+        "answer": true,
+        "xyz": [
+          12288,
+          8192,
+          0
+        ]
+      }
+    ],
+    "events": [
+      [
+        "can_be_occupied_by",
+        1,
+        "foot"
+      ],
+      [
+        "can_be_occupied_by",
+        0,
+        "foot"
+      ]
+    ],
+    "foot": [
+      8192,
+      8192,
+      0
+    ],
+    "infantry": true,
+    "latch": false,
+    "latch_after": 1,
+    "mission": 8,
+    "nav": 0,
+    "result": 1
+  },
+  {
+    "bunkers": [
+      {
+        "answer": true,
+        "xyz": [
+          9216,
+          8192,
+          0
+        ]
+      },
+      {
+        "answer": true,
+        "xyz": [
+          12288,
+          8192,
+          0
+        ]
+      }
+    ],
+    "events": [
+      [
+        "can_be_occupied_by",
+        1,
+        "foot"
+      ],
+      [
+        "can_be_occupied_by",
+        0,
+        "foot"
+      ],
+      [
+        "assign_destination",
+        0,
+        1
+      ],
+      [
+        "queue_mission",
+        8,
+        1
+      ]
+    ],
+    "foot": [
+      8192,
+      8192,
+      0
+    ],
+    "infantry": true,
+    "latch": false,
+    "latch_after": 1,
+    "mission": 5,
+    "nav": 0,
+    "result": 1
+  },
+  {
+    "bunkers": [
+      {
+        "answer": true,
+        "xyz": [
+          9216,
+          8192,
+          0
+        ]
+      },
+      {
+        "answer": true,
+        "xyz": [
+          12288,
+          8192,
+          0
+        ]
+      }
+    ],
+    "events": [
+      [
+        "can_be_occupied_by",
+        1,
+        "foot"
+      ],
+      [
+        "can_be_occupied_by",
+        0,
+        "foot"
+      ],
+      [
+        "assign_destination",
+        0,
+        1
+      ],
+      [
+        "queue_mission",
+        8,
+        1
+      ]
+    ],
+    "foot": [
+      8192,
+      8192,
+      0
+    ],
+    "infantry": true,
+    "latch": false,
+    "latch_after": 1,
+    "mission": 8,
+    "nav": 1,
+    "result": 1
+  }
+]

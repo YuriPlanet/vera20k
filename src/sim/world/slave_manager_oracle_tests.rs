@@ -329,7 +329,16 @@ fn place_slave(
     let frame = sim.session.binary_frame;
     let (x, y) = node.get("cell").map_or((15, 15), cell);
     let id = sim
-        .construct_object_limbo_at_height("SLAV", "Americans", x, y, 0, 0, rules)
+        .construct_object_limbo_at_height(
+            "SLAV",
+            "Americans",
+            x,
+            y,
+            0,
+            0,
+            rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("slave");
     // make_slave supplies Object+9C's full XYZ after construction, including
     // held slaves. The constructor's zero Location is a separate input.

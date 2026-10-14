@@ -266,6 +266,58 @@ impl SmudgeGrid {
         true
     }
 
+    /// Map588AC0's per-source footprint removal. The origin is decoded from
+    /// native Cell+11F / Type.Width, not from Rust's cached footprint origin.
+    /// Each target clears only Cell+48; data and SmudgeClass lifetime survive.
+    /// Original Execute1186E2C20 calls this in allocated578350/578290 order.
+    pub(crate) fn clear_footprint_identity_at(
+        &mut self,
+        source: (u16, u16),
+        registry: &SmudgeTypeRegistry,
+        terrain: &ResolvedTerrainGrid,
+    ) -> Option<usize> {
+        let value = *self.cell(source.0, source.1);
+        let Some(type_id) = value.type_id else {
+            return Some(0);
+        };
+        let definition = registry.get(type_id)?;
+        // The current retail reader retains positive stock dimensions1/2;
+        // its existing1..255 compatibility clamp is a separate mod boundary.
+        let width = i16::from(definition.width);
+        let data = i16::from(value.frame_offset);
+        let origin = (
+            (source.0 as i16).wrapping_sub(data % width),
+            (source.1 as i16).wrapping_sub(data / width),
+        );
+        let mut changed = 0;
+        for dy in 0..i16::from(definition.height) {
+            for dx in 0..width {
+                //588B80..BA4: signed-word linear lookup and shared Dummy stamp.
+                let selected = terrain
+                    .native_cell_identity((origin.0.wrapping_add(dx), origin.1.wrapping_add(dy)));
+                match selected {
+                    NativeCellIdentity::Real(_) => {
+                        let at = terrain.native_cell_coord(selected);
+                        if let Some(index) = self.index_of(at.0 as u16, at.1 as u16)
+                            && self.cells[index].type_id.take().is_some()
+                        {
+                            // Keep+11F and derived origin metadata; an empty
+                            // identity stops drawing, not an invented data reset.
+                            self.dirty_cells.push((at.0 as u16, at.1 as u16));
+                            changed += 1;
+                        }
+                    }
+                    NativeCellIdentity::Dummy => {
+                        let dummy = terrain.shared_cell_dummy();
+                        let (_, data) = dummy.smudge_identity_data();
+                        dummy.write_smudge_identity_data(-1, data);
+                    }
+                }
+            }
+        }
+        Some(changed)
+    }
+
     pub fn iter_occupied(&self) -> impl Iterator<Item = (u16, u16, &SmudgeCell)> {
         self.cells.iter().enumerate().filter_map(move |(idx, c)| {
             if c.type_id.is_some() {

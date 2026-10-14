@@ -1,0 +1,731 @@
+[
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj0",
+        90,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "buildings_mixed_registry_remove_0",
+      "objects": [
+        {
+          "health": 90,
+          "owner": 0,
+          "remove": false,
+          "rtti": 6
+        },
+        {
+          "health": 80,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        },
+        {
+          "health": 70,
+          "naval": true,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        },
+        {
+          "health": 60,
+          "owner": 0,
+          "remove": false,
+          "rtti": 15
+        },
+        {
+          "health": 50,
+          "owner": 0,
+          "remove": false,
+          "rtti": 2
+        },
+        {
+          "health": 40,
+          "owner": 1,
+          "remove": false,
+          "rtti": 6
+        },
+        {
+          "health": 30,
+          "limbo": true,
+          "owner": 0,
+          "remove": false,
+          "rtti": 6
+        },
+        {
+          "health": 20,
+          "limbo": true,
+          "naval": true,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        },
+        {
+          "health": 0,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        }
+      ],
+      "subset": "buildings"
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj0",
+        90,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "buildings_mixed_registry_remove_1",
+      "objects": [
+        {
+          "health": 90,
+          "owner": 0,
+          "remove": true,
+          "rtti": 6
+        },
+        {
+          "health": 80,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        },
+        {
+          "health": 70,
+          "naval": true,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        },
+        {
+          "health": 60,
+          "owner": 0,
+          "remove": true,
+          "rtti": 15
+        },
+        {
+          "health": 50,
+          "owner": 0,
+          "remove": true,
+          "rtti": 2
+        },
+        {
+          "health": 40,
+          "owner": 1,
+          "remove": true,
+          "rtti": 6
+        },
+        {
+          "health": 30,
+          "limbo": true,
+          "owner": 0,
+          "remove": true,
+          "rtti": 6
+        },
+        {
+          "health": 20,
+          "limbo": true,
+          "naval": true,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        },
+        {
+          "health": 0,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        }
+      ],
+      "subset": "buildings"
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj1",
+        33,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "civilian_side": 2,
+      "controllers": {
+        "0": [
+          [
+            1,
+            0
+          ]
+        ]
+      },
+      "house": 0,
+      "houses": [
+        0,
+        1,
+        2
+      ],
+      "name": "buildings_captured_original_owner",
+      "objects": [
+        {
+          "owner": 1,
+          "rtti": 1
+        },
+        {
+          "health": 33,
+          "naval": false,
+          "owner": 1,
+          "rtti": 6
+        }
+      ],
+      "subset": "buildings"
+    },
+    "original_owners": {
+      "0": [
+        "house0"
+      ]
+    }
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj1",
+        80,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        "receive_damage",
+        "obj3",
+        60,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        "receive_damage",
+        "obj4",
+        50,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        "receive_damage",
+        "obj8",
+        0,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "land_mixed_registry_remove_0",
+      "objects": [
+        {
+          "health": 90,
+          "owner": 0,
+          "remove": false,
+          "rtti": 6
+        },
+        {
+          "health": 80,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        },
+        {
+          "health": 70,
+          "naval": true,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        },
+        {
+          "health": 60,
+          "owner": 0,
+          "remove": false,
+          "rtti": 15
+        },
+        {
+          "health": 50,
+          "owner": 0,
+          "remove": false,
+          "rtti": 2
+        },
+        {
+          "health": 40,
+          "owner": 1,
+          "remove": false,
+          "rtti": 6
+        },
+        {
+          "health": 30,
+          "limbo": true,
+          "owner": 0,
+          "remove": false,
+          "rtti": 6
+        },
+        {
+          "health": 20,
+          "limbo": true,
+          "naval": true,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        },
+        {
+          "health": 0,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        }
+      ],
+      "subset": "land"
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj1",
+        80,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        "receive_damage",
+        "obj3",
+        60,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        "receive_damage",
+        "obj4",
+        50,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        "receive_damage",
+        "obj8",
+        0,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "land_mixed_registry_remove_1",
+      "objects": [
+        {
+          "health": 90,
+          "owner": 0,
+          "remove": true,
+          "rtti": 6
+        },
+        {
+          "health": 80,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        },
+        {
+          "health": 70,
+          "naval": true,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        },
+        {
+          "health": 60,
+          "owner": 0,
+          "remove": true,
+          "rtti": 15
+        },
+        {
+          "health": 50,
+          "owner": 0,
+          "remove": true,
+          "rtti": 2
+        },
+        {
+          "health": 40,
+          "owner": 1,
+          "remove": true,
+          "rtti": 6
+        },
+        {
+          "health": 30,
+          "limbo": true,
+          "owner": 0,
+          "remove": true,
+          "rtti": 6
+        },
+        {
+          "health": 20,
+          "limbo": true,
+          "naval": true,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        },
+        {
+          "health": 0,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        }
+      ],
+      "subset": "land"
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj1",
+        33,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "civilian_side": 2,
+      "controllers": {
+        "0": [
+          [
+            1,
+            0
+          ]
+        ]
+      },
+      "house": 0,
+      "houses": [
+        0,
+        1,
+        2
+      ],
+      "name": "land_captured_original_owner",
+      "objects": [
+        {
+          "owner": 1,
+          "rtti": 1
+        },
+        {
+          "health": 33,
+          "naval": false,
+          "owner": 1,
+          "rtti": 1
+        }
+      ],
+      "subset": "land"
+    },
+    "original_owners": {
+      "0": [
+        "house0"
+      ]
+    }
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj2",
+        70,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "naval_mixed_registry_remove_0",
+      "objects": [
+        {
+          "health": 90,
+          "owner": 0,
+          "remove": false,
+          "rtti": 6
+        },
+        {
+          "health": 80,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        },
+        {
+          "health": 70,
+          "naval": true,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        },
+        {
+          "health": 60,
+          "owner": 0,
+          "remove": false,
+          "rtti": 15
+        },
+        {
+          "health": 50,
+          "owner": 0,
+          "remove": false,
+          "rtti": 2
+        },
+        {
+          "health": 40,
+          "owner": 1,
+          "remove": false,
+          "rtti": 6
+        },
+        {
+          "health": 30,
+          "limbo": true,
+          "owner": 0,
+          "remove": false,
+          "rtti": 6
+        },
+        {
+          "health": 20,
+          "limbo": true,
+          "naval": true,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        },
+        {
+          "health": 0,
+          "owner": 0,
+          "remove": false,
+          "rtti": 1
+        }
+      ],
+      "subset": "naval"
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj2",
+        70,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "naval_mixed_registry_remove_1",
+      "objects": [
+        {
+          "health": 90,
+          "owner": 0,
+          "remove": true,
+          "rtti": 6
+        },
+        {
+          "health": 80,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        },
+        {
+          "health": 70,
+          "naval": true,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        },
+        {
+          "health": 60,
+          "owner": 0,
+          "remove": true,
+          "rtti": 15
+        },
+        {
+          "health": 50,
+          "owner": 0,
+          "remove": true,
+          "rtti": 2
+        },
+        {
+          "health": 40,
+          "owner": 1,
+          "remove": true,
+          "rtti": 6
+        },
+        {
+          "health": 30,
+          "limbo": true,
+          "owner": 0,
+          "remove": true,
+          "rtti": 6
+        },
+        {
+          "health": 20,
+          "limbo": true,
+          "naval": true,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        },
+        {
+          "health": 0,
+          "owner": 0,
+          "remove": true,
+          "rtti": 1
+        }
+      ],
+      "subset": "naval"
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj1",
+        33,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "civilian_side": 2,
+      "controllers": {
+        "0": [
+          [
+            1,
+            0
+          ]
+        ]
+      },
+      "house": 0,
+      "houses": [
+        0,
+        1,
+        2
+      ],
+      "name": "naval_captured_original_owner",
+      "objects": [
+        {
+          "owner": 1,
+          "rtti": 1
+        },
+        {
+          "health": 33,
+          "naval": true,
+          "owner": 1,
+          "rtti": 1
+        }
+      ],
+      "subset": "naval"
+    },
+    "original_owners": {
+      "0": [
+        "house0"
+      ]
+    }
+  }
+]

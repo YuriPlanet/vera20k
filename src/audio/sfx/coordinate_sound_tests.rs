@@ -18,12 +18,22 @@ pub(super) fn cue(input: &str) -> &'static str {
 }
 
 pub(super) fn source() -> SoundSource {
-    let coordinate = &native()["audio_core_controls"]["input"]["coordinate"];
-    let axis = |index: usize| coordinate[index].as_i64().unwrap() as i32;
+    let [x, y, z] = coordinate();
     SoundSource::new(
-        crate::util::lepton::absolute_leptons_to_screen(axis(0), axis(1), axis(2)),
-        ((axis(0) >> 8) as u16, (axis(1) >> 8) as u16),
+        crate::util::lepton::absolute_leptons_to_screen(x, y, z),
+        ((x >> 8) as u16, (y >> 8) as u16),
     )
+}
+
+pub(super) fn coordinate() -> [i32; 3] {
+    let coordinate = &native()["audio_core_controls"]["input"]["coordinate"];
+    std::array::from_fn(|index| coordinate[index].as_i64().unwrap() as i32)
+}
+
+pub(super) fn request_flags() -> u32 {
+    native()["audio_core_controls"]["input"]["caller_argument"]
+        .as_u64()
+        .unwrap() as u32
 }
 
 pub(super) fn gain(label: &str, sound: &str, registry: &SoundRegistry) -> Option<SpatialGain> {
@@ -229,7 +239,14 @@ fn inaudible_requests_use_the_independent_native200_pool_and_reap_in_order() {
     with_player(|player, registry, _assets, _index| {
         let sound = cue("sound_index");
         let source = source();
-        assert!(!player.play_sound_at_coord("bmetdama", source, None, registry));
+        assert!(!player.play_sound_at_coord(
+            "bmetdama",
+            coordinate(),
+            request_flags(),
+            source,
+            None,
+            registry
+        ));
         assert_eq!(
             control("negative_request_no_node")["state"]["coordinate_request_count"],
             0
@@ -238,9 +255,23 @@ fn inaudible_requests_use_the_independent_native200_pool_and_reap_in_order() {
             .as_u64()
             .unwrap() as usize;
         for _ in 0..count {
-            assert!(player.play_sound_at_coord(sound, source, None, registry));
+            assert!(player.play_sound_at_coord(
+                sound,
+                coordinate(),
+                request_flags(),
+                source,
+                None,
+                registry
+            ));
         }
-        assert!(!player.play_sound_at_coord(sound, source, None, registry));
+        assert!(!player.play_sound_at_coord(
+            sound,
+            coordinate(),
+            request_flags(),
+            source,
+            None,
+            registry
+        ));
         assert_eq!(player.coordinate_requests.len(), count);
         assert!(player.pending.is_empty());
         let rows = player.coordinate_sound_observation();
@@ -270,7 +301,14 @@ fn retained_request_depths_and_newborn_depth_match_executed_nested_pause() {
         let sound = cue("sound_index");
         let source = source();
         let gain = gain("coordinate_before_nested_pause", sound, registry).unwrap();
-        assert!(player.play_sound_at_coord(sound, source, Some(gain), registry));
+        assert!(player.play_sound_at_coord(
+            sound,
+            coordinate(),
+            request_flags(),
+            source,
+            Some(gain),
+            registry
+        ));
         // Native whole GamePause can nest. Compare the existing two owning
         // passes directly; the app's public bool setter separately coalesces
         // repeated per-frame reports of the same pause edge.
@@ -284,7 +322,14 @@ fn retained_request_depths_and_newborn_depth_match_executed_nested_pause() {
                     .unwrap()
             );
         }
-        assert!(player.play_sound_at_coord(sound, source, Some(gain), registry));
+        assert!(player.play_sound_at_coord(
+            sound,
+            coordinate(),
+            request_flags(),
+            source,
+            Some(gain),
+            registry
+        ));
         assert_eq!(
             i64::from(player.coordinate_requests[1].suspend_depth),
             control("new_request_during_nested_pause_depth_zero")["state"]["coordinate_requests"]
@@ -318,5 +363,74 @@ fn retained_request_depths_and_newborn_depth_match_executed_nested_pause() {
         assert!(player.coordinate_requests.is_empty());
         assert!(player.pending.is_empty());
         assert!(player.live.is_empty());
+    });
+}
+
+/// Rust regression for750F40's instruction-level selector, using a registered
+/// retail cue and the already executed750E20 source.405FD0's existing arbiter
+/// controls establish detach; this does not claim a natural device endpoint.
+#[test]
+fn coordinate_stop_matches_full_xyz_and_intersecting_flags_without_hard_stop() {
+    with_player(|player, registry, _assets, _index| {
+        let sound = cue("sound_index");
+        let coordinate = coordinate();
+        let gain = gain("coordinate_before_nested_pause", sound, registry).unwrap();
+        // Each unmatched selector preserves the request's handle. Projected
+        // source is deliberately identical: spatial cache never decides stop.
+        for (requested, flags) in [
+            ([coordinate[0] + 1, coordinate[1], coordinate[2]], 1),
+            ([coordinate[0], coordinate[1] + 1, coordinate[2]], 1),
+            ([coordinate[0], coordinate[1], coordinate[2] + 1], 1),
+            (coordinate, 2),
+            (coordinate, 0),
+        ] {
+            player.stop_all();
+            assert!(player.play_sound_at_coord(
+                sound,
+                coordinate,
+                1,
+                source(),
+                Some(gain),
+                registry,
+            ));
+            let owner = HandleOwner::Coordinate(player.coordinate_requests[0].id);
+            let before = player.arbiter.validate_loop_handle(owner).unwrap();
+            player.stop_sound_at_coord(requested, flags);
+            assert_eq!(player.arbiter.validate_loop_handle(owner), Some(before));
+            assert_eq!(player.coordinate_requests.len(), 1);
+        }
+
+        player.stop_all();
+        let mut events = Vec::new();
+        for flags in [1, 3] {
+            assert!(player.play_sound_at_coord(
+                sound,
+                coordinate,
+                flags,
+                source(),
+                Some(gain),
+                registry,
+            ));
+            let owner = HandleOwner::Coordinate(player.coordinate_requests.last().unwrap().id);
+            events.push((owner, player.arbiter.validate_loop_handle(owner).unwrap()));
+        }
+        let live = player.arbiter.live_event_count();
+        player.stop_sound_at_coord(coordinate, 1);
+        assert_eq!(player.coordinate_requests.len(), 2, "750F40 retains nodes");
+        assert_eq!(
+            player.arbiter.live_event_count(),
+            live,
+            "405FD0 is not a hard stop"
+        );
+        for (owner, event) in events {
+            assert!(player.arbiter.validate_loop_handle(owner).is_none());
+            let snapshot = player.arbiter.native_event_snapshot(event).unwrap();
+            assert_eq!(snapshot["flags"].as_u64().unwrap() & 0x60, 0x60);
+        }
+        player.service_coordinate_sounds(registry);
+        assert!(
+            player.coordinate_requests.is_empty(),
+            "750EC0 owns retirement"
+        );
     });
 }

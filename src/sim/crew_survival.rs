@@ -410,7 +410,7 @@ impl Simulation {
     ) -> bool {
         let unlimbo = self.survivor_unlimbo(cell);
         let (_, _, z) = unlimbo.cell_level();
-        let Some(id) = self.construct_crew_limbo(rules, crew, owner, cell, z) else {
+        let Some(id) = self.construct_crew_limbo(rules, crew, owner, cell, z, effects) else {
             return false;
         };
         //443141 raises A8E7AC after the constructor and before the caller's
@@ -937,7 +937,7 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) -> Option<u64> {
         let (rx, ry, z) = unlimbo.cell_level();
-        let id = self.construct_crew_limbo(rules, crew, owner, (rx, ry), z)?;
+        let id = self.construct_crew_limbo(rules, crew, owner, (rx, ry), z, effects)?;
         if !self.unlimbo_crew(rules, id, unlimbo, None, registry, effects) {
             self.discard_constructed_limbo(id, Some(rules), effects);
             return None;
@@ -954,9 +954,19 @@ impl Simulation {
         owner: InternedId,
         cell: (u16, u16),
         z: u8,
+        effects: FrameEffects<'_>,
     ) -> Option<u64> {
         let owner_name = self.interner.resolve(owner).to_string();
-        self.construct_object_limbo_at_height(crew, &owner_name, cell.0, cell.1, 0, z, rules)
+        self.construct_object_limbo_at_height(
+            crew,
+            &owner_name,
+            cell.0,
+            cell.1,
+            0,
+            z,
+            rules,
+            effects,
+        )
     }
 
     /// Unlimbo a Foot in limbo as `unlimbo` says; an infantryman takes the
@@ -1143,7 +1153,8 @@ impl Simulation {
             if is_engineer(&crew) {
                 engineer_picked = true;
             }
-            let Some(id) = self.construct_crew_limbo(rules, &crew, owner, cells[0], 0) else {
+            let Some(id) = self.construct_crew_limbo(rules, &crew, owner, cells[0], 0, effects)
+            else {
                 continue;
             };
             //44A65E..44A74E: the cell pick, ordinary caller placement and

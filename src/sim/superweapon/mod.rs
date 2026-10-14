@@ -1,8 +1,8 @@
 //! Superweapon system — charging, readiness, suspension, launch dispatch.
 //!
-//! Each player has a set of `SuperWeaponInstance`s, one per superweapon type
-//! granted by their buildings. The system ticks after power (for suspend/resume)
-//! and before combat. `fire` dispatches a launch to its `SuperClass::Launch`
+//! Each House constructs one `SuperWeaponInstance` per stock type before map
+//! objects; buildings grant those retained instances. Its power edge, Super AI visit and
+//! dirty tech-tree tail own their distinct passes. `fire` dispatches a launch to its `SuperClass::Launch`
 //! case. A computer house fires its charged ones from its Strategy tick
 //! (`ai_fire`).
 //!
@@ -12,10 +12,13 @@
 
 pub(crate) mod ai_fire;
 pub mod cell_grid;
+pub(crate) mod chrono_screen;
 mod chronosphere;
 pub(crate) use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 #[cfg(test)]
 mod cell_receiver_tests;
+#[cfg(test)]
+mod charge_native_tests;
 #[cfg(test)]
 pub(crate) mod chronosphere_tests;
 mod fire;
@@ -201,7 +204,7 @@ pub struct SuperWeaponInstance {
     /// Charge/drain state: -1=N/A, 0=empty, 1=charged, 2=draining.
     /// Only used when UseChargeDrain=yes (Force Shield). -1 for all others.
     pub charge_drain_state: i32,
-    /// Native frame when the SW became ready. -1 = not ready yet.
+    /// Native frame when the SW became ready. Construction uses -100.
     pub ready_tick: i32,
     /// `SuperClass+0x62` (ChronoMapCoords): the cell a Chronosphere click
     /// stores (`0x006CC3D3`) and a PostClick Fire_SW copies from its
@@ -283,7 +286,7 @@ impl SuperWeaponInstance {
             charge_start_tick: frame,
             charge_duration: 0,
             charge_drain_state: -1,
-            ready_tick: -1,
+            ready_tick: -100,
             chrono_cell: (0, 0),
             placement_anim: None,
             fade_countdown: idle_fade(),
@@ -339,15 +342,69 @@ impl SuperWeaponInstance {
         self.placement_anim
     }
 
-    /// Activate (grant) this SW and start charging.
-    pub fn activate(&mut self, recharge_frames: i32, current_frame: u32) {
+    /// Ordinary, non-one-time Grant6CB560. The existing House pass owns timer
+    /// list admission and placement-Anim release; the instance owns timer/flags.
+    /// Whole original frame0/1 low-power controls are retained by the trigger
+    /// charge-percentage corpus. A low-power grant pauses all of the recharge.
+    fn grant(&mut self, sw: &SuperWeaponType, current_frame: u32, on_hold: bool) -> bool {
+        if self.is_active {
+            return false;
+        }
         self.is_active = true;
-        self.is_ready = false;
+        let frame = current_frame as i32;
+        if self.is_suspended {
+            let mut timer = self.charge_timer();
+            if sw.manual_control {
+                timer.pause(frame);
+            } else {
+                timer.resume(frame);
+            }
+            self.store_charge_timer(timer);
+        }
         self.is_suspended = false;
-        self.charge_start_tick = current_frame as i32;
-        self.charge_duration = recharge_frames;
-        self.charge_drain_state = -1;
-        self.ready_tick = -1;
+        if sw.manual_control {
+            let mut timer = CdTimer::started(frame, self.recharge_time(sw));
+            timer.pause(frame);
+            self.store_charge_timer(timer);
+        } else if !self.is_ready {
+            self.store_charge_timer(CdTimer::started(frame, self.recharge_time(sw)));
+            if sw.use_charge_drain {
+                self.charge_drain_state = 0;
+            }
+        }
+        if on_hold {
+            let mut timer = self.charge_timer();
+            timer.pause(frame);
+            self.store_charge_timer(timer);
+            self.is_suspended = true;
+        }
+        true
+    }
+
+    /// SetPercentage6CC1E0, called by Execute1296E430D. The actual f32 0.01
+    /// (3C23D70A) is5368709/2^29. With percentage0..100 and an i32 recharge,
+    /// the product fits i64; PC53 chop discards at most8 low bits, all below
+    /// that29-bit binary point, so signed division gives the same ftol integer.
+    /// Native execution: trigger_super_charge_percent.json setter_controls.
+    /// Preserve ready/held except that a zero remainder sets ready, and restart
+    /// the raw timer even while held. Custom recharge Action128 is unported.
+    pub(crate) fn set_charge_percentage(
+        &mut self,
+        percentage: i32,
+        sw: &SuperWeaponType,
+        current_frame: u32,
+    ) -> bool {
+        if !self.is_active || !(0..=100).contains(&percentage) {
+            return false;
+        }
+        let recharge = self.recharge_time(sw);
+        let scaled = (i64::from(percentage) * i64::from(recharge) * 5_368_709) / (1_i64 << 29);
+        let remaining = recharge.wrapping_sub(scaled as i32);
+        if remaining == 0 {
+            self.is_ready = true;
+        }
+        self.store_charge_timer(CdTimer::started(current_frame as i32, remaining));
+        true
     }
 
     /// `SuperClass::Deactivate @ 0x006CB7B0` when no building provides the
@@ -739,141 +796,81 @@ pub fn superweapon_views_for_owner(
     views
 }
 
-/// Tick the per-house superweapon instances: initialize grants, advance charge
-/// timers, and handle power suspend/resume.
-pub fn tick_superweapon_instances(sim: &mut Simulation, rules: &RuleSet) {
+/// House4F8E28..4F8E84: each existing stock Super's AI6CBCA0, in type
+/// registry order, after this House's power/teams/EVA and before its defeat.
+/// Hold/revoke50AF10 and grant50B1D0 have their own reached caller phases.
+pub(crate) fn tick_house_superweapon_instances(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+) {
     let current_frame = sim.session.binary_frame;
-
-    // One-time initialization: scan all owners' buildings for SW grants.
-    // Handles map-pre-placed buildings that bypass production placement hooks.
-    // Native grants them in each House's first update, so in the House
-    // array's order (`LogicClass__PerTickUpdate @ 0x0055AFB0`, House loop
-    // `0x0055B68D..0x0055B6B1`), the order they join the timer list in.
-    if !sim.super_weapons_initialized {
-        sim.super_weapons_initialized = true;
-        let mut owners: std::collections::BTreeSet<InternedId> = sim
-            .substrate
-            .entities
-            .values()
-            .filter(|e| e.category == crate::map::entities::EntityCategory::Structure && !e.dying)
-            .map(|e| e.owner())
-            .collect();
-        let mut ordered: Vec<InternedId> = sim
-            .session
-            .house_order
-            .iter()
-            .copied()
-            .filter(|owner| owners.remove(owner))
-            .collect();
-        ordered.extend(owners);
-        for owner_id in ordered {
-            refresh_super_weapons_for_owner(sim, rules, owner_id);
+    for type_id in house_super_order(sim, rules, owner) {
+        let (fade, ready) = {
+            let instance = sim
+                .super_weapons
+                .get_mut(&owner)
+                .and_then(|weapons| weapons.get_mut(&type_id))
+                .expect("selected retained Super");
+            // The fade head precedes the granted/held/readiness gates.
+            let fade = instance.step_fade();
+            let ready = instance.is_active
+                && !instance.is_ready
+                && !instance.is_suspended
+                && instance.charge_start_tick != -1
+                && instance.charge_timer().expired(current_frame as i32);
+            if ready {
+                instance.is_ready = true;
+                instance.ready_tick = current_frame as i32;
+            }
+            (fade, ready)
+        };
+        if let Some([x, y, z]) = fade
+            && let Some(sound_id) = rules
+                .super_weapon(sim.interner.resolve(type_id))
+                .and_then(|sw| sw.special_sound.clone())
+        {
+            let (rx, ry, sub_x, sub_y, _) =
+                crate::sim::anim_class::AnimWorldCoord { x, y, z }.to_cell_sub_z();
+            sim.sound_events.push(SimSoundEvent::VocAt {
+                sound_id,
+                audible_to: None,
+                rx,
+                ry,
+                sub_x,
+                sub_y,
+                world_z_leptons: z,
+            });
+        }
+        if ready {
+            sim.sound_events.push(SimSoundEvent::SuperWeaponReady {
+                owner,
+                sw_type: type_id,
+            });
         }
     }
+}
 
-    // Phase 1: Charge/suspend lifecycle for all instances.
-    // Collect owners to avoid borrow conflict on sim.super_weapons.
-    let owners: Vec<InternedId> = sim.super_weapons.keys().copied().collect();
-    let offline_only = offline_only_supers(sim, rules);
-    let mut became_ready: Vec<(InternedId, InternedId)> = Vec::new();
-    let mut hold_changed: Vec<(InternedId, InternedId)> = Vec::new();
-    let mut faded: Vec<(InternedId, [i32; 3])> = Vec::new();
-    for owner_id in owners {
-        let is_low_power = sim
-            .power_states
-            .get(&owner_id)
-            .is_some_and(|ps| ps.is_low_power);
-
-        let Some(weapons) = sim.super_weapons.get_mut(&owner_id) else {
-            continue;
-        };
-        for inst in weapons.values_mut() {
-            // SuperClass::AI's head runs for every Super, granted or not,
-            // ahead of its grant test (`0x006CBCFE`).
-            if let Some(coords) = inst.step_fade() {
-                faded.push((inst.type_id, coords));
-            }
-            if !inst.is_active {
-                continue;
-            }
-            let sw = rules.super_weapon(sim.interner.resolve(inst.type_id));
-            // The hold arm of `HouseClass @ 0x0050AF10`: a Super is released,
-            // charged or not, while its house has power and one of the
-            // buildings that provide it is online (`+0x660`); otherwise a
-            // powered type holds and any other keeps its state. One that no
-            // building provides was revoked when its last provider went
-            // (`refresh_super_weapons_for_owner`). Native runs the pass when
-            // the power state flips (`0x00508DD5`) and at the House update
-            // after a building event (`+0x1FC`), after the object loop. VERA
-            // tests every frame, after the object pass that starts, ends and
-            // erases warps, so it holds and releases in the same frame; a
-            // release by a Phase 5 kill lands a frame late.
-            let manual_control = sw.is_some_and(|sw| sw.manual_control);
-            let online = !is_low_power && !offline_only.contains(&(owner_id, inst.type_id));
-            let changed = if online {
-                inst.suspend(false, manual_control, current_frame)
-            } else if sw.is_none_or(|sw| sw.is_powered) {
-                inst.suspend(true, manual_control, current_frame)
-            } else {
-                false
-            };
-            if changed {
-                hold_changed.push((owner_id, inst.type_id));
-            }
-            if inst.is_ready {
-                continue;
-            }
-
-            // Charge advancement
-            if inst.charge_start_tick != -1
-                && !inst.is_suspended
-                && inst.charge_timer().expired(current_frame as i32)
-            {
-                inst.is_ready = true;
-                inst.ready_tick = current_frame as i32;
-                became_ready.push((owner_id, inst.type_id));
-            }
-        }
-    }
-    // `0x006CBCBA..0x006CBCCF`: the type's `SpecialSound=` at the stored
-    // coordinate, for every player.
-    for (sw_type, [x, y, z]) in faded {
-        let Some(sound_id) = rules
-            .super_weapon(sim.interner.resolve(sw_type))
-            .and_then(|sw| sw.special_sound.clone())
-        else {
-            continue;
-        };
-        let (rx, ry, sub_x, sub_y, _) =
-            crate::sim::anim_class::AnimWorldCoord { x, y, z }.to_cell_sub_z();
-        sim.sound_events.push(SimSoundEvent::VocAt {
-            sound_id,
-            audible_to: None,
-            rx,
-            ry,
-            sub_x,
-            sub_y,
-            world_z_leptons: z,
-        });
-    }
-    for (owner, sw_type) in hold_changed {
-        sim.sound_events
-            .push(SimSoundEvent::SuperWeaponStatusChanged { owner, sw_type });
-    }
-    // `SuperClass::AI_Ready @ 0x006CBCA0`: `+0x6F` set at `0x006CBDB6`, then
-    // `0x006CBE63 PlayEVA(<Type=-indexed *Ready line>, -1)` when the announce
-    // argument (`house == PlayerPtr`, `HouseClass::Update 0x004F8E42`) holds.
-    // The app applies that local-owner half.
-    for (owner, sw_type) in became_ready {
-        sim.sound_events
-            .push(SimSoundEvent::SuperWeaponReady { owner, sw_type });
-    }
+/// Supers are constructed by the scenario House owner before map objects.
+/// Storage-key order is not the original SuperWeaponTypes registry order.
+fn house_super_order(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Vec<InternedId> {
+    let Some(weapons) = sim.super_weapons.get(&owner) else {
+        return Vec::new();
+    };
+    rules
+        .super_weapon_order
+        .iter()
+        .filter_map(|name| {
+            let id = sim.interner.get(name)?;
+            weapons.contains_key(&id).then_some(id)
+        })
+        .collect()
 }
 
 /// Tick already-active global superweapon effects in their native pre-object
 /// scheduler slot: `LightningStorm::Process @ 0x0053A6C0` steps the nuke's
 /// screen flash, then runs the Psychic Dominator's Process (`0x0053A742`)
-/// and, after the unported chrono screen (`0x0053A747`), the storm's own work.
+/// then ChronoScreenEffect (`0x0053A747`), and the storm's own work.
 /// Returns whether a bridge changed.
 pub(crate) fn tick_active_superweapon_effects(
     sim: &mut Simulation,
@@ -890,6 +887,7 @@ pub(crate) fn tick_active_superweapon_effects(
         sim.update_lighting();
     }
     let dominator = psychic_dominator::process(sim, rules, overlay_registry, frame_effects);
+    sim.process_chrono_screen_effect();
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
     dominator || storm
 }
@@ -951,7 +949,7 @@ pub(crate) fn aux_building_present(
 /// building's upgrades (`+0x5EC`; `0x0050B242..0x0050B267`,
 /// `0x0050AFF2..0x0050B02A`), without the `AuxBuilding=` test. Retail has
 /// no upgrade building (`PowersUpBuilding=`), so it never decides.
-fn provided_supers<'r>(
+pub(crate) fn provided_supers<'r>(
     sim: &Simulation,
     rules: &'r RuleSet,
     building: &crate::sim::game_entity::GameEntity,
@@ -971,188 +969,129 @@ fn provided_supers<'r>(
     .flatten()
 }
 
-/// The (owner, Super) pairs the hold pass's online test
-/// (`0x0050AFF2..0x0050B05F`) finds providers for, none of them online
-/// (`BuildingClass+0x660`, cleared through a Temporal warp): it holds a
-/// powered one as it does under low power (`0x0050B0FE..0x0050B12C`).
-/// Only the buildings of houses holding a Super are walked, and their
-/// Supers only when one of them is offline.
-///
-/// RESIDUAL: a warp is VERA's only way offline
-/// ([`GameEntity::building_online`](crate::sim::game_entity::GameEntity::building_online)).
-/// `BuildingClass::GoOffline @ 0x00452360`, which also sets the owner's
-/// `+0x1FC` (`0x004523B8`), is not ported, nor its callers: trigger action
-/// 61 (`0x006DDFB9`), a map's powered-down building (`0x0044FD23`) and the
-/// power toggle event (`0x004C6D9A`). No player input reaches the event:
-/// BandBox_LeftUp queues it for the TogglePower action (`0x004ABFB3`), which
-/// DetermineAction returns only in power-toggle mode (`DisplayClass+0x11B2`,
-/// `0x00692815`), and `SetTogglePowerMode @ 0x004AC820`, the mode's only
-/// writer of 1, is called with 0 by all six of its callers. Trigger: a map
-/// powers down every building that provides a powered Super. Effect: native
-/// holds the Super until one is powered up. Dormant: the 338 retail map
-/// texts hold one powered-down `[Structures]` entry and one action 61,
-/// neither on a superweapon building.
-fn offline_only_supers(
+/// Shared provider facts for one reached House pass. Source authority is the
+/// retained House building list and the existing457630/457690 provider readers.
+fn provider_supers(
     sim: &Simulation,
     rules: &RuleSet,
-) -> std::collections::BTreeSet<(InternedId, InternedId)> {
-    use std::collections::BTreeSet;
-    let mut pairs = BTreeSet::new();
-    for (&owner, weapons) in &sim.super_weapons {
-        if !weapons.values().any(|inst| inst.is_active)
-            || owned_live_buildings(sim, owner).all(|building| building.building_online())
-        {
-            continue;
+    owner: InternedId,
+) -> (
+    std::collections::BTreeSet<InternedId>,
+    std::collections::BTreeSet<InternedId>,
+) {
+    let mut provided = std::collections::BTreeSet::new();
+    let mut online = std::collections::BTreeSet::new();
+    for building in owned_live_buildings(sim, owner) {
+        for name in provided_supers(sim, rules, building) {
+            if let Some(id) = sim.interner.get(name) {
+                provided.insert(id);
+                if building.building_online() {
+                    online.insert(id);
+                }
+            }
         }
-        let providers = |online: bool| -> BTreeSet<&str> {
-            owned_live_buildings(sim, owner)
-                .filter(|building| building.building_online() == online)
-                .flat_map(|building| provided_supers(sim, rules, building))
-                .collect()
-        };
-        let online = providers(true);
-        pairs.extend(
-            providers(false)
-                .difference(&online)
-                .filter_map(|sw_id| Some((owner, sim.interner.get(sw_id)?))),
-        );
     }
-    pairs
+    (provided, online)
 }
 
-/// Refresh superweapon grants for a specific owner by scanning their buildings.
-///
-/// Call when a building is completed, sold, destroyed, captured or erased.
-/// Grants each weapon the owner's buildings provide ([`provided_supers`])
-/// and the owner does not hold, including one revoked earlier, and revokes
-/// each one no building provides. With the Super Weapons option off, no
-/// building provides a `DisableableFromShell=` type.
-///
-/// gamemd: the grant pass `HouseClass @ 0x0050B1D0` (Ghidra label
-/// `HouseClass__Grant_Provided_Supers`, called from `BuildingClass::Unlimbo`
-/// and `HouseClass::Update`) calls `SuperClass::Grant @ 0x006CB560` for each
-/// weapon whose present flag `+0x6D` is clear. The revoke pass
-/// `HouseClass @ 0x0050AF10` (label `HouseClass__Update_Owned_Supers`) calls
-/// `SuperClass @ 0x006CB7B0` (label `SuperClass__Deactivate`), which clears
-/// `+0x6D` and the charged flag `+0x6F`. Grant returns early only while
-/// `+0x6D` is set, and otherwise restarts the recharge timer at the full
-/// recharge time. Each loss is reported as
-/// [`SimSoundEvent::SuperWeaponStatusChanged`], as is each hold change of
-/// [`tick_superweapon_instances`].
-///
-/// RESIDUALS: an ordinary placement (`BuildingClass::Unlimbo` `0x00440D1E`)
-/// and a capture (`0x0044936E`, `0x00449379`) only set the house's `+0x1FC`;
-/// the passes run at its next update (`0x004F92F6`, `0x004F92FD`), houses in
-/// `HouseClass::Array` order. VERA runs them at the event. Trigger: two
-/// `ShowTimer=` grants in one frame, by two houses or two buildings of one
-/// house. Effect: their timer lines stack in event order, not in house and
-/// `[SuperWeaponTypes]` order; rare, and only the lines' order. The revoke
-/// pass also deactivates every Super of a defeated house (`+0x1F5`,
-/// `0x0050AF70`, `0x0050B0F4`) whatever buildings it keeps; VERA revokes by
-/// building only. Trigger: a defeated house that still owns a superweapon
-/// building, not seen in retail play. The MCV's deploy
-/// ([`Simulation::deploy_mcv`]) and a construction yard's undeploy
-/// ([`Simulation::finish_undeploy`]) unlimbo and limbo a building without
-/// a refresh, where native Unlimbo and Limbo set `+0x1FC` (`0x00440D1E`,
-/// `0x00445D99`); dormant, as no retail construction yard provides a
-/// Super.
-pub fn refresh_super_weapons_for_owner(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
-    use std::collections::BTreeSet;
-
-    let owner_str = sim.interner.resolve(owner).to_string();
-    // The Super Weapons game option (`0x00A8B263`) withholds the
-    // `DisableableFromShell=` types (`+0xE7`): the grant pass skips them
-    // (`0x0050B2A4..0x0050B2B5`) and the hold pass revokes one already
-    // granted (`0x0050B085..0x0050B09B`). The others work with it off.
-    let super_weapons_allowed = sim.session.game_options.super_weapons;
-    let allowed = |sw_id: &&str| {
-        super_weapons_allowed
-            || rules
-                .super_weapon(sw_id)
-                .is_some_and(|sw| !sw.disableable_from_shell)
+/// House50AF10: hold/release or revoke existing Supers. Reached only at the
+/// native power edge, dirty House tail and represented Building destructor.
+/// Native code reads the shared building providers and retained power totals;
+/// it does not grant or construct. Changed hold/loss re-dirties House+1FC.
+pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
+    let Some(house) = sim.houses.get(&owner) else {
+        return;
     };
-
-    // Collect all SW type IDs (as strings) granted by living buildings of this owner.
-    let granted_strs: Vec<String> = owned_live_buildings(sim, owner)
-        .flat_map(|building| provided_supers(sim, rules, building))
-        .filter(allowed)
-        .map(str::to_string)
-        .collect();
-
-    // Intern all granted SW IDs. `BTreeSet` (not `HashSet`) keeps the
-    // revoke pass deterministic across machines.
-    let granted: BTreeSet<InternedId> = granted_strs
-        .iter()
-        .map(|s| sim.interner.intern(s))
-        .collect();
-    // `HouseClass @ 0x0050B1D0` grants in the house's Supers order, the
-    // `[SuperWeaponTypes]` order, which is also the order they join the
-    // timer list in.
-    let mut grant_order: Vec<(Option<usize>, InternedId)> = granted
-        .iter()
-        .map(|&id| (rules.super_weapon_index(sim.interner.resolve(id)), id))
-        .collect();
-    grant_order.sort();
-    let passive = sim
-        .houses
+    let defeated = house.is_defeated;
+    let low_power = sim
+        .power_states
         .get(&owner)
-        .is_some_and(|house| house.multiplay_passive);
+        .is_some_and(|state| state.is_low_power);
+    let (provided, online) = provider_supers(sim, rules, owner);
+    for type_id in house_super_order(sim, rules, owner) {
+        let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
+            continue;
+        };
+        let allowed = sim.session.game_options.super_weapons || !sw.disableable_from_shell;
+        let changed = {
+            let instance = sim
+                .super_weapons
+                .get_mut(&owner)
+                .and_then(|weapons| weapons.get_mut(&type_id))
+                .expect("selected retained Super");
+            if !instance.is_active {
+                false
+            } else if defeated || !allowed || !provided.contains(&type_id) {
+                instance.deactivate();
+                true
+            } else if !low_power && online.contains(&type_id) {
+                instance.suspend(false, sw.manual_control, sim.session.binary_frame)
+            } else if sw.is_powered {
+                instance.suspend(true, sw.manual_control, sim.session.binary_frame)
+            } else {
+                false
+            }
+        };
+        if changed {
+            sim.request_house_tech_tree_recheck(owner);
+            sim.sound_events
+                .push(SimSoundEvent::SuperWeaponStatusChanged {
+                    owner,
+                    sw_type: type_id,
+                });
+        }
+    }
+}
+
+/// House50B1D0: grant provided stock instances in the existing type registry
+/// order. Native dirty-tail callers run hold/revoke before this pass. Ordinary
+/// placement merely requests that tail; upgrade attachment is a separate,
+/// currently unported synchronous caller. Never construct a missing Super here.
+pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
+    let Some(house) = sim.houses.get(&owner) else {
+        return;
+    };
+    if house.is_defeated {
+        return;
+    }
+    let passive = house.multiplay_passive;
+    //50B2C7..50B305 uses the power ratio even for an unpowered Super type.
+    let low_power = sim
+        .power_states
+        .get(&owner)
+        .is_some_and(|state| state.is_low_power);
+    let (provided, _) = provider_supers(sim, rules, owner);
     let mut timer_place = next_timer_place(sim);
-
-    let weapons = sim.super_weapons.entry(owner).or_default();
-
-    // Grant each weapon the owner does not hold: a new one, or one revoked
-    // when its building was lost. Grant keeps the Super's countdown and cell
-    // (`+0x50`, `+0x54`, `+0x62`); a type that is not `ManualControl=`
-    // (`+0xF5`) releases its held anim (`0x006CB6B4..0x006CB6D2`).
-    let mut released = Vec::new();
-    for &(_, sw_iid) in &grant_order {
-        if weapons.get(&sw_iid).is_some_and(|inst| inst.is_active) {
+    for type_id in house_super_order(sim, rules, owner) {
+        if !provided.contains(&type_id) {
             continue;
         }
-        let sw_str = sim.interner.resolve(sw_iid).to_string();
-        let sw = rules.super_weapon(&sw_str);
-        let instance = weapons
-            .entry(sw_iid)
-            .or_insert_with(|| SuperWeaponInstance::new(sw_iid, owner, 0));
-        let recharge = sw.map_or(4500, |sw| instance.recharge_time(sw));
-        instance.activate(recharge, sim.session.binary_frame);
-        // `0x006CB5D2..0x006CB63B`: a `ShowTimer=` Super whose owner is not
-        // `MultiplayPassive` joins the end of the timer list.
-        instance.timer_place = (sw.is_some_and(|sw| sw.show_timer) && !passive).then(|| {
-            timer_place += 1;
-            timer_place - 1
-        });
-        if !sw.is_some_and(|sw| sw.manual_control) {
-            released.push(sw_iid);
+        let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
+            continue;
+        };
+        if !sim.session.game_options.super_weapons && sw.disableable_from_shell {
+            continue;
         }
-        log::info!("SuperWeapon '{}' granted to '{}'", sw_str, owner_str);
-    }
-
-    // Deactivate revoked (building destroyed, no other provides it, or the
-    // option withholds it). The hold pass revokes only a Super that can hold
-    // (`+0x60`) and is not one-time (`+0x6E`), or any Super of a defeated
-    // house (`0x0050AF5B..0x0050AF78`); VERA's all can hold and none is
-    // one-time (the constructor sets `+0x60`, `0x006CAFC7`; only the crate
-    // and trigger grants, unported, clear it or grant one-time).
-    let revoke_ids: Vec<InternedId> = weapons
-        .iter()
-        .filter(|(sw_iid, inst)| inst.is_active && !granted.contains(sw_iid))
-        .map(|(sw_iid, _)| *sw_iid)
-        .collect();
-    for &sw_iid in &revoke_ids {
-        let sw_str = sim.interner.resolve(sw_iid).to_string();
-        log::info!("SuperWeapon '{}' revoked from '{}'", sw_str, owner_str);
-        if let Some(inst) = weapons.get_mut(&sw_iid) {
-            inst.deactivate();
+        let granted = {
+            let instance = sim
+                .super_weapons
+                .get_mut(&owner)
+                .and_then(|weapons| weapons.get_mut(&type_id))
+                .expect("selected retained Super");
+            if !instance.grant(sw, sim.session.binary_frame, low_power) {
+                false
+            } else {
+                instance.timer_place = (sw.show_timer && !passive).then(|| {
+                    let place = timer_place;
+                    timer_place += 1;
+                    place
+                });
+                true
+            }
+        };
+        if granted && !sw.manual_control {
+            sim.release_super_anim(owner, type_id);
         }
-    }
-    for sw_type in revoke_ids {
-        sim.sound_events
-            .push(SimSoundEvent::SuperWeaponStatusChanged { owner, sw_type });
-    }
-    for sw_type in released {
-        sim.release_super_anim(owner, sw_type);
     }
 }
 
@@ -1162,20 +1101,81 @@ mod frame_tests {
 
     /// A house for each owner, as every scenario owner has: the passes walk
     /// the house's buildings.
-    fn add_houses(sim: &mut Simulation, names: &[&str]) {
+    fn add_houses(sim: &mut Simulation, names: &[&str], rules: &RuleSet) {
         for name in names {
             let id = sim.interner.intern(name);
             sim.houses.entry(id).or_insert_with(|| {
                 crate::sim::house_state::HouseState::new(id, 0, None, true, 10_000, 10)
             });
+            if !sim.session.house_order.contains(&id) {
+                sim.session.house_order.push(id);
+            }
+            let mut supers = std::collections::BTreeMap::new();
+            for name in &rules.super_weapon_order {
+                let type_id = sim.interner.intern(name);
+                supers.insert(
+                    type_id,
+                    SuperWeaponInstance::new(type_id, id, sim.session.binary_frame as i32),
+                );
+            }
+            sim.super_weapons.insert(id, supers);
         }
+    }
+
+    /// Explicit native pass inputs for timer-list/receiver fixtures. No
+    /// initialization or decision body is maintained by this test adapter.
+    fn run_recheck_passes(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
+        update_owned_supers(sim, rules, owner);
+        grant_provided_supers(sim, rules, owner);
+    }
+
+    /// Original House50B305..50B314 grants after its own power assessment;
+    /// whole Grant6CB560 stops a fresh low-power timer with all9000 remaining.
+    /// Executed frame0/frame1 controls: observe-dominator-grant.json, retained
+    /// through the selected ALL01 native corpus by the trigger owner.
+    #[test]
+    fn fresh_low_power_grant_uses_current_house_assessment() {
+        use crate::rules::ini_parser::IniFile;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
+             [BuildingTypes]\n0=YAPPET\n\
+             [YAPPET]\nStrength=1000\nPower=-1000\n\
+             SuperWeapon=PsychicDominatorSpecial\n\
+             [SuperWeaponTypes]\n0=PsychicDominatorSpecial\n\
+             [PsychicDominatorSpecial]\nType=PsychicDominator\n\
+             RechargeTime=10\nIsPowered=yes\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::with_seed(31);
+        add_houses(&mut sim, &["Confederation"], &rules);
+        let owner = sim.interner.intern("Confederation");
+        sim.session.game_mode_nonzero = false;
+        let sw = sim.interner.intern("PsychicDominatorSpecial");
+        sim.super_weapons.entry(owner).or_default().insert(
+            sw,
+            SuperWeaponInstance::new(sw, owner, sim.session.binary_frame as i32),
+        );
+        sim.spawn_object("YAPPET", "Confederation", 10, 10, 0, &rules)
+            .expect("admitted preplaced provider");
+
+        sim.advance_tick(&[], Some(&rules), None, None, 67);
+        let inst = &sim.super_weapons[&owner][&sw];
+        assert!(sim.power_states[&owner].is_low_power);
+        assert!(inst.is_active);
+        assert!(inst.is_suspended, "the same House update grants on hold");
+        assert_eq!((inst.charge_start_tick, inst.charge_duration), (-1, 9000));
+        sim.advance_tick(&[], Some(&rules), None, None, 67);
+        let inst = &sim.super_weapons[&owner][&sw];
+        assert_eq!((inst.charge_start_tick, inst.charge_duration), (-1, 9000));
     }
 
     #[test]
     fn charge_progress_uses_full_recharge_time_across_suspend_resume() {
         let id = InternedId::from_index(1);
         let mut instance = SuperWeaponInstance::new(id, id, 0);
-        instance.activate(10, 100);
+        instance.is_active = true;
+        instance.charge_start_tick = (100) as i32;
+        instance.charge_duration = 10;
 
         assert_eq!(instance.charge_progress(104, 10), 0.4);
 
@@ -1193,7 +1193,9 @@ mod frame_tests {
     fn charge_progress_uses_full_recharge_time_across_frame_wrap() {
         let id = InternedId::from_index(1);
         let mut instance = SuperWeaponInstance::new(id, id, 0);
-        instance.activate(4, u32::MAX - 1);
+        instance.is_active = true;
+        instance.charge_start_tick = (u32::MAX - 1) as i32;
+        instance.charge_duration = 4;
 
         assert_eq!(instance.charge_progress(0, 4), 0.5);
         assert!(instance.suspend(true, false, 0));
@@ -1221,12 +1223,13 @@ mod frame_tests {
         let owner = sim.interner.intern("Americans");
         let sw = sim.interner.intern("NukeSpecial");
         let mut instance = SuperWeaponInstance::new(sw, owner, 0);
-        instance.activate(10, sim.session.binary_frame);
+        instance.is_active = true;
+        instance.charge_start_tick = (sim.session.binary_frame) as i32;
+        instance.charge_duration = 10;
         sim.super_weapons
             .entry(owner)
             .or_default()
             .insert(sw, instance);
-        sim.super_weapons_initialized = true;
         let ready = |sim: &Simulation| {
             sim.sound_events
                 .iter()
@@ -1241,15 +1244,15 @@ mod frame_tests {
         };
 
         sim.session.binary_frame += 5;
-        tick_superweapon_instances(&mut sim, &rules);
+        tick_house_superweapon_instances(&mut sim, &rules, owner);
         assert_eq!(ready(&sim), 0, "still charging");
 
         sim.session.binary_frame += 10;
-        tick_superweapon_instances(&mut sim, &rules);
+        tick_house_superweapon_instances(&mut sim, &rules, owner);
         assert_eq!(ready(&sim), 1, "the expiry tick announces");
         assert!(sim.super_weapons[&owner][&sw].is_ready);
 
-        tick_superweapon_instances(&mut sim, &rules);
+        tick_house_superweapon_instances(&mut sim, &rules, owner);
         assert_eq!(ready(&sim), 1, "a ready weapon is not re-announced");
     }
 
@@ -1271,7 +1274,7 @@ mod frame_tests {
         let mut rules = RuleSet::from_ini(&ini).expect("superweapon grant rules should parse");
         rules.set_buildup_control_for_test("NAMISL", [0, 25, 2]);
         let mut sim = Simulation::new();
-        add_houses(&mut sim, &["Americans"]);
+        add_houses(&mut sim, &["Americans"], &rules);
         let owner = sim.interner.intern("Americans");
         let nuke = sim.interner.intern("NukeSpecial");
         let weapon = |sim: &Simulation| {
@@ -1287,12 +1290,13 @@ mod frame_tests {
         let first = sim
             .spawn_object("NAMISL", "Americans", 10, 10, 0, &rules)
             .expect("first silo spawns");
-        refresh_super_weapons_for_owner(&mut sim, &rules, owner);
+        run_recheck_passes(&mut sim, &rules, owner);
         assert_eq!(weapon(&sim), (true, false, 0, 900));
 
         assert!(crate::sim::production::sell_building_now_for_test(
             &mut sim, &rules, first
         ));
+        run_recheck_passes(&mut sim, &rules, owner);
         assert!(
             !sim.super_weapons[&owner][&nuke].is_active,
             "the sale revokes"
@@ -1301,7 +1305,7 @@ mod frame_tests {
         sim.session.binary_frame = 300;
         sim.spawn_object("NAMISL", "Americans", 20, 20, 0, &rules)
             .expect("second silo spawns");
-        refresh_super_weapons_for_owner(&mut sim, &rules, owner);
+        run_recheck_passes(&mut sim, &rules, owner);
         assert_eq!(weapon(&sim), (true, false, 300, 900));
     }
 
@@ -1329,19 +1333,14 @@ mod frame_tests {
             rules.set_buildup_control_for_test(name, [0, 25, 2]);
         }
         let mut sim = Simulation::new();
-        add_houses(&mut sim, &["Americans", "Russians"]);
+        // Interned before stock Super construction, so a storage-key pass
+        // would grant the Curtain ahead of Nuke despite the registry order.
+        let curtain = sim.interner.intern("IronCurtainSpecial");
+        add_houses(&mut sim, &["Americans", "Russians", "Neutral"], &rules);
         let americans = sim.interner.intern("Americans");
         let russians = sim.interner.intern("Russians");
         let neutral = sim.interner.intern("Neutral");
-        sim.houses
-            .entry(neutral)
-            .or_insert_with(|| {
-                crate::sim::house_state::HouseState::new(neutral, 0, None, true, 10_000, 10)
-            })
-            .multiplay_passive = true;
-        // Interned ahead of the Nuke, so an id-ordered pass would grant it
-        // first.
-        let curtain = sim.interner.intern("IronCurtainSpecial");
+        sim.houses.get_mut(&neutral).unwrap().multiplay_passive = true;
         let nuke = sim.interner.intern("NukeSpecial");
         let listed = |sim: &Simulation, rules: &RuleSet| {
             super_timer_views(sim, rules)
@@ -1357,13 +1356,13 @@ mod frame_tests {
             .expect("silo spawns");
         sim.spawn_object("RADAR", "Americans", 18, 10, 0, &rules)
             .expect("radar spawns");
-        refresh_super_weapons_for_owner(&mut sim, &rules, americans);
+        run_recheck_passes(&mut sim, &rules, americans);
         sim.spawn_object("SILO", "Russians", 10, 20, 0, &rules)
             .expect("russian silo spawns");
-        refresh_super_weapons_for_owner(&mut sim, &rules, russians);
+        run_recheck_passes(&mut sim, &rules, russians);
         sim.spawn_object("SILO", "Neutral", 10, 30, 0, &rules)
             .expect("neutral silo spawns");
-        refresh_super_weapons_for_owner(&mut sim, &rules, neutral);
+        run_recheck_passes(&mut sim, &rules, neutral);
         assert!(sim.super_weapons[&neutral][&nuke].is_active);
         assert_eq!(
             listed(&sim, &rules),
@@ -1374,6 +1373,7 @@ mod frame_tests {
         assert!(crate::sim::production::sell_building_now_for_test(
             &mut sim, &rules, silo
         ));
+        run_recheck_passes(&mut sim, &rules, americans);
         assert_eq!(
             listed(&sim, &rules),
             [(americans, curtain), (russians, nuke)]
@@ -1387,7 +1387,7 @@ mod frame_tests {
 
         sim.spawn_object("SILO", "Americans", 14, 10, 0, &rules)
             .expect("silo spawns again");
-        refresh_super_weapons_for_owner(&mut sim, &rules, americans);
+        run_recheck_passes(&mut sim, &rules, americans);
         assert_eq!(
             listed(&sim, &rules),
             [(americans, curtain), (russians, nuke), (americans, nuke)]
@@ -1421,11 +1421,20 @@ mod frame_tests {
             );
             sim.session.house_order.push(house);
         }
+        for owner in [russians, americans] {
+            for name in &rules.super_weapon_order {
+                let id = sim.interner.intern(name);
+                sim.super_weapons
+                    .entry(owner)
+                    .or_default()
+                    .insert(id, SuperWeaponInstance::new(id, owner, 0));
+            }
+        }
         sim.spawn_object("SILO", "Americans", 10, 10, 0, &rules)
             .expect("american silo spawns");
         sim.spawn_object("SILO", "Russians", 10, 20, 0, &rules)
             .expect("russian silo spawns");
-        tick_superweapon_instances(&mut sim, &rules);
+        sim.advance_tick(&[], Some(&rules), None, None, 67);
         let nuke = sim.interner.intern("NukeSpecial");
         let listed: Vec<_> = super_timer_views(&sim, &rules)
             .into_iter()
@@ -1452,7 +1461,7 @@ mod frame_tests {
         let mut rules = RuleSet::from_ini(&ini).expect("superweapon grant rules should parse");
         rules.set_buildup_control_for_test("NAMISL", [0, 25, 2]);
         let mut sim = Simulation::new();
-        add_houses(&mut sim, &["Americans", "Russians"]);
+        add_houses(&mut sim, &["Americans", "Russians"], &rules);
         let americans = sim.interner.intern("Americans");
         let russians = sim.interner.intern("Russians");
         let nuke = sim.interner.intern("NukeSpecial");
@@ -1466,7 +1475,7 @@ mod frame_tests {
         let silo = sim
             .spawn_object("NAMISL", "Americans", 10, 10, 0, &rules)
             .expect("silo spawns");
-        refresh_super_weapons_for_owner(&mut sim, &rules, americans);
+        run_recheck_passes(&mut sim, &rules, americans);
         assert_eq!(weapon(&sim, americans), Some((true, 0)));
 
         sim.session.binary_frame = 300;
@@ -1477,6 +1486,13 @@ mod frame_tests {
             None,
             crate::sim::world::FrameEffects::default(),
         );
+        assert!(
+            sim.super_weapons[&americans][&nuke].is_active,
+            "capture requests the House tail"
+        );
+        assert!(!sim.super_weapons[&russians][&nuke].is_active);
+        run_recheck_passes(&mut sim, &rules, americans);
+        run_recheck_passes(&mut sim, &rules, russians);
         assert_eq!(
             weapon(&sim, americans),
             Some((false, 0)),
@@ -1506,7 +1522,7 @@ mod frame_tests {
         let mut rules = RuleSet::from_ini(&ini).expect("superweapon status rules should parse");
         rules.set_buildup_control_for_test("NAMISL", [0, 25, 2]);
         let mut sim = Simulation::new();
-        add_houses(&mut sim, &["Americans"]);
+        add_houses(&mut sim, &["Americans"], &rules);
         let owner = sim.interner.intern("Americans");
         let nuke = sim.interner.intern("NukeSpecial");
         let reports = |sim: &Simulation| {
@@ -1525,23 +1541,23 @@ mod frame_tests {
         let silo = sim
             .spawn_object("NAMISL", "Americans", 10, 10, 0, &rules)
             .expect("silo spawns");
-        refresh_super_weapons_for_owner(&mut sim, &rules, owner);
-        sim.super_weapons_initialized = true;
-        tick_superweapon_instances(&mut sim, &rules);
+        run_recheck_passes(&mut sim, &rules, owner);
+        update_owned_supers(&mut sim, &rules, owner);
         assert_eq!(reports(&sim), 0, "the grant");
 
         sim.power_states.entry(owner).or_default().is_low_power = true;
-        tick_superweapon_instances(&mut sim, &rules);
-        tick_superweapon_instances(&mut sim, &rules);
+        update_owned_supers(&mut sim, &rules, owner);
+        update_owned_supers(&mut sim, &rules, owner);
         assert_eq!(reports(&sim), 1, "the hold");
 
         sim.power_states.entry(owner).or_default().is_low_power = false;
-        tick_superweapon_instances(&mut sim, &rules);
+        update_owned_supers(&mut sim, &rules, owner);
         assert_eq!(reports(&sim), 2, "the release");
 
         assert!(crate::sim::production::sell_building_now_for_test(
             &mut sim, &rules, silo
         ));
+        run_recheck_passes(&mut sim, &rules, owner);
         assert_eq!(reports(&sim), 3, "the loss");
     }
 
@@ -1566,18 +1582,15 @@ mod frame_tests {
                 rules.set_buildup_control_for_test(name, [0, 25, 2]);
             }
             let mut sim = Simulation::new();
+            add_houses(&mut sim, &["Americans"], &rules);
             let owner = sim.interner.intern("Americans");
-            sim.houses.insert(
-                owner,
-                crate::sim::house_state::HouseState::new(owner, 0, None, true, 10_000, 10),
-            );
             sim.spawn_object("SILO", "Americans", 10, 10, 0, &rules)
                 .expect("silo spawns");
             if plant {
                 sim.spawn_object("PLANT", "Americans", 14, 10, 0, &rules)
                     .expect("plant spawns");
             }
-            refresh_super_weapons_for_owner(&mut sim, &rules, owner);
+            run_recheck_passes(&mut sim, &rules, owner);
             let nuke = sim.interner.intern("NukeSpecial");
             sim.super_weapons
                 .get(&owner)
@@ -1633,11 +1646,11 @@ mod frame_tests {
         ];
 
         sim.session.game_options.super_weapons = false;
-        refresh_super_weapons_for_owner(&mut sim, &rules, americans);
+        run_recheck_passes(&mut sim, &rules, americans);
         assert_eq!(granted(&sim), kept);
 
         sim.session.game_options.super_weapons = true;
-        refresh_super_weapons_for_owner(&mut sim, &rules, americans);
+        run_recheck_passes(&mut sim, &rules, americans);
         assert_eq!(granted(&sim), rules.super_weapon_order);
     }
 }

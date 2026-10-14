@@ -211,14 +211,15 @@ mod tests {
                     .unwrap();
             }
             let mut sim = Simulation::new();
-            sim.install_resolved_terrain_for_new_map(
-                crate::map::resolved_terrain::test_flat_ground_grid(32),
-            );
+            crate::sim::arena_fixture::flat_ground(&mut sim, rules);
+            // Keep both actors and the bullet inside MapClass's Size diamond
+            // (the arena's Size width is 20); generous LocalSize alone does
+            // not admit a bullet from the former (8,8) source.
             let gun = sim
-                .spawn_object("GTGCAN", "French", 8, 8, 0, rules)
+                .spawn_object("GTGCAN", "French", 12, 12, 0, rules)
                 .unwrap();
             let target = sim
-                .spawn_object("NAPOWR", "Russians", 12, 8, 0, rules)
+                .spawn_object("NAPOWR", "Russians", 16, 12, 0, rules)
                 .unwrap();
             let facing = fire_coord::building_direction_to(
                 &sim,
@@ -253,7 +254,12 @@ mod tests {
                     .projectiles
                     .iter()
                     .find(|(id, projectile)| projectile.source_id == gun && !before.contains(id))
-                    .expect("a real Grand Cannon shell")
+                    .unwrap_or_else(|| panic!(
+                        "a real Grand Cannon shell: frame={} shot={event:?} live_bullets={:?} target_health={:?}",
+                        sim.session.binary_frame,
+                        sim.projectiles.iter().collect::<Vec<_>>(),
+                        sim.substrate.entities.get(target).map(|entity| entity.health)
+                    ))
                     .1;
                 assert_eq!(shell.launch_origin, event.fire_coord);
                 let flash_type = event.muzzle_anim.expect("stock weapon selects a flash");

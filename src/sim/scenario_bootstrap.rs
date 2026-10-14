@@ -1808,7 +1808,14 @@ fn place_starting_object_near_base(
     // one constructor draw therefore precedes every placement-search draw and
     // remains spent even when every attempt fails.
     let stable_id = sim.construct_object_limbo_at_height(
-        type_id, owner, base_rx, base_ry, facing, initial_z, rules,
+        type_id,
+        owner,
+        base_rx,
+        base_ry,
+        facing,
+        initial_z,
+        rules,
+        crate::sim::world::FrameEffects::default(),
     )?;
     if starting_object_cell_placeable(sim, resolved_terrain, base_rx, base_ry, category)
         && sim
@@ -2661,29 +2668,36 @@ pub(crate) fn initialize_map_roster_houses(
             sim.session.game_options.starting_credits,
             sim.session.game_options.tech_level,
         );
-        if let Some((_, computer_difficulty)) = campaign_difficulties {
-            let rules = rules.expect("admitted campaign rules");
-            let house_id = sim
-                .next_native_load_id()
-                .expect("admitted campaign native-ID cursor");
+        let campaign_house_id = campaign_difficulties.map(|_| {
+            sim.next_native_load_id()
+                .expect("admitted campaign native-ID cursor")
+        });
+        // Every native House constructs its whole Supers vector before map
+        // objects. Only the admitted campaign prefix has a measured ID cursor.
+        if let Some(rules) = rules {
             let mut supers = std::collections::BTreeMap::new();
             for name in &rules.super_weapon_order {
                 let type_id = sim.interner.intern(name);
-                let super_id = sim
-                    .next_native_load_id()
-                    .expect("admitted campaign native-ID cursor");
                 let mut instance =
                     crate::sim::superweapon::SuperWeaponInstance::new(type_id, name_id, frame);
-                instance.bind_native_identity(super_id);
+                if campaign_house_id.is_some() {
+                    let super_id = sim
+                        .next_native_load_id()
+                        .expect("admitted campaign native-ID cursor");
+                    instance.bind_native_identity(super_id);
+                }
                 assert!(
                     supers.insert(type_id, instance).is_none(),
                     "distinct Super type registry"
                 );
             }
             sim.super_weapons.insert(name_id, supers);
+        }
+        if let Some((_, computer_difficulty)) = campaign_difficulties {
+            let rules = rules.expect("admitted campaign rules");
             let draw = draw_house_constructor_timer(&mut sim.scenario_rng);
             house_state.bind_native_construction(
-                house_id,
+                campaign_house_id.expect("admitted campaign House ID"),
                 computer_difficulty,
                 frame,
                 draw,

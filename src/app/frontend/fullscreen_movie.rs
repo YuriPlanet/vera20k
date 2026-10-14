@@ -12,15 +12,10 @@
 //! buttons are consumed and ignored. Afterwards the screen is cleared again,
 //! paused audio resumes, and the caller's dialog is recreated.
 
-use std::time::Instant;
-
 use anyhow::Result;
 
-use crate::assets::bink_audio::BinkAudioDecoder;
-use crate::assets::bink_file::BinkFile;
-use crate::audio::movie_stream::MovieAudioStream;
 use crate::render::batch::SpriteInstance;
-use crate::render::bink_movie::{BinkMovieStep, BinkMovieSurface};
+use crate::render::bink_movie::BinkMovieSurface;
 use crate::render::shell_paint::MOVIE_DEPTH;
 
 /// The continuation owned by Play_Movie's caller.
@@ -35,6 +30,9 @@ pub(crate) enum MovieReturn {
     /// Basic.Action plays after ReadScenario, before tactical video mode and
     /// scenario timing begin (StartScenario683D9C..683DB6).
     CampaignLoaded(Box<crate::app::loading::init::MapLoadResult>),
+    /// TAction10's5BF260 call returns to the same tactical world. The shared
+    /// fullscreen owner holds media/audio; the screen gate stops new frames.
+    RunningScenario,
 }
 
 /// The name Play_Movie resolves: truncated at the first `.`.
@@ -53,65 +51,9 @@ pub(crate) fn movie_origin(screen_w: i32, screen_h: i32, movie_w: i32, movie_h: 
     )
 }
 
-/// Bink soundtrack track 0 fed frame by frame alongside the video.
-struct Soundtrack {
-    decoder: BinkAudioDecoder,
-    stream: MovieAudioStream,
-    next_frame: usize,
-}
-
-impl Soundtrack {
-    fn open(file: &BinkFile, mixer: &rodio::mixer::Mixer, volume: f32) -> Option<Self> {
-        let track = file.header.audio_tracks.first().copied()?;
-        let decoder = BinkAudioDecoder::new(track)
-            .map_err(|err| log::warn!("Movie soundtrack unavailable: {err}"))
-            .ok()?;
-        let stream =
-            MovieAudioStream::connect(mixer, decoder.sample_rate(), decoder.channels(), volume)?;
-        Some(Self {
-            decoder,
-            stream,
-            next_frame: 0,
-        })
-    }
-
-    /// Decode and queue every audio packet of frames before `until`.
-    fn feed(&mut self, file: &BinkFile, until: usize) {
-        while self.next_frame < until {
-            match file.audio_packets(self.next_frame) {
-                Ok(packets) => {
-                    for packet in packets.into_iter().filter(|p| p.track_index == 0) {
-                        match self.decoder.decode_packet(packet.bytes) {
-                            Ok(samples) => {
-                                self.stream.push(&samples);
-                            }
-                            Err(err) => log::warn!(
-                                "Movie audio decode error at frame {}: {err}",
-                                self.next_frame
-                            ),
-                        }
-                    }
-                }
-                Err(err) => log::warn!(
-                    "Movie audio packet error at frame {}: {err}",
-                    self.next_frame
-                ),
-            }
-            self.next_frame += 1;
-        }
-    }
-}
-
 pub(crate) struct FullscreenMovie {
-    surface: BinkMovieSurface,
-    soundtrack: Option<Soundtrack>,
-    last_step: Instant,
+    playback: crate::app::movie_playback::MoviePlayback,
     return_to: MovieReturn,
-    ended: bool,
-    /// Paused while the application is inactive (`BinkPause(1)`).
-    paused: bool,
-    /// Diagnostic shell capture only: playback is pinned at one frame.
-    capture_hold: bool,
 }
 
 impl FullscreenMovie {
@@ -121,99 +63,41 @@ impl FullscreenMovie {
         voice_volume: f32,
         return_to: MovieReturn,
     ) -> Self {
-        let mut soundtrack =
-            mixer.and_then(|mixer| Soundtrack::open(surface.file(), mixer, voice_volume));
-        // Frame 0 is decoded on construction; queue its audio (the preload).
-        if let Some(soundtrack) = soundtrack.as_mut() {
-            soundtrack.feed(surface.file(), surface.next_frame());
-        }
         Self {
-            surface,
-            soundtrack,
-            last_step: Instant::now(),
+            playback: crate::app::movie_playback::MoviePlayback::new(surface, mixer, voice_volume),
             return_to,
-            ended: false,
-            paused: false,
-            capture_hold: false,
         }
     }
-
     pub(crate) fn into_return(self) -> MovieReturn {
         self.return_to
     }
-
-    /// `BinkPause` while the application is inactive (`[0xA8ED80]`): the
-    /// clock and the soundtrack stop, and reactivation resumes where it left
-    /// off. Idempotent per state.
     pub(crate) fn set_active(&mut self, active: bool) {
-        if self.paused != active {
-            return;
-        }
-        self.paused = !active;
-        if let Some(soundtrack) = self.soundtrack.as_ref() {
-            if active {
-                soundtrack.stream.resume();
-            } else {
-                soundtrack.stream.pause();
-            }
-        }
-        self.last_step = Instant::now();
+        self.playback.set_active(active);
     }
-
-    /// Advance by wall time. Returns `true` once the last frame has played.
     pub(crate) fn step(&mut self, gpu: &crate::render::gpu::GpuContext) -> Result<bool> {
-        if self.ended {
-            return Ok(true);
-        }
-        if self.paused || self.capture_hold {
-            return Ok(false);
-        }
-        let now = Instant::now();
-        let elapsed = now.duration_since(self.last_step).as_secs_f64();
-        self.last_step = now;
-        let step = self.surface.step(gpu, elapsed)?;
-        if let Some(soundtrack) = self.soundtrack.as_mut() {
-            soundtrack.feed(self.surface.file(), self.surface.next_frame());
-        }
-        if matches!(step, BinkMovieStep::Ended) {
-            self.ended = true;
-        }
-        Ok(self.ended)
+        self.playback.step(gpu)
     }
-
-    /// Mark the movie finished (bare Escape release).
     pub(crate) fn abort(&mut self) {
-        self.ended = true;
+        self.playback.abort();
     }
-
-    /// Diagnostic shell capture: decode forward until video frame `target`
-    /// (zero-based) is displayed, independent of wall time, then pin it.
     pub(crate) fn hold_at_frame_for_capture(
         &mut self,
         gpu: &crate::render::gpu::GpuContext,
         target: usize,
     ) -> Result<()> {
-        let frame_time = 1.0 / self.surface.fps().max(1.0);
-        while self.surface.next_frame() <= target {
-            if matches!(self.surface.step(gpu, frame_time)?, BinkMovieStep::Ended) {
-                break;
-            }
-        }
-        self.capture_hold = true;
-        Ok(())
+        self.playback.hold_at_frame_for_capture(gpu, target)
     }
-
-    /// Zero-based index of the displayed video frame.
     pub(crate) fn displayed_frame(&self) -> usize {
-        self.surface.next_frame().saturating_sub(1)
+        self.playback.displayed_frame()
     }
-
     pub(crate) fn surface(&self) -> &BinkMovieSurface {
-        &self.surface
+        self.playback.surface()
     }
-
     pub(crate) fn instance(&self, screen_w: i32, screen_h: i32) -> SpriteInstance {
-        let (w, h) = (self.surface.width() as i32, self.surface.height() as i32);
+        let (w, h) = (
+            self.surface().width() as i32,
+            self.surface().height() as i32,
+        );
         let (x, y) = movie_origin(screen_w, screen_h, w, h);
         SpriteInstance {
             position: [x as f32, y as f32],

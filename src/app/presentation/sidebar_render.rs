@@ -594,6 +594,11 @@ pub(crate) fn current_sidebar_chrome(
 /// source redraw; this development interaction has no native lifecycle claim.
 fn refresh_radar_animation_source(state: &mut AppState) {
     let Some(resolved) = current_sidebar_resolution(state) else {
+        let wall_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
+            state,
+            std::time::Instant::now(),
+        );
+        crate::app::radar_movie::retire(state, wall_ms);
         let presentation = &mut state.match_state.match_presentation;
         presentation.radar_anim = None;
         presentation.radar_animation_source = None;
@@ -642,6 +647,13 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     }
     presentation.radar_animation_source = Some(identity);
     presentation.radar_content_insets = Some(insets);
+    if presentation.radar_anim.is_none() {
+        let wall_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
+            state,
+            std::time::Instant::now(),
+        );
+        crate::app::radar_movie::retire(state, wall_ms);
+    }
 }
 
 /// Original gamemd.exe SHA256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c:

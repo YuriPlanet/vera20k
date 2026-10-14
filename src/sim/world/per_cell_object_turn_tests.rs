@@ -244,7 +244,16 @@ fn a_jumpjet_touchdown_without_a_target_runs_the_class_null_setter() {
     super::super::lifecycle_tests::install_common_raw_terrain(&mut sim, 32, 32, 0, None);
     sim.session.binary_frame = 1000;
     let id = sim
-        .construct_object_limbo_at_height("NIGHTHAWK", "Americans", 10, 10, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "NIGHTHAWK",
+            "Americans",
+            10,
+            10,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     assert!(matches!(
         sim.reveal(id),

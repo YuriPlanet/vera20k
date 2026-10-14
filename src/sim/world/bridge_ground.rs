@@ -108,7 +108,16 @@ mod tests {
 
     fn place(sim: &mut Simulation, rules: &RuleSet, name: &str, x: u16) -> u64 {
         let id = sim
-            .construct_object_limbo_at_height(name, "Americans", x, 4, 0, 0, rules)
+            .construct_object_limbo_at_height(
+                name,
+                "Americans",
+                x,
+                4,
+                0,
+                0,
+                rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         // Supply the fallout scene's pose after the constructor's zero Location.
         crate::sim::movement::ground_pose::put_location(
@@ -545,7 +554,16 @@ mod tests {
             Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(8, 8, cells));
         let mut create = |name, x, marked| {
             let id = sim
-                .construct_object_limbo_at_height(name, "Americans", x, 4, 0, 0, &rules)
+                .construct_object_limbo_at_height(
+                    name,
+                    "Americans",
+                    x,
+                    4,
+                    0,
+                    0,
+                    &rules,
+                    crate::sim::world::FrameEffects::default(),
+                )
                 .unwrap();
             // The unmarked contrast has this same pose without Cell membership.
             crate::sim::movement::ground_pose::put_location(

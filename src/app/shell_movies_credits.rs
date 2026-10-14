@@ -236,6 +236,7 @@ impl App {
 
     /// Play_Movie `0x005BED40` from the shell.
     pub(super) fn start_fullscreen_movie(state: &mut AppState, name: &str, return_to: MovieReturn) {
+        let running_scenario = matches!(&return_to, MovieReturn::RunningScenario);
         // The calling dialog is destroyed before the movie state runs.
         Self::destroy_current_shell_dialog(state);
         state.frontend.movie_list = None;
@@ -273,11 +274,12 @@ impl App {
                 return;
             }
         };
-        // Stream players (the theme) pause, not stop. Sound events pause for
-        // as long as the movie runs (`pump_audio_service`).
-        if let Some(music) = state.audio.music_player.as_mut() {
-            music.pause_output();
-        }
+        //5BEDFB..5BEE38 enters the same ABF35C movie hold as radar5BF580:
+        //Vox/streams pause, both VolumeInterp targets become0x2000.
+        //The separate menu pause owner must not acquire another movie credit.
+        let wall_ms =
+            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        state.audio.set_movie_audio_held(true, wall_ms);
         // The Bink soundtrack plays at VoiceVolume: BinkSetVolume(ftol(
         // VoiceVolume * 32768.0)) at `0x00432897` (32768 = unity gain).
         let voice_volume = state
@@ -292,20 +294,23 @@ impl App {
             return_to,
         );
         state.frontend.fullscreen_movie = Some(movie);
+        if running_scenario {
+            state.frontend.screen = crate::ui::game_screen::GameScreen::MainMenu;
+        }
         state.platform.window.request_redraw();
     }
 
     /// End of Play_Movie: resume the paused music and recreate the caller's
-    /// dialog (state 4 for Sneak Peeks, state `0xE` for the list). The SFX
-    /// pause is `pump_audio_service`'s.
+    /// dialog (state 4 for Sneak Peeks, state `0xE` for the list). Release
+    ///5BEE69..5BEE9E's shared movie hold; a separate menu pause stays held.
     pub(super) fn finish_fullscreen_movie(state: &mut AppState) {
         let Some(movie) = state.frontend.fullscreen_movie.take() else {
             return;
         };
         let return_to = movie.into_return();
-        if let Some(music) = state.audio.music_player.as_mut() {
-            music.resume_output();
-        }
+        let wall_ms =
+            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        state.audio.retire_movie_audio(wall_ms);
         Self::return_from_fullscreen_movie(state, return_to);
     }
 
@@ -358,6 +363,10 @@ impl App {
             }
             MovieReturn::CampaignLoaded(result) => {
                 crate::app::loading::transitions::apply_map_load_result(state, *result);
+            }
+            MovieReturn::RunningScenario => {
+                state.frontend.screen = crate::ui::game_screen::GameScreen::InGame;
+                state.platform.window.request_redraw();
             }
         }
     }

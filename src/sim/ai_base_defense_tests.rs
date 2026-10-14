@@ -361,7 +361,7 @@ fn production_state_feeds_the_choice_as_native() {
         fudge[2],
         defense_building_types()
     );
-    let rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&text)).unwrap();
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let owner = sim.interner.intern("Computer");

@@ -83,6 +83,11 @@ impl BinkMovieSurface {
         self.current_frame
     }
 
+    /// The actual decoded frame, for the retained sidebar surface consumer.
+    pub fn rgba(&self) -> &[u8] {
+        &self.rgba
+    }
+
     pub fn file(&self) -> &BinkFile {
         &self.file
     }
@@ -102,6 +107,11 @@ impl BinkMovieSurface {
                 if self.looping {
                     self.restart_at_original_frame_one()?;
                     changed = true;
+                    break;
+                }
+                // Upload the final decoded frame before reporting completion
+                // on a later step. Catch-up must not discard its last store.
+                if changed {
                     break;
                 }
                 return Ok(BinkMovieStep::Ended);

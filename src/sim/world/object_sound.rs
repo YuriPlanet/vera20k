@@ -30,6 +30,12 @@
 //!   its first Terrain on the ground list (`0x0047C550`). An object takes the
 //!   action's sound as its custom sound. With none, `VocClass::PlayAtCoord @
 //!   0x00750E20` plays it at the coordinate with flags 1.
+//! - TAction 116 (`0x006E1980`) resolves the same waypoint and ground-list
+//!   object, then calls `Set_Custom_Sound(-1)`. With no object (including
+//!   the zero cell), `VocClass::StopAtCoord @ 0x00750F40` detaches every
+//!   retained request whose full XYZ equals the waypoint and whose flags
+//!   intersect 1. The audio request owner retains those coordinates/flags;
+//!   request retirement remains in its existing `0x00750EC0` service.
 //!
 //! The handles belong to the app/audio owner, keyed by
 //! [`ambient_sound_owner`] and [`custom_sound_owner`]. Each PlayAt is
@@ -44,9 +50,6 @@
 //! 161 retail skirmish maps author action 99 in 151 maps.
 //!
 //! RESIDUALS:
-//! - PlayAtCoord's flags (`+0x2C` of the request node) are not kept. Only
-//!   TAction 116's stop scan (`0x00750F40`) reads them, and no retail
-//!   skirmish map authors action 116.
 //! - A waypoint index the action reader rejects (native `-1`) reads the slot
 //!   before the waypoint array; VERA plays nothing.
 //! - Anim, Bullet, Wave and Terrain types do not bind AmbientSound
@@ -137,15 +140,48 @@ impl Simulation {
             && let Some(object) = self.waypoint_sound_object((cell.0 as u16, cell.1 as u16))
         {
             self.set_custom_sound(object, sound);
+            effects.flush_sound(self, rules);
             return true;
         }
         if let Some(sound_id) = sound {
             self.sound_events.push(SimSoundEvent::VocAtCoord {
                 sound_id: sound_id.to_owned(),
                 coordinate: DriveCoord { x, y, z },
+                flags: 1,
             });
             effects.flush_sound(self, rules);
         }
+        true
+    }
+
+    /// TAction 116 (`0x006E1980`): clear the first ground Building's custom
+    /// sound, else the first Terrain's; with neither, stop coordinate requests
+    /// through `0x00750F40` using flags 1. `+0x64` remains the object's sole
+    /// custom-sound authority, and the app/audio owner holds request handles.
+    pub(crate) fn trigger_stop_sound_at_waypoint(
+        &mut self,
+        waypoint: Option<u32>,
+        rules: Option<&RuleSet>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some([x, y, z]) = waypoint.and_then(|index| self.trigger_waypoint_coord(index as i32))
+        else {
+            return false;
+        };
+        let cell = ((x / 256) as i16, (y / 256) as i16);
+        if cell != (0, 0)
+            && let Some(object) = self.waypoint_sound_object((cell.0 as u16, cell.1 as u16))
+        {
+            self.set_custom_sound(object, None);
+        } else {
+            self.sound_events.push(SimSoundEvent::VocStopAtCoord {
+                coordinate: DriveCoord { x, y, z },
+                flags: 1,
+            });
+        }
+        // Original detach completes before the next action or Object AI can
+        // submit a new sound on the same handle/coordinate in this frame.
+        effects.flush_sound(self, rules);
         true
     }
 

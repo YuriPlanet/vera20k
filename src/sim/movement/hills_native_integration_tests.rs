@@ -215,6 +215,7 @@ fn spawn_supplied_ground_mtnk(
             0,
             height,
             &resources.rules,
+            crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let terrain = sim.resolved_terrain.as_ref().unwrap();

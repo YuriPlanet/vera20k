@@ -769,7 +769,16 @@ fn naval_factory_spawn_uses_water_exit_cells() {
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 20, 20);
     stamp_type_foundation(&mut sim, &rules, 1);
     let produced = sim
-        .construct_object_limbo_at_height("DEST", "Americans", 0, 0, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "DEST",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("construct the original ExitObject receiver");
     assert_eq!(
         super::production_queue::exit_produced_object(

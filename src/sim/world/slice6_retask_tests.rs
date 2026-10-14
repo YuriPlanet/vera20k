@@ -331,7 +331,14 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // Infantry Approach: the GI's Attack now walks him to a cell in M60 range of
 // the tank (pinned in the loop) instead of the tank's own cell, so his NavCom
 // and path change. Replay, retasking and all three RNG gates remain unchanged.
-const SLICE6_BASELINE_HASH: u64 = 0xC4B5_83A9_D807_77FD;
+// Snapshot345 retires the duplicate announcement None hash feed. The common
+// map fixture also installs its freshly created64x64 grid through the map
+// owner, capturing4096 zero real-cell flag slots instead of absent dimensions/
+// storage. Scoped hash-only controls below recover the incoming pin and the
+// announcement-only intermediate without changing the corrected map state.
+const SLICE6_INCOMING_HASH: u64 = 0xC4B5_83A9_D807_77FD;
+const SLICE6_ANNOUNCEMENT_ONLY_HASH: u64 = 0x4645_6FE7_BB02_4917;
+const SLICE6_BASELINE_HASH: u64 = 0x9041_91B9_31BD_8D18;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -626,6 +633,48 @@ fn replay_hash_stable_through_slice6() {
             .body_facing
             .rot_per_frame(),
         0x7F00
+    );
+    let current_hash = sim.state_hash();
+    let retained_authority = bincode::serialize(&sim).expect("retained retask authority");
+    let retained_dummy = sim.effective_shared_cell_dummy().snapshot();
+    let retained_streams = (
+        sim.scenario_rng.state(),
+        sim.main_rng.state(),
+        sim.mapgen_rng.state(),
+    );
+    let announcement_only_hash = sim.state_hash_with_legacy_absent_real_cell_authority_for_test();
+    let incoming_hash_control =
+        crate::sim::trigger_runtime::with_legacy_announcement_hash_control_for_test(|| {
+            sim.state_hash_with_legacy_absent_real_cell_authority_for_test()
+        });
+    println!(
+        "[slice6 fixture hash feeds] current={current_hash:016X} old_map={announcement_only_hash:016X} control={incoming_hash_control:016X}"
+    );
+    assert_eq!(
+        announcement_only_hash, SLICE6_ANNOUNCEMENT_ONLY_HASH,
+        "restoring only the absent saved real-cell feed recovers the announcement-only intermediate"
+    );
+    assert_eq!(
+        incoming_hash_control, SLICE6_INCOMING_HASH,
+        "restoring only the retired None and absent saved real-cell feeds recovers the incoming Rust pin"
+    );
+    assert_eq!(
+        sim.state_hash(),
+        current_hash,
+        "diagnostic feeds stay scoped"
+    );
+    assert!(
+        retained_authority == bincode::serialize(&sim).expect("unchanged retask authority"),
+        "diagnostic feeds cannot alter serialized gameplay state"
+    );
+    assert_eq!(sim.effective_shared_cell_dummy().snapshot(), retained_dummy);
+    assert_eq!(
+        (
+            sim.scenario_rng.state(),
+            sim.main_rng.state(),
+            sim.mapgen_rng.state()
+        ),
+        retained_streams
     );
     assert_eq!(
         sim.state_hash(),

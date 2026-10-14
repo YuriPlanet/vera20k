@@ -648,7 +648,16 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         for (label, type_name) in &producer_types {
             let native = &before["producers"][label];
             let id = sim
-                .construct_object_limbo_at_height(type_name, "Americans", 0, 0, 0, 0, &rules)
+                .construct_object_limbo_at_height(
+                    type_name,
+                    "Americans",
+                    0,
+                    0,
+                    0,
+                    0,
+                    &rules,
+                    crate::sim::world::FrameEffects::default(),
+                )
                 .unwrap();
             assert!(labels.insert(*label, id).is_none());
             let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -1300,7 +1309,16 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
             // Only matching Target, active45 timer and constructor Techno state
             // are required by the compared expiry arm; Unlimbo is not compared.
             let observer = sim
-                .construct_object_limbo_at_height("MTNK", "Americans", 10, 11, 0, 0, &rules)
+                .construct_object_limbo_at_height(
+                    "MTNK",
+                    "Americans",
+                    10,
+                    11,
+                    0,
+                    0,
+                    &rules,
+                    crate::sim::world::FrameEffects::default(),
+                )
                 .unwrap();
             sim.assign_target_represented(
                 observer,

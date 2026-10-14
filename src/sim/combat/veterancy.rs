@@ -381,7 +381,7 @@ pub fn sample_promotion(entity: &mut GameEntity, elite_flash_timer: i32) -> Opti
     }
     match curr {
         LEVEL_ELITE => {
-            entity.elite_flash_frames = elite_flash_timer;
+            entity.start_flash_countdown(elite_flash_timer);
             Some(Promotion::Elite)
         }
         LEVEL_VETERAN => Some(Promotion::Veteran),
@@ -830,12 +830,12 @@ mod tests {
 
         set_veteran(&mut e);
         assert_eq!(sample_promotion(&mut e, 150), Some(Promotion::Veteran));
-        assert_eq!(e.elite_flash_frames, 0);
+        assert_eq!(e.flash_countdown(), 0);
         assert_eq!(sample_promotion(&mut e, 150), None);
 
         set_elite(&mut e);
         assert_eq!(sample_promotion(&mut e, 150), Some(Promotion::Elite));
-        assert_eq!(e.elite_flash_frames, 150);
+        assert_eq!(e.flash_countdown(), 150);
         assert_eq!(e.veterancy_rank_cache, LEVEL_ELITE);
     }
 
@@ -846,7 +846,7 @@ mod tests {
     fn gsi_08_12_first_sample_is_silent_and_direct_elite_announces_elite() {
         let mut placed = entity(200, 300, 300);
         assert_eq!(sample_promotion(&mut placed, 150), None);
-        assert_eq!(placed.elite_flash_frames, 0);
+        assert_eq!(placed.flash_countdown(), 0);
 
         let mut rookie = entity(0, 300, 300);
         sample_promotion(&mut rookie, 150);

@@ -1080,7 +1080,7 @@ fn a_held_vehicle_goes_with_the_last_war_factory() {
 /// A 900-credit tank buildable from a war factory, and an Industrial Plant type
 /// (`UnitsCostBonus=.75`) that is not yet on the map, for a house with no money.
 fn plant_world() -> (Simulation, RuleSet, InternedId) {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
         "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=HTNK\n\
          [BuildingTypes]\n0=NAWEAP\n1=NAINDP\n\
          [HTNK]\nOwner=Russians\nCost=900\nStrength=400\nSpeed=5\nTechLevel=1\n\
@@ -1092,6 +1092,7 @@ fn plant_world() -> (Simulation, RuleSet, InternedId) {
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
         32,
     ));
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     let owner = sim.interner.intern("Russians");

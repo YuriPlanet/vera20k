@@ -1684,7 +1684,7 @@ mod tests {
     fn stationary_attack_fixture_with_overrides(extra: &str) -> (Simulation, RuleSet, u64) {
         // Keep overrides in the same physical body. Appending a second
         // [TANK] is not a rules layer and does not replace its first body.
-        let rules = RuleSet::from_ini(&IniFile::from_str(
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
             &(r#"
 [InfantryTypes]
 0=GI
@@ -1750,18 +1750,9 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             .unwrap();
         sim.session.game_mode_nonzero = true;
         sim.session.current_house = Some(sim.entities().get(tank).unwrap().owner());
-        // Later test objects use ordinary constructor placement. Flat pixels
-        // alone are insufficient: test_flat_cell has no SpeedType costs and
-        // Foot's native admission therefore rejects those later spawns.
-        sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
-            32,
-            32,
-            |rx, ry| crate::map::resolved_terrain::ResolvedTerrainCell {
-                speed_costs: crate::map::resolved_terrain::TEST_OPEN_SPEED_COSTS,
-                base_speed_costs: crate::map::resolved_terrain::TEST_OPEN_SPEED_COSTS,
-                ..crate::map::resolved_terrain::test_clear_cell(rx, ry)
-            },
-        ));
+        // Later objects use ordinary Unlimbo: supply clear rules, playfield,
+        // terrain and navigation through the shared component-arena owner.
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         (sim, rules, tank)
     }
 
@@ -2643,7 +2634,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
     /// row35. The complete query and caller goldens live in spatial_oracle.
     #[test]
     fn engineer_hut_cursor_uses_native_repair_rows_for_all_relations() {
-        let rules = RuleSet::from_ini(&IniFile::from_str(
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
             "[InfantryTypes]\n0=ENGINEER\n[BuildingTypes]\n0=CABHUT\n\
              [ENGINEER]\nStrength=75\nEngineer=yes\nC4=yes\n\
              [CABHUT]\nStrength=200\nFoundation=1x1\nBridgeRepairHut=yes\nCanC4=yes\nRepairable=yes\nCapturable=yes\n",
@@ -2668,6 +2659,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 }
                 sim.install_resolved_terrain_for_new_map(terrain);
                 sim.bridge_state = Some(crate::sim::bridge_state::BridgeRuntimeState::default());
+                crate::sim::arena_fixture::supply_native_map(&mut sim);
                 let owner = if relation == "self" {
                     "Americans"
                 } else {

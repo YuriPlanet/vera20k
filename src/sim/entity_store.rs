@@ -67,6 +67,14 @@ pub struct EntityStore {
     /// Uninit retains an entry; remove compacts it. Class/category is immutable
     /// while stored, like indexed identity (replace through remove/insert).
     infantry_registry: Vec<u64>,
+    /// Derived TechnoClass registration index from monotonic constructor IDs.
+    /// Production construction stores each parent before manager children;
+    /// see construction33/55,world_spawn::store_with_constructor_managers,
+    /// authored_health::unlimbo and reinforcement construction. Stable ID is
+    /// authoritative, this cache is rebuilt on restore and never serialized.
+    /// UnInit keeps a row; physical remove compacts it; take_turn retains it.
+    /// RMG PreconsumedGenerated registration parity is not established here.
+    techno_registry: Vec<u64>,
     /// Which entities may have changed since each reader last took its log
     /// ([`Self::take_touched`]). Every route to a `&mut GameEntity` goes
     /// through the store, so an entity missing from a log has not changed.
@@ -134,6 +142,7 @@ impl Clone for EntityStore {
         Self {
             entities: self.entities.clone(),
             infantry_registry: self.infantry_registry.clone(),
+            techno_registry: self.techno_registry.clone(),
             touched: TouchLogs::everything(),
         }
     }
@@ -156,6 +165,7 @@ impl EntityStore {
         Self {
             entities: BTreeMap::new(),
             infantry_registry: Vec::new(),
+            techno_registry: Vec::new(),
             touched: TouchLogs::everything(),
         }
     }
@@ -167,6 +177,9 @@ impl EntityStore {
         self.touched.note(id, self.entities.len());
         let infantry = entity.category == crate::map::entities::EntityCategory::Infantry;
         self.entities.insert(id, Box::new(entity));
+        if let Err(index) = self.techno_registry.binary_search(&id) {
+            self.techno_registry.insert(index, id);
+        }
         self.remove_infantry_index(id);
         if infantry {
             let index = self
@@ -185,6 +198,9 @@ impl EntityStore {
         }
         if removed.is_some() {
             self.remove_infantry_index(stable_id);
+            if let Ok(index) = self.techno_registry.binary_search(&stable_id) {
+                self.techno_registry.remove(index);
+            }
         }
         removed
     }
@@ -288,6 +304,15 @@ impl EntityStore {
         self.entities.keys().copied().collect()
     }
 
+    /// Action14's full Techno array, independent of Logic and Display order.
+    /// Read length/slot afresh after callbacks; append/removal is visible.
+    pub(crate) fn techno_registry_at(&self, index: usize) -> Option<u64> {
+        self.techno_registry.get(index).copied()
+    }
+    pub(crate) fn techno_registry_len(&self) -> usize {
+        self.techno_registry.len()
+    }
+
     /// Native InfantryClass array index. Read afresh after a callback: removing
     /// a row shifts successors left, while a newly constructed row is visible.
     /// This is distinct from the live Logic vector and includes dead/limbo rows.
@@ -368,9 +393,11 @@ impl<'de> serde::Deserialize<'de> for EntityStore {
         let mut store = Self {
             entities,
             infantry_registry: Vec::new(),
+            techno_registry: Vec::new(),
             touched: TouchLogs::everything(),
         };
         store.rebuild_infantry_registry();
+        store.techno_registry = store.entities.keys().copied().collect();
         Ok(store)
     }
 }

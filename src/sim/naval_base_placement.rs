@@ -272,7 +272,7 @@ mod tests {
     }
 
     fn naval_integration_rules() -> RuleSet {
-        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(
+        RuleSet::from_ini_with_fixed_art_for_test(&crate::sim::arena_fixture::clear_ground_ini(
             "[General]\nShipyard=GAYARD\nAINavalYardAdjacency=0\n\
              [AI]\nBuildConst=gacnst\n\
              [Countries]\n0=Americans\n[Sides]\nAllied=Americans\n[Americans]\nSide=Allied\n\
@@ -669,6 +669,13 @@ mod tests {
         sim.playfield_bounds = Some(broad_bounds());
         sim.playfield_size_height = Some(24);
         sim.resolved_terrain = Some(water_terrain(24, 24));
+        // The land construction yard has a legal 1x1 clear foundation; its
+        // adjacent naval candidate remains water for the zero-distance test.
+        *sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut(10, 10)
+            .unwrap() = crate::map::resolved_terrain::test_clear_cell(10, 10);
         let owner = sim.interner.intern("AIHouse");
         let country = sim.interner.intern("Americans");
         sim.houses.insert(

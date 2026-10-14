@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original6ECA70 Script59 first waypoint/blocker RTTI gate, member Type Ammo/current Ammo gate and retained target routing",
+  "assumptions": [
+    "Declared synthetic Team/member/current target, exact signed Type Ammo and current Ammo priors; member count0/3 and first/repeat supplied. Original whole6ECA70 executes unchanged.",
+    "This is a handler control fixture, not full waypoint/map/CoordinateAttack execution, type/rules loading, TeamAI scheduling or an ALL01 scene."
+  ],
+  "substitutions": [
+    "Existing TeamEmu WhatAmI/GetTechnoType transports supply declared RTTI/type identity. Scenario68BCE0 supplies a Cell; Cell47C5A0 records bridge-list argument and supplies declared building/other/null blocker.",
+    "AssignMissionTarget6E9050 records and maintains the retained shared target view; CoordinateAttack6EB490 records only. Their production owners and original corpora are separate. No arithmetic, RNG or timer call is replaced in59 itself."
+  ],
+  "entry_points": {
+    "script59": "0x006ECA70",
+    "waypoint_cell": "0x0068BCE0",
+    "blocker": "0x0047C5A0",
+    "assign_mission_target": "0x006E9050",
+    "coordinate_attack": "0x006EB490"
+  },
+  "replay_command": "python -m tools.team_recruit_oracle --attack-waypoint-building",
+  "payload_sha256": "9457e597938595ef9f1700630965e60f8ea31edcf99b323259c9e83ce8534d34"
+}

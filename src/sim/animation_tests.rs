@@ -871,7 +871,16 @@ fn infantry_action_fixture(
         crate::sim::house_state::HouseState::new(house, 0, None, true, 0, 10),
     );
     let id = sim
-        .construct_object_limbo_at_height("E1", "Americans", 10, 10, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "E1",
+            "Americans",
+            10,
+            10,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     sim.substrate
         .entities

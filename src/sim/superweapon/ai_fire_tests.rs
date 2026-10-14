@@ -133,8 +133,11 @@ fn catalog_rules(oracle: &Value, values: Option<&Value>, extra: &str) -> RuleSet
         names("build_tech")
     );
     let art = IniFile::from_str(&art);
-    let mut rules =
-        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&text), &art).unwrap();
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&text),
+        &art,
+    )
+    .unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
     rules
 }
@@ -284,6 +287,7 @@ fn the_try_fire_arms_match_native() {
         sim.session.binary_frame = int(&row["frame"]) as u32;
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.playfield_bounds = Some(test_playfield_bounds());
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
         let rally = cell(&row["rally"]);
         if rally != NO_CELL {
             sim.spawn_object_at_height(
@@ -426,6 +430,7 @@ fn the_genetic_mutator_target_matches_native() {
             .insert(ALLY.to_ascii_uppercase());
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.playfield_bounds = Some(playfield(&oracle));
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
         // Each listed object and its cell, in arrival order; the cells that
         // hold a Unit or Building.
         let mut listed = Vec::new();
@@ -638,6 +643,7 @@ fn retail_skirmish() -> Option<(RuleSet, Simulation, InternedId, InternedId)> {
     sim.session.game_options.super_weapons = true;
     sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
     sim.playfield_bounds = Some(test_playfield_bounds());
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     Some((rules, sim, americans, russians))
 }
 
@@ -753,9 +759,43 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
     let Some((rules, mut sim, americans, _)) = retail_skirmish() else {
         return;
     };
-    sim.spawn_object_at_height("NAMISL", "Americans", 10, 10, 0, 0, &rules)
+    // NukeCarrier's ordinary projectile path reads the native Size diamond.
+    // A width0 fixture becomes empty when its map height is supplied; place
+    // this launch scene inside a coherent Size/normalized LocalSize instead.
+    sim.session.map_width = 64;
+    sim.session.map_height = 64;
+    sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+        theater: "TEMPERATE".into(),
+        fill: "Clear".into(),
+        level: 0,
+        width: 32,
+        height: 64,
+        local_left: 2,
+        local_top: 2,
+        local_width: 28,
+        local_height: 56,
+    });
+    assert!(sim.rebuild_dynamic_navigation(&rules));
+    for cell in [
+        (30, 30),
+        (20, 20),
+        (24, 20),
+        (40, 40),
+        (50, 40),
+        (30, 50),
+        (42, 42),
+    ] {
+        assert!(sim.map_cell_in_bounds(cell), "launch scene cell {cell:?}");
+        assert!(crate::sim::cell_rect::cell_is_in_playfield_height_aware(
+            (i32::from(cell.0), i32::from(cell.1)),
+            sim.playfield_bounds,
+            sim.resolved_terrain.as_ref(),
+        ));
+    }
+    let silo = sim
+        .spawn_object_at_height("NAMISL", "Americans", 30, 30, 0, 0, &rules)
         .expect("the silo stands");
-    for at in [(20, 10), (24, 10)] {
+    for at in [(20, 20), (24, 20)] {
         sim.spawn_object_at_height("NAPOWR", "Americans", at.0, at.1, 0, 0, &rules)
             .expect("the power plant stands");
     }
@@ -769,7 +809,9 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
     }
     let sw_type = sim.interner.intern("NukeSpecial");
     let mut instance = SuperWeaponInstance::new(sw_type, americans, 0);
-    instance.activate(9000, sim.session.binary_frame);
+    instance.is_active = true;
+    instance.charge_start_tick = (sim.session.binary_frame) as i32;
+    instance.charge_duration = 9000;
     instance.is_ready = true;
     sim.super_weapons
         .entry(americans)
@@ -789,7 +831,26 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
             break;
         }
     }
-    assert!(carrier, "the missile flies");
+    assert!(
+        carrier,
+        "the missile flies: target={:?}, super={:?}, silo={:?}, power={:?}, house={:?}",
+        sim.houses[&americans].nuke_target(),
+        sim.super_weapons
+            .get(&americans)
+            .and_then(|supers| supers.get(&sw_type)),
+        sim.substrate.entities.get(silo).map(|entity| (
+            &entity.mission,
+            entity.building_online(),
+            entity.building_up(),
+            entity.health.current
+        )),
+        sim.power_states.get(&americans),
+        (
+            sim.houses[&americans].is_defeated,
+            sim.houses[&americans].enemy_house,
+            sim.houses[&americans].strategy_timer
+        )
+    );
     // The yard's centre cell.
     assert_eq!(sim.houses[&americans].nuke_target(), (42, 42));
     let instance = &sim.super_weapons[&americans][&sw_type];
@@ -819,7 +880,7 @@ fn the_psychic_dominator_target_matches_native() {
     assert_eq!(rows.len(), 26);
     let art = IniFile::from_str("[PLAIN]\nFoundation=1x1\n");
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
-        &IniFile::from_str(
+        &crate::sim::arena_fixture::clear_ground_ini(
             "[InfantryTypes]\n0=GI\n1=PSIGI\n[VehicleTypes]\n0=TANK\n1=BALLOON\n\
              [AircraftTypes]\n0=JET\n[BuildingTypes]\n0=PLAIN\n\
              [GI]\nStrength=100\nSpeed=4\n\
@@ -854,6 +915,7 @@ fn the_psychic_dominator_target_matches_native() {
             .insert(ALLY.to_ascii_uppercase());
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.playfield_bounds = Some(playfield(&oracle));
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
         let status = u8::try_from(int(&row["psydom"])).unwrap();
         sim.psychic_dominator = PsychicDominatorState::for_test(
             status,

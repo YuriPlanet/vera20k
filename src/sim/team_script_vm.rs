@@ -131,6 +131,17 @@ pub struct TeamTypeIniMetadata {
     /// Waypoint(+D4), constructor -1; ReadString64/FromLetters763690.
     #[serde(default = "minus_one")]
     waypoint: i32,
+    /// TeamType+B1, exact-case `UseTransportOrigin`: ctor6F0759 clears it;
+    /// ReadBool5295F0 at6F122F retains its current value, store6F1234.
+    /// Reinforcement65DBF9 selects TransportWaypoint instead of House edge.
+    #[serde(default)]
+    use_transport_origin: bool,
+    /// TeamType+D8, exact-case `TransportWaypoint`: ctor6F07A5 writes-1.
+    /// ReadString64 at6F1461 uses ToLetters763610(current) as default,
+    /// FromLetters763690 stores at6F1473 when the returned length is positive.
+    /// Fixed AIMD and map rereads share this same definition input owner.
+    #[serde(default = "minus_one")]
+    transport_waypoint: i32,
     #[serde(default)]
     full: bool,
     #[serde(default)]
@@ -225,6 +236,8 @@ impl Default for TeamTypeIniMetadata {
             house: None,
             veteran_level: 1,
             waypoint: -1,
+            use_transport_origin: false,
+            transport_waypoint: -1,
             full: false,
             whiner: false,
             max_teams: -1,
@@ -625,6 +638,16 @@ impl TeamScriptState {
     /// The member ids in list order, head (the newest) first.
     pub fn members(&self) -> impl Iterator<Item = u64> + '_ {
         self.members.iter().map(|member| member.id)
+    }
+
+    /// The native Foot+5D8 successor, derived from this owner's member list.
+    /// Callers cache it before callbacks that can unlink the current member.
+    /// No second retained link list is stored or restored.
+    pub(super) fn next_member_after(&self, current: u64) -> Option<u64> {
+        self.members
+            .windows(2)
+            .find(|pair| pair[0].id == current)
+            .map(|pair| pair[1].id)
     }
 
     pub fn member_count(&self) -> usize {
@@ -1231,6 +1254,11 @@ impl TeamScriptVm {
                 }
                 if metadata.on_trans_only {
                     b"team-on-trans-only-v1".hash(hasher);
+                }
+                if metadata.use_transport_origin || metadata.transport_waypoint != -1 {
+                    b"team-transport-origin-v1".hash(hasher);
+                    metadata.use_transport_origin.hash(hasher);
+                    metadata.transport_waypoint.hash(hasher);
                 }
             }
             team.task_force_id.hash(hasher);

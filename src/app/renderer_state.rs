@@ -38,6 +38,9 @@ pub(crate) struct RendererState {
     pub(super) status_screen_fill: crate::render::batch::BatchTexture,
     /// GAME.FNT bitmap font (falls back to the built-in 5x7 face).
     pub(crate) bit_font: BitFont,
+    /// InitGame52C1EF..52C302's immutable GRFXTXT.SHP/PAL result surface.
+    pub(crate) outcome_banner_art:
+        Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,
     pub(crate) vxl_slope_transition_cache:
         std::cell::RefCell<crate::render::unit_slope_transition_cache::VxlSlopeTransitionCache>,
     /// This frame's posed bodies: crash tilts and pitched rockets

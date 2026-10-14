@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Map577C90 House admission, Cell487690 leave and allocated578290 traversal with explicit sparse priors; no native world callback/render parity.",
+  "assumptions": [
+    "Seven signed Cell counter/gap priors execute487690 then577D26..577D4D. Four bulk controls execute full577C90 with current/null/foreign incoming Houses and a sparse-table hole. Native code, not a host formula, supplies every expected counter, mask, visit and House byte.",
+    "Map Size width3, canonical House array/index identities, current Player, House240/241 set priors, sparse512-stride Cell pointers and all Cell fields read by the selected bodies are supplied. Cell/House/Map constructors and actual ALL01 map allocation are not executed.",
+    "The null input retains Player241; the foreign input clears only its canonical House241 and returns. The local allocated loop exits at its first null pointer and does not visit the supplied later4,4 cell. Subsequent native cursor calls execute through original578290; no host-side scan supplies traversal answers.",
+    "Rust compares represented counter/gap, ground bits18, map bits3, pending20 and signed frame bytes. Unrepresented upper raw flags are retained in native outputs but are not a claim of Rust full-Cell parity.",
+    "Seed31 initializes the existing three RNG stream transport. The selected bodies have no expected RNG draws; hashes and observed draw entry points are recorded, not used as substitute answers. No timers or detach calls occur in these selected bodies."
+  ],
+  "substitutions": [
+    "Reuse ActionFixture heap/CRT/VM and DiscoveryFixture cell observation format; no577C90,487690,578290 or post-leave instruction is replaced.",
+    "4ADEE0 release and4ADCD0 reentry are recorded RET8 sinks with empty world callback behavior. Live sight/gap/RevealToAll, nested Tag/discovery reentry, changes to PlayerPtr during callbacks and whole-scenario ordering are excluded.",
+    "4068E0 null-House debug,657CE0 radar refresh and map virtual redraw38(2) are recorded sinks. No audio/draw/device/dirty-region state or rendered pixels is simulated."
+  ],
+  "entry_points": {
+    "reshroud": "0x00577C90",
+    "leave": "0x00487690",
+    "clear_gate": "0x00577D26",
+    "clear_gate_end": "0x00577D4D",
+    "iterator_next": "0x00578290",
+    "release": "0x004ADEE0",
+    "reentry": "0x004ADCD0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --reshroud",
+  "payload_sha256": "54e5b916797161342b4abd7eda8a65d0f7563a79c7a3bd4ac74fa0382418eca6"
+}

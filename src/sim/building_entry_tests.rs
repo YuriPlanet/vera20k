@@ -107,8 +107,11 @@ const ART: &str = "[YAPOWR]\nFoundation=2x2\n[GAPOWR]\nFoundation=2x2\n[UABSORB]
                    [NABNKR]\nFoundation=2x2\n[CAGAS01]\nFoundation=2x2\n[NATBNK]\nFoundation=2x2\n";
 
 fn rules() -> RuleSet {
-    RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(RULES), &IniFile::from_str(ART))
-        .expect("building entry rules")
+    RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(RULES),
+        &IniFile::from_str(ART),
+    )
+    .expect("building entry rules")
 }
 
 /// The flat arena with the computer YuriCountry and the human Americans.
@@ -133,7 +136,16 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, rx: u16
 fn absorb(sim: &mut Simulation, rules: &RuleSet, building: u64, count: usize) {
     for _ in 0..count {
         let id = sim
-            .construct_object_limbo_at_height("INIT", "YuriCountry", 1, 1, 0, 0, rules)
+            .construct_object_limbo_at_height(
+                "INIT",
+                "YuriCountry",
+                1,
+                1,
+                0,
+                0,
+                rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("absorbed infantry");
         sim.substrate.entities.get_mut(id).unwrap().passenger_role = PassengerRole::Inside {
             transport_id: building,
@@ -211,6 +223,10 @@ fn seek_team(sim: &mut Simulation, action_id: i32, members: Vec<u64>) -> u64 {
 
 fn garrison_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
     sim.foot_enter_battle_bunker(id, rules, None, FrameEffects::default())
+}
+
+fn whole_map_garrison_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
+    sim.foot_enter_nearest_occupiable(id, rules, None, FrameEffects::default())
 }
 
 fn tank_bunker_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
@@ -326,7 +342,7 @@ fn the_bio_reactor_pick_matches_native() {
 /// ties keep the later building, and the pick, its reissue
 /// (Assign_Destination(pick, 1), then Queue_Mission(Capture, 1)), the answer
 /// and the latch are [`pick_nearest_admitted`]'s and
-/// [`battle_bunker_reissues`]' over [`object_distance`].
+/// [`garrison_seek_reissues`]' over [`object_distance`].
 #[test]
 fn the_battle_bunker_pick_matches_native() {
     let oracle: Value =
@@ -355,7 +371,7 @@ fn the_battle_bunker_pick_matches_native() {
         let nav_com = row["nav"].as_u64().map(NavTargetRef::object);
         let mission = MissionId::from_raw(i32::try_from(row["mission"].as_i64().unwrap()).unwrap());
         if let Some(best) = best
-            && battle_bunker_reissues(best, nav_com, mission)
+            && garrison_seek_reissues(best, nav_com, mission)
         {
             seen.push(json!(["assign_destination", best, 1]));
             seen.push(json!(["queue_mission", capture, 1]));
@@ -581,7 +597,7 @@ fn a_transport_sent_to_an_absorber_keeps_its_cargo() {
     assert!(entity.passenger_role.cargo().is_some());
 }
 
-/// Both latches are saved and, while set, hashed.
+/// All three latches are saved and, while set, hashed.
 #[test]
 fn the_latches_are_saved_and_hashed() {
     let rules = rules();
@@ -592,6 +608,10 @@ fn the_latches_are_saved_and_hashed() {
     let occupier = spawn(&mut sim, &rules, "E1", "YuriCountry", 10, 14);
     assert!(seek(&mut sim, &rules, foot));
     assert!(garrison_seek(&mut sim, &rules, occupier));
+    set_should_enter_nearest_occupiable_for_test(
+        sim.substrate.entities.get_mut(occupier).unwrap(),
+        true,
+    );
 
     let bytes = crate::sim::snapshot::GameSnapshot::save_validated(&sim, 0, 0, "Seek", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -609,6 +629,11 @@ fn the_latches_are_saved_and_hashed() {
             .building_entry
             .should_enter_occupiable()
     );
+    assert!(
+        entity(&restored, occupier)
+            .building_entry
+            .should_enter_nearest_occupiable()
+    );
     let latched = restored.state_hash();
     set_should_enter_absorber_for_test(restored.substrate.entities.get_mut(foot).unwrap(), false);
     let absorber_cleared = restored.state_hash();
@@ -617,7 +642,13 @@ fn the_latches_are_saved_and_hashed() {
         restored.substrate.entities.get_mut(occupier).unwrap(),
         false,
     );
-    assert_ne!(restored.state_hash(), absorber_cleared);
+    let house_garrison_cleared = restored.state_hash();
+    assert_ne!(house_garrison_cleared, absorber_cleared);
+    set_should_enter_nearest_occupiable_for_test(
+        restored.substrate.entities.get_mut(occupier).unwrap(),
+        false,
+    );
+    assert_ne!(restored.state_hash(), house_garrison_cleared);
 }
 
 /// With no absorber of its house taking it, EnterBioReactor clears the
@@ -915,6 +946,10 @@ fn occupants_are_admitted_in_order_and_a_human_drops_its_seek() {
     let second = spawn(&mut sim, &rules, "E1", "YuriCountry", 14, 12);
     for id in [first, second] {
         set_should_enter_occupiable_for_test(sim.substrate.entities.get_mut(id).unwrap(), true);
+        set_should_enter_nearest_occupiable_for_test(
+            sim.substrate.entities.get_mut(id).unwrap(),
+            true,
+        );
     }
     sim.sound_events.clear();
 
@@ -935,6 +970,11 @@ fn occupants_are_admitted_in_order_and_a_human_drops_its_seek() {
         entity(&sim, second)
             .building_entry
             .should_enter_occupiable()
+    );
+    assert!(
+        entity(&sim, second)
+            .building_entry
+            .should_enter_nearest_occupiable()
     );
     let americans = sim.interner.intern("Americans");
     let cues: Vec<_> = sim
@@ -1045,6 +1085,10 @@ fn an_ejected_human_occupant_drops_its_seek() {
             sim.substrate.entities.get_mut(occupant).unwrap(),
             true,
         );
+        set_should_enter_nearest_occupiable_for_test(
+            sim.substrate.entities.get_mut(occupant).unwrap(),
+            true,
+        );
 
         let out = crate::sim::passenger::garrison_eject::sell_building_occupants(
             &mut sim,
@@ -1063,6 +1107,11 @@ fn an_ejected_human_occupant_drops_its_seek() {
         entity(&sim, ejected[1])
             .building_entry
             .should_enter_occupiable()
+    );
+    assert!(
+        entity(&sim, ejected[1])
+            .building_entry
+            .should_enter_nearest_occupiable()
     );
 }
 
@@ -1397,5 +1446,282 @@ fn a_retail_tank_bunker_admits_the_lasher_and_the_gattling_tank() {
     assert_eq!(
         entity(&sim, admitted[0].1).bunker_link,
         BunkerLink::Approaching(bunker)
+    );
+}
+
+/// Nine original4DFE00 controls through the production seek. Ordinary
+/// types supply the admission: CAGAS01 takes an occupier, GAPOWR refuses it.
+#[test]
+fn nearest_occupiable_production_matches_native_controls() {
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/team_nearest_occupiable.json",
+    ))
+    .unwrap();
+    let rules = rules();
+    for (number, row) in native.as_array().unwrap().iter().enumerate() {
+        let (mut sim, _) = arena(&rules);
+        let foot = spawn(
+            &mut sim,
+            &rules,
+            if row["infantry"] == true {
+                "E1"
+            } else {
+                "LTNK"
+            },
+            "YuriCountry",
+            4,
+            4,
+        );
+        let coord = xyz(&row["foot"]);
+        {
+            let entity = sim.substrate.entities.get_mut(foot).unwrap();
+            crate::sim::movement::ground_pose::set_position_world_xy(
+                &mut entity.position,
+                [coord[0], coord[1]],
+            );
+            entity.position.exact_z_leptons = Some(coord[2]);
+        }
+        let buildings: Vec<_> = row["bunkers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let building = spawn(
+                    &mut sim,
+                    &rules,
+                    if entry["answer"] == true {
+                        "CAGAS01"
+                    } else {
+                        "GAPOWR"
+                    },
+                    "YuriCountry",
+                    8 + 4 * index as u16,
+                    20,
+                );
+                let coord = xyz(&entry["xyz"]);
+                let entity = sim.substrate.entities.get_mut(building).unwrap();
+                //1x1 makes Location the native fixture's substituted GetCoords.
+                entity.foundation = "1x1".to_owned();
+                crate::sim::movement::ground_pose::set_position_world_xy(
+                    &mut entity.position,
+                    [coord[0], coord[1]],
+                );
+                entity.position.exact_z_leptons = Some(coord[2]);
+                building
+            })
+            .collect();
+        let now = sim.session.binary_frame;
+        sim.mission_assign_exact(
+            foot,
+            MissionId::from_raw(row["mission"].as_i64().unwrap() as i32),
+            now,
+        )
+        .unwrap();
+        let nav = row["nav"].as_u64().map(|index| buildings[index as usize]);
+        sim.substrate
+            .entities
+            .get_mut(foot)
+            .unwrap()
+            .navigation
+            .nav_com = nav.map(NavTargetRef::object);
+        set_should_enter_nearest_occupiable_for_test(
+            sim.substrate.entities.get_mut(foot).unwrap(),
+            row["latch"] == true,
+        );
+
+        let returned = whole_map_garrison_seek(&mut sim, &rules, foot);
+
+        assert_eq!(returned, row["result"] == 1, "row {number}: result");
+        let actor = entity(&sim, foot);
+        assert_eq!(
+            actor.building_entry.should_enter_nearest_occupiable(),
+            row["latch_after"] == 1,
+            "row {number}: retained691"
+        );
+        let requested = row["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|event| event[0] == "assign_destination")
+            .map(|event| buildings[event[1].as_u64().unwrap() as usize]);
+        assert_eq!(
+            actor.navigation.nav_com,
+            requested.or(nav).map(NavTargetRef::object),
+            "row {number}: destination"
+        );
+        if returned {
+            assert_eq!(
+                actor.mission.current(),
+                MissionId::from_known(MissionType::Capture),
+                "row {number}: mission"
+            );
+        }
+    }
+}
+
+#[test]
+fn script64_enters_a_neutral_civilian_building_outside_the_own_house_list() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "{RULES}\n[Countries]\n0=YuriCountry\n1=Americans\n2=Neutral\n\
+             [Neutral]\nMultiplayPassive=yes\n"
+        )),
+        &IniFile::from_str(ART),
+    )
+    .unwrap();
+    let (mut sim, grid) = arena(&rules);
+    let neutral = sim.interner.intern("Neutral");
+    let mut house = HouseState::new(neutral, 2, Some(neutral), false, 0, 10);
+    house.multiplay_passive =
+        crate::sim::house_state::resolve_multiplay_passive(Some(&rules), Some("Neutral"));
+    assert!(house.multiplay_passive, "production Country reader");
+    sim.houses.insert(neutral, house);
+    sim.session.house_order.push(neutral);
+    let own = spawn(&mut sim, &rules, "NABNKR", "YuriCountry", 24, 10);
+    let civilian = spawn(&mut sim, &rules, "CAGAS01", "Neutral", 16, 10);
+    let occupier = spawn(&mut sim, &rules, "E1", "YuriCountry", 10, 10);
+    let owner = entity(&sim, occupier).owner();
+    assert_eq!(sim.house_occupiables(owner, &rules), [own]);
+    let team = seek_team(&mut sim, 64, vec![occupier]);
+
+    sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+
+    assert!(sim.team_script_vm.team(team).unwrap().advance_pending());
+    assert_eq!(sim.team_script_vm.team_for_member(occupier), None);
+    assert_eq!(
+        entity(&sim, occupier).navigation.nav_com,
+        Some(NavTargetRef::object(civilian))
+    );
+    assert!(
+        entity(&sim, occupier)
+            .building_entry
+            .should_enter_nearest_occupiable()
+    );
+    assert!(run_until(&mut sim, &rules, &grid, 600, |sim| {
+        entity(sim, occupier).passenger_role.inside_transport_id() == Some(civilian)
+    }));
+    assert!(
+        entity(&sim, occupier)
+            .building_entry
+            .should_enter_nearest_occupiable(),
+        "a computer occupant retains691 for ejection/retry"
+    );
+}
+
+#[test]
+fn nearest_occupiable_uses_native_playfield_instead_of_navigation_rectangle() {
+    let rules = rules();
+    let (mut sim, grid) = arena(&rules);
+    let building = spawn(&mut sim, &rules, "CAGAS01", "YuriCountry", 16, 10);
+    let occupier = spawn(&mut sim, &rules, "E1", "YuriCountry", 10, 10);
+    assert!(entity(&sim, building).position.rx < grid.width());
+    assert!(whole_map_garrison_seek(&mut sim, &rules, occupier));
+    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        base: 1,
+        off_fc: 0,
+        off_100: 0,
+        off_104: 1,
+        off_108: 1,
+    });
+
+    assert!(!whole_map_garrison_seek(&mut sim, &rules, occupier));
+    assert!(
+        !entity(&sim, occupier)
+            .building_entry
+            .should_enter_nearest_occupiable()
+    );
+}
+
+#[test]
+fn guard_and_area_guard_retry_script64_without_a_scenario_draw() {
+    let rules = rules();
+    for mission in [MissionType::Guard, MissionType::AreaGuard] {
+        let (mut sim, _) = arena(&rules);
+        let building = spawn(&mut sim, &rules, "CAGAS01", "YuriCountry", 16, 10);
+        let occupier = spawn(&mut sim, &rules, "E1", "YuriCountry", 10, 10);
+        set_should_enter_nearest_occupiable_for_test(
+            sim.substrate.entities.get_mut(occupier).unwrap(),
+            true,
+        );
+        let now = sim.session.binary_frame;
+        sim.mission_assign_exact(occupier, MissionId::from_known(mission), now)
+            .unwrap();
+        let rng = sim.scenario_rng.logical_state();
+
+        sim.object_ai_visit_one(
+            occupier,
+            Some(&rules),
+            crate::sim::world::ObjectAiCtx::default(),
+        );
+
+        assert_eq!(
+            entity(&sim, occupier).navigation.nav_com,
+            Some(NavTargetRef::object(building))
+        );
+        assert_eq!(
+            entity(&sim, occupier).mission.current(),
+            MissionId::from_known(MissionType::Capture)
+        );
+        assert_eq!(sim.scenario_rng.logical_state(), rng);
+    }
+}
+
+/// The selected campaign passes, not Battle mode or hand-written tuning:
+/// RULESMD/LANGRULE, optional ALL01UMD.INI, then the map through the existing
+/// production reader, and fixed ART for the actual infantry admission.
+#[test]
+fn retail_all01_script64_conscript_admits_a_map_civilian_garrison() {
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map = crate::map::map_file::MapFile::from_bytes(
+        assets.get_ref("ALL01UMD.MAP").expect("retail ALL01"),
+    )
+    .unwrap();
+    let named = assets.resolve_ref("ALL01UMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "ALL01UMD.INI")
+            .expect("present campaign INI parses")
+            .ini
+    });
+    let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (mut rules, _, fixed_art, _) = owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    rules.bind_animation_sequences(
+        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
+    );
+    assert!(rules.object("E2").expect("retail Conscript").occupier);
+    let civilian = map
+        .entities
+        .iter()
+        .find(|entity| {
+            entity.category == crate::map::entities::EntityCategory::Structure
+                && entity.owner == "Neutral"
+                && rules
+                    .object(&entity.type_id)
+                    .is_some_and(|object| object.can_be_occupied && object.tech_level == -1)
+        })
+        .expect("ALL01 places neutral civilian garrisons");
+    let (mut sim, _) = arena(&rules);
+    let neutral = sim.interner.intern("Neutral");
+    let mut house = HouseState::new(neutral, 2, Some(neutral), false, 0, 10);
+    house.multiplay_passive =
+        crate::sim::house_state::resolve_multiplay_passive(Some(&rules), Some("Neutral"));
+    assert!(house.multiplay_passive, "retained campaign Country reader");
+    sim.houses.insert(neutral, house);
+    sim.session.house_order.push(neutral);
+    let building = spawn(&mut sim, &rules, &civilian.type_id, "Neutral", 16, 10);
+    let conscript = spawn(&mut sim, &rules, "E2", "YuriCountry", 10, 10);
+
+    assert!(whole_map_garrison_seek(&mut sim, &rules, conscript));
+    assert_eq!(
+        entity(&sim, conscript).navigation.nav_com,
+        Some(NavTargetRef::object(building))
     );
 }

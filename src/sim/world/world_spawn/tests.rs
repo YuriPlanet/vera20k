@@ -290,7 +290,16 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
         let raw_z = row["input"]["raw_z"].as_i64().unwrap() as i32;
         let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture();
         let id = sim
-            .construct_object_limbo_at_height("ENGINEER", "Americans", 15, 15, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                "ENGINEER",
+                "Americans",
+                15,
+                15,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         sim.clear_lifecycle_test_events_for_test();
         let request = RevealRequest {
@@ -335,7 +344,16 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
         assert!(mark < facing && facing < idle);
 
         let failed = sim
-            .construct_object_limbo_at_height("ENGINEER", "Americans", 16, 15, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                "ENGINEER",
+                "Americans",
+                16,
+                15,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         sim.clear_lifecycle_test_events_for_test();
         let mut refused = request;
@@ -561,7 +579,16 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
             "contact allocation leaves all 250 Scenario words unchanged"
         );
         let held = sim
-            .construct_object_limbo_at_height("BASE", "Americans", 0, 0, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                "BASE",
+                "Americans",
+                0,
+                0,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         check(sim.substrate.entities.get(held).unwrap());
         let mut authored = Simulation::with_seed(1);
@@ -589,7 +616,16 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
         let pads = expected["count"].as_u64().unwrap() as u32;
         for pad in 0..pads {
             let aircraft = authored
-                .construct_object_limbo_at_height("ORCA", "Americans", 0, 0, 0, 0, &rules)
+                .construct_object_limbo_at_height(
+                    "ORCA",
+                    "Americans",
+                    0,
+                    0,
+                    0,
+                    0,
+                    &rules,
+                    crate::sim::world::FrameEffects::default(),
+                )
                 .unwrap();
             let rng = authored.scenario_rng.logical_state();
             assert_eq!(
@@ -962,7 +998,16 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
     sim.session.current_house = Some(current);
     sim.session.game_mode_nonzero = true;
     let id = sim
-        .construct_object_limbo_at_height("E1", "Computer1", 6, 5, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "E1",
+            "Computer1",
+            6,
+            5,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     let ambush = MissionId::from_known(MissionType::Ambush);
     let hunt = MissionId::from_known(MissionType::Hunt);
@@ -1198,7 +1243,16 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
     let mut held = Simulation::with_seed(0x1a42);
     install_constructor_test_playfield(&mut held);
     let held_id = held
-        .construct_object_limbo_at_height("GALITE", "Americans", 0, 0, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "GALITE",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("construct held lamp");
     assert!(held.lighting_sources.buildings.is_empty());
     assert!(held.lighting_sources.pending.is_empty());
@@ -1463,7 +1517,16 @@ fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spe
     sim.overlay_grid = Some(overlays);
 
     let parent_id = sim
-        .construct_object_limbo_at_height("CARRIER", "Americans", 2, 2, 9, 0, &rules)
+        .construct_object_limbo_at_height(
+            "CARRIER",
+            "Americans",
+            2,
+            2,
+            9,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("constructor-complete carrier graph");
     let child_ids = sim
         .substrate
@@ -1795,7 +1858,16 @@ fn techno_constructor_spawn_manager_pool_draws_parent_then_children_and_cancels_
         .collect::<Vec<_>>();
 
     let parent_id = sim
-        .construct_object_limbo_at_height("CARRIER", "Americans", 0, 0, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "CARRIER",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("factory-held carrier constructor");
     let parent = sim
         .substrate
@@ -1842,7 +1914,16 @@ fn techno_constructor_slave_manager_pool_draws_parent_then_children_and_cancels_
         .collect::<Vec<_>>();
 
     let parent_id = sim
-        .construct_object_limbo_at_height("SMIN", "Americans", 0, 0, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "SMIN",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("factory-held slave miner constructor");
     let slave_ids = sim
         .substrate
@@ -1889,7 +1970,16 @@ fn techno_constructor_manager_pools_survive_delivery_without_reconstruction() {
         let mut sim = Simulation::with_seed(seed);
         install_constructor_test_playfield(&mut sim);
         let parent_id = sim
-            .construct_object_limbo_at_height(parent_type, "Americans", 0, 0, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                parent_type,
+                "Americans",
+                0,
+                0,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("held manager parent");
         let child_ids = if parent_type == "CARRIER" {
             sim.substrate
@@ -2295,7 +2385,16 @@ fn techno_constructor_failed_reveal_keeps_one_draw_and_reuses_identity() {
     let mut expected = SimRng::new(seed);
     let word = (expected.next_u32() & 0xFFFF) as u16;
     let stable_id = sim
-        .construct_object_limbo_at_height("MTNK", "Americans", 3, 3, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "MTNK",
+            "Americans",
+            3,
+            3,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
 
     assert!(

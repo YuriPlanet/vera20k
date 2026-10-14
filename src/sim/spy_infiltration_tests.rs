@@ -298,7 +298,7 @@ const ARENA_ART: &str = "[PLANT]\nFoundation=2x2\n[DEPOT]\nFoundation=2x2\n\
 
 fn arena_rules() -> RuleSet {
     RuleSet::from_ini_with_fixed_art_for_test(
-        &IniFile::from_str(ARENA_RULES),
+        &crate::sim::arena_fixture::clear_ground_ini(ARENA_RULES),
         &IniFile::from_str(ARENA_ART),
     )
     .unwrap()

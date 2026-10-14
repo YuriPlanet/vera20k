@@ -18,6 +18,28 @@ pub enum RadarAnimPhase {
     Opening,
     Online,
     Closing,
+    /// Native housing phase 4: open frames 25..32 for a movie.
+    MovieOpening,
+    /// Native housing phase 5: restore the ordinary radar after a movie.
+    MovieRestoring,
+}
+
+/// Native radar +14B8 prelude and mode 3/4. The app owns media resources;
+/// this owner alone decides when they may occupy the displayed radar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MovieStage {
+    Announce,
+    WaitAnnouncement,
+    WaitStreams,
+    Playback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RadarMovieCommand {
+    None,
+    Announce,
+    PrepareStreams,
+    StartPlayback,
 }
 
 /// Ordinary tactical-radar housing state (movie/jammed modes are separate).
@@ -46,9 +68,13 @@ impl RadarAnimation {
             (true, RadarAnimPhase::Offline | RadarAnimPhase::Closing) => {
                 self.phase = RadarAnimPhase::Opening
             }
-            (false, RadarAnimPhase::Online | RadarAnimPhase::Opening) => {
-                self.phase = RadarAnimPhase::Closing
-            }
+            (
+                false,
+                RadarAnimPhase::Online
+                | RadarAnimPhase::Opening
+                | RadarAnimPhase::MovieOpening
+                | RadarAnimPhase::MovieRestoring,
+            ) => self.phase = RadarAnimPhase::Closing,
             _ => {}
         }
     }
@@ -71,7 +97,9 @@ impl RadarAnimation {
         self.duration = 4;
         let old_frame = self.frame;
         match self.phase {
-            RadarAnimPhase::Opening => {
+            RadarAnimPhase::Opening
+            | RadarAnimPhase::MovieOpening
+            | RadarAnimPhase::MovieRestoring => {
                 self.frame += 1;
                 if self.frame >= 32 {
                     self.frame = 32;
@@ -98,6 +126,9 @@ pub(in crate::render) struct RadarPresentation {
     pub(in crate::render) surface: RadarSurface,
     needs_upload: bool,
     frames_rgba: Vec<Vec<u8>>,
+    movie: Option<MovieStage>,
+    pending_radar: bool,
+    movie_pause_latch: bool,
 }
 impl RadarPresentation {
     pub(in crate::render) fn new(
@@ -119,6 +150,9 @@ impl RadarPresentation {
             surface,
             needs_upload: false,
             frames_rgba,
+            movie: None,
+            pending_radar: false,
+            movie_pause_latch: false,
         })
     }
     /// Source installation is separate from animation timing (652E90).
@@ -146,6 +180,11 @@ impl RadarPresentation {
         true
     }
     pub(in crate::render) fn set_has_radar(&mut self, has_radar: bool) {
+        self.pending_radar = has_radar;
+        // SetMode656CB0 defers ordinary changes into +14B4 during modes3/4.
+        if self.movie.is_some() {
+            return;
+        }
         // 656DF0/656BE0 do not clear/dirty the native surface. A loss before
         // the next due draw must expose the last displayed map, not frame32.
         self.needs_upload |= !has_radar && self.animation.phase == RadarAnimPhase::Online;
@@ -169,6 +208,59 @@ impl RadarPresentation {
     pub(in crate::render) fn phase(&self) -> RadarAnimPhase {
         self.animation.phase
     }
+    fn admit_movie(&mut self) -> bool {
+        if self.movie.is_some() {
+            return false;
+        }
+        self.movie = Some(MovieStage::Announce);
+        // SetMode4 at656DB2 changes only mode; the housing is preserved while
+        // IncomingTransmission plays. SetMode3 below starts its transition.
+        true
+    }
+    fn movie_step(&mut self, selected_done: bool, streams_ready: bool) -> RadarMovieCommand {
+        match self.movie {
+            Some(MovieStage::Announce) => {
+                self.movie = Some(MovieStage::WaitAnnouncement);
+                RadarMovieCommand::Announce
+            }
+            Some(MovieStage::WaitAnnouncement) if selected_done => {
+                self.movie = Some(MovieStage::WaitStreams);
+                RadarMovieCommand::PrepareStreams
+            }
+            Some(MovieStage::WaitStreams) if streams_ready => {
+                self.movie = Some(MovieStage::Playback);
+                if matches!(
+                    self.animation.phase,
+                    RadarAnimPhase::Online | RadarAnimPhase::MovieRestoring
+                ) {
+                    //656D69:phase1/5 starts at25; other phases reverse/open
+                    //through the same656BE0 owner without resetting its timer.
+                    self.animation.phase = RadarAnimPhase::MovieOpening;
+                    self.animation.frame = 25;
+                } else {
+                    self.animation.phase = RadarAnimPhase::Opening;
+                }
+                RadarMovieCommand::StartPlayback
+            }
+            _ => RadarMovieCommand::None,
+        }
+    }
+    fn finish_movie(&mut self, has_next: bool) {
+        if has_next {
+            //657BEE writes phase4/frame25; no second IncomingTransmission.
+            self.animation.phase = RadarAnimPhase::MovieOpening;
+            self.animation.frame = 25;
+        } else {
+            self.movie = None;
+            self.movie_pause_latch = false;
+            if self.pending_radar {
+                self.animation.phase = RadarAnimPhase::MovieOpening;
+                self.animation.frame = 25;
+            } else {
+                self.animation.phase = RadarAnimPhase::Closing;
+            }
+        }
+    }
     /// Save the actual online content before the next availability change.
     /// Internal minimap updates continue while closed; they cannot replace this
     /// displayed backing until online again (`656EF2..6F0D`, `657578`).
@@ -180,7 +272,7 @@ impl RadarPresentation {
         solid_quads: impl Iterator<Item = SpriteInstance>,
         origin: [f32; 2],
     ) {
-        if self.animation.phase != RadarAnimPhase::Online {
+        if self.animation.phase != RadarAnimPhase::Online || self.movie.is_some() {
             return;
         }
         // Snapshot the currently displayed online draw, whose stock housing
@@ -271,7 +363,47 @@ impl RadarAnimState {
         );
     }
     pub fn is_minimap_visible(&self) -> bool {
-        self.phase() == RadarAnimPhase::Online
+        self.phase() == RadarAnimPhase::Online && self.presentation.movie.is_none()
+    }
+    ///653963->656CB0(4),6578F0: one admission/prelude authority.
+    pub fn admit_movie(&mut self) -> bool {
+        self.presentation.admit_movie()
+    }
+    pub fn movie_command(&mut self, selected_done: bool, streams_ready: bool) -> RadarMovieCommand {
+        self.presentation.movie_step(selected_done, streams_ready)
+    }
+    pub fn movie_ready_to_draw(&self) -> bool {
+        self.presentation.movie == Some(MovieStage::Playback)
+            && self.phase() == RadarAnimPhase::Online
+    }
+    pub fn movie_pause(&self) -> bool {
+        self.presentation.movie_pause_latch
+    }
+    ///657C24 compares head+4 with14BC once at actual playback, including next
+    ///head after retirement; enqueuing never acquires this pause.
+    pub fn set_movie_pause(&mut self, paused: bool) {
+        self.presentation.movie_pause_latch = paused;
+    }
+    pub fn finish_movie(&mut self, has_next: bool) {
+        self.presentation.finish_movie(has_next);
+    }
+    pub fn retire_movies(&mut self) -> bool {
+        let suspended = matches!(
+            self.presentation.movie,
+            Some(MovieStage::WaitAnnouncement | MovieStage::WaitStreams)
+        );
+        if self.presentation.movie.is_some() {
+            self.presentation.finish_movie(false);
+        }
+        self.presentation.movie_pause_latch = false;
+        suspended
+    }
+    /// Native movie copies into retained SidebarSurface. Use the stock 140x110
+    /// aperture centered in its168x110 backing. Full native origin/final-paint
+    /// driver equivalence is not established; no battlefield shader involved.
+    pub fn paint_movie(&mut self, gpu: &GpuContext, frame: &[u8], size: [u32; 2]) {
+        self.presentation.surface.paint_movie(frame, size);
+        self.upload_frame(gpu);
     }
     pub fn phase(&self) -> RadarAnimPhase {
         self.presentation.phase()
@@ -310,6 +442,59 @@ mod tests {
     use serde::Deserialize;
     fn housing() -> Vec<Vec<u8>> {
         (0..33).map(|i| [i * 5, 12, 88, 255].repeat(2)).collect()
+    }
+    /// Executed6531DB controls for native phase4/5: at100+3 buckets no
+    ///movement; at100+4,25->26 and31->32/phase1. Synthetic colors here only
+    ///exercise the owner, never certify retail shape/pixel equivalence.
+    #[test]
+    fn native_movie_housing_controls_and_pending_restore() {
+        for phase in [RadarAnimPhase::MovieOpening, RadarAnimPhase::MovieRestoring] {
+            let mut a = RadarAnimation {
+                phase,
+                frame: 25,
+                last_bucket: 100,
+                duration: 4,
+            };
+            assert!(!a.advance_draw(1_663));
+            assert_eq!(a.frame, 25);
+            assert!(a.advance_draw(1_664));
+            assert_eq!((a.frame, a.last_bucket, a.duration), (26, 104, 4));
+            a.frame = 31;
+            assert!(a.advance_draw(1_728));
+            assert_eq!((a.frame, a.phase), (32, RadarAnimPhase::Online));
+        }
+        let mut radar = RadarPresentation::new(housing(), 2, 1).unwrap();
+        radar.set_has_radar(true);
+        radar.animation.phase = RadarAnimPhase::Online;
+        radar.animation.frame = 32;
+        assert!(radar.admit_movie());
+        assert!(!radar.admit_movie());
+        assert_eq!(radar.movie_step(true, true), RadarMovieCommand::Announce);
+        assert_eq!(radar.movie_step(false, true), RadarMovieCommand::None);
+        assert_eq!(
+            radar.movie_step(true, false),
+            RadarMovieCommand::PrepareStreams
+        );
+        assert_eq!(radar.movie_step(true, false), RadarMovieCommand::None);
+        assert_eq!(
+            radar.movie_step(true, true),
+            RadarMovieCommand::StartPlayback
+        );
+        radar.set_has_radar(false);
+        assert_eq!(radar.movie, Some(MovieStage::Playback));
+        radar.movie_pause_latch = true;
+        radar.finish_movie(true);
+        assert!(
+            radar.movie_pause_latch,
+            "retiring117 keeps latch until the next head draw"
+        );
+        assert_eq!(
+            (radar.animation.phase, radar.animation.frame),
+            (RadarAnimPhase::MovieOpening, 25)
+        );
+        radar.finish_movie(false);
+        assert!(!radar.movie_pause_latch);
+        assert_eq!(radar.animation.phase, RadarAnimPhase::Closing);
     }
     fn online_snapshot(radar: &mut RadarPresentation, rgb: [u8; 3]) {
         let q = SpriteInstance {

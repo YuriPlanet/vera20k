@@ -171,7 +171,16 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
             .unwrap();
         let member = sim
             .with_object_placement_scope(|sim| {
-                sim.construct_object_limbo_at_height(typ, "Americans", 0, 0, 0, 0, &rules)
+                sim.construct_object_limbo_at_height(
+                    typ,
+                    "Americans",
+                    0,
+                    0,
+                    0,
+                    0,
+                    &rules,
+                    crate::sim::world::FrameEffects::default(),
+                )
             })
             .unwrap();
         assert!(sim.with_object_placement_scope(|sim| {
@@ -1578,6 +1587,92 @@ fn teleport_and_grounded_jumpjet_limbo_clear_the_infantrymans_sub_cell() {
             sim.substrate.raw_cell_occupation.ground_bits(3, 4),
             0,
             "{kind:?}"
+        );
+    }
+}
+
+/// Foot4DB324 calls Hover5171C0(0), whose original Head_To_Coord514D10
+/// feeds Unit744210. A moving Hover claims that head rather than Location;
+/// Stop_Moving516320 retains it, and Foot's disabled current mark cannot
+/// release it. The head remains retained while the raw claim is removed.
+#[test]
+fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_resident() {
+    use crate::sim::components::DriveCoord;
+
+    for (head, cell, deck) in [
+        (Some(DriveCoord::cell(3, 3, 0)), (3, 3), false),
+        (Some(DriveCoord::cell(3, 3, 416)), (3, 3), true),
+        (None, (2, 3), false),
+    ] {
+        let mut sim = Simulation::new();
+        install_common_raw_terrain(&mut sim, 8, 8, 0, deck.then_some(cell));
+        insert_entity(&mut sim, 1, EntityCategory::Unit);
+        sim.substrate.entities.get_mut(1).unwrap().locomotor =
+            Some(LocomotorState::for_test_kind(LocomotorKind::Hover));
+        let _ = sim.try_reveal_entity(1, common_raw_request(2, 3, 0, 128, 128));
+        let current = DriveCoord::cell(2, 3, 0);
+        sim.object_raw_receiver_at(1, current, false);
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.foot_occupation_enabled = false;
+        entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .hover_runtime_mut()
+            .unwrap()
+            .set_head(head);
+        sim.object_raw_receiver_at(1, head.unwrap_or(current), true);
+        let bits = |sim: &Simulation| {
+            if deck {
+                sim.substrate.raw_cell_occupation.deck_bits(cell.0, cell.1)
+            } else {
+                sim.substrate
+                    .raw_cell_occupation
+                    .ground_bits(cell.0, cell.1)
+            }
+        };
+        assert_eq!(bits(&sim) & 0x20, 0x20, "accepted Hover head claim");
+        let layer = if deck {
+            MovementLayer::Bridge
+        } else {
+            MovementLayer::Ground
+        };
+        assert_ne!(
+            sim.substrate
+                .cell_occupation
+                .vehicle_bits(cell.0, cell.1, layer),
+            0
+        );
+
+        let _ = sim.techno_limbo(1);
+
+        assert_eq!(bits(&sim) & 0x20, 0, "actual head must be released");
+        assert_eq!(
+            sim.substrate
+                .cell_occupation
+                .vehicle_bits(cell.0, cell.1, layer),
+            0
+        );
+        assert!(!sim.substrate.occupancy.contains_entity(2, 3, 1));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .locomotor
+                .as_ref()
+                .unwrap()
+                .step_head(),
+            head,
+            "Mark_All(0) preserves the retained head"
+        );
+        insert_entity(&mut sim, 2, EntityCategory::Unit);
+        sim.object_raw_receiver_at(2, head.unwrap_or(current), true);
+        let _ = sim.techno_limbo(1);
+        assert_eq!(
+            bits(&sim) & 0x20,
+            0x20,
+            "already-Limbo object cannot clear a new resident"
         );
     }
 }
@@ -4213,10 +4308,9 @@ fn score_stats_credit_the_killer_and_charge_the_victim_once() {
     victim.health.current = 0;
     sim.record_the_kill(
         1,
-        None,
-        Some(killer_owner),
+        crate::sim::combat::KillSource::House(Some(killer_owner)),
         crate::sim::combat::KillCallback::Terminal,
-        &rules,
+        crate::sim::world::UninitContext::with_rules(&rules),
     );
     assert_eq!(sim.houses[&victim_owner].stats.losses(), 1);
     assert_eq!(sim.houses[&killer_owner].stats.kills(), 1);
@@ -4262,10 +4356,9 @@ fn score_stats_come_from_the_kill_record_captured_at_destruction() {
     victim.health.current = 0;
     sim.record_the_kill(
         1,
-        None,
-        Some(killer_owner),
+        crate::sim::combat::KillSource::House(Some(killer_owner)),
         crate::sim::combat::KillCallback::Terminal,
-        &rules,
+        crate::sim::world::UninitContext::with_rules(&rules),
     );
     assert_eq!(sim.houses[&killer_owner].economy.score(), 200);
 
@@ -4307,10 +4400,9 @@ fn score_stats_count_a_self_inflicted_kill_but_award_no_points() {
     sim.substrate.entities.get_mut(1).unwrap().health.current = 0;
     sim.record_the_kill(
         1,
-        None,
-        Some(owner),
+        crate::sim::combat::KillSource::House(Some(owner)),
         crate::sim::combat::KillCallback::Terminal,
-        &rules,
+        crate::sim::world::UninitContext::with_rules(&rules),
     );
 
     sim.uninit(1);

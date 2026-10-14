@@ -71,6 +71,143 @@ pub struct NativeCellQuery<'a> {
     dummy: SharedCellDummy,
 }
 
+/// MapClass's shared LocalSize iterator words +11C/+120. The simulation
+/// hosts one cursor across synchronous callbacks; query/terrain clones do
+/// not own copies of its traversal. This differs from the allocated-cell
+/// iterator578350/578290 below, whose null pointer terminates the scan.
+///
+/// Original reset578850 and next578710, called by RevealZone6E11C0.
+/// Executed controls: tools/spatial_oracle/trigger_reveal_zone.json.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NativeLocalCellCursor {
+    x: i32,
+    y: i32,
+}
+
+impl NativeLocalCellCursor {
+    pub(crate) fn reset(bounds: PlayfieldBounds) -> Self {
+        Self {
+            x: bounds.off_fc.wrapping_add(bounds.off_100).wrapping_add(1),
+            y: bounds
+                .base
+                .wrapping_sub(bounds.off_fc)
+                .wrapping_add(bounds.off_100),
+        }
+    }
+
+    /// Advance before mode1 membership and return the second fixed512 cell
+    /// lookup, including the canonical Dummy on null. Bounds are current for
+    /// this synchronous next call; the caller reloads them after callbacks.
+    /// Terminal null retains both words and the last Dummy stamp.
+    pub(crate) fn next_in_query(
+        &mut self,
+        bounds: PlayfieldBounds,
+        query: &NativeCellQuery<'_>,
+    ) -> Option<NativeCellIdentity> {
+        let limit = bounds
+            .off_100
+            .wrapping_add(bounds.off_108)
+            .wrapping_mul(2)
+            .wrapping_add(bounds.base)
+            .wrapping_add(12);
+        let threshold = bounds
+            .off_fc
+            .wrapping_add(bounds.off_104)
+            .wrapping_mul(2)
+            .wrapping_sub(bounds.base)
+            .wrapping_sub(2);
+        while self.x.wrapping_add(self.y) <= limit {
+            let candidate = (self.x as i16, self.y as i16);
+            if self.x.wrapping_sub(self.y) < threshold {
+                self.x = self.x.wrapping_add(1);
+                self.y = self.y.wrapping_sub(1);
+            } else {
+                let odd = self
+                    .x
+                    .wrapping_sub(bounds.base)
+                    .wrapping_add(self.y)
+                    .wrapping_sub(1)
+                    & 1
+                    != 0;
+                let adjustment = bounds.off_104.wrapping_sub(if odd { 2 } else { 1 });
+                self.x = self.x.wrapping_sub(adjustment);
+                self.y = self.y.wrapping_add(adjustment);
+                if odd {
+                    self.y = self.y.wrapping_add(1);
+                } else {
+                    self.x = self.x.wrapping_add(1);
+                }
+            }
+            let (level, slope) = query.ground_fields(query.lookup(candidate));
+            if bounds.contains_height_aware_packed(
+                i32::from(candidate.0),
+                i32::from(candidate.1),
+                level as i8,
+                slope,
+            ) {
+                return Some(query.lookup(candidate));
+            }
+        }
+        None
+    }
+}
+
+/// Allocated Map+10C/+110/+114 traversal, separate from LocalSize+11C/+120.
+/// Original578350/578290. Null returns retain the advanced cursor; a Rust
+/// Iterator adapter may fuse after null, but nested simulation users must
+/// share these live words and must not add a native terminal flag.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NativeAllocatedCellCursor {
+    x: i32,
+    y: i32,
+    remaining: i32,
+}
+
+impl NativeAllocatedCellCursor {
+    pub(crate) fn reset(size_width: i32) -> Self {
+        Self {
+            x: 1,
+            y: size_width,
+            remaining: size_width.wrapping_sub(1),
+        }
+    }
+
+    pub(crate) fn next_in_terrain(
+        &mut self,
+        terrain: &ResolvedTerrainGrid,
+        size_width: i32,
+    ) -> Option<NativeCellIdentity> {
+        let index = self.y.wrapping_mul(512).wrapping_add(self.x);
+        let selected = (0..0x40000)
+            .contains(&index)
+            .then(|| terrain.native_fixed_cell_index((index % 512) as i16, (index / 512) as i16))
+            .flatten()
+            .map(NativeCellIdentity::Real);
+        if self.remaining != 0 {
+            self.x = self.x.wrapping_add(1);
+            self.y = self.y.wrapping_sub(1);
+            self.remaining = self.remaining.wrapping_sub(1);
+        } else {
+            (self.x, self.y) = (self.y, self.x);
+            if self
+                .x
+                .wrapping_sub(size_width)
+                .wrapping_sub(1)
+                .wrapping_add(self.y)
+                & 1
+                == 0
+            {
+                self.remaining = size_width.wrapping_sub(2);
+                self.x = self.x.wrapping_add(1);
+            } else {
+                self.remaining = size_width.wrapping_sub(1);
+                self.y = self.y.wrapping_add(1);
+            }
+        }
+        selected
+    }
+}
+
 impl<'a> NativeCellQuery<'a> {
     /// Simulation queries retain the map's one live fallback identity. The
     /// same nested query APIs also serve isolated ordinary input producers.
@@ -890,33 +1027,18 @@ impl ResolvedTerrainGrid {
         &self,
         size_width: i32,
     ) -> impl Iterator<Item = &ResolvedTerrainCell> {
-        let (mut x, mut y, mut remaining) = (1i32, size_width, size_width.wrapping_sub(1));
+        let mut cursor = NativeAllocatedCellCursor::reset(size_width);
         let mut ended = false;
         std::iter::from_fn(move || {
             if ended {
                 return None;
             }
-            let index = y.wrapping_mul(512).wrapping_add(x);
-            let cell = (0..0x40000)
-                .contains(&index)
-                .then(|| self.cell((index % 512) as u16, (index / 512) as u16))
-                .flatten();
-            if remaining != 0 {
-                x = x.wrapping_add(1);
-                y = y.wrapping_sub(1);
-                remaining = remaining.wrapping_sub(1);
-            } else {
-                (x, y) = (y, x);
-                if x.wrapping_sub(size_width).wrapping_sub(1).wrapping_add(y) & 1 == 0 {
-                    remaining = size_width.wrapping_sub(2);
-                    x = x.wrapping_add(1);
-                } else {
-                    remaining = size_width.wrapping_sub(1);
-                    y = y.wrapping_add(1);
-                }
-            }
-            ended = cell.is_none();
-            cell
+            let selected = cursor.next_in_terrain(self, size_width);
+            ended = selected.is_none();
+            selected.map(|cell| match cell {
+                NativeCellIdentity::Real(index) => &self.cells[index],
+                NativeCellIdentity::Dummy => unreachable!("allocated iterator has no Dummy"),
+            })
         })
     }
 }

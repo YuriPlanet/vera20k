@@ -156,6 +156,9 @@ pub(crate) fn drive_local_player_outcome_voice_wait(state: &mut AppState, wall_m
         .expect("finished outcome voice wait remains present")
         .kind();
     state.match_state.scenario_outcome = None;
+    //685670/685DC0 clear5BF450 before either outcome fade.
+    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(state, wall_ms);
     state.frontend.finished_game_count = state.frontend.finished_game_count.saturating_add(1);
     let elapsed_seconds = state.match_state.scenario_elapsed_clock.stop(wall_ms);
     let model = build_score_screen_model(state, elapsed_seconds);
@@ -395,7 +398,9 @@ pub(crate) fn pump_audio_service(state: &mut AppState, now_ms: u64) {
     // The process audio service remains live while the loading job holds the
     // asset-manager lease. Retained simulations still own Main on the shell;
     // only the process before its first scenario uses the frontend cursor.
-    let paused = state.match_state.paused() || state.frontend.fullscreen_movie.is_some();
+    //Full-screen5BED40 acquires its own shared movie hold synchronously.
+    //It does not also call the scenario/menu pause path684140.
+    let paused = state.match_state.presentation_paused();
     let assets = crate::app::loading::pump::audio_service_asset_manager(
         &state.process_assets,
         state.frontend.loading_session.as_ref(),
@@ -1292,6 +1297,29 @@ fn refresh_cell_lighting(state: &mut AppState) {
 fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffect]) {
     for effect in effects {
         match effect {
+            TriggerEffect::ChronoScreen { command } => {
+                crate::app::chrono_screen::apply(state, *command);
+            }
+            TriggerEffect::RadarMovie {
+                index,
+                pause_simulation,
+            } => {
+                crate::app::radar_movie::enqueue(state, *index, *pause_simulation);
+            }
+            TriggerEffect::FullscreenMovie { index } => {
+                let name = state
+                    .process_assets
+                    .native_rules()
+                    .and_then(|rules| rules.movies().name(*index))
+                    .map(str::to_owned);
+                if let Some(name) = name {
+                    crate::app::App::start_fullscreen_movie(
+                        state,
+                        &name,
+                        crate::app::frontend::fullscreen_movie::MovieReturn::RunningScenario,
+                    );
+                }
+            }
             // Consumed by the frame's existing bridge/terrain refresh.
             TriggerEffect::BridgeStateChanged => {}
             TriggerEffect::CameraAtCoord { coord, velocity } => {
@@ -1305,20 +1333,8 @@ fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffect]) {
                     minimap.remember_event_cell(*cell);
                 }
             }
-            TriggerEffect::MissionAnnouncement { text } => {
-                // gamemd routes trigger text through the message list
-                // (contract lane §4.5: the native trigger-text path is a
-                // message-list producer).
-                crate::app::input::messages::post_system_message(state, text);
-            }
             TriggerEffect::LocalizedMessage { csf_label } => {
                 crate::app::input::messages::post_trigger_message(state, csf_label);
-            }
-            TriggerEffect::MissionResult { title, detail } => {
-                state.frontend.screen = GameScreen::MissionResult {
-                    title: title.clone(),
-                    detail: detail.clone(),
-                };
             }
         }
     }

@@ -338,7 +338,10 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // Snapshot332 drops the C4 walk-up intent, whose empty value every entity's
 // fold hashed. This fixture orders no C4; route, per-frame replay and all
 // three RNG gates remain unchanged.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x38EB_6DC4_C87D_4E43;
+// Snapshot345 retires only the duplicated announcement None hash feed in
+// this no-Tag scene. The end-of-test control must reproduce the incoming pin.
+const BRIDGE_HARNESS_INCOMING_HASH: u64 = 0x38EB_6DC4_C87D_4E43;
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xA333_077C_B5E5_6DA3;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -917,6 +920,11 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         "bridge absolute RNG states changed",
     );
     let final_hash = *replayed.last().expect("at least one tick replayed");
+    super::global_parity_harness_tests::assert_announcement_feed_retirement_hash_control(
+        "bridge",
+        &rep,
+        BRIDGE_HARNESS_INCOMING_HASH,
+    );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,
         "committed bridge-harness baseline drifted. Do not paste the observed value \

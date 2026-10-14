@@ -78,7 +78,16 @@ fn bridge_damage_exact_height_runs_body_and_detaches_only_after_collapse() {
     let rules = rules();
     let mut sim = world(&rules, 9);
     let attacker = sim
-        .construct_object_limbo_at_height("MTNK", "Americans", 7, 7, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "MTNK",
+            "Americans",
+            7,
+            7,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     // The admitted scene supplies this pose after the held constructor.
     crate::sim::movement::ground_pose::put_location(
@@ -310,7 +319,16 @@ fn bridge_publication_production_nonanchor_collapse_keeps_other_overlay_and_runs
         assert!(before.cell(coord.0, coord.1).unwrap().bridge_walkable);
     }
     let tank = sim
-        .construct_object_limbo_at_height("MTNK", "Americans", 3, 4, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "MTNK",
+            "Americans",
+            3,
+            4,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     // Ground fallout selects the scene's supplied Cell member, not ctor zero.
     crate::sim::movement::ground_pose::put_location(

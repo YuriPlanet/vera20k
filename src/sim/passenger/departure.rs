@@ -159,14 +159,11 @@ fn restore_departure(
             }
         }
     }
-    if let Some(cargo) = sim
-        .substrate
-        .entities
-        .get_mut(transport_id)
-        .and_then(|transport| transport.passenger_role.cargo_mut())
-    {
-        cargo.restore_front(passenger_id, passenger_size);
-    }
+    let _ = sim.add_cargo_passenger_chain(
+        transport_id,
+        &[(passenger_id, passenger_size)],
+        UninitContext::new(Some(rules), registry).with_effects(effects),
+    );
     // Vehicle failures always re-adopt the current passenger's IFVMode. The
     // landed-aircraft compatibility path did so only before Reveal; retain that
     // distinction instead of restoring a saved override or unifying failure tails.

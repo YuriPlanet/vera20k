@@ -72,7 +72,9 @@ mod foot_path;
 #[cfg(test)]
 pub(crate) use foot_path::FindPathResult;
 pub(crate) use foot_path::FootPathOutcome;
+pub(crate) use foot_path::coord_cell;
 pub(crate) use track_fresh::{BlockingObject, ProcessMovementArgs};
+pub(crate) use drive_locomotion::drive_do_turn;
 mod foot_range_stop;
 pub(crate) use foot_range_stop::range_stop_admits;
 mod foot_speed;
@@ -82,6 +84,8 @@ pub(crate) mod infantry_entry;
 mod infantry_scatter;
 pub(crate) mod locomotor_owner;
 pub(crate) mod locomotor_ready;
+mod locomotor_turn;
+pub(crate) use locomotor_turn::locomotor_do_turn;
 pub(crate) mod motion_query;
 pub(crate) mod movement_bridge;
 mod movement_commands;
@@ -142,7 +146,6 @@ pub mod turret;
 
 pub use facing_class::FacingClass;
 
-pub(crate) use drive_locomotion::drive_do_turn;
 #[cfg(test)]
 pub(crate) use drive_locomotion::{DriveLocomotionRuntime, ShipLocomotionRuntime};
 #[cfg(test)]

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "One full RGB565 ChronoScreen draw kernel and six original Start/Process counter histories; not native game/GPU/full-scene parity.",
+  "assumptions": [
+    "Original 53BBA0 and 53C0A0, LUT trig and _ftol run under process FPCW 0x0E7F on an 8x38 fixture; source/destination pitch is 10/11 words.",
+    "Start and Process execute whole bodies for durations -1,0,1,3,90 plus duration3 with Scenario+35A2 already set. The tactical fill rectangle is supplied (0,0,6,6), not a retail viewport.",
+    "Scenario pause starts false except the explicit prior-set contrast; the retained pause byte and native phase/counter writes are recorded. Pause sink values are fixture effects, not original Scenario Pause/Resume body proof.",
+    "No original gameplay/RNG loop, DirectDraw device, capture, UI render, audio device or complete ALL01 scene is executed."
+  ],
+  "substitutions": [
+    "Existing Emu transport supplies synthetic surface dimensions, pitches, buffer Lock/Unlock and recorded DSurface constructor/copy/fill/delete sinks.",
+    "Lifecycle controls replace 53BBA0 with a recorded sink; the separate draw control executes its untouched original body and helper calls.",
+    "406E80,405BE0,406060,405C00,4060F0,7529A0,750920,7518C0,753570,753580 are recorded audio/mouse/platform sinks; 684240/684290 record and supply the fixture pause byte, 684060/684180 are recorded Scenario sinks.",
+    "4F42F0 and 4F4480 are recorded redraw sinks, including target surface, phase and A9FA94 capture guard. No renderer body is substituted in the separate native pixel kernel."
+  ],
+  "entry_points": {
+    "Start": "0x0053B460",
+    "Process": "0x0053B560",
+    "Active": "0x0053BAD0",
+    "Draw": "0x0053BBA0",
+    "RGB565_kernel": "0x0053C0A0",
+    "sin_table": "0x004CB150",
+    "cos_table": "0x004CB1A0",
+    "ftol": "0x007C5F00"
+  },
+  "replay_command": "python -m tools.superweapon_oracle --chrono-screen",
+  "payload_sha256": "e3eb9767dd9e5aa2e2fe1ef3bd96987044cd3a4c4caa92c89640922a2e98ce1a"
+}

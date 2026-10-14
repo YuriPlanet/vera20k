@@ -149,6 +149,16 @@ impl TeamScriptVm {
                         crate::map::actions::decode_waypoint_token(value)
                             .map_or(-1, |index| index as i32)
                     }),
+                    use_transport_origin: fields.read_bool("UseTransportOrigin", false),
+                    transport_waypoint: fields.read_string_with(
+                        "TransportWaypoint",
+                        0x40,
+                        -1,
+                        |_, value| {
+                            crate::map::actions::decode_waypoint_token(value)
+                                .map_or(-1, |index| index as i32)
+                        },
+                    ),
                     full: fields.read_bool("Full", false),
                     whiner: fields.read_bool("Whiner", false),
                     max_teams: fields.read_int("Max", -1),

@@ -1,4 +1,4 @@
-//! Trigger action 99 and `ObjectClass::AI`'s sound block through the
+//! Trigger actions 99/116 and `ObjectClass::AI`'s sound block through the
 //! production map reader, trigger poll and object visits. Control flow is
 //! instruction-level reading (see the module doc); these are Rust
 //! regressions, not native executions.
@@ -97,7 +97,7 @@ fn event_8_springs_on_the_first_logic_poll_and_plays_action_99_at_the_waypoint()
     poll(&mut sim, &map);
     assert!(matches!(
         sim.sound_events.as_slice(),
-        [SimSoundEvent::VocAtCoord { sound_id, coordinate }]
+        [SimSoundEvent::VocAtCoord { sound_id, coordinate, flags: 1 }]
             if sound_id == "TestAmbient" && *coordinate == WAYPOINT_COORD
     ));
     // Repeat 0: the Tag is gone, so later polls play nothing.
@@ -220,6 +220,76 @@ fn action_99_prefers_the_cell_building_over_its_terrain() {
         sim.object_custom_sounds.keys().copied().collect::<Vec<_>>(),
         [40]
     );
+}
+
+#[test]
+fn action_116_clears_the_first_building_instead_of_terrain_or_coordinate_requests() {
+    let (mut sim, map) = sim_with_trigger("116,0,0,0,0,0,0,B");
+    insert_tree(&mut sim, 41, (5, 6));
+    insert_structure(&mut sim, 40, "CAWASH18", (5, 6));
+    sim.set_custom_sound(40, Some("TestAmbient"));
+    sim.set_custom_sound(41, Some("CowAmbient"));
+    poll(&mut sim, &map);
+    assert!(matches!(
+        sim.sound_events.as_slice(),
+        [SimSoundEvent::ObjectSoundDetached { owner }] if *owner == custom_sound_owner(40)
+    ));
+    assert!(!sim.object_custom_sounds.contains_key(&40));
+    assert_eq!(
+        sim.object_custom_sounds.get(&41).map(String::as_str),
+        Some("CowAmbient")
+    );
+    // Object AI can no longer recreate +50; Terrain's independent handle survives.
+    sim.sound_events.clear();
+    sim.object_ai_sounds(40, None, FrameEffects::default());
+    assert!(sim.sound_events.is_empty());
+    sim.object_ai_sounds(41, None, FrameEffects::default());
+    assert!(matches!(sim.sound_events.as_slice(),
+        [SimSoundEvent::AnimationStarted { anim_id, .. }] if *anim_id == custom_sound_owner(41)));
+}
+
+#[test]
+fn action_116_clears_the_cell_terrain_without_a_building() {
+    let (mut sim, map) = sim_with_trigger("116,0,0,0,0,0,0,B");
+    insert_tree(&mut sim, 41, (5, 6));
+    sim.set_custom_sound(41, Some("TestAmbient"));
+    poll(&mut sim, &map);
+    assert!(matches!(
+        sim.sound_events.as_slice(),
+        [SimSoundEvent::ObjectSoundDetached { owner }] if *owner == custom_sound_owner(41)
+    ));
+    assert!(sim.object_custom_sounds.is_empty());
+}
+
+#[test]
+fn action_116_without_an_object_preserves_full_waypoint_and_request_flags() {
+    let (mut sim, map) = sim_with_trigger("116,0,0,0,0,0,0,B");
+    let before = sim.rng_state();
+    poll(&mut sim, &map);
+    assert!(matches!(
+        sim.sound_events.as_slice(),
+        [SimSoundEvent::VocStopAtCoord { coordinate, flags: 1 }]
+            if *coordinate == WAYPOINT_COORD
+    ));
+    assert_eq!(sim.rng_state(), before);
+}
+
+#[test]
+fn action_116_zero_cell_still_stops_coordinate_requests() {
+    let (mut sim, mut map) = sim_with_trigger("116,0,0,0,0,0,0,B");
+    map.waypoints.get_mut(&1).unwrap().rx = 0;
+    map.waypoints.get_mut(&1).unwrap().ry = 0;
+    sim.session.install_waypoints(&map.waypoints);
+    insert_structure(&mut sim, 40, "CAWASH18", (0, 0));
+    sim.set_custom_sound(40, Some("TestAmbient"));
+    let expected = sim.trigger_waypoint_coord(1).unwrap();
+    poll(&mut sim, &map);
+    assert!(matches!(
+        sim.sound_events.as_slice(),
+        [SimSoundEvent::VocStopAtCoord { coordinate, flags: 1 }]
+            if [coordinate.x, coordinate.y, coordinate.z] == expected
+    ));
+    assert!(sim.object_custom_sounds.contains_key(&40));
 }
 
 #[test]

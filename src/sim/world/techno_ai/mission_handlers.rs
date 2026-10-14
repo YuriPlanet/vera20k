@@ -1887,8 +1887,9 @@ pub(super) fn evaluate_foot_area_guard(
 /// garrison seek (vt+0x348, [`Simulation::foot_enter_battle_bunker`]);
 /// either answer is unread, and the handler returns the then-current
 /// mission's `ftol(Rate × 900)` (`0x005B3A00`) with no draw: Capture's,
-/// once a garrison seek has commenced it. `+0x691` (vt+0x34C) follows; no
-/// VERA code sets it (`sim::building_entry`).
+/// once a garrison seek has commenced it. `+0x691` (vt+0x34C) follows,
+/// seeking across the entire Building registry for script64's civilian
+/// garrison teams (`sim::building_entry`).
 fn foot_building_entry_head(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1901,6 +1902,8 @@ fn foot_building_entry_head(
         let _ = sim.foot_enter_bio_reactor(id, rules, ctx.overlay_registry, ctx.effects);
     } else if latches.should_enter_occupiable() {
         let _ = sim.foot_enter_battle_bunker(id, rules, ctx.overlay_registry, ctx.effects);
+    } else if latches.should_enter_nearest_occupiable() {
+        let _ = sim.foot_enter_nearest_occupiable(id, rules, ctx.overlay_registry, ctx.effects);
     } else {
         return None;
     }
@@ -1980,11 +1983,6 @@ fn foot_building_entry_head(
 ///   plants; VERA's shoots it instead. Frequency: every Guard dispatch of such
 ///   a computer-owned infantryman with a building target.
 ///   `+0xEC2` is UNCHECKED.
-/// - **the third building-entry latch.** The head
-///   ([`foot_building_entry_head`]) tests `+0x68F`, then `+0x690` (vt+0x348)
-///   and `+0x691` (vt+0x34C); no VERA code sets the last (script action 64,
-///   which no retail script uses, `sim::building_entry`), so its arm never
-///   runs.
 /// - **Tesla charging adjacency** (0x004D5116-0x004D51D2; AreaGuard4D6F44).
 ///   A secondary weapon's ElectricAssault warhead (`+0x158`)
 ///   admits an adjacent allied Overpowerable building (`+0x1575`, reader460029).

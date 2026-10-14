@@ -54,7 +54,7 @@ fn rows<'a>(golden: &'a Value, set: &str) -> &'a [Value] {
 /// cannot passive-acquire, so a cadence row's target comes only from its
 /// events, as in the oracle; `SHED` is the unarmed enemy they aim at.
 fn rules(guard_aa_rate: &str, rof: u32) -> RuleSet {
-    RuleSet::from_ini(&IniFile::from_str(&format!(
+    RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[Guard]\nRate=.030\nAARate={guard_aa_rate}\n\
          [Sticky]\nRate=.016\nAARate=.016\n\
          [Attack]\nRate=.016\nAARate=.016\n\
@@ -101,6 +101,7 @@ pub(super) fn fixture(
 ) -> (Simulation, u64, u64) {
     let mut sim = Simulation::new();
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(16));
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     let building = sim.spawn_object(kind, "Americans", 5, 5, 0, rules).unwrap();
     let target = sim
         .spawn_object("SHED", "Russians", target_cell.0, target_cell.1, 0, rules)
@@ -631,6 +632,7 @@ fn building_dispatch_cadence_matches_the_original() {
         let rules = rules(".016", input["rof"].as_u64().unwrap() as u32);
         let mut sim = Simulation::new();
         sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(16));
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
         let building = sim
             .spawn_object("DEF", "Americans", 5, 5, 0, &rules)
             .unwrap();

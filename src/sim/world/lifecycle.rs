@@ -1171,6 +1171,16 @@ impl Simulation {
                 stable_id,
                 crate::sim::house_tracking::HouseTracking::increment_factory_count,
             );
+            // Building440D1E, after IncrementFactoryCount and before +544.
+            if let Some(owner) = self
+                .substrate
+                .entities
+                .get(stable_id)
+                .filter(|entity| entity.category == EntityCategory::Structure)
+                .map(|entity| entity.owner())
+            {
+                self.request_house_tech_tree_recheck(owner);
+            }
             self.append_live_build_const(stable_id);
             self.append_house_base_building(stable_id);
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
@@ -1314,7 +1324,7 @@ impl Simulation {
                 if !self.object_placement_scope_active() {
                     //6F4A03..6F4A18: the attachment owner resolves the Tag,
                     // including an Event48-only chain's no-match traversal.
-                    self.dispatch_object_discovery(stable_id, context);
+                    self.dispatch_object_tag_event(stable_id, 4, Some(stable_id), None, context);
                 }
                 //6F4A1D reloads owner AFTER synchronous Tag actions.
                 if let Some(owner) = self
@@ -1385,12 +1395,12 @@ impl Simulation {
                 context.effects(),
             );
         }
-        //44D5ED..44D63C also writes House26C/246/1FC. The retained
+        //44D61A writes1FC after admitted shared discovery, independent of
+        //ScenarioInit; only the26C/246 notification above is init-gated.
+        self.request_house_tech_tree_recheck(owner);
+        //44D5ED..44D63C also writes House26C/246. The retained
         // built-type Event19 and90-frame notification consumers remain
         // the large separate mechanism documented in ai_base_building.
-        // Existing placement/opening owns the Super recheck; stock SOV01
-        // has no Russian Structures or Event19, and foreign GTGCAN
-        // discovery cannot grant a player Super. Do not add unread copies.
         true
     }
 
@@ -2814,6 +2824,16 @@ impl Simulation {
                 stable_id,
                 crate::sim::house_tracking::HouseTracking::recount,
             );
+            // Building445D99 requests1FC after Recount on its first Limbo.
+            if let Some(owner) = self
+                .substrate
+                .entities
+                .get(stable_id)
+                .filter(|entity| entity.category == EntityCategory::Structure)
+                .map(|entity| entity.owner())
+            {
+                self.request_house_tech_tree_recheck(owner);
+            }
             // 0x004459AE..0x004459CA (infantry) and the unit arm after it:
             // the building's self-heal counts leave its house on the same
             // first Limbo, each clamped at zero.
@@ -2859,10 +2879,10 @@ impl Simulation {
         }
         self.foot_neighbors_before_limbo(stable_id);
         // Foot4DB260 dispatches vt+0x500 on the first Limbo (0x004DB2FB,
-        // while A8E7AC is zero) before +9C(0): Infantry 0x0051DAF0, whose
-        // Walk Stop clears the moving bytes Lock leaves.
-        // RESIDUAL: a Unit's or Aircraft's +0x500 (Foot 0x004D55C0, the
-        // locomotor's Stop_Moving) is not run here.
+        // while A8E7AC is zero) before +9C(0): the same class receiver as
+        //FindPath/FireAt. Infantry51DAF0 clears Doing/Walk moving state;
+        //Unit/Aircraft4D55C0 calls the active locomotor Stop_Moving. This
+        //includes Hover/Jumpjet Script37 returns, before occupation release.
         if let Some(rules) = context.rules()
             && !self.object_placement_scope_active()
             && self
@@ -2870,15 +2890,15 @@ impl Simulation {
                 .entities
                 .get(stable_id)
                 .is_some_and(|entity| {
-                    entity.category == EntityCategory::Infantry && !entity.lifecycle.in_limbo
+                    entity.category != EntityCategory::Structure && !entity.lifecycle.in_limbo
                 })
             && let Err(cause) =
-                self.infantry_stop_driver(stable_id, rules, context.registry(), context.effects())
+                self.foot_stop_driver(stable_id, rules, context.registry(), context.effects())
         {
-            log::debug!("infantry {stable_id} Limbo Stop_Driver: {cause}");
+            log::debug!("Foot {stable_id} Limbo Stop_Driver: {cause}");
         }
         // 0x004DB324: the active locomotor's +9C(0) on the first Limbo.
-        self.locomotor_mark_all_occupation_bits_up(stable_id);
+        self.locomotor_mark_all_occupation_bits(stable_id, false);
         // The Drive instance retains head-to and handoff projections of that
         // +9C(0) release; they leave with it on the first Limbo.
         if let Some(entity) = self.substrate.entities.get_mut(stable_id)
@@ -4695,6 +4715,33 @@ impl Simulation {
             .entities
             .get(stable_id)
             .is_some_and(|entity| entity.category != EntityCategory::Structure);
+        // Unit7357D6..7357EF asks the existing House CanBuild4F7870 before
+        // leaving its Team or removing tracking. AtLimit(-1) requests the
+        // existing House+1FC tech-tree refresh; no alternate counter or
+        // production admission is introduced. Constructor-complete Full
+        // carriers can reach this scalar path without an earlier UnInit.
+        // Source: Steam gamemd3e81a617..08600, Unit destructor735780 body.
+        if (game_state as u8) != 0
+            && let Some(rules) = context.rules()
+            && let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
+                (entity.category == EntityCategory::Unit)
+                    .then(|| self.object_type(entity.type_ref(), rules))
+                    .flatten()
+                    .filter(|object| {
+                        crate::sim::production::can_build(
+                            self,
+                            rules,
+                            entity.owner(),
+                            object,
+                            false,
+                            false,
+                        ) == crate::sim::production::CanBuild::AtLimit
+                    })
+                    .map(|_| entity.owner())
+            })
+        {
+            self.request_house_tech_tree_recheck(owner);
+        }
         // Constructor-complete Unit7357F6..735809, Infantry517DF2..517E05
         // and Aircraft4140EB..4140FE leave their Team before Remove_Tracking.
         // Their gate is the low byte of GameState[A8E9A0], independently of
@@ -4743,6 +4790,24 @@ impl Simulation {
             // gamemd SHA1cdd1180e49024fbda8ad568caac2e86e.
             self.clear_all_building_anim_slots(stable_id);
             self.clear_building_damage_fire_slots(stable_id, context.rules());
+            // Building43BE47..43BEF0 rechecks existing grants when one of its
+            // actual457630/457690 providers departs. This is a destructor
+            // hold/revoke callback, not an event-time grant pass.
+            if (game_state as u8) != 0
+                && let Some(rules) = context.rules()
+                && let Some(owner) = self
+                    .substrate
+                    .entities
+                    .get(stable_id)
+                    .filter(|entity| {
+                        crate::sim::superweapon::provided_supers(self, rules, entity)
+                            .next()
+                            .is_some()
+                    })
+                    .map(|entity| entity.owner())
+            {
+                crate::sim::superweapon::update_owned_supers(self, rules, owner);
+            }
             // Active-frame Building43BEF5..43BF11 compares Health+6C with
             // the retained AI sample+544 after its slot/fire destructors.
             // A mismatch dirties power only, without publishing a sample or
@@ -4769,6 +4834,39 @@ impl Simulation {
                 stable_id,
                 crate::sim::house_tracking::HouseTracking::remove_tracking,
             );
+        }
+        // Unit73581B..73584D follows its own RemoveTracking735816 with
+        // CargoRemoveFirst473430 -> child's scalarF8, before Unit expiry
+        //735892 and the delegated Foot destructor. A8E7AC!=0 skips this
+        //loop: PlaceMembers65E5A4's final refusal still holds that scope,
+        //whereas its initial NullCell65E12B disposal does not. Ordinary
+        //UnInit already drained cargo; constructor-complete Full carriers
+        //can reach this scalar owner directly. Do not book a kill/UnInit or
+        //use FootRemoveFirst4DE710's gunner reset on this raw Cargo pop.
+        // Source: Steam gamemd3e81a617..08600, Unit destructor735780 body.
+        if (game_state as u8) != 0
+            && !self.object_placement_scope_active()
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.category == EntityCategory::Unit)
+        {
+            loop {
+                let passenger = self
+                    .substrate
+                    .entities
+                    .get_mut(stable_id)
+                    .and_then(|entity| entity.passenger_role.cargo_mut())
+                    .and_then(|cargo| cargo.unload_first())
+                    .map(|(id, _)| id);
+                let Some(passenger) = passenger else {
+                    break;
+                };
+                if self.substrate.entities.contains(passenger) {
+                    self.finalize_and_remove_common(passenger, context, game_state);
+                }
+            }
         }
         if foot {
             // Class scalar destructors dispatch removed=true independently of

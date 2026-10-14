@@ -1599,14 +1599,7 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         && target_building
         && target.passenger_role.cargo().is_some_and(|cargo| {
             crate::sim::passenger::can_dock_occupier_garrison(
-                entity,
-                target,
-                obj,
-                target_obj,
-                cargo,
-                rules,
-                &sim.houses,
-                sim.path_grid(),
+                entity, target, obj, target_obj, cargo, rules, sim,
             )
         });
     let engineer = infantry && obj.engineer;

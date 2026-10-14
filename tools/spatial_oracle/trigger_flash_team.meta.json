@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Three original TAction104/TeamType6F1F30/Team6EF5F0 controls, including the literal ALL01 Enter_Tanya40-frame operand",
+  "assumptions": [
+    "Original TeamType name factories construct two types; only their reference identities are used. No TeamType INI body or full Team/Techno/House constructors execute.",
+    "Live Team array, distinct opaque House pointers and head-first member links are explicit priors. The native loops do not read member health, alive, limbo or disguise fields.",
+    "Original Action constructor/reader executes parameter-type5, reference+30 and signed token8 value+90; null reference, empty registry and matching types across Houses are bounded.",
+    "The legacy team_creation elite_flash controls own signed countdown4CC770. This mode observes member writes only; no TeamAI, TechnoAI, game-frame schedule, rendering or complete campaign progression executes."
+  ],
+  "substitutions": [
+    "Existing ActionFixture supplies heap/CRT INI-tokenizer transport; no action dispatcher, TeamType flash, Team flash or member write is replaced."
+  ],
+  "entry_points": {
+    "action_constructor": "0x006DD000",
+    "action_read": "0x006DD5B0",
+    "action_execute": "0x006DD8B0",
+    "execute104": "0x006DF562",
+    "team_type_name_factory": "0x006F1920",
+    "team_type_flash": "0x006F1F30",
+    "team_flash": "0x006EF5F0",
+    "member_write": "0x006EF5FB"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --flash-team",
+  "payload_sha256": "c40ed4d1d8b6bc7e7590965dfa9af444eb420fd6659b5b8014f1309ae98017c5"
+}

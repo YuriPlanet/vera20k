@@ -201,7 +201,7 @@ fn building_crew_keeps_distinct_native_caller_placement_and_rng() {
     let mut sim = sim_with_houses(31);
     let owner = sim.interner.intern("Americans");
     let id = sim
-        .construct_crew_limbo(&rules, "E1", owner, (15, 15), 0)
+        .construct_crew_limbo(&rules, "E1", owner, (15, 15), 0, Default::default())
         .unwrap();
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(row["rng_before"].as_str().unwrap());
     let unlimbo = CrewUnlimbo::Place {
@@ -583,7 +583,16 @@ fn load_absorbed(sim: &mut Simulation, rules: &RuleSet, building: u64, count: us
     (0..count)
         .map(|_| {
             let id = sim
-                .construct_object_limbo_at_height("E1", "Americans", 10, 10, 0, 0, rules)
+                .construct_object_limbo_at_height(
+                    "E1",
+                    "Americans",
+                    10,
+                    10,
+                    0,
+                    0,
+                    rules,
+                    crate::sim::world::FrameEffects::default(),
+                )
                 .expect("absorbed infantry");
             sim.substrate.entities.get_mut(id).unwrap().passenger_role = PassengerRole::Inside {
                 transport_id: building,
@@ -1025,8 +1034,17 @@ fn load_passengers(
     };
     let passengers: Vec<u64> = (0..count)
         .map(|_| {
-            sim.construct_object_limbo_at_height("E1", owner, rx, ry, 0, 0, rules)
-                .expect("passenger")
+            sim.construct_object_limbo_at_height(
+                "E1",
+                owner,
+                rx,
+                ry,
+                0,
+                0,
+                rules,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .expect("passenger")
         })
         .collect();
     for &id in passengers.iter().rev() {

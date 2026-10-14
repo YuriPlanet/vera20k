@@ -77,7 +77,9 @@ pub(crate) use cell_recalc::{
     LoadCellRecalcOutcome, LoadCellRecalcState,
 };
 use cliffs::DestroyableCliffCatalog;
-pub(crate) use native_cell::CellClassProjectionView;
+pub(crate) use native_cell::{
+    CellClassProjectionView, NativeAllocatedCellCursor, NativeLocalCellCursor,
+};
 pub use native_cell::{NativeCellQuery, SharedCellDummy, SharedCellDummySnapshot};
 use recalc_catalog::BridgeRecalcCatalog;
 pub(crate) use recalc_catalog::BridgeRecalcCatalogError;

@@ -39,10 +39,28 @@ fn original_conversion_health_corpus() {
         .unwrap();
         let mut sim = Simulation::with_seed(12);
         let source = sim
-            .construct_object_limbo_at_height("SRC", "Neutral", 10, 10, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                "SRC",
+                "Neutral",
+                10,
+                10,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         let destination = sim
-            .construct_object_limbo_at_height("DST", "Neutral", 10, 10, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                "DST",
+                "Neutral",
+                10,
+                10,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         damage(&mut sim, source, value("current"));
         let captured = super::ConversionHealth::capture(
@@ -56,16 +74,18 @@ fn original_conversion_health_corpus() {
     }
 }
 
+const CONVERSION_ART: &str = "[YARD]\nFoundation=1x1\n[YAREFN]\nFoundation=1x1\n";
+
 fn rules() -> RuleSet {
     with_buildup(
-        RuleSet::from_ini(&IniFile::from_str(
+        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(
             "[VehicleTypes]\n0=MCV\n1=SMIN\n[BuildingTypes]\n0=YARD\n1=YAREFN\n[InfantryTypes]\n0=SLAV\n\
              [MCV]\nStrength=100\nSpeed=5\nDeploysInto=YARD\n\
-             [YARD]\nStrength=1000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=MCV\n\
+             [YARD]\nStrength=1000\nDeployFacing=0\nUndeploysInto=MCV\n\
              [SMIN]\nStrength=100\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\nSlavesNumber=1\n\
-             [YAREFN]\nStrength=1000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
+             [YAREFN]\nStrength=1000\nDeployFacing=0\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
              [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n[Clear]\nBuildable=yes\n",
-        ))
+        ), &IniFile::from_str(CONVERSION_ART))
         .unwrap(),
     )
 }
@@ -236,14 +256,14 @@ fn slave_conversions_reset_master_health_but_preserve_retained_slave_state() {
 
 #[test]
 fn all_four_conversion_callers_preserve_results_above_u16() {
-    let rules = with_buildup(RuleSet::from_ini(&IniFile::from_str(
+    let rules = with_buildup(RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(
         "[VehicleTypes]\n0=MCV\n1=SMIN\n[BuildingTypes]\n0=YARD\n1=YAREFN\n[InfantryTypes]\n0=SLAV\n\
          [MCV]\nStrength=100000\nSpeed=5\nDeploysInto=YARD\n\
-         [YARD]\nStrength=1000000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=MCV\n\
+         [YARD]\nStrength=1000000\nDeployFacing=0\nUndeploysInto=MCV\n\
          [SMIN]\nStrength=100000\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\nSlavesNumber=1\n\
-         [YAREFN]\nStrength=1000000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
+         [YAREFN]\nStrength=1000000\nDeployFacing=0\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
          [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n[Clear]\nBuildable=yes\n"
-    )).unwrap());
+    ), &IniFile::from_str(CONVERSION_ART)).unwrap());
     let mut sim = Simulation::with_seed(123);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let source = sim

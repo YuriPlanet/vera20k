@@ -1321,7 +1321,7 @@ impl Simulation {
             return;
         }
         let key = (cell.0 as u16, cell.1 as u16);
-        match self.find_blocking_object(key) {
+        match self.find_blocking_object(key, MovementLayer::Ground) {
             Some(BlockingObject::Entity(blocker)) => {
                 let (Some(actor), Some(target)) = (
                     self.substrate.entities.get(id),
@@ -1374,9 +1374,15 @@ impl Simulation {
 
     /// `CellClass::Find_Blocking_Object 0x47C5A0` with the zero point: the
     /// first Aircraft of the ground list, else `Find_Nearest_Object`
-    /// (0x47C3D0), else the first terrain object. Callers: the track
-    /// admission (`0x004B3BE9`) and `Coordinate_Attack` (`0x006EB56F`).
-    pub(crate) fn find_blocking_object(&self, cell: (u16, u16)) -> Option<BlockingObject> {
+    /// (0x47C3D0), else the first terrain object. Track admission4B3BE9 and
+    /// CoordinateAttack6EB56F use ground; Script1 at6EC9F7 selects the
+    /// bridge list from Cell140 bit100, as Script59 at6ECAC7 also does.
+    /// This is their shared native owner.
+    pub(crate) fn find_blocking_object(
+        &self,
+        cell: (u16, u16),
+        layer: MovementLayer,
+    ) -> Option<BlockingObject> {
         let list = self.substrate.occupancy.get(cell.0, cell.1);
         if let Some(aircraft) = list
             .into_iter()
@@ -1390,7 +1396,7 @@ impl Simulation {
         {
             return Some(BlockingObject::Entity(aircraft.entity_id));
         }
-        let nearest = self.nearest_cell_object(cell, MovementLayer::Ground, None);
+        let nearest = self.nearest_cell_object(cell, layer, None);
         if let Some(object) = nearest {
             return Some(BlockingObject::Entity(object));
         }

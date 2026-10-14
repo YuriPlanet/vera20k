@@ -358,8 +358,16 @@ pub(super) fn place_unit_crate(
     let owner_name = sim.interner.resolve(owner).to_owned();
     let level =
         u8::try_from(center.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS).unwrap_or(0);
-    let Some(id) = sim.spawn_object_limbo_at_height(type_id, &owner_name, rx, ry, 0, level, rules)
-    else {
+    let Some(id) = sim.construct_object_limbo_at_height(
+        type_id,
+        &owner_name,
+        rx,
+        ry,
+        0,
+        level,
+        rules,
+        frame_effects,
+    ) else {
         return UnitCrateOutcome::NoObject;
     };
     if sim

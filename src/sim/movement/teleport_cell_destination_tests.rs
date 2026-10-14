@@ -146,7 +146,16 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
     assert_eq!(row["human_input"]["player_control_byte"], 0);
     assert_eq!(row["human_input"]["original_predicate_al"], 1);
     let id = sim
-        .construct_object_limbo_at_height("CLEG", "Americans", 10, 10, 0, 0, rules)
+        .construct_object_limbo_at_height(
+            "CLEG",
+            "Americans",
+            10,
+            10,
+            0,
+            0,
+            rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     let actor = sim.substrate.entities.get_mut(id).unwrap();
     assert_eq!(actor.category, EntityCategory::Infantry);
@@ -229,7 +238,16 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
     }
     if let Some(transport) = input.get("transport") {
         let target = sim
-            .construct_object_limbo_at_height("FV", "Americans", 12, 10, 0, 0, rules)
+            .construct_object_limbo_at_height(
+                "FV",
+                "Americans",
+                12,
+                10,
+                0,
+                0,
+                rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         let supplied = coord(&transport["coords"]);
         let vehicle = sim.substrate.entities.get_mut(target).unwrap();
@@ -614,7 +632,16 @@ fn full_transport_arrival_replays_original_warp_in_refusal_tail() {
             other => panic!("{name}: missing transport {other:?}"),
         };
         let occupant = sim
-            .construct_object_limbo_at_height("E1", "Americans", 12, 10, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                "E1",
+                "Americans",
+                12,
+                10,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         sim.substrate
             .entities

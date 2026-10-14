@@ -6,6 +6,16 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
 
+/// Explicit rules prior for a synthetic clear-ground component scene.
+/// Native LandType defaults are not buildable; an arena intended to host
+/// ordinary buildings must supply the retail Clear `Buildable=yes` input.
+/// Merge the scene last so its deliberate overrides still take precedence.
+pub(crate) fn clear_ground_ini(source: &str) -> crate::rules::ini_parser::IniFile {
+    let mut ini = crate::rules::ini_parser::IniFile::from_str("[Clear]\nBuildable=yes\n");
+    ini.merge(&crate::rules::ini_parser::IniFile::from_str(source));
+    ini
+}
+
 /// The arena's playfield, wide enough to hold every arena cell (and the shared
 /// dummy just past its edge).
 pub(crate) const OPEN_PLAYFIELD: crate::sim::cell_rect::PlayfieldBounds =
@@ -92,7 +102,12 @@ fn clear_ground(size: u16) -> crate::map::resolved_terrain::ResolvedTerrainGrid 
 /// fixture already installed are kept, including a zone grid built before a
 /// later terrain change; rebuild zones after editing cells.
 pub(crate) fn supply_native_map(sim: &mut Simulation) {
-    let terrain = sim.resolved_terrain.get_or_insert_with(|| clear_ground(64));
+    if sim.resolved_terrain.is_none() {
+        // A newly supplied map also owns its saved real CellClass values.
+        // Keep already installed terrain and deliberate native priors intact.
+        sim.install_resolved_terrain_for_new_map(clear_ground(64));
+    }
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
     let (width, height) = (terrain.width(), terrain.height());
     let grid = PathGrid::from_resolved_terrain(terrain);
     let size = (i32::from(width), i32::from(height));

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "16 original1/59 HasOccurred predicates and8 original Foot4D8978..4D8A14 arrival-slice controls. Excludes full PerCell, original Tag action bodies, line/zone loops and Fly reachability.",
+  "assumptions": [
+    "Predicate controls reuse the same minimal original House/actor/TEvent-reader fixture as power controls, including duplicate Country identity and null incoming House.",
+    "Arrival controls supply original-layout Infantry actor, copied vtable and Cell storage, flags and initial Location. Original virtual GetMapCoords41BEA0 executes.",
+    "Map5657A0 is a supplied selected-Cell callout; Tag6E53A0 is a recorded sink. Named callbacks mutate Cell attachment, actor Location or alive; only original caller caching/argument rereads are demonstrated.",
+    "The slice begins after range stop and ends before MCV53/54 or Map24/25/26. Native timers/RNG, prefix producers, world load and overall mission progression do not execute."
+  ],
+  "substitutions": [
+    "Existing FlagsFixture transport. Explicit recorded Map pointer and Tag callback sinks; no original GetMapCoords getter or selected caller instruction is replaced."
+  ],
+  "entry_points": {
+    "has_occurred": "0x0071E940",
+    "entered_special": "0x0071F1BD",
+    "foot_cell_tag_slice": "0x004D8978",
+    "map_coords": "0x0041BEA0",
+    "map_callout": "0x005657A0",
+    "tag_callout": "0x006E53A0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --entered-cell-events",
+  "payload_sha256": "3947faa9a6216743356ed9f3f633c660c26c18cc2b0dd6e8b3c928b0d62d72eb"
+}

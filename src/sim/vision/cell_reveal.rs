@@ -1,4 +1,4 @@
-//! MapCell4A9CA0, RevealCell4AA050 and Tactical6D8700 edge-cache authority.
+//! MapCell4A9890/4A9CA0, RevealCell4AA050 and Tactical6D8700 cache authority.
 //! Counters and ground knowledge stay with OwnerVisibility. MapCell4A9CA0
 //! updates these derived cache bytes only for the cell it visits, leaving its
 //! neighbors stale; RevealCell4AA050 also rewrites its neighbors' ground
@@ -54,6 +54,49 @@ pub(crate) struct MapCellNotification {
 }
 
 impl OwnerVisibility {
+    /// Map577C90's per-cell receiver577D1F..577D47, unlike577AB0's
+    /// counter overwrite. Reuse the unique Cell487690 leave arithmetic and
+    /// clear knowledge/cache bits only when the resulting counter is>=0.
+    /// Gap counts, edge-frame bytes and pending20 survive the flag clear.
+    pub(super) fn store_reshrouded_map_cell(&mut self, cell: (u16, u16)) {
+        let Some(index) = self.index(cell.0, cell.1) else {
+            return;
+        };
+        let state = &mut self.shroud_knowledge[index];
+        state.leave();
+        if state.counter >= 0 {
+            state.open = false;
+            state.transient_visible = false;
+            self.ground_flags[index] &= !(GROUND_VISIBLE | GROUND_OPEN);
+            self.map_cell_edge_cache[index].initialized = false;
+            self.map_cell_edge_cache[index].fog_open = false;
+        }
+        self.publish_knowledge(index);
+    }
+
+    /// Original bulk577D90/577AB0 stores, including Cell12C bits18 and
+    /// Cell140 bits3. These writers leave edge-frame bytes and pending20
+    /// unchanged; their next4A9890 receiver reads the same cache authority.
+    pub(super) fn store_bulk_map_cell(&mut self, cell: (u16, u16), reset: bool) {
+        let Some(index) = self.index(cell.0, cell.1) else {
+            return;
+        };
+        let state = &mut self.shroud_knowledge[index];
+        state.counter = i32::from(reset);
+        state.gap_counter = 0;
+        state.open = !reset;
+        let ground = &mut self.ground_flags[index];
+        if reset {
+            *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
+        } else {
+            *ground |= GROUND_VISIBLE | GROUND_OPEN;
+        }
+        let cache = &mut self.map_cell_edge_cache[index];
+        cache.initialized = !reset;
+        cache.fog_open = !reset;
+        self.publish_knowledge(index);
+    }
+
     fn visibility_cell(
         &self,
         cell: (u16, u16),
@@ -133,6 +176,71 @@ impl OwnerVisibility {
 }
 
 impl FogState {
+    /// Original Display4A9890, via Map653810/Execute16. Unlike4A9CA0 it
+    /// does not touch sight/gap counters; unlike4AA050 it initializes both
+    /// ground and fog edge channels. Fresh and changed are distinct: the
+    /// receiver5865F0 runs only on changed, with the original fresh argument.
+    /// Original leaf/frontier execution: tools/spatial_oracle/
+    /// trigger_forced_map.{json,meta.json}, Steam3e81a617. Its active caller
+    /// is Execute16 at6DE3A8 through Map653810.
+    /// The unrepresented Cell140 bit40 is cleared natively; no represented
+    /// counter/pending20 substitutes for that bit. First initialization's
+    /// FogOfWar486BF0 cleanup remains the existing fogged-object residual;
+    /// the selected ALL01 Scenario has that flag clear.
+    pub(crate) fn reveal_forced_map_cell(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> Option<MapCellNotification> {
+        let vis = self
+            .by_owner
+            .entry(viewer)
+            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
+        let key = vis.visibility_cell(cell, native_cells);
+        let (ground, old) = vis.map_cell_parts(key);
+        let fresh = !(old.initialized && ground & GROUND_VISIBLE != 0);
+        let (state, ground, cache) = vis.map_cell_parts_mut(key);
+        cache.initialized = true;
+        *ground |= GROUND_VISIBLE;
+        state.open = true;
+        if let VisibilityCell::Real(index) = key {
+            vis.publish_knowledge(index);
+        }
+        let ground = self.map_cell_edge_frame(viewer, cell, false, native_cells);
+        let vis = self.by_owner.get_mut(&viewer).unwrap();
+        let (_, flags, cache) = vis.map_cell_parts_mut(key);
+        cache.frames[0] = ground;
+        if ground == -1 {
+            *flags |= GROUND_OPEN;
+        }
+        let fog = self.map_cell_edge_frame(viewer, cell, true, native_cells);
+        let vis = self.by_owner.get_mut(&viewer).unwrap();
+        let (_, _, cache) = vis.map_cell_parts_mut(key);
+        cache.frames[1] = fog;
+        if fog == -1 {
+            cache.fog_open = true;
+        }
+        //4A9981..4A9C48 interleaves the two channels for each neighbor.
+        // The guarded recursive +90 arms cannot occur: a neighbor without
+        // its eligible or open bit returns-2 in6D8700, not another frame.
+        for neighbor in cell_neighbors(cell) {
+            self.propagate_map_cell_edge(viewer, neighbor, false, native_cells);
+            self.propagate_map_cell_edge(viewer, neighbor, true, native_cells);
+        }
+        if !fresh && old.frames == [ground, fog] {
+            return None;
+        }
+        let cell = match (key, native_cells) {
+            (VisibilityCell::Dummy, Some(cells)) => {
+                let coord = cells.coord(NativeCellIdentity::Dummy);
+                (coord.0 as u16, coord.1 as u16)
+            }
+            _ => cell,
+        };
+        Some(MapCellNotification { cell, fresh })
+    }
+
     /// Original MapCell4A9CA0..4A9DC9, with ordinary final0/1 counter leaves.
     /// Emit only when4A9D94 calls CellChangeNotify; fresh is its separate
     /// new-knowledge argument, independently of cache-change admission.
@@ -314,24 +422,7 @@ impl FogState {
             *ground |= GROUND_OPEN;
         }
         for neighbor in cell_neighbors(cell) {
-            let key = self.by_owner[&viewer].visibility_cell(neighbor, native_cells);
-            if self.by_owner[&viewer].map_cell_parts(key).0 & GROUND_OPEN != 0 {
-                continue;
-            }
-            let frame = self.map_cell_edge_frame(viewer, neighbor, false, native_cells);
-            let vis = self.by_owner.get_mut(&viewer).unwrap();
-            let (_, ground, cache) = vis.map_cell_parts_mut(key);
-            if frame == -1 {
-                *ground |= GROUND_OPEN;
-                for next in cell_neighbors(neighbor) {
-                    let key = self.by_owner[&viewer].visibility_cell(next, native_cells);
-                    let frame = self.map_cell_edge_frame(viewer, next, false, native_cells);
-                    let vis = self.by_owner.get_mut(&viewer).unwrap();
-                    vis.map_cell_parts_mut(key).2.frames[0] = frame;
-                }
-            } else if frame >= 0 {
-                cache.frames[0] = frame;
-            }
+            self.propagate_map_cell_edge(viewer, neighbor, false, native_cells);
         }
         if !changed {
             return None;
@@ -344,6 +435,47 @@ impl FogState {
             _ => cell,
         };
         Some(MapCellNotification { cell, fresh })
+    }
+
+    /// Shared neighbor-channel responsibility in4A9890 and4AA050. It
+    /// preserves native delta order and updates adjacent frames only when
+    /// this neighbor becomes fully open; counters and notification remain
+    /// with the calling entry. Tactical redraw is presentation-owned.
+    fn propagate_map_cell_edge(
+        &mut self,
+        viewer: InternedId,
+        neighbor: (u16, u16),
+        fog_channel: bool,
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) {
+        let key = self.by_owner[&viewer].visibility_cell(neighbor, native_cells);
+        let (ground, cache) = self.by_owner[&viewer].map_cell_parts(key);
+        if if fog_channel {
+            cache.fog_open
+        } else {
+            ground & GROUND_OPEN != 0
+        } {
+            return;
+        }
+        let frame = self.map_cell_edge_frame(viewer, neighbor, fog_channel, native_cells);
+        let vis = self.by_owner.get_mut(&viewer).unwrap();
+        let (_, ground, cache) = vis.map_cell_parts_mut(key);
+        let channel = usize::from(fog_channel);
+        if frame == -1 {
+            if fog_channel {
+                cache.fog_open = true;
+            } else {
+                *ground |= GROUND_OPEN;
+            }
+            for next in cell_neighbors(neighbor) {
+                let key = self.by_owner[&viewer].visibility_cell(next, native_cells);
+                let frame = self.map_cell_edge_frame(viewer, next, fog_channel, native_cells);
+                let vis = self.by_owner.get_mut(&viewer).unwrap();
+                vis.map_cell_parts_mut(key).2.frames[channel] = frame;
+            }
+        } else if frame >= 0 {
+            cache.frames[channel] = frame;
+        }
     }
 
     pub(super) fn is_dummy_ground_unshrouded(&self, viewer: InternedId) -> bool {

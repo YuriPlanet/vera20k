@@ -17,21 +17,15 @@ pub(super) enum RotationResult {
 ///
 /// A vehicle holds position while its hull turns: gamemd's Drive/Ship Process
 /// returns through its tail while `FacingClass::Is_Rotating` answers true on
-/// the body (`0x004B0788`), whoever started the turn. `desired` is a turn this
-/// visit issues first — the fresh arm's `Do_Turn` (`0x004B343B`), one
-/// `FacingClass::Set` at the body's constructor rate (duration
-/// `abs(delta) / rate` native frames; a non-positive rate is instant). Infantry
-/// are excluded by the caller.
+/// the body (`0x004B0788`), whoever started the turn. The fresh arm issues
+/// Do_Turn through the shared locomotor slot owner before this query.
+/// Infantry are excluded by the caller.
 ///
 /// Takes individual fields to avoid borrow conflicts with `entity.movement_target`.
 pub(super) fn handle_vehicle_rotation(
-    body_facing: &mut super::facing_class::FacingClass,
-    desired: Option<u16>,
+    body_facing: &super::facing_class::FacingClass,
     native_frame: u32,
 ) -> RotationResult {
-    if let Some(desired) = desired {
-        body_facing.set(desired, native_frame);
-    }
     if !body_facing.is_rotating(native_frame) {
         return RotationResult::ReadyToMove;
     }

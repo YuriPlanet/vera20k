@@ -815,11 +815,11 @@ const DRIVE_DESTINATION_BRAKE_FLOOR: SimFixed = SimFixed::lit("0.3");
 const SINKING_BRAKE_FLOOR: SimFixed = SimFixed::lit("0.1");
 const CRUSH_SLOWDOWN_CAP: SimFixed = SimFixed::lit("0.2");
 
-/// `DriveLocomotionClass::Do_Turn @ 0x004B0EF0` (ILocomotion +0x4C): one
-/// `FacingClass::Set @ 0x004C9220` on the owner's PrimaryFacing (+0x388).
-/// Re-issuing the destination the facing already holds keeps its running
-/// timer (tools/mcv_deploy_oracle.json turns). The hull then animates from the
-/// frame-anchored `body_facing`.
+/// Drive4B0EF0, Ship6A05C0, Hover516370 and Teleport7192C0 have identical
+/// ILocomotion+4C bodies: Set4C9220 on the owner's PrimaryFacing+388.
+/// The active-slot adapter calls this same delegate; Drive Process also
+/// calls its concrete owner directly. A repeated destination retains its
+/// running timer (tools/mcv_deploy_oracle.json turns).
 pub(crate) fn drive_do_turn(entity: &mut GameEntity, desired: u16, frame: u32) {
     entity.body_facing.set(desired, frame);
 }

@@ -8,7 +8,7 @@ fn infantry_terminal_held_factory_restore_waits_for_release_before_retiring() {
     use crate::sim::production::{
         ProductionCategory, dispatch_production_changes_for_tests, enqueue_by_type,
     };
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
         "[Countries]\n0=Americans\n[InfantryTypes]\n0=E1\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n0=BARR\n\
          [E1]\nStrength=100\nSpeed=4\nCost=200\nTechLevel=1\nOwner=Americans\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
          [BARR]\nOwner=Americans\nStrength=1000\nFoundation=1x1\nFactory=InfantryType\nExitCoord=256,0,0\n",

@@ -163,7 +163,16 @@ fn cargo(sim: &Simulation, plane: u64) -> Vec<u64> {
 fn plane_at(sim: &mut Simulation, rules: &RuleSet, at: (u16, u16), passengers: u32) -> u64 {
     let id = sim
         .with_object_placement_scope(|sim| {
-            sim.construct_object_limbo_at_height("PDPLANE", "Americans", 0, 0, 0, 0, rules)
+            sim.construct_object_limbo_at_height(
+                "PDPLANE",
+                "Americans",
+                0,
+                0,
+                0,
+                0,
+                rules,
+                crate::sim::world::FrameEffects::default(),
+            )
         })
         .unwrap();
     sim.substrate
@@ -184,7 +193,15 @@ fn plane_at(sim: &mut Simulation, rules: &RuleSet, at: (u16, u16), passengers: u
         )
     })
     .unwrap();
-    board_passengers(sim, rules, id, "Americans", "E1", passengers);
+    board_passengers(
+        sim,
+        rules,
+        id,
+        "Americans",
+        "E1",
+        passengers,
+        Default::default(),
+    );
     sim.substrate
         .entities
         .get_mut(id)

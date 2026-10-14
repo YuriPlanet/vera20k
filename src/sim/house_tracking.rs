@@ -641,6 +641,22 @@ impl HouseTracking {
         self.buildings
     }
 
+    /// TEvent9 / DestroyedUnitsAll (`71F12F..71F187`, Steam
+    /// `3e81a617..08600`) reads the two CounterClass totals independently.
+    /// Aircraft and tracked/limbo units do not participate; a negative total
+    /// is accepted rather than canceling a positive total of the other class.
+    /// Source: tools/spatial_oracle/tag_lifecycle.py --destroyed-house-events.
+    pub(crate) fn units_destroyed(&self) -> bool {
+        self.active_units() <= 0 && self.active_infantry() <= 0
+    }
+
+    /// TEvent11 / DestroyedAll (`71F189..71F1B1`) additionally tests the
+    /// tracked Building scalar +2F0. It remains positive after a building's
+    /// Limbo until its actual destructor removes tracking.
+    pub(crate) fn all_destroyed(&self) -> bool {
+        self.buildings <= 0 && self.units_destroyed()
+    }
+
     /// The normal game's test (`0x004F8F21..0x004F8F77`): alive while
     /// `+0x2F0` plus the on-map totals and the on-map count of `[AI]
     /// BuildRefinery=`'s third type is not zero.

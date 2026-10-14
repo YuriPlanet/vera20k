@@ -552,7 +552,6 @@ pub(crate) fn sell_complete(
         id,
         UninitContext::new(Some(rules), registry).with_effects(frame_effects),
     );
-    crate::sim::superweapon::refresh_super_weapons_for_owner(sim, rules, owner);
     false
 }
 

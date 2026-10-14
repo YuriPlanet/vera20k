@@ -92,7 +92,8 @@ fn rules_for(row: &Value) -> RuleSet {
     for (index, sw) in supers.iter().enumerate() {
         ini += &format!("[SW{index}]\nType={:?}\n", KINDS[int(&sw["kind"]) as usize]);
     }
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(&ini)).expect("fixture rules");
+    let mut rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&ini))
+        .expect("fixture rules");
     for (index, sw) in supers.iter().enumerate() {
         let name = format!("SW{index}");
         rules

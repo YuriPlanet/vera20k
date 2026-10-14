@@ -4,6 +4,135 @@ use crate::util::fixed_math::SimFixed;
 use serde_json::Value;
 
 #[test]
+fn cheer_matches_original_admission_and_shared_do_action_clock() {
+    use crate::sim::mission::state::MissionTestFixture;
+    use crate::sim::mission::{MissionDispatchTimer, MissionId};
+    use crate::sim::world::FrameEffects;
+
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_cheer.json",
+    ))
+    .unwrap();
+    for row in corpus.as_array().unwrap() {
+        let input = &row["input"];
+        let count = input["counts"]
+            .as_array()
+            .and_then(|counts| counts.first())
+            .map_or(6, |record| record[1].as_i64().unwrap());
+        let art = IniFile::from_str(&format!(
+            "[ENGINEER]\nSequence=CheerSequence\n[CheerSequence]\n\
+             Ready=100,6,6\nIdle1=100,6,6\nIdle2=100,6,6\n\
+             Die1=100,6,6\nCheer=100,{count},6\n"
+        ));
+        let (mut sim, mut rules, _) =
+            crate::sim::world::entry_test_fixture::fixture_with_rules_and_fixed_art("", &art);
+        // The original control supplies Type+E3C's signed action bank. ART
+        // metadata alone does not bind that bank, as the app loader does.
+        rules.bind_animation_sequences(
+            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
+        );
+        assert_eq!(
+            i64::from(
+                rules
+                    .animation_sequence("ENGINEER")
+                    .unwrap()
+                    .infantry_action(32)
+                    .unwrap()
+                    .frames_per_facing,
+            ),
+            count,
+            "{input}: supplied native Cheer count"
+        );
+        let owner = sim.interner.intern("Americans");
+        sim.houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 10),
+        );
+        sim.session.binary_frame = 100;
+        // infantry_deploy_action leaves GameOptions+A8EB60 at the loaded
+        // image's zero prior; Cheer normalizes its action-table delay there.
+        sim.session.game_options.game_speed = 0;
+        let id = sim
+            .construct_object_limbo_at_height(
+                "ENGINEER",
+                "Americans",
+                10,
+                10,
+                0,
+                0,
+                &rules,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        actor.lifecycle.object_alive = input["alive"].as_i64().unwrap_or(1) != 0;
+        actor.lifecycle.in_limbo = input["limbo"].as_i64().unwrap_or(0) != 0;
+        actor.health.current = 100;
+        actor.mission.apply_test_fixture(MissionTestFixture {
+            current: MissionId::from_raw(input["mission"].as_i64().unwrap() as i32),
+            queued: MissionId::from_raw(input["queued"].as_i64().unwrap_or(-1) as i32),
+            suspended: MissionId::NONE,
+            movement_bypass_latch: 0,
+            handler_state: 0,
+            mission_start_frame: 0,
+            ai_counter: 0,
+            dispatch_timer: MissionDispatchTimer::at_frame(0),
+        });
+        actor
+            .mission_leaf
+            .set_infantry_doing_verified(input["doing"].as_i64().unwrap() as i32)
+            .unwrap();
+        actor.install_native_stage_fixture(crate::sim::stage::StageClass::from_native_fixture(
+            7,
+            0,
+            crate::sim::timer::CdTimer::from_raw(17, 91),
+            92,
+            1,
+        ));
+        let before_rng = sim.rng_state();
+        sim.infantry_cheer(
+            id,
+            input["bypass_admission"].as_bool().unwrap_or(false),
+            &rules,
+            FrameEffects::default(),
+        );
+        let actor = sim.substrate.entities.get(id).unwrap();
+        let after = &row["after"];
+        assert_eq!(
+            doing(&sim, id),
+            after["doing"].as_i64().unwrap() as i32,
+            "{input}"
+        );
+        assert_eq!(
+            actor.native_stage().value(),
+            after["frame"].as_i64().unwrap() as i32,
+            "{input}"
+        );
+        assert_eq!(
+            [
+                actor.native_stage().timer().start_frame(),
+                actor.native_stage().timer().duration(),
+                actor.native_stage().rate()
+            ],
+            [
+                // The native packet omits +104 and projects +100/+108/+10C/+110:
+                // start, duration, rate, increment (not contiguous timer memory).
+                after["stage"][0].as_i64().unwrap() as i32,
+                after["stage"][1].as_i64().unwrap() as i32,
+                after["stage"][2].as_i64().unwrap() as i32,
+            ],
+            "{input}: shared native clock"
+        );
+        assert_eq!(
+            sim.rng_state(),
+            before_rng,
+            "{input}: no random first-frame request"
+        );
+        assert_eq!(row["rng_before"], row["rng_after"], "{input}: original RNG");
+    }
+}
+
+#[test]
 fn do_action_refuses_unchanged_and_uninterruptible_actions() {
     // Oracle astar_null rows: Doing 0 with request 0 leaves frame/timer alone.
     assert!(!do_action_admits(0, 0, false));
@@ -67,7 +196,16 @@ fn rocketeer(input: &Value) -> (Simulation, RuleSet, u64) {
         "WALKJET"
     };
     let id = sim
-        .construct_object_limbo_at_height(type_id, "Americans", 10, 10, 64, 0, &rules)
+        .construct_object_limbo_at_height(
+            type_id,
+            "Americans",
+            10,
+            10,
+            64,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("rocketeer");
     let height = input["height"].as_i64().unwrap_or(500) as i32;
     let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -339,7 +477,16 @@ fn walk_consumer(input: &Value) -> (Simulation, RuleSet, u64) {
         crate::sim::house_state::HouseState::new(house, 0, None, true, 0, 10),
     );
     let id = sim
-        .construct_object_limbo_at_height("E1", "Americans", 10, 10, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "E1",
+            "Americans",
+            10,
+            10,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("infantryman");
     let entity = sim.substrate.entities.get_mut(id).unwrap();
     entity.lifecycle.in_limbo = false;
@@ -488,7 +635,16 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
             crate::sim::house_state::HouseState::new(house, 0, None, true, 0, 10),
         );
         let id = sim
-            .construct_object_limbo_at_height("CLEG", "Americans", 10, 10, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                "CLEG",
+                "Americans",
+                10,
+                10,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
         actor.lifecycle.in_limbo = false;

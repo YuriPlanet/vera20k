@@ -4,6 +4,14 @@
 //! Map577F30 (RevealEntireMap) shares the House240 latch.
 use super::{FogState, InternedId, OwnerVisibility, SightAdmission, gap_footprint};
 
+/// The three native bulk writers have different counter semantics.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MapTransition {
+    Reveal,
+    ResetShroud,
+    Reshroud,
+}
+
 impl FogState {
     /// House+240, the existing Map reveal/gap authority. The separately
     /// stored House+241 map-clear byte does not decide reveal admission.
@@ -65,7 +73,11 @@ impl FogState {
         self.transition_whole_map_with_gap_reentry(
             owner,
             cells,
-            reset,
+            if reset {
+                MapTransition::ResetShroud
+            } else {
+                MapTransition::Reveal
+            },
             old_spy_sat_active,
             source_ids,
             None,
@@ -79,12 +91,13 @@ impl FogState {
         &mut self,
         owner: InternedId,
         cells: Vec<(u16, u16)>,
-        reset: bool,
+        transition: MapTransition,
         old_spy_sat_active: bool,
         source_ids: &std::collections::BTreeSet<u64>,
         gap_reentry: Option<&[super::GapGeneratorSource]>,
         alternates: &std::collections::BTreeMap<u64, SightAdmission>,
     ) {
+        let reset = transition != MapTransition::Reveal;
         if self.width == 0
             || self.height == 0
             || (!reset && self.whole_map_revealed_owners.contains(&owner))
@@ -144,15 +157,11 @@ impl FogState {
         {
             let vis = self.by_owner.get_mut(&owner).unwrap();
             for (x, y) in cells {
-                let Some(index) = vis.index(x, y) else {
-                    continue;
-                };
-                let state = &mut vis.shroud_knowledge[index];
-                state.counter = if reset { 1 } else { 0 };
-                state.gap_counter = 0;
-                state.open = !reset;
-                // Both original bulk stores preserve Cell140 pending20.
-                vis.publish_knowledge(index);
+                if transition == MapTransition::Reshroud {
+                    vis.store_reshrouded_map_cell((x, y));
+                } else {
+                    vis.store_bulk_map_cell((x, y), reset);
+                }
             }
         }
         //4ADCD0 repeats registration order, ordinary sight then gap. Stable IDs

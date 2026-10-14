@@ -1,0 +1,1116 @@
+[
+  {
+    "calls": [
+      "0065C780",
+      "0065C780",
+      "00413D20",
+      "0065C780",
+      "00414310",
+      "0041B870",
+      "0041B870",
+      "004733A0",
+      "0041B870"
+    ],
+    "case_kind": "droppod_transport",
+    "created_ids": [
+      207,
+      208,
+      209
+    ],
+    "creation_depth": 0,
+    "id_after": 209,
+    "id_before": 206,
+    "input": {
+      "droppod": true,
+      "edge": 0,
+      "entries": [
+        [
+          "E1",
+          2
+        ]
+      ],
+      "name": "Droppod transport control",
+      "origin": [
+        87,
+        50
+      ],
+      "transport_origin": [
+        86,
+        49
+      ],
+      "transport_waypoint": 5,
+      "transport_waypoint_letters": "F",
+      "use_transport_origin": true
+    },
+    "member_limbo": [
+      true,
+      true
+    ],
+    "members": [
+      208,
+      207
+    ],
+    "plane": {
+      "cargo": [
+        208,
+        207
+      ],
+      "limbo": false,
+      "mission": 26,
+      "mission_only": true,
+      "native_id": 209,
+      "nav_present": false,
+      "payload_latch": true,
+      "queued": -1,
+      "target_cell": [
+        87,
+        50
+      ],
+      "team_present": false,
+      "xyz": [
+        22144,
+        12672,
+        1916
+      ]
+    },
+    "plane_art_inputs": {
+      "file": "ARTMD.INI",
+      "inputs": {
+        "FALC": {
+          "AltCameo": "FALCUICO",
+          "Cameo": "FALCICON",
+          "Remapable": "yes",
+          "Voxel": "yes"
+        },
+        "PDPLANE": {
+          "Cameo": "OBMBICON",
+          "DisableShadowCache": "yes",
+          "DisableVoxelCache": "yes",
+          "PrimaryFireFLH": "0,32,0",
+          "Voxel": "yes"
+        }
+      },
+      "lines": [
+        {
+          "key": "Voxel",
+          "line": 746,
+          "section": "FALC",
+          "value": "yes"
+        },
+        {
+          "key": "Remapable",
+          "line": 747,
+          "section": "FALC",
+          "value": "yes"
+        },
+        {
+          "key": "Cameo",
+          "line": 748,
+          "section": "FALC",
+          "value": "FALCICON"
+        },
+        {
+          "key": "AltCameo",
+          "line": 749,
+          "section": "FALC",
+          "value": "FALCUICO"
+        },
+        {
+          "key": "Cameo",
+          "line": 1105,
+          "section": "PDPLANE",
+          "value": "OBMBICON"
+        },
+        {
+          "key": "Voxel",
+          "line": 1106,
+          "section": "PDPLANE",
+          "value": "yes"
+        },
+        {
+          "key": "PrimaryFireFLH",
+          "line": 1107,
+          "section": "PDPLANE",
+          "value": "0,32,0"
+        },
+        {
+          "key": "DisableVoxelCache",
+          "line": 1108,
+          "section": "PDPLANE",
+          "value": "yes"
+        },
+        {
+          "key": "DisableShadowCache",
+          "line": 1109,
+          "section": "PDPLANE",
+          "value": "yes"
+        }
+      ],
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    },
+    "plane_rules_reads": [
+      {
+        "file": "RULESMD.INI",
+        "flight_level": -1,
+        "inputs": {
+          "PDPLANE": {
+            "Ammo": "100",
+            "Armor": "light",
+            "CanPassiveAquire": "no",
+            "CanRetaliate": "no",
+            "Category": "AirLift",
+            "CrashingSound": "PDPlaneDie",
+            "Crewed": "yes",
+            "DamageParticleSystems": "SparkSys,SmallGreySSys",
+            "Explosion": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60",
+            "ImmuneToPsionics": "yes",
+            "ImpactLandSound": "GenAircraftCrash",
+            "Landable": "no",
+            "LeadershipRating": "10",
+            "Locomotor": "{4A582746-9839-11d1-B709-00A024DDAFD1}",
+            "MaxDebris": "2",
+            "MoveSound": "PDPlaneMoveLoop",
+            "MoveToShroud": "yes",
+            "MovementZone": "Fly",
+            "Name": "Cargo Plane",
+            "Owner": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry",
+            "PitchAngle": "0",
+            "Points": "30",
+            "Primary": "ParaDropWeapon",
+            "ROT": "2",
+            "RadarInvisible": "no",
+            "Selectable": "no",
+            "Sight": "0",
+            "Spawned": "yes",
+            "Speed": "15",
+            "Strength": "400",
+            "TechLevel": "-1",
+            "ThreatPosed": "0",
+            "UIName": "Name:PDPLANE"
+          }
+        },
+        "lines": [
+          {
+            "key": "UIName",
+            "line": 11537,
+            "section": "PDPLANE",
+            "value": "Name:PDPLANE"
+          },
+          {
+            "key": "Name",
+            "line": 11538,
+            "section": "PDPLANE",
+            "value": "Cargo Plane"
+          },
+          {
+            "key": "Strength",
+            "line": 11539,
+            "section": "PDPLANE",
+            "value": "400"
+          },
+          {
+            "key": "Category",
+            "line": 11540,
+            "section": "PDPLANE",
+            "value": "AirLift"
+          },
+          {
+            "key": "Armor",
+            "line": 11541,
+            "section": "PDPLANE",
+            "value": "light"
+          },
+          {
+            "key": "TechLevel",
+            "line": 11542,
+            "section": "PDPLANE",
+            "value": "-1"
+          },
+          {
+            "key": "Primary",
+            "line": 11543,
+            "section": "PDPLANE",
+            "value": "ParaDropWeapon"
+          },
+          {
+            "key": "Spawned",
+            "line": 11544,
+            "section": "PDPLANE",
+            "value": "yes"
+          },
+          {
+            "key": "LeadershipRating",
+            "line": 11545,
+            "section": "PDPLANE",
+            "value": "10"
+          },
+          {
+            "key": "Selectable",
+            "line": 11546,
+            "section": "PDPLANE",
+            "value": "no"
+          },
+          {
+            "key": "RadarInvisible",
+            "line": 11547,
+            "section": "PDPLANE",
+            "value": "no"
+          },
+          {
+            "key": "Sight",
+            "line": 11548,
+            "section": "PDPLANE",
+            "value": "0"
+          },
+          {
+            "key": "Landable",
+            "line": 11549,
+            "section": "PDPLANE",
+            "value": "no"
+          },
+          {
+            "key": "MoveToShroud",
+            "line": 11550,
+            "section": "PDPLANE",
+            "value": "yes"
+          },
+          {
+            "key": "PitchAngle",
+            "line": 11551,
+            "section": "PDPLANE",
+            "value": "0"
+          },
+          {
+            "key": "Speed",
+            "line": 11552,
+            "section": "PDPLANE",
+            "value": "15"
+          },
+          {
+            "key": "Owner",
+            "line": 11553,
+            "section": "PDPLANE",
+            "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "Points",
+            "line": 11554,
+            "section": "PDPLANE",
+            "value": "30"
+          },
+          {
+            "key": "ROT",
+            "line": 11555,
+            "section": "PDPLANE",
+            "value": "2"
+          },
+          {
+            "key": "Crewed",
+            "line": 11556,
+            "section": "PDPLANE",
+            "value": "yes"
+          },
+          {
+            "key": "Ammo",
+            "line": 11557,
+            "section": "PDPLANE",
+            "value": "100"
+          },
+          {
+            "key": "Explosion",
+            "line": 11558,
+            "section": "PDPLANE",
+            "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60"
+          },
+          {
+            "key": "MaxDebris",
+            "line": 11559,
+            "section": "PDPLANE",
+            "value": "2"
+          },
+          {
+            "key": "Locomotor",
+            "line": 11560,
+            "section": "PDPLANE",
+            "value": "{4A582746-9839-11d1-B709-00A024DDAFD1}"
+          },
+          {
+            "key": "MovementZone",
+            "line": 11561,
+            "section": "PDPLANE",
+            "value": "Fly"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 11562,
+            "section": "PDPLANE",
+            "value": "0"
+          },
+          {
+            "key": "DamageParticleSystems",
+            "line": 11563,
+            "section": "PDPLANE",
+            "value": "SparkSys,SmallGreySSys"
+          },
+          {
+            "key": "ImmuneToPsionics",
+            "line": 11564,
+            "section": "PDPLANE",
+            "value": "yes"
+          },
+          {
+            "key": "CanPassiveAquire",
+            "line": 11565,
+            "section": "PDPLANE",
+            "value": "no"
+          },
+          {
+            "key": "CanRetaliate",
+            "line": 11566,
+            "section": "PDPLANE",
+            "value": "no"
+          },
+          {
+            "key": "MoveSound",
+            "line": 11567,
+            "section": "PDPLANE",
+            "value": "PDPlaneMoveLoop"
+          },
+          {
+            "key": "CrashingSound",
+            "line": 11569,
+            "section": "PDPLANE",
+            "value": "PDPlaneDie"
+          },
+          {
+            "key": "ImpactLandSound",
+            "line": 11570,
+            "section": "PDPLANE",
+            "value": "GenAircraftCrash"
+          }
+        ],
+        "locomotor": "4627584a3998d111b70900a024ddafd1",
+        "reader_al": 1,
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+        "speed_type": 4
+      },
+      {
+        "file": "MPBattleMD.ini",
+        "flight_level": -1,
+        "inputs": {},
+        "lines": [],
+        "locomotor": "4627584a3998d111b70900a024ddafd1",
+        "reader_al": 0,
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+        "speed_type": 4
+      },
+      {
+        "file": "XMP03T4.MAP",
+        "flight_level": -1,
+        "inputs": {},
+        "lines": [],
+        "locomotor": "4627584a3998d111b70900a024ddafd1",
+        "reader_al": 0,
+        "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e",
+        "speed_type": 4
+      }
+    ],
+    "recent_cell": [
+      87,
+      50
+    ],
+    "recent_counter": 1,
+    "returned": 1,
+    "rng_after": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "00000000080000006f000000f36c464956552b6a25e089903bdbef9c77fbc7066d414a5f0e1aaef49425673dddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "rng_before": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "00000000050000006c000000f36c464956552b6a25e089903bdbef9c77fbc7069cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "windows_character_formats": [
+      {
+        "arguments": [
+          70
+        ],
+        "call": "00763635",
+        "format": "%c",
+        "iat": "007E14B0",
+        "output": "F",
+        "returned": 1
+      }
+    ]
+  },
+  {
+    "calls": [
+      "0065C780",
+      "0065C780",
+      "00413D20",
+      "0065C780",
+      "004AA440",
+      "0065C7E0",
+      "00414310",
+      "0041B870",
+      "0041B870",
+      "004733A0",
+      "0041B870"
+    ],
+    "case_kind": "droppod_transport",
+    "created_ids": [
+      207,
+      208,
+      209
+    ],
+    "creation_depth": 0,
+    "id_after": 209,
+    "id_before": 206,
+    "input": {
+      "droppod": true,
+      "edge": 0,
+      "entries": [
+        [
+          "E1",
+          2
+        ]
+      ],
+      "name": "Droppod transport control",
+      "origin": [
+        87,
+        50
+      ],
+      "transport_origin": [
+        86,
+        49
+      ],
+      "transport_waypoint": 5,
+      "transport_waypoint_letters": "F",
+      "use_transport_origin": false
+    },
+    "member_limbo": [
+      true,
+      true
+    ],
+    "members": [
+      208,
+      207
+    ],
+    "plane": {
+      "cargo": [
+        208,
+        207
+      ],
+      "limbo": false,
+      "mission": 26,
+      "mission_only": true,
+      "native_id": 209,
+      "nav_present": false,
+      "payload_latch": true,
+      "queued": -1,
+      "target_cell": [
+        87,
+        50
+      ],
+      "team_present": false,
+      "xyz": [
+        6528,
+        15488,
+        1500
+      ]
+    },
+    "plane_art_inputs": {
+      "file": "ARTMD.INI",
+      "inputs": {
+        "FALC": {
+          "AltCameo": "FALCUICO",
+          "Cameo": "FALCICON",
+          "Remapable": "yes",
+          "Voxel": "yes"
+        },
+        "PDPLANE": {
+          "Cameo": "OBMBICON",
+          "DisableShadowCache": "yes",
+          "DisableVoxelCache": "yes",
+          "PrimaryFireFLH": "0,32,0",
+          "Voxel": "yes"
+        }
+      },
+      "lines": [
+        {
+          "key": "Voxel",
+          "line": 746,
+          "section": "FALC",
+          "value": "yes"
+        },
+        {
+          "key": "Remapable",
+          "line": 747,
+          "section": "FALC",
+          "value": "yes"
+        },
+        {
+          "key": "Cameo",
+          "line": 748,
+          "section": "FALC",
+          "value": "FALCICON"
+        },
+        {
+          "key": "AltCameo",
+          "line": 749,
+          "section": "FALC",
+          "value": "FALCUICO"
+        },
+        {
+          "key": "Cameo",
+          "line": 1105,
+          "section": "PDPLANE",
+          "value": "OBMBICON"
+        },
+        {
+          "key": "Voxel",
+          "line": 1106,
+          "section": "PDPLANE",
+          "value": "yes"
+        },
+        {
+          "key": "PrimaryFireFLH",
+          "line": 1107,
+          "section": "PDPLANE",
+          "value": "0,32,0"
+        },
+        {
+          "key": "DisableVoxelCache",
+          "line": 1108,
+          "section": "PDPLANE",
+          "value": "yes"
+        },
+        {
+          "key": "DisableShadowCache",
+          "line": 1109,
+          "section": "PDPLANE",
+          "value": "yes"
+        }
+      ],
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    },
+    "plane_rules_reads": [
+      {
+        "file": "RULESMD.INI",
+        "flight_level": -1,
+        "inputs": {
+          "PDPLANE": {
+            "Ammo": "100",
+            "Armor": "light",
+            "CanPassiveAquire": "no",
+            "CanRetaliate": "no",
+            "Category": "AirLift",
+            "CrashingSound": "PDPlaneDie",
+            "Crewed": "yes",
+            "DamageParticleSystems": "SparkSys,SmallGreySSys",
+            "Explosion": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60",
+            "ImmuneToPsionics": "yes",
+            "ImpactLandSound": "GenAircraftCrash",
+            "Landable": "no",
+            "LeadershipRating": "10",
+            "Locomotor": "{4A582746-9839-11d1-B709-00A024DDAFD1}",
+            "MaxDebris": "2",
+            "MoveSound": "PDPlaneMoveLoop",
+            "MoveToShroud": "yes",
+            "MovementZone": "Fly",
+            "Name": "Cargo Plane",
+            "Owner": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry",
+            "PitchAngle": "0",
+            "Points": "30",
+            "Primary": "ParaDropWeapon",
+            "ROT": "2",
+            "RadarInvisible": "no",
+            "Selectable": "no",
+            "Sight": "0",
+            "Spawned": "yes",
+            "Speed": "15",
+            "Strength": "400",
+            "TechLevel": "-1",
+            "ThreatPosed": "0",
+            "UIName": "Name:PDPLANE"
+          }
+        },
+        "lines": [
+          {
+            "key": "UIName",
+            "line": 11537,
+            "section": "PDPLANE",
+            "value": "Name:PDPLANE"
+          },
+          {
+            "key": "Name",
+            "line": 11538,
+            "section": "PDPLANE",
+            "value": "Cargo Plane"
+          },
+          {
+            "key": "Strength",
+            "line": 11539,
+            "section": "PDPLANE",
+            "value": "400"
+          },
+          {
+            "key": "Category",
+            "line": 11540,
+            "section": "PDPLANE",
+            "value": "AirLift"
+          },
+          {
+            "key": "Armor",
+            "line": 11541,
+            "section": "PDPLANE",
+            "value": "light"
+          },
+          {
+            "key": "TechLevel",
+            "line": 11542,
+            "section": "PDPLANE",
+            "value": "-1"
+          },
+          {
+            "key": "Primary",
+            "line": 11543,
+            "section": "PDPLANE",
+            "value": "ParaDropWeapon"
+          },
+          {
+            "key": "Spawned",
+            "line": 11544,
+            "section": "PDPLANE",
+            "value": "yes"
+          },
+          {
+            "key": "LeadershipRating",
+            "line": 11545,
+            "section": "PDPLANE",
+            "value": "10"
+          },
+          {
+            "key": "Selectable",
+            "line": 11546,
+            "section": "PDPLANE",
+            "value": "no"
+          },
+          {
+            "key": "RadarInvisible",
+            "line": 11547,
+            "section": "PDPLANE",
+            "value": "no"
+          },
+          {
+            "key": "Sight",
+            "line": 11548,
+            "section": "PDPLANE",
+            "value": "0"
+          },
+          {
+            "key": "Landable",
+            "line": 11549,
+            "section": "PDPLANE",
+            "value": "no"
+          },
+          {
+            "key": "MoveToShroud",
+            "line": 11550,
+            "section": "PDPLANE",
+            "value": "yes"
+          },
+          {
+            "key": "PitchAngle",
+            "line": 11551,
+            "section": "PDPLANE",
+            "value": "0"
+          },
+          {
+            "key": "Speed",
+            "line": 11552,
+            "section": "PDPLANE",
+            "value": "15"
+          },
+          {
+            "key": "Owner",
+            "line": 11553,
+            "section": "PDPLANE",
+            "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "Points",
+            "line": 11554,
+            "section": "PDPLANE",
+            "value": "30"
+          },
+          {
+            "key": "ROT",
+            "line": 11555,
+            "section": "PDPLANE",
+            "value": "2"
+          },
+          {
+            "key": "Crewed",
+            "line": 11556,
+            "section": "PDPLANE",
+            "value": "yes"
+          },
+          {
+            "key": "Ammo",
+            "line": 11557,
+            "section": "PDPLANE",
+            "value": "100"
+          },
+          {
+            "key": "Explosion",
+            "line": 11558,
+            "section": "PDPLANE",
+            "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60"
+          },
+          {
+            "key": "MaxDebris",
+            "line": 11559,
+            "section": "PDPLANE",
+            "value": "2"
+          },
+          {
+            "key": "Locomotor",
+            "line": 11560,
+            "section": "PDPLANE",
+            "value": "{4A582746-9839-11d1-B709-00A024DDAFD1}"
+          },
+          {
+            "key": "MovementZone",
+            "line": 11561,
+            "section": "PDPLANE",
+            "value": "Fly"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 11562,
+            "section": "PDPLANE",
+            "value": "0"
+          },
+          {
+            "key": "DamageParticleSystems",
+            "line": 11563,
+            "section": "PDPLANE",
+            "value": "SparkSys,SmallGreySSys"
+          },
+          {
+            "key": "ImmuneToPsionics",
+            "line": 11564,
+            "section": "PDPLANE",
+            "value": "yes"
+          },
+          {
+            "key": "CanPassiveAquire",
+            "line": 11565,
+            "section": "PDPLANE",
+            "value": "no"
+          },
+          {
+            "key": "CanRetaliate",
+            "line": 11566,
+            "section": "PDPLANE",
+            "value": "no"
+          },
+          {
+            "key": "MoveSound",
+            "line": 11567,
+            "section": "PDPLANE",
+            "value": "PDPlaneMoveLoop"
+          },
+          {
+            "key": "CrashingSound",
+            "line": 11569,
+            "section": "PDPLANE",
+            "value": "PDPlaneDie"
+          },
+          {
+            "key": "ImpactLandSound",
+            "line": 11570,
+            "section": "PDPLANE",
+            "value": "GenAircraftCrash"
+          }
+        ],
+        "locomotor": "4627584a3998d111b70900a024ddafd1",
+        "reader_al": 1,
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+        "speed_type": 4
+      },
+      {
+        "file": "MPBattleMD.ini",
+        "flight_level": -1,
+        "inputs": {},
+        "lines": [],
+        "locomotor": "4627584a3998d111b70900a024ddafd1",
+        "reader_al": 0,
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+        "speed_type": 4
+      },
+      {
+        "file": "XMP03T4.MAP",
+        "flight_level": -1,
+        "inputs": {},
+        "lines": [],
+        "locomotor": "4627584a3998d111b70900a024ddafd1",
+        "reader_al": 0,
+        "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e",
+        "speed_type": 4
+      }
+    ],
+    "recent_cell": [
+      87,
+      50
+    ],
+    "recent_counter": 1,
+    "returned": 1,
+    "rng_after": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "000000000900000070000000f36c464956552b6a25e089903bdbef9c77fbc7066d414a5f0e1aaef49425673d116a50ca761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "rng_before": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "00000000050000006c000000f36c464956552b6a25e089903bdbef9c77fbc7069cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "windows_character_formats": [
+      {
+        "arguments": [
+          70
+        ],
+        "call": "00763635",
+        "format": "%c",
+        "iat": "007E14B0",
+        "output": "F",
+        "returned": 1
+      }
+    ]
+  },
+  {
+    "after": {
+      "letters": "EN",
+      "transport_waypoint": 143,
+      "use_transport_origin": true
+    },
+    "before": {
+      "letters": "",
+      "transport_waypoint": -1,
+      "use_transport_origin": false
+    },
+    "case_kind": "transport_input",
+    "fields": {
+      "TransportWaypoint": "EN",
+      "UseTransportOrigin": "yes"
+    },
+    "rng_after": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "00000000050000006c000000f36c464956552b6a25e089903bdbef9c77fbc7069cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "rng_before": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "00000000050000006c000000f36c464956552b6a25e089903bdbef9c77fbc7069cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "windows_character_formats": [
+      {
+        "arguments": [
+          69,
+          78
+        ],
+        "call": "00763671",
+        "format": "%c%c",
+        "iat": "007E14B0",
+        "output": "EN",
+        "returned": 2
+      }
+    ]
+  },
+  {
+    "after": {
+      "letters": "EN",
+      "transport_waypoint": 143,
+      "use_transport_origin": true
+    },
+    "before": {
+      "letters": "EN",
+      "transport_waypoint": 143,
+      "use_transport_origin": true
+    },
+    "case_kind": "transport_input",
+    "fields": {},
+    "rng_after": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "00000000050000006c000000f36c464956552b6a25e089903bdbef9c77fbc7069cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "rng_before": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "00000000050000006c000000f36c464956552b6a25e089903bdbef9c77fbc7069cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "windows_character_formats": [
+      {
+        "arguments": [
+          69,
+          78
+        ],
+        "call": "00763671",
+        "format": "%c%c",
+        "iat": "007E14B0",
+        "output": "EN",
+        "returned": 2
+      },
+      {
+        "arguments": [
+          69,
+          78
+        ],
+        "call": "00763671",
+        "format": "%c%c",
+        "iat": "007E14B0",
+        "output": "EN",
+        "returned": 2
+      },
+      {
+        "arguments": [
+          69,
+          78
+        ],
+        "call": "00763671",
+        "format": "%c%c",
+        "iat": "007E14B0",
+        "output": "EN",
+        "returned": 2
+      }
+    ]
+  },
+  {
+    "after": {
+      "letters": "EN",
+      "transport_waypoint": 143,
+      "use_transport_origin": true
+    },
+    "before": {
+      "letters": "EN",
+      "transport_waypoint": 143,
+      "use_transport_origin": true
+    },
+    "case_kind": "transport_input",
+    "fields": {
+      "UseTransportOrigin": "junk"
+    },
+    "rng_after": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "00000000050000006c000000f36c464956552b6a25e089903bdbef9c77fbc7069cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "rng_before": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "00000000050000006c000000f36c464956552b6a25e089903bdbef9c77fbc7069cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "windows_character_formats": [
+      {
+        "arguments": [
+          69,
+          78
+        ],
+        "call": "00763671",
+        "format": "%c%c",
+        "iat": "007E14B0",
+        "output": "EN",
+        "returned": 2
+      },
+      {
+        "arguments": [
+          69,
+          78
+        ],
+        "call": "00763671",
+        "format": "%c%c",
+        "iat": "007E14B0",
+        "output": "EN",
+        "returned": 2
+      },
+      {
+        "arguments": [
+          69,
+          78
+        ],
+        "call": "00763671",
+        "format": "%c%c",
+        "iat": "007E14B0",
+        "output": "EN",
+        "returned": 2
+      }
+    ]
+  },
+  {
+    "after": {
+      "letters": "CI",
+      "transport_waypoint": 86,
+      "use_transport_origin": false
+    },
+    "before": {
+      "letters": "EN",
+      "transport_waypoint": 143,
+      "use_transport_origin": true
+    },
+    "case_kind": "transport_input",
+    "fields": {
+      "TransportWaypoint": "CI",
+      "UseTransportOrigin": "no"
+    },
+    "rng_after": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "00000000050000006c000000f36c464956552b6a25e089903bdbef9c77fbc7069cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "rng_before": {
+      "main": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "mapgen": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "scenario": "00000000050000006c000000f36c464956552b6a25e089903bdbef9c77fbc7069cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7"
+    },
+    "windows_character_formats": [
+      {
+        "arguments": [
+          69,
+          78
+        ],
+        "call": "00763671",
+        "format": "%c%c",
+        "iat": "007E14B0",
+        "output": "EN",
+        "returned": 2
+      },
+      {
+        "arguments": [
+          69,
+          78
+        ],
+        "call": "00763671",
+        "format": "%c%c",
+        "iat": "007E14B0",
+        "output": "EN",
+        "returned": 2
+      },
+      {
+        "arguments": [
+          67,
+          73
+        ],
+        "call": "00763671",
+        "format": "%c%c",
+        "iat": "007E14B0",
+        "output": "CI",
+        "returned": 2
+      }
+    ]
+  }
+]

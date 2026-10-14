@@ -162,6 +162,11 @@ impl Simulation {
                 })
         });
 
+        // ReadScenario684ACE completes684C30 before684C05..684C1B captures
+        // each House's initial Technos. Saved-world restore never enters this
+        // fresh-only owner and therefore retains, rather than recaptures, them.
+        self.retain_initial_house_technos();
+
         ScenarioPostMapOutput {
             navigation_published,
             crates,

@@ -211,3 +211,140 @@ fn gsi_04_11_smudge_dirty_flush_publishes_tactical_then_radar_per_cell() {
     assert_eq!(sim.radar_terrain_dirty_generation, 4);
     assert!(sim.smudge_grid.as_mut().unwrap().drain_dirty().is_empty());
 }
+
+/// Whole native Execute118/588AC0 controls pin footprint decoding, first-null
+/// traversal and identity-only writes. This replays the conditional supplied
+/// map/type fields, not complete retail mission or rendered-output parity.
+#[test]
+fn action118_matches_original_smudge_fields_dummy_and_first_null_controls() {
+    use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+    use serde_json::Value;
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/smudge_clear_all.json",
+    ))
+    .unwrap();
+    assert_eq!(corpus["kind"], "bounded-original-clear-all-smudges");
+    let mut ini = "[SmudgeTypes]\n".to_string();
+    for (index, row) in corpus["supplied_types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        ini.push_str(&format!("{index}={}\n", row["name"].as_str().unwrap()));
+    }
+    for row in corpus["supplied_types"].as_array().unwrap() {
+        ini.push_str(&format!(
+            "[{}]\nWidth={}\nHeight={}\n",
+            row["name"].as_str().unwrap(),
+            row["width"],
+            row["height"],
+        ));
+    }
+    let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+    let pair = |value: &Value| {
+        (
+            value[0].as_i64().unwrap() as u16,
+            value[1].as_i64().unwrap() as u16,
+        )
+    };
+    for row in corpus["rows"].as_array().unwrap() {
+        let mut sim = Simulation::with_seed(19);
+        let mut terrain = test_grid(10, 10, test_flat_cell);
+        let allocated: Vec<_> = row["cells_after"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|cell| pair(&cell["cell"]))
+            .collect();
+        // These are the actual original-constructed cell pointer slots. Clear
+        // never changes allocation; the partial row stops at its first null.
+        terrain.test_set_native_allocated_cells(&allocated);
+        let before = &corpus["dummy_coord_before"];
+        terrain.shared_cell_dummy().stamp_coord(
+            before[0].as_i64().unwrap() as i32,
+            before[1].as_i64().unwrap() as i32,
+        );
+        if let Some(identity) = row["input"]["dummy"]["smudge"].as_i64() {
+            terrain.shared_cell_dummy().write_smudge_identity_data(
+                identity as i32,
+                row["input"]["dummy"]["smudge_data"].as_u64().unwrap() as u8,
+            );
+        }
+        let mut grid = SmudgeGrid::new(10, 10);
+        for input in row["input"]["cells"].as_array().unwrap() {
+            grid.test_force_set(
+                input["x"].as_u64().unwrap() as u16,
+                input["y"].as_u64().unwrap() as u16,
+                SmudgeCell {
+                    type_id: Some(input["smudge"].as_u64().unwrap() as u16),
+                    // This cache is not native authority. Intentionally stale
+                    // metadata must not replace the retained data-byte decode.
+                    footprint_origin: Some((9, 9)),
+                    frame_offset: input["smudge_data"].as_u64().unwrap() as u8,
+                },
+            );
+        }
+        let _ = grid.drain_dirty();
+        sim.smudge_grid = Some(grid);
+        sim.install_resolved_terrain_for_new_map(terrain);
+        sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+            theater: "TEMPERATE".into(),
+            fill: "Clear".into(),
+            level: 0,
+            width: 6,
+            height: 4,
+            local_left: 0,
+            local_top: 0,
+            local_width: 6,
+            local_height: 4,
+        });
+        let rng_before = sim.scenario_rng.native_state_hex();
+        assert!(sim.trigger_clear_all_smudges(&rules), "{}", row["name"]);
+        assert_eq!(sim.scenario_rng.native_state_hex(), rng_before);
+        assert_eq!(row["returned"], 1);
+        assert_eq!(row["rng_unchanged"], true);
+        let grid = sim.smudge_grid.as_ref().unwrap();
+        for expected in row["cells_after"].as_array().unwrap() {
+            let at = pair(&expected["cell"]);
+            let cell = grid.cell(at.0, at.1);
+            assert_eq!(
+                cell.type_id.map_or(-1, i32::from),
+                expected["identity"].as_i64().unwrap() as i32,
+                "{} {at:?}",
+                row["name"],
+            );
+            assert_eq!(
+                cell.frame_offset,
+                expected["data"].as_u64().unwrap() as u8,
+                "{} {at:?} retained data",
+                row["name"],
+            );
+        }
+        let dummy = sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy();
+        let native_dummy = &row["dummy_after"];
+        let native_at = pair(&native_dummy["coord"]);
+        assert_eq!(
+            dummy.snapshot().coord,
+            (i32::from(native_at.0 as i16), i32::from(native_at.1 as i16))
+        );
+        assert_eq!(
+            dummy.smudge_identity_data(),
+            (
+                native_dummy["smudge"].as_i64().unwrap() as i32,
+                native_dummy["smudge_data"].as_u64().unwrap() as u8,
+            ),
+        );
+        let changed: Vec<_> = row["cell_writes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|write| write["dummy"] == false && write["previous"] != -1)
+            .map(|write| pair(&write["cell"]))
+            .collect();
+        assert_eq!(sim.tactical_dirty_cells, changed);
+        assert_eq!(sim.radar_terrain_dirty_cells, changed);
+        assert!(sim.smudge_grid.as_mut().unwrap().drain_dirty().is_empty());
+    }
+}

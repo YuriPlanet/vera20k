@@ -21,7 +21,7 @@
 //! `ClearAllQueues @ 0x00752370`, `ResetAll @ 0x007535D0`,
 //! `PumpAndCheckActive @ 0x007529E0` ([`VoxQueue::is_active`]).
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::rules::sound_ini::{EvaPriority, EvaType};
 
@@ -73,6 +73,10 @@ pub struct VoxRequest<'a> {
 /// `VoxClass` queue state.
 #[derive(Debug, Default)]
 pub struct VoxQueue {
+    /// Native Dialog entry+50:0 playing,1 admitted,2 done. Entries begin2;
+    /// Failed physical output retains1 rather than fabricating completion;
+    /// native failed-device entry-state execution remains a stated boundary.
+    entry_states: BTreeMap<String, u8>,
     interrupt_list: VecDeque<VoxNode>,
     critical_list: VecDeque<VoxNode>,
     pending: Option<VoxNode>,
@@ -97,8 +101,8 @@ impl VoxQueue {
     /// Guards (one `if`, `0x00752480..`): the stream player exists, the index
     /// is valid, `DAT_00B1D3D8 == 0` (not suspended) and the entry is not the
     /// current one (`iVar1 != DAT_00B1D4C4`). A `-1` type/priority takes the
-    /// entry's own; `PlayEVA` always passes priority `-1`, so only the type
-    /// can be overridden per call site.
+    /// entry's own; `PlayEVA` passes priority `-1`, while Radar6579BB passes
+    /// type0/priority3 through this same owner.
     ///
     /// Type 2 (INTERRUPT) **while an entry is current**: every interrupt-list
     /// node is dropped, the current entry is marked done, `StreamPlayer::Stop`,
@@ -113,6 +117,7 @@ impl VoxQueue {
         &mut self,
         request: VoxRequest<'_>,
         type_override: Option<EvaType>,
+        priority_override: Option<EvaPriority>,
     ) -> QueueEffect {
         let mut effect = QueueEffect::default();
         let event = request.event.to_ascii_uppercase();
@@ -128,11 +133,12 @@ impl VoxQueue {
         }
         effect.advance_queue = true;
         let eva_type = type_override.unwrap_or(request.eva_type);
-        let priority = request.priority;
+        let priority = priority_override.unwrap_or(request.priority);
 
         if self.current.is_some() && eva_type == EvaType::Interrupt {
-            self.interrupt_list.clear();
-            self.current = None;
+            if let Some(current) = self.current.take() {
+                self.entry_states.insert(current.event, 2);
+            }
             effect.stop_stream = true;
             self.clear_all_queues();
             self.gap_ms = 0;
@@ -147,6 +153,7 @@ impl VoxQueue {
             .find_in_queues(&event)
             .is_some_and(|node| node.eva_type == eva_type);
         if !duplicate {
+            self.entry_states.insert(event.clone(), 1);
             effect.inserted = self.insert_into_queue(VoxNode {
                 event,
                 sample: request.sample.to_string(),
@@ -192,9 +199,13 @@ impl VoxQueue {
                         .as_ref()
                         .is_none_or(|pending| pending.priority < node.priority);
                 if slot_free {
+                    if let Some(old) = self.pending.take() {
+                        self.entry_states.insert(old.event, 2);
+                    }
                     self.pending = Some(node);
                     true
                 } else {
+                    self.entry_states.insert(node.event, 2);
                     false
                 }
             }
@@ -222,6 +233,9 @@ impl VoxQueue {
     /// slot), is dropped; the current entry plays on.
     pub fn remove_from_queues(&mut self, event: &str) {
         let event = event.to_ascii_uppercase();
+        if self.find_in_queues(&event).is_some() {
+            self.entry_states.insert(event.clone(), 2);
+        }
         self.critical_list.retain(|node| node.event != event);
         if self
             .pending
@@ -260,13 +274,19 @@ impl VoxQueue {
         if self.pause_depth != 0 {
             return None;
         }
-        self.current = None;
+        if let Some(current) = self.current.take() {
+            self.entry_states.insert(current.event, 2);
+        }
         if let Some(node) = self.interrupt_list.pop_front() {
-            self.pending = None;
+            if let Some(pending) = self.pending.take() {
+                self.entry_states.insert(pending.event, 2);
+            }
             return Some(node);
         }
         if let Some(node) = self.critical_list.pop_front() {
-            self.pending = None;
+            if let Some(pending) = self.pending.take() {
+                self.entry_states.insert(pending.event, 2);
+            }
             return Some(node);
         }
         if let Some(node) = self.pending.take() {
@@ -281,6 +301,7 @@ impl VoxQueue {
     /// `0x0075296D..0x0075298E`: after `StreamPlayer::PlayFile` succeeded —
     /// gap = 500 ms, the node becomes the current entry (state 0).
     pub fn started(&mut self, node: VoxNode) {
+        self.entry_states.insert(node.event.clone(), 0);
         self.gap_ms = INTER_LINE_GAP_MS;
         self.end_time_ms = u64::MAX - INTER_LINE_GAP_MS;
         self.current = Some(node);
@@ -296,6 +317,15 @@ impl VoxQueue {
     /// interrupt and critical lists and the four priority lists; the current
     /// entry is untouched.
     pub fn clear_all_queues(&mut self) {
+        for node in self
+            .pending
+            .iter()
+            .chain(self.interrupt_list.iter())
+            .chain(self.critical_list.iter())
+            .chain(self.priority_lists.iter().flatten())
+        {
+            self.entry_states.insert(node.event.clone(), 2);
+        }
         self.pending = None;
         self.interrupt_list.clear();
         self.critical_list.clear();
@@ -308,12 +338,24 @@ impl VoxQueue {
     /// (the caller's job — returns `true` when a line was current),
     /// `ClearAllQueues`, then `DAT_00B1D428 = 0` and `DAT_00B1D3D8 = 0`.
     pub fn reset_all(&mut self) -> bool {
-        let had_current = self.current.take().is_some();
-        self.clear_all_queues();
+        let had_current = self.stop_all(true);
         self.pause_depth = 0;
         self.suspend_depth = 0;
         self.gap_ms = 0;
         self.end_time_ms = 0;
+        had_current
+    }
+
+    ///7529A0 marks the current entry done and optionally clears waiting
+    ///queues. Unlike ResetAll7535D0, it preserves both nested depths.
+    pub(crate) fn stop_all(&mut self, clear_queues: bool) -> bool {
+        let had_current = self.current.is_some();
+        if let Some(current) = self.current.take() {
+            self.entry_states.insert(current.event, 2);
+        }
+        if clear_queues {
+            self.clear_all_queues();
+        }
         had_current
     }
 
@@ -369,6 +411,14 @@ impl VoxQueue {
     /// The entry that is current (playing or inside its post-line gap).
     pub fn current(&self) -> Option<&VoxNode> {
         self.current.as_ref()
+    }
+    ///7532A0 asks the selected entry's state, not aggregate queue activity.
+    pub fn entry_done(&self, event: &str) -> bool {
+        self.entry_states
+            .get(&event.to_ascii_uppercase())
+            .copied()
+            .unwrap_or(2)
+            == 2
     }
 
     #[cfg(test)]
@@ -430,6 +480,55 @@ mod tests {
             EvaPriority::Low,
         )
     }
+
+    /// Radar6578F0 executed control: IncomingTransmission standard/critical,
+    /// suspend rejects new admission while its already queued line can play.
+    /// Selected state stays0 at end+500, becomes2 only at end+501 (752760).
+    #[test]
+    fn selected_radar_entry_completion_preserves_native_gap_and_suspend() {
+        let mut q = VoxQueue::new();
+        let incoming = req("EVA_IncomingTransmission", EvaType::Queue, EvaPriority::Low);
+        q.queue_voice(
+            incoming,
+            Some(EvaType::Standard),
+            Some(EvaPriority::Critical),
+        );
+        assert!(!q.entry_done(incoming.event));
+        q.suspend();
+        assert!(!q.queue_voice(unit_lost(), None, None).inserted);
+        let node = q
+            .take_next(1, false)
+            .expect("suspend affects admission, not dequeue");
+        assert_eq!(
+            (node.eva_type, node.priority),
+            (EvaType::Standard, EvaPriority::Critical)
+        );
+        q.started(node);
+        q.stream_ended(1_000);
+        assert!(q.take_next(1_500, false).is_none());
+        assert!(!q.entry_done(incoming.event));
+        assert!(q.take_next(1_501, false).is_none());
+        assert!(q.entry_done(incoming.event));
+        q.resume();
+        assert!(q.queue_voice(unit_lost(), None, None).inserted);
+    }
+
+    #[test]
+    fn selected_entry_done_is_independent_of_other_voices_and_failed_start() {
+        let mut q = VoxQueue::new();
+        assert!(q.entry_done("EVA_IncomingTransmission"));
+        q.queue_voice(low_power(), None, None);
+        assert!(q.is_active(false));
+        assert!(q.entry_done("EVA_IncomingTransmission"));
+        q.remove_from_queues("EVA_LowPower");
+        assert!(q.entry_done("EVA_LowPower"));
+        q.queue_voice(unit_lost(), None, None);
+        let _failed_play_file = q.take_next(1, false).unwrap();
+        assert!(
+            !q.entry_done("EVA_UnitLost"),
+            "absence of a node is not entry state2"
+        );
+    }
     fn you_have_lost() -> VoxRequest<'static> {
         req("EVA_YouHaveLost", EvaType::Standard, EvaPriority::Normal)
     }
@@ -455,16 +554,16 @@ mod tests {
     #[test]
     fn remove_from_queues_drops_every_waiting_node_of_the_entry() {
         let mut q = VoxQueue::new();
-        q.queue_voice(construction_complete(), None);
+        q.queue_voice(construction_complete(), None, None);
         play_next(&mut q, 1);
         let ready = |eva_type| req("EVA_ChronosphereReady", eva_type, EvaPriority::Important);
-        assert!(q.queue_voice(ready(EvaType::Standard), None).inserted);
-        assert!(q.queue_voice(ready(EvaType::Queue), None).inserted);
+        assert!(q.queue_voice(ready(EvaType::Standard), None, None).inserted);
+        assert!(q.queue_voice(ready(EvaType::Queue), None, None).inserted);
         assert!(
-            q.queue_voice(ready(EvaType::QueuedInterrupt), None)
+            q.queue_voice(ready(EvaType::QueuedInterrupt), None, None)
                 .inserted
         );
-        assert!(q.queue_voice(low_power(), None).inserted);
+        assert!(q.queue_voice(low_power(), None, None).inserted);
         assert_eq!(q.queued_count(), 4);
 
         q.remove_from_queues("EVA_ChronosphereReady");
@@ -485,19 +584,19 @@ mod tests {
     fn pending_slot_replacement_is_strict_priority() {
         let mut q = VoxQueue::new();
         // Occupy the stream so requests park in the pending slot.
-        q.queue_voice(construction_complete(), None);
+        q.queue_voice(construction_complete(), None, None);
         assert_eq!(
             play_next(&mut q, 1).as_deref(),
             Some("EVA_CONSTRUCTIONCOMPLETE")
         );
 
-        assert!(q.queue_voice(base_attack(), None).inserted);
+        assert!(q.queue_voice(base_attack(), None, None).inserted);
         assert_eq!(q.pending_event(), Some("EVA_OURBASEISUNDERATTACK"));
         // NORMAL pending, IMPORTANT arrives: replaced; the base line never plays.
-        assert!(q.queue_voice(unit_lost(), None).inserted);
+        assert!(q.queue_voice(unit_lost(), None, None).inserted);
         assert_eq!(q.pending_event(), Some("EVA_UNITLOST"));
         // IMPORTANT pending, NORMAL arrives: discarded.
-        assert!(!q.queue_voice(base_attack(), None).inserted);
+        assert!(!q.queue_voice(base_attack(), None, None).inserted);
         assert_eq!(q.pending_event(), Some("EVA_UNITLOST"));
         // Equal priority from a different entry: `JGE` discards it too.
         assert!(
@@ -507,6 +606,7 @@ mod tests {
                     EvaType::Standard,
                     EvaPriority::Important
                 ),
+                None,
                 None
             )
             .inserted
@@ -519,12 +619,12 @@ mod tests {
     #[test]
     fn a_standard_line_waits_in_the_pending_slot_while_a_line_plays() {
         let mut q = VoxQueue::new();
-        q.queue_voice(construction_complete(), None);
+        q.queue_voice(construction_complete(), None, None);
         assert_eq!(
             play_next(&mut q, 1).as_deref(),
             Some("EVA_CONSTRUCTIONCOMPLETE")
         );
-        assert!(q.queue_voice(unit_ready(), None).inserted);
+        assert!(q.queue_voice(unit_ready(), None, None).inserted);
         assert!(q.take_next(2, true).is_none(), "stream still playing");
         q.stream_ended(1_000);
         assert_eq!(play_next(&mut q, 1_501).as_deref(), Some("EVA_UNITREADY"));
@@ -535,19 +635,20 @@ mod tests {
     #[test]
     fn queue_lists_are_fifo_per_priority_and_drain_after_the_pending_slot() {
         let mut q = VoxQueue::new();
-        q.queue_voice(construction_complete(), None);
+        q.queue_voice(construction_complete(), None, None);
         play_next(&mut q, 1);
         // Two LOW queue lines, one IMPORTANT queue line, then a STANDARD one.
-        assert!(q.queue_voice(new_options(), None).inserted);
+        assert!(q.queue_voice(new_options(), None, None).inserted);
         assert!(
             q.queue_voice(
                 req("EVA_OtherLowQueue", EvaType::Queue, EvaPriority::Low),
+                None,
                 None
             )
             .inserted
         );
-        assert!(q.queue_voice(low_power(), None).inserted);
-        assert!(q.queue_voice(unit_lost(), None).inserted);
+        assert!(q.queue_voice(low_power(), None, None).inserted);
+        assert!(q.queue_voice(unit_lost(), None, None).inserted);
         assert_eq!(q.queued_count(), 4);
 
         let mut order = Vec::new();
@@ -575,26 +676,26 @@ mod tests {
     #[test]
     fn duplicate_rule_matches_entry_and_type() {
         let mut q = VoxQueue::new();
-        q.queue_voice(construction_complete(), None);
+        q.queue_voice(construction_complete(), None, None);
         play_next(&mut q, 1);
-        assert!(q.queue_voice(low_power(), None).inserted);
+        assert!(q.queue_voice(low_power(), None, None).inserted);
         assert!(
-            !q.queue_voice(low_power(), None).inserted,
+            !q.queue_voice(low_power(), None, None).inserted,
             "same entry, same type"
         );
         assert_eq!(q.queued_count(), 1);
         // Same entry with an overridden type is a second node.
         assert!(
-            q.queue_voice(low_power(), Some(EvaType::QueuedInterrupt))
+            q.queue_voice(low_power(), Some(EvaType::QueuedInterrupt), None)
                 .inserted
         );
         assert_eq!(q.queued_count(), 2);
 
         // The current entry is refused while current, including during the gap.
-        assert!(!q.queue_voice(construction_complete(), None).inserted);
+        assert!(!q.queue_voice(construction_complete(), None, None).inserted);
         q.stream_ended(1_000);
         assert!(q.take_next(1_200, false).is_none());
-        assert!(!q.queue_voice(construction_complete(), None).inserted);
+        assert!(!q.queue_voice(construction_complete(), None, None).inserted);
     }
 
     /// "You have lost" (STANDARD NORMAL) arriving while "Unit lost" plays is
@@ -603,20 +704,20 @@ mod tests {
     #[test]
     fn outcome_and_critical_lines_are_not_dropped_while_a_line_plays() {
         let mut q = VoxQueue::new();
-        q.queue_voice(unit_lost(), None);
+        q.queue_voice(unit_lost(), None, None);
         assert_eq!(play_next(&mut q, 1).as_deref(), Some("EVA_UNITLOST"));
-        assert!(q.queue_voice(you_have_lost(), None).inserted);
+        assert!(q.queue_voice(you_have_lost(), None, None).inserted);
         assert!(q.is_active(true));
         q.stream_ended(3_000);
         assert_eq!(play_next(&mut q, 3_501).as_deref(), Some("EVA_YOUHAVELOST"));
 
         let mut q = VoxQueue::new();
-        q.queue_voice(unit_lost(), None);
+        q.queue_voice(unit_lost(), None, None);
         play_next(&mut q, 1);
-        assert!(q.queue_voice(base_attack(), None).inserted);
-        assert!(q.queue_voice(nuke_launched(), None).inserted);
+        assert!(q.queue_voice(base_attack(), None, None).inserted);
+        assert!(q.queue_voice(nuke_launched(), None, None).inserted);
         // With a critical node waiting, a new STANDARD line cannot take the slot.
-        assert!(!q.queue_voice(unit_ready(), None).inserted);
+        assert!(!q.queue_voice(unit_ready(), None, None).inserted);
         q.stream_ended(1_000);
         assert_eq!(
             play_next(&mut q, 1_501).as_deref(),
@@ -632,9 +733,9 @@ mod tests {
     #[test]
     fn next_line_waits_five_hundred_ms_after_the_previous_ended() {
         let mut q = VoxQueue::new();
-        q.queue_voice(construction_complete(), None);
+        q.queue_voice(construction_complete(), None, None);
         play_next(&mut q, 1);
-        q.queue_voice(unit_ready(), None);
+        q.queue_voice(unit_ready(), None, None);
         q.stream_ended(10_000);
         assert!(q.take_next(10_499, false).is_none());
         assert!(q.take_next(10_500, false).is_none(), "equality still waits");
@@ -647,16 +748,16 @@ mod tests {
     #[test]
     fn interrupt_cuts_only_when_a_line_is_current() {
         let mut q = VoxQueue::new();
-        q.queue_voice(construction_complete(), None);
+        q.queue_voice(construction_complete(), None, None);
         play_next(&mut q, 1);
-        q.queue_voice(low_power(), None);
-        q.queue_voice(unit_lost(), None);
+        q.queue_voice(low_power(), None, None);
+        q.queue_voice(unit_lost(), None, None);
         let bct = req(
             "EVA_BattleControlTerminated",
             EvaType::Standard,
             EvaPriority::Critical,
         );
-        let effect = q.queue_voice(bct, Some(EvaType::Interrupt));
+        let effect = q.queue_voice(bct, Some(EvaType::Interrupt), None);
         assert!(effect.stop_stream && effect.inserted);
         assert_eq!(q.queued_count(), 1);
         assert!(q.current().is_none());
@@ -667,8 +768,8 @@ mod tests {
         );
 
         let mut q = VoxQueue::new();
-        q.queue_voice(low_power(), None);
-        let effect = q.queue_voice(unit_lost(), Some(EvaType::Interrupt));
+        q.queue_voice(low_power(), None, None);
+        let effect = q.queue_voice(unit_lost(), Some(EvaType::Interrupt), None);
         assert!(!effect.stop_stream && effect.inserted);
         assert_eq!(q.queued_count(), 2, "idle slot: nothing is cleared");
         assert_eq!(q.pending_event(), Some("EVA_UNITLOST"));
@@ -679,7 +780,7 @@ mod tests {
     #[test]
     fn pausing_suspends_the_eva_queue_until_every_pause_is_lifted() {
         let mut q = VoxQueue::new();
-        q.queue_voice(construction_complete(), None);
+        q.queue_voice(construction_complete(), None, None);
         q.set_paused(true);
         q.set_paused(true);
         assert!(q.take_next(1, false).is_none());
@@ -701,12 +802,12 @@ mod tests {
     #[test]
     fn suspend_blocks_queueing_but_not_dequeue() {
         let mut q = VoxQueue::new();
-        q.queue_voice(low_power(), None);
+        q.queue_voice(low_power(), None, None);
         q.suspend();
-        assert!(!q.queue_voice(unit_lost(), None).inserted);
+        assert!(!q.queue_voice(unit_lost(), None, None).inserted);
         assert_eq!(play_next(&mut q, 1).as_deref(), Some("EVA_LOWPOWER"));
         q.resume();
         q.resume();
-        assert!(q.queue_voice(unit_lost(), None).inserted);
+        assert!(q.queue_voice(unit_lost(), None, None).inserted);
     }
 }

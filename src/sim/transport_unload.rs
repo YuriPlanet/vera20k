@@ -219,12 +219,6 @@ fn pick_exit_octant(sim: &Simulation, entity: &GameEntity) -> Option<((u16, u16)
     Some((cell, opposite_octant(best_octant)))
 }
 
-/// `Do_Turn(octant << 13)` on the transport's hull (`0x0073D86C`, locomotor
-/// slot `+0x4C`): arm the body `FacingClass` toward `octant << 13`.
-fn start_hull_turn(entity: &mut GameEntity, octant: usize, now: u32) {
-    entity.body_facing.set((octant as u16) << 13, now);
-}
-
 /// State 1's wait, VERA-side: the hull turn has finished. Native state 1
 /// instead tests the `+0x6AF` turret rotation latch (`0x0073D892`), which
 /// Facing_Update sets only from a `Turret=` unit's `+0x3A0`
@@ -657,7 +651,12 @@ pub(crate) fn unit_mission_unload(
                     if turreted {
                         entity.transport_unload_keep_count = if cargo == 1 { 0 } else { 1 };
                     }
-                    start_hull_turn(entity, face_octant, now);
+                    //73D86C dispatches the active ILocomotion+4C owner.
+                    crate::sim::movement::locomotor_do_turn(
+                        entity,
+                        (face_octant as u16) << 13,
+                        now,
+                    );
                     entity.mission.set_handler_state(STATE_TURNING);
                 }
                 return 1;

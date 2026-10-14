@@ -30,6 +30,7 @@ pub(crate) mod entry_test_fixture;
 mod object_entry;
 mod sinking;
 mod sound_boundary;
+mod time_warp;
 pub(crate) use sound_boundary::{FrameEffects, SoundBoundary};
 #[cfg(test)]
 mod unit_unlimbo_tests;
@@ -40,6 +41,7 @@ mod ground_move;
 pub(crate) use ground_move::GroundMove;
 mod house_base;
 mod house_defeat;
+pub(crate) use house_defeat::HouseBlowupSubset;
 mod ion_blast;
 pub(crate) use house_base::HouseBaseState;
 mod infantry_terminal;
@@ -532,7 +534,11 @@ pub enum SimSoundEvent {
     VocAtCoord {
         sound_id: String,
         coordinate: DriveCoord,
+        flags: u32,
     },
+    /// VocClass750F40 detaches independent coordinate requests whose flags
+    /// overlap and whose full signed XYZ equals the supplied coordinate.
+    VocStopAtCoord { coordinate: DriveCoord, flags: u32 },
     /// `TechnoClass::AI_Update @ 0x006FA054..0x006FA145` crossed a rank.
     ///
     /// Native plays `[AudioVisual] UpgradeVeteranSound=`/`UpgradeEliteSound=`
@@ -1199,6 +1205,15 @@ pub struct Simulation {
     /// retain the current handle and rebuilt terrain is rebound to it.
     #[serde(skip, default)]
     pub(crate) shared_cell_dummy: SharedCellDummy,
+    /// Shared Map+11C/+120 traversal for synchronous RevealZone578850/578710.
+    /// Nested discovery actions overwrite this same cursor; never restore an
+    /// outer cursor. Every exposed traversal resets before consuming it, and
+    /// no action stack survives a save, so this private scratch is not saved
+    /// or hashed. Terrain/query/input clones do not share its mutable state.
+    #[serde(skip)]
+    native_local_cell_cursor: Option<crate::map::resolved_terrain::NativeLocalCellCursor>,
+    #[serde(skip)]
+    native_allocated_cell_cursor: Option<crate::map::resolved_terrain::NativeAllocatedCellCursor>,
     /// Serialized value authority for allocated real CellClass bridge bits.
     /// The derived terrain grid is skipped; load installs its pristine map
     /// template and then writes these saved values directly back onto real
@@ -1295,8 +1310,6 @@ pub struct Simulation {
     /// saves no blast.
     #[serde(skip)]
     ion_blasts: Vec<ion_blast::IonBlast>,
-    /// Whether superweapon grants have been initialized from map-placed buildings.
-    pub(crate) super_weapons_initialized: bool,
     /// Per-cell terrain speed modifier config (slope climb/descend).
     /// Built from [General] rules at map load.
     #[serde(skip)]
@@ -3326,6 +3339,8 @@ impl Simulation {
             structure_navigation_cells: BTreeSet::new(),
             resolved_terrain: None,
             shared_cell_dummy: SharedCellDummy::fresh(),
+            native_local_cell_cursor: None,
+            native_allocated_cell_cursor: None,
             real_cell_bridge_flags_0x1180: RealCellBridgeFlags0x1180::default(),
             dynamic_terrain_cells: BTreeMap::new(),
             bridge_state: None,
@@ -3349,7 +3364,6 @@ impl Simulation {
             lightning_storm: Default::default(),
             psychic_dominator: Default::default(),
             ion_blasts: Vec::new(),
-            super_weapons_initialized: false,
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
             debug_event_logging: false,
             input_delay_ticks: 2,
@@ -3651,14 +3665,13 @@ impl Simulation {
     ) -> Option<crate::sim::house_state::HouseOutcomeState> {
         self.houses
             .get(&owner)?
-            .outcome_state
+            .outcome()
             .filter(|outcome| outcome.exit_ready)
     }
 
     fn natural_outcome_exit_ready(&self) -> bool {
-        self.houses
-            .iter()
-            .any(|(&owner, house)| house.is_human && self.ready_outcome_for_owner(owner).is_some())
+        self.session.current_house
+            .is_some_and(|owner| self.ready_outcome_for_owner(owner).is_some())
     }
 
     fn termination_frame_requested(&self) -> bool {
@@ -3672,11 +3685,12 @@ impl Simulation {
     /// or out (`0x0055B389`, `0x0055B392`), else with
     /// `DominatorAmbientChangeRate=` while the Psychic Dominator is active
     /// (`PsyDom::Active`, `0x0055B3A4`), else with `AmbientChangeRate=`. The
-    /// chrono screen's test (`0x0055B39B`), in the nuke's arm, is not
-    /// modelled: map trigger action 127 sets it (`0x0053B460`), and VERA does
-    /// not port that action.
+    /// chrono screen's test (`0x0055B39B`) shares the nuke arm. Original
+    /// controls: superweapon_oracle.json/ambient_step, chrono=1.
     pub(crate) fn tick_scenario_lighting_transition(&mut self, rules: &RuleSet) {
-        let interval_frames = if self.session.lighting.nuke_flash_running() {
+        let interval_frames = if self.session.lighting.nuke_flash_running()
+            || self.session.chrono_screen().active()
+        {
             self.session.lighting.nuke_change_rate()
         } else if crate::sim::superweapon::psychic_dominator::active(self) {
             self.session.lighting.dominator_change_rate
@@ -4744,6 +4758,14 @@ impl Simulation {
         }
     }
 
+    /// Inline native House+1FC writers request the existing House tail;
+    /// power/radar dirty bytes remain with their distinct PowerState owner.
+    pub(crate) fn request_house_tech_tree_recheck(&mut self, owner: InternedId) {
+        if let Some(house) = self.houses.get_mut(&owner) {
+            house.recheck_tech_tree();
+        }
+    }
+
     /// BuildingAI440042..44006C samples live health before the common Techno
     /// tail. Repair701410 itself leaves both House dirty bytes untouched.
     pub(super) fn sample_building_health_for_house_update(&mut self, id: u64) {
@@ -4765,6 +4787,7 @@ impl Simulation {
             return;
         }
         let state = self.power_states.entry(owner).or_default();
+        let was_low_power = state.is_low_power;
         let assessed = power_system::assess_house_power(
             state,
             &self.substrate.entities,
@@ -4775,6 +4798,11 @@ impl Simulation {
         );
         if assessed {
             production::refresh_factory_rates_for_house(self, rules, owner);
+            // Power508DD5 compares the old/current ratio;508DDB invokes the
+            // shared hold/revoke before the radar tail, only on that edge.
+            if self.power_states[&owner].is_low_power != was_low_power {
+                crate::sim::superweapon::update_owned_supers(self, rules, owner);
+            }
         }
         // 0x004F84FB: once the current house is defeated no House rechecks
         // radar, so the radar its defeat switched on stays on.
@@ -4861,6 +4889,40 @@ impl Simulation {
     #[cfg(test)]
     pub(crate) fn change_owner(&mut self, stable_id: u64, new_owner: InternedId) {
         self.change_owner_impl(stable_id, new_owner, None, None, FrameEffects::default());
+    }
+
+    /// Original House502D30: first matching registration, not owner-name order.
+    /// Country identity remains RuleSet-owned; duplicate-Country Houses are valid.
+    pub(crate) fn house_by_country_index(
+        &self,
+        country: crate::rules::ruleset::CountryIdx,
+        rules: &RuleSet,
+    ) -> Option<InternedId> {
+        self.session.house_order.iter().copied().find(|owner| {
+            self.houses
+                .get(owner)
+                .and_then(|house| house.country)
+                .and_then(|id| rules.country_index(self.interner.resolve(id)))
+                == Some(country)
+        })
+    }
+
+    /// Original House510F60 -> Scenario510ED0, otherwise502D30. Only the
+    /// literal Player@A..H selectors4507..4514 use the start-slot mapping.
+    pub(crate) fn house_by_trigger_selector(
+        &self,
+        selector: i32,
+        rules: &RuleSet,
+    ) -> Option<InternedId> {
+        if (4507..=4514).contains(&selector) {
+            self.session
+                .start_slot_houses
+                .get(&((selector - 4507) as u32))
+                .copied()
+        } else {
+            let country = u16::try_from(selector).ok()?;
+            self.house_by_country_index(crate::rules::ruleset::CountryIdx(country), rules)
+        }
     }
 
     pub(crate) fn change_owner_with_rules(
@@ -5035,10 +5097,9 @@ impl Simulation {
         if let Some(rules) = rules {
             self.record_the_kill(
                 stable_id,
-                None,
-                None,
+                crate::sim::combat::KillSource::Techno(None),
                 crate::sim::combat::KillCallback::OwnerChange,
-                rules,
+                UninitContext::new(Some(rules), registry).with_effects(effects),
             );
             let cost = self
                 .substrate
@@ -5202,15 +5263,10 @@ impl Simulation {
         if let Some(rules) = rules {
             self.reapply_building_gap_after_owner_change(stable_id, rules);
         }
-        // `0x0044936E`, `0x00449379`: both houses' `+0x1FC` asks their next
-        // House update for the Super revoke and grant passes
-        // (`0x004F92F6`, `0x004F92FD`); VERA refreshes at the event, as for
-        // a death or a sale.
-        if category == EntityCategory::Structure
-            && let Some(rules) = rules
-        {
-            crate::sim::superweapon::refresh_super_weapons_for_owner(self, rules, old_owner);
-            crate::sim::superweapon::refresh_super_weapons_for_owner(self, rules, new_owner);
+        //44936E/449379: both houses' retained1FC asks their next House tail.
+        if category == EntityCategory::Structure {
+            self.request_house_tech_tree_recheck(old_owner);
+            self.request_house_tech_tree_recheck(new_owner);
         }
     }
 
@@ -6700,11 +6756,6 @@ impl Simulation {
         self.refresh_fog(&vision_config, rules);
 
         if let Some(rules) = rules {
-            // --- Phase 4.5: Superweapons ---
-            // DEPENDS ON: power state (suspend/resume gating).
-            // PRODUCES: AnimClass bolts and explosions, damage to entities, sound_events.
-            crate::sim::superweapon::tick_superweapon_instances(self, rules);
-
             // --- Phase 5: Combat + Turret rotation ---
             // DEPENDS ON: vision/fog (targeting uses fog state), power (cloaking).
             // Buildings, Units and Infantry fired in their own live slots.

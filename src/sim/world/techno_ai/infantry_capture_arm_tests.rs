@@ -93,8 +93,11 @@ const CAPTURE: MissionId = MissionId::from_known(MissionType::Capture);
 
 fn rules() -> RuleSet {
     let art = IniFile::from_str(ART);
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(RULES), &art)
-        .expect("capture arm rules");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(RULES),
+        &art,
+    )
+    .expect("capture arm rules");
     rules.install_art_data(ArtRegistry::from_ini(&art));
     rules.bind_animation_sequences(
         &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),

@@ -19,7 +19,7 @@ fn rules() -> RuleSet {
     let base = "Strength=1000\nArmor=concrete\nFoundation=1x1\n\
                 CanPassiveAquire=no\nHasStupidGuardMode=no\n";
     let powered = "Powered=yes\nPower=-50\n";
-    let layers = RulesLayerStack::new(IniFile::from_str(&format!(
+    let layers = RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[BuildingTypes]\n0=PLANT\n1=DEF\n2=HUM\n3=PLAIN\n\
          [PLANT]\n{base}Power=200\n\
          [DEF]\n{base}{powered}WorkingSound=PowerOn\nNotWorkingSound=PowerOff\n\
@@ -42,6 +42,7 @@ fn rules() -> RuleSet {
 fn world(size: u16) -> Simulation {
     let mut sim = Simulation::new();
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(size));
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     let owner = sim.interner.intern("Americans");
     sim.houses
         .insert(owner, HouseState::new(owner, 0, None, true, 10_000, 10));

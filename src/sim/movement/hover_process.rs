@@ -288,6 +288,30 @@ impl Simulation {
         }
     }
 
+    /// Hover ILocomotion+9C, `Mark_All_Occupation_Bits` at5171C0: mode0
+    /// asks the existing Head_To projection (514D10), then linked Foot+F4.
+    /// Mode1 does nothing; neither mode changes the retained head. Foot Limbo
+    /// calls this after Stop_Driver (4DB324), and Chrono Warp shares the slot.
+    /// Steam gamemd3e81a617..08600 executable controls:
+    /// tools/spatial_oracle/locomotor_force_track.hover_mark_all.{json,meta.json}.
+    /// Ledger: no RNG draws, timer writes or detaches in this body/Unit744210.
+    pub(crate) fn hover_mark_all_occupation_bits(&mut self, id: u64, put: bool) {
+        if put {
+            return;
+        }
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if runtime(entity).is_none() {
+            return;
+        }
+        let coord = super::super::foot_coordinate::head_or_current(
+            super::super::foot_coordinate::stored_head(entity),
+            super::super::foot_coordinate::current_coordinate(entity),
+        );
+        self.object_raw_receiver_at(id, coord, false);
+    }
+
     /// The Foot's current speed (vt+0x538, GetCurrentSpeed 0x004DB1A0).
     fn hover_foot_speed(&self, id: u64, rules: &RuleSet) -> i32 {
         let Some(entity) = self.substrate.entities.get(id) else {

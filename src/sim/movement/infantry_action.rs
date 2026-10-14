@@ -54,6 +54,7 @@ pub(crate) const DO_DEPLOY: i32 = 0x1B;
 pub(crate) const DO_DEPLOYED: i32 = 0x1C;
 pub(crate) const DO_DEPLOYED_IDLE: i32 = 0x1E;
 pub(crate) const DO_UNDEPLOY: i32 = 0x1F;
+pub(crate) const DO_CHEER: i32 = 0x20;
 pub(crate) const DO_PARADROP: i32 = 0x21;
 pub(crate) const DO_AIR_DEATH_START: i32 = 0x22;
 pub(crate) const DO_AIR_DEATH_FALLING: i32 = 0x23;
@@ -118,6 +119,36 @@ fn deploy_action(doing: i32) -> bool {
 }
 
 impl Simulation {
+    /// Infantry virtual388 at522C00. Its argument bypasses CanCheer522BC0,
+    /// not DoAction's interruption gate: both paths call51D6F0(32,0,0).
+    /// House50C8C0 passes0; SlaveManager6B0BD1 passes1. GetMission5B3040
+    /// reads the current selector, falling back to the queued selector.
+    /// Steam3e81a617..08600; tools/spatial_oracle/infantry_action_callback
+    /// --cheer records admission, retained Doing/Stage and RNG boundaries.
+    pub(crate) fn infantry_cheer(
+        &mut self,
+        id: u64,
+        bypass_admission: bool,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(infantry) = actor.mission_leaf.as_infantry() else {
+            return; // Other Techno classes' virtual388 is the no-op receiver.
+        };
+        if !bypass_admission
+            && (!matches!(actor.mission.effective().raw(), 5 | 11)
+                || !matches!(infantry.doing(), DO_READY | DO_IDLE1 | DO_IDLE2 | DO_CHEER))
+        {
+            return;
+        }
+        if let Err(cause) = self.infantry_do_action(id, DO_CHEER, false, rules, effects) {
+            log::debug!("infantry {id} Cheer: {cause}");
+        }
+    }
+
     /// `InfantryClass::Do_Action` 0x0051D6F0 for `requested` with the
     /// caller's `force` and a random-frame argument 0, as the class's own
     /// receivers request it. Answers whether the action was accepted.

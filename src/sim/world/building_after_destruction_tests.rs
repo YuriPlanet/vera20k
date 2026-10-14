@@ -74,7 +74,7 @@ Foundation=2x2
 
 fn rules() -> RuleSet {
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
-        &IniFile::from_str(RULES),
+        &crate::sim::arena_fixture::clear_ground_ini(RULES),
         &IniFile::from_str(ART),
     )
     .expect("rubble rules");

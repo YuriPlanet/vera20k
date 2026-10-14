@@ -63,7 +63,7 @@ pub(super) fn advance(
     );
     // Walk75AE00 snaps the body, but SI still supplies the desired direction to
     // the displacement even if snap's equality branch retains an old target.
-    entity.body_facing.snap(desired, native_frame);
+    super::locomotor_turn::walk_do_turn(entity, desired, native_frame);
     let proposed = crate::util::native_trig::facing_step_world_xy(current, desired, speed);
     // A boundary step's staged sub-cell only feeds the crossing test, which
     // restores the old Location for walk_host's SetLocation (0x0075C12E). A

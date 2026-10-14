@@ -768,7 +768,8 @@ impl Simulation {
 
 /// An object's `Greatest_Threat` through its `+0x3C4` override, called
 /// directly with the caller's literal mask around the object's own Location:
-/// a team leader's for script actions 0 and 57 (`0x006ED15E`, `0x006F0253`),
+/// a team leader's for script actions 0,16 and 57 (`0x006ED15E`,
+/// `0x006ECE06`, `0x006F0253`),
 /// and an aircraft's own for Mission_Hunt (`0x00414B24`, `0x00414B64`).
 pub(crate) fn direct_greatest_threat(
     sim: &mut Simulation,
@@ -777,12 +778,19 @@ pub(crate) fn direct_greatest_threat(
     scanner: u64,
     mask: ScanMission,
 ) -> Option<u64> {
+    // These callers explicitly copy Object+9C..A4, not virtual GetCoords.
+    // Preserve the shared direct-call owner for all of them. Original Steam
+    // gamemd3e81a617..08600:6ED132,6ECDEF,6F0222 and414B3D.
+    let coord = crate::sim::movement::ground_pose::object_location(
+        sim.substrate.entities.get(scanner)?,
+        sim.resolved_terrain.as_ref(),
+    );
     sim.greatest_threat_represented(
         rules,
         overlay_registry,
         scanner,
         mask,
-        None,
+        Some([coord.x, coord.y, coord.z]),
         crate::sim::combat::combat_targeting::greatest_threat_for_entity,
     )
 }

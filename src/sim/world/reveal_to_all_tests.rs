@@ -9,16 +9,31 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::{FrameEffects, SimSoundEvent};
 
 /// The building's top-left cell, well inside the map's `Size=` diamond
-/// (`rx + ry > 64` in this 64x64 storage).
+/// (`rx + ry > 64` in this Size64x64 diamond).
 const SITE: (u16, u16) = (45, 45);
 /// A cell on the map that no source in these tests sees.
 const FAR: (u16, u16) = (60, 60);
 
-/// Retail rules on a clear 64x64 skirmish map: the human current house
+/// Retail rules on a Size64x64 diamond in128x128 storage: the human current house
 /// `Americans` and the computer houses `Russians` and `Confederation`.
 fn world() -> Option<(RuleSet, Simulation, InternedId)> {
     use crate::sim::superweapon::chronosphere_tests::{retail_rules_binding, world_with};
-    let (rules, mut sim, americans) = world_with(retail_rules_binding(&[])?, 64, &[]);
+    let (rules, mut sim, americans) = world_with(retail_rules_binding(&[])?, 128, &[]);
+    //578350 starts at(1,SizeW), not at a rectangular grid's first cell.
+    //Native Size64x64 spans packed coordinates1..127, just as the existing
+    //shroud_refresh Size6x4 fixture uses10x10 storage for its allocated walk.
+    sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+        theater: "TEMPERATE".into(),
+        fill: "Clear".into(),
+        level: 0,
+        width: 64,
+        height: 64,
+        local_left: 0,
+        local_top: 0,
+        local_width: 64,
+        local_height: 64,
+    });
+    assert!(sim.rebuild_dynamic_navigation(&rules));
     let confederation = sim.interner.intern("Confederation");
     sim.houses.insert(
         confederation,
@@ -27,8 +42,16 @@ fn world() -> Option<(RuleSet, Simulation, InternedId)> {
     sim.session.house_order.push(confederation);
     sim.session.current_house = Some(americans);
     sim.session.game_mode_nonzero = true;
-    sim.fog.width = 64;
-    sim.fog.height = 64;
+    sim.fog = vision::FogState::new(128, 128);
+    let allocated: std::collections::BTreeSet<_> = sim
+        .resolved_terrain
+        .as_ref()
+        .unwrap()
+        .native_cell_iterator(64)
+        .map(|cell| (cell.rx, cell.ry))
+        .collect();
+    assert!(allocated.contains(&SITE) && allocated.contains(&FAR));
+    assert!(!allocated.contains(&(0, 0)));
     Some((rules, sim, americans))
 }
 
@@ -55,7 +78,9 @@ fn alternate_cells(sim: &Simulation, id: u64, viewer: InternedId) -> Vec<(u16, u
 /// `viewer`'s shroud counter at a cell (CellClass `+0x130`'s on the native
 /// map): 1 shrouded, 0 explored, -n under n sight contributions.
 fn counter(sim: &Simulation, viewer: InternedId, (x, y): (u16, u16)) -> i32 {
-    sim.fog.by_owner[&viewer].shroud_knowledge_raw()[usize::from(y) * 64 + usize::from(x)].counter
+    sim.fog.by_owner[&viewer].shroud_knowledge_raw()
+        [usize::from(y) * usize::from(sim.fog.width) + usize::from(x)]
+    .counter
 }
 
 #[test]
@@ -360,7 +385,16 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
     // Its Unlimbo queues Construction (`0x006F6E2A`, `0x0044D6BD..0x0044D6D0`)
     // before its DiscoveredBy(owner), which therefore leaves it shut.
     let id = sim
-        .construct_object_limbo_at_height("NAIRON", "Russians", SITE.0, SITE.1, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "NAIRON",
+            "Russians",
+            SITE.0,
+            SITE.1,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     assert_eq!(
         sim.reveal_constructed_object_at_height(
@@ -429,4 +463,90 @@ fn a_shroud_reset_shows_a_superweapon_a_computer_captured_from_the_human() {
         assert_eq!(counter(&sim, americans, (x, y)), -1, "{x},{y}");
     }
     assert!(!sim.fog.is_cell_revealed(americans, FAR.0, FAR.1));
+}
+
+#[test]
+fn native_action51_keeps_null_house241_and_gates_foreign_map_changes() {
+    // Map577C90 --reshroud corpus: full branch/allocated loop with declared
+    // no-source release/reentry sinks. Production uses the shared Fog owners;
+    // this is not an occupied-map/Tag callback or whole-ALL01 parity claim.
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_reshroud.json",
+    ))
+    .unwrap();
+    for row in corpus["controls"].as_array().unwrap() {
+        let Some((rules, mut sim, player)) = world() else {
+            return;
+        };
+        let foreign = sim.interner.get("Russians").unwrap();
+        let (fog, terrain) = vision::native_map_cell_fixture(&row["topology"], player);
+        sim.fog = fog;
+        sim.resolved_terrain = Some(terrain);
+        let width = row["size_width"].as_u64().unwrap() as u32;
+        sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+            theater: "TEMPERATE".into(),
+            fill: "Clear".into(),
+            level: 0,
+            width,
+            height: width,
+            local_left: 0,
+            local_top: 0,
+            local_width: width,
+            local_height: width,
+        });
+        for (name, owner) in [("player", player), ("foreign", foreign)] {
+            sim.houses.get_mut(&owner).unwrap().map_is_clear =
+                row["houses_before"][name]["clear"] == 1;
+            assert_eq!(row["houses_before"][name]["revealed"], 1);
+            sim.fog.admit_whole_map_reveal(owner);
+        }
+        let rng_before = (
+            sim.scenario_rng.logical_state(),
+            sim.main_rng.logical_state(),
+            sim.mapgen_rng.logical_state(),
+        );
+        let incoming = match row["incoming"].as_str() {
+            Some("player") => Some(player),
+            Some("foreign") => Some(foreign),
+            None => None,
+            other => panic!("unexpected native incoming House {other:?}"),
+        };
+        sim.trigger_reshroud_map(incoming, &rules);
+        for (name, owner) in [("player", player), ("foreign", foreign)] {
+            assert_eq!(
+                sim.houses[&owner].map_is_clear,
+                row["houses"][name]["clear"] == 1,
+                "{} {name}241",
+                row["name"]
+            );
+            assert_eq!(
+                sim.fog.whole_map_revealed_for_owner(owner),
+                row["houses"][name]["revealed"] == 1,
+                "{} {name}240",
+                row["name"]
+            );
+        }
+        for cell in row["cells"].as_array().unwrap() {
+            vision::assert_native_cell_history(
+                &sim.fog,
+                player,
+                cell,
+                sim.resolved_terrain.as_ref().unwrap(),
+                false,
+            );
+        }
+        assert_eq!(
+            (
+                sim.scenario_rng.logical_state(),
+                sim.main_rng.logical_state(),
+                sim.mapgen_rng.logical_state(),
+            ),
+            rng_before,
+            "{} must not draw RNG with empty callbacks",
+            row["name"]
+        );
+        assert!(sim.substrate.entities.is_empty());
+        assert_eq!(row["rng_before"], row["rng_after"]);
+        assert!(row["rng_calls"].as_array().unwrap().is_empty());
+    }
 }

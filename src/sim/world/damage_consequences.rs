@@ -9,7 +9,6 @@ use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{DeathEffects, UnderAttackEvent};
-use crate::sim::intern::InternedId;
 
 enum DamageDelivery {
     Immediate,
@@ -130,20 +129,6 @@ impl DamageConsequences {
             delivery,
         } = self;
         let ordinary = matches!(&delivery, DamageDelivery::Ordinary { .. });
-        // Capture owner/category before deferred deletion drains. Delivery can
-        // occur inside a live Unit/Bullet slot or at the remaining global tail.
-        let dead_infos: Vec<(InternedId, EntityCategory)> = effects
-            .despawned_ids
-            .iter()
-            .filter_map(|&dead_id| {
-                world
-                    .substrate
-                    .entities
-                    .get(dead_id)
-                    .map(|entity| (entity.owner(), entity.category))
-            })
-            .collect();
-
         for &dead_id in &effects.immediate_uninit_ids {
             if world
                 .substrate
@@ -188,15 +173,6 @@ impl DamageConsequences {
         }
 
         world.finish_terrain_navigation_changes(rules, &terrain_navigation_changed_cells);
-        if effects.structure_destroyed {
-            let mut refreshed = Vec::new();
-            for &(owner, category) in &dead_infos {
-                if category == EntityCategory::Structure && !refreshed.contains(&owner) {
-                    refreshed.push(owner);
-                    crate::sim::superweapon::refresh_super_weapons_for_owner(world, rules, owner);
-                }
-            }
-        }
 
         world.admit_death_debris(std::mem::take(&mut effects.voxel_debris));
         // Explicit callback-disabled fixtures retain their effect packets;

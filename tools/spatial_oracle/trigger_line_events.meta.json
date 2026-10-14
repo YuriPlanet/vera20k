@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Nine original Map568CDB line-marker subsets and Foot4D8A70 horizontal/vertical scanning controls on declared4x4 cells. Not full InitCellAttributes, original Tag bodies, Fly ingress or a complete campaign.",
+  "assumptions": [
+    "Reuse PowerEventControls/FlagsFixture original-image/platform transport, actual Infantry vtable and GetMapCoords41BEA0. Native Map5657A0 packed lookup executes on the supplied512-stride sparse pointer table.",
+    "Minimal Tag/TagType/linked TriggerType/Event node priors expose original6E5300/6E5320/6E6250/6E6280/726F50/726F80 queries. No enabled/difficulty or event predicate substitution is introduced.",
+    "Source Cell coordinates and initial flag4 are supplied. The writer begins after terrain-animation latch clearing and ends before tiberium/Recalc; source iteration is explicitly declared. Final line bits are original output.",
+    "Arrival begins after direct1/59 and MCV interlude. Initial actor cell3,4, source Cell and saved stack/register priors match that slice. Each Tag request is recorded; named sinks move the actor or clear a later Cell attachment.",
+    "No original Tag actions, full PerCell prefix/tail, zone24, rendering, native RNG/timer schedule or ordinary Fly reachability is claimed."
+  ],
+  "substitutions": [
+    "Recorded Tag6E53A0 sink returns1 and supplies only the named synchronous mutations. Existing platform/CRT transport remains; marker writer, classifiers, Map lookup, GetMapCoords and caller loops execute unchanged."
+  ],
+  "entry_points": {
+    "line_marker": "0x00568CDB",
+    "foot_line_slice": "0x004D8A70",
+    "vertical_getter": "0x006E5300",
+    "horizontal_getter": "0x006E5320",
+    "packed_map_lookup": "0x005657A0",
+    "map_coords": "0x0041BEA0",
+    "tag_callout": "0x006E53A0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --line-events",
+  "payload_sha256": "edcc58bdf6c3d613c2b964e9c4b01f8659d669e9e3199c88a64020dce8d22f40"
+}

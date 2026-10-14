@@ -26,6 +26,17 @@ impl RadarSurface {
     pub fn dimensions(&self) -> [u32; 2] {
         [self.width, self.height]
     }
+    pub fn paint_movie(&mut self, source: &[u8], size: [u32; 2]) {
+        assert_eq!(source.len(), (size[0] * size[1] * 4) as usize);
+        let x_origin = self.width.saturating_sub(size[0]) / 2;
+        for y in 0..size[1].min(self.height) {
+            let width = size[0].min(self.width - x_origin);
+            let from = (y * size[0] * 4) as usize;
+            let to = ((y * self.width + x_origin) * 4) as usize;
+            self.rgba[to..to + width as usize * 4]
+                .copy_from_slice(&source[from..from + width as usize * 4]);
+        }
+    }
     pub fn paint_frame(&mut self, frame: &[u8]) {
         assert_eq!(frame.len(), self.rgba.len());
         for (dest, source) in self

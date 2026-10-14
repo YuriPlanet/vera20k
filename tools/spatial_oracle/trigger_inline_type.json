@@ -1,0 +1,100 @@
+[
+  {
+    "args": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "inline_type": "NANRCT",
+    "kind": 125,
+    "raw": "125,10,NANRCT,0,0,0,0,NA",
+    "read": "1,125,10,NANRCT,0,0,0,0,NA",
+    "value": 0,
+    "waypoint": 364
+  },
+  {
+    "args": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "inline_type": "GTGCAN",
+    "kind": 125,
+    "raw": "125,10,GTGCAN,0,0,0,0,EJ",
+    "read": "1,125,10,GTGCAN,0,0,0,0,EJ",
+    "value": 0,
+    "waypoint": 139
+  },
+  {
+    "args": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "inline_type": " TypeNameWithMoreThan24B",
+    "kind": 125,
+    "raw": "125,10, TypeNameWithMoreThan24Bytes,0,0,0,0,NZ",
+    "read": "1,125,10, TypeNameWithMoreThan24Bytes,0,0,0,0,NZ",
+    "value": 0,
+    "waypoint": 389
+  },
+  {
+    "args": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "inline_type": "-1tail",
+    "kind": 125,
+    "raw": "125,10,-1tail,0,0,0,0,NA",
+    "read": "1,125,10,-1tail,0,0,0,0,NA",
+    "value": 0,
+    "waypoint": 364
+  },
+  {
+    "args": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "inline_type": "GTGCAN",
+    "kind": 131,
+    "raw": "131,9,GTGCAN,0,0,0,0,90",
+    "read": "1,131,9,GTGCAN,0,0,0,0,90",
+    "value": 90,
+    "waypoint": 0
+  },
+  {
+    "args": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "inline_type": "-1tail",
+    "kind": 131,
+    "raw": "131,9,-1tail,0,0,0,0,90",
+    "read": "1,131,9,-1tail,0,0,0,0,90",
+    "value": 90,
+    "waypoint": 0
+  },
+  {
+    "args": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "inline_type": "",
+    "kind": 125,
+    "raw": "125,0,NANRCT,0,0,0,0,NA",
+    "read": "1,125,0,NANRCT,0,0,0,0,NA",
+    "value": 0,
+    "waypoint": 364
+  }
+]

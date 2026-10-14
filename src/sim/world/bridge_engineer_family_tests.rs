@@ -50,7 +50,16 @@ fn engineer_family_selector_matches_original_boundary_and_dummy() {
         sim.resolve_type_handles(&rules);
         sim.install_resolved_terrain_for_new_map(terrain);
         let engineer = sim
-            .construct_object_limbo_at_height("ENGINEER", "Americans", 10, 10, 0, 10, &rules)
+            .construct_object_limbo_at_height(
+                "ENGINEER",
+                "Americans",
+                10,
+                10,
+                0,
+                10,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .unwrap();
         {
             let actor = sim.substrate.entities.get_mut(engineer).unwrap();

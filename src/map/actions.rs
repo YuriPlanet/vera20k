@@ -105,6 +105,34 @@ impl ActionEntry {
             _ => Some(0),
         }
     }
+
+    /// `TActionClass+0x48`: Read6DD852..6DD86A atoi-reads token8 only for
+    /// parameter type11. Other types retain constructor6DD000's zero.
+    /// This is independent of the +90 literal and +44 waypoint. Executed
+    /// constructor/read/dispatch controls: trigger_super_charge_percent.json.
+    pub(crate) fn auxiliary_value(&self) -> i32 {
+        if self.params.first().map_or(0, |value| crt_atoi(value)) != 11 {
+            return 0;
+        }
+        self.params.get(6).map_or(0, |value| crt_atoi(value))
+    }
+
+    /// Types9/10 share the inline type ID at TAction+54. The original switch
+    /// table6DD880 routes both to6DD7F6; Read6DD801..6DD831 copies
+    /// 24 bytes and appends NUL; it does not trim or canonicalize case.
+    /// FlashBuildings6E4560 and CreateBuilding6E4200 use this same literal.
+    /// Type10 retains alphabetic +44; type9 reads token8 into +90 instead.
+    /// Executed reader controls: tools/spatial_oracle/trigger_inline_type.json.
+    pub(crate) fn inline_type_name(&self) -> &str {
+        if !matches!(
+            self.params.first().map_or(0, |value| crt_atoi(value)),
+            9 | 10
+        ) {
+            return "";
+        }
+        let value = self.params.get(1).map_or("", String::as_str);
+        truncate_native_bytes(value.split('\0').next().unwrap_or(""), 24)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -228,6 +256,34 @@ fn materialize_waypoint_index(param_type: Option<&str>, token_8: Option<&str>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_inline_type_reader_keeps_type10_waypoint_separate_from_type9_value() {
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/trigger_inline_type.json",
+        ))
+        .unwrap();
+        for row in rows.as_array().unwrap() {
+            let ini = IniFile::from_str(&format!(
+                "[Actions]\nINLINE=1,{}\n",
+                row["raw"].as_str().unwrap()
+            ));
+            let parsed = parse_actions(&ini);
+            let action = &parsed["INLINE"].entries[0];
+            assert_eq!(
+                action.inline_type_name(),
+                row["inline_type"].as_str().unwrap()
+            );
+            assert_eq!(
+                action.literal_value(),
+                Some(row["value"].as_i64().unwrap() as i32)
+            );
+            assert_eq!(
+                action.waypoint_index,
+                Some(row["waypoint"].as_u64().unwrap() as u32)
+            );
+        }
+    }
 
     #[test]
     fn test_parse_actions() {

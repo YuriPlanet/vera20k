@@ -22,6 +22,7 @@ from tools.native_oracle import (
 from tools.spatial_oracle.map_queries import dwords
 
 OBJ, TYPE, VT, PACKET, RULES = [SCRATCH+n for n in (0, 0x2000, 0x4000, 0x5000, 0x6000)]
+SOURCE, TAG = SCRATCH+0xA000, SCRATCH+0xB000
 SP = STACK_BASE + STACK_SIZE - 0x1000
 ESTIMATE = -987654321
 RANGES = ((0x5F5390, 0x5F584D), (0x70BE80, 0x70BF47),
@@ -77,6 +78,8 @@ class Fixture:
         self.u.reg_write(UC_X86_REG_ESI, OBJ)
         self.writes, self.callbacks, self.branches = [], [], []
         self.stubs, self.callback_mode = {}, 'none'
+        self.damage_source, self.tag_context = 0, None
+        self.tag_calls = []
         self.period = None
 
     def write(self, u, _access, address, size, value, _data):
@@ -87,6 +90,23 @@ class Fixture:
                                    value=i32(value)))
 
     def code(self, u, address, _size, _data):
+        if address == 0x6E53A0 and self.tag_context is not None:
+            sp = u.reg_read(UC_X86_REG_ESP)
+            event,actor,xy,force,source = struct.unpack('<IIIII',u.mem_read(sp+4,20))
+            assert u.reg_read(UC_X86_REG_ECX) == TAG
+            row = dict(kind=event,actor=actor,cell=xy,force=force,source=source,
+                       health=self.read(OBJ+0x6C),alive=u.mem_read(OBJ+0x90,1)[0])
+            if event == 6:
+                if self.tag_context['mutation'] == 'detach_after6':
+                    u.mem_write(OBJ+0x34,dwords(0))
+                elif self.tag_context['mutation'] == 'clear_alive_after6':
+                    u.mem_write(OBJ+0x90,b'\0')
+            self.tag_calls.append(row)
+            # Explicit callout sink, not original Tag/Trigger execution.
+            u.reg_write(UC_X86_REG_EAX,1)
+            u.reg_write(UC_X86_REG_ESP,sp+24)
+            u.reg_write(UC_X86_REG_EIP,struct.unpack('<I',u.mem_read(sp,4))[0])
+            return
         if address == 0x70BF0F:
             self.period = i32(u.reg_read(UC_X86_REG_EAX))
         if address in BRANCHES:
@@ -107,7 +127,7 @@ class Fixture:
             assert arg == 1
             mutation = {'destroy_revive': 70001}.get(self.callback_mode)
         else:
-            assert slot == 0xE0 and arg == 0
+            assert slot == 0xE0 and arg == self.damage_source
         if mutation is not None:
             u.mem_write(OBJ+0x6C, dwords(mutation))
             row['supplied_writes'].append(dict(field='actual', value=mutation))
@@ -124,8 +144,13 @@ class Fixture:
     def unchanged(self):
         assert self.original == [bytes(self.u.mem_read(a, b-a)) for a, b in RANGES]
 
-    def receiver(self, current, strength, damage, *, kind='unit', can_c4=True, alive=1, callback='none'):
+    def receiver(self, current, strength, damage, *, kind='unit', can_c4=True, alive=1, callback='none', tag_context=None):
         self.reset(kind, current, strength, alive)
+        self.tag_context = tag_context
+        if tag_context is not None:
+            self.damage_source = SOURCE if tag_context['source'] else 0
+            self.u.mem_write(OBJ+0x34,dwords(TAG if tag_context['tag'] else 0))
+            self.u.mem_write(SOURCE+0x21C,dwords(0))
         self.u.mem_write(TYPE+0x1577, bytes((int(can_c4),)))
         self.callback_mode = callback
         for slot in (0x148, 0xE0, 0xDC):
@@ -135,17 +160,21 @@ class Fixture:
         self.u.mem_write(PACKET, dwords(damage))
         # int*damage, distance0, null warhead/source, ignoreDefenses1,
         # preventPassengerEscape1, null sourceHouse. Forced path never dereferences warhead.
-        self.u.mem_write(SP, dwords(RET_MAGIC, PACKET, 0, 0, 0, 1, 1, 0))
+        self.u.mem_write(SP, dwords(RET_MAGIC, PACKET, 0, 0, self.damage_source, 1, 1, 0))
         run_checked(self.u, 0x5F5390, RET_MAGIC, count=2000, required_addresses=(0x5F53A1,))
         assert self.u.reg_read(UC_X86_REG_ESP) == SP+32
         assert self.read(OBJ+0x70) == ESTIMATE
         self.unchanged()
-        return dict(input=dict(kind=kind, current=current, strength=strength, damage=damage,
+        result = dict(input=dict(kind=kind, current=current, strength=strength, damage=damage,
                                can_c4=can_c4, alive=alive, callback=callback),
                     output=dict(actual=self.read(OBJ+0x6C), estimated=self.read(OBJ+0x70),
                                 damage_packet=self.read(PACKET), result=i32(self.u.reg_read(UC_X86_REG_EAX)),
                                 alive=int(self.u.mem_read(OBJ+0x90, 1)[0]), writes=self.writes,
                                 callbacks=self.callbacks, branches=self.branches))
+        if tag_context is not None:
+            result['input']['tag_context'] = tag_context
+            result['output']['tag_calls'] = self.tag_calls
+        return result
 
     def self_heal(self, current, strength, frame, *, kind='unit', enabled=True, repair_rate=1.0, expect_trap=False):
         self.reset(kind, current, strength)
@@ -300,5 +329,43 @@ def metadata():
     return result
 
 
+def generate_damage_tags():
+    fixture = Fixture()
+    cases = []
+    for name,source,tag,damage,alive,mutation in (
+        ('ordinary',True,True,1,1,'none'),
+        ('no_source',False,True,1,1,'none'),
+        ('no_tag',True,False,1,1,'none'),
+        ('no_damage',True,True,0,1,'none'),
+        ('healing',True,True,-1,1,'none'),
+        ('lethal',True,True,80,1,'none'),
+        ('already_not_alive',True,True,1,0,'none'),
+        ('tag_detach',True,True,1,1,'detach_after6'),
+        ('alive_clear',True,True,1,1,'clear_alive_after6')):
+        row = fixture.receiver(80,100,damage,alive=alive,
+            tag_context=dict(source=source,tag=tag,mutation=mutation))
+        row['name'] = name
+        cases.append(row)
+    return cases
+
+
+def damage_tag_metadata():
+    return provenance(
+        scope='Nine unchanged Object5F5390 receiver controls for surviving damage Tag6/44 order, null-source/null-tag, early returns and synchronous detach/alive mutation. Not original Tag-body, Techno wrapper or complete receiver parity.',
+        assumptions=[
+            'Reuse the existing Object HP Fixture with copied original Unit vtable/type getters, strength100/current80, ignoreDefenses=true and explicit source/tag storage.',
+            'Tag6E53A0 is a recorded sink returning1. Only named mutation controls change the supplied Object attachment/alive fields; original event predicates/actions are excluded.',
+            'Changed/kill/destroy virtual sinks remain the established HP fixture boundary. Actual native Object instructions and arithmetic execute; no gameplay getter is replaced.'],
+        substitutions=['Original Tag callout is supplied and recorded; platform transport and existing virtual HP callback sinks remain.'],
+        entry_points={'object_receive_damage':0x5F5390,'tag_callout':0x6E53A0})
+
+
 if __name__ == '__main__':
-    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata)
+    import sys
+    args = sys.argv[1:]
+    if '--damage-tags' in args:
+        args.remove('--damage-tags')
+        finish_vectors(generate_damage_tags,Path(__file__).with_name('object_damage_tags.json'),
+            provenance=damage_tag_metadata,argv=args)
+    else:
+        finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata,argv=args)

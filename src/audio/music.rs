@@ -30,6 +30,7 @@ pub struct MusicPlayer {
     output_scale: f64,
     theme_scale: f64,
     focus_output_scale: f64,
+    paused: bool,
 }
 
 impl MusicPlayer {
@@ -46,6 +47,7 @@ impl MusicPlayer {
             output_scale: 1.0,
             theme_scale: 1.0,
             focus_output_scale: 1.0,
+            paused: false,
         })
     }
 
@@ -71,6 +73,9 @@ impl MusicPlayer {
         let player = Player::connect_new(self._device.mixer());
         player.set_volume(self.effective_volume());
         player.append(source);
+        if self.paused {
+            player.pause();
+        }
         log::info!("Playing prepared music track: {}", prepared.stem);
         self.current_player = Some(player);
         true
@@ -86,12 +91,14 @@ impl MusicPlayer {
     /// (`0x00408270`) and resumes them afterwards (`0x00408230`), so the
     /// theme continues from where it stopped rather than restarting.
     pub fn pause_output(&mut self) {
+        self.paused = true;
         if let Some(player) = self.current_player.as_ref() {
             player.pause();
         }
     }
 
     pub fn resume_output(&mut self) {
+        self.paused = false;
         if let Some(player) = self.current_player.as_ref() {
             player.play();
         }

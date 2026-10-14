@@ -308,8 +308,11 @@ mod tests {
 
     fn rules() -> RuleSet {
         let art = IniFile::from_str(ART);
-        let mut rules =
-            RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(RULES), &art).unwrap();
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::sim::arena_fixture::clear_ground_ini(RULES),
+            &art,
+        )
+        .unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
         rules
     }
@@ -333,6 +336,7 @@ mod tests {
             level: if (x, y) == target { target_level } else { 0 },
             ..test_flat_cell(x, y)
         }));
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
         let silo = sim
             .spawn_object_at_height(kind, "Russians", 20, 30, 0, 0, rules)
             .unwrap();

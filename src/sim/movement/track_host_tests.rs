@@ -1816,7 +1816,15 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
                 "[VehicleTypes]\n0=HTNK\n1=MTNK\n[BuildingTypes]\n0=NADEPT\n1=GADEPT\n{}",
                 ini_text(&sections)
             );
-            let ini = IniFile::from_str(&text);
+            // This bounded native arrival control supplies admitted actors
+            // on clear ground, but its selected-key packet omits LandType.
+            // Supply that synthetic construction prior in the first layer;
+            // the extracted retail keys and later passes keep precedence.
+            let ini = if base["file"] == "RULESMD.INI" {
+                crate::sim::arena_fixture::clear_ground_ini(&text)
+            } else {
+                IniFile::from_str(&text)
+            };
             match base["file"].as_str().unwrap() {
                 "RULESMD.INI" => stack = Some(RulesLayerStack::new(ini)),
                 name => stack.as_mut().unwrap().push(

@@ -174,7 +174,16 @@ fn scene(input: &Value) -> Scene {
     let (x, y) = input.get("cell").map_or((15, 15), cell);
     let on_bridge = input["on_bridge"] == true;
     let transport = sim
-        .construct_object_limbo_at_height("APC", "Americans", x, y, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "APC",
+            "Americans",
+            x,
+            y,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("transport");
     let sub = input.get("sub").map_or((128, 128), |sub| {
         (
@@ -283,7 +292,16 @@ fn scene(input: &Value) -> Scene {
         };
         let spot = spec["spot"].as_u64().unwrap() as u8;
         let id = sim
-            .construct_object_limbo_at_height("E1", owner, x, y, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                "E1",
+                owner,
+                x,
+                y,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("occupant");
         sim.substrate.entities.get_mut(id).unwrap().sub_cell = Some(spot);
         let (dx, dy) = SPOT_OFFSETS[usize::from(spot)];

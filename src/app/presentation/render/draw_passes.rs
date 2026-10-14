@@ -748,6 +748,43 @@ pub(super) fn dispatch_draw_passes(
         "super_timer_text",
     );
 
+    // TacticalDraw6D4B25->6D4E20 is its last battlefield draw: centred
+    // GRFXTXT frame, or white text if the shape/converter is unavailable.
+    // Keep the tactical clip and draw before sidebar copy/Chrono capture.
+    draw_pooled_ui(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        state
+            .renderer
+            .outcome_banner_art
+            .as_ref()
+            .map(|art| art.texture()),
+        "outcome_shape",
+    );
+    draw_pooled_ui(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        Some(state.renderer.bit_font.atlas()),
+        "outcome_text",
+    );
+
+    // Original4F4480's53BAE0 gate skips tactical redraw during ChronoScreen,
+    // but sidebar/UI still follow. Surface stores therefore precede chrome.
+    drop(pass);
+    state
+        .match_state
+        .match_presentation
+        .chrono_screen
+        .draw_tactical(
+            &state.renderer.gpu,
+            encoder,
+            state.renderer.combat_light_renderer.composition_texture(),
+            [tac_x, tac_y, tac_w, tac_h],
+        );
+    let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+
     // --- Screen-fixed UI: sidebar, messages, tooltips, cursor — UI camera (zoom=1.0) ---
     // Chrome owns the whole window: the sidebar column, the message list that
     // starts at the tactical origin, tooltips, and the cursor, which the native
@@ -1106,7 +1143,7 @@ mod tests {
     }
 
     #[test]
-    fn gsi_13_01_pixel_fx_and_the_timer_lines_end_vera_tactical_writes() {
+    fn gsi_13_01_pixel_fx_and_timers_precede_native_outcome_and_chrono_capture() {
         let first_rally = source_offset("\"factory_rally_first\"");
         let ion_blasts = source_offset(".draw_ion_blasts(encoder, view)");
         let objects = source_offset("merge_passes::draw_native_object_pass(");
@@ -1118,6 +1155,10 @@ mod tests {
         let sparkle = source_offset("pool.get(\"cell_sparkles\")");
         let timer_fill = source_offset("\"super_timer_fill\"");
         let timer_text = source_offset("\"super_timer_text\"");
+        let outcome_start = source_offset("// TacticalDraw6D4B25->6D4E20");
+        let outcome_shape = source_offset("\"outcome_shape\"");
+        let outcome_text = source_offset("\"outcome_text\"");
+        let chrono_capture = source_offset(".draw_tactical(");
         let screen_fixed = source_offset("// --- Screen-fixed UI:");
         let sidebar_blit = source_offset("surface.composite(&mut pass)");
         let full_window_scissor = source_offset(
@@ -1138,23 +1179,26 @@ mod tests {
         assert!(status < combat_lights);
         assert!(status < placement);
         assert!(placement < sparkle);
-        // 6D492B, then the timer lines 6D4941..6D4B25. Native then draws
-        // the tactical text (6D4B2B, 6D4E20), which VERA does not port.
+        // 6D492B, then timer lines6D4941..6D4B25 and tactical text6D4E20.
+        // The result owner supplies either GRFXTXT or its CSF fallback.
         assert!(sparkle < timer_fill);
         assert!(timer_fill < timer_text);
-        assert!(timer_text < screen_fixed);
+        assert!(timer_text < outcome_start);
+        assert!(outcome_start < outcome_shape);
+        assert!(outcome_shape < outcome_text);
+        assert!(outcome_text < chrono_capture);
+        assert!(chrono_capture < screen_fixed);
         // The sidebar blits scissor to the column and strip; the rest of the
         // chrome owns the whole frame.
         assert!(screen_fixed < sidebar_blit);
         assert!(sidebar_blit < full_window_scissor);
         assert!(full_window_scissor < first_screen_submission);
 
-        let final_tactical_slice = &SOURCE[sparkle..screen_fixed];
+        let timer_tail = &SOURCE[sparkle..outcome_start];
         assert_eq!(
-            final_tactical_slice.matches(".draw").count()
-                + final_tactical_slice.matches("draw_pooled").count(),
+            timer_tail.matches(".draw").count() + timer_tail.matches("draw_pooled").count(),
             3,
-            "PixelFX and the timer lines must remain VERA's final tactical draw submissions"
+            "PixelFX and the two timer submissions precede the native result draw"
         );
     }
 

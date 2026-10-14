@@ -206,6 +206,7 @@ fn test_audio() -> crate::app::audio_runtime::AppAudioRuntime {
         sfx_player: None,
         launcher_audio_available: true,
         theme_startup_suppressed: false,
+        movie_audio: Default::default(),
     }
 }
 

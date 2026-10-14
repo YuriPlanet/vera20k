@@ -238,6 +238,13 @@ pub(crate) fn try_load_save_file(
     state: &mut AppState,
     path: &Path,
 ) -> Result<(), crate::app::persistence::PreparedLoadError> {
+    // UI559DBC->69BB40->5BF450 precedes the lower load, including failure.
+    let wall_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
+        state,
+        std::time::Instant::now(),
+    );
+    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(state, wall_ms);
     use crate::app::persistence::{PreparedLoadError, PreparedSavedGame, SavedGamePreparationView};
     let from_menu = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu;
     crate::app::loading::pump::present_saved_game_loading(state);

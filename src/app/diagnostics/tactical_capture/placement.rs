@@ -400,7 +400,9 @@ Buildable=yes
 
     #[test]
     fn no_valid_candidate_fails_without_fallback() {
-        let (sim, rules, grid, yard_id) = ready_fixture(1, 1, (0, 0));
+        // Radius zero visits only the live yard's occupied anchor. A failed
+        // search must not fall back to a cell beyond the requested radius.
+        let (sim, rules, grid, yard_id) = ready_fixture(24, 24, (10, 10));
         assert!(matches!(
             first_valid_placement(
                 &sim,
@@ -408,8 +410,8 @@ Buildable=yes
                 "Russians",
                 "NAPOWR",
                 yard_id,
-                (0, 0),
-                16,
+                (10, 10),
+                0,
                 &grid,
                 None,
             ),

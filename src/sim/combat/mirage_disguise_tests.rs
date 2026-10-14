@@ -8,20 +8,17 @@ use super::{
     EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags, receiver_health, resolve_receive_damage,
 };
 use crate::map::entities::EntityCategory;
-use crate::map::houses::HouseAllianceMap;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cloak_disguise::DisguiseRuntime;
 use crate::sim::components::DriveCoord;
-use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::{StringInterner, test_interner};
 use crate::sim::timer::CdTimer;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
 
 fn corpus() -> Value {
     let native: Value = serde_json::from_str(crate::test_fixture::text(
@@ -201,9 +198,12 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
             context,
         );
         let owner = target.owner();
-        let houses = BTreeMap::from([(owner, HouseState::new(owner, 0, Some(owner), false, 0, 0))]);
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut world = crate::sim::world::Simulation::new();
+        world
+            .houses
+            .insert(owner, HouseState::new(owner, 0, Some(owner), false, 0, 0));
+        world.substrate.entities.insert(target);
+        world.session.binary_frame = frame;
         let warhead = interner.intern(input["warhead"].as_str().unwrap());
         // The original receiver controls have no attacker or sourceHouse.
         // Preserve that ABI instead of introducing a retaliation source.
@@ -221,14 +221,14 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
                 arg6: row["args"][5] != 0,
             },
         );
-        let alliances = HouseAllianceMap::new();
+        world.interner = interner.clone();
         let resolved = resolve_receive_damage(
             &event,
-            &entities,
+            &world.substrate.entities,
             &rules,
-            &interner,
-            &houses,
-            &alliances,
+            &world.interner,
+            &world.houses,
+            &world.house_alliances,
             false,
             u64::from(frame),
             None,
@@ -236,17 +236,15 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
         .expect("physical MGTK/AP receiver resolves");
         let receipt = receiver_health::commit_receiver_health(
             &event,
-            &mut entities,
+            &mut world,
             &rules,
-            &interner,
-            &alliances,
-            None,
             None,
             Some(resolved),
-            frame,
+            crate::sim::world::FrameEffects::default(),
+            false,
         )
         .expect("ordinary Object/Techno health commit");
-        let target = entities.get(1).unwrap();
+        let target = world.substrate.entities.get(1).unwrap();
         assert_eq!(
             receipt.state as i32,
             int(&row["returned_eax"]),

@@ -1005,12 +1005,16 @@ fn caller_count_bridge_detour(
 
 #[test]
 fn gsi_04_12_completed_ground_unit_clearance_rally_threads_exact_blocker_counts() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    // This routing fixture supplies an already-placed factory at (0,0).
+    // Native CanPlaceAt7161A0 rejects that sentinel before the cell bypass;
+    // the explicit synthetic PlaceAnywhere prior admits it without changing
+    // the bridge/path witness. This does not test retail building admission.
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&crate::sim::arena_fixture::clear_ground_ini(
         "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=MTNK\n\n\
          [BuildingTypes]\n0=GAWEAP\n\n\
          [MTNK]\nOwner=Americans\nStrength=300\nArmor=heavy\nSpeed=6\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\n\
-         [GAWEAP]\nOwner=Americans\nWeaponsFactory=yes\nStrength=1000\nFoundation=1x1\nFactory=UnitType\nExitCoord=256,0,0\n",
-    ))
+         [GAWEAP]\nOwner=Americans\nWeaponsFactory=yes\nStrength=1000\nPlaceAnywhere=yes\nFactory=UnitType\nExitCoord=256,0,0\n",
+    ), &IniFile::from_str("[GAWEAP]\nFoundation=1x1\n"))
     .expect("ground-unit production rules should parse");
 
     // The real war-factory exit is ground cell (1,0); the rally is ground cell
@@ -1026,7 +1030,7 @@ fn gsi_04_12_completed_ground_unit_clearance_rally_threads_exact_blocker_counts(
         ..rectangular_spawn_bounds(6)
     });
     sim.playfield_size_height = Some(4);
-    sim.resolved_terrain = Some(terrain);
+    sim.install_resolved_terrain_for_new_map(terrain);
     sim.zone_grid = Some(zone_grid);
     let owner = sim.interner.intern("Americans");
     sim.houses.insert(
@@ -1142,13 +1146,16 @@ fn gsi_04_12_completed_ground_unit_clearance_rally_threads_exact_blocker_counts(
 
 #[test]
 fn gsi_04_12_miner_dock_approach_threads_exact_blocker_counts() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    // The admitted refinery prior is at native CanPlaceAt's (0,0) sentinel.
+    // Only this synthetic type supplies PlaceAnywhere; its 1x1 ART and the
+    // existing bridge/path geometry stay fixed. Retail admission is excluded.
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&crate::sim::arena_fixture::clear_ground_ini(
         "[VehicleTypes]\n0=HARV\n1=BLOCK\n\n\
          [BuildingTypes]\n0=REFN\n\n\
          [HARV]\nStrength=600\nSpeed=4\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Normal\nHarvester=yes\nDock=REFN\nStorage=20\n\n\
          [BLOCK]\nStrength=300\nSpeed=4\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Normal\n\n\
-         [REFN]\nStrength=900\nFoundation=1x1\nRefinery=yes\nDockUnload=yes\n",
-    ))
+         [REFN]\nStrength=900\nPlaceAnywhere=yes\nRefinery=yes\nDockUnload=yes\n",
+    ), &IniFile::from_str("[REFN]\nFoundation=1x1\n"))
     .expect("dock-approach rules should parse");
 
     // The War Miner's dock approach and staging legs are Unit
@@ -1165,7 +1172,7 @@ fn gsi_04_12_miner_dock_approach_threads_exact_blocker_counts() {
         ..rectangular_spawn_bounds(6)
     });
     sim.playfield_size_height = Some(4);
-    sim.resolved_terrain = Some(terrain);
+    sim.install_resolved_terrain_for_new_map(terrain);
     sim.zone_grid = Some(zone_grid);
     let refinery_id = sim
         .spawn_object("REFN", "Americans", 0, 0, 0, &rules)
@@ -1196,14 +1203,14 @@ fn gsi_04_12_miner_dock_approach_threads_exact_blocker_counts() {
 
 #[test]
 fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&crate::sim::arena_fixture::clear_ground_ini(
         "[InfantryTypes]\n0=ENGINEER\n\n\
          [VehicleTypes]\n0=BLOCK\n\n\
          [BuildingTypes]\n0=TARGET\n\n\
          [ENGINEER]\nStrength=75\nSpeed=4\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Infantry\nEngineer=yes\n\n\
          [BLOCK]\nStrength=300\nSpeed=4\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Normal\n\n\
-         [TARGET]\nStrength=500\nFoundation=1x1\nCapturable=yes\n",
-    ))
+         [TARGET]\nStrength=500\nCapturable=yes\n",
+    ), &IniFile::from_str("[TARGET]\nFoundation=1x1\n"))
     .expect("interaction-order rules should parse");
 
     let (path_grid, zone_grid, terrain) = caller_count_bridge_detour(MovementZone::Infantry, false);
@@ -1216,7 +1223,7 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
         ..rectangular_spawn_bounds(6)
     });
     sim.playfield_size_height = Some(4);
-    sim.resolved_terrain = Some(terrain);
+    sim.install_resolved_terrain_for_new_map(terrain);
     sim.zone_grid = Some(zone_grid);
     let engineer_id = sim
         .spawn_object("ENGINEER", "Americans", 1, 0, 0, &rules)

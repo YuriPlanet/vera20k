@@ -35,7 +35,16 @@ fn factory_fixture(
         crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
     );
     let parent = saved
-        .construct_object_limbo_at_height(type_name, "Americans", 0, 0, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            type_name,
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("construct actual held graph");
     let type_id = saved.interner.get(type_name).unwrap();
     let cost = rules.object(type_name).unwrap().cost;
@@ -314,7 +323,16 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
             }
             "unrelated-limbo" => {
                 saved
-                    .construct_object_limbo_at_height("MTNK", "Americans", 0, 0, 0, 0, &rules)
+                    .construct_object_limbo_at_height(
+                        "MTNK",
+                        "Americans",
+                        0,
+                        0,
+                        0,
+                        0,
+                        &rules,
+                        crate::sim::world::FrameEffects::default(),
+                    )
                     .unwrap();
             }
             "empty-registry" => {

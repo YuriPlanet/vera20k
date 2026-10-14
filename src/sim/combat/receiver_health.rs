@@ -1,10 +1,12 @@
 //! The local health commit ends its entity borrow before world callbacks run.
 //!
 //! This stage retains the existing Object/Techno/Building receiver ordering.
-//! Its result carries decisions across the later synchronous lifecycle stages;
-//! it does not execute or defer those stages itself.
+//! Surviving Object damage raises its synchronous Tag events here before the
+//! Techno continuation. Its result then carries decisions to later lifecycle
+//! stages after re-reading any state the Tag callbacks changed.
 
 use super::*;
+use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 
 pub(super) struct ReceiverHealthCommit {
     pub(super) building_entry_frame: Option<i32>,
@@ -28,19 +30,17 @@ pub(super) struct ReceiverHealthCommit {
 
 pub(super) fn commit_receiver_health(
     event: &EntityDamageEvent,
-    entities: &mut EntityStore,
+    world: &mut Simulation,
     rules: &RuleSet,
-    interner: &StringInterner,
-    alliances: &HouseAllianceMap,
-    attacker_owner: Option<InternedId>,
-    live_source_owner: Option<InternedId>,
+    registry: Option<&OverlayTypeRegistry>,
     receiver_outcome: Option<ResolvedReceiveDamage>,
-    binary_frame: u32,
+    effects: FrameEffects<'_>,
+    callbacks: bool,
 ) -> Option<ReceiverHealthCommit> {
     let target_id = event.target_id;
     let mut building_entry_frame = None;
     let attacker_id = event.attacker_id;
-    let mut state = damage::DamageState::Unaffected;
+    let state;
     let mut became_fatal = false;
     let mut entered_techno_death = false;
     let mut reached_exact_zero = false;
@@ -53,10 +53,24 @@ pub(super) fn commit_receiver_health(
     let mut latch_hostile_hit = false;
     let mut uncloak_after_damage = false;
     let mut threat_feedback: Option<(InternedId, InternedId, i32, i32, i32)> = None;
+    let binary_frame = world.session.binary_frame;
+    let live_source_owner = (attacker_id != RAD_NO_ATTACKER)
+        .then(|| {
+            world
+                .substrate
+                .entities
+                .get(attacker_id)
+                .map(GameEntity::owner)
+        })
+        .flatten();
+    let attacker_owner = event.source_house.or(live_source_owner);
     // A source not allied with the target's owner.
-    let hostile_source = |target: &GameEntity| {
+    let hostile_source = |target: &GameEntity,
+                          source_owner: Option<InternedId>,
+                          alliances: &HouseAllianceMap,
+                          interner: &StringInterner| {
         attacker_id != RAD_NO_ATTACKER
-            && attacker_owner.is_some_and(|source_owner| {
+            && source_owner.is_some_and(|source_owner| {
                 !crate::map::houses::is_allied_with(
                     alliances,
                     interner.resolve(target.owner()),
@@ -64,7 +78,10 @@ pub(super) fn commit_receiver_health(
                 )
             })
     };
-    if let Some(target) = entities.get_mut(target_id) {
+    let (packet, final_packet, reached_survivor_postlude, strength) = {
+        let interner = &world.interner;
+        let alliances = &world.house_alliances;
+        let target = world.substrate.entities.get_mut(target_id)?;
         let receive_outcome = receiver_outcome?.outcome;
         if let Some(value) = receive_outcome.psychedelic_value {
             // TechnoClass writes the signed kernel result first, then the
@@ -80,7 +97,11 @@ pub(super) fn commit_receiver_health(
                 reached_exact_zero,
                 postmortem_candidate,
                 fatal_category,
-                positive_postlude: Some((value, true, hostile_source(target))),
+                positive_postlude: Some((
+                    value,
+                    true,
+                    hostile_source(target, attacker_owner, alliances, interner),
+                )),
                 synchronous_retaliation,
                 smoke_maintenance,
                 healing_only,
@@ -129,6 +150,57 @@ pub(super) fn commit_receiver_health(
         } else {
             receive_outcome.post_object_damage.unwrap_or(packet)
         };
+        (packet, final_packet, reached_survivor_postlude, strength)
+    };
+    // Object5F57B5..5807 runs both surviving-damage Tag visits before
+    // returning to Techno701E5E. Both require a source Techno and re-read
+    // ObjectAlive and the attachment after the preceding synchronous callback.
+    // The shared Tag owner receives actor=victim and source=attacker; it reads
+    // the source's current House during Event44, never a captured House pointer.
+    // Steam3e81a617..08600; tools/spatial_oracle/object_health --damage-tags.
+    if callbacks
+        && attacker_id != RAD_NO_ATTACKER
+        && matches!(
+            state,
+            damage::DamageState::Damaged | damage::DamageState::Yellow | damage::DamageState::Red
+        )
+    {
+        for kind in [6, 44] {
+            if world
+                .substrate
+                .entities
+                .get(target_id)
+                .is_none_or(|target| !target.lifecycle.object_alive)
+            {
+                break;
+            }
+            world.dispatch_object_tag_event(
+                target_id,
+                kind,
+                Some(target_id),
+                Some(attacker_id),
+                UninitContext::new(Some(rules), registry).with_effects(effects),
+            );
+        }
+    }
+    // World callbacks may change owner, health and disguise, or clear alive.
+    // Every later Techno decision consumes that resulting authoritative object.
+    //701DF8 returns from Object;701E23/701E61 re-read source/victim Owner
+    //for anger, rather than preserving their pre-Tag House identities.
+    let interner = &world.interner;
+    let alliances = &world.house_alliances;
+    let live_source_owner = (attacker_id != RAD_NO_ATTACKER)
+        .then(|| {
+            world
+                .substrate
+                .entities
+                .get(attacker_id)
+                .map(GameEntity::owner)
+        })
+        .flatten();
+    let attacker_owner = event.source_house.or(live_source_owner);
+    if let Some(target) = world.substrate.entities.get_mut(target_id) {
+        let target_type = rules.object(interner.resolve(target.type_ref()))?;
         // Past the anger write, Object's result 5 (ObjectAlive already clear)
         // returns at once (`0x00701E71`, `0x00701F80..0x00701F91`): no reveal,
         // death arm or survivor tail.
@@ -162,7 +234,7 @@ pub(super) fn commit_receiver_health(
         }
         let survivor_tail = reached_survivor_postlude && !already_dead && !entered_techno_death;
         uncloak_after_damage = survivor_tail;
-        let hostile_source = hostile_source(target);
+        let hostile_source = hostile_source(target, attacker_owner, alliances, interner);
         if reached_survivor_postlude && let Some(source_owner) = live_source_owner {
             threat_feedback = Some((
                 target.owner(),

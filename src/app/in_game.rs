@@ -24,6 +24,10 @@ impl App {
     }
 
     pub(super) fn return_to_main_menu(state: &mut AppState) {
+        let wall_ms =
+            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        crate::app::radar_movie::retire(state, wall_ms);
+        crate::app::chrono_screen::retire(state, wall_ms);
         if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
             // Main_Game48CCC0 clears ScenarioStarted[A8ED5C] at48CEBF
             // after the match returns (EBX=0 from48CCD4). The runtime may
@@ -83,6 +87,11 @@ impl App {
             return;
         }
         state.platform.window_active = active;
+        state
+            .match_state
+            .match_presentation
+            .radar_movies
+            .set_active(active);
         state.match_state.input.keys_held.clear();
         state.match_state.input.hotkey_modifiers = ModifiersState::empty();
         state.platform.live_modifiers = ModifiersState::empty();
@@ -210,7 +219,14 @@ impl App {
                 state,
                 Instant::now(),
             );
-            if will_be_open {
+            if will_be_open
+                || state
+                    .match_state
+                    .match_presentation
+                    .radar_anim
+                    .as_ref()
+                    .is_some_and(|radar| radar.movie_pause())
+            {
                 state.match_state.scenario_elapsed_clock.pause(now_ms);
             } else {
                 state.match_state.scenario_elapsed_clock.resume(now_ms);
@@ -366,6 +382,9 @@ impl App {
         // Abort is the independent EXIT-event route: it never inherits the
         // victory/defeat HouseClass SavourDelay or its outcome-voice wait.
         state.match_state.scenario_outcome = None;
+        //686570 clears the movie queue before its independent audio fade.
+        crate::app::radar_movie::retire(state, wall_ms);
+        crate::app::chrono_screen::retire(state, wall_ms);
         let _ = state.match_state.scenario_elapsed_clock.stop(wall_ms);
         // gamemd provenance: battle abort teardown; verified
         // GameExit__BattleControlTerminated @ 0x00686570 starts Theme's fade
@@ -646,6 +665,10 @@ impl App {
     /// calls this instead of exiting immediately; `render_frame` drives it to
     /// completion and then exits the event loop.
     pub(super) fn start_quit_cascade(state: &mut AppState) {
+        let wall_ms =
+            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        crate::app::radar_movie::retire(state, wall_ms);
+        crate::app::chrono_screen::retire(state, wall_ms);
         let start_volume = state
             .audio
             .music_player

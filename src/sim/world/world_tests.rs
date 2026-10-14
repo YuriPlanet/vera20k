@@ -3144,7 +3144,11 @@ fn alliance_map(pairs: &[(&str, &[&str])]) -> HouseAllianceMap {
 }
 
 fn combat_test_rules() -> RuleSet {
-    let ini: IniFile = IniFile::from_str(
+    combat_test_rules_with_override("")
+}
+
+fn combat_test_rules_with_override(extra: &str) -> RuleSet {
+    let mut ini: IniFile = IniFile::from_str(
         "[InfantryTypes]\n0=E1\n\n\
          [VehicleTypes]\n0=MTNK\n1=AMCV\n\n\
          [AircraftTypes]\n\n\
@@ -3158,6 +3162,7 @@ fn combat_test_rules() -> RuleSet {
          [SA]\nVerses=100%,100%,100%,90%,70%,25%,100%,25%,25%,0%,0%\n\n\
          [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n[Clear]\nBuildable=yes\n",
     );
+    ini.merge(&IniFile::from_str(extra));
     RuleSet::from_ini_with_fixed_art_for_test(
         &ini,
         &IniFile::from_str("[GACNST]\nFoundation=4x3\n"),
@@ -4092,7 +4097,7 @@ fn short_game_victory_resolution_uses_new_defeat_state() {
     check_defeat_now(&mut sim, Some(&rules));
 
     assert!(sim.houses[&defeated].is_defeated);
-    assert!(sim.houses[&survivor].has_won);
+    assert!(sim.houses[&survivor].has_won());
 }
 
 /// HouseClass::Update's gate calls Blowup_All (`0x004F8F7B`) before
@@ -4112,9 +4117,9 @@ fn defeated_house_is_flagged_has_lost_and_its_stragglers_die() {
 
     // The loser is flagged both defeated and has_lost; the winner is not.
     assert!(sim.houses[&defeated].is_defeated);
-    assert!(sim.houses[&defeated].has_lost);
-    assert!(!sim.houses[&survivor].has_lost);
-    assert!(sim.houses[&survivor].has_won);
+    assert!(sim.houses[&defeated].has_lost());
+    assert!(!sim.houses[&survivor].has_lost());
+    assert!(sim.houses[&survivor].has_won());
     let straggler = sim
         .entities()
         .get(1)
@@ -4136,35 +4141,44 @@ fn gsi_01_04_house_rung_owns_savour_deadline_and_emits_one_transition_edge() {
     let mut sim = Simulation::new();
     sim.session.game_options.short_game = false;
     sim.session.tick = 10;
+    sim.session.binary_frame = 10;
     let winner = insert_house_with_counts(&mut sim, "Americans", 1, 0);
     let loser = insert_house_with_counts(&mut sim, "Russians", 0, 0);
+    sim.session.current_house = Some(winner);
 
     check_defeat_now(&mut sim, Some(&rules));
 
-    let winner_outcome = sim.houses[&winner].outcome_state.expect("victory accepted");
+    let winner_outcome = sim.houses[&winner].outcome().expect("victory accepted");
     assert_eq!(winner_outcome.kind, HouseOutcomeKind::Victory);
-    assert_eq!(winner_outcome.savour_until_tick, 38);
+    // Original C4 scalar control reuses the same constructor double *900
+    // ->7C5F00 (FPCW0E7F): read_double_percent.json absent row is26.
+    assert_eq!(
+        sim.houses[&winner].outcome_timer(),
+        crate::sim::timer::CdTimer::started(10, 26)
+    );
     assert!(!winner_outcome.exit_ready);
     assert_eq!(
         sim.sound_events
             .iter()
             .filter(|event| matches!(event, SimSoundEvent::MatchOutcome { .. }))
             .count(),
-        2,
-        "one accepted loss and one accepted victory each emit one EVA edge"
+        1,
+        "only the current player's accepted victory emits its EVA edge"
     );
 
     sim.sound_events.clear();
-    sim.session.tick = 36;
+    sim.session.tick = 35;
+    sim.session.binary_frame = 35;
     check_defeat_now(&mut sim, Some(&rules));
-    assert!(!sim.houses[&winner].outcome_state.unwrap().exit_ready);
+    assert!(!sim.houses[&winner].outcome().unwrap().exit_ready);
     assert!(!sim.termination_frame_requested());
     assert!(sim.sound_events.is_empty(), "accepted edges never replay");
 
-    sim.session.tick = 37;
+    sim.session.tick = 36;
+    sim.session.binary_frame = 36;
     check_defeat_now(&mut sim, Some(&rules));
-    assert!(sim.houses[&winner].outcome_state.unwrap().exit_ready);
-    assert!(sim.houses[&loser].outcome_state.unwrap().exit_ready);
+    assert!(sim.houses[&winner].outcome().unwrap().exit_ready);
+    assert!(sim.houses[&loser].outcome().unwrap().exit_ready);
     assert!(sim.termination_frame_requested());
     assert!(sim.sound_events.is_empty(), "expiry does not replay EVA");
 }
@@ -4181,7 +4195,7 @@ fn short_game_base_unit_survivor_prevents_enemy_victory() {
     check_defeat_now(&mut sim, Some(&rules));
 
     assert!(!sim.houses[&mcv_owner].is_defeated);
-    assert!(!sim.houses[&enemy].has_won);
+    assert!(!sim.houses[&enemy].has_won());
 }
 
 /// Retail CAGAS01 is `Insignificant=yes`, and Add_Tracking skips
@@ -4217,7 +4231,7 @@ fn gsi_05_16_a_captured_insignificant_garrison_does_not_keep_its_house_alive() {
 
     assert_eq!(sim.houses[&player].tracking.buildings(), 0);
     assert!(sim.houses[&player].is_defeated);
-    assert!(sim.houses[&enemy].has_won);
+    assert!(sim.houses[&enemy].has_won());
     assert_eq!(sim.entities().get(1).unwrap().health.current, 0);
 }
 
@@ -4267,7 +4281,7 @@ fn passive_house_owning_buildings_does_not_block_last_player_victory() {
 
     assert!(sim.houses[&loser].is_defeated);
     assert!(
-        sim.houses[&survivor].has_won,
+        sim.houses[&survivor].has_won(),
         "last non-passive house standing must win despite the Civilian house owning buildings"
     );
 }
@@ -4286,10 +4300,10 @@ fn passive_house_is_never_defeated_even_with_nothing_left() {
     check_defeat_now(&mut sim, Some(&rules));
 
     assert!(!sim.houses[&passive].is_defeated);
-    assert!(!sim.houses[&passive].has_lost);
-    assert!(!sim.houses[&passive].has_won);
+    assert!(!sim.houses[&passive].has_lost());
+    assert!(!sim.houses[&passive].has_won());
     assert!(sim.houses[&opponent].is_defeated);
-    assert!(sim.houses[&player].has_won);
+    assert!(sim.houses[&player].has_won());
 }
 
 #[test]
@@ -4318,8 +4332,8 @@ fn solo_developer_board_creates_no_automatic_victory_state_or_eva() {
     for tick in 0..300 {
         sim.session.tick = tick;
         check_defeat_now(&mut sim, None);
-        assert!(!sim.houses[&player].has_won);
-        assert!(sim.houses[&player].outcome_state.is_none());
+        assert!(!sim.houses[&player].has_won());
+        assert!(sim.houses[&player].outcome().is_none());
         assert!(sim.ready_outcome_for_owner(player).is_none());
         assert!(!sim.termination_frame_requested());
     }
@@ -4338,18 +4352,20 @@ fn explicit_solo_outcomes_advance_and_reach_the_shared_ready_query() {
         let player = insert_house_with_counts(&mut sim, "Americans", 1, 1);
         insert_passive_house_with_counts(&mut sim, "Neutral", 4, 0);
         insert_passive_house_with_counts(&mut sim, "Special", 2, 0);
+        sim.session.current_house = Some(player);
         let house = sim.houses.get_mut(&player).unwrap();
         assert!(match kind {
-            HouseOutcomeKind::Victory => house.flag_to_win(0, 3),
-            HouseOutcomeKind::Defeat => house.flag_to_lose(0, 3),
+            HouseOutcomeKind::Victory => house.accept_win_result(0, 3, false),
+            HouseOutcomeKind::Defeat => house.accept_lose_result(0, 3, false),
         });
         // Accepted outcomes carry no automatic/explicit origin discriminator.
         // Their timer and app-visible readiness must not depend on opponents.
-        for tick in 0..3 {
+        for tick in 0..=3 {
             sim.session.tick = tick;
+            sim.session.binary_frame = tick as u32;
             check_defeat_now(&mut sim, None);
-            assert_eq!(sim.termination_frame_requested(), tick == 2);
-            assert_eq!(sim.ready_outcome_for_owner(player).is_some(), tick == 2);
+            assert_eq!(sim.termination_frame_requested(), tick == 3);
+            assert_eq!(sim.ready_outcome_for_owner(player).is_some(), tick == 3);
         }
         assert_eq!(sim.ready_outcome_for_owner(player).unwrap().kind, kind);
         assert!(
@@ -4372,15 +4388,15 @@ fn one_way_alliance_does_not_end_the_game() {
 
     check_defeat_now(&mut sim, Some(&rules));
 
-    assert!(!sim.houses[&a].has_won, "one-way alliance must not win");
-    assert!(!sim.houses[&b].has_won, "one-way alliance must not win");
+    assert!(!sim.houses[&a].has_won(), "one-way alliance must not win");
+    assert!(!sim.houses[&b].has_won(), "one-way alliance must not win");
 
     // Control: once the alliance is mutual the same board is a shared victory.
     sim.house_alliances =
         directed_alliances(&[("Americans", "Russians"), ("Russians", "Americans")]);
     check_defeat_now(&mut sim, Some(&rules));
-    assert!(sim.houses[&a].has_won);
-    assert!(sim.houses[&b].has_won);
+    assert!(sim.houses[&a].has_won());
+    assert!(sim.houses[&b].has_won());
 }
 
 #[test]
@@ -5375,8 +5391,13 @@ fn test_structural_bridge_collapse_preserves_dynamic_navigation_and_snapshot() {
     let (resolved, bridge_state) = structural_bridge_for_damage_dispatch();
     sim.resolved_terrain = Some(resolved);
     sim.bridge_state = Some(bridge_state);
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
 
-    let rules = combat_test_rules();
+    // This navigation fixture supplies a foundation at the native (0,0)
+    // CanPlaceAt sentinel. Explicit synthetic PlaceAnywhere admits that
+    // already-placed prior; its 4x3 ART and all blocker geometry stay fixed.
+    // Retail Building placement admission is not what this test measures.
+    let rules = combat_test_rules_with_override("[GACNST]\nPlaceAnywhere=yes\n");
     let mut building = make_test_entity("GACNST", EntityCategory::Structure);
     building.cell_x = 0;
     building.cell_y = 0;
@@ -9596,7 +9617,7 @@ fn idle_objects_are_handed_out_only_for_their_own_turn() {
     use crate::sim::touch_log::Touched;
 
     let rules = RuleSet::from_ini_with_fixed_art_for_test(
-        &IniFile::from_str(
+        &crate::sim::arena_fixture::clear_ground_ini(
             "[InfantryTypes]\n0=E1\n[VehicleTypes]\n0=MTNK\n[BuildingTypes]\n0=GAPOWR\n\
          [E1]\nStrength=125\nArmor=flak\nSpeed=4\n\
          [MTNK]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nStrength=300\n\

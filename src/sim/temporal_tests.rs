@@ -172,7 +172,7 @@ fn rules() -> RuleSet {
 /// The fixture's rules over an edited copy of [`RULES`].
 fn rules_from(text: &str, art_text: &str) -> RuleSet {
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
-        &IniFile::from_str(text),
+        &crate::sim::arena_fixture::clear_ground_ini(text),
         &IniFile::from_str(art_text),
     )
     .expect("temporal rules");
@@ -186,6 +186,7 @@ fn rules_from(text: &str, art_text: &str) -> RuleSet {
 /// Americans (human), Russians and Allies2 (computer).
 fn sim(seed: u64) -> Simulation {
     let mut sim = Simulation::with_seed(seed);
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     for (name, side, human) in [
         ("Americans", 0, true),
         ("Russians", 1, false),
@@ -1423,6 +1424,17 @@ fn a_warp_in_progress_survives_a_snapshot() {
         crate::sim::world::FrameEffects::default(),
     );
     sim.temporal_update_head(a, &rules, None, crate::sim::world::FrameEffects::default());
+    // This fixture now supplies native navigation. Load retains its base rows
+    // but reconstructs the hierarchy only at the map-authority restore seam.
+    // Provide the empty overlay owner that the production seam requires.
+    let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
+    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
+        terrain.width(),
+        terrain.height(),
+    ));
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::empty();
+    sim.restore_map_authority_after_snapshot_load(&rules, &overlays, None)
+        .expect("publish fixture map authority");
     // A load restarts the Scenario stream from Seed0; put the source there too.
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let saved_hash = sim.state_hash();
@@ -1430,16 +1442,26 @@ fn a_warp_in_progress_survives_a_snapshot() {
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .expect("snapshot")
         .sim;
-    assert_eq!(
-        restored.state_hash(),
-        saved_hash,
-        "the load restores the hash"
-    );
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     restored
         .restore_after_snapshot_load()
         .expect("temporal links resolve");
+    restored.rebuild_caches_after_load(
+        terrain,
+        crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+        &rules,
+    );
+    restored
+        .restore_map_authority_after_snapshot_load(&rules, &overlays, None)
+        .expect("restore fixture map authority and navigation");
     let hash = restored.state_hash();
-    assert_eq!(hash, saved_hash, "and the relink keeps it");
+    assert_eq!(
+        hash,
+        saved_hash,
+        "the admitted load restores the hash; saved owners {:?}; restored owners {:?}",
+        sim.hash_owner_diagnostics_for_test(),
+        restored.hash_owner_diagnostics_for_test(),
+    );
     assert_eq!(
         restored.substrate.entities.get(tank).unwrap().temporal,
         entity(&sim, tank).temporal
@@ -1468,7 +1490,8 @@ fn a_warp_in_progress_survives_a_snapshot() {
 fn a_warped_object_runs_none_of_its_ai_phases() {
     // Stand is presentation; native idle admission reads Doing. Supply the
     // real Ready record, then start it through Do_Action before testing freeze.
-    let ini = IniFile::from_str(&RULES.replace("[E1]\n", "[E1]\nImage=GI\n"));
+    let ini =
+        crate::sim::arena_fixture::clear_ground_ini(&RULES.replace("[E1]\n", "[E1]\nImage=GI\n"));
     let art = IniFile::from_str(&format!(
         "{ART}\n{}",
         crate::rules::retail_ini_fixture::GI_ART_EXCERPT
@@ -1574,6 +1597,10 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
 fn only_a_temporal_scanner_acquires_a_warped_enemy() {
     let rules = rules();
     let mut sim = sim(22);
+    // GreatestThreat6F9393 checks every ring cell against native Map Size.
+    // The component actors at10..13 belong to this Size20 arena, not the
+    // helper's Size64 diamond (which excludes their x+y<64 coordinates).
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let tank = spawn(&mut sim, &rules, "HTNK", "Russians", 12, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Americans", 12, 13);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 10, 10);
@@ -2170,6 +2197,21 @@ fn native_initiate_warp_corpus() {
 /// A flat 32x32 clear map with its playfield, zones and path grid.
 fn arena(seed: u64, rules: &RuleSet) -> (Simulation, crate::sim::pathfinding::PathGrid) {
     let mut sim = sim(seed);
+    // Native Houses construct all stock Supers before object placement; these
+    // synthetic arenas do not run the production scenario bootstrap.
+    for owner in sim.session.house_order.clone() {
+        for name in &rules.super_weapon_order {
+            let id = sim.interner.intern(name);
+            sim.super_weapons.entry(owner).or_default().insert(
+                id,
+                crate::sim::superweapon::SuperWeaponInstance::new(
+                    id,
+                    owner,
+                    sim.session.binary_frame as i32,
+                ),
+            );
+        }
+    }
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     (sim, grid)
 }

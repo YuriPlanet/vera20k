@@ -671,6 +671,12 @@ impl LoadingJob {
 }
 
 pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
+    let wall_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
+        state,
+        std::time::Instant::now(),
+    );
+    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(state, wall_ms);
     let mut session = LoadingSession::from_request(request);
     session.job.ra2_dir = state
         .platform

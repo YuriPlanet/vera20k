@@ -3,7 +3,7 @@
 //! belong to `MatchAudioState`. Output state survives scenario transitions.
 
 use crate::assets::asset_manager::AssetManager;
-use crate::audio::arbiter::AudioServiceClock;
+use crate::audio::arbiter::{AudioServiceClock, VolumeInterp};
 use crate::audio::music::MusicPlayer;
 use crate::audio::sfx::SfxPlayer;
 use crate::audio::theme::{
@@ -62,6 +62,7 @@ fn apply_theme_action_to_output(
 }
 
 pub(crate) struct AppAudioRuntime {
+    pub(crate) movie_audio: MovieAudioHold,
     /// Always-present device-independent Theme owner.
     pub(crate) theme: ThemeRuntime,
     /// One process cadence for Sound, Vox and Theme; device callbacks run
@@ -80,12 +81,100 @@ pub(crate) struct AppAudioRuntime {
     pub(crate) theme_startup_suppressed: bool,
 }
 
+///5BF580/5BF530's independent boolean and existing407170 interps. The
+///lifecycle master remains separate, so exit fades cannot be overwritten by
+///a movie finishing. Native stream-list/device callbacks are represented by
+///rodio's output pause plus this stream gain; no guessed completion timeout.
+pub(crate) struct MovieAudioHold {
+    held: bool,
+    stream_gain: VolumeInterp,
+    master_gain: VolumeInterp,
+    lifecycle_scale: f64,
+}
+impl Default for MovieAudioHold {
+    fn default() -> Self {
+        Self {
+            held: false,
+            stream_gain: VolumeInterp::new(0x4000, 0),
+            master_gain: VolumeInterp::new(0x4000, 0),
+            lifecycle_scale: 1.0,
+        }
+    }
+}
+
 /// gamemd-derived: Theme admission and logical/physical command ordering come
 /// from `ThemeClass` AI `0x007209D0`, Next `0x00720A80`, Queue `0x00720B20`,
 /// Play `0x00720BB0`, and Stop `0x00720EA0`. Their shared device gate calls
 /// `FUN_00407000` (`DAT_0087E728 != 0`) alongside Theme initialization
 /// `DAT_00A8EC74 != 0` and startup suppression `DAT_00A8ED64 == 0`.
 impl AppAudioRuntime {
+    pub(crate) fn movie_mixer(&self) -> Option<&rodio::mixer::Mixer> {
+        self.music_player
+            .as_ref()
+            .map(MusicPlayer::mixer)
+            .or_else(|| self.sfx_player.as_ref().map(SfxPlayer::mixer))
+    }
+    ///408390 asks existing stream interps to reach silence before admission.
+    ///Rust's physical stream gain is a substitute for the DirectSound list
+    ///cursor predicate408410, not a claim about hardware completion timing.
+    pub(crate) fn prepare_movie_streams(&mut self, wall_ms: u64) {
+        if self.music_player.is_some() {
+            self.movie_audio.stream_gain.set_target(0, wall_ms);
+        } else {
+            self.movie_audio.stream_gain.set_target_immediate(0);
+            self.movie_audio.stream_gain.tick(wall_ms);
+        }
+    }
+    pub(crate) fn movie_streams_ready(&self) -> bool {
+        self.movie_audio.stream_gain.value() == 0
+    }
+    pub(crate) fn set_movie_audio_held(&mut self, held: bool, wall_ms: u64) {
+        if held == self.movie_audio.held {
+            return;
+        }
+        self.movie_audio.held = held;
+        self.movie_audio
+            .master_gain
+            .set_target(if held { 0x2000 } else { 0x4000 }, wall_ms);
+        //5BF580 and full-screen5BEDFB..5BEE38 target both native
+        //VolumeInterp objects. Do not leave Radar's prelude stream at0.
+        self.movie_audio
+            .stream_gain
+            .set_target(if held { 0x2000 } else { 0x4000 }, wall_ms);
+        if let Some(sfx) = self.sfx_player.as_mut() {
+            sfx.set_movie_held(held, wall_ms);
+        }
+        if let Some(music) = self.music_player.as_mut() {
+            if held {
+                music.pause_output();
+            } else {
+                music.resume_output();
+            }
+        }
+    }
+    ///Clear5BF450 releases even a prelude that has not acquired the hold yet.
+    pub(crate) fn retire_movie_audio(&mut self, wall_ms: u64) {
+        self.set_movie_audio_held(false, wall_ms);
+        self.movie_audio.stream_gain.set_target(0x4000, wall_ms);
+    }
+    fn service_movie_gain(&mut self, wall_ms: u64) {
+        self.movie_audio.stream_gain.tick(wall_ms);
+        self.movie_audio.master_gain.tick(wall_ms);
+        self.apply_output_scales();
+    }
+    fn apply_output_scales(&mut self) {
+        let master = self.movie_audio.lifecycle_scale
+            * f64::from(self.movie_audio.master_gain.value())
+            / 16384.0;
+        if let Some(player) = self.music_player.as_mut() {
+            player.set_output_scale(
+                master * f64::from(self.movie_audio.stream_gain.value()) / 16384.0,
+            );
+        }
+        if let Some(player) = self.sfx_player.as_mut() {
+            player.set_output_scale(master);
+        }
+    }
     /// `OptionsClass::Set_Score_Volume` at `0x005FA4A0` publishes the stored
     /// Options f32 to the stream first, then Theme's `+0xC` gate. Theme owns its
     /// native quantization; the player's safe 0..1 gain never feeds back into
@@ -139,6 +228,7 @@ impl AppAudioRuntime {
         catalog: Option<&crate::app::process_assets::ProcessAudioCatalog>,
         main: &mut crate::sim::rng::MainRngDraws,
     ) {
+        self.service_movie_gain(wall_ms);
         let retained = main.clone();
         let mut draw_main =
             crate::audio::sfx::PlaybackDraws::new(move |low, high| retained.ranged(low, high));
@@ -301,12 +391,8 @@ impl AppAudioRuntime {
     /// The audio master (`[0x0087E758]`), one multiplier over the music and
     /// sound outputs; the scenario exits fade it to zero and restore it.
     pub(crate) fn set_master_output_scale(&mut self, scale: f64) {
-        if let Some(player) = self.music_player.as_mut() {
-            player.set_output_scale(scale);
-        }
-        if let Some(player) = self.sfx_player.as_mut() {
-            player.set_output_scale(scale);
-        }
+        self.movie_audio.lifecycle_scale = scale;
+        self.apply_output_scales();
     }
 
     /// B8 user commands preserve Theme fade/queue ordering and output ownership.
@@ -458,6 +544,7 @@ mod tests {
                 sfx_player: None,
                 launcher_audio_available: true,
                 theme_startup_suppressed: false,
+                movie_audio: Default::default(),
             };
             runtime.initialize_theme(&assets);
             let stored = f32::from_bits(options["stored_f32_bits"].as_u64().unwrap() as u32);
@@ -496,6 +583,7 @@ mod tests {
             sfx_player: None,
             launcher_audio_available: true,
             theme_startup_suppressed: false,
+            movie_audio: Default::default(),
         };
         let mut frontend = crate::sim::rng::MainRng::new(1);
         let mut main = crate::app::state::process_main_draws(None, &mut frontend);
@@ -505,6 +593,38 @@ mod tests {
         assert!(
             runtime.service_clock.admit(134),
             "the denied call did not reset the gate"
+        );
+    }
+
+    #[test]
+    fn shared_movie_hold_targets_both_interps_and_keeps_the_exit_master() {
+        let mut runtime = AppAudioRuntime {
+            theme: ThemeRuntime::default(),
+            service_clock: AudioServiceClock::default(),
+            music_player: None,
+            sfx_player: None,
+            launcher_audio_available: false,
+            theme_startup_suppressed: false,
+            movie_audio: Default::default(),
+        };
+        runtime.prepare_movie_streams(0);
+        runtime.set_master_output_scale(0.25);
+        runtime.set_movie_audio_held(true, 100);
+        assert_eq!(runtime.movie_audio.master_gain.target_value(), 0x2000);
+        assert_eq!(
+            runtime.movie_audio.stream_gain.target_value(),
+            0x2000,
+            "5BF580/5BEDFB targets stream87E750 as well as master87E758"
+        );
+        runtime.set_movie_audio_held(true, 200);
+        assert_eq!(runtime.movie_audio.lifecycle_scale, 0.25);
+        runtime.retire_movie_audio(250);
+        runtime.retire_movie_audio(300);
+        assert_eq!(runtime.movie_audio.master_gain.target_value(), 0x4000);
+        assert_eq!(runtime.movie_audio.stream_gain.target_value(), 0x4000);
+        assert_eq!(
+            runtime.movie_audio.lifecycle_scale, 0.25,
+            "movie retirement cannot cancel a scenario-exit fade"
         );
     }
 

@@ -1,0 +1,154 @@
+[
+  {
+    "input": {
+      "initial": [
+        17,
+        -7,
+        2147483647,
+        -2147483648
+      ],
+      "teams": [
+        {
+          "members": [
+            0
+          ],
+          "owner": 0,
+          "type": "matching"
+        }
+      ],
+      "type_present": false
+    },
+    "member_writes": [],
+    "name": "null_type",
+    "read": {
+      "args": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "kind": 104,
+      "raw": "104,5,<none>,0,0,0,0,40",
+      "read": "1,104,5,<none>,0,0,0,0,40",
+      "value": 40,
+      "waypoint": 0
+    },
+    "returned": 1,
+    "rng_calls": [],
+    "stored": [
+      17,
+      -7,
+      2147483647,
+      -2147483648
+    ],
+    "team_visits": []
+  },
+  {
+    "input": {
+      "initial": [
+        17,
+        -7,
+        2147483647,
+        -2147483648
+      ],
+      "teams": [],
+      "type_present": true
+    },
+    "member_writes": [],
+    "name": "no_live_teams",
+    "read": {
+      "args": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "kind": 104,
+      "raw": "104,5,088C1A4C,0,0,0,0,40",
+      "read": "1,104,5,088C1A4C,0,0,0,0,40",
+      "value": 40,
+      "waypoint": 0
+    },
+    "returned": 1,
+    "rng_calls": [],
+    "stored": [
+      17,
+      -7,
+      2147483647,
+      -2147483648
+    ],
+    "team_visits": []
+  },
+  {
+    "input": {
+      "initial": [
+        17,
+        -7,
+        2147483647,
+        -2147483648
+      ],
+      "teams": [
+        {
+          "members": [
+            3,
+            0
+          ],
+          "owner": 0,
+          "type": "matching"
+        },
+        {
+          "members": [
+            1
+          ],
+          "owner": 0,
+          "type": "other"
+        },
+        {
+          "members": [
+            2
+          ],
+          "owner": 1,
+          "type": "matching"
+        },
+        {
+          "members": [],
+          "owner": 1,
+          "type": "matching"
+        }
+      ],
+      "type_present": true
+    },
+    "member_writes": [
+      3,
+      0,
+      2
+    ],
+    "name": "all01_mixed_types_and_houses",
+    "read": {
+      "args": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "kind": 104,
+      "raw": "104,5,088C1A4C,0,0,0,0,40",
+      "read": "1,104,5,088C1A4C,0,0,0,0,40",
+      "value": 40,
+      "waypoint": 0
+    },
+    "returned": 1,
+    "rng_calls": [],
+    "stored": [
+      40,
+      -7,
+      40,
+      40
+    ],
+    "team_visits": [
+      0,
+      2,
+      3
+    ]
+  }
+]

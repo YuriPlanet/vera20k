@@ -578,7 +578,7 @@ fn advance_ordinary_mover(
     // Steering / rotation: rotate in place, then move. ROT=0 means an
     // instant turn.
     if snap.category != EntityCategory::Infantry {
-        match movement_step::handle_vehicle_rotation(&mut entity.body_facing, None, native_frame) {
+        match movement_step::handle_vehicle_rotation(&entity.body_facing, native_frame) {
             movement_step::RotationResult::StillRotating => return,
             movement_step::RotationResult::ReadyToMove => {}
         }

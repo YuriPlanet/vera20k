@@ -113,7 +113,7 @@ fn try_spawn_building_free_unit(
     // object is not on the map until one does.
     let (initial_rx, initial_ry) = primary.unwrap_or(search_seed);
     let initial_z = sim.terrain_cell_level(initial_rx, initial_ry).unwrap_or(0);
-    let Some(free_unit_id) = sim.spawn_object_limbo_at_height(
+    let Some(free_unit_id) = sim.construct_object_limbo_at_height(
         &free_unit_type,
         owner,
         initial_rx,
@@ -121,6 +121,7 @@ fn try_spawn_building_free_unit(
         FREE_UNIT_FACING_PRIMARY,
         initial_z,
         rules,
+        effects,
     ) else {
         let refund = refund_free_unit(sim, rules, owner, &free_unit_type);
         log::warn!(

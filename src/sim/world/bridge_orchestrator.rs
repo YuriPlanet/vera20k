@@ -16,7 +16,8 @@ use std::collections::BTreeSet;
 
 #[path = "bridge_damage_dispatch.rs"]
 mod damage_dispatch;
-use damage_dispatch::{BridgeDamageDrivers, LiveCells};
+pub(crate) use damage_dispatch::BridgeDamageDrivers;
+use damage_dispatch::LiveCells;
 
 #[path = "bridge_ground.rs"]
 mod ground_fallout;

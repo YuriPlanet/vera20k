@@ -1,0 +1,174 @@
+[
+  {
+    "advance": false,
+    "coordinate_attack": true,
+    "events": [
+      [
+        "waypoint",
+        11
+      ],
+      [
+        "blocker",
+        false
+      ],
+      [
+        "assign",
+        true
+      ],
+      [
+        "coordinate_attack"
+      ]
+    ],
+    "input": {
+      "ammo": 0,
+      "blocker": "building",
+      "count": 3,
+      "first": true,
+      "name": "building_unlimited",
+      "type_ammo": -1
+    },
+    "target_present": true
+  },
+  {
+    "advance": true,
+    "coordinate_attack": false,
+    "events": [
+      [
+        "waypoint",
+        11
+      ],
+      [
+        "blocker",
+        false
+      ],
+      [
+        "assign",
+        false
+      ],
+      [
+        "assign",
+        false
+      ]
+    ],
+    "input": {
+      "ammo": 0,
+      "blocker": "other",
+      "count": 3,
+      "first": true,
+      "name": "other_blocker",
+      "type_ammo": -1
+    },
+    "target_present": false
+  },
+  {
+    "advance": true,
+    "coordinate_attack": false,
+    "events": [
+      [
+        "waypoint",
+        11
+      ],
+      [
+        "blocker",
+        false
+      ],
+      [
+        "assign",
+        false
+      ],
+      [
+        "assign",
+        false
+      ]
+    ],
+    "input": {
+      "ammo": 0,
+      "blocker": null,
+      "count": 3,
+      "first": true,
+      "name": "no_blocker",
+      "type_ammo": -1
+    },
+    "target_present": false
+  },
+  {
+    "advance": true,
+    "coordinate_attack": false,
+    "events": [
+      [
+        "waypoint",
+        11
+      ],
+      [
+        "blocker",
+        false
+      ],
+      [
+        "assign",
+        true
+      ],
+      [
+        "assign",
+        false
+      ]
+    ],
+    "input": {
+      "ammo": 0,
+      "blocker": "building",
+      "count": 3,
+      "first": true,
+      "name": "spent_building",
+      "type_ammo": 1
+    },
+    "target_present": false
+  },
+  {
+    "advance": false,
+    "coordinate_attack": true,
+    "events": [
+      [
+        "coordinate_attack"
+      ]
+    ],
+    "input": {
+      "ammo": 1,
+      "blocker": null,
+      "count": 3,
+      "first": false,
+      "name": "retained_building",
+      "type_ammo": 1
+    },
+    "target_present": true
+  },
+  {
+    "advance": true,
+    "coordinate_attack": false,
+    "events": [
+      [
+        "waypoint",
+        11
+      ],
+      [
+        "blocker",
+        false
+      ],
+      [
+        "assign",
+        true
+      ],
+      [
+        "assign",
+        false
+      ]
+    ],
+    "input": {
+      "ammo": 0,
+      "blocker": "building",
+      "count": 0,
+      "first": true,
+      "name": "empty_team",
+      "type_ammo": -1
+    },
+    "target_present": false
+  }
+]

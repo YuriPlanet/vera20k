@@ -11,6 +11,12 @@ pub(crate) fn commit_prepared_load(
     prepared: crate::app::persistence::PreparedSavedGame,
     from_menu: bool,
 ) {
+    let wall_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
+        state,
+        std::time::Instant::now(),
+    );
+    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(state, wall_ms);
     let native_tiberium_stats = prepared.native_tiberium_stats();
     log::info!(
         "Load: rebuilt native tiberium queues ({} growth, {} spread)",

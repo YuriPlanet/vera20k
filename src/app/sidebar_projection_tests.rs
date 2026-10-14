@@ -8,7 +8,6 @@ use serde_json::Value;
 
 use super::sidebar_projection::{SidebarProjectionState, cameo_candidates};
 use crate::assets::csf_file::{CsfFile, test_csf};
-use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
@@ -134,7 +133,7 @@ fn native_context_world(context: &Value) -> (Simulation, RuleSet, InternedId, Cs
         )
         .unwrap();
     }
-    let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&ini)).unwrap();
     let (sim, owner) = world(&rules, &factories.map(|(name, _)| name));
     let csf = test_csf(
         &labels

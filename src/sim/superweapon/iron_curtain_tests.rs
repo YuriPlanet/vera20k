@@ -393,7 +393,16 @@ fn the_overrides_match_native() {
             .unwrap_or_else(|| panic!("{kind} stands for {row}"));
         let drone = (row["eaten"] == true).then(|| {
             let drone = sim
-                .construct_object_limbo_at_height("DRON", "Russians", 39, 40, 0, 0, &rules)
+                .construct_object_limbo_at_height(
+                    "DRON",
+                    "Russians",
+                    39,
+                    40,
+                    0,
+                    0,
+                    &rules,
+                    crate::sim::world::FrameEffects::default(),
+                )
                 .unwrap();
             sim.parasite_attach(
                 drone,

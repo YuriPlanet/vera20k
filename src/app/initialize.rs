@@ -255,6 +255,13 @@ impl App {
         if let Some(fnt) = startup_fnt.as_ref() {
             bit_font = BitFont::from_fnt(&gpu, &batch_renderer, fnt);
         }
+        let outcome_banner_art = startup_asset_manager.as_ref().and_then(|assets| {
+            crate::app::presentation::outcome_banner::OutcomeBannerArt::build(
+                &gpu,
+                &batch_renderer,
+                assets,
+            )
+        });
         let mut startup_splash = if capture_dimensions.is_none() && main_menu_shell_error.is_none()
         {
             startup_asset_manager
@@ -481,6 +488,7 @@ impl App {
             sfx_player,
             launcher_audio_available,
             theme_startup_suppressed: false,
+            movie_audio: Default::default(),
         };
         if let Some(assets) = startup_asset_manager.as_ref() {
             startup_audio_runtime.initialize_theme(assets);
@@ -539,6 +547,8 @@ impl App {
                     super_timer_blinks: Default::default(),
                     minimap: None,
                     radar_anim: None,
+                    radar_movies: Default::default(),
+                    chrono_screen: Default::default(),
                     radar_animation_source: None,
                     radar_content_insets: None,
                     has_radar: false,
@@ -671,6 +681,7 @@ impl App {
                 debug_ui,
                 status_screen_fill,
                 bit_font,
+                outcome_banner_art,
                 vxl_slope_transition_cache: std::cell::RefCell::new(Default::default()),
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
@@ -910,9 +921,9 @@ mod tests {
                     assert!(!output.tick.terminal_score_finalized);
                     assert!(loaded.sim().ready_outcome_for_owner(owner).is_none());
                     let house = &loaded.sim().houses[&owner];
-                    assert!(!house.has_won && !house.has_lost && !house.is_defeated);
+                    assert!(!house.has_won() && !house.has_lost() && !house.is_defeated);
                     assert!(
-                        house.outcome_state.is_none(),
+                        house.outcome().is_none(),
                         "no hidden false outcome on frame {frame}"
                     );
                 }

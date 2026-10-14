@@ -172,6 +172,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                     0,
                     0,
                     rules,
+                    crate::sim::world::FrameEffects::default(),
                 )
                 .expect("absorbed infantry");
             sim.substrate.entities.get_mut(id).unwrap().passenger_role = PassengerRole::Inside {

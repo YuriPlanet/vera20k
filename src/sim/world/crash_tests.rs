@@ -891,7 +891,16 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
     assert!(sim.set_cell_air_slot((52, 52), Some(1)));
     for _ in 0..2 {
         let rider = sim
-            .construct_object_limbo_at_height("RIDER", "Americans", 52, 52, 0, 0, &rules)
+            .construct_object_limbo_at_height(
+                "RIDER",
+                "Americans",
+                52,
+                52,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("rider");
         sim.substrate
             .entities
@@ -1761,7 +1770,16 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
     let riders: Vec<u64> = (0..2)
         .map(|_| {
             let rider = sim
-                .construct_object_limbo_at_height("E1", "Americans", 0, 0, 0, 0, &resources.rules)
+                .construct_object_limbo_at_height(
+                    "E1",
+                    "Americans",
+                    0,
+                    0,
+                    0,
+                    0,
+                    &resources.rules,
+                    crate::sim::world::FrameEffects::default(),
+                )
                 .expect("a GI");
             sim.substrate
                 .entities

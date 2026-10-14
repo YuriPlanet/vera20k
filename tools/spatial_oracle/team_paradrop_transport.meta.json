@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Two whole original65D8E0 Droppod transport controls and four retained TeamType input reads",
+  "assumptions": [
+    "Existing original MTNK/E1/ORCA/PDPLANE type readers, concrete constructors, partial House and physical FootMissions crop are reused. Resolved TeamType/TaskForce priors are twoE1, Droppod1, waypoint87/50, TransportWaypoint5 at86/49 and UseTransportOrigin1/0. This is not actual ENGINEER/INIT TaskForce construction, full ALL01 map, scene/rendering or complete rules registry parity.",
+    "Whole65D8E0 executes original65DD30, PDPLANE41CAA0/type factory, origin selection, class mission/target/destination/Unlimbo, Cargo4733A0 and Commence. No gameplay receiver result is supplied; same-frame aircraft flight AI and later drops are outside these creation controls.",
+    "Four reader controls retain one genuinely constructed TeamType+B1/D8 and execute original exact-case ReadBool and ToLetters/ReadString64/FromLetters blocks with physical-cache transactions. ToLetters calculates characters in original instructions; only Windows wsprintfA at763635/763671 is supplied for its exact %c/%c%c format arguments, with per-row calls/arguments/bytes recorded. IDs, members/cargo, plane mission/position/targets, review admission and three RNG states are native outputs.",
+    "Native Aircraft+6C9 payload latch is observed but remains the established paradrop module residual: selected retail PDPLANE is unselectable and missions26/27 do not consume its fire gate."
+  ],
+  "substitutions": [
+    "Inherited existing platform/asset/INI/partial House/crop boundary and resolved Team definition inputs; Reader supplies the unresolved USER32!wsprintfA IAT7E14B0 at the two original ToLetters character-format call sites. Each input/output is retained; cdecl caller stack cleanup executes. No constructor, cargo, placement, mission, origin, numeric ToLetters arithmetic or field-reader return is supplied."
+  ],
+  "entry_points": {
+    "spawn": "0x0065D8E0",
+    "create_members": "0x0065DD30",
+    "plane_find": "0x0041CAA0",
+    "aircraft_reader": "0x0041CC20",
+    "transport_origin_read": "0x006F121A",
+    "transport_waypoint_read": "0x006F1446",
+    "transport_waypoint_get": "0x006F18E0",
+    "cargo_add": "0x004733A0",
+    "commence": "0x0041B870"
+  },
+  "replay_command": "python -m tools.spatial_oracle.team_creation --paradrop-transport",
+  "payload_sha256": "5daa37a1118b3dcf3238f211761de09d6e419e707d6c88f246cdf06ff3e81351"
+}

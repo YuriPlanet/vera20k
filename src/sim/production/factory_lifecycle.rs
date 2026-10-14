@@ -205,7 +205,8 @@ pub(super) fn start_active_production(
     // A factory-held object is still in limbo and has no cell authority. Zero
     // is only inert storage here; the result-bearing Unlimbo later installs the
     // selected delivery/placement coordinate on this same stable identity.
-    let stable_id = sim.construct_object_limbo_at_height(&type_name, &owner, 0, 0, 0, 0, rules)?;
+    let stable_id =
+        sim.construct_object_limbo_at_height(&type_name, &owner, 0, 0, 0, 0, rules, effects)?;
     let linked = sim
         .production
         .factories

@@ -31,18 +31,13 @@
 //! - The one-time arm (`0x006CDA88..0x006CDCB3`: a NukePayload bullet
 //!   dropped straight on the cell): VERA grants no one-time Super.
 //! - A charged launch that finds no silo type (`0x006CDCFA`, `0x006CDD30`)
-//!   or no silo (`0x006CDD44`) still runs the player's tail and sets
-//!   `+0x1FC` (`0x006CDE06`); VERA's launch reports nothing then. Triggers:
-//!   a `MultiMissile` no `NukeSilo=` type names (none in retail, where
-//!   NAMISL names NukeSpecial), or a Super whose silo was lost or captured
-//!   since the owner's last House update; VERA revokes it at that event
-//!   (`refresh_super_weapons_for_owner`), so ClickFire refuses it first.
-//! - `HouseClass+0x1FC` (`0x006CDCDC`, `0x006CDE2F`) asks the owner's next
-//!   House update for its revoke and grant passes, which change nothing
-//!   after a launch (the silo still stands), and, for the local player, for
-//!   each building's construction options (vt+0x4E0) and the sidebar strips
-//!   (`SidebarClass::RecalculateStrips @ 0x006A7D20`), presentation; VERA
-//!   refreshes grants at building events.
+//!   or no silo (`0x006CDD44`) still runs the player's common tail at
+//!   `0x006CDE06`; the sim retains its `+0x1FC` request (`0x006CDE2F`),
+//!   but emits no launch event then, so the app's selection-clear tail is
+//!   absent. Trigger: a custom no-silo type or loss before the House tail.
+//! - The House dirty tail also refreshes local building construction options
+//!   (vt+0x4E0) and sidebar strips (`0x006A7D20`); those presentation
+//!   consumers are outside the simulation's revoke/grant migration.
 //! - The launch-mute global `0x00A8B538` that skips the EVA line
 //!   (`0x006CDDEE`) is not modeled: the line always plays.
 //! - `DigSound=` plays at the cell (the launch event carries it); native's
@@ -58,8 +53,8 @@
 //!   bullet leaves VERA's store at its commit.
 //! - The chrono screen (`0x00A9FAB0`) shares the flash's lighting arms. Map
 //!   trigger action 127 sets it (`0x006DFABF` -> `0x0053B460`) and
-//!   `0x0053B560` steps it; VERA does not port that action, which the retail
-//!   campaign maps ALL01UMD and SOV01UMD run.
+//!   `0x0053B560` steps it through the shared pre-object scheduler. Its
+//!   private state and presentation commands are in `chrono_screen`.
 //! - The bridge units' draw brightening by four times the active profile's
 //!   Level (`UnitClass::DrawIt 0x0073D03B`, `InfantryClass::DrawIt
 //!   0x00519319`), the nuke's included, is not ported for any profile.
@@ -148,7 +143,8 @@ pub(crate) fn nuke_ball_type(rules: &RuleSet) -> bool {
 /// and the silo's firing type (`+0x5F8`) the type's `Type=`
 /// (`0x006CDDA3..0x006CDDD7`). The app plays `DigSound=` at the cell and
 /// `EVA_NuclearMissileLaunched` (`0x006CDDE9`, `0x006CDE01`) for the launch
-/// event. Without such a building nothing happens (module RESIDUAL).
+/// event. A charged call still requests the House tail without a silo
+/// (`0x006CDE06..0x006CDE2F`; executed `nuke_launch.recheck`).
 pub(super) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -178,9 +174,11 @@ pub(super) fn launch(
         .find(|&slot| rules.building_type_at(slot as i32).is_some_and(fires))
         .and_then(|slot| sim.interner.get(&ids[slot]))
     else {
+        sim.request_house_tech_tree_recheck(owner);
         return false;
     };
     let Some(silo) = find_building_of_type(sim, owner, silo_type) else {
+        sim.request_house_tech_tree_recheck(owner);
         return false;
     };
     crate::sim::world::queue_and_commence(sim, silo, MissionType::Missile, rules);
@@ -198,6 +196,7 @@ pub(super) fn launch(
         rx: cell.0,
         ry: cell.1,
     });
+    sim.request_house_tech_tree_recheck(owner); //Launch common tail6CDE2F
     true
 }
 

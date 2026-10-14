@@ -55,10 +55,21 @@ pub(crate) struct MatchState {
 }
 
 impl MatchState {
+    /// ScenarioPause684060 during ChronoScreen affects audio/elapsed time,
+    /// while the original Logic53A747 effect clock continues advancing.
+    pub(crate) fn presentation_paused(&self) -> bool {
+        self.paused() || self.match_presentation.chrono_screen.scenario_paused()
+    }
     /// True when the game is paused and the simulation frozen: an in-scenario
     /// modal is open, or the debug pause is on.
     pub(crate) fn paused(&self) -> bool {
-        self.match_presentation.in_game_menu.is_open() || self.debug_pause
+        self.match_presentation.in_game_menu.is_open()
+            || self.debug_pause
+            || self
+                .match_presentation
+                .radar_anim
+                .as_ref()
+                .is_some_and(|radar| radar.movie_pause())
     }
 
     /// The live scenario's pinned player, including a successfully restored save.

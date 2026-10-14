@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "24 unchanged original HasOccurred44 controls through71EE57..71EE7C, source House registered index vs Country/actor, nulls, signed-1, wrong raise and buildup. Not full damage receiver, Tag actions or campaign parity.",
+  "assumptions": [
+    "Reuse PowerEventControls/FlagsFixture original-image/platform transport and original counted TEvent reader. Minimal House storage has supplied+30 registered indices0/1/2 and Country bindings0/7/0.",
+    "Actor and source are distinct original-layout Techno objects with copied Infantry vtables and independent+21C House pointers. Event44 first reads source+21C then House+30 directly. After a match the original shared tail also calls Country502D30; observed calls remain in the rows and no lookup/getter return is substituted.",
+    "Optional source=None retains the original fixture null ABI and omits any new row field; other selectors retain20/21/22 House priors. Null-source rows deliberately keep an actor present to distinguish the two arguments.",
+    "Event+54 sentinel and timer bytes are observed. House/Object constructors, source ownership writers, RegisterEvent, Spring, Object damage callers and a physical world do not execute."
+  ],
+  "substitutions": [
+    "Existing FlagsFixture allocator/CRT/TLS transport and explicit object/House storage priors only. No selected predicate instruction, branch or gameplay getter is replaced."
+  ],
+  "entry_points": {
+    "event_constructor": "0x0071E6A0",
+    "event_counted_read": "0x007274DC",
+    "has_occurred": "0x0071E940",
+    "source_house_index_compare": "0x0071EE57"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --damage-source-events",
+  "payload_sha256": "bb6742f2dc65eb4163c8353ccf84e0365d7137d69fe57315d4eb76fa8ffb8b9e"
+}

@@ -350,11 +350,14 @@ pub(super) fn dispatch_sim_sound_events(
             SimSoundEvent::VocAtCoord {
                 sound_id,
                 coordinate,
+                flags,
             } => {
                 // Original750B32 uses arithmetic coord>>8 for the shroud
                 // cell. Preserve direct Location XYZ; do not recenter it.
                 GameSoundEvent::VocAtCoord {
                     sound_id,
+                    coordinate: [coordinate.x, coordinate.y, coordinate.z],
+                    flags,
                     source: SoundSource::new(
                         crate::util::lepton::absolute_leptons_to_screen(
                             coordinate.x,
@@ -365,6 +368,10 @@ pub(super) fn dispatch_sim_sound_events(
                     ),
                 }
             }
+            SimSoundEvent::VocStopAtCoord { coordinate, flags } => GameSoundEvent::VocStopAtCoord {
+                coordinate: [coordinate.x, coordinate.y, coordinate.z],
+                flags,
+            },
             SimSoundEvent::BuildingComplete { owner } => {
                 // Only play EVA for the local player's production.
                 if !owner_is_local(&sim.interner, owner, local_owner_name) {
@@ -486,7 +493,7 @@ pub(super) fn dispatch_sim_sound_events(
                     continue;
                 }
                 GameSoundEvent::Eva {
-                    event: outcome_eva_event(kind).to_string(),
+                    event: outcome_eva_event(kind, !sim.session.game_mode_nonzero).to_string(),
                     type_override: None,
                 }
             }
@@ -996,10 +1003,17 @@ fn owner_is_local(
 /// `EVA_YouAreVictorious` (`0x00824C2C`) and `Flag_To_Lose 0x004FCDA1`
 /// `EVA_YouHaveLost` (`0x00824C08`), both with `EDX = -1` (the entry's own
 /// type; stock rows are STANDARD NORMAL). The side column is the consumer's.
-fn outcome_eva_event(kind: crate::sim::house_state::HouseOutcomeKind) -> &'static str {
-    match kind {
-        crate::sim::house_state::HouseOutcomeKind::Victory => "EVA_YouAreVictorious",
-        crate::sim::house_state::HouseOutcomeKind::Defeat => "EVA_YouHaveLost",
+fn outcome_eva_event(
+    kind: crate::sim::house_state::HouseOutcomeKind,
+    campaign: bool,
+) -> &'static str {
+    //Campaign branches4FCB62/4FCD4B use distinct registered EVA names
+    //at824C54/824CAC; multiplayer branches use824C2C/824C08.
+    match (kind, campaign) {
+        (crate::sim::house_state::HouseOutcomeKind::Victory, true) => "EVA_MissionAccomplished",
+        (crate::sim::house_state::HouseOutcomeKind::Defeat, true) => "EVA_MissionFailed",
+        (crate::sim::house_state::HouseOutcomeKind::Victory, false) => "EVA_YouAreVictorious",
+        (crate::sim::house_state::HouseOutcomeKind::Defeat, false) => "EVA_YouHaveLost",
     }
 }
 
@@ -1655,6 +1669,7 @@ mod tests {
                         y: 4 * 256 + 174,
                         z: 104,
                     },
+                    flags: 0,
                 },
             ],
             &sim,
@@ -1996,12 +2011,20 @@ mod tests {
         use crate::sim::house_state::HouseOutcomeKind;
 
         assert_eq!(
-            outcome_eva_event(HouseOutcomeKind::Victory),
+            outcome_eva_event(HouseOutcomeKind::Victory, false),
             "EVA_YouAreVictorious"
         );
         assert_eq!(
-            outcome_eva_event(HouseOutcomeKind::Defeat),
+            outcome_eva_event(HouseOutcomeKind::Defeat, false),
             "EVA_YouHaveLost"
+        );
+        assert_eq!(
+            outcome_eva_event(HouseOutcomeKind::Victory, true),
+            "EVA_MissionAccomplished"
+        );
+        assert_eq!(
+            outcome_eva_event(HouseOutcomeKind::Defeat, true),
+            "EVA_MissionFailed"
         );
     }
 

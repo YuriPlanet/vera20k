@@ -7500,6 +7500,206 @@ def ion_blast_draw():
     return rows
 
 
+def chrono_screen_surface_fixture(emu):
+    """Recorded platform surface calls shared by the selected Chrono controls.
+
+    The getters, lock/pitch and DSurface operations are supplied sinks, not a
+    DirectDraw/renderer model. The original 53BBA0/53C0A0 arithmetic is untouched.
+    """
+    snapshot, composite, vtable, source, destination = [
+        FAKE + 0x500000 + offset * 0x1000 for offset in range(5)]
+    width, height, source_pitch, destination_pitch = 8, 38, 10, 11
+    roles = {snapshot: 'snapshot', composite: 'composite'}
+    for surface in (snapshot, composite):
+        emu.write32(surface, vtable)
+
+    def role(e):
+        return roles.get(e.uc.reg_read(UC_X86_REG_ECX), 'unknown')
+
+    def event(e, name, args=()):
+        e.events.append(dict(name=name, surface=role(e), args=list(args)))
+        return 1
+
+    virtuals = (
+        (0x7C, lambda e: width, 0),
+        (0x80, lambda e: height, 0),
+        (0x70, lambda e: 2, 0),
+        (0x74, lambda e: 2 * (source_pitch if role(e) == 'snapshot'
+                              else destination_pitch), 0),
+        (0x5C, lambda e: source if role(e) == 'snapshot' else destination, 8),
+        (0x60, lambda e: 0, 0),
+        (0x00, lambda e: event(e, 'surface_destroy', [e.arg(0)]), 4),
+        (0x04, lambda e: event(e, 'surface_copy', [
+            roles.get(e.arg(0), 'unknown'), e.arg(1), e.arg(2)]), 12),
+        (0x10, lambda e: event(e, 'surface_fill_rect', [
+            *struct.unpack('<iiii', e.uc.mem_read(e.arg(0), 16)), e.arg(2)]), 12),
+        (0x18, lambda e: event(e, 'surface_fill', [e.arg(0)]), 4),
+    )
+    for ordinal, (slot, answer, pops) in enumerate(virtuals):
+        stub = STUBS + 0xA00 + ordinal * 0x10
+        emu.write32(vtable + slot, stub)
+        emu.hook(stub, answer, pops)
+    emu.write32(COMPOSITE, composite)
+    return dict(snapshot=snapshot, composite=composite, vtable=vtable,
+                source=source, destination=destination, width=width, height=height,
+                source_pitch=source_pitch, destination_pitch=destination_pitch,
+                roles=roles)
+
+
+def chrono_screen_draw_control():
+    """One full original 53BBA0 RGB565 call, including trig and coordinate casts."""
+    emu = Emu()
+    fixture = chrono_screen_surface_fixture(emu)
+    width, height = fixture['width'], fixture['height']
+    source_pitch, destination_pitch = fixture['source_pitch'], fixture['destination_pitch']
+    words = [((x * 4 + y * 3) % 32) << 11 | ((x * 8 + y * 5) % 64) << 5
+             | ((x * 2 + y * 7) % 32)
+             for y in range(height) for x in range(source_pitch)]
+    emu.uc.mem_write(fixture['source'], struct.pack(f'<{len(words)}H', *words))
+    emu.uc.mem_write(fixture['destination'], struct.pack(
+        f'<{destination_pitch * height}H', *([0xDEAD] * (destination_pitch * height))))
+    emu.write32(0xA9FA9C, fixture['snapshot'])
+    emu.write32(0xA9FA98, 8)
+    emu.write32(0xA9FAA8, 15)
+    emu.write32(0x8205D0, 2)
+    samples, angles, weights = [], [], []
+
+    def observe_angle(uc, _address, _size, _data):
+        angles.append(uc.reg_read(UC_X86_REG_EDI))
+        weights.append(uc.reg_read(UC_X86_REG_ESI))
+
+    emu.uc.hook_add(UC_HOOK_CODE, observe_angle, begin=0x53C14C, end=0x53C14C)
+    emu.uc.hook_add(UC_HOOK_CODE, lambda uc, _a, _s, _d: samples.append([
+        uc.reg_read(UC_X86_REG_ECX), uc.reg_read(UC_X86_REG_EAX)]),
+        begin=0x53C1B8, end=0x53C1B8)
+    emu.invoke(0x53BBA0, ecx=0,
+               required=(0x53C0A0, 0x4CB1A0, 0x4CB150, 0x7C5F00))
+    output = list(struct.unpack(f'<{destination_pitch * height}H',
+                               emu.uc.mem_read(fixture['destination'],
+                                               destination_pitch * height * 2)))
+    return dict(name='rgb565_pitched_snapshot_step7', width=width, height=height,
+                source_pitch_words=source_pitch, destination_pitch_words=destination_pitch,
+                duration=15, remaining=8, returning=False, source_words=words,
+                amplitude_bits=emu.read32(0xA9FAA0), velocity_bits=emu.read32(0xA9FAA4),
+                white_weight=weights[0], angle_bits=angles,
+                sample_coordinates=samples, output_words=output)
+
+
+def chrono_screen_lifecycle_control(duration, *, pause_prior=False):
+    """Original Start/Process counter writes; platform and scene sinks recorded."""
+    emu = Emu()
+    fixture = chrono_screen_surface_fixture(emu)
+    # A synthetic tactical view narrower than the Composite confirms which
+    # rectangle case 2 passes without asserting retail viewport initialization.
+    emu.uc.mem_write(TACTICAL_VIEW, struct.pack('<iiii', 0, 0, 6, 6))
+    for right, left, loss, shift in PIXEL_SHIFTS:
+        emu.write32(right, loss)
+        emu.write32(left, shift)
+    emu.write32(RULES + 0x284, 123)
+    emu.write32(RULES + 0x288, 124)
+    write8(emu, SCENARIO + 0x35A2, int(pause_prior))
+
+    def constructor(e):
+        pointer = e.uc.reg_read(UC_X86_REG_ECX)
+        e.events.append(dict(name='surface_construct', address='0x004BA5A0',
+                             args=[e.arg(n) for n in range(4)]))
+        fixture['roles'][pointer] = 'snapshot'
+        e.write32(pointer, fixture['vtable'])
+        return pointer
+
+    emu.hook(0x4BA5A0, constructor, 16)
+
+    def sink(e, name, address, args=(), pause=None):
+        e.events.append(dict(name=name, address=f'0x{address:08X}', args=list(args)))
+        if pause is not None:
+            write8(e, SCENARIO + 0x35A2, pause)
+        return 0
+
+    for address in (0x406E80, 0x405BE0, 0x406060, 0x405C00,
+                    0x753570, 0x753580, 0x684180):
+        emu.hook(address, lambda e, a=address: sink(e, 'platform_sink', a), 0)
+    for address in (0x7529A0, 0x7518C0):
+        emu.hook(address, lambda e, a=address: sink(
+            e, 'audio_gate', a, [e.uc.reg_read(UC_X86_REG_ECX) & 0xFF]), 0)
+    emu.hook(0x750920, lambda e: sink(e, 'audio_play', 0x750920, [
+        e.uc.reg_read(UC_X86_REG_ECX), e.uc.reg_read(UC_X86_REG_EDX), e.arg(0)]), 8)
+    emu.hook(0x4060F0, lambda e: sink(e, 'audio_fade', 0x4060F0, [
+        e.uc.reg_read(UC_X86_REG_EDX), e.arg(0)]), 4)
+    emu.hook(0x684240, lambda e: sink(e, 'scenario_pause_sink', 0x684240, pause=1), 0)
+    emu.hook(0x684290, lambda e: sink(e, 'scenario_resume_sink', 0x684290, pause=0), 0)
+    emu.hook(0x684060, lambda e: sink(e, 'midpoint_sink', 0x684060, [
+        e.uc.reg_read(UC_X86_REG_ECX)]), 0)
+    emu.hook(0x4F42F0, lambda e: sink(e, 'redraw_request', 0x4F42F0, [e.arg(0)]), 4)
+    emu.hook(0x4F4480, lambda e: sink(e, 'snapshot_redraw_sink', 0x4F4480, [
+        fixture['roles'].get(e.read32(COMPOSITE), 'unknown'),
+        e.read32(0xA9FAB0), read8(e, 0xA9FA94)]), 0)
+    emu.hook(0x53BBA0, lambda e: sink(e, 'draw_sink', 0x53BBA0, [
+        e.uc.reg_read(UC_X86_REG_ECX) & 0xFF,
+        e.read32(0xA9FA98), e.read32(0xA9FAA8)]), 0)
+
+    def state():
+        return dict(phase=emu.read_i32(0xA9FAB0), remaining=emu.read_i32(0xA9FA98),
+                    duration=emu.read_i32(0xA9FAA8),
+                    snapshot=fixture['roles'].get(emu.read32(0xA9FA9C), 'none'),
+                    scenario_pause_sink_value=read8(emu, SCENARIO + 0x35A2),
+                    active=bool(emu.invoke(0x53BAD0)))
+
+    before_start = state()
+    emu.invoke(0x53B460, ecx=duration)
+    start_events, after_start = list(emu.events), state()
+    frames = []
+    while emu.read32(0xA9FAB0) != 0:
+        if len(frames) >= 1000:
+            raise OracleError('ChronoScreen control did not finish in its bounded fixture')
+        emu.events.clear()
+        before = state()
+        emu.invoke(0x53B560)
+        frames.append(dict(before=before, events=list(emu.events), after=state()))
+    return dict(duration_input=duration, scenario_pause_prior=pause_prior,
+                before_start=before_start,
+                start_events=start_events, after_start=after_start, frames=frames,
+                final=state())
+
+
+def generate_chrono_screen():
+    return dict(draw_controls=[chrono_screen_draw_control()],
+                lifecycle_controls=[chrono_screen_lifecycle_control(n)
+                                    for n in (-1, 0, 1, 3, 90)]
+                                   + [chrono_screen_lifecycle_control(3, pause_prior=True)])
+
+
+def chrono_screen_metadata():
+    return provenance(
+        scope='One full RGB565 ChronoScreen draw kernel and six original Start/Process '
+              'counter histories; not native game/GPU/full-scene parity.',
+        assumptions=[
+            'Original 53BBA0 and 53C0A0, LUT trig and _ftol run under process FPCW '
+            '0x0E7F on an 8x38 fixture; source/destination pitch is 10/11 words.',
+            'Start and Process execute whole bodies for durations -1,0,1,3,90 plus '
+            'duration3 with Scenario+35A2 already set. '
+            'The tactical fill rectangle is supplied (0,0,6,6), not a retail viewport.',
+            'Scenario pause starts false except the explicit prior-set contrast; '
+            'the retained pause byte and native phase/counter '
+            'writes are recorded. Pause sink values are fixture effects, not original '
+            'Scenario Pause/Resume body proof.',
+            'No original gameplay/RNG loop, DirectDraw device, capture, UI render, '
+            'audio device or complete ALL01 scene is executed.'],
+        substitutions=[
+            'Existing Emu transport supplies synthetic surface dimensions, pitches, '
+            'buffer Lock/Unlock and recorded DSurface constructor/copy/fill/delete sinks.',
+            'Lifecycle controls replace 53BBA0 with a recorded sink; the separate '
+            'draw control executes its untouched original body and helper calls.',
+            '406E80,405BE0,406060,405C00,4060F0,7529A0,750920,7518C0,753570,753580 '
+            'are recorded audio/mouse/platform sinks; 684240/684290 record and supply '
+            'the fixture pause byte, 684060/684180 are recorded Scenario sinks.',
+            '4F42F0 and 4F4480 are recorded redraw sinks, including target surface, '
+            'phase and A9FA94 capture guard. No renderer body is substituted in the '
+            'separate native pixel kernel.'],
+        entry_points={'Start': 0x53B460, 'Process': 0x53B560, 'Active': 0x53BAD0,
+                      'Draw': 0x53BBA0, 'RGB565_kernel': 0x53C0A0,
+                      'sin_table': 0x4CB150, 'cos_table': 0x4CB1A0, 'ftol': 0x7C5F00})
+
+
 def generate():
     return {'source': 'unicorn/gamemd.exe', 'click_fire': click_fire(),
             'defense_alert': defense_alert(), 'mission_missile': mission_missile(),
@@ -7569,6 +7769,15 @@ def generate():
 
 
 if __name__ == '__main__':
+    import sys
+    if '--chrono-screen' in sys.argv[1:]:
+        arguments = sys.argv[1:]
+        arguments.remove('--chrono-screen')
+        finish_vectors(generate_chrono_screen, Path(__file__).with_name('chrono_screen_effect.json'),
+                       provenance=chrono_screen_metadata,
+                       source_paths={'producer': Path(__file__), 'fixture': Path(__file__).with_name(
+                           'ai_base_building_oracle.py')}, argv=arguments)
+        raise SystemExit
     here = Path(__file__)
     finish_vectors(generate, here.with_suffix('.json'), source_paths={
         'superweapon_oracle': here, 'ai_base_building_oracle':

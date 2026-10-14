@@ -7,6 +7,381 @@ use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::house_state::HouseState;
 use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};
 
+fn patrol_corpus() -> serde_json::Value {
+    serde_json::from_str(crate::test_fixture::text("tools/team_patrol.json")).unwrap()
+}
+
+/// The expected retained bits and periods are executed native outputs, including
+/// the decimal-float/percentage distinction. This also exercises the production
+/// process reader, rather than independently parsing a scalar for the test.
+#[test]
+fn patrol_scan_production_reader_and_period_match_original() {
+    use crate::rules::native_processing::{
+        NativeRulesRegistryState, RulesLayerKind, RulesLayerStack,
+    };
+    use crate::util::native_x87::NativeF64Bits;
+    let native = patrol_corpus();
+    let default_bits = u64::from_str_radix(native["default_bits"].as_str().unwrap(), 16).unwrap();
+    assert_eq!(
+        crate::rules::ruleset::GeneralRules::default()
+            .patrol_scan_minutes
+            .bits(),
+        default_bits
+    );
+    for row in native["rules"].as_array().unwrap() {
+        // The oracle supplies this prior directly. Its 0.1 bits are not the
+        // original ReadDouble("10%") result (which is one ulp lower).
+        let initial = NativeF64Bits::from_bits(
+            u64::from_str_radix(row["initial_bits"].as_str().unwrap(), 16).unwrap(),
+        );
+        let registry =
+            NativeRulesRegistryState::default().with_patrol_scan_minutes_for_test(initial);
+        let mut layers = RulesLayerStack::new(IniFile::empty());
+        let pass = row["raw"].as_str().map_or_else(
+            || "[AI]\nFixtureOnly=1\n".to_owned(),
+            |raw| format!("[AI]\nPatrolScan={raw}\n"),
+        );
+        layers.push(RulesLayerKind::Scenario, IniFile::from_str(&pass));
+        let processed = layers
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), registry)
+            .unwrap();
+        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        assert_eq!(
+            rules.general.patrol_scan_minutes.bits(),
+            u64::from_str_radix(row["output_bits"].as_str().unwrap(), 16).unwrap(),
+            "{row}"
+        );
+        assert_eq!(
+            i64::from(rules.general.patrol_scan_frames()),
+            row["ticks"].as_i64().unwrap(),
+            "{row}"
+        );
+    }
+    // A General-only spelling must not enter the independently gated AI read.
+    let misplaced = RuleSet::from_ini(&IniFile::from_str("[General]\nPatrolScan=10%\n")).unwrap();
+    assert_eq!(misplaced.general.patrol_scan_minutes.bits(), default_bits);
+}
+
+#[test]
+fn patrol_scan_retains_across_type_reset_and_changes_configuration_identity() {
+    use crate::rules::native_processing::RulesLayerStack;
+    let mut hashes = Vec::new();
+    for raw in ["1%", "10%"] {
+        let first = RulesLayerStack::new(IniFile::from_str(&format!("[AI]\nPatrolScan={raw}\n")))
+            .process()
+            .unwrap();
+        let expected = RuleSet::from_processed_rules(&first)
+            .unwrap()
+            .general
+            .patrol_scan_minutes;
+        let (_, trace) = first.into_ini_and_native_type_construction_trace();
+        let processed = RulesLayerStack::new(IniFile::empty())
+            .process_with_fixed_art_and_registry_state(
+                &IniFile::empty(),
+                trace
+                    .into_registry_state_discarding_events()
+                    .destructive_reset(),
+            )
+            .unwrap();
+        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        assert_eq!(rules.general.patrol_scan_minutes, expected);
+        hashes.push((rules.source_ini_hash(), rules.simulation_config_hash()));
+    }
+    assert_eq!(hashes[0].0, hashes[1].0);
+    assert_ne!(hashes[0].1, hashes[1].1);
+}
+
+fn patrol_team_fixture(armed: bool) -> (Simulation, RuleSet, u64, Vec<u64>) {
+    let text = if armed {
+        let base = RULES.replace(
+            "Strength=125\n",
+            "Strength=125\nLeadershipRating=5\nPrimary=Rifle\n",
+        );
+        format!(
+            "{base}\n\
+          [Rifle]\nDamage=20\nROF=15\nRange=8\nProjectile=Invisible\nWarhead=SA\n\
+          [Invisible]\nInvisible=yes\nAG=yes\n[SA]\nVerses=100%\n\
+          [AI]\nPatrolScan=1%\n"
+        )
+    } else {
+        format!("{RULES}\n[AI]\nPatrolScan=1%\n")
+    };
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&text),
+        &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
+    )
+    .unwrap();
+    let mut sim = Simulation::with_seed(0x6ECCE0);
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let (team, members, _) = building_team(&mut sim, &rules, &[(16, 11), (2, 0)], &[]);
+    sim.session.install_waypoints(
+        &[(
+            11,
+            crate::map::waypoints::Waypoint {
+                index: 11,
+                rx: 30,
+                ry: 20,
+            },
+        )]
+        .into(),
+    );
+    for &member in &members {
+        sim.team_set_member_initiated(team, member);
+    }
+    let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+    state.cursor = -1;
+    state.advance_pending = true;
+    (sim, rules, team, members)
+}
+
+#[test]
+fn patrol_dispatch_moves_to_its_waypoint_without_finishing_immediately() {
+    let (mut sim, rules, team, members) = patrol_team_fixture(false);
+    sim.session.binary_frame = 1;
+    let rng_before = sim.scenario_rng.native_state_hex();
+    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng_before);
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert_eq!(state.cursor(), 0);
+    assert!(!state.advance_pending());
+    assert!(state.refusal().is_none());
+    assert_eq!(
+        state.mission_target,
+        Some(TeamTarget::Cell { x: 30, y: 20 })
+    );
+    assert!(members.iter().all(|&member| {
+        sim.substrate
+            .entities
+            .get(member)
+            .unwrap()
+            .navigation
+            .nav_com
+            .is_some()
+    }));
+}
+
+#[test]
+fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() {
+    let (mut sim, rules, team, members) = patrol_team_fixture(false);
+    let old = sim
+        .spawn_object_at_height("GAPOWR", "Americans", 20, 10, 0, 0, &rules)
+        .unwrap();
+    {
+        let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+        state.cursor = 0;
+        state.advance_pending = false;
+    }
+    sim.team_assign_mission_target(
+        team,
+        Some(TeamTarget::Object(old)),
+        &rules,
+        None,
+        FrameEffects::default(),
+    );
+    for &member in &members {
+        sim.team_member_assign_target(
+            member,
+            TeamTarget::Object(old),
+            &rules,
+            None,
+            FrameEffects::default(),
+        );
+        sim.team_member_set_destination(
+            member,
+            Some(TeamTarget::Object(old)),
+            &rules,
+            None,
+            FrameEffects::default(),
+        );
+    }
+    sim.session.binary_frame = rules.general.patrol_scan_frames() as u32;
+    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert_eq!(state.mission_target, None);
+    assert_eq!(
+        state.focus, None,
+        "NULL scan does not reseed the waypoint in the same visit"
+    );
+    assert!(members.iter().all(|&member| {
+        let entity = sim.substrate.entities.get(member).unwrap();
+        entity.attack_target.is_none() && entity.navigation.nav_com.is_none()
+    }));
+    sim.session.binary_frame += 1;
+    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    assert_eq!(
+        sim.team_script_vm.team(team).unwrap().mission_target,
+        Some(TeamTarget::Cell { x: 30, y: 20 })
+    );
+}
+
+#[test]
+fn patrol_scans_on_the_global_period_and_orders_members_to_attack() {
+    let (mut sim, rules, team, members) = patrol_team_fixture(true);
+    let enemy = sim
+        .spawn_object_at_height("E1", "Americans", 14, 10, 0, 0, &rules)
+        .unwrap();
+    let owner = sim.interner.get("Russians").unwrap();
+    crate::sim::vision::reveal_radius(&mut sim.fog, owner, 14, 10, 8);
+    sim.session.binary_frame = (rules.general.patrol_scan_frames() - 1) as u32;
+    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    assert_eq!(
+        sim.team_script_vm.team(team).unwrap().mission_target,
+        Some(TeamTarget::Cell { x: 30, y: 20 })
+    );
+    sim.session.binary_frame += 1;
+    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    assert_eq!(
+        sim.team_script_vm.team(team).unwrap().mission_target,
+        Some(TeamTarget::Object(enemy))
+    );
+    assert!(members.iter().all(|&member| {
+        sim.substrate
+            .entities
+            .get(member)
+            .unwrap()
+            .attack_target
+            .as_ref()
+            .is_some_and(|attack| attack.target == crate::sim::combat::TargetKind::Entity(enemy))
+    }));
+}
+
+#[test]
+fn patrol_reuses_the_native_leadership_rating_member_selection() {
+    let corpus = patrol_corpus();
+    for row in corpus["controls"].as_array().unwrap() {
+        let scan = row["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|event| event[0] == "scan");
+        let Some(scan) = scan else { continue };
+        let inputs = row["members"].as_array().unwrap();
+        let mut text = String::new();
+        for (aircraft, section) in [(false, "InfantryTypes"), (true, "AircraftTypes")] {
+            text.push_str(&format!("[{section}]\n"));
+            for (index, input) in inputs.iter().enumerate() {
+                if input["aircraft"].as_bool().unwrap() == aircraft {
+                    text.push_str(&format!("{index}=MEMBER{index}\n"));
+                }
+            }
+        }
+        for (index, input) in inputs.iter().enumerate() {
+            text.push_str(&format!(
+                "[MEMBER{index}]\nStrength=100\nLeadershipRating={}\n",
+                input["rating"]
+            ));
+        }
+        let rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
+        let mut sim = Simulation::new();
+        let ids: Vec<_> = inputs
+            .iter()
+            .enumerate()
+            .map(|(index, input)| {
+                let id = index as u64 + 1;
+                let category = if input["aircraft"].as_bool().unwrap() {
+                    EntityCategory::Aircraft
+                } else {
+                    EntityCategory::Infantry
+                };
+                let mut entity = GameEntity::test_default_of_category(
+                    id,
+                    &format!("MEMBER{index}"),
+                    "OWNER",
+                    10,
+                    10,
+                    category,
+                );
+                entity.lifecycle.object_alive = input["active"].as_bool().unwrap();
+                entity.lifecycle.in_limbo = input["limbo"].as_bool().unwrap();
+                entity.health.current = input["health"].as_i64().unwrap() as i32;
+                sim.substrate.entities.insert(entity);
+                id
+            })
+            .collect();
+        sim.interner = crate::sim::intern::test_interner();
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.get("OWNER").unwrap();
+        let script = sim.interner.intern("SCRIPT");
+        let team = sim
+            .team_script_vm
+            .create_team(owner, script, ids.clone(), 0);
+        for (member, input) in sim
+            .team_script_vm
+            .teams
+            .get_mut(&team)
+            .unwrap()
+            .members
+            .iter_mut()
+            .zip(inputs)
+        {
+            member.initiated = input["initiated"].as_bool().unwrap();
+        }
+        let actual = if row["placement_scope"].as_bool().unwrap() {
+            sim.with_object_placement_scope(|sim| sim.team_leader(team, &rules))
+        } else {
+            sim.team_leader(team, &rules)
+        };
+        assert_eq!(
+            actual,
+            Some(ids[scan[1].as_u64().unwrap() as usize]),
+            "{row}"
+        );
+        assert_eq!(scan[2], 1);
+        assert_eq!(scan[4], 0, "Patrol ignores OnlyTargetHouseEnemy");
+    }
+}
+
+#[test]
+fn retail_all01_patrol_scripts_and_rules_use_the_production_readers() {
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map =
+        crate::map::map_file::MapFile::from_bytes(assets.get_ref("ALL01UMD.MAP").unwrap()).unwrap();
+    let named = assets.resolve_ref("ALL01UMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "ALL01UMD.INI")
+            .unwrap()
+            .ini
+    });
+    let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (rules, _, _, _) = owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let corpus = patrol_corpus();
+    let row = corpus["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["initial_bits"] == corpus["default_bits"] && row["raw"] == "0.016")
+        .unwrap();
+    assert_eq!(
+        rules.general.patrol_scan_minutes.bits(),
+        u64::from_str_radix(row["output_bits"].as_str().unwrap(), 16).unwrap()
+    );
+    assert_eq!(
+        i64::from(rules.general.patrol_scan_frames()),
+        row["ticks"].as_i64().unwrap()
+    );
+    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
+        .unwrap();
+    assert_eq!(
+        teams
+            .scripts
+            .iter()
+            .flat_map(|script| &script.actions)
+            .filter(|action| action.action_id == 16)
+            .count(),
+        27
+    );
+    assert!(action_is_ported(16));
+}
+
 const RULES: &str = "\
 [InfantryTypes]
 0=E1
@@ -22,7 +397,7 @@ Strength=750
 
 fn rules() -> RuleSet {
     RuleSet::from_ini_with_fixed_art_for_test(
-        &IniFile::from_str(RULES),
+        &crate::sim::arena_fixture::clear_ground_ini(RULES),
         &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
     )
     .expect("team action rules")
@@ -86,6 +461,203 @@ fn building_team(
         .team_script_vm
         .create_team(russians, script, members.clone(), 0);
     (team, members, plants)
+}
+
+#[test]
+fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/team_attack_waypoint_building.json",
+    ))
+    .unwrap();
+    assert_eq!(rows.as_array().unwrap().len(), 6);
+    for row in rows.as_array().unwrap() {
+        let input = &row["input"];
+        let type_ammo = input["type_ammo"].as_i64().unwrap();
+        // One physical E1 section must carry the corpus's Type+684 prior.
+        // Appending a second [E1] body leaves the first body's default Ammo.
+        let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
+        ini.merge(&IniFile::from_str(&format!("[E1]\nAmmo={type_ammo}\n")));
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &ini,
+            &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            i64::from(rules.object("E1").unwrap().ammo),
+            type_ammo,
+            "{input}: supplied native type ammo"
+        );
+        let mut sim = Simulation::new();
+        sim.session.binary_frame = 1;
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        let first = input["first"].as_bool().unwrap();
+        let has_building = input["blocker"] == "building" || !first;
+        let plants = if has_building {
+            vec![("Americans", 20, 10)]
+        } else {
+            vec![]
+        };
+        let (team, members, buildings) = building_team(&mut sim, &rules, &[(59, 11)], &plants);
+        if input["blocker"] == "other" {
+            sim.spawn_object_at_height("E1", "Americans", 20, 10, 0, 0, &rules)
+                .unwrap();
+        }
+        sim.session.install_waypoints(
+            &[(
+                11,
+                crate::map::waypoints::Waypoint {
+                    index: 11,
+                    rx: 20,
+                    ry: 10,
+                },
+            )]
+            .into(),
+        );
+        for &member in &members {
+            sim.team_set_member_initiated(team, member);
+            // Supplied native raw+2FC prior for this control. Production
+            // non-Aircraft ammunition writers remain the documented owner
+            // residual; this fixture does not invent a working reload loop.
+            sim.substrate
+                .entities
+                .get_mut(member)
+                .unwrap()
+                .aircraft_ammo = Some(crate::sim::docking::aircraft_dock::AircraftAmmo::new(
+                input["ammo"].as_i64().unwrap() as i32,
+            ));
+        }
+        if input["count"] == 0 {
+            for &member in &members {
+                sim.team_remove_member(team, member, false, Some(&rules), FrameEffects::default());
+            }
+        }
+        if !first {
+            sim.team_assign_mission_target(
+                team,
+                Some(TeamTarget::Object(buildings[0])),
+                &rules,
+                None,
+                FrameEffects::default(),
+            );
+            // Changed waypoint now contains no building. A repeated visit
+            // must retain the old target without running the first query.
+            sim.session.install_waypoints(
+                &[(
+                    11,
+                    crate::map::waypoints::Waypoint {
+                        index: 11,
+                        rx: 30,
+                        ry: 20,
+                    },
+                )]
+                .into(),
+            );
+        }
+        let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+        state.cursor = if first { -1 } else { 0 };
+        state.advance_pending = first;
+        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        let state = sim.team_script_vm.team(team).unwrap();
+        assert_eq!(
+            state.mission_target.is_some(),
+            row["target_present"].as_bool().unwrap(),
+            "{input}"
+        );
+        assert_eq!(
+            state.advance_pending,
+            row["advance"].as_bool().unwrap(),
+            "{input}"
+        );
+        assert!(state.refusal().is_none(), "{input}");
+        if row["coordinate_attack"].as_bool().unwrap() {
+            assert_eq!(
+                state.mission_target,
+                Some(TeamTarget::Object(buildings[0])),
+                "{input}"
+            );
+            for &member in &members {
+                assert_eq!(
+                    sim.substrate
+                        .entities
+                        .get(member)
+                        .unwrap()
+                        .attack_target
+                        .as_ref()
+                        .map(|attack| attack.target),
+                    Some(crate::sim::combat::TargetKind::Entity(buildings[0])),
+                    "{input}: existing CoordinateAttack consumer"
+                );
+            }
+        }
+        // The native corpus establishes selector/ammo control routing. This
+        // real Rust consumer check does not claim whole joined native scene
+        // parity for its separately tested mission/blocker/attack owners.
+    }
+}
+
+#[test]
+fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map =
+        crate::map::map_file::MapFile::from_bytes(assets.get_ref("ALL01UMD.MAP").unwrap()).unwrap();
+    let named = assets.resolve_ref("ALL01UMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "ALL01UMD.INI")
+            .unwrap()
+            .ini
+    });
+    let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (rules, _, _, _) = owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let registry =
+        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
+            .unwrap();
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    let programs: Vec<_> = sim
+        .team_script_vm
+        .scripts
+        .values()
+        .filter(|script| script.actions.iter().any(|action| action.action_id == 59))
+        .map(|script| script.id)
+        .collect();
+    let count: usize = sim
+        .team_script_vm
+        .scripts
+        .values()
+        .flat_map(|script| &script.actions)
+        .filter(|action| action.action_id == 59)
+        .count();
+    assert_eq!(programs.len(), 10, "physical Script59 programs");
+    assert_eq!(count, 11, "physical referenced Script59 steps");
+    for definition in sim
+        .team_script_vm
+        .team_types
+        .values()
+        .filter(|definition| programs.contains(&definition.script_id))
+    {
+        for entry in &sim.team_script_vm.task_forces[&definition.task_force_id].entries {
+            let name = sim.interner.resolve(entry.member_type.id);
+            let object = rules
+                .object_in_category(entry.member_type.category, name)
+                .unwrap();
+            assert!(
+                entry.member_type.category == crate::rules::object_type::ObjectCategory::Aircraft
+                    || object.ammo <= 0,
+                "ALL01 Script59 {name} needs the still-missing non-Aircraft current ammunition owner; do not assume it is full"
+            );
+        }
+    }
+    assert!(action_is_ported(59));
 }
 
 /// Advance until `done` holds for the team, at most `frames` frames.
@@ -544,7 +1116,7 @@ impl DeployTeam {
     /// action 9, then action 2 (stay).
     fn new(spawns: &[(&str, u16, u16)]) -> Self {
         let rules = RuleSet::from_ini_with_fixed_art_for_test(
-            &IniFile::from_str(DEPLOY_RULES),
+            &crate::sim::arena_fixture::clear_ground_ini(DEPLOY_RULES),
             &IniFile::from_str("[YARD]\nFoundation=4x4\n"),
         )
         .expect("deploy rules");

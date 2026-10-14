@@ -345,7 +345,7 @@ fn near_native_rows_stop_through_the_continuation_null_setter() {
         sim.session.binary_frame = 101;
         // 0x4D4044 Unit +0x500 = 0x4D55C0 (locomotor Stop), then the
         // 0x4D404A tail, which returns for a Chebyshev-1 target.
-        sim.run_find_path_failed_receiver(
+        sim.foot_stop_driver(
             id,
             &rules,
             Some(&registry),

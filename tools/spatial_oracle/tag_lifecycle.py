@@ -889,6 +889,588 @@ def source_paths():
     return paths
 
 
+class PowerEventControls:
+    """Selected Event/RegisterEvent inputs on the existing FlagsFixture VM.
+
+    Migrates the two executed ALL01 scratch controls into this lifecycle owner.
+    No new VM transport, parser, capture model or gameplay callable substitute.
+    Minimal House/Actor storage is explicit; a whole capture/world is excluded.
+    """
+    SPANS = [(0x71E6A0,0x71E7FA),(0x71E940,0x71F216),(0x49FAE0,0x49FB2F),
+             (0x502D30,0x502D60),(0x4FCE30,0x4FCE73),(0x6F9DB0,0x6F9DC7),
+             (0x7264C0,0x7265BD),(0x71FA30,0x71FA34)]
+
+    def __init__(self):
+        from tools.native_oracle import NATIVE_FPCW
+        from tools.spatial_oracle.trigger_type_flags import FlagsFixture
+        from tools.spatial_oracle.infantry_deploy_rules import HEAP, CURSOR, PTD
+        from tools.spatial_oracle.engineer_repair_admission import INF_VTABLE
+        from unicorn.x86_const import UC_X86_REG_FPCW
+        self.fixture = FlagsFixture()
+        self.u = u = self.fixture.u
+        self.arena = HEAP
+        self.event, self.persist, self.timer = HEAP+0x70000, HEAP+0x70100, HEAP+0x70110
+        self.houses = [HEAP+0x10000,HEAP+0x30000,HEAP+0x50000]
+        self.types = [HEAP+0x81000+i*0x100 for i in range(3)]
+        self.house_array, self.actor = HEAP+0x80000, HEAP+0x85000
+        self.source = HEAP+0x88000
+        self.counters = [HEAP+0x90000+i*0x1000 for i in range(3)]
+        u.reg_write(UC_X86_REG_FPCW,NATIVE_FPCW)
+        u.mem_write(PTD,bytes(0x74));u.mem_write(CURSOR,dwords(HEAP+0xA0000))
+        for i,(house,typ,counter) in enumerate(zip(self.houses,self.types,self.counters)):
+            u.mem_write(house,bytes(0x17000))
+            u.mem_write(house+0x30,dwords(20+i));u.mem_write(house+0x34,dwords(typ))
+            u.mem_write(typ+0xB8,dwords([0,7,0][i]))
+            u.mem_write(house+0x5550,dwords(0x7E449C,counter,512,1,0,10))
+            u.mem_write(counter,bytes(512*4))
+        u.mem_write(0xA8022C,dwords(self.house_array));u.mem_write(0xA80238,dwords(3))
+        u.mem_write(self.house_array,dwords(*self.houses))
+        u.mem_write(self.actor,bytes(0x800));u.mem_write(self.actor,dwords(INF_VTABLE))
+        u.mem_write(self.actor+0x21C,dwords(self.houses[0]))
+        u.mem_write(self.source,bytes(0x800));u.mem_write(self.source,dwords(INF_VTABLE))
+        u.mem_write(self.source+0x21C,dwords(self.houses[0]))
+        u.mem_write(self.timer,dwords(0,0,30));u.mem_write(0xA8ED84,dwords(123))
+        u.mem_write(0xA8ED6B,b'\0')
+        for i,base in enumerate((0xB0F1A0,0xB0F658,0xB0F670)):
+            u.mem_write(base+4,dwords(HEAP+0x1000+i*0x400,128,0,0,128))
+        self.fixture.call(0x71E6A0,[],ecx=self.event)
+        self.constructor_defaults = {name:self.integer(self.event+offset)
+            for name,offset in [('kind',0x2C),('value',0x34),('last_house',0x54)]}
+        self.original = [bytes(u.mem_read(a,b-a)) for a,b in self.SPANS]
+        self.calls, self.admission_calls, self.predicates, self.registers = [], [], [], []
+        u.hook_add(UC_HOOK_CODE,self.observe)
+        self.readers = {raw:self.read_event(raw) for raw in (
+            '1,32,0,402','1,32,0,7','1,57,0,7','1,58,0,0','1,58,0,7',
+            '1,58,0,999','1,30,0,0','1,1,0,0','1,1,0,7','1,1,0,-1')}
+
+    def integer(self,address):
+        return struct.unpack('<i',self.u.mem_read(address,4))[0]
+
+    @staticmethod
+    def read_event(raw):
+        from tools.spatial_oracle.trigger_event_records import execute
+        row = execute(raw)
+        assert len(row['conditions']) == 1
+        return row['conditions'][0]
+
+    def observe(self,vm,pc,size,data):
+        if pc in (0x49FAE0,0x49FB60,0x502D30,0x4FCE30,0x6F9DB0,0x6F9DC0,0x65C780,0x65C7E0):
+            sp = vm.reg_read(UC_X86_REG_ESP)
+            self.calls.append(dict(pc=f'0x{pc:08X}',ecx=vm.reg_read(UC_X86_REG_ECX),
+                arg0=struct.unpack('<I',vm.mem_read(sp+4,4))[0]))
+
+    def observe_admission(self,vm,pc,size,data):
+        if pc in (0x71E940,0x71FA30,0x726400):
+            self.admission_calls.append(dict(pc=hex(pc),ecx=vm.reg_read(UC_X86_REG_ECX)))
+
+    def predicate(self,name,raw,house_index=0,raised=8,actor_index=None,
+                  scenario_init=False,counts=(0,0,0),
+                  power=((100,200),(300,200),(0,200)),order=(0,1,2),
+                  destruction_counts=None,source_index=None):
+        # Preserve historical key scenario_init; it denotes A8ED6B, NOT the
+        # A8E7AC placement scope. See this selected mode's metadata.
+        if raw not in self.readers:
+            self.readers[raw] = self.read_event(raw)
+        u,p = self.u,self.readers[raw]
+        u.mem_write(self.event+0x2C,dwords(p['kind']));u.mem_write(self.event+0x34,dwords(p['value']))
+        u.mem_write(self.event+0x54,dwords(0xABCD1234));u.mem_write(self.persist,b'\0')
+        u.mem_write(self.house_array,dwords(*(self.houses[i] for i in order)))
+        u.mem_write(0xA8ED6B,bytes([scenario_init]))
+        for counter,value in zip(self.counters,counts):
+            if 0 <= p['value'] < 512:u.mem_write(counter+p['value']*4,dwords(value))
+        for house,(output,drain) in zip(self.houses,power):u.mem_write(house+0x53A4,dwords(output,drain))
+        if destruction_counts is not None:
+            # CounterClass49FB60 reads its cached signed total at+10.
+            # These are supplied priors, not executions of House writers.
+            for house,(buildings,units,infantry,aircraft) in zip(self.houses,destruction_counts):
+                u.mem_write(house+0x2F0,dwords(buildings))
+                for offset,total in ((0x5564,units),(0x5578,infantry),(0x558C,aircraft)):
+                    u.mem_write(house+offset+0x10,dwords(total))
+        u.mem_write(self.actor+0x21C,dwords(self.houses[actor_index if actor_index is not None else 0]))
+        if source_index is not None:
+            u.mem_write(self.source+0x21C,dwords(self.houses[source_index]))
+        self.calls = []
+        result = self.fixture.call(0x71E940,[raised,self.houses[house_index] if house_index is not None else 0,
+            self.actor if actor_index is not None else 0,self.timer,self.persist,
+            self.source if source_index is not None else 0],ecx=self.event)&255
+        self.predicates.append(dict(name=name,raw=raw,read=p,
+            inputs=dict(incoming_house=house_index,raised=raised,actor_owner=actor_index,
+                        scenario_init=scenario_init,counts=counts,power=power,house_order=order),
+            result=result,persistence=u.mem_read(self.persist,1)[0],
+            event54=self.integer(self.event+0x54),calls=list(self.calls)))
+        if destruction_counts is not None:
+            self.predicates[-1]['inputs']['destruction_counts'] = destruction_counts
+        if source_index is not None:
+            # Default-null callers retain their established ABI and output
+            # shape. The source is separate storage, never the actor alias.
+            self.predicates[-1]['inputs']['source_owner'] = source_index
+
+    def register_legacy(self,name,raw,trigger_country,actor_owner,counts,power):
+        u,p,arena = self.u,self.readers[raw],self.arena
+        typ,live,zero = arena+0x87000,arena+0x87200,arena+0x87400
+        u.mem_write(zero,dwords(0));u.mem_write(self.event+0x28,dwords(0,p['kind'],0,p['value']))
+        u.mem_write(self.event+0x54,dwords(0));u.mem_write(0xA8ED6B,b'\0')
+        for i,t in enumerate(self.types):u.mem_write(t+0xB4,dwords([0,7,0][i]))
+        u.mem_write(self.house_array,dwords(*self.houses))
+        for counter,value in zip(self.counters,counts):u.mem_write(counter+p['value']*4,dwords(value))
+        for house,(output,drain) in zip(self.houses,power):u.mem_write(house+0x53A4,dwords(output,drain))
+        u.mem_write(typ,bytes(0xB4));u.mem_write(typ+0xA4,dwords(self.types[0 if trigger_country==0 else 1],0,self.event))
+        u.mem_write(live,bytes(0x48));u.mem_write(live+0x24,dwords(typ))
+        u.mem_write(live+0x34,dwords(0,0,30));u.mem_write(live+0x44,b'\1')
+        u.mem_write(self.actor+0x21C,dwords(self.houses[actor_owner or 0]));self.calls=[]
+        result=self.fixture.call(0x7264C0,[1 if p['kind']==1 else 8,
+            self.actor if actor_owner is not None else 0,0,0,zero],ecx=live)&255
+        self.registers.append(dict(name=name,raw=raw,trigger_country=trigger_country,
+            actor_owner=actor_owner,counts=counts,power=power,result=result,
+            event54=self.integer(self.event+0x54),live_trigger2c=self.integer(live+0x2C),
+            live_trigger_completed=self.integer(live+0x40),calls=list(self.calls)))
+
+    def setup_admission(self,events,trigger_country=0,frame=123,timer_start=0,
+                        timer_duration=75,completed=0,count=0):
+        u,arena = self.u,self.arena
+        typ,live,live2,zero = arena+0x87000,arena+0x87200,arena+0x87300,arena+0x87400
+        u.mem_write(zero,dwords(0));u.mem_write(0xA8ED84,dwords(frame));u.mem_write(0xA8ED6B,b'\0')
+        u.mem_write(self.house_array,dwords(*self.houses));u.mem_write(typ,bytes(0xB4))
+        u.mem_write(typ+0xA4,dwords(self.types[0 if trigger_country==0 else 1],0,self.event))
+        for i,raw in enumerate(events):
+            p=self.readers[raw];address=self.event+i*0x60
+            self.fixture.call(0x71E6A0,[],ecx=address)
+            u.mem_write(address+0x28,dwords(self.event+(i+1)*0x60 if i+1<len(events) else 0,p['kind'],0,p['value']))
+        for counter in self.counters:u.mem_write(counter+402*4,dwords(0))
+        u.mem_write(self.counters[0]+402*4,dwords(count))
+        for pointer in (live,live2):
+            u.mem_write(pointer,bytes(0x48));u.mem_write(pointer+0x24,dwords(typ))
+            u.mem_write(pointer+0x34,dwords(timer_start,0,timer_duration))
+            u.mem_write(pointer+0x40,dwords(completed));u.mem_write(pointer+0x44,b'\1')
+
+    def register_admission(self,name,raised,repeat=False,actor=None,second_live=False):
+        live=self.arena+(0x87300 if second_live else 0x87200)
+        self.calls=[]
+        if actor is not None:self.u.mem_write(self.actor+0x21C,dwords(self.houses[actor]))
+        prior=dict(timer=[self.integer(live+o) for o in (0x34,0x38,0x3C)],
+            completed=self.integer(live+0x40),house=self.integer(live+0x2C),event_house=self.integer(self.event+0x54))
+        trace_start=len(self.admission_calls)
+        result=self.fixture.call(0x7264C0,[raised,self.actor if actor is not None else 0,0,int(repeat),self.arena+0x87400],ecx=live)&255
+        self.registers.append(dict(name=name,raised=raised,repeat=repeat,actor_owner=actor,
+            prior=prior,result=result,timer=[self.integer(live+o) for o in (0x34,0x38,0x3C)],
+            completed=self.integer(live+0x40),house=self.integer(live+0x2C),
+            event_house=self.integer(self.event+0x54),calls=list(self.calls),
+            admission_calls=list(self.admission_calls[trace_start:])))
+
+    def assert_unchanged(self):
+        assert self.original == [bytes(self.u.mem_read(a,b-a)) for a,b in self.SPANS]
+        assert not any(call['pc'] in ('0x0065C780','0x0065C7E0')
+            for row in self.predicates+self.registers for call in row['calls'])
+
+
+def generate_power_events():
+    """Replay only the existing36+5 predicates,4+12 registers,5 classifiers."""
+    from tools.native_oracle import NATIVE_FPCW, image_sha256
+    first=PowerEventControls()
+    for count in (0,1,-1,2,2147483647,-2147483648):
+        first.predicate(f'building402_count_{count}','1,32,0,402',counts=(count,0,0))
+    for kind in (32,57):
+        for house in (0,1,None):
+            first.predicate(f'building_kind{kind}_incoming{house}',f'1,{kind},0,7',house_index=house,counts=(1,0,2))
+    for value,house in ((0,1),(7,0),(999,0)):
+        first.predicate(f'power_value{value}_incoming{house}',f'1,58,0,{value}',house_index=house)
+    for output,drain in ((0,0),(0,100),(99,100),(100,100),(101,100),(-3,-1),(-1,0),(-3,2),(2147483646,2147483647)):
+        first.predicate(f'power58_{output}_{drain}','1,58,0,0',power=((output,drain),(300,200),(0,200)))
+    for output,drain in ((0,0),(99,100),(100,100),(-3,-1)):
+        first.predicate(f'power30_{output}_{drain}','1,30,0,0',power=((output,drain),(300,200),(0,200)))
+    first.predicate('power58_duplicate_country_reordered','1,58,0,0',order=(2,1,0),power=((300,200),(300,200),(100,200)))
+    for name,raw,raised,actor,init in (
+        ('entered_match','1,1,0,0',1,0,False),('entered_nonmatch','1,1,0,0',1,1,False),
+        ('entered_country7','1,1,0,7',1,1,False),('entered_wildcard','1,1,0,-1',1,1,False),
+        ('entered_wrong_kind','1,1,0,0',8,0,False),('entered_init','1,1,0,0',1,0,True),
+        ('entered_null_actor','1,1,0,0',1,None,False)):
+        first.predicate(name,raw,raised=raised,actor_index=actor,scenario_init=init)
+    for case in (
+        ('register32_trigger0_value7','1,32,0,7',0,None,(1,0,0),((0,100),(100,100),(0,100))),
+        ('register32_trigger7_value7','1,32,0,7',7,None,(1,0,0),((0,100),(100,100),(0,100))),
+        ('register58_trigger7_value0','1,58,0,0',7,None,(0,0,0),((0,100),(100,100),(0,100))),
+        ('register1_trigger7_actor0_value0','1,1,0,0',7,0,(0,0,0),((0,100),(100,100),(0,100)))):
+        first.register_legacy(*case)
+    first.assert_unchanged()
+    timer_unchanged=bytes(first.u.mem_read(first.timer,12))==dwords(0,0,30)
+    second=PowerEventControls()
+    second.u.hook_add(UC_HOOK_CODE,second.observe_admission)
+    for raw in ('1,13,0,5','1,36,0,49','1,1,0,-1'):second.readers[raw]=second.read_event(raw)
+    for count in (0,1):second.predicate('logic13_building402_count'+str(count),'1,32,0,402',raised=13,counts=(count,0,0))
+    for output in (99,100):second.predicate('logic13_power58_'+str(output),'1,58,0,0',raised=13,power=((output,100),(300,200),(0,200)))
+    second.predicate('logic13_entered_false','1,1,0,0',raised=13,actor_index=0)
+    latch=[]
+    extra_spans=[(0x71F950,0x71FA34),(0x7264C0,0x7265BD)]
+    extra_code=[bytes(second.u.mem_read(a,b-a)) for a,b in extra_spans]
+    for kind in (1,2,13,32,58):
+        second.u.mem_write(second.event+0x2C,dwords(kind))
+        latch.append(dict(kind=kind,class71f950=second.fixture.call(0x71F950,[],ecx=second.event)&255,
+            class71f9c0=second.fixture.call(0x71F9C0,[],ecx=second.event)&255))
+    for i,typ in enumerate(second.types):second.u.mem_write(typ+0xB4,dwords([0,7,0][i]))
+    for repeat in (False,True):
+        for frame,count in ((74,1),(75,0),(75,1),(123,1)):
+            second.setup_admission(['1,13,0,5','1,32,0,402'],frame=frame,count=count)
+            second.register_admission(f'logic13_mixed13_32_repeat{int(repeat)}_frame{frame}_count{count}',13,repeat)
+    second.setup_admission(['1,1,0,-1'])
+    second.register_admission('entered_wildcard_owner0',1,actor=0)
+    second.register_admission('entered_wrong_raise_keeps_live_and_event_house',13,actor=1)
+    second.u.mem_write(second.arena+0x87300+0x40,dwords(1))
+    second.register_admission('second_live_completed_event_reads_shared_retained_house',13,second_live=True)
+    second.register_admission('entered_wildcard_replaces_owner1',1,actor=1)
+    second.assert_unchanged()
+    assert extra_code==[bytes(second.u.mem_read(a,b-a)) for a,b in extra_spans]
+    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+        constructor_defaults=first.constructor_defaults,reader_rows=first.readers,
+        predicate_controls=first.predicates+second.predicates,register_controls=first.registers+second.registers,
+        latch_classifications=latch,code_unchanged=True,zero_rng_calls=True,timer_bytes_unchanged=timer_unchanged,
+        code_spans=[dict(start=hex(a),end=hex(b),sha256=hashlib.sha256(code).hexdigest())
+                    for (a,b),code in zip(first.SPANS,first.original)])
+
+
+def power_event_metadata():
+    value = provenance(
+        scope='41 original HasOccurred controls for Event1/30/32/57/58,16 original RegisterEvent controls and5 original latch classifiers. Preserves the previously executed ALL01 scalar/owner/timer observations; not a full tagged capture or world schedule.',
+        assumptions=[
+            'Minimal three-House storage with Country bindings0/7/0 and an explicitly reordered duplicate-Country contrast; supplied512-entry native-layout on-map Building counters and cached signed power output/drain. Full House constructors/counter producers are excluded.',
+            'Original TEvent constructor and counted reader execute through existing owners. Actual Infantry vtable supplies unchanged owner-index/owner-pointer getters; no gameplay getter result is patched.',
+            'HasOccurred predicate priors use current frame123 and an unchanged30-frame timer. Register controls supply LiveTrigger/TriggerType fields; additive mixed13/32 controls execute original CdTimer/Reset at frames74/75/123 and repeat false/true.',
+            'Historical predicate input key scenario_init denotes raised-kind admission byte A8ED6B, not A8E7AC placement scope. No full Tag dispatch, Spring/TAction effects, retail ALL01 startup/capture or complete master frame executes.',
+            'The second LiveTrigger shares the exact Type-owned Event node; its supplied completed bit establishes skipped-event retained-House forwarding, not a reachable Event1 completion history.',
+            'Migration retained36+5 predicate,4+12 register and5 classifier outputs from the earlier two executed packets. This packaging pass did not rerun native execution.'],
+        substitutions=['Reuse FlagsFixture/VectorFixture arena, platform CRT/TLS imports and trigger_event_records counted reader. Original gameplay code/vtables unchanged. Explicit minimal world memory priors are not a physical world-load result.'],
+        entry_points={'event_constructor':0x71E6A0,'event_counted_read':0x7274DC,
+            'has_occurred':0x71E940,'register_event':0x7264C0,'on_map_type_count':0x49FAE0,
+            'country_house':0x502D30,'cached_power_ratio':0x4FCE30,'owner_index':0x6F9DB0,
+            'owner_house':0x6F9DC0,'event_retained_house':0x71FA30,'reset':0x726400,
+            'latch_classifier':0x71F950,'secondary_classifier':0x71F9C0})
+
+    value['reproduction'] = {'write': 'python -m tools.spatial_oracle.tag_lifecycle --power-events --write', 'check': 'python -m tools.spatial_oracle.tag_lifecycle --power-events --check', 'environment': {'VERA20K_GAMEMD_EXE': 'supported original Steam gamemd.exe'}, 'predicate_controls': 41, 'register_controls': 16, 'latch_classifications': 5}
+    value['migration'] = {'previous_results': [{'name': 'all01-power-event-controls.json', 'file_sha256': '48731f7bc412ba1285f9012700c2c779f497c7b052666824fd19d6cf731556d4'}, {'name': 'all01-power-event-admission-controls.json', 'file_sha256': '8ae841898b0ed41725379716bebd8eaf1376f4b6fb3bb3cded7e9e9c77ef305f'}], 'previous_supplied_priors': ['Minimal threeHouse storage with original country lookup array; first two Countries0/7, thirdduplicate0. Counters512 entries are supplied native layout; no real House/Object constructors or counter producer lifecycle is executed.', 'Original TEvent constructor executes and its kind/value scalar priors come from separate executed original counted Read.', 'Original Infantry vtable0x7EB058 exposes unchanged6F9DB0(owner index)/6F9DC0(owner pointer); no gameplay getter return is patched.', 'Current frame123, noScenarioInit except namedcontrast, no repeat. Four additional full7264C0 controls use supplied LiveTrigger/TriggerType state and original owner lookup, predicate and retained-House forwarding. Full Tag dispatch, Spring/gameplay actions or map world initialization is excluded.'], 'previous_admission_bounds': ['Initialized minimal original-layout priors, physical counted Event reader outputs, actual unchanged HasOccurred/RegisterEvent/latch classifier bodies.', 'No full Tag dispatch, Spring/TAction effects, House world/counter producers, original ALL01 startup/retail world or complete game-frame schedule executed.', 'Current timer comparisons use real original frame counters and CdTimer/Reset bodies; timer event5sec comes from original event reader.', 'A8ED6B is the raised-kind admission byte; prior field name scenario_init in the older scratch fixture does not denote A8E7AC placement scope.', 'Second LiveTrigger shares the exact Type-owned Event node; completed=1 is a deliberately supplied state to establish skipped-event House forwarding, not claimed reachable from Event1.'], 'validation': 'Original rows copied without alteration; AST and metadata/hash checks only. Selected generator not reexecuted in this migration.'}
+    return value
+
+
+def power_event_source_paths():
+    return dict(producer=Path(__file__),fixture=Path(__file__).with_name('trigger_type_flags.py'),
+        reader=Path(__file__).with_name('trigger_event_records.py'),
+        arena=Path(__file__).with_name('infantry_deploy_rules.py'),
+        native_transport=Path(__file__).parents[1]/'native_oracle.py')
+
+
+def generate_destroyed_house_events():
+    """Selected9/11 controls through the existing HasOccurred fixture.
+
+    House constructors, counter writers and a physical gameplay world are
+    excluded. All original predicates, Country lookup and total getters run.
+    """
+    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    m = PowerEventControls()
+    m.SPANS = [*m.SPANS,(0x49FB60,0x49FB64)]
+    m.original.append(bytes(m.u.mem_read(0x49FB60,4)))
+    timer_before = bytes(m.u.mem_read(m.timer,12))
+    for kind in (9,11):
+        for totals in ((0,0,0,0),(0,1,0,0),(0,0,1,0),(0,-1,1,0),
+                       (0,-2,-3,0),(0,0,0,4),(1,0,0,0),(-1,0,0,0)):
+            m.predicate(f'destroyed{kind}_totals'+','.join(map(str,totals)),
+                f'1,{kind},0,0',house_index=1,
+                destruction_counts=(totals,(8,8,8,8),(0,0,0,0)))
+        for value in (-1,7,999):
+            m.predicate(f'destroyed{kind}_country{value}',f'1,{kind},0,{value}',
+                destruction_counts=((0,0,0,0),(0,1,0,0),(0,0,0,0)))
+        m.predicate(f'destroyed{kind}_null_incoming_logic_raise',f'1,{kind},0,0',
+            house_index=None,raised=13,scenario_init=True,
+            destruction_counts=((0,0,0,0),(8,8,8,8),(0,0,0,0)))
+        m.predicate(f'destroyed{kind}_first_duplicate_country',f'1,{kind},0,0',
+            order=(2,1,0),destruction_counts=((0,0,0,0),(0,0,0,0),(0,1,0,0)))
+    m.assert_unchanged()
+    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+        constructor_defaults=m.constructor_defaults,reader_rows=m.readers,
+        predicate_controls=m.predicates,code_unchanged=True,zero_rng_calls=True,
+        timer_bytes_unchanged=timer_before==bytes(m.u.mem_read(m.timer,12)),
+        code_spans=[dict(start=hex(a),end=hex(b),sha256=hashlib.sha256(code).hexdigest())
+            for (a,b),code in zip(m.SPANS,m.original)])
+
+
+def destroyed_house_event_metadata():
+    return provenance(
+        scope='26 original HasOccurred9/11 predicate controls, including signed independent counters, tracked Building vs active presence, Country/null/duplicate lookup and raised-event contrasts. Not a full ALL01 world or counter lifecycle comparison.',
+        assumptions=[
+            'Reuse PowerEventControls minimal three-House arena and original counted TEvent reader. House Country bindings0/7/0, tracked Building scalar and CounterClass cached totals are supplied.',
+            'Counter getters49FB60, Country lookup502D30 and HasOccurred71E940 execute unchanged; cached totals are not obtained from executed Add/RemoveTracking or Added/RemovedFromGame.',
+            'An unchanged timer and Event+54 sentinel bound mutable-field effects. The ALL01 Apocs_Gone/Enter_Tanya tags and their gameplay actions do not run in these scalar controls.'],
+        substitutions=['Existing oracle platform/CRT/TLS transport only; no selected gameplay getter or predicate is replaced.'],
+        entry_points={'event_constructor':0x71E6A0,'event_counted_read':0x7274DC,
+            'has_occurred':0x71E940,'country_house':0x502D30,'counter_total':0x49FB60})
+
+
+def generate_damage_source_events():
+    """Event44 compares source House+30, independently of actor/Country."""
+    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    m = PowerEventControls()
+    # This selected fixture supplies canonical registered House indices0/1/2.
+    # Legacy modes keep their existing20/21/22 priors and null source ABI.
+    for index,house in enumerate(m.houses):
+        m.u.mem_write(house+0x30,dwords(index))
+    timer_before = bytes(m.u.mem_read(m.timer,12))
+    for source in range(3):
+        for value in (0,1,2,7):
+            m.predicate(f'source44_source{source}_value{value}',f'1,44,0,{value}',
+                raised=44,actor_index=(source+1)%3,source_index=source)
+        m.predicate(f'source44_source{source}_value_minus1','1,44,0,-1',
+            raised=44,actor_index=(source+1)%3,source_index=source)
+    for value in (0,1,2,7,-1):
+        m.predicate(f'source44_null_source_value{value}',f'1,44,0,{value}',
+            raised=44,actor_index=0)
+    m.predicate('source44_wrong_raise','1,44,0,0',raised=6,
+        actor_index=1,source_index=0)
+    m.predicate('source44_buildup_gate','1,44,0,0',raised=44,
+        actor_index=1,source_index=0,scenario_init=True)
+    m.predicate('source44_null_incoming_house','1,44,0,2',raised=44,
+        actor_index=0,source_index=2,house_index=None)
+    m.predicate('source44_null_actor','1,44,0,1',raised=44,
+        source_index=1,actor_index=None)
+    m.assert_unchanged()
+    return dict(schema_version=1,native_sha256=image_sha256(),
+        native_fpcw=f'0x{NATIVE_FPCW:X}',house_indices=[0,1,2],country_indices=[0,7,0],
+        houses=m.houses,actor=m.actor,source_object=m.source,
+        predicate_controls=m.predicates,code_unchanged=True,
+        timer_bytes_unchanged=timer_before==bytes(m.u.mem_read(m.timer,12)),
+        code_spans=[dict(start=hex(a),end=hex(b),sha256=hashlib.sha256(code).hexdigest())
+            for (a,b),code in zip(m.SPANS,m.original)])
+
+
+def damage_source_event_metadata():
+    return provenance(
+        scope='24 unchanged original HasOccurred44 controls through71EE57..71EE7C, source House registered index vs Country/actor, nulls, signed-1, wrong raise and buildup. Not full damage receiver, Tag actions or campaign parity.',
+        assumptions=[
+            'Reuse PowerEventControls/FlagsFixture original-image/platform transport and original counted TEvent reader. Minimal House storage has supplied+30 registered indices0/1/2 and Country bindings0/7/0.',
+            'Actor and source are distinct original-layout Techno objects with copied Infantry vtables and independent+21C House pointers. Event44 first reads source+21C then House+30 directly. After a match the original shared tail also calls Country502D30; observed calls remain in the rows and no lookup/getter return is substituted.',
+            'Optional source=None retains the original fixture null ABI and omits any new row field; other selectors retain20/21/22 House priors. Null-source rows deliberately keep an actor present to distinguish the two arguments.',
+            'Event+54 sentinel and timer bytes are observed. House/Object constructors, source ownership writers, RegisterEvent, Spring, Object damage callers and a physical world do not execute.'],
+        substitutions=['Existing FlagsFixture allocator/CRT/TLS transport and explicit object/House storage priors only. No selected predicate instruction, branch or gameplay getter is replaced.'],
+        entry_points={'event_constructor':0x71E6A0,'event_counted_read':0x7274DC,
+            'has_occurred':0x71E940,'source_house_index_compare':0x71EE57})
+
+
+def generate_entered_cell_events():
+    """Original1/59 predicates plus the bounded cached-Tag arrival slice."""
+    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    from tools.spatial_oracle.building_body_rules import SP
+    m = PowerEventControls()
+    for kind in (1,59):
+        for actor in (0,1,2,None):
+            m.predicate(f'entered{kind}_actor{actor}',f'1,{kind},0,0',raised=kind,actor_index=actor)
+        m.predicate(f'entered{kind}_wildcard',f'1,{kind},0,-1',raised=kind,actor_index=1)
+        m.predicate(f'entered{kind}_wrong_raise',f'1,{kind},0,0',raised=59 if kind==1 else 1,actor_index=0)
+        m.predicate(f'entered{kind}_buildup',f'1,{kind},0,0',raised=kind,actor_index=0,scenario_init=True)
+        m.predicate(f'entered{kind}_null_incoming',f'1,{kind},0,0',raised=kind,actor_index=0,house_index=None)
+    m.assert_unchanged()
+    u = m.u
+    selected_cell,tag = m.arena+0x8A000,m.arena+0x8B000
+    rows = []
+    active = {}
+    def observe(vm,pc,size,data):
+        if pc == 0x5657A0 and active:
+            sp = vm.reg_read(UC_X86_REG_ESP)
+            pointer = struct.unpack('<I',vm.mem_read(sp+4,4))[0]
+            active['lookups'].append(list(struct.unpack('<hh',vm.mem_read(pointer,4))))
+            vm.reg_write(UC_X86_REG_EAX,selected_cell)
+            vm.reg_write(UC_X86_REG_ESP,sp+8)
+            vm.reg_write(UC_X86_REG_EIP,struct.unpack('<I',vm.mem_read(sp,4))[0])
+        elif pc == 0x6E53A0 and active:
+            sp = vm.reg_read(UC_X86_REG_ESP)
+            kind,actor,xy,force,source = struct.unpack('<IIIII',vm.mem_read(sp+4,20))
+            active['calls'].append(dict(kind=kind,tag=vm.reg_read(UC_X86_REG_ECX),
+                actor=actor,cell=list(struct.unpack('<hh',dwords(xy))),force=force,source=source))
+            assert vm.reg_read(UC_X86_REG_ECX)==tag
+            if kind == 1:
+                if active['mutation']=='detach_after1':vm.mem_write(selected_cell+0x3C,dwords(0))
+                elif active['mutation']=='move_after1':vm.mem_write(m.actor+0x9C,dwords(8*256,9*256,0))
+                elif active['mutation']=='clear_alive_after1':vm.mem_write(m.actor+0x90,b'\0')
+            vm.reg_write(UC_X86_REG_EAX,1)
+            vm.reg_write(UC_X86_REG_ESP,sp+24)
+            vm.reg_write(UC_X86_REG_EIP,struct.unpack('<I',vm.mem_read(sp,4))[0])
+    u.hook_add(UC_HOOK_CODE,observe)
+    body_before = bytes(u.mem_read(0x4D8978,0x4D8A14-0x4D8978))
+    getter_before = bytes(u.mem_read(0x41BEA0,0x2C))
+    for name,flags,on_bridge,has_tag,mutation in (
+        ('ordinary',0,False,True,'none'),('no_tag',0,False,False,'none'),
+        ('bridge_ground',0x100,False,True,'none'),('bridge_on',0x100,True,True,'none'),
+        ('alternate_bridge_ground',0x400,False,True,'none'),
+        ('cached_after_detach',0,False,True,'detach_after1'),
+        ('reread_cell_after_move',0,False,True,'move_after1'),
+        ('no_alive_gate_between_raises',0,False,True,'clear_alive_after1')):
+        u.mem_write(selected_cell,bytes(0x180))
+        u.mem_write(selected_cell+0x140,dwords(flags))
+        u.mem_write(selected_cell+0x3C,dwords(tag if has_tag else 0))
+        u.mem_write(m.actor+0x9C,dwords(3*256,4*256,0))
+        u.mem_write(m.actor+0x8C,bytes([on_bridge]));u.mem_write(m.actor+0x90,b'\1')
+        u.reg_write(UC_X86_REG_ESI,m.actor);u.reg_write(UC_X86_REG_ESP,SP)
+        active.clear();active.update(mutation=mutation,calls=[],lookups=[])
+        stop=run_checked(u,0x4D8978,(0x4D8A14,0x4D8A70),count=1000)
+        rows.append(dict(name=name,inputs=dict(flags=flags,on_bridge=on_bridge,tag=has_tag,mutation=mutation),
+            calls=list(active['calls']),lookups=list(active['lookups']),stop=hex(stop)))
+    active.clear()
+    assert body_before==bytes(u.mem_read(0x4D8978,len(body_before)))
+    assert getter_before==bytes(u.mem_read(0x41BEA0,len(getter_before)))
+    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+        predicate_controls=m.predicates,arrival_controls=rows,actor=m.actor,tag=tag,houses=m.houses,
+        code_unchanged=True,arrival_body_sha256=hashlib.sha256(body_before).hexdigest())
+
+
+def entered_cell_event_metadata():
+    return provenance(
+        scope='16 original1/59 HasOccurred predicates and8 original Foot4D8978..4D8A14 arrival-slice controls. Excludes full PerCell, original Tag action bodies, line/zone loops and Fly reachability.',
+        assumptions=[
+            'Predicate controls reuse the same minimal original House/actor/TEvent-reader fixture as power controls, including duplicate Country identity and null incoming House.',
+            'Arrival controls supply original-layout Infantry actor, copied vtable and Cell storage, flags and initial Location. Original virtual GetMapCoords41BEA0 executes.',
+            'Map5657A0 is a supplied selected-Cell callout; Tag6E53A0 is a recorded sink. Named callbacks mutate Cell attachment, actor Location or alive; only original caller caching/argument rereads are demonstrated.',
+            'The slice begins after range stop and ends before MCV53/54 or Map24/25/26. Native timers/RNG, prefix producers, world load and overall mission progression do not execute.'],
+        substitutions=['Existing FlagsFixture transport. Explicit recorded Map pointer and Tag callback sinks; no original GetMapCoords getter or selected caller instruction is replaced.'],
+        entry_points={'has_occurred':0x71E940,'entered_special':0x71F1BD,
+            'foot_cell_tag_slice':0x4D8978,'map_coords':0x41BEA0,'map_callout':0x5657A0,'tag_callout':0x6E53A0})
+
+
+def generate_line_events():
+    """Original marker writer and Foot line loops on declared sparse cells."""
+    from tools.native_oracle import image_sha256
+    from tools.spatial_oracle.building_body_rules import SP
+    from tools.spatial_oracle.map_queries import TABLE, EMPTY_TABLE
+    m = PowerEventControls()
+    u, arena = m.u, m.arena
+    positions = [(x,y) for y in range(1,5) for x in range(1,5)]
+    addresses = {xy: arena+0xB0000+index*0x200 for index,xy in enumerate(positions)}
+    original_spans = [(0x568CDB,0x568DCC),(0x4D8A70,0x4D8B6A),
+                      (0x6E5300,0x6E5339),(0x6E6250,0x6E62A8),
+                      (0x726F50,0x726FA1),(0x5657A0,0x5657D0),(0x41BEA0,0x41BECC)]
+    original = [bytes(u.mem_read(a,b-a)) for a,b in original_spans]
+    active = {}
+    def observe(vm,pc,size,data):
+        if pc != 0x6E53A0 or not active:
+            return
+        sp = vm.reg_read(UC_X86_REG_ESP)
+        kind,actor,xy,force,source = struct.unpack('<IIIII',vm.mem_read(sp+4,20))
+        active['calls'].append(dict(kind=kind, tag=active['tag_ids'][vm.reg_read(UC_X86_REG_ECX)],
+            cell=list(struct.unpack('<hh',dwords(xy))),actor=actor,force=force,source=source))
+        if len(active['calls']) == 1:
+            if active['mutation'] == 'move_after_first':
+                vm.mem_write(m.actor+0x9C,dwords(8*256,9*256,0))
+            elif active['mutation'] == 'detach_later':
+                vm.mem_write(addresses[(3,3)]+0x3C,dwords(0))
+        vm.reg_write(UC_X86_REG_EAX,1)
+        vm.reg_write(UC_X86_REG_ESP,sp+24)
+        vm.reg_write(UC_X86_REG_EIP,struct.unpack('<I',vm.mem_read(sp,4))[0])
+    hook = u.hook_add(UC_HOOK_CODE,observe)
+    rows = []
+    try:
+        for name,definitions,mutation in (
+            ('no_markers',[], 'none'),
+            ('vertical',[((3,2),[26])], 'none'),
+            ('two_vertical_live_order',[((3,2),[26]),((3,3),[26])], 'none'),
+            ('linked_vertical',[((3,2),[8,26])], 'none'),
+            ('horizontal',[((1,4),[25]),((2,4),[25])], 'none'),
+            ('horizontal_precedes_vertical',[((2,4),[25,26])], 'none'),
+            ('mixed_last_cell_vertical_gate',[((1,4),[25]),((4,2),[26]),((3,2),[26])], 'none'),
+            ('reread_actor_cell',[((3,2),[26]),((3,3),[26])], 'move_after_first'),
+            ('reread_later_attachment',[((3,2),[26]),((3,3),[26])], 'detach_later')):
+            table = bytearray(EMPTY_TABLE)
+            for xy,address in addresses.items():
+                struct.pack_into('<I',table,(xy[1]*512+xy[0])*4,address)
+                u.mem_write(address,bytes(0x180))
+                u.mem_write(address+0x24,packed(*xy))
+                u.mem_write(address+0x140,dwords(4))
+            u.mem_write(TABLE,bytes(table))
+            u.mem_write(0x87F7E8+0x13C,dwords(TABLE,0x40000))
+            u.mem_write(0x87F924,dwords(TABLE))
+            u.mem_write(0x87F7E8+0x124,dwords(1,1,4,4))
+            tags = {}
+            for index,(xy,kinds) in enumerate(definitions):
+                tag = arena+0xC0000+index*0x400
+                tag_type,first = tag+0x100,tag+0x200
+                u.mem_write(tag,bytes(0x400))
+                u.mem_write(tag+0x24,dwords(tag_type))
+                u.mem_write(tag_type+0xA0,dwords(first))
+                # Each supplied linked TriggerType has one real-layout Event.
+                for node,kind in enumerate(kinds):
+                    typ = first+node*0x100
+                    event = typ+0xB8
+                    u.mem_write(typ+0xA8,dwords(first+(node+1)*0x100 if node+1<len(kinds) else 0,event))
+                    u.mem_write(event+0x28,dwords(0,kind))
+                u.mem_write(addresses[xy]+0x3C,dwords(tag))
+                tags[tag] = index
+            # Execute the original line subset once per retained source Cell;
+            # line bit outcomes are native output, never hand-calculated.
+            for xy in positions:
+                address = addresses[xy]
+                tag = struct.unpack('<I',u.mem_read(address+0x3C,4))[0]
+                if not tag:
+                    continue
+                u.reg_write(UC_X86_REG_ESI,address)
+                u.reg_write(UC_X86_REG_EDI,0x87F7E8)
+                u.reg_write(UC_X86_REG_EBP,0x200000)
+                u.reg_write(UC_X86_REG_EAX,tag)
+                u.reg_write(UC_X86_REG_ESP,SP)
+                run_checked(u,0x568CDB,0x568DCC,count=5000)
+            marked = [m.integer(addresses[xy]+0x140) for xy in positions]
+            u.mem_write(m.actor+0x9C,dwords(3*256,4*256,0))
+            u.reg_write(UC_X86_REG_ESI,m.actor)
+            u.reg_write(UC_X86_REG_EBP,addresses[(3,4)])
+            u.reg_write(UC_X86_REG_EBX,4)
+            u.reg_write(UC_X86_REG_ESP,SP)
+            u.mem_write(SP+0x1C,dwords(3))
+            u.mem_write(SP+0x14,dwords(addresses[(3,4)]))
+            active.clear();active.update(tag_ids=tags,calls=[],mutation=mutation)
+            run_checked(u,0x4D8A70,0x4D8B6A,count=5000)
+            rows.append(dict(name=name,input=dict(cells=positions,actor_cell=[3,4],
+                definitions=[dict(cell=xy,events=kinds) for xy,kinds in definitions],mutation=mutation),
+                line_flags=marked,calls=list(active['calls'])))
+            active.clear()
+    finally:
+        u.hook_del(hook)
+    assert original == [bytes(u.mem_read(a,b-a)) for a,b in original_spans]
+    return dict(schema_version=1,native_sha256=image_sha256(),controls=rows,
+        original_code_unchanged=True,
+        code_spans=[dict(start=hex(a),end=hex(b),sha256=hashlib.sha256(code).hexdigest())
+                    for (a,b),code in zip(original_spans,original)])
+
+
+def line_event_metadata():
+    return provenance(
+        scope='Nine original Map568CDB line-marker subsets and Foot4D8A70 horizontal/vertical scanning controls on declared4x4 cells. Not full InitCellAttributes, original Tag bodies, Fly ingress or a complete campaign.',
+        assumptions=[
+            'Reuse PowerEventControls/FlagsFixture original-image/platform transport, actual Infantry vtable and GetMapCoords41BEA0. Native Map5657A0 packed lookup executes on the supplied512-stride sparse pointer table.',
+            'Minimal Tag/TagType/linked TriggerType/Event node priors expose original6E5300/6E5320/6E6250/6E6280/726F50/726F80 queries. No enabled/difficulty or event predicate substitution is introduced.',
+            'Source Cell coordinates and initial flag4 are supplied. The writer begins after terrain-animation latch clearing and ends before tiberium/Recalc; source iteration is explicitly declared. Final line bits are original output.',
+            'Arrival begins after direct1/59 and MCV interlude. Initial actor cell3,4, source Cell and saved stack/register priors match that slice. Each Tag request is recorded; named sinks move the actor or clear a later Cell attachment.',
+            'No original Tag actions, full PerCell prefix/tail, zone24, rendering, native RNG/timer schedule or ordinary Fly reachability is claimed.'],
+        substitutions=['Recorded Tag6E53A0 sink returns1 and supplies only the named synchronous mutations. Existing platform/CRT transport remains; marker writer, classifiers, Map lookup, GetMapCoords and caller loops execute unchanged.'],
+        entry_points={'line_marker':0x568CDB,'foot_line_slice':0x4D8A70,
+            'vertical_getter':0x6E5300,'horizontal_getter':0x6E5320,
+            'packed_map_lookup':0x5657A0,'map_coords':0x41BEA0,'tag_callout':0x6E53A0})
+
+
 if __name__=='__main__':
-    finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata,
-                   source_paths=source_paths())
+    import sys
+    args=sys.argv[1:]
+    if '--damage-source-events' in args:
+        args.remove('--damage-source-events')
+        finish_vectors(generate_damage_source_events,Path(__file__).with_name('trigger_damage_source_events.json'),
+                       provenance=damage_source_event_metadata,source_paths=power_event_source_paths(),argv=args)
+    elif '--line-events' in args:
+        args.remove('--line-events')
+        finish_vectors(generate_line_events,Path(__file__).with_name('trigger_line_events.json'),
+                       provenance=line_event_metadata,source_paths=power_event_source_paths(),argv=args)
+    elif '--entered-cell-events' in args:
+        args.remove('--entered-cell-events')
+        finish_vectors(generate_entered_cell_events,Path(__file__).with_name('trigger_entered_cell_events.json'),
+                       provenance=entered_cell_event_metadata,source_paths=power_event_source_paths(),argv=args)
+    elif '--destroyed-house-events' in args:
+        args.remove('--destroyed-house-events')
+        finish_vectors(generate_destroyed_house_events,Path(__file__).with_name('trigger_destroyed_house_events.json'),
+                       provenance=destroyed_house_event_metadata,source_paths=power_event_source_paths(),argv=args)
+    elif '--power-events' in args:
+        args.remove('--power-events')
+        finish_vectors(generate_power_events,Path(__file__).with_name('trigger_power_events.json'),
+                       provenance=power_event_metadata,source_paths=power_event_source_paths(),argv=args)
+    else:
+        finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata,
+                       source_paths=source_paths())

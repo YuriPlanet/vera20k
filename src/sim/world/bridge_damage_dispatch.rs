@@ -94,7 +94,7 @@ impl CellReader for LiveCells<'_> {
 
 /// The bridge drivers that ApplyDamageToCell and the direct overlay blocks
 /// call. Every driver publishes synchronously through the live host.
-pub(super) struct BridgeDamageDrivers<'a> {
+pub(crate) struct BridgeDamageDrivers<'a> {
     pub(super) sim: &'a mut Simulation,
     pub(super) rules: &'a RuleSet,
     registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -104,7 +104,7 @@ pub(super) struct BridgeDamageDrivers<'a> {
 }
 
 impl<'a> BridgeDamageDrivers<'a> {
-    pub(super) fn new(
+    pub(crate) fn new(
         sim: &'a mut Simulation,
         rules: &'a RuleSet,
         registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -122,7 +122,7 @@ impl<'a> BridgeDamageDrivers<'a> {
     /// ApplyDamageToCell `0x00587180`: the driver is chosen again from live
     /// cell state on every call ([`damage_dispatch::select_driver`]); no
     /// match returns false.
-    pub(super) fn apply_damage_to_cell(&mut self, input: (i16, i16)) -> bool {
+    pub(crate) fn apply_damage_to_cell(&mut self, input: (i16, i16)) -> bool {
         let cell = self
             .sim
             .resolved_terrain
@@ -133,6 +133,12 @@ impl<'a> BridgeDamageDrivers<'a> {
             return false;
         };
         self.run(input, path)
+    }
+
+    /// Read-only receipt of the cascades already published by this owner.
+    /// The bridge state and mutation services remain private to the host.
+    pub(crate) fn collapsed(&self) -> bool {
+        self.collapsed
     }
 
     /// One driver at `input`: DamageOrdinaryWoodBridge (`0x0057BAA0`) or

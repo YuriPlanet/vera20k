@@ -338,7 +338,7 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
     use crate::rules::sound_ini::SoundRegistry;
     use std::sync::Arc;
 
-    let root = IniFile::from_str(
+    let root = crate::sim::arena_fixture::clear_ground_ini(
         "[Countries]\n0=Player\n1=Town\n[Player]\n[Town]\n\
          [BuildingTypes]\n0=B\n[Sides]\nAllied=Player\nCivilian=Town\n\
          [B]\nStrength=100\nTechLevel=-1\nCanBeOccupied=yes\nMaxNumberOccupants=10\n\

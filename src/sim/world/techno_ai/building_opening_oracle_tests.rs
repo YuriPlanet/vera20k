@@ -62,6 +62,7 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
     // The joined original fixture stores3 at GameOptionsClass0xA8EB60.
     sim.session.game_options.game_speed = 3;
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(24));
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(owner), route == "player", 5000, 10);
     house.current_iq = 0;
@@ -539,7 +540,7 @@ fn place_selects_the_original_house_order_and_primary_factory() {
     let corpus = corpus();
     let controls = &corpus["factory_controls"];
     let fixture = |naval: bool| {
-        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
             "[Countries]\n0=Americans\n[Sides]\nGDI=Americans\n\
              [BuildingTypes]\n0=GACNST\n1=GAPOWR\n\
              [GACNST]\nFactory=BuildingType\nOwner=Americans\nNaval={naval}\n\
@@ -548,6 +549,7 @@ fn place_selects_the_original_house_order_and_primary_factory() {
         .unwrap();
         let mut sim = Simulation::new();
         sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(24));
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
         let owner = sim.interner.intern("Americans");
         sim.houses.insert(
             owner,

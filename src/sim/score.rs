@@ -349,12 +349,17 @@ mod tests {
         let mut human_house = HouseState::new(human, 0, None, true, 0, 10);
         human_house.is_defeated = true;
         human_house.economy.set_score_for_test(200);
-        human_house.outcome_state = Some(HouseOutcomeState {
-            kind: HouseOutcomeKind::Defeat,
-            savour_until_tick: 0,
-            exit_ready: true,
-        });
+        human_house.supply_outcome_state_for_test(
+            false,
+            true,
+            Some(HouseOutcomeState {
+                kind: HouseOutcomeKind::Defeat,
+                exit_ready: true,
+            }),
+            crate::sim::timer::CdTimer::default(),
+        );
         sim.houses.insert(human, human_house);
+        sim.session.current_house = Some(human);
 
         let opponent = sim.interner.intern("Opponent");
         let mut opponent_house = HouseState::new(opponent, 1, None, false, 0, 10);
@@ -389,6 +394,18 @@ mod tests {
             Some(&first_snapshot),
             "later terminal pumps expose the same immutable snapshot"
         );
+    }
+
+    #[test]
+    fn another_humans_ready_result_does_not_finalize_the_current_players_score() {
+        let mut sim = natural_terminal_sim(0x51C0_9ABD);
+        sim.session.current_house = sim.interner.get("Opponent");
+        let cursor = sim.clone_scenario_rng().state();
+        let tick = sim.advance_tick(&[], None, None, None, 67);
+        assert!(tick.frame_committed);
+        assert!(!tick.terminal_score_finalized);
+        assert!(sim.terminal_score_snapshot().is_none());
+        assert_eq!(sim.clone_scenario_rng().state(), cursor);
     }
 
     #[test]

@@ -5,7 +5,6 @@
 
 use super::*;
 use crate::map::resolved_terrain::test_flat_ground_grid;
-use crate::rules::ini_parser::IniFile;
 use crate::sim::components::BuildingUp;
 use crate::sim::world::PlacementEvidence;
 use serde_json::Value;
@@ -18,7 +17,7 @@ fn corpus() -> Value {
 }
 
 fn constructed(control: [i32; 3], origin: i32) -> (Simulation, RuleSet, u64) {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+    let mut rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
         "[BuildingTypes]\n0=B\n[B]\nStrength=100\n",
     ))
     .unwrap();
@@ -27,6 +26,7 @@ fn constructed(control: [i32; 3], origin: i32) -> (Simulation, RuleSet, u64) {
     sim.session.binary_frame = origin as u32;
     sim.session.game_options.game_speed = 0;
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(16));
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     let id = sim
         .spawn_object_limbo_at_height("B", "Americans", 5, 5, 0, 0, &rules)
         .unwrap();

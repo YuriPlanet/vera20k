@@ -1411,7 +1411,21 @@ mod tests {
                     .has_live_contact_with(2),
                 !post_attach
             );
-            assert!(sim.sound_events.is_empty());
+            // Reboarding runs shared Techno Limbo:6F6C6B releases the
+            // passenger's Gattling handle even when already in Limbo. A
+            // first Foot Limbo may also detach its positional sound. Neither
+            // cleanup request is the success-only415DF6 parachute cue.
+            let gattling_owner = crate::sim::combat::gattling::gattling_sound_owner(2);
+            assert!(
+                sim.sound_events.iter().all(|event| match event {
+                    SimSoundEvent::ObjectSoundDetached { owner: 2 } => true,
+                    SimSoundEvent::GattlingLoopRelease { owner } => *owner == gattling_owner,
+                    _ => false,
+                }),
+                "post_attach={post_attach}: {:?}",
+                sim.sound_events
+            );
+            assert!(chute_sounds(&sim).is_empty());
             if !post_attach {
                 assert_eq!(sim.scenario_rng.state(), rng_before);
             }

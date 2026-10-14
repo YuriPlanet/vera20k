@@ -462,7 +462,7 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
 #[test]
 fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
     let rules = RuleSet::from_ini_with_fixed_art_for_test(
-        &crate::rules::ini_parser::IniFile::from_str(
+        &crate::sim::arena_fixture::clear_ground_ini(
             "[VehicleTypes]\n0=REPAIRER\n1=TANK\n2=ORGANIC\n\
              [BuildingTypes]\n0=DEPLOYED\n1=ORDINARY\n\
              [REPAIRER]\nStrength=100\nPrimary=Fix\nSpeed=5\n\

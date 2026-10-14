@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "41 original HasOccurred controls for Event1/30/32/57/58,16 original RegisterEvent controls and5 original latch classifiers. Preserves the previously executed ALL01 scalar/owner/timer observations; not a full tagged capture or world schedule.",
+  "assumptions": [
+    "Minimal three-House storage with Country bindings0/7/0 and an explicitly reordered duplicate-Country contrast; supplied512-entry native-layout on-map Building counters and cached signed power output/drain. Full House constructors/counter producers are excluded.",
+    "Original TEvent constructor and counted reader execute through existing owners. Actual Infantry vtable supplies unchanged owner-index/owner-pointer getters; no gameplay getter result is patched.",
+    "HasOccurred predicate priors use current frame123 and an unchanged30-frame timer. Register controls supply LiveTrigger/TriggerType fields; additive mixed13/32 controls execute original CdTimer/Reset at frames74/75/123 and repeat false/true.",
+    "Historical predicate input key scenario_init denotes raised-kind admission byte A8ED6B, not A8E7AC placement scope. No full Tag dispatch, Spring/TAction effects, retail ALL01 startup/capture or complete master frame executes.",
+    "The second LiveTrigger shares the exact Type-owned Event node; its supplied completed bit establishes skipped-event retained-House forwarding, not a reachable Event1 completion history.",
+    "Migration retained36+5 predicate,4+12 register and5 classifier outputs from the earlier two executed packets. This packaging pass did not rerun native execution."
+  ],
+  "substitutions": [
+    "Reuse FlagsFixture/VectorFixture arena, platform CRT/TLS imports and trigger_event_records counted reader. Original gameplay code/vtables unchanged. Explicit minimal world memory priors are not a physical world-load result."
+  ],
+  "entry_points": {
+    "event_constructor": "0x0071E6A0",
+    "event_counted_read": "0x007274DC",
+    "has_occurred": "0x0071E940",
+    "register_event": "0x007264C0",
+    "on_map_type_count": "0x0049FAE0",
+    "country_house": "0x00502D30",
+    "cached_power_ratio": "0x004FCE30",
+    "owner_index": "0x006F9DB0",
+    "owner_house": "0x006F9DC0",
+    "event_retained_house": "0x0071FA30",
+    "reset": "0x00726400",
+    "latch_classifier": "0x0071F950",
+    "secondary_classifier": "0x0071F9C0"
+  },
+  "payload_sha256": "75ed6f9149e866ff556f90580c3d64230ca2569b4c6082b9e31bbfb81365a2e9",
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --power-events",
+  "reproduction": {
+    "write": "python -m tools.spatial_oracle.tag_lifecycle --power-events --write",
+    "check": "python -m tools.spatial_oracle.tag_lifecycle --power-events --check",
+    "environment": {
+      "VERA20K_GAMEMD_EXE": "supported original Steam gamemd.exe"
+    },
+    "predicate_controls": 41,
+    "register_controls": 16,
+    "latch_classifications": 5
+  },
+  "migration": {
+    "previous_results": [
+      {
+        "name": "all01-power-event-controls.json",
+        "file_sha256": "48731f7bc412ba1285f9012700c2c779f497c7b052666824fd19d6cf731556d4"
+      },
+      {
+        "name": "all01-power-event-admission-controls.json",
+        "file_sha256": "8ae841898b0ed41725379716bebd8eaf1376f4b6fb3bb3cded7e9e9c77ef305f"
+      }
+    ],
+    "previous_supplied_priors": [
+      "Minimal threeHouse storage with original country lookup array; first two Countries0/7, thirdduplicate0. Counters512 entries are supplied native layout; no real House/Object constructors or counter producer lifecycle is executed.",
+      "Original TEvent constructor executes and its kind/value scalar priors come from separate executed original counted Read.",
+      "Original Infantry vtable0x7EB058 exposes unchanged6F9DB0(owner index)/6F9DC0(owner pointer); no gameplay getter return is patched.",
+      "Current frame123, noScenarioInit except namedcontrast, no repeat. Four additional full7264C0 controls use supplied LiveTrigger/TriggerType state and original owner lookup, predicate and retained-House forwarding. Full Tag dispatch, Spring/gameplay actions or map world initialization is excluded."
+    ],
+    "previous_admission_bounds": [
+      "Initialized minimal original-layout priors, physical counted Event reader outputs, actual unchanged HasOccurred/RegisterEvent/latch classifier bodies.",
+      "No full Tag dispatch, Spring/TAction effects, House world/counter producers, original ALL01 startup/retail world or complete game-frame schedule executed.",
+      "Current timer comparisons use real original frame counters and CdTimer/Reset bodies; timer event5sec comes from original event reader.",
+      "A8ED6B is the raised-kind admission byte; prior field name scenario_init in the older scratch fixture does not denote A8E7AC placement scope.",
+      "Second LiveTrigger shares the exact Type-owned Event node; completed=1 is a deliberately supplied state to establish skipped-event House forwarding, not claimed reachable from Event1."
+    ],
+    "validation": "Original rows copied without alteration; AST and metadata/hash checks only. Selected generator not reexecuted in this migration."
+  }
+}

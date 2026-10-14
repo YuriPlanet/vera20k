@@ -1,0 +1,2216 @@
+{
+  "code_spans": [
+    {
+      "end": "0x71e7fa",
+      "sha256": "06cd5ee987954dd20a7b263e95fc75998865814703714810c0af9b2d67dc767e",
+      "start": "0x71e6a0"
+    },
+    {
+      "end": "0x71f216",
+      "sha256": "ff2c7779c1841b8bc7dcb2268b63a7827ad1226be51ea51485d710970fbca02d",
+      "start": "0x71e940"
+    },
+    {
+      "end": "0x49fb2f",
+      "sha256": "08b76ebf0e2df8fe8b507949bd7f799fdd16c7f7f82b465293f0e87790c4ff51",
+      "start": "0x49fae0"
+    },
+    {
+      "end": "0x502d60",
+      "sha256": "6cdcedafe10869296cf621f6fd1d427d3f6d4c8fb3c7c9e470a00799079a3d57",
+      "start": "0x502d30"
+    },
+    {
+      "end": "0x4fce73",
+      "sha256": "2846baabda836e6f4cc96038952bd93410c4a9c0e8e36b618dd8922d611d3b55",
+      "start": "0x4fce30"
+    },
+    {
+      "end": "0x6f9dc7",
+      "sha256": "451ecfd96c98bc4249559fd5718c0b15ceb6540dfea820a1629bc5f15aca4dcd",
+      "start": "0x6f9db0"
+    },
+    {
+      "end": "0x7265bd",
+      "sha256": "ae861623b7ba530b7559bf260c42934c87fc136f9afebac8f21c59155c4e8ba3",
+      "start": "0x7264c0"
+    },
+    {
+      "end": "0x71fa34",
+      "sha256": "9c8eb3adab3133652cdccbd58b010e59bcef792f39806367b4a21f5a9815fbf5",
+      "start": "0x71fa30"
+    },
+    {
+      "end": "0x49fb64",
+      "sha256": "74032ad0e931f3c4730df99da43479f9f5315cc898c7c8614278631cb2c16a62",
+      "start": "0x49fb60"
+    }
+  ],
+  "code_unchanged": true,
+  "constructor_defaults": {
+    "kind": 0,
+    "last_house": 0,
+    "value": 0
+  },
+  "native_fpcw": "0xE7F",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "predicate_controls": [
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_totals0,0,0,0",
+      "persistence": 0,
+      "raw": "1,9,0,0",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_totals0,1,0,0",
+      "persistence": 0,
+      "raw": "1,9,0,0",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            1,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_totals0,0,1,0",
+      "persistence": 0,
+      "raw": "1,9,0,0",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            -1,
+            1,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_totals0,-1,1,0",
+      "persistence": 0,
+      "raw": "1,9,0,0",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            -2,
+            -3,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_totals0,-2,-3,0",
+      "persistence": 0,
+      "raw": "1,9,0,0",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            4
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_totals0,0,0,4",
+      "persistence": 0,
+      "raw": "1,9,0,0",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            1,
+            0,
+            0,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_totals1,0,0,0",
+      "persistence": 0,
+      "raw": "1,9,0,0",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            -1,
+            0,
+            0,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_totals-1,0,0,0",
+      "persistence": 0,
+      "raw": "1,9,0,0",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 4294967295,
+          "pc": "0x00502D30"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_country-1",
+      "persistence": 0,
+      "raw": "1,9,0,-1",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": -1
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 7,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538137956,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_country7",
+      "persistence": 0,
+      "raw": "1,9,0,7",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 7
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 999,
+          "pc": "0x00502D30"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_country999",
+      "persistence": 0,
+      "raw": "1,9,0,999",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 999
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": null,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 13,
+        "scenario_init": true
+      },
+      "name": "destroyed9_null_incoming_logic_raise",
+      "persistence": 0,
+      "raw": "1,9,0,0",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538269028,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          2,
+          1,
+          0
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed9_first_duplicate_country",
+      "persistence": 0,
+      "raw": "1,9,0,0",
+      "read": {
+        "kind": 9,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_totals0,0,0,0",
+      "persistence": 0,
+      "raw": "1,11,0,0",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_totals0,1,0,0",
+      "persistence": 0,
+      "raw": "1,11,0,0",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            1,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_totals0,0,1,0",
+      "persistence": 0,
+      "raw": "1,11,0,0",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            -1,
+            1,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_totals0,-1,1,0",
+      "persistence": 0,
+      "raw": "1,11,0,0",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            -2,
+            -3,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_totals0,-2,-3,0",
+      "persistence": 0,
+      "raw": "1,11,0,0",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            4
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_totals0,0,0,4",
+      "persistence": 0,
+      "raw": "1,11,0,0",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            1,
+            0,
+            0,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_totals1,0,0,0",
+      "persistence": 0,
+      "raw": "1,11,0,0",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            -1,
+            0,
+            0,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_totals-1,0,0,0",
+      "persistence": 0,
+      "raw": "1,11,0,0",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 4294967295,
+          "pc": "0x00502D30"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_country-1",
+      "persistence": 0,
+      "raw": "1,11,0,-1",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": -1
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 7,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538137956,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_country7",
+      "persistence": 0,
+      "raw": "1,11,0,7",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 7
+      },
+      "result": 0
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 999,
+          "pc": "0x00502D30"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_country999",
+      "persistence": 0,
+      "raw": "1,11,0,999",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 999
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006884,
+          "pc": "0x0049FB60"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538006904,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": null,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 13,
+        "scenario_init": true
+      },
+      "name": "destroyed11_null_incoming_logic_raise",
+      "persistence": 0,
+      "raw": "1,11,0,0",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 1
+    },
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "ecx": 0,
+          "pc": "0x00502D30"
+        },
+        {
+          "arg0": 0,
+          "ecx": 538269028,
+          "pc": "0x0049FB60"
+        }
+      ],
+      "event54": -1412623820,
+      "inputs": {
+        "actor_owner": null,
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "destruction_counts": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ]
+        ],
+        "house_order": [
+          2,
+          1,
+          0
+        ],
+        "incoming_house": 0,
+        "power": [
+          [
+            100,
+            200
+          ],
+          [
+            300,
+            200
+          ],
+          [
+            0,
+            200
+          ]
+        ],
+        "raised": 8,
+        "scenario_init": false
+      },
+      "name": "destroyed11_first_duplicate_country",
+      "persistence": 0,
+      "raw": "1,11,0,0",
+      "read": {
+        "kind": 11,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "result": 0
+    }
+  ],
+  "reader_rows": {
+    "1,1,0,-1": {
+      "kind": 1,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": -1
+    },
+    "1,1,0,0": {
+      "kind": 1,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 0
+    },
+    "1,1,0,7": {
+      "kind": 1,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 7
+    },
+    "1,11,0,-1": {
+      "kind": 11,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": -1
+    },
+    "1,11,0,0": {
+      "kind": 11,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 0
+    },
+    "1,11,0,7": {
+      "kind": 11,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 7
+    },
+    "1,11,0,999": {
+      "kind": 11,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 999
+    },
+    "1,30,0,0": {
+      "kind": 30,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 0
+    },
+    "1,32,0,402": {
+      "kind": 32,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 402
+    },
+    "1,32,0,7": {
+      "kind": 32,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 7
+    },
+    "1,57,0,7": {
+      "kind": 57,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 7
+    },
+    "1,58,0,0": {
+      "kind": 58,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 0
+    },
+    "1,58,0,7": {
+      "kind": 58,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 7
+    },
+    "1,58,0,999": {
+      "kind": 58,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 999
+    },
+    "1,9,0,-1": {
+      "kind": 9,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": -1
+    },
+    "1,9,0,0": {
+      "kind": 9,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 0
+    },
+    "1,9,0,7": {
+      "kind": 9,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 7
+    },
+    "1,9,0,999": {
+      "kind": 9,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 999
+    }
+  },
+  "schema_version": 1,
+  "timer_bytes_unchanged": true,
+  "zero_rng_calls": true
+}

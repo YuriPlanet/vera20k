@@ -43,7 +43,8 @@ use crate::audio::events::SoundSource;
 use crate::audio::voice_queue::VoiceQueue;
 use crate::audio::vox::{VoxNode, VoxQueue, VoxRequest};
 use crate::rules::sound_ini::{
-    EvaRegistry, EvaSide, EvaType, SoundEntry, SoundRegistry, VOLUME_SCALE, control, sound_type,
+    EvaPriority, EvaRegistry, EvaSide, EvaType, SoundEntry, SoundRegistry, VOLUME_SCALE, control,
+    sound_type,
 };
 use crate::util::native_x87::X87Chop53;
 
@@ -1253,14 +1254,22 @@ pub struct SfxPlayer {
     /// Whether the game is paused, so [`Self::set_paused`] only acts on the
     /// edge the way `GamePause::Enter`/`Exit` do.
     paused: bool,
+    movie_held: bool,
+    ///7518C0 gates Voc admission; it neither pauses Theme nor ends buffers.
+    voc_enabled: bool,
+    ///53BAD0 excludes the SFX half of GamePause, not its EVA stream half.
+    chrono_screen_active: bool,
 }
 
 /// Native750E20 copies +20/+24/+28 and initializes nested suspend depth+30.
-/// `source` is that immutable coordinate in VERA's world-pixel/cell frame.
+/// `coordinate`/`flags` are immutable signed native XYZ leptons and +2C.
+/// `source` is their derived projection in VERA's world-pixel/cell frame.
 /// The gain cache is derived by the app's existing spatial context before
 /// every common pump and is applied only in the admitted750EC0 phase.
 struct CoordinateSoundRequest {
     id: u64,
+    coordinate: [i32; 3],
+    flags: u32,
     source: SoundSource,
     gain: Option<SpatialGain>,
     suspend_depth: i32,
@@ -1340,6 +1349,9 @@ impl SfxPlayer {
             output_scale: 1.0,
             focus_output_scale: 1.0,
             paused: false,
+            movie_held: false,
+            voc_enabled: true,
+            chrono_screen_active: false,
         })
     }
 
@@ -1428,6 +1440,9 @@ impl SfxPlayer {
         gain: SpatialGain,
         registry: &SoundRegistry,
     ) -> bool {
+        if !self.voc_enabled {
+            return false;
+        }
         let owner = owner.into();
         let Some(entry) = registered_entry(sound_id, registry) else {
             // Original7509E0 binds a null Voc for an invalid index; the raw
@@ -1554,6 +1569,8 @@ impl SfxPlayer {
     pub(crate) fn play_sound_at_coord(
         &mut self,
         sound_id: &str,
+        coordinate: [i32; 3],
+        flags: u32,
         source: SoundSource,
         gain: Option<SpatialGain>,
         registry: &SoundRegistry,
@@ -1578,11 +1595,28 @@ impl SfxPlayer {
         // requests/events are already suspended by a modal or movie.
         self.coordinate_requests.push(CoordinateSoundRequest {
             id,
+            coordinate,
+            flags,
             source,
             gain,
             suspend_depth: 0,
         });
         true
+    }
+
+    /// `VocClass::StopAtCoord @ 0x00750F40`: visit retained request nodes in
+    /// order, match all three signed coordinate words and intersect +2C with
+    /// `flags`, then invoke the existing405FD0 handle detach. The node is not
+    /// removed here;750EC0 retires it once its detached handle no longer owns
+    /// an event or an uncounted-loop binding. Current buffers can finish/decay.
+    pub(crate) fn stop_sound_at_coord(&mut self, coordinate: [i32; 3], flags: u32) {
+        for index in 0..self.coordinate_requests.len() {
+            let request = &self.coordinate_requests[index];
+            if request.coordinate == coordinate && request.flags & flags != 0 {
+                let owner = HandleOwner::Coordinate(request.id);
+                self.detach_animation_sound(owner);
+            }
+        }
     }
 
     /// Refresh this derived gain cache from the current listener/shroud.
@@ -1608,6 +1642,8 @@ impl SfxPlayer {
             .map(|request| {
                 serde_json::json!({
                     "request_id": request.id,
+                    "coordinate_leptons": request.coordinate,
+                    "flags": request.flags,
                     "sound_id": self.arbiter.handle_sound_key(HandleOwner::Coordinate(request.id)),
                     "source_world_pixels": [request.source.screen_x, request.source.screen_y],
                     "source_cell": [request.source.rx, request.source.ry],
@@ -1675,18 +1711,17 @@ impl SfxPlayer {
     /// loop stops repeating and switches to decay at the next sound service.
     /// The handle is cleared immediately; one-shots keep playing.
     /// Idempotent.
-    pub fn release_animation_sound(&mut self, anim_id: u64) {
-        let event = self
-            .arbiter
-            .validate_loop_handle(HandleOwner::Positional(anim_id));
+    pub fn release_animation_sound(&mut self, owner: impl Into<HandleOwner>) {
+        let owner = owner.into();
+        let event = self.arbiter.validate_loop_handle(owner);
         if let Some(observer) = &mut self.pcm_observer {
-            observer.owner_action(HandleOwner::Positional(anim_id), "release", self.now_ms);
+            observer.owner_action(owner, "release", self.now_ms);
         }
         let control = event
             .and_then(|event| self.live.get(&event))
             .and_then(|output| output.control.clone());
         let mut update_event = || {
-            self.arbiter.release_owner(HandleOwner::Positional(anim_id));
+            self.arbiter.release_owner(owner);
             event.is_some_and(|event| self.arbiter.playout_no_replay(event))
         };
         if let Some(control) = control {
@@ -1699,18 +1734,17 @@ impl SfxPlayer {
     /// `VocHandle405FD0`: discard the handle and request the next state3
     /// service to stop the current buffer and select decay if available.
     /// The arbiter remains the handle and admission owner.
-    pub fn detach_animation_sound(&mut self, owner: u64) {
-        let event = self
-            .arbiter
-            .validate_loop_handle(HandleOwner::Positional(owner));
+    pub fn detach_animation_sound(&mut self, owner: impl Into<HandleOwner>) {
+        let owner = owner.into();
+        let event = self.arbiter.validate_loop_handle(owner);
         if let Some(observer) = &mut self.pcm_observer {
-            observer.owner_action(HandleOwner::Positional(owner), "detach", self.now_ms);
+            observer.owner_action(owner, "detach", self.now_ms);
         }
         let control = event
             .and_then(|event| self.live.get(&event))
             .and_then(|output| output.control.clone());
         let mut update_event = || {
-            self.arbiter.detach_owner(HandleOwner::Positional(owner));
+            self.arbiter.detach_owner(owner);
             event.is_some_and(|event| self.arbiter.playout_no_replay(event))
         };
         if let Some(control) = control {
@@ -1856,6 +1890,7 @@ impl SfxPlayer {
         self.queue_eva(
             eva_registry.index_of(event).unwrap_or(-1),
             type_override,
+            None,
             eva_registry,
             side,
             registry,
@@ -1873,6 +1908,7 @@ impl SfxPlayer {
         &mut self,
         index: i32,
         type_override: Option<EvaType>,
+        priority_override: Option<EvaPriority>,
         eva_registry: &EvaRegistry,
         side: EvaSide,
         registry: &SoundRegistry,
@@ -1890,6 +1926,7 @@ impl SfxPlayer {
                 priority: entry.priority,
             },
             type_override,
+            priority_override,
         );
         if effect.stop_stream {
             // `StreamPlayer::Stop` (`0x00752480`, type 2 while current): only
@@ -1915,6 +1952,33 @@ impl SfxPlayer {
         if let Some(entry) = eva_registry.entry(event) {
             self.vox.remove_from_queues(&entry.name);
         }
+    }
+    pub(crate) fn clear_eva_queues(&mut self) {
+        self.vox.clear_all_queues();
+    }
+    pub(crate) fn stop_eva(&mut self, clear_queues: bool) {
+        self.stop_eva_stream();
+        self.vox.stop_all(clear_queues);
+    }
+    pub(crate) fn set_voc_enabled(&mut self, enabled: bool) {
+        self.voc_enabled = enabled;
+    }
+    pub(crate) fn set_chrono_screen_active(&mut self, active: bool) {
+        self.chrono_screen_active = active;
+    }
+    pub(crate) fn suspend_eva(&mut self) {
+        self.vox.suspend();
+    }
+    pub(crate) fn resume_eva(&mut self) {
+        self.vox.resume();
+    }
+    pub(crate) fn eva_entry_done(&self, index: i32, registry: &EvaRegistry) -> bool {
+        registry
+            .entry_by_index(index)
+            .is_none_or(|entry| self.vox.entry_done(&entry.name))
+    }
+    pub(crate) fn mixer(&self) -> &rodio::mixer::Mixer {
+        self._device.mixer()
     }
 
     /// Whether the announcement stream has audio left to play
@@ -2022,6 +2086,9 @@ impl SfxPlayer {
         pan: i32,
         channel: SfxChannel,
     ) -> Option<EventId> {
+        if !self.voc_enabled {
+            return None;
+        }
         let key = registry_key(sound_id);
         let event = self.arbiter.submit(
             &PlayRequest {
@@ -2271,17 +2338,37 @@ impl SfxPlayer {
             return;
         }
         self.paused = paused;
-        self.vox.set_paused(paused);
-        if paused {
+        self.apply_pause_edge(paused, now_ms, !self.chrono_screen_active);
+    }
+    ///5BF580/5BF530 own a distinct idempotent hold. Each source enters the
+    ///existing nested Sound/Vox owners; releasing a movie cannot resume a menu.
+    pub(crate) fn set_movie_held(&mut self, held: bool, now_ms: u64) {
+        if held == self.movie_held {
+            return;
+        }
+        self.movie_held = held;
+        self.apply_pause_edge(held, now_ms, true);
+    }
+    /// Both native callers enter the existing nested owners. The final output
+    ///gate combines their reasons; neither caller owns another event pool.
+    fn apply_pause_edge(&mut self, entering: bool, now_ms: u64, suspend_sounds: bool) {
+        self.vox.set_paused(entering);
+        if entering && suspend_sounds {
             self.arbiter.suspend_all(now_ms);
             self.suspend_coordinate_sounds(now_ms);
-        } else {
+        } else if suspend_sounds {
             self.resume_coordinate_sounds(now_ms);
             self.arbiter.resume_all(now_ms);
         }
-        let outputs = self.live.values().chain(self.eva_player.iter());
-        for output in outputs {
-            if paused {
+        for output in self.live.values() {
+            if self.movie_held || (self.paused && !self.chrono_screen_active) {
+                output.player.pause();
+            } else {
+                output.player.play();
+            }
+        }
+        if let Some(output) = &self.eva_player {
+            if self.movie_held || self.paused {
                 output.player.pause();
             } else {
                 output.player.play();
@@ -2359,6 +2446,21 @@ impl SfxPlayer {
         for request in requests {
             self.stop_animation_sound(HandleOwner::Coordinate(request.id));
         }
+        self.clear_sound_pool();
+        // World replacement owns the wider Techno/Vox reset; the screen
+        // effect's406E80 call only clears the shared event pool.
+        self.voice_queue = VoiceQueue::new();
+        self.stop_eva_stream();
+        self.vox.reset_all();
+        self.paused = false;
+        self.movie_held = false;
+        self.voc_enabled = true;
+        self.chrono_screen_active = false;
+    }
+
+    ///406E80, shared by world teardown and ChronoScreen53B501. Preserve
+    ///Vox depths, owner voice latches and coordinate requests at this boundary.
+    pub(crate) fn clear_sound_pool(&mut self) {
         for event in self.live.keys().copied().collect::<Vec<_>>() {
             let token = self.output_token(event);
             if let (Some(observer), Some(token)) = (&mut self.pcm_observer, token) {
@@ -2376,16 +2478,6 @@ impl SfxPlayer {
         }
         self.pending.clear();
         self.arbiter.clear_for_world_replacement();
-        // World replacement resets native Techno voice latches at
-        // 70C231/70C23A/70C240; outgoing queued owners must not survive this
-        // common audio reset (69BB82 -> 7535D0). Do not replay them on load.
-        self.voice_queue = VoiceQueue::new();
-        // `VoxClass::ResetAll @ 0x007535D0`: current entry done, stop the
-        // stream, `ClearAllQueues`, then `DAT_00b1d428 = 0` and
-        // `DAT_00b1d3d8 = 0`. Both depths are reset here, not left to unwind
-        // on the next pause edge.
-        self.stop_eva_stream();
-        self.vox.reset_all();
     }
 
     pub(crate) fn observe_pcm(&mut self, config: PcmObservationConfig) -> Result<(), &'static str> {
@@ -3498,6 +3590,7 @@ mod tests {
                     player.queue_eva(
                         index,
                         Some(EvaType::Interrupt),
+                        None,
                         definitions.eva(),
                         side,
                         definitions.sounds(),
@@ -3857,8 +3950,8 @@ mod tests {
             }
             let before = player.pcm_observer.as_ref().unwrap().recorded_samples();
             match operation {
-                "release" => player.release_animation_sound(7),
-                "detach" => player.detach_animation_sound(7),
+                "release" => player.release_animation_sound(7_u64),
+                "detach" => player.detach_animation_sound(7_u64),
                 _ => player.stop_animation_sound(7_u64),
             }
             assert!(player.handle_sound_id(7).is_none());

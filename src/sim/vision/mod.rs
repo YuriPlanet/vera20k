@@ -11,6 +11,7 @@
 mod cell_reveal;
 mod gap_source;
 mod map_reveal;
+pub(crate) use map_reveal::MapTransition;
 mod shroud_knowledge;
 pub use cell_reveal::SHROUD_EDGE_LUT;
 #[cfg(test)]

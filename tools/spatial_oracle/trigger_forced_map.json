@@ -1,0 +1,871 @@
+{
+  "controls": [
+    {
+      "cell": [
+        9,
+        10
+      ],
+      "cells": [
+        {
+          "alt": 8,
+          "cache": [
+            9,
+            9
+          ],
+          "cell": [
+            8,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            8,
+            8
+          ],
+          "cell": [
+            8,
+            10
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            12,
+            12
+          ],
+          "cell": [
+            8,
+            11
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            1,
+            1
+          ],
+          "cell": [
+            9,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            34,
+            34
+          ],
+          "cell": [
+            9,
+            10
+          ],
+          "counter": 7,
+          "flags": 34,
+          "gap": 3,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            6,
+            6
+          ],
+          "cell": [
+            9,
+            11
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            3,
+            3
+          ],
+          "cell": [
+            10,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            6,
+            6
+          ],
+          "cell": [
+            10,
+            10
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 0,
+          "cache": [
+            -2,
+            -2
+          ],
+          "cell": [
+            10,
+            11
+          ],
+          "counter": 1,
+          "flags": 0,
+          "gap": 0,
+          "level": 0
+        }
+      ],
+      "dummy": {
+        "alt": 0,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          15,
+          16
+        ],
+        "counter": 1,
+        "flags": 0,
+        "gap": 0,
+        "level": 0
+      },
+      "name": "first_frontier",
+      "notifications": [
+        {
+          "cell": [
+            9,
+            10
+          ],
+          "fresh": 1
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": []
+    },
+    {
+      "cell": [
+        10,
+        11
+      ],
+      "cells": [
+        {
+          "alt": 8,
+          "cache": [
+            9,
+            9
+          ],
+          "cell": [
+            8,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            8,
+            8
+          ],
+          "cell": [
+            8,
+            10
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            12,
+            12
+          ],
+          "cell": [
+            8,
+            11
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            1,
+            1
+          ],
+          "cell": [
+            9,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 24,
+          "cache": [
+            34,
+            34
+          ],
+          "cell": [
+            9,
+            10
+          ],
+          "counter": 7,
+          "flags": 35,
+          "gap": 3,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            4,
+            4
+          ],
+          "cell": [
+            9,
+            11
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            3,
+            3
+          ],
+          "cell": [
+            10,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            2,
+            2
+          ],
+          "cell": [
+            10,
+            10
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            6,
+            6
+          ],
+          "cell": [
+            10,
+            11
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        }
+      ],
+      "dummy": {
+        "alt": 0,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          16,
+          17
+        ],
+        "counter": 1,
+        "flags": 0,
+        "gap": 0,
+        "level": 0
+      },
+      "name": "last_corner",
+      "notifications": [
+        {
+          "cell": [
+            10,
+            11
+          ],
+          "fresh": 1
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": []
+    },
+    {
+      "cell": [
+        9,
+        10
+      ],
+      "cells": [
+        {
+          "alt": 8,
+          "cache": [
+            9,
+            9
+          ],
+          "cell": [
+            8,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            8,
+            8
+          ],
+          "cell": [
+            8,
+            10
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            12,
+            12
+          ],
+          "cell": [
+            8,
+            11
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            1,
+            1
+          ],
+          "cell": [
+            9,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 24,
+          "cache": [
+            -1,
+            -1
+          ],
+          "cell": [
+            9,
+            10
+          ],
+          "counter": 7,
+          "flags": 35,
+          "gap": 3,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            4,
+            4
+          ],
+          "cell": [
+            9,
+            11
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            3,
+            3
+          ],
+          "cell": [
+            10,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            2,
+            2
+          ],
+          "cell": [
+            10,
+            10
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            6,
+            6
+          ],
+          "cell": [
+            10,
+            11
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        }
+      ],
+      "dummy": {
+        "alt": 0,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          15,
+          16
+        ],
+        "counter": 1,
+        "flags": 0,
+        "gap": 0,
+        "level": 0
+      },
+      "name": "center_cache_change",
+      "notifications": [
+        {
+          "cell": [
+            9,
+            10
+          ],
+          "fresh": 0
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": []
+    },
+    {
+      "cell": [
+        9,
+        10
+      ],
+      "cells": [
+        {
+          "alt": 8,
+          "cache": [
+            9,
+            9
+          ],
+          "cell": [
+            8,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            8,
+            8
+          ],
+          "cell": [
+            8,
+            10
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            12,
+            12
+          ],
+          "cell": [
+            8,
+            11
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            1,
+            1
+          ],
+          "cell": [
+            9,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 24,
+          "cache": [
+            -1,
+            -1
+          ],
+          "cell": [
+            9,
+            10
+          ],
+          "counter": 7,
+          "flags": 35,
+          "gap": 3,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            4,
+            4
+          ],
+          "cell": [
+            9,
+            11
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            3,
+            3
+          ],
+          "cell": [
+            10,
+            9
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            2,
+            2
+          ],
+          "cell": [
+            10,
+            10
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        },
+        {
+          "alt": 8,
+          "cache": [
+            6,
+            6
+          ],
+          "cell": [
+            10,
+            11
+          ],
+          "counter": 1,
+          "flags": 2,
+          "gap": 0,
+          "level": 0
+        }
+      ],
+      "dummy": {
+        "alt": 0,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          7,
+          10
+        ],
+        "counter": 1,
+        "flags": 0,
+        "gap": 0,
+        "level": 0
+      },
+      "name": "center_unchanged",
+      "notifications": [],
+      "returned_al": 0,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": []
+    }
+  ],
+  "schema_version": 1,
+  "topology": {
+    "allocated_cells": [
+      {
+        "alt": 8,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          8,
+          9
+        ],
+        "counter": 1,
+        "flags": 2,
+        "gap": 0,
+        "level": 0
+      },
+      {
+        "alt": 8,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          8,
+          10
+        ],
+        "counter": 1,
+        "flags": 2,
+        "gap": 0,
+        "level": 0
+      },
+      {
+        "alt": 8,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          8,
+          11
+        ],
+        "counter": 1,
+        "flags": 2,
+        "gap": 0,
+        "level": 0
+      },
+      {
+        "alt": 8,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          9,
+          9
+        ],
+        "counter": 1,
+        "flags": 2,
+        "gap": 0,
+        "level": 0
+      },
+      {
+        "alt": 0,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          9,
+          10
+        ],
+        "counter": 7,
+        "flags": 32,
+        "gap": 3,
+        "level": 0
+      },
+      {
+        "alt": 8,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          9,
+          11
+        ],
+        "counter": 1,
+        "flags": 2,
+        "gap": 0,
+        "level": 0
+      },
+      {
+        "alt": 8,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          10,
+          9
+        ],
+        "counter": 1,
+        "flags": 2,
+        "gap": 0,
+        "level": 0
+      },
+      {
+        "alt": 8,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          10,
+          10
+        ],
+        "counter": 1,
+        "flags": 2,
+        "gap": 0,
+        "level": 0
+      },
+      {
+        "alt": 0,
+        "cache": [
+          -2,
+          -2
+        ],
+        "cell": [
+          10,
+          11
+        ],
+        "counter": 1,
+        "flags": 0,
+        "gap": 0,
+        "level": 0
+      }
+    ],
+    "dummy_prior": {
+      "alt": 0,
+      "cache": [
+        -2,
+        -2
+      ],
+      "cell": [
+        0,
+        0
+      ],
+      "counter": 1,
+      "flags": 0,
+      "gap": 0,
+      "level": 0
+    }
+  }
+}

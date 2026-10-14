@@ -402,8 +402,8 @@ pub(super) fn track_move_to(
 }
 
 /// ILocomotion +0x48 Stop_Moving of the active Drive, Ship or Hover
-/// instance, the only call of Foot's failed-path receiver 0x4D55C0 (Unit
-/// +0x500). It clears the locomotor destination; NavCom and the committed
+/// instance, as FootStopDriver4D55C0/Unit+500 dispatches from FindPath,
+/// FireAt and first-Limbo. It clears the locomotor destination; NavCom and the committed
 /// head are untouched.
 pub(crate) fn track_stop_moving(entity: &mut GameEntity) -> bool {
     if is_drive_locomotor(entity) {

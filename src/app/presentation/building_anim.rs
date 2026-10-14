@@ -175,6 +175,7 @@ impl SoundPlaybackInputs<'_> {
                     let _ = sfx.queue_eva(
                         *index,
                         Some(crate::rules::sound_ini::EvaType::Interrupt),
+                        None,
                         eva_registry,
                         eva_side,
                         registry,
@@ -238,13 +239,23 @@ impl SoundPlaybackInputs<'_> {
                         sfx.play_registered_sound_spatial(sound_id, gain, registry);
                     }
                 }
-                GameSoundEvent::VocAtCoord { sound_id, source } => {
+                GameSoundEvent::VocAtCoord {
+                    sound_id,
+                    coordinate,
+                    flags,
+                    source,
+                } => {
                     sfx.play_sound_at_coord(
                         sound_id,
+                        *coordinate,
+                        *flags,
                         *source,
                         gain_for(sound_id, Some(*source)),
                         registry,
                     );
+                }
+                GameSoundEvent::VocStopAtCoord { coordinate, flags } => {
+                    sfx.stop_sound_at_coord(*coordinate, *flags);
                 }
                 GameSoundEvent::BaseUnderAttackSfx { sound_id } => {
                     // `0x004F95BF MOV EDX,0x2000` / `0x004F95C4 PUSH 0x3F800000`:

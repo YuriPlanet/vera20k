@@ -214,7 +214,7 @@ fn techno_effect_light_at(
     frame: u32,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
     let intensity = light.brightness();
-    let flashed = if entity.elite_flash_frames & 2 == 0 {
+    let flashed = if entity.flash_countdown() & 2 == 0 {
         intensity
     } else if entity.category == crate::map::entities::EntityCategory::Structure {
         if intensity <= 1500 {

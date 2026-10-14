@@ -55,7 +55,7 @@ impl Fixture {
     /// `Can_Add`'s mission and recruit gates.
     fn new(script: &[(i32, i32)], returns: bool) -> Self {
         let rules = RuleSet::from_ini_with_fixed_art_for_test(
-            &IniFile::from_str(RULES),
+            &crate::sim::arena_fixture::clear_ground_ini(RULES),
             &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
         )
         .expect("transport action rules");

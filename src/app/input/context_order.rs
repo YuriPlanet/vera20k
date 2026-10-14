@@ -3322,7 +3322,7 @@ mod tests {
         HoverTargetKindWithId,
     ) {
         let rules = crate::rules::ruleset::RuleSet::from_ini(
-            &crate::rules::ini_parser::IniFile::from_str(&format!(
+            &crate::sim::arena_fixture::clear_ground_ini(&format!(
                 "[InfantryTypes]\n0=ENGINEER\n[VehicleTypes]\n0=TRUCK\n[BuildingTypes]\n0=CABHUT\n\
                  [TRUCK]\nStrength=100\nSpeed=4\n\
                  [ENGINEER]\nStrength=75\nEngineer=yes\n{}\n\
@@ -3351,6 +3351,7 @@ mod tests {
         }
         sim.install_resolved_terrain_for_new_map(terrain);
         sim.bridge_state = Some(crate::sim::bridge_state::BridgeRuntimeState::default());
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
         let owner = if relation == "self" {
             "Americans"
         } else {

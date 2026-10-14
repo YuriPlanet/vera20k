@@ -50,7 +50,16 @@ fn armed_teleport_destination_requires_the_current_cell_inputs() {
     .unwrap();
     let mut sim = Simulation::with_seed(31);
     let id = sim
-        .construct_object_limbo_at_height("CLEG", "Americans", 10, 10, 0, 0, &rules)
+        .construct_object_limbo_at_height(
+            "CLEG",
+            "Americans",
+            10,
+            10,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
     let actor = sim.substrate.entities.get_mut(id).unwrap();
     actor.lifecycle.in_limbo = false;

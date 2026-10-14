@@ -88,6 +88,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) minimap: Option<MinimapRenderer>,
     /// Animated radar chrome — plays 33-frame open/close animation when radar gained/lost.
     pub(crate) radar_anim: Option<crate::render::radar::anim::RadarAnimState>,
+    pub(crate) radar_movies: crate::app::radar_movie::RadarMovies,
+    pub(crate) chrono_screen: crate::app::chrono_screen::ChronoScreenPresentation,
     /// Requested-versus-resolved atlas identity used to construct `radar_anim`.
     ///
     /// Kept beside the animation so tactical evidence never reconstructs

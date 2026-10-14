@@ -102,6 +102,7 @@ fn dispatch(queue: &mut VoxQueue, registry: &EvaRegistry, step: &Value) -> Queue
                     priority: entry.priority,
                 },
                 Some(EvaType::Interrupt),
+                None,
             )
         });
     let reached = |address: &str| {

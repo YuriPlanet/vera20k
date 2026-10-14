@@ -639,32 +639,6 @@ pub(crate) fn commit_entities(
             rules,
             run.effects(),
         );
-        // ReceiveDamage carries sourceHouse separately from the source object.
-        // Records snapshot it at detonation; a record without one falls back
-        // to the live source's owner. Periodic radiation supplies both null
-        // source object and null source house explicitly.
-        let attacker_owner: Option<InternedId> = event.source_house.or_else(|| {
-            (attacker_id != RAD_NO_ATTACKER)
-                .then(|| {
-                    world
-                        .substrate
-                        .entities
-                        .get(attacker_id)
-                        .map(|attacker| attacker.owner())
-                })
-                .flatten()
-        });
-        // UpdateAngerNodes reads source->Owner directly; the separately
-        // captured source-house ABI argument is not used by this callback.
-        let live_source_owner = (attacker_id != RAD_NO_ATTACKER)
-            .then(|| {
-                world
-                    .substrate
-                    .entities
-                    .get(attacker_id)
-                    .map(|source| source.owner())
-            })
-            .flatten();
         let receiver_outcome = resolve_receive_damage(
             event,
             &world.substrate.entities,
@@ -697,6 +671,7 @@ pub(crate) fn commit_entities(
         if starts_berserk {
             world.leave_team(target_id, false, Some(rules), run.effects());
         }
+        let receiver_callbacks = callbacks_enabled(world);
         let Some(receiver_health::ReceiverHealthCommit {
             building_entry_frame,
             state: receive_state,
@@ -714,18 +689,30 @@ pub(crate) fn commit_entities(
             psychedelic,
         }) = receiver_health::commit_receiver_health(
             event,
-            &mut world.substrate.entities,
+            world,
             rules,
-            &world.interner,
-            &world.house_alliances,
-            attacker_owner,
-            live_source_owner,
+            overlay_registry,
             receiver_outcome,
-            world.session.binary_frame,
+            run.effects(),
+            receiver_callbacks,
         )
         else {
             continue;
         };
+        // Generic Object damage Tags have already returned. This later
+        //kill continuation reads the source's current Owner; the separately
+        //supplied source-House ABI pointer stays fixed for the receive call.
+        let attacker_owner: Option<InternedId> = event.source_house.or_else(|| {
+            (attacker_id != RAD_NO_ATTACKER)
+                .then(|| {
+                    world
+                        .substrate
+                        .entities
+                        .get(attacker_id)
+                        .map(|attacker| attacker.owner())
+                })
+                .flatten()
+        });
         if starts_berserk {
             // The class setter: Infantry's (`0x0051B1F0`) also resets its
             // action and path head.
@@ -767,6 +754,9 @@ pub(crate) fn commit_entities(
                     world.sound_events.push(SimSoundEvent::VocAtCoord {
                         sound_id: sound_id.to_owned(),
                         coordinate,
+                        //702734/70277D PUSH0 before each750E20;
+                        //executed coordinate_attempts retain args[0].
+                        flags: 0,
                     });
                     run.effects().flush_sound(world, Some(rules));
                 }
@@ -883,12 +873,31 @@ pub(crate) fn commit_entities(
         // own death effects can already observe. Deferring it to the lifecycle
         // release point would change that visibility.
         if reached_exact_zero {
+            //Object5F5772..579A chooses E4 only for a supplied sourceHouse
+            //that differs from the source Techno's CURRENT Owner (or NULL
+            //Techno). Do not turn that House pointer into an E0 attacker.
+            let live_source_owner = (attacker_id != RAD_NO_ATTACKER)
+                .then(|| {
+                    world
+                        .substrate
+                        .entities
+                        .get(attacker_id)
+                        .map(GameEntity::owner)
+                })
+                .flatten();
+            let source = if let Some(house) = event.source_house
+                && (attacker_id == RAD_NO_ATTACKER || live_source_owner != Some(house))
+            {
+                super::KillSource::House(Some(house))
+            } else {
+                super::KillSource::Techno((attacker_id != RAD_NO_ATTACKER).then_some(attacker_id))
+            };
             world.record_the_kill(
                 target_id,
-                (attacker_id != RAD_NO_ATTACKER).then_some(attacker_id),
-                attacker_owner,
+                source,
                 super::KillCallback::Terminal,
-                rules,
+                crate::sim::world::UninitContext::new(Some(rules), overlay_registry)
+                    .with_effects(run.effects()),
             );
         }
         if reached_exact_zero && postmortem_candidate.is_none() {
@@ -1114,6 +1123,8 @@ pub(crate) fn commit_entities(
             world.sound_events.push(SimSoundEvent::VocAtCoord {
                 sound_id: sound_id.to_owned(),
                 coordinate,
+                //4426E1 PUSH0 before750E20 at442706 (same executed owner).
+                flags: 0,
             });
             run.effects().flush_sound(world, Some(rules));
         }

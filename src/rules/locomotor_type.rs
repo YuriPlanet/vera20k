@@ -38,13 +38,13 @@ pub enum LocomotorKind {
     Hover,
     /// Infantry ground movement. Distinct arrival threshold from vehicles.
     Walk,
-    /// True aircraft (Harrier, Kirov). Dedicated altitude state machine.
+    /// True aircraft (Harrier). Dedicated altitude state machine.
     Fly,
     /// Chrono movement (instant relocation). Often a temporary override.
     Teleport,
     /// Naval vessel. Drive-like but carries naval identity for AI recognition.
     Ship,
-    /// Jumpjet hover-flight (Rocketeer). Altitude-holding state machine, NOT Fly.
+    /// Jumpjet hover-flight (Rocketeer, Kirov). Altitude-holding state machine, NOT Fly.
     Jumpjet,
     /// Spawned missile (V3, Dreadnought). Scripted missile controller.
     Rocket,

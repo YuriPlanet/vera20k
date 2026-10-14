@@ -1,0 +1,969 @@
+{
+  "dummy_coord_before": [
+    8738,
+    -13107
+  ],
+  "kind": "bounded-original-clear-all-smudges",
+  "rows": [
+    {
+      "cell_writes": [],
+      "cells_after": [
+        {
+          "cell": [
+            1,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            2,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            2,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            2,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            3,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            3,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            3,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            3,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            3,
+            8
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            3
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            8
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            9
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            2
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            3
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            8
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            9
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            1
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            2
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            3
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            8
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            2
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            3
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            8,
+            3
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            8,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            8,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            8,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            9,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            9,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        }
+      ],
+      "display_dirty_after": 1,
+      "dummy_after": {
+        "coord": [
+          8738,
+          -13107
+        ],
+        "smudge": -1,
+        "smudge_data": 0
+      },
+      "input": {
+        "allocate_diamond": true,
+        "cells": [],
+        "dummy": null,
+        "morphable": [
+          0
+        ],
+        "size": [
+          6,
+          4
+        ],
+        "tile_count": 1
+      },
+      "name": "empty",
+      "redraw_epoch_after": 1,
+      "redraw_epoch_before": 0,
+      "redraw_level_after": 1,
+      "redraw_level_before": 0,
+      "returned": 1,
+      "rng_unchanged": true
+    },
+    {
+      "cell_writes": [
+        {
+          "cell": [
+            3,
+            4
+          ],
+          "data": 0,
+          "dummy": false,
+          "identity": -1,
+          "previous": 1
+        },
+        {
+          "cell": [
+            4,
+            4
+          ],
+          "data": 1,
+          "dummy": false,
+          "identity": -1,
+          "previous": 1
+        },
+        {
+          "cell": [
+            3,
+            5
+          ],
+          "data": 2,
+          "dummy": false,
+          "identity": -1,
+          "previous": 1
+        },
+        {
+          "cell": [
+            4,
+            5
+          ],
+          "data": 3,
+          "dummy": false,
+          "identity": -1,
+          "previous": 1
+        },
+        {
+          "cell": [
+            5,
+            3
+          ],
+          "data": 0,
+          "dummy": false,
+          "identity": -1,
+          "previous": 0
+        }
+      ],
+      "cells_after": [
+        {
+          "cell": [
+            1,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            2,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            2,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            2,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            3,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            3,
+            5
+          ],
+          "data": 2,
+          "identity": -1
+        },
+        {
+          "cell": [
+            3,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            3,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            3,
+            8
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            3
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            4
+          ],
+          "data": 1,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            5
+          ],
+          "data": 3,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            8
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            4,
+            9
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            2
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            3
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            8
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            5,
+            9
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            1
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            2
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            3
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            6,
+            8
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            2
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            3
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            7,
+            7
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            8,
+            3
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            8,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            8,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            8,
+            6
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            9,
+            4
+          ],
+          "data": 0,
+          "identity": -1
+        },
+        {
+          "cell": [
+            9,
+            5
+          ],
+          "data": 0,
+          "identity": -1
+        }
+      ],
+      "display_dirty_after": 1,
+      "dummy_after": {
+        "coord": [
+          8738,
+          -13107
+        ],
+        "smudge": -1,
+        "smudge_data": 0
+      },
+      "input": {
+        "allocate_diamond": true,
+        "cells": [
+          {
+            "smudge": 1,
+            "smudge_data": 0,
+            "x": 3,
+            "y": 4
+          },
+          {
+            "smudge": 1,
+            "smudge_data": 1,
+            "x": 4,
+            "y": 4
+          },
+          {
+            "smudge": 1,
+            "smudge_data": 2,
+            "x": 3,
+            "y": 5
+          },
+          {
+            "smudge": 1,
+            "smudge_data": 3,
+            "x": 4,
+            "y": 5
+          },
+          {
+            "smudge": 0,
+            "smudge_data": 0,
+            "x": 5,
+            "y": 3
+          }
+        ],
+        "dummy": null,
+        "morphable": [
+          0
+        ],
+        "size": [
+          6,
+          4
+        ],
+        "tile_count": 1
+      },
+      "name": "complete_footprints",
+      "redraw_epoch_after": 255,
+      "redraw_epoch_before": 254,
+      "redraw_level_after": 2,
+      "redraw_level_before": 2,
+      "returned": 1,
+      "rng_unchanged": true
+    },
+    {
+      "cell_writes": [
+        {
+          "cell": [
+            0,
+            5
+          ],
+          "data": 11,
+          "dummy": true,
+          "identity": -1,
+          "previous": 0
+        },
+        {
+          "cell": [
+            1,
+            5
+          ],
+          "data": 11,
+          "dummy": true,
+          "identity": -1,
+          "previous": -1
+        },
+        {
+          "cell": [
+            0,
+            6
+          ],
+          "data": 11,
+          "dummy": true,
+          "identity": -1,
+          "previous": -1
+        },
+        {
+          "cell": [
+            1,
+            6
+          ],
+          "data": 3,
+          "dummy": false,
+          "identity": -1,
+          "previous": 1
+        }
+      ],
+      "cells_after": [
+        {
+          "cell": [
+            1,
+            6
+          ],
+          "data": 3,
+          "identity": -1
+        }
+      ],
+      "display_dirty_after": 1,
+      "dummy_after": {
+        "coord": [
+          0,
+          6
+        ],
+        "smudge": -1,
+        "smudge_data": 11
+      },
+      "input": {
+        "allocate_diamond": false,
+        "cells": [
+          {
+            "smudge": 1,
+            "smudge_data": 3,
+            "x": 1,
+            "y": 6
+          }
+        ],
+        "dummy": {
+          "smudge": 0,
+          "smudge_data": 11
+        },
+        "morphable": [
+          0
+        ],
+        "size": [
+          6,
+          4
+        ],
+        "tile_count": 1
+      },
+      "name": "partial_boundary_first_null",
+      "redraw_epoch_after": 0,
+      "redraw_epoch_before": 255,
+      "redraw_level_after": 1,
+      "redraw_level_before": 0,
+      "returned": 1,
+      "rng_unchanged": true
+    }
+  ],
+  "schema_version": 1,
+  "supplied_types": [
+    {
+      "height": 1,
+      "name": "ONE",
+      "width": 1
+    },
+    {
+      "height": 2,
+      "name": "TWO",
+      "width": 2
+    }
+  ]
+}

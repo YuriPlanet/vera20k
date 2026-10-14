@@ -55,6 +55,37 @@ class Reader(Lists):
   self.u.mem_write(SP,dwords(RET_MAGIC,*args));self.u.reg_write(UC_X86_REG_ESP,SP);self.u.reg_write(UC_X86_REG_ECX,obj)
   run_checked(self.u,addr,RET_MAGIC,count=2000000,timeout_us=timeout_us,context=context)
   return self.u.reg_read(UC_X86_REG_EAX)
+ def install_waypoint_character_format_transport(self):
+  """Supply only ToLetters763610's two Windows wsprintfA calls.
+
+  Original instructions calculate and push every character. The raw PE IAT
+  7E14B0 is unresolved40FFF0, not an operating-system formatter. Keep code
+  bytes unchanged and supply the two exact %c formats at the import call.
+  wsprintfA is cdecl: leave arguments for the original ADD ESP cleanup.
+  Contract: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-wsprintfa
+  No native division, letter selection, INI reader or gameplay return is supplied.
+  """
+  from unicorn import UC_HOOK_CODE
+  if hasattr(self,'waypoint_character_formats'):return self.waypoint_character_formats
+  self.waypoint_character_formats=[]
+  def transport(u,pc,_size,_data):
+   if pc not in (0x763635,0x763671):return
+   assert bytes(u.mem_read(pc,6))==bytes.fromhex('ff15b0147e00')
+   sp=u.reg_read(UC_X86_REG_ESP)
+   dest,fmt=struct.unpack('<2I',u.mem_read(sp,8))
+   template=self.string(fmt)
+   assert template in ('%c','%c%c'),(hex(pc),template)
+   count=template.count('%c')
+   args=list(struct.unpack('<'+'I'*count,u.mem_read(sp+8,4*count)))
+   raw=bytes(value&255 for value in args)
+   assert all(0<value<128 for value in raw),(hex(pc),args)
+   u.mem_write(dest,raw+b'\0')
+   u.reg_write(UC_X86_REG_EAX,len(raw))
+   u.reg_write(UC_X86_REG_EIP,pc+6)
+   self.waypoint_character_formats.append(dict(call=f'{pc:08X}',iat='007E14B0',
+       format=template,arguments=args,output=raw.decode('ascii'),returned=len(raw)))
+  self.waypoint_character_format_hook=self.u.hook_add(UC_HOOK_CODE,transport)
+  return self.waypoint_character_formats
  def guid_transport(self,u,pc,sp,events):
   """Existing Mission's two Windows GUID-reader transport boundaries.
 

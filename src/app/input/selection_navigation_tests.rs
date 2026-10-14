@@ -585,7 +585,7 @@ fn replay_category_history(
         .map(|entity| {
             (
                 entity.stable_id(),
-                (entity.veterancy_rank_cache, entity.elite_flash_frames),
+                (entity.veterancy_rank_cache, entity.flash_countdown()),
             )
         })
         .collect();
@@ -917,7 +917,7 @@ fn replay_category_history(
         }
         for entity in sim.entities().values() {
             assert_eq!(
-                (entity.veterancy_rank_cache, entity.elite_flash_frames),
+                (entity.veterancy_rank_cache, entity.flash_countdown()),
                 rank_cache[&entity.stable_id()],
                 "{label}: navigation samples raw without announcing/promoting {}",
                 entity.stable_id()
@@ -1057,7 +1057,7 @@ fn veterancy_navigation_samples_original_raw_rank_without_cached_rank_writes() {
         // A deliberately stale valid value catches using it instead of raw.
         entity.veterancy_rank_cache = ((row["rank"].as_u64().unwrap() + 1) % 3) as i8;
         let cache = entity.veterancy_rank_cache;
-        let flash = entity.elite_flash_frames;
+        let flash = entity.flash_countdown();
         let before_rng = sim.rng_state();
         assert_eq!(
             entity_navigation_category(&sim, &rules, id, CategoryNavigationKind::Veterancy),
@@ -1068,7 +1068,7 @@ fn veterancy_navigation_samples_original_raw_rank_without_cached_rank_writes() {
         assert_eq!(sim.rng_state(), before_rng, "{}: no RNG", row["id"]);
         let entity = sim.entities().get(id).unwrap();
         assert_eq!(
-            (entity.veterancy_rank_cache, entity.elite_flash_frames),
+            (entity.veterancy_rank_cache, entity.flash_countdown()),
             (cache, flash),
             "{}: read-only raw rank",
             row["id"]

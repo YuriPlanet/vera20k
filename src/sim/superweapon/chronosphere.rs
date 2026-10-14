@@ -396,7 +396,7 @@ fn arm_chrono_warp(
     let [x, y, z] = deck_coords(sim, (cx as u16, cy as u16));
     let mut destination = DriveCoord { x, y, z };
     if category == EntityCategory::Unit {
-        sim.locomotor_mark_all_occupation_bits_up(id);
+        sim.locomotor_mark_all_occupation_bits(id, false);
         let _ = sim.force_track(
             id,
             -1,

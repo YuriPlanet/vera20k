@@ -802,6 +802,33 @@ impl OverlayGrid {
         true
     }
 
+    /// Building458A80's clear-site stores458B3F..458B48: erase a present
+    /// overlay's identity/data/rubble reference, retaining the wall owner and
+    /// all Recalc-derived cell attributes. There is no neighbor or Recalc
+    /// callback here; subsequent Limbo/Unlimbo supplies its own cell callbacks.
+    pub(crate) fn clear_building_placement_fields(
+        &mut self,
+        terrain: &mut ResolvedTerrainGrid,
+        rx: u16,
+        ry: u16,
+    ) -> bool {
+        let Some(idx) = index_of(self.width, self.height, rx, ry) else {
+            return false;
+        };
+        if self.cells[idx].overlay_id.is_none() {
+            return false;
+        }
+        self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
+        self.cells[idx].overlay_id = None;
+        self.cells[idx].overlay_data = 0;
+        self.cells[idx].rubble_building_type = None;
+        self.removed_render_cells.push((rx, ry));
+        let cell = terrain.native_cell_identity((rx as i16, ry as i16));
+        terrain.clear_native_cell_overlay(cell);
+        terrain.write_native_cell_state(cell, 0);
+        true
+    }
+
     /// Pending overlay/radar dirty coordinates without consuming the runtime
     /// receipt. Initial presentation uses this to include every real cell
     /// written by a multi-cell startup Mark transaction.
