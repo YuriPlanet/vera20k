@@ -861,7 +861,7 @@ fn a_bio_reactor_unload_command_reveals_its_passenger() {
 /// Unload cadence draw, and retries successfully after a legal exit opens.
 #[test]
 fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
-    let mut ini = IniFile::from_str(RULES);
+    let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
     ini.merge(&IniFile::from_str(
         "[AudioVisual]\nLeaveBioReactorSound=BioReactorExit\n",
     ));
@@ -1501,7 +1501,7 @@ fn absorbed_infantry_tracking_is_restored_after_building_death_and_sale() {
 #[test]
 fn a_bio_reactor_unload_only_dirties_power_for_positive_extra_power() {
     for extra_power in [0, -1] {
-        let ini = IniFile::from_str(
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
             &RULES.replace("ExtraPower=100", &format!("ExtraPower={extra_power}")),
         );
         let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::from_str(ART))
