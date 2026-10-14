@@ -788,7 +788,7 @@ pub(in crate::sim) fn recalculate_strips(
     owner: InternedId,
 ) -> Vec<crate::sim::command::CommandEnvelope> {
     use crate::sim::command::{Command, CommandEnvelope};
-        if !sim.houses.get(&owner).is_some_and(|house| house.is_human) {
+    if !sim.houses.get(&owner).is_some_and(|house| house.is_human) {
         return Vec::new();
     }
     let mut abandons = Vec::new();

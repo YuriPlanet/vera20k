@@ -774,8 +774,8 @@ impl Simulation {
             FreshDispatch::Retry(retry) => {
                 //4B420B..4B4219: recurse with arg3 = 1, nothing cleared.
                 self.track_process_movement(&call.with_args(ProcessMovementArgs {
-                        allow_retry: retry.allow_retry,
-                        force_single: retry.force_single_direction,
+                    allow_retry: retry.allow_retry,
+                    force_single: retry.force_single_direction,
                 }))
             }
             FreshDispatch::ClearSecondThenRetry(retry) => {
@@ -783,8 +783,8 @@ impl Simulation {
                 self.clear_path_head(id);
                 self.track_retire_selector(id);
                 self.track_process_movement(&call.with_args(ProcessMovementArgs {
-                        allow_retry: retry.allow_retry,
-                        force_single: retry.force_single_direction,
+                    allow_retry: retry.allow_retry,
+                    force_single: retry.force_single_direction,
                 }))
             }
             FreshDispatch::ScatterOrStop { retry, .. } => {

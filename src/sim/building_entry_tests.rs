@@ -2303,7 +2303,7 @@ fn nearest_occupiable_production_matches_native_controls() {
                 let coord = xyz(&entry["xyz"]);
                 let entity = sim.substrate.entities.get_mut(building).unwrap();
                 //1x1 makes Location the native fixture's substituted GetCoords.
-                entity.foundation = "1x1".to_owned();
+                entity.type_facts.set_foundation_for_test("1x1".to_owned());
                 crate::sim::movement::ground_pose::set_position_world_xy(
                     &mut entity.position,
                     [coord[0], coord[1]],

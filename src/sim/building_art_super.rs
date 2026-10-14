@@ -143,7 +143,7 @@ impl Simulation {
             };
             let present = self.substrate.entities.get(id).is_some_and(|entity| {
                 entity.building_art.anim_slots[usize::from(occupied)].is_some()
-                });
+            });
             if !present {
                 continue;
             }

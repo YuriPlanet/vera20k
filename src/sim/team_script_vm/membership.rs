@@ -194,7 +194,7 @@ impl Simulation {
                 entity.veterancy.rank(),
                 0,
             )
-                .is_some()
+            .is_some()
             && entity
                 .aircraft_ammo
                 .as_ref()

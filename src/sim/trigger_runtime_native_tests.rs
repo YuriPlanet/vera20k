@@ -1244,7 +1244,9 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
         false,
     );
     entity.set_native_unique_id_for_test(integer(&native["reactor_native_unique_id"]));
-    entity.foundation = object.foundation.clone();
+    entity
+        .type_facts
+        .set_foundation_for_test(object.foundation.clone());
     entity.begin_building_body(BuildingBodyMode::Idle, 0);
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(1);
@@ -3054,8 +3056,8 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
                                 kind: integer(&args[2]),
                                 actor: object,
                                 source: None,
-                                cell: cell,
-                                force: force,
+                                cell,
+                                force,
                             },
                             &mut effects,
                             Some(&rules),

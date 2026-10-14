@@ -438,10 +438,10 @@ fn slot_anim(sim: &Simulation, id: u64, slot: usize) -> Option<String> {
         .building_art
         .anim_slots()[slot]
         .map(|anim| {
-        sim.interner
-            .resolve(sim.anim(anim).unwrap().type_id)
-            .to_string()
-    })
+            sim.interner
+                .resolve(sim.anim(anim).unwrap().type_id)
+                .to_string()
+        })
 }
 
 /// Every `recruit` row: Mission_Attack's arm for a GetFireError answering OK

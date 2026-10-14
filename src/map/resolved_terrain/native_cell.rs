@@ -512,11 +512,11 @@ impl SharedCellDummy {
             _ => {
                 let _ =
                     self.state
-            .cell
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                        .cell
+                        .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                             Some(update(current))
-            });
-    }
+                        });
+            }
         }
     }
 

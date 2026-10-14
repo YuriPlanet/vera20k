@@ -386,18 +386,14 @@ impl Simulation {
             );
             return None;
         }
-        let Some(owner) = self.team_type_house(team_type, rules) else {
-            return None;
-        };
+        let owner = self.team_type_house(team_type, rules)?;
         let zone = self.team_initial_zone(team_type);
-        let Some(team) = self.team_script_vm.construct_team_instance(
+        let team = self.team_script_vm.construct_team_instance(
             team_type,
             owner,
             self.session.binary_frame as i32,
             zone,
-        ) else {
-            return None;
-        };
+        )?;
         self.attach_team_trigger_tag(team, team_type);
         let state = self
             .team_script_vm

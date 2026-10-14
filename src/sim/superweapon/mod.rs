@@ -851,6 +851,40 @@ pub(crate) fn tick_house_superweapon_instances(
     }
 }
 
+/// `HouseClass::HouseClass` builds the House's whole Supers vector, one
+/// Super per `[SuperWeaponTypes]` entry in that order
+/// (`0x004F620E..0x004F6290`), for every House in every game mode; the grant
+/// and hold passes only walk that list ([`house_super_order`]). Only the
+/// admitted campaign prefix has a measured native-ID cursor, so only it binds
+/// each Super's ID (`bind_native_ids`).
+pub(crate) fn construct_house_supers(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    bind_native_ids: bool,
+) {
+    let frame = sim.session.binary_frame as i32;
+    let mut supers = std::collections::BTreeMap::new();
+    for name in &rules.super_weapon_order {
+        let type_id = sim.interner.intern(name);
+        let mut instance = SuperWeaponInstance::new(type_id, owner, frame);
+        if bind_native_ids {
+            let super_id = sim
+                .next_native_load_id()
+                .expect("admitted campaign native-ID cursor");
+            instance.bind_native_identity(super_id);
+        }
+        assert!(
+            supers.insert(type_id, instance).is_none(),
+            "distinct Super type registry"
+        );
+    }
+    assert!(
+        sim.super_weapons.insert(owner, supers).is_none(),
+        "a House constructs its Supers once"
+    );
+}
+
 /// Supers are constructed by the scenario House owner before map objects.
 /// Storage-key order is not the original SuperWeaponTypes registry order.
 fn house_super_order(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Vec<InternedId> {
@@ -1174,7 +1208,7 @@ mod frame_tests {
         let id = InternedId::from_index(1);
         let mut instance = SuperWeaponInstance::new(id, id, 0);
         instance.is_active = true;
-        instance.charge_start_tick = (100) as i32;
+        instance.charge_start_tick = 100;
         instance.charge_duration = 10;
 
         assert_eq!(instance.charge_progress(104, 10), 0.4);

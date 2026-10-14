@@ -1578,6 +1578,8 @@ pub(crate) fn populate_special_houses(
             sim.session.game_options.starting_credits,
             sim.session.game_options.tech_level,
         );
+        // The House constructor builds its whole Supers vector.
+        crate::sim::superweapon::construct_house_supers(sim, rules, name_id, false);
         // Stock Neutral/Special are MultiplayPassive, which keeps them out of
         // defeat evaluation and out of the game-over alive scan. `country_name`
         // is always concrete here — the roster's `Country=` when the map named
@@ -1614,6 +1616,8 @@ pub(crate) fn populate_launch_houses(
             sim.session.game_options.starting_credits,
             sim.session.game_options.tech_level,
         );
+        // The House constructor builds its whole Supers vector.
+        crate::sim::superweapon::construct_house_supers(sim, rules, name_id, false);
         // `ScenarioClass::Create_Houses` passes every launch house through
         // `HouseClass::SetDifficulty` (humans with 1, `0x00688132`; computer
         // slots with their own, `0x006882B9`); Neutral and Special are never
@@ -2672,23 +2676,12 @@ pub(crate) fn initialize_map_roster_houses(
         // Every native House constructs its whole Supers vector before map
         // objects. Only the admitted campaign prefix has a measured ID cursor.
         if let Some(rules) = rules {
-            let mut supers = std::collections::BTreeMap::new();
-            for name in &rules.super_weapon_order {
-                let type_id = sim.interner.intern(name);
-                let mut instance =
-                    crate::sim::superweapon::SuperWeaponInstance::new(type_id, name_id, frame);
-                if campaign_house_id.is_some() {
-                    let super_id = sim
-                        .next_native_load_id()
-                        .expect("admitted campaign native-ID cursor");
-                    instance.bind_native_identity(super_id);
-                }
-                assert!(
-                    supers.insert(type_id, instance).is_none(),
-                    "distinct Super type registry"
-                );
-            }
-            sim.super_weapons.insert(name_id, supers);
+            crate::sim::superweapon::construct_house_supers(
+                sim,
+                rules,
+                name_id,
+                campaign_house_id.is_some(),
+            );
         }
         if let Some((_, computer_difficulty)) = campaign_difficulties {
             let rules = rules.expect("admitted campaign rules");

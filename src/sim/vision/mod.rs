@@ -431,14 +431,14 @@ impl OwnerVisibility {
         {
             self.tracked.unground.push(index as u32);
         }
-        }
+    }
 
     /// Panics unless a tracked grid holds what [`TrackedCells`] promises.
     #[cfg(test)]
     fn assert_tracked(&self) {
         if !self.tracked.complete {
             return;
-            }
+        }
         let listed = |list: &[u32]| {
             let mut listed = vec![false; self.cells.len()];
             for &index in list {
@@ -1745,8 +1745,8 @@ pub fn recompute_owner_visibility_in_place(
     let removed: Vec<_> = {
         let mut ids = admitted.iter().map(|entity| entity.stable_id()).peekable();
         fog.sight_admissions
-        .keys()
-        .copied()
+            .keys()
+            .copied()
             .filter(|key| {
                 while ids.next_if(|&id| id < key.0).is_some() {}
                 ids.peek() != Some(&key.0)
@@ -2127,7 +2127,7 @@ fn retained_sight_matches(
                         origin: admission.origin,
                         radius: admission.radius,
                     } == geometry
-    })
+            })
     }) && retained.next().is_none()
 }
 
@@ -2555,12 +2555,12 @@ pub(crate) fn cell_ground_mapped(
     cell: crate::map::cell_index::NativeCellIdentity,
 ) -> bool {
     match cell {
-            crate::map::cell_index::NativeCellIdentity::Real(index) => {
-                let cell = &terrain.cells()[index];
+        crate::map::cell_index::NativeCellIdentity::Real(index) => {
+            let cell = &terrain.cells()[index];
             fog.is_cell_revealed(viewer, cell.rx, cell.ry)
-            }
+        }
         crate::map::cell_index::NativeCellIdentity::Dummy => fog.is_dummy_ground_unshrouded(viewer),
-            }
+    }
 }
 
 /// A flat fire-leaf reveal of `range` cells around a cell, with no height
@@ -2948,10 +2948,10 @@ pub(crate) fn materialize_gap_generator_sources(
         // The gap fog is not a published bit, so a tracked grid's published
         // bits still match its knowledge.
         if !vis.tracked.complete || visit_every_cell() {
-        for index in 0..vis.cells.len() {
-            vis.publish_knowledge(index);
+            for index in 0..vis.cells.len() {
+                vis.publish_knowledge(index);
+            }
         }
-    }
     }
 }
 

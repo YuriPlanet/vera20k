@@ -312,7 +312,7 @@ fn a_charged_nuke_held_for_low_power_does_not_launch() {
     let sw = rules.super_weapon("NukeSpecial").unwrap();
     let mut instance = SuperWeaponInstance::new(nuke, owner, 0);
     instance.is_active = true;
-    instance.charge_start_tick = (0) as i32;
+    instance.charge_start_tick = 0;
     instance.charge_duration = 10;
     instance.is_ready = true;
     sim.super_weapons

@@ -1063,92 +1063,6 @@ class PowerEventControls:
             for row in self.predicates+self.registers for call in row['calls'])
 
 
-def generate_power_events():
-    """Replay only the existing36+5 predicates,4+12 registers,5 classifiers."""
-    from tools.native_oracle import NATIVE_FPCW, image_sha256
-    first=PowerEventControls()
-    for count in (0,1,-1,2,2147483647,-2147483648):
-        first.predicate(f'building402_count_{count}','1,32,0,402',counts=(count,0,0))
-    for kind in (32,57):
-        for house in (0,1,None):
-            first.predicate(f'building_kind{kind}_incoming{house}',f'1,{kind},0,7',house_index=house,counts=(1,0,2))
-    for value,house in ((0,1),(7,0),(999,0)):
-        first.predicate(f'power_value{value}_incoming{house}',f'1,58,0,{value}',house_index=house)
-    for output,drain in ((0,0),(0,100),(99,100),(100,100),(101,100),(-3,-1),(-1,0),(-3,2),(2147483646,2147483647)):
-        first.predicate(f'power58_{output}_{drain}','1,58,0,0',power=((output,drain),(300,200),(0,200)))
-    for output,drain in ((0,0),(99,100),(100,100),(-3,-1)):
-        first.predicate(f'power30_{output}_{drain}','1,30,0,0',power=((output,drain),(300,200),(0,200)))
-    first.predicate('power58_duplicate_country_reordered','1,58,0,0',order=(2,1,0),power=((300,200),(300,200),(100,200)))
-    for name,raw,raised,actor,init in (
-        ('entered_match','1,1,0,0',1,0,False),('entered_nonmatch','1,1,0,0',1,1,False),
-        ('entered_country7','1,1,0,7',1,1,False),('entered_wildcard','1,1,0,-1',1,1,False),
-        ('entered_wrong_kind','1,1,0,0',8,0,False),('entered_init','1,1,0,0',1,0,True),
-        ('entered_null_actor','1,1,0,0',1,None,False)):
-        first.predicate(name,raw,raised=raised,actor_index=actor,scenario_init=init)
-    for case in (
-        ('register32_trigger0_value7','1,32,0,7',0,None,(1,0,0),((0,100),(100,100),(0,100))),
-        ('register32_trigger7_value7','1,32,0,7',7,None,(1,0,0),((0,100),(100,100),(0,100))),
-        ('register58_trigger7_value0','1,58,0,0',7,None,(0,0,0),((0,100),(100,100),(0,100))),
-        ('register1_trigger7_actor0_value0','1,1,0,0',7,0,(0,0,0),((0,100),(100,100),(0,100)))):
-        first.register_legacy(*case)
-    first.assert_unchanged()
-    timer_unchanged=bytes(first.u.mem_read(first.timer,12))==dwords(0,0,30)
-    second=PowerEventControls()
-    second.u.hook_add(UC_HOOK_CODE,second.observe_admission)
-    for raw in ('1,13,0,5','1,36,0,49','1,1,0,-1'):second.readers[raw]=second.read_event(raw)
-    for count in (0,1):second.predicate('logic13_building402_count'+str(count),'1,32,0,402',raised=13,counts=(count,0,0))
-    for output in (99,100):second.predicate('logic13_power58_'+str(output),'1,58,0,0',raised=13,power=((output,100),(300,200),(0,200)))
-    second.predicate('logic13_entered_false','1,1,0,0',raised=13,actor_index=0)
-    latch=[]
-    extra_spans=[(0x71F950,0x71FA34),(0x7264C0,0x7265BD)]
-    extra_code=[bytes(second.u.mem_read(a,b-a)) for a,b in extra_spans]
-    for kind in (1,2,13,32,58):
-        second.u.mem_write(second.event+0x2C,dwords(kind))
-        latch.append(dict(kind=kind,class71f950=second.fixture.call(0x71F950,[],ecx=second.event)&255,
-            class71f9c0=second.fixture.call(0x71F9C0,[],ecx=second.event)&255))
-    for i,typ in enumerate(second.types):second.u.mem_write(typ+0xB4,dwords([0,7,0][i]))
-    for repeat in (False,True):
-        for frame,count in ((74,1),(75,0),(75,1),(123,1)):
-            second.setup_admission(['1,13,0,5','1,32,0,402'],frame=frame,count=count)
-            second.register_admission(f'logic13_mixed13_32_repeat{int(repeat)}_frame{frame}_count{count}',13,repeat)
-    second.setup_admission(['1,1,0,-1'])
-    second.register_admission('entered_wildcard_owner0',1,actor=0)
-    second.register_admission('entered_wrong_raise_keeps_live_and_event_house',13,actor=1)
-    second.u.mem_write(second.arena+0x87300+0x40,dwords(1))
-    second.register_admission('second_live_completed_event_reads_shared_retained_house',13,second_live=True)
-    second.register_admission('entered_wildcard_replaces_owner1',1,actor=1)
-    second.assert_unchanged()
-    assert extra_code==[bytes(second.u.mem_read(a,b-a)) for a,b in extra_spans]
-    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
-        constructor_defaults=first.constructor_defaults,reader_rows=first.readers,
-        predicate_controls=first.predicates+second.predicates,register_controls=first.registers+second.registers,
-        latch_classifications=latch,code_unchanged=True,zero_rng_calls=True,timer_bytes_unchanged=timer_unchanged,
-        code_spans=[dict(start=hex(a),end=hex(b),sha256=hashlib.sha256(code).hexdigest())
-                    for (a,b),code in zip(first.SPANS,first.original)])
-
-
-def power_event_metadata():
-    value = provenance(
-        scope='41 original HasOccurred controls for Event1/30/32/57/58,16 original RegisterEvent controls and5 original latch classifiers. Preserves the previously executed ALL01 scalar/owner/timer observations; not a full tagged capture or world schedule.',
-        assumptions=[
-            'Minimal three-House storage with Country bindings0/7/0 and an explicitly reordered duplicate-Country contrast; supplied512-entry native-layout on-map Building counters and cached signed power output/drain. Full House constructors/counter producers are excluded.',
-            'Original TEvent constructor and counted reader execute through existing owners. Actual Infantry vtable supplies unchanged owner-index/owner-pointer getters; no gameplay getter result is patched.',
-            'HasOccurred predicate priors use current frame123 and an unchanged30-frame timer. Register controls supply LiveTrigger/TriggerType fields; additive mixed13/32 controls execute original CdTimer/Reset at frames74/75/123 and repeat false/true.',
-            'Historical predicate input key scenario_init denotes raised-kind admission byte A8ED6B, not A8E7AC placement scope. No full Tag dispatch, Spring/TAction effects, retail ALL01 startup/capture or complete master frame executes.',
-            'The second LiveTrigger shares the exact Type-owned Event node; its supplied completed bit establishes skipped-event retained-House forwarding, not a reachable Event1 completion history.',
-            'Migration retained36+5 predicate,4+12 register and5 classifier outputs from the earlier two executed packets. This packaging pass did not rerun native execution.'],
-        substitutions=['Reuse FlagsFixture/VectorFixture arena, platform CRT/TLS imports and trigger_event_records counted reader. Original gameplay code/vtables unchanged. Explicit minimal world memory priors are not a physical world-load result.'],
-        entry_points={'event_constructor':0x71E6A0,'event_counted_read':0x7274DC,
-            'has_occurred':0x71E940,'register_event':0x7264C0,'on_map_type_count':0x49FAE0,
-            'country_house':0x502D30,'cached_power_ratio':0x4FCE30,'owner_index':0x6F9DB0,
-            'owner_house':0x6F9DC0,'event_retained_house':0x71FA30,'reset':0x726400,
-            'latch_classifier':0x71F950,'secondary_classifier':0x71F9C0})
-
-    value['reproduction'] = {'write': 'python -m tools.spatial_oracle.tag_lifecycle --power-events --write', 'check': 'python -m tools.spatial_oracle.tag_lifecycle --power-events --check', 'environment': {'VERA20K_GAMEMD_EXE': 'supported original Steam gamemd.exe'}, 'predicate_controls': 41, 'register_controls': 16, 'latch_classifications': 5}
-    value['migration'] = {'previous_results': [{'name': 'all01-power-event-controls.json', 'file_sha256': '48731f7bc412ba1285f9012700c2c779f497c7b052666824fd19d6cf731556d4'}, {'name': 'all01-power-event-admission-controls.json', 'file_sha256': '8ae841898b0ed41725379716bebd8eaf1376f4b6fb3bb3cded7e9e9c77ef305f'}], 'previous_supplied_priors': ['Minimal threeHouse storage with original country lookup array; first two Countries0/7, thirdduplicate0. Counters512 entries are supplied native layout; no real House/Object constructors or counter producer lifecycle is executed.', 'Original TEvent constructor executes and its kind/value scalar priors come from separate executed original counted Read.', 'Original Infantry vtable0x7EB058 exposes unchanged6F9DB0(owner index)/6F9DC0(owner pointer); no gameplay getter return is patched.', 'Current frame123, noScenarioInit except namedcontrast, no repeat. Four additional full7264C0 controls use supplied LiveTrigger/TriggerType state and original owner lookup, predicate and retained-House forwarding. Full Tag dispatch, Spring/gameplay actions or map world initialization is excluded.'], 'previous_admission_bounds': ['Initialized minimal original-layout priors, physical counted Event reader outputs, actual unchanged HasOccurred/RegisterEvent/latch classifier bodies.', 'No full Tag dispatch, Spring/TAction effects, House world/counter producers, original ALL01 startup/retail world or complete game-frame schedule executed.', 'Current timer comparisons use real original frame counters and CdTimer/Reset bodies; timer event5sec comes from original event reader.', 'A8ED6B is the raised-kind admission byte; prior field name scenario_init in the older scratch fixture does not denote A8E7AC placement scope.', 'Second LiveTrigger shares the exact Type-owned Event node; completed=1 is a deliberately supplied state to establish skipped-event House forwarding, not claimed reachable from Event1.'], 'validation': 'Original rows copied without alteration; AST and metadata/hash checks only. Selected generator not reexecuted in this migration.'}
-    return value
-
-
 def power_event_source_paths():
     return dict(producer=Path(__file__),fixture=Path(__file__).with_name('trigger_type_flags.py'),
         reader=Path(__file__).with_name('trigger_event_records.py'),
@@ -1467,10 +1381,6 @@ if __name__=='__main__':
         args.remove('--destroyed-house-events')
         finish_vectors(generate_destroyed_house_events,Path(__file__).with_name('trigger_destroyed_house_events.json'),
                        provenance=destroyed_house_event_metadata,source_paths=power_event_source_paths(),argv=args)
-    elif '--power-events' in args:
-        args.remove('--power-events')
-        finish_vectors(generate_power_events,Path(__file__).with_name('trigger_power_events.json'),
-                       provenance=power_event_metadata,source_paths=power_event_source_paths(),argv=args)
     else:
         finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata,
                        source_paths=source_paths())

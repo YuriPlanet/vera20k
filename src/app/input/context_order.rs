@@ -153,14 +153,14 @@ pub(crate) fn attack_action(
     };
     let mut action = if admitted
         && (sim.techno_player_controllable(actor_id, rules)
-        || resolved_unit_in_range(
-            sim,
-            actor_id,
-            target,
-            Some(rules),
-            sim.resolved_terrain.as_ref(),
-            overlay_registry,
-            Some(target),
+            || resolved_unit_in_range(
+                sim,
+                actor_id,
+                target,
+                Some(rules),
+                sim.resolved_terrain.as_ref(),
+                overlay_registry,
+                Some(target),
             )) {
         AttackAction::Attack
     } else if let TargetKind::Entity(target_id) = *target
@@ -1734,7 +1734,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
 
             if context_actions_enabled && let Some(target) = hover.as_ref() {
                 let orders = transport_entry_orders(
-                                    sim,
+                    sim,
                     &resources.rules,
                     &selected_units,
                     target.stable_id,
@@ -1745,9 +1745,9 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                             .into_iter()
                             .map(|command| CommandEnvelope::new(owner_id, execute_tick, command)),
                     );
-                        return finish_order(state, queued, speaker_id);
-                    }
+                    return finish_order(state, queued, speaker_id);
                 }
+            }
 
             // C4 plant: SEAL / Tanya / Psi-Corp Trooper clicking a CanC4 enemy
             // structure. Engineers already resolved their higher-priority
@@ -1945,7 +1945,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             // enemy the player cannot see is no object to click, as for the
             // cursor: the Cell under it takes the click.
             let force_move_target = hover
-                    .as_ref()
+                .as_ref()
                 .filter(|target| force_move && target.kind != HoverTargetKind::HiddenEnemy)
                 .map(|target| target.stable_id);
 
@@ -2030,8 +2030,8 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 }
                 let payload = if let Some(target_id) = attack_target {
                     let Some(payload) = object_attack_click_command(
-                            sim,
-                            &resources.rules,
+                        sim,
+                        &resources.rules,
                         &resources.overlay_registry,
                         owner_id,
                         order_mode,
@@ -2078,28 +2078,28 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                             let destination = match force_move_target {
                                 Some(target_id) => {
                                     crate::app::input::commands::object_move_destination(
-                                sim,
-                                &resources.rules,
-                                owner_id,
-                                stable_id,
-                    target_id,
+                                        sim,
+                                        &resources.rules,
+                                        owner_id,
+                                        stable_id,
+                                        target_id,
                                         crate::sim::world::MoveAction::Move,
                                         force_move_key,
                                     )
                                 }
                                 None => crate::app::input::commands::ordinary_cell_move_goal(
-                        sim,
-                        &resources.rules,
+                                    sim,
+                                    &resources.rules,
                                     Some(&resources.overlay_registry),
                                     owner_id,
                                     stable_id,
                                     (target_rx, target_ry),
                                     shift_click,
-                    )
+                                )
                                 .map(|(rx, ry)| TargetKind::Cell(rx, ry)),
                             };
                             let Some(destination) = destination else {
-                    continue;
+                                continue;
                             };
                             move_click_command(
                                 sim,
@@ -2108,7 +2108,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                                 stable_id,
                                 destination,
                             )
-                }
+                        }
                     }
                 };
                 queued.push(CommandEnvelope::new(owner_id, execute_tick, payload));
@@ -4239,8 +4239,8 @@ mod tests {
                     .unwrap()
                     .parasite
                     .set_paralysis_for_test(CdTimer::from_raw(
-                    gates["paralysis_start"].as_i64().unwrap() as i32,
-                    gates["paralysis_duration"].as_i64().unwrap() as i32,
+                        gates["paralysis_start"].as_i64().unwrap() as i32,
+                        gates["paralysis_duration"].as_i64().unwrap() as i32,
                     ));
             }
             if gates["warp_out"] == true {

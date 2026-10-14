@@ -893,8 +893,8 @@ pub(crate) fn object_move_destination(
     sim.object_move_click(viewer, entity_id, target_id, action, force_move_key, rules)
         .unwrap_or_else(|cause| {
             log::warn!("Move click over an object: {cause}");
-                None
-    })
+            None
+        })
 }
 
 /// Make ordinary local Move and AreaGuard bytes authoritative at issue time.

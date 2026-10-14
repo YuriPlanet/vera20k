@@ -67,12 +67,12 @@ mod foot_approach;
 mod foot_coordinate;
 mod foot_mark;
 mod foot_path;
+pub(crate) use drive_locomotion::drive_do_turn;
 #[cfg(test)]
 pub(crate) use foot_path::FindPathResult;
 pub(crate) use foot_path::FootPathOutcome;
 pub(crate) use foot_path::coord_cell;
 pub(crate) use track_fresh::{BlockingObject, ProcessMovementArgs};
-pub(crate) use drive_locomotion::drive_do_turn;
 mod foot_range_stop;
 mod foot_speed;
 pub(crate) mod ground_pose;

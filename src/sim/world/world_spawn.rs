@@ -1236,7 +1236,8 @@ impl Simulation {
             return None;
         }
         //458A92 reads Object5F5B90 -> Type45EC20's sentinel list once.
-        let foundation = crate::rules::foundation::foundation_cell_offsets(&building.foundation);
+        let foundation =
+            crate::rules::foundation::foundation_cell_offsets(building.type_facts.foundation());
         let origin = (
             crate::util::lepton::lepton_to_cell_packed(coord.x),
             crate::util::lepton::lepton_to_cell_packed(coord.y),

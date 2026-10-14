@@ -682,7 +682,8 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // Integrated StateHasher pin after executed scoped feed attribution. The test
 // below recovers current main exactly with retired feeds and preserves serialized
 // gameplay, the live Dummy and all three RNG streams; this is a Rust ratchet.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x69E4_BD1F_0A5C_4319;
+// Re-pinned after merging main's +0x438/+0x439 latches into the hash.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x3B11_939D_CFE5_8242;
 
 // ALL01 r6 (fork-local schema345) used DefaultHasher before main's
 // pinned StateHasher, entity/fog digests and owner migrations. These remain

@@ -314,28 +314,28 @@ fn forced_no_kidding_gates_match_native_walk_and_jumpjet_rows() {
                 loco.set_walk_destination(flag("moving").then(|| DriveCoord::cell(6, 5, 0)));
             }
             man.locomotor = Some(loco);
-                let before = serde_json::to_value(&man).unwrap();
-                let mut sim = sim_with(man);
-                let rng = sim.scenario_rng.state();
-                let flags = ScatterFlags::new(flag("first_bool"), flag("second_bool"));
-                let admitted = sim
-                    .infantry_scatter_admitted(
-                        1,
-                        flags,
-                        &rules,
-                        crate::sim::world::FrameEffects::default(),
-                    )
-                    .unwrap();
+            let before = serde_json::to_value(&man).unwrap();
+            let mut sim = sim_with(man);
+            let rng = sim.scenario_rng.state();
+            let flags = ScatterFlags::new(flag("first_bool"), flag("second_bool"));
+            let admitted = sim
+                .infantry_scatter_admitted(
+                    1,
+                    flags,
+                    &rules,
+                    crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap();
             assert_eq!(admitted, flag("gate_admitted"), "{row}");
-                assert_eq!(sim.scenario_rng.state(), rng, "{row}");
-                assert_eq!(
-                    serde_json::to_value(sim.substrate.entities.get(1).unwrap()).unwrap(),
-                    before,
-                    "{row}"
-                );
-                checked += 1;
-            }
+            assert_eq!(sim.scenario_rng.state(), rng, "{row}");
+            assert_eq!(
+                serde_json::to_value(sim.substrate.entities.get(1).unwrap()).unwrap(),
+                before,
+                "{row}"
+            );
+            checked += 1;
         }
+    }
     assert_eq!(checked, 128);
 }
 

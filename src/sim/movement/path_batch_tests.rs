@@ -530,15 +530,15 @@ fn a_refused_walk_retry_waits_for_the_next_batch() {
     let (mut sim, [_, infantry]) = jam(&rules);
     sim.batch_path_searches();
     let run = |sim: &mut Simulation, request: &FootPathRequest| {
-    sim.substrate
-        .entities
-        .get_mut(infantry)
-        .unwrap()
-        .mission_leaf
-        .set_infantry_doing_verified(3)
-        .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(infantry)
+            .unwrap()
+            .mission_leaf
+            .set_infantry_doing_verified(3)
+            .unwrap();
         sim.run_foot_path_request(request, Some(&rules), None, FrameEffects::default())
-        .expect("the request runs");
+            .expect("the request runs");
         let entity = sim.substrate.entities.get(infantry).unwrap();
         entity.mission_leaf.as_infantry().unwrap().doing()
     };

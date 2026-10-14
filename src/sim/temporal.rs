@@ -1182,10 +1182,10 @@ impl Simulation {
                 .get(id)
                 .is_some_and(|entity| entity.active_chrono_warp().is_some())
             {
-            match self.process_chrono_warp(id, rules, ctx) {
-                Ok(changed) => *bridge_state_changed |= changed,
-                Err(error) => log::warn!("chrono warp {id} prologue Process: {}", error.cause),
-            }
+                match self.process_chrono_warp(id, rules, ctx) {
+                    Ok(changed) => *bridge_state_changed |= changed,
+                    Err(error) => log::warn!("chrono warp {id} prologue Process: {}", error.cause),
+                }
             } else {
                 // Infantry51BB81..51BBC0 runs the ordinary Teleport's extra
                 // Process even in Limbo. Its71930C..719322 early arm calls the

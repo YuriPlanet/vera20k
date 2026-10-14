@@ -1024,8 +1024,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             self.owner_type()?,
             owner.veterancy.rank(),
         )
-            .and_then(|id| rules.weapon(id))
-            .map(|weapon| weapon.burst)
+        .and_then(|id| rules.weapon(id))
+        .map(|weapon| weapon.burst)
     }
 
     fn owner_health(&self) -> i32 {

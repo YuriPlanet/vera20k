@@ -1945,8 +1945,8 @@ impl Simulation {
     /// Later visits retain that target. An absent target or wholly spent
     /// team clears it and finishes; otherwise the existing CoordinateAttack
     /// owner orders the members. No RNG or timer write in this handler.
-    /// Source: original6EC9A0..6ECA64 and6E9605..6E961D; Steam identity is
-    /// recorded in tools/spatial_oracle/trigger_power_events.meta.json.
+    /// Source: original6EC9A0..6ECA64 and6E9605..6E961D in Steam gamemd.exe
+    /// (SHA-256 3e81a617..08600).
     /// Terrain targets and retained Dummy identity remain the existing
     /// TeamTarget residuals; ALL01 Nuke_Repair's waypoint364 names a Building.
     fn team_action_attack_waypoint(

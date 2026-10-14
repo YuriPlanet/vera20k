@@ -158,6 +158,14 @@ pub(super) fn commit_receiver_health(
     // The shared Tag owner receives actor=victim and source=attacker; it reads
     // the source's current House during Event44, never a captured House pointer.
     // Steam3e81a617..08600; tools/spatial_oracle/object_health --damage-tags.
+    //
+    // RESIDUAL: earlier in the same body the hit raises the damage-state Tag
+    // events through 0x006E53A0 (0x005F55F0..0x005F573F): 39/42 when it turns
+    // the object yellow, 40/43 when it turns it red, 38/41 on its first
+    // damage. VERA dispatches none of them. Trigger: a map trigger on events
+    // 38-43 (FirstDamaged/HalfHealth/QuarterHealth). Effect: it never fires.
+    // Frequency: unmeasured across retail maps. Risk: the scripted reaction to
+    // a damaged object is missing.
     if callbacks
         && attacker_id != RAD_NO_ATTACKER
         && matches!(
