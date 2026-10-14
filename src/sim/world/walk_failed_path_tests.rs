@@ -34,7 +34,7 @@ fn engineer_at(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) -> u64 {
 /// Infantry 0x51AA40(cell, true) through the shared Walk setter owner.
 fn order_walk(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)) {
     assert!(
-        sim.set_infantry_destination(
+        sim.assign_infantry_destination(
             id,
             crate::sim::components::NavTargetRef::cell(target.0, target.1),
             rules,
@@ -104,11 +104,11 @@ fn far_failure_stops_walk_clears_target_and_queues_guard_for_a_human_house() {
         e.mission.queued()
     );
     // 0x51DBB2 Walk Stop, then 0x4D413A SetDestination(NULL,1) and the outer
-    // Process cancellation: destination, NavCom and MovementTarget are gone.
+    // Process cancellation: destination and NavCom are gone.
     assert!(e.locomotor.as_ref().unwrap().walk_destination().is_none());
     assert_eq!(e.locomotor.as_ref().unwrap().walk_is_moving(), Some(false));
     assert!(e.navigation.nav_com.is_none());
-    assert!(e.movement_target.is_none());
+    assert!(crate::sim::movement::motion_query::is_moving(&e) != Some(true));
     // 0x4D4149 Assign_Target(NULL).
     assert!(e.attack_target.is_none());
     // A Clear current cell answers 0 at 0x51DBAC.
@@ -132,7 +132,8 @@ fn building_target_redirects_to_a_nearby_cell_and_the_walk_completes_there() {
     for _ in 0..400 {
         sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
         let e = sim.substrate.entities.get(id).unwrap();
-        if e.movement_target.is_none() && e.locomotor.as_ref().unwrap().walk_destination().is_none()
+        if crate::sim::movement::motion_query::is_moving(&e) != Some(true)
+            && e.locomotor.as_ref().unwrap().walk_destination().is_none()
         {
             break;
         }
@@ -263,7 +264,7 @@ fn own_cell_destination_fails_and_clears_the_order() {
     assert!(e.locomotor.as_ref().unwrap().walk_destination().is_none());
     assert_eq!(e.locomotor.as_ref().unwrap().walk_is_moving(), Some(false));
     assert!(e.navigation.nav_com.is_none());
-    assert!(e.movement_target.is_none());
+    assert!(crate::sim::movement::motion_query::is_moving(&e) != Some(true));
     assert_eq!(e.mission.queued(), MissionId::NONE);
     assert_eq!(
         e.mission.current(),
@@ -485,13 +486,9 @@ fn infantry_damage_scatter_reaches_the_ordinary_walk_process() {
     );
     for _ in 0..200 {
         sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
-        if sim
-            .substrate
-            .entities
-            .get(victim)
-            .unwrap()
-            .movement_target
-            .is_none()
+        if crate::sim::movement::motion_query::is_moving(
+            sim.substrate.entities.get(victim).unwrap(),
+        ) != Some(true)
         {
             break;
         }

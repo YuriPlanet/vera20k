@@ -15,7 +15,7 @@
 
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::fixed_math::SimFixed;
 
 /// World position in isometric cell coordinates plus sub-cell lepton offset.
 ///
@@ -100,23 +100,6 @@ pub(crate) use crate::sim::building_construction::BuildingDown;
 #[cfg(test)]
 pub(crate) use crate::sim::building_construction::BuildingUp;
 
-/// Move-order scheduling adapter, with no gamemd counterpart (#689).
-///
-/// The order adapter a move order attaches (ground orders through
-/// `issue_move_command_with_destination`, Jumpjet orders through their own
-/// setter). Its readers take its presence as "moving". It keeps no goal: the
-/// locomotor destination and Foot's NavCom own it. No order keeps route
-/// cells either: a Foot's route is its Foot+5E0 queue
-/// (`navigation.path_replay`).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct MovementTarget {
-    /// The order's speed in leptons per second, stamped when the adapter is
-    /// attached. Movement reads the owner's live speed getter, not this; the
-    /// stamp stays only for the Jumpjet order speed, the no-rules fallback in
-    /// `foot_speed::adjusted_speed` and the state hash.
-    pub speed: SimFixed,
-}
-
 /// Native-like navigation target reference.
 ///
 /// In gamemd this is an `AbstractClass*`. Phase 1 needs cell targets for normal
@@ -146,8 +129,7 @@ impl NavTargetRef {
 
 /// FootClass-style owner navigation fields.
 ///
-/// `nav_com` is the owner destination. It must stay separate from
-/// `MovementTarget`, which is only the active execution path.
+/// `nav_com` is the owner destination (Foot+0x5A4).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct NavigationState {
     /// Foot+55C is retained lifecycle history, not current occupancy.
@@ -169,10 +151,12 @@ pub struct NavigationState {
     pub suspended_nav_com: Option<NavTargetRef>,
     #[serde(default)]
     pub nav_queue: Vec<NavTargetRef>,
-    /// Drive path execution reached the destination cell, but the owner
-    /// no-active-track arrival clear has not run yet.
+    /// A class-setter call (vt+0x480) that Rust deferred and still owes: a
+    /// mission restore's `Assign_Destination(saved, 1)` (`0x004D8F99`) made
+    /// where only NavCom could be written. `Simulation::complete_pending_order`
+    /// makes it at the object's next Process entry.
     #[serde(default)]
-    pub pending_arrival_clear: bool,
+    pub pending_destination_setter: bool,
     /// FootClass+530, constructor positive-zero. FootUnlimbo4D72EA..4D72F4
     /// copies TechnoType+2F0 only after successful Techno placement, neighbor
     /// publication and the optional AirTracker tail. It outlives routes and
@@ -202,7 +186,7 @@ impl NavigationState {
             nav_com: None,
             suspended_nav_com: None,
             nav_queue: Vec::new(),
-            pending_arrival_clear: false,
+            pending_destination_setter: false,
             threat_avoidance_coefficient: default_threat_avoidance_coefficient(),
         }
     }
@@ -240,7 +224,7 @@ impl NavigationState {
 /// both timers at the current frame (0x4D3320, 0x4D335B), stores +64C = 10
 /// (0x4D332C) and +6B7 = 0 (0x4D3451). Set_Destination_Internal 0x004D94B0
 /// rewrites the timers and latch at 0x4D96C2..0x4D9707 for every accepted
-/// setter, including a null destination, so this owner outlives MovementTarget.
+/// setter, including a null destination.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct FootPathRuntime {
     /// Foot+640/+648, including the native frame anchor.
@@ -274,6 +258,17 @@ impl FootPathRuntime {
             path_blocked: false,
             retries_left: 10,
             scold_latch: 0,
+        }
+    }
+
+    /// Find_Path's urgency on the code-2 ladders (Walk 0x0075B979, Drive/Ship
+    /// 0x4B36BC..0x4B36EF): 2 once the latched blockage timer has expired,
+    /// else 1.
+    pub(crate) fn code2_urgency(&self, frame: u32) -> u8 {
+        if self.path_blocked && self.blocked_timer.expired(frame as i32) {
+            2
+        } else {
+            1
         }
     }
 
@@ -600,29 +595,6 @@ pub struct DriveOccupationFootprint {
     pub layer: MovementLayer,
 }
 
-/// An adapter with a zero speed stamp.
-impl Default for MovementTarget {
-    fn default() -> Self {
-        Self { speed: SIM_ZERO }
-    }
-}
-
-/// Persistent high-level order state that survives transient combat/movement components.
-///
-/// This keeps attack-move intent alive while systems temporarily
-/// add/remove `MovementTarget` and `AttackTarget`.
-///
-/// Slice 6: the "is this unit busy?" signalling role moved to the `mission`
-/// substrate (`mission::verb::get_current_mission`/`is_busy`). What remains here
-/// is the AttackMove goal. Area Guard uses its native mission and
-/// ArchiveTarget instead. Retiring this enum entirely waits
-/// on a goal field landing on the mission/nav substrate (a later slice).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum OrderIntent {
-    /// Move toward a destination but auto-acquire enemies along the way.
-    AttackMove { goal_rx: u16, goal_ry: u16 },
-}
-
 /// Which part of a multi-part voxel model an entity/atlas entry represents.
 ///
 /// Non-turret units use `Composite` (body+turret+barrel baked together).
@@ -859,6 +831,7 @@ pub struct PendingC4Detonation {
 mod tests {
     use super::*;
     use crate::sim::movement::DriveLocomotionRuntime;
+    use crate::util::fixed_math::SIM_ZERO;
 
     #[test]
     fn test_position_creation() {
@@ -880,8 +853,6 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Position>();
         assert_send_sync::<Health>();
-        assert_send_sync::<MovementTarget>();
-        assert_send_sync::<OrderIntent>();
         assert_send_sync::<BuildingUp>();
         assert_send_sync::<VoxelAnimation>();
         assert_send_sync::<HarvestOverlay>();

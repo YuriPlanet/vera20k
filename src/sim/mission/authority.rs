@@ -30,7 +30,7 @@ use crate::sim::world::Simulation;
 use super::concrete_effects::UnavailableConcreteMissionEffects;
 use super::concrete_effects::{
     AuthorityUnavailable, ConcreteMissionEffects, ConcreteSetterRequest,
-    RepresentedConcreteMissionEffects, represented_assign_destination_mode_one,
+    RepresentedConcreteMissionEffects, represented_assign_destination,
     represented_assign_target_admitted,
 };
 use super::readiness::{
@@ -69,9 +69,9 @@ pub(crate) fn restore_entity_after_target_expiry(
     debug_assert!(restored);
     represented_assign_target_admitted(entity, saved_target, saved_target_commits);
     if category != EntityCategory::Structure {
-        represented_assign_destination_mode_one(entity, saved_destination);
+        represented_assign_destination(entity, saved_destination);
         if saved_destination.is_some() {
-            entity.navigation.pending_arrival_clear = true;
+            entity.navigation.pending_destination_setter = true;
         }
     }
     true
@@ -123,21 +123,10 @@ pub(crate) enum MissionAuthorityError {
     AuthorityUnavailable(#[from] AuthorityUnavailable),
 }
 
-/// Supplies exact non-Mission inputs for Queue's synchronous readiness call.
-///
-/// Validation runs against a copied post-Queue Mission preview before the real
-/// queue write.  The final readiness value is deliberately read again after
-/// the real write and is never cached from validation. The trait is sealed:
-/// successful validation guarantees that this fresh read is available, so an
-/// integration error cannot be returned after Queue has mutated real state.
+/// Answers Queue's synchronous readiness call (`0x005B362D`), after the queue
+/// write, as the per-tick promotion answers it ([`ready_to_commence_answer`]).
+/// The trait is sealed; tests script the answer.
 pub(crate) trait ReadyInputProvider: ready_private::Sealed {
-    fn validate_ready_inputs(
-        &self,
-        sim: &Simulation,
-        receiver: u64,
-        preview: &MissionCom,
-    ) -> Result<(), ReadyUnavailable>;
-
     fn ready_to_commence(&self, sim: &Simulation, receiver: u64, mission: &MissionCom) -> bool;
 }
 
@@ -347,8 +336,8 @@ fn evaluate_ready(
                         // the ground height at its cell, minus the bridge deck
                         // when on a bridge — so ground and bridge both read 0,
                         // airborne reads positive, only below-ground reads
-                        // negative. `LocomotorState::altitude` is exactly that
-                        // quantity, so the producer is a one-liner.
+                        // negative. GetHeight's port, `current_fly_height`, is
+                        // exactly that quantity, so the producer is a one-liner.
                         //
                         // It is not wired up because turning it on stalls
                         // vehicles. Supplying it makes this branch's
@@ -362,27 +351,25 @@ fn evaluate_ready(
                         // Root cause is upstream of here: the dominant deferral
                         // reads `effective=Move, current=NONE, queued=Move,
                         // bypass_latch=0, moving=true` — a unit already moving
-                        // with no commenced mission at all. Our command path
-                        // sets `movement_target` directly AND queues the
-                        // mission, so movement precedes commencement and the
-                        // gate then refuses to commence because the unit is
-                        // moving. Native runs it the other way: the order
-                        // queues, the unit is not yet moving, the gate
-                        // commences, and the mission handler starts the move.
+                        // with no commenced mission at all. The order's class
+                        // destination setter starts the locomotor in the same
+                        // MEGAMISSION call that queues the mission, natively
+                        // too (`0x004C747C`), so movement precedes
+                        // commencement there as well; what lets native
+                        // commence such a unit is not established.
                         // `set_movement_bypass_after_verified_queue` — native's
                         // escape hatch for exactly this — is called only by the
                         // refinery and jumpjet completion paths here, never by
                         // the general queue an ordinary Move uses.
                         //
-                        // So this stays `None` until the command path stops
-                        // starting movement ahead of commencement. Until then
-                        // the host maps the resulting error to permissive-ready
-                        // and the Unit moving-defer branch is inert — which is
-                        // why none of the Drive/Ship readiness mapping can
-                        // affect vehicle behaviour yet.
+                        // So this stays `None` until that is established. Until
+                        // then `ready_to_commence_answer` maps the resulting
+                        // error to ready and the Unit moving-defer branch is
+                        // inert — which is why none of the Drive/Ship readiness
+                        // mapping can affect vehicle behaviour yet.
                         // MCV Event9 stops before queuing Unload, so this route
-                        // can supply native GetHeight without the existing Move
-                        // adapter's start-before-Commence dependency cycle.
+                        // can supply native GetHeight without a Move's
+                        // start-before-Commence cycle.
                         signed_height: (mission.queued()
                             == MissionId::from_known(super::MissionType::Unload)
                             && crate::sim::mcv_deploy::is_mcv(sim, entity, rules))
@@ -440,34 +427,44 @@ fn evaluate_ready(
 }
 
 impl ReadyInputProvider for EntityReadyInputProvider {
-    fn validate_ready_inputs(
-        &self,
-        sim: &Simulation,
-        receiver: u64,
-        preview: &MissionCom,
-    ) -> Result<(), ReadyUnavailable> {
-        evaluate_ready(sim, receiver, preview, None, false).map(|_| ())
-    }
-
     fn ready_to_commence(&self, sim: &Simulation, receiver: u64, mission: &MissionCom) -> bool {
-        evaluate_ready(sim, receiver, mission, None, false)
-            .expect("successful readiness preflight must make the fresh read available")
+        ready_to_commence_answer(sim, receiver, mission, None)
     }
 }
 
 impl ReadyInputProvider for LiveReadyInputProvider<'_> {
-    fn validate_ready_inputs(
-        &self,
-        sim: &Simulation,
-        receiver: u64,
-        preview: &MissionCom,
-    ) -> Result<(), ReadyUnavailable> {
-        evaluate_ready(sim, receiver, preview, Some(self.rules), false).map(|_| ())
-    }
-
     fn ready_to_commence(&self, sim: &Simulation, receiver: u64, mission: &MissionCom) -> bool {
-        evaluate_ready(sim, receiver, mission, Some(self.rules), false)
-            .expect("successful readiness preflight must make the fresh read available")
+        ready_to_commence_answer(sim, receiver, mission, Some(self.rules))
+    }
+}
+
+/// `Ready_To_Commence` (vt+0x200) as VERA answers it, for Queue's synchronous
+/// call and the per-tick promotion alike. Absent locomotor producers read as
+/// "not moving now", so every later exact gate still evaluates.
+///
+/// RESIDUAL: a Locomotor or SignedHeight input the evaluation cannot read
+/// answers ready, the moving-defer branch's pass outcome. Unit readiness has
+/// no `Get_Height` (vt+0x1C8) producer outside an MCV's Unload (see
+/// `evaluate_ready`), so a moving Unit skips the defer at `0x007442E9..
+/// 0x00744327`. Trigger: a Unit queues a mission while it moves on a mission
+/// other than Guard, or Attack with no target, without the `+0xB8` bypass.
+/// Effect: VERA commences the queued mission at once; native keeps it queued
+/// until the Unit stops moving. Frequency: every such queue, e.g. an
+/// attack-mover's scan hit while it drives. Risk: missions start earlier,
+/// so a driving Unit stops to attack where native drives on.
+///
+/// Rules-free callers answer not ready on a Unit's factory and contact
+/// lookups, so the next per-tick promotion decides.
+fn ready_to_commence_answer(
+    sim: &Simulation,
+    receiver: u64,
+    mission: &MissionCom,
+    rules: Option<&RuleSet>,
+) -> bool {
+    match evaluate_ready(sim, receiver, mission, rules, true) {
+        Ok(ready) => ready,
+        Err(ReadyUnavailable::Locomotor | ReadyUnavailable::SignedHeight) => true,
+        Err(_) => false,
     }
 }
 
@@ -582,16 +579,8 @@ impl Simulation {
     /// Update (`0x0043FE43`/`0x0043FFA3`); verified via
     /// `decompile_function 0x007360c0` / `0x0051bab0` and the Queue/Commence
     /// active-caller census. Commence is a fieldwise no-op on an empty queue,
-    /// so the Ready read is skipped there (pure, result unused).
-    ///
-    /// Readiness degradation (recorded residual): the exact locomotor family
-    /// states and the signed object height have no live producers, so the
-    /// native moving-defer branch cannot be evaluated; that unavailability is
-    /// mapped to "promote" (the branch's pass outcome). Every other gate —
-    /// excluded missions, deploy/unload latches, tracker bytes, the Radio
-    /// slot-0 weapons-factory hold, the no-contact factory-cell hold, the
-    /// Infantry firing/falling/Doing gates, the Aircraft and Building latches
-    /// — evaluates exactly. Any other unavailable input blocks promotion.
+    /// so the Ready read is skipped there (pure, result unused). Readiness is
+    /// [`ready_to_commence_answer`], with its moving-defer residual.
     pub(crate) fn mission_host_promote(&mut self, receiver: u64, now: u32, rules: &RuleSet) {
         let queued = self
             .substrate
@@ -608,22 +597,21 @@ impl Simulation {
 
     /// `Ready_To_Commence` (vt+0x200) as a query, also for handlers that act
     /// between the answer and the Commence (Mission_Unload state 4 sends
-    /// OVER_OUT first, `0x0073E264..0x0073E279`). Degraded moving gate:
-    /// absent locomotor producers read as "not moving now" so every later
-    /// exact gate still evaluates; a residual Locomotor/SignedHeight error (a
-    /// live producer without a height owner) degrades to the branch's pass
-    /// outcome.
+    /// OVER_OUT first, `0x0073E264..0x0073E279`): [`ready_to_commence_answer`].
     pub(crate) fn mission_ready_to_commence(&self, receiver: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(receiver) else {
             return false;
         };
-        match evaluate_ready(self, receiver, &entity.mission, Some(rules), true) {
-            Ok(ready) => ready,
-            Err(ReadyUnavailable::Locomotor | ReadyUnavailable::SignedHeight) => true,
-            Err(_) => false,
-        }
+        ready_to_commence_answer(self, receiver, &entity.mission, Some(rules))
     }
 
+    /// `MissionClass::Queue_Mission @ 0x005B35E0` (vt+0x1E8): the guarded
+    /// queue write (`0x005B35E7..0x005B361A`, which also clears the `+0xB8`
+    /// bypass), then, when the low byte of `commence_now` is set,
+    /// Ready_To_Commence (`0x005B362D`) and Commence (`0x005B363B`). The
+    /// outer guards (Wait with Guard, Selling) return before both; the
+    /// same-mission guard skips only the write. The readiness answer comes
+    /// after the write, as native asks it.
     pub(crate) fn mission_queue_exact(
         &mut self,
         receiver: u64,
@@ -635,34 +623,19 @@ impl Simulation {
         let entity = self
             .substrate
             .entities
-            .get(receiver)
+            .get_mut(receiver)
             .ok_or(MissionAuthorityError::MissingReceiver(receiver))?;
-        if !aircraft_allows(entity, requested) {
+        if !aircraft_allows(entity, requested)
+            || verb::queue_base(&mut entity.mission, requested)
+                == QueueContinuation::OuterGuardBlocked
+        {
             return Ok(());
         }
         // Derived wrappers forward the full dword, but MissionClass::Queue
         // reads only its low byte to decide whether promotion is immediate.
-        let commence_immediately = commence_now as u8 != 0;
-
-        let mut preview = entity.mission;
-        if verb::queue_base(&mut preview, requested) == QueueContinuation::OuterGuardBlocked {
+        if commence_now as u8 == 0 {
             return Ok(());
         }
-        if commence_immediately {
-            readiness.validate_ready_inputs(self, receiver, &preview)?;
-        }
-
-        let entity = self
-            .substrate
-            .entities
-            .get_mut(receiver)
-            .expect("receiver was resolved before Queue mutation");
-        let continuation = verb::queue_base(&mut entity.mission, requested);
-        debug_assert_eq!(continuation, QueueContinuation::Continue);
-        if !commence_immediately {
-            return Ok(());
-        }
-
         let ready = {
             let entity = self
                 .substrate
@@ -724,8 +697,9 @@ impl Simulation {
     }
 
     /// Dispatch the same concrete destination owner used by Override/Restore,
-    /// without changing a mission or its Target. AreaGuard and Rescue require
-    /// its synchronous Move_To/path/timer effects before their cadence tail.
+    /// without changing a mission or its Target: vt+0x480(requested, 1).
+    /// AreaGuard and Rescue require its synchronous Move_To/path/timer effects
+    /// before their cadence tail.
     pub(crate) fn assign_destination_represented(
         &mut self,
         receiver: u64,
@@ -734,17 +708,48 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
+        self.assign_destination_through(
+            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects),
+            receiver,
+            requested,
+        )
+    }
+
+    /// [`Self::assign_destination_represented`] with vt+0x480's mode 0, which
+    /// keeps NavQueue: Enter_Idle_Mode (`0x004D8395`), Foot Approach
+    /// (`0x004D5A6A`) and Mission_Enter (`0x004D939A`) pass it when they take
+    /// NavQueue[0].
+    pub(crate) fn assign_destination_keeping_queue(
+        &mut self,
+        receiver: u64,
+        requested: Option<NavTargetRef>,
+        rules: Option<&RuleSet>,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<(), MissionAuthorityError> {
+        self.assign_destination_through(
+            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects)
+                .keeping_queue(),
+            receiver,
+            requested,
+        )
+    }
+
+    fn assign_destination_through(
+        &mut self,
+        mut effects: RepresentedConcreteMissionEffects<'_>,
+        receiver: u64,
+        requested: Option<NavTargetRef>,
+    ) -> Result<(), MissionAuthorityError> {
         if !self.substrate.entities.contains(receiver) {
             return Err(MissionAuthorityError::MissingReceiver(receiver));
         }
-        let mut effects =
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects);
         let prepared = effects.preflight(
             self,
             receiver,
             ConcreteSetterRequest::Destination { requested },
         )?;
-        effects.apply_destination_mode_one(self, &prepared, requested);
+        effects.apply_destination(self, &prepared, requested);
         Ok(())
     }
 
@@ -867,7 +872,6 @@ impl Simulation {
         now: u32,
         readiness: &impl ReadyInputProvider,
     ) -> Result<(), MissionAuthorityError> {
-        self.validate_jumpjet_second_gate_previews(receiver, now, readiness)?;
         self.mission_queue_exact(receiver, MISSION_GUARD, 1, now, readiness)?;
         {
             let entity = self
@@ -893,39 +897,6 @@ impl Simulation {
                 .expect("receiver remains present for the second Jumpjet Commence");
             commence_entity_mission(entity, now);
         }
-        Ok(())
-    }
-
-    fn validate_jumpjet_second_gate_previews(
-        &self,
-        receiver: u64,
-        now: u32,
-        readiness: &impl ReadyInputProvider,
-    ) -> Result<(), MissionAuthorityError> {
-        let entity = self
-            .substrate
-            .entities
-            .get(receiver)
-            .ok_or(MissionAuthorityError::MissingReceiver(receiver))?;
-
-        let mut post_queue = entity.mission;
-        let queue_continues = aircraft_allows(entity, MISSION_GUARD)
-            && verb::queue_base(&mut post_queue, MISSION_GUARD) == QueueContinuation::Continue;
-
-        if !queue_continues {
-            post_queue.set_movement_bypass_after_verified_queue();
-            readiness.validate_ready_inputs(self, receiver, &post_queue)?;
-            return Ok(());
-        }
-
-        let mut no_commence = post_queue;
-        no_commence.set_movement_bypass_after_verified_queue();
-        readiness.validate_ready_inputs(self, receiver, &no_commence)?;
-
-        let mut successful_commence = post_queue;
-        verb::commence_base(&mut successful_commence, now);
-        successful_commence.set_movement_bypass_after_verified_queue();
-        readiness.validate_ready_inputs(self, receiver, &successful_commence)?;
         Ok(())
     }
 
@@ -1019,7 +990,7 @@ impl Simulation {
                 .map(|entity| entity.category),
             Some(EntityCategory::Structure)
         ) {
-            effects.apply_destination_mode_one(self, &prepared, packet.destination);
+            effects.apply_destination(self, &prepared, packet.destination);
         }
         Ok(true)
     }
@@ -1064,7 +1035,7 @@ impl Simulation {
         debug_assert!(restored);
         effects.apply_target(self, &prepared, saved_target);
         if category != EntityCategory::Structure {
-            let setter_ran = effects.apply_destination_mode_one(self, &prepared, saved_destination);
+            let setter_ran = effects.apply_destination(self, &prepared, saved_destination);
             if saved_destination.is_some()
                 && !setter_ran
                 && let Some(entity) = self.substrate.entities.get_mut(receiver)
@@ -1078,7 +1049,7 @@ impl Simulation {
                 // restored object holds its order and never moves toward it,
                 // which is exactly the state a blocked-step Override leaves it
                 // in.
-                entity.navigation.pending_arrival_clear = true;
+                entity.navigation.pending_destination_setter = true;
             }
         }
         Ok(true)
@@ -1103,22 +1074,13 @@ mod tests {
     const ATTACK: MissionId = MissionId::from_raw(1);
 
     struct TestReadyProvider {
-        validation: Result<(), ReadyUnavailable>,
         ready: bool,
-        validations: Cell<u32>,
         reads: Cell<u32>,
         missions: RefCell<Vec<MissionCom>>,
     }
 
     struct SequencedReadyProvider {
         values: RefCell<VecDeque<bool>>,
-        validations: Cell<u32>,
-        reads: Cell<u32>,
-        missions: RefCell<Vec<MissionCom>>,
-    }
-
-    struct RejectSuccessfulJumpjetPreview {
-        validations: Cell<u32>,
         reads: Cell<u32>,
         missions: RefCell<Vec<MissionCom>>,
     }
@@ -1127,7 +1089,6 @@ mod tests {
         fn new(values: impl IntoIterator<Item = bool>) -> Self {
             Self {
                 values: RefCell::new(values.into_iter().collect()),
-                validations: Cell::new(0),
                 reads: Cell::new(0),
                 missions: RefCell::new(Vec::new()),
             }
@@ -1137,24 +1098,14 @@ mod tests {
     impl ready_private::Sealed for SequencedReadyProvider {}
 
     impl ReadyInputProvider for SequencedReadyProvider {
-        fn validate_ready_inputs(
-            &self,
-            _sim: &Simulation,
-            _receiver: u64,
-            preview: &MissionCom,
-        ) -> Result<(), ReadyUnavailable> {
-            self.validations.set(self.validations.get() + 1);
-            self.missions.borrow_mut().push(*preview);
-            Ok(())
-        }
-
         fn ready_to_commence(
             &self,
             _sim: &Simulation,
             _receiver: u64,
-            _mission: &MissionCom,
+            mission: &MissionCom,
         ) -> bool {
             self.reads.set(self.reads.get() + 1);
+            self.missions.borrow_mut().push(*mission);
             self.values
                 .borrow_mut()
                 .pop_front()
@@ -1162,44 +1113,10 @@ mod tests {
         }
     }
 
-    impl ready_private::Sealed for RejectSuccessfulJumpjetPreview {}
-
-    impl ReadyInputProvider for RejectSuccessfulJumpjetPreview {
-        fn validate_ready_inputs(
-            &self,
-            _sim: &Simulation,
-            _receiver: u64,
-            preview: &MissionCom,
-        ) -> Result<(), ReadyUnavailable> {
-            self.validations.set(self.validations.get() + 1);
-            self.missions.borrow_mut().push(*preview);
-            if preview.movement_bypass_latch() != 0
-                && preview.current() == GUARD
-                && preview.queued() == MissionId::NONE
-            {
-                Err(ReadyUnavailable::WorldLookup)
-            } else {
-                Ok(())
-            }
-        }
-
-        fn ready_to_commence(
-            &self,
-            _sim: &Simulation,
-            _receiver: u64,
-            _mission: &MissionCom,
-        ) -> bool {
-            self.reads.set(self.reads.get() + 1);
-            false
-        }
-    }
-
     impl TestReadyProvider {
         fn ready(value: bool) -> Self {
             Self {
-                validation: Ok(()),
                 ready: value,
-                validations: Cell::new(0),
                 reads: Cell::new(0),
                 missions: RefCell::new(Vec::new()),
             }
@@ -1209,17 +1126,6 @@ mod tests {
     impl ready_private::Sealed for TestReadyProvider {}
 
     impl ReadyInputProvider for TestReadyProvider {
-        fn validate_ready_inputs(
-            &self,
-            _sim: &Simulation,
-            _receiver: u64,
-            preview: &MissionCom,
-        ) -> Result<(), ReadyUnavailable> {
-            self.validations.set(self.validations.get() + 1);
-            self.missions.borrow_mut().push(*preview);
-            self.validation
-        }
-
         fn ready_to_commence(
             &self,
             _sim: &Simulation,
@@ -1288,28 +1194,21 @@ mod tests {
         );
     }
 
+    /// `0x005B3614` writes the queue before `0x005B362D` asks
+    /// Ready_To_Commence, so a Unit whose readiness lookups are unavailable
+    /// (no rules: its factory and contact lookups) keeps the queued mission
+    /// for the per-tick promotion rather than losing it.
     #[test]
-    fn mission_authority_queue_unavailable_validation_is_atomic() {
+    fn mission_authority_queue_writes_before_an_unavailable_readiness_answer() {
         let mut sim = sim_with(entity(EntityCategory::Unit, GUARD));
-        let before = sim.substrate.entities.get(1).unwrap().clone();
-        let readiness = TestReadyProvider {
-            validation: Err(ReadyUnavailable::SignedHeight),
-            ready: true,
-            validations: Cell::new(0),
-            reads: Cell::new(0),
-            missions: RefCell::new(Vec::new()),
-        };
 
-        assert!(matches!(
-            sim.mission_queue_exact(1, MOVE, 1, 10, &readiness),
-            Err(MissionAuthorityError::Readiness(
-                ReadyUnavailable::SignedHeight
-            ))
-        ));
+        sim.mission_queue_exact(1, MOVE, 1, 10, &EntityReadyInputProvider)
+            .unwrap();
+
         let after = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(after.mission, before.mission);
-        assert_eq!(readiness.validations.get(), 1);
-        assert_eq!(readiness.reads.get(), 0);
+        assert_eq!(after.mission.current(), GUARD);
+        assert_eq!(after.mission.queued(), MOVE);
+        assert_eq!(after.mission.movement_bypass_latch(), 0);
     }
 
     #[test]
@@ -1321,7 +1220,6 @@ mod tests {
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(entity.mission.current(), GUARD);
         assert_eq!(entity.mission.queued(), MOVE);
-        assert_eq!(readiness.validations.get(), 0);
         assert_eq!(readiness.reads.get(), 0);
     }
 
@@ -1337,7 +1235,6 @@ mod tests {
             let after = sim.substrate.entities.get(1).unwrap();
             assert_eq!(after.mission.current(), GUARD);
             assert_eq!(after.mission.queued(), MOVE);
-            assert_eq!(readiness.validations.get(), 0);
             assert_eq!(readiness.reads.get(), 0);
         }
 
@@ -1349,7 +1246,6 @@ mod tests {
         let after = sim.substrate.entities.get(1).unwrap();
         assert_eq!(after.mission.current(), MOVE);
         assert_eq!(after.mission.queued(), MissionId::NONE);
-        assert_eq!(readiness.validations.get(), 1);
         assert_eq!(readiness.reads.get(), 1);
     }
 
@@ -1363,7 +1259,6 @@ mod tests {
         let false_entity = false_sim.substrate.entities.get(1).unwrap();
         assert_eq!(false_entity.mission.current(), GUARD);
         assert_eq!(false_entity.mission.queued(), MOVE);
-        assert_eq!(false_ready.validations.get(), 1);
         assert_eq!(false_ready.reads.get(), 1);
 
         let mut true_sim = sim_with(entity(EntityCategory::Unit, GUARD));
@@ -1374,7 +1269,6 @@ mod tests {
         let entity = true_sim.substrate.entities.get(1).unwrap();
         assert_eq!(entity.mission.current(), MOVE);
         assert_eq!(entity.mission.queued(), MissionId::NONE);
-        assert_eq!(true_ready.validations.get(), 1);
         assert_eq!(true_ready.reads.get(), 1);
     }
 
@@ -1394,7 +1288,6 @@ mod tests {
             let after = sim.substrate.entities.get(1).unwrap();
             assert_eq!(after.mission, before_mission);
             assert_eq!(after.mission_leaf, before_leaf);
-            assert_eq!(readiness.validations.get(), 0);
             assert_eq!(readiness.reads.get(), 0);
         }
 
@@ -1440,7 +1333,6 @@ mod tests {
                 .unwrap();
 
             assert_eq!(sim.substrate.entities.get(1).unwrap().mission, before);
-            assert_eq!(readiness.validations.get(), 0);
             assert_eq!(readiness.reads.get(), 0);
         }
     }
@@ -1456,7 +1348,6 @@ mod tests {
                 .unwrap();
 
             assert_eq!(sim.substrate.entities.get(1).unwrap().mission, before);
-            assert_eq!(readiness.validations.get(), 1);
             assert_eq!(readiness.reads.get(), 1);
         }
     }
@@ -1482,7 +1373,6 @@ mod tests {
                 after.mission_leaf.as_aircraft().unwrap().action_latch(),
                 expected_action
             );
-            assert_eq!(readiness.validations.get(), 1);
             assert_eq!(readiness.reads.get(), 1);
         }
     }
@@ -1511,7 +1401,7 @@ mod tests {
     fn native_e1_override_callers_keep_target_action_and_destination_refusal_order() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
-        use crate::sim::components::{Health, MovementTarget};
+        use crate::sim::components::Health;
         use crate::sim::house_state::HouseState;
         use crate::sim::movement::locomotor::LocomotorState;
         use crate::sim::rng::SimRng;
@@ -1628,7 +1518,6 @@ mod tests {
                 actor.navigation.nav_com = Some(NavTargetRef::cell(12, 10));
                 actor.navigation.path_replay.directions =
                     vec![before["path_field"].as_u64().unwrap() as u8, 2, 3];
-                actor.movement_target = Some(MovementTarget::default());
                 actor.locomotor = Some(LocomotorState::for_test_kind(
                     crate::rules::locomotor_type::LocomotorKind::Walk,
                 ));
@@ -1738,11 +1627,6 @@ mod tests {
                     destination["nav"].as_bool().unwrap(),
                     "{name}",
                 );
-                assert_eq!(
-                    actor.movement_target.is_some(),
-                    destination["nav"].as_bool().unwrap() && after["path_field"] != -1,
-                    "only a retained path head can keep its derived movement adapter: {name}",
-                );
                 let expected_head = (after["path_field"] != -1)
                     .then(|| after["path_field"].as_u64().unwrap() as u8);
                 assert_eq!(
@@ -1833,7 +1717,7 @@ mod tests {
         unit.weapon_burst.complete_shot(4);
         unit.attack_target = Some(active_target);
         unit.navigation.nav_com = Some(NavTargetRef::cell(1, 2));
-        unit.navigation.pending_arrival_clear = true;
+        unit.navigation.pending_destination_setter = true;
         let mut sim = sim_with(unit);
         let mut effects = RecordingConcreteMissionEffects::available();
 
@@ -1899,7 +1783,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .navigation
-                .pending_arrival_clear
+                .pending_destination_setter
         );
     }
 
@@ -2187,18 +2071,16 @@ mod tests {
             .unwrap();
 
         let mission = &sim.substrate.entities.get(1).unwrap().mission;
-        assert_eq!(readiness.validations.get(), 3);
         assert_eq!(readiness.reads.get(), 2);
-        let previews = readiness.missions.borrow();
-        assert_eq!(previews[0].current(), ATTACK);
-        assert_eq!(previews[0].queued(), GUARD);
-        assert_eq!(previews[0].movement_bypass_latch(), 1);
-        assert_eq!(previews[1].current(), GUARD);
-        assert_eq!(previews[1].queued(), MissionId::NONE);
-        assert_eq!(previews[1].movement_bypass_latch(), 1);
-        assert_eq!(previews[2].current(), ATTACK);
-        assert_eq!(previews[2].queued(), GUARD);
-        assert_eq!(previews[2].movement_bypass_latch(), 0);
+        let reads = readiness.missions.borrow();
+        // Queue's own gate (`0x005B362D`) follows the write that cleared +0xB8.
+        assert_eq!(reads[0].current(), ATTACK);
+        assert_eq!(reads[0].queued(), GUARD);
+        assert_eq!(reads[0].movement_bypass_latch(), 0);
+        // The lift tail's second gate sees the raised bypass.
+        assert_eq!(reads[1].current(), ATTACK);
+        assert_eq!(reads[1].queued(), GUARD);
+        assert_eq!(reads[1].movement_bypass_latch(), 1);
         assert_eq!(mission.current(), GUARD);
         assert_eq!(mission.queued(), MissionId::NONE);
         assert_eq!(mission.movement_bypass_latch(), 0);
@@ -2213,43 +2095,10 @@ mod tests {
             .unwrap();
 
         let mission = &sim.substrate.entities.get(1).unwrap().mission;
-        assert_eq!(readiness.validations.get(), 3);
         assert_eq!(readiness.reads.get(), 2);
         assert_eq!(mission.current(), ATTACK);
         assert_eq!(mission.queued(), GUARD);
         assert_eq!(mission.movement_bypass_latch(), 1);
-    }
-
-    #[test]
-    fn mission_b8_owner_sequence_jumpjet_second_preflight_error_is_atomic() {
-        let mut sim = sim_with(entity(EntityCategory::Unit, ATTACK));
-        let before_mission = sim.substrate.entities.get(1).unwrap().mission;
-        let before_leaf = sim.substrate.entities.get(1).unwrap().mission_leaf;
-        let readiness = RejectSuccessfulJumpjetPreview {
-            validations: Cell::new(0),
-            reads: Cell::new(0),
-            missions: RefCell::new(Vec::new()),
-        };
-
-        assert!(matches!(
-            sim.mission_jumpjet_move_to_completion_exact(1, 10, &readiness),
-            Err(MissionAuthorityError::Readiness(
-                ReadyUnavailable::WorldLookup
-            ))
-        ));
-
-        let after = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(after.mission, before_mission);
-        assert_eq!(after.mission_leaf, before_leaf);
-        assert_eq!(readiness.validations.get(), 2);
-        assert_eq!(readiness.reads.get(), 0);
-        let previews = readiness.missions.borrow();
-        assert_eq!(previews[0].current(), ATTACK);
-        assert_eq!(previews[0].queued(), GUARD);
-        assert_eq!(previews[0].movement_bypass_latch(), 1);
-        assert_eq!(previews[1].current(), GUARD);
-        assert_eq!(previews[1].queued(), MissionId::NONE);
-        assert_eq!(previews[1].movement_bypass_latch(), 1);
     }
 
     #[test]

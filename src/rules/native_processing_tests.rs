@@ -2,6 +2,168 @@
 
 use super::*;
 
+/// Rules constructor +7AC=-1 and ReadGeneral66F2AF..66F2CF's prior-value
+/// ReadInt. Reset clears type registries, not this scalar. The original
+/// constructor is consumed from the Smoke corpus; the remaining assertions
+/// exercise the production reader/registry handoff, not an AI wind index.
+#[test]
+fn smoke_wind_reader_retains_layer_history_and_registry_reset() {
+    use crate::rules::ruleset::RuleSet;
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/damage_smoke.json",
+    ))
+    .unwrap();
+    let mut layers = RulesLayerStack::new(IniFile::empty());
+    assert_eq!(
+        RuleSet::from_rules_layers(&layers)
+            .unwrap()
+            .general
+            .wind_direction(),
+        native["wind_constructor"].as_i64().unwrap() as i32
+    );
+    for (text, expected) in [
+        ("[General]\nWindDirection=1\n", 1),
+        ("[General]\nOther=4\n", 1),
+        // ReadInt defaults only on absence; present junk takes atoi's0.
+        ("[General]\nWindDirection=oops\n", 0),
+        ("[General]\nWindDirection=-7\n", -7),
+        ("[General]\nWindDirection=17\n", 17),
+    ] {
+        layers.push(RulesLayerKind::Scenario, IniFile::from_str(text));
+        assert_eq!(
+            RuleSet::from_rules_layers(&layers)
+                .unwrap()
+                .general
+                .wind_direction(),
+            expected
+        );
+    }
+    let processed = layers.process().unwrap();
+    let (_, receipt) = processed.into_ini_and_native_type_construction_trace();
+    let reset = receipt
+        .into_registry_state_discarding_events()
+        .destructive_reset();
+    let continued = RulesLayerStack::new(IniFile::from_str("[General]\nOther=9\n"))
+        .process_with_fixed_art_and_registry_state(&IniFile::empty(), reset)
+        .unwrap();
+    assert_eq!(continued.wind_direction(), 17);
+}
+
+/// Rust regression for RulesClass666163/66616D defaults and
+/// ReadGeneral66F30E..66F350 current-value defaults. Exercise the production
+/// pass reader, its RuleSet publication and the process-resident registry
+/// handoff; these are instruction-derived expectations, not native goldens.
+#[test]
+fn falling_rate_limits_retain_layer_and_scene_reader_history() {
+    use crate::rules::ruleset::RuleSet;
+    let values = |processed: &ProcessedRulesLayers| {
+        let rules = RuleSet::from_processed_rules(processed).unwrap();
+        let published = (
+            rules.general.parachute_max_fall_rate,
+            rules.general.no_parachute_max_fall_rate,
+        );
+        assert_eq!(published, processed.fall_rate_controls());
+        published
+    };
+    let mut layers = RulesLayerStack::new(IniFile::empty());
+    assert_eq!(values(&layers.process().unwrap()), (-3, -100));
+    for (kind, text, expected) in [
+        (
+            RulesLayerKind::LangRule,
+            "[General]\nParachuteMaxFallRate=-7\nNoParachuteMaxFallRate=-123\n",
+            (-7, -123),
+        ),
+        (
+            RulesLayerKind::GameMode,
+            "[General]\nParachuteMaxFallRate=-2\n",
+            (-2, -123),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nParachuteMaxFallRate=\nNoParachuteMaxFallRate=\n",
+            (-2, -123),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nParachutemaxFallRate=99\nNoparachuteMaxFallRate=99\n",
+            (-2, -123),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nNoParachuteMaxFallRate=invalid\n",
+            (-2, 0),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nParachuteMaxFallRate=12tail\nNoParachuteMaxFallRate=-2147483648\n",
+            (12, i32::MIN),
+        ),
+    ] {
+        layers.push(kind, IniFile::from_str(text));
+        assert_eq!(values(&layers.process().unwrap()), expected, "{text}");
+    }
+    let processed = layers.process().unwrap();
+    let (_, receipt) = processed.into_ini_and_native_type_construction_trace();
+    let mut registry = receipt.into_registry_state_discarding_events();
+    for reset in [false, true] {
+        if reset {
+            registry = registry.destructive_reset();
+        }
+        let continued = RulesLayerStack::new(IniFile::from_str("[General]\nName=Next scene\n"))
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), registry)
+            .unwrap();
+        assert_eq!(values(&continued), (12, i32::MIN));
+        let fresh = RulesLayerStack::new(IniFile::from_str("[General]\nName=Next scene\n"))
+            .process_with_fixed_art(&IniFile::empty())
+            .unwrap();
+        let retained_rules = RuleSet::from_processed_rules(&continued).unwrap();
+        let fresh_rules = RuleSet::from_processed_rules(&fresh).unwrap();
+        assert_eq!(
+            retained_rules.source_ini_hash(),
+            fresh_rules.source_ini_hash()
+        );
+        assert_ne!(
+            retained_rules.simulation_config_hash(),
+            fresh_rules.simulation_config_hash(),
+            "identical current INIs must not hide retained fall-rate differences"
+        );
+        let (_, receipt) = continued.into_ini_and_native_type_construction_trace();
+        registry = receipt.into_registry_state_discarding_events();
+    }
+}
+
+/// Retail RulesMD followed by production mode/map readers, rather than text
+/// matching or manual constants in the simulation. The retail source authors
+/// the same -3/-100 values as RulesClass's constructor defaults.
+#[test]
+fn retail_falling_rate_limits_survive_mode_and_map_layers() {
+    use crate::rules::ruleset::RuleSet;
+    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let mut layers = RulesLayerStack::new(ini);
+    let read = |layers: &RulesLayerStack| {
+        let processed = layers.process_with_fixed_art(&art).unwrap();
+        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        (
+            rules.general.parachute_max_fall_rate,
+            rules.general.no_parachute_max_fall_rate,
+        )
+    };
+    assert_eq!(read(&layers), (-3, -100));
+    layers.push(RulesLayerKind::LangRule, IniFile::empty());
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[General]\nNoParachuteMaxFallRate=-61\n"),
+    );
+    assert_eq!(read(&layers), (-3, -61));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[General]\nParachuteMaxFallRate=-5\n"),
+    );
+    assert_eq!(read(&layers), (-5, -61));
+}
+
 /// Rules ctor665EDE and retained ReadGeneral67181C..67183C, compared with
 /// original5276D0 reads. Physical-empty lines and deliberately stored-empty
 /// cache values have different admission; the shared INI owner preserves it.

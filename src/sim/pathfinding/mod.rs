@@ -14,6 +14,8 @@
 
 // Core A* algorithm, PathGrid, PathCell
 mod core;
+// Search scratch shared by the cell A* and the zone precheck
+mod stamped_table;
 
 // Path post-processing
 pub mod path_smooth;

@@ -97,6 +97,17 @@ impl Simulation {
             .ok_or("Foot coordinate owner disappeared")?;
         navigation_coordinate(entity, self.resolved_terrain.as_ref())
     }
+
+    /// The object's own coordinate ([`current_coordinate`]), altitude
+    /// included.
+    pub(crate) fn foot_current_coordinate(&self, id: u64) -> Result<DriveCoord, String> {
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("Foot coordinate owner disappeared")?;
+        Ok(current_coordinate(entity))
+    }
 }
 
 #[cfg(test)]

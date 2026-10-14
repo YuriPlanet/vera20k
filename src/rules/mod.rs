@@ -105,8 +105,8 @@
 pub mod animation_sequence;
 pub mod art_data;
 pub mod bridge_warheads;
-pub mod buildup_asset_catalog;
 pub mod building_rubble;
+pub mod buildup_asset_catalog;
 pub mod campaign_loading;
 #[cfg(test)]
 mod campaign_start_tests;
@@ -161,6 +161,8 @@ pub mod weapon_type;
 
 #[cfg(test)]
 pub(crate) mod area_guard_tests;
+#[cfg(test)]
+pub(crate) mod deploy_voice_tests;
 #[cfg(test)]
 mod ini_token_readers_tests;
 #[cfg(test)]

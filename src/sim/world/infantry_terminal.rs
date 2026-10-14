@@ -49,6 +49,10 @@ enum ReceiverDeathRecipe {
     Sequence,
     ExternalAnim(u8),
     Cleanup,
+    /// DropAsBomb water landing (`0x005181B5..0x005182AF`): Wake at
+    /// Location and SplashList[0] three leptons higher, then the common
+    /// Crashable/UnInit tail (`0x005185F1`).
+    WaterSplash,
     /// A `JumpJet=` type's InfantryExplode (the InfDeath=3 construction,
     /// `0x0051831D..0x0051835D`) over a crash its `FootClass::Crash`
     /// accepted: the infantryman stays, alive at Health 0.
@@ -94,6 +98,46 @@ impl InfantryDeathPostlude {
         uninit: Option<super::UninitContext<'_>>,
     ) {
         use crate::sim::combat::destruction_effects::{DeathAnimFollowUp, DeathAnimSpawn};
+        if matches!(self.recipe, ReceiverDeathRecipe::WaterSplash) {
+            world.emit_death_anim(
+                rules,
+                &mut effects.explosion_effects,
+                &rules.general.wake.name,
+                DeathAnimSpawn::at(self.location, 0),
+            );
+            if let Some(splash) = rules.combat_damage.splash_list.first() {
+                world.emit_death_anim(
+                    rules,
+                    &mut effects.explosion_effects,
+                    splash,
+                    DeathAnimSpawn::at(
+                        crate::sim::anim_class::AnimWorldCoord {
+                            z: self.location.z.wrapping_add(3),
+                            ..self.location
+                        },
+                        0,
+                    ),
+                );
+            }
+            // Native5185F1 tests Crashable after both constructors, even
+            // when the selected anim arm preceded the JumpJet type gate.
+            // A grounded object's Crash refuses; at height1..10 it can retain
+            // the object instead of UnInit. Reuse FootClass's one Crash owner.
+            if let Some(context) = uninit
+                && world
+                    .substrate
+                    .entities
+                    .get(self.id)
+                    .and_then(|entity| world.object_type(entity.type_ref(), rules))
+                    .is_some_and(|object| object.crashable)
+                && world.foot_crash(self.id, None, rules, context.registry(), context.effects())
+            {
+                let entity = world.substrate.entities.get_mut(self.id).unwrap();
+                entity.dying = false;
+                entity.infantry_terminal = None;
+                return;
+            }
+        }
         let anim = match self.recipe {
             ReceiverDeathRecipe::ExternalAnim(inf_death) => Some((
                 inf_death,
@@ -106,7 +150,9 @@ impl InfantryDeathPostlude {
                 INFANTRY_MUTATE_INF_DEATH,
                 Some(DeathAnimFollowUp::Mutate(self.house)),
             )),
-            ReceiverDeathRecipe::Sequence | ReceiverDeathRecipe::Cleanup => None,
+            ReceiverDeathRecipe::Sequence
+            | ReceiverDeathRecipe::Cleanup
+            | ReceiverDeathRecipe::WaterSplash => None,
         };
         if let Some((inf_death, follow_up)) = anim
             && let Some(name) = rules.general.infantry_death_anim(inf_death)
@@ -126,6 +172,7 @@ impl InfantryDeathPostlude {
             ReceiverDeathRecipe::ExternalAnim(_)
                 | ReceiverDeathRecipe::Mutate
                 | ReceiverDeathRecipe::Cleanup
+                | ReceiverDeathRecipe::WaterSplash
         ) {
             match uninit {
                 Some(context) => world.uninit_with_context(self.id, context),
@@ -167,6 +214,8 @@ const PARADROP_INF_DEATH: u8 = INFANTRY_EXPLODE_INF_DEATH;
 /// that takes a killed infantryman, as far as VERA ports the ladder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InfantryDeathArm {
+    /// Low DropAsBomb over water, before JumpJet, Paradrop and NotHuman.
+    WaterSplash(crate::sim::anim_class::AnimWorldCoord),
     /// A `JumpJet=` type (`+0xD94`, `0x00518313`): InfantryExplode whatever
     /// the warhead, then a `Crashable=` one's crash.
     JumpJetExplode { crashable: bool },
@@ -180,7 +229,8 @@ enum InfantryDeathArm {
 impl Simulation {
     /// The arm that takes infantryman `entity` when a warhead with
     /// `inf_death` kills it, in the ladder's order:
-    /// [`InfantryDeathArm::JumpJetExplode`] for a `JumpJet=` type;
+    /// low DropAsBomb over water; [`InfantryDeathArm::JumpJetExplode`] for a
+    /// `JumpJet=` type;
     /// [`PARADROP_INF_DEATH`] replaces the InfDeath while its action is still
     /// Paradrop; [`InfantryDeathArm::NotHuman`] for a `NotHuman=` type;
     /// else the table.
@@ -192,15 +242,13 @@ impl Simulation {
     /// builds the list's InfDeath entry, else its first
     /// (`0x00518460..0x005184F2`). Retail sets neither key.
     ///
-    /// RESIDUAL: three rungs ahead of the JumpJet one are not ported, none
-    /// reachable in VERA. An ignoreDefenses kill of a `Cyborg=` (`+0xEAC`)
+    /// RESIDUAL: two rungs ahead of the JumpJet one are not ported, dormant
+    /// on retail. An ignoreDefenses kill of a `Cyborg=` (`+0xEAC`)
     /// type raises a flag (`0x0051815B`) that takes the Die1, Die2,
     /// NotHuman and refused InfDeath 9 arms on to UnInit (`0x005185E5`); a
-    /// prone Cyborg builds InfantryExplode (`0x005182B4`); and a DropIn
-    /// faller (`+0x8F`) below height 11 over water builds `Wake=` and the
-    /// first `SplashList=` anim, then UnInits (`0x005181B5..0x005182AF`).
-    /// Retail sets no `Cyborg=`, and VERA sets no `+0x8F`
-    /// ([`Simulation::drop_in_bridge_member`]'s DRIFT).
+    /// prone Cyborg builds InfantryExplode (`0x005182B4`). Retail sets no
+    /// `Cyborg=`. The preceding low DropAsBomb water arm is ported here
+    /// (`0x005181B5..0x005182AF`; original `tools.native_inspect` instructions).
     ///
     /// RESIDUAL: a `NotHuman=` infantryman killed with InfDeath 8 natively
     /// also builds InfantryVirus at its Location, spawns one gas particle
@@ -217,6 +265,9 @@ impl Simulation {
         inf_death: u8,
         rules: &RuleSet,
     ) -> InfantryDeathArm {
+        if let Some(location) = self.dropped_bomb_water_death_location(entity.stable_id()) {
+            return InfantryDeathArm::WaterSplash(location);
+        }
         let (jumpjet, crashable, not_human) = self
             .object_type(entity.type_ref(), rules)
             .map_or((false, false, false), |object| {
@@ -379,7 +430,7 @@ impl Simulation {
             .expect("fatal Infantry retained for postlude");
         debug_assert_eq!(entity.category, EntityCategory::Infantry);
         let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
-        let location = crate::sim::anim_class::AnimWorldCoord {
+        let mut location = crate::sim::anim_class::AnimWorldCoord {
             x,
             y,
             z: crate::sim::movement::ground_pose::object_world_z_leptons(
@@ -388,6 +439,10 @@ impl Simulation {
             ),
         };
         let recipe = match self.infantry_death_arm(entity, inf_death, rules) {
+            InfantryDeathArm::WaterSplash(raw_location) => {
+                location = raw_location;
+                ReceiverDeathRecipe::WaterSplash
+            }
             InfantryDeathArm::JumpJetExplode { crashable } => {
                 if crashable && self.foot_crash(id, None, rules, overlay_registry, effects) {
                     ReceiverDeathRecipe::CrashExplode

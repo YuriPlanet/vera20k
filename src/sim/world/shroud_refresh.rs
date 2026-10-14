@@ -674,7 +674,15 @@ impl Simulation {
             return None;
         }
         let ability = vision::entity_has_sight_ability(entity, &self.interner, Some(rules));
-        vision::entity_sight_footprint(&self.fog, entity, config, height_grid, ability, current)
+        vision::entity_sight_footprint(
+            &self.fog,
+            entity,
+            config,
+            height_grid,
+            self.resolved_terrain.as_ref(),
+            ability,
+            current,
+        )
     }
 
     /// `TechnoClass::UpdateReveal(0, 0, 1, PlayerPtr, 0)` (`0x0070AF50`) for
@@ -909,6 +917,7 @@ impl Simulation {
                     entity,
                     &config,
                     height_grid.as_deref(),
+                    self.resolved_terrain.as_ref(),
                     ability,
                     &self.interner,
                     viewer,

@@ -501,7 +501,6 @@ mod tests {
     use crate::render::locomotor_visual::{ground_screen_position, screen_position};
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::LocomotorState;
-    use crate::util::fixed_math::SimFixed;
 
     /// Stock YR sets one global `FlightLevel=1500` for every aircraft.
     const STOCK_FLIGHT_LEVEL_LEPTONS: i32 = 1500;
@@ -514,9 +513,8 @@ mod tests {
         ry: u16,
     ) -> GameEntity {
         let mut entity = GameEntity::test_default(1, type_ref, "Americans", rx, ry);
-        let mut loco = LocomotorState::for_test_kind(kind);
-        loco.altitude = SimFixed::from_num(altitude_leptons);
-        entity.locomotor = Some(loco);
+        entity.locomotor = Some(LocomotorState::for_test_kind(kind));
+        entity.position.exact_z_leptons = Some(altitude_leptons);
         entity
     }
 
@@ -1034,6 +1032,14 @@ mod tests {
         aircraft.lifecycle.in_limbo = true;
         sim.entities_mut().insert(aircraft);
         sim.reveal(1);
+        // A headless Reveal commits no exact Z; lift the aircraft back to 900
+        // and resubmit its display, as a takeoff does.
+        sim.entities_mut()
+            .get_mut(1)
+            .unwrap()
+            .position
+            .exact_z_leptons = Some(900);
+        sim.resubmit_entity_display_for_test(1);
         assert_eq!(sim.display_layers().layer_of(1), Some(DisplayLayer::TOP));
 
         // Reproduce the stale-registration boundary: physical descent has
@@ -1043,10 +1049,8 @@ mod tests {
         sim.entities_mut()
             .get_mut(1)
             .unwrap()
-            .locomotor
-            .as_mut()
-            .unwrap()
-            .altitude = SimFixed::ZERO;
+            .position
+            .exact_z_leptons = Some(0);
         assert_eq!(
             entity_draw_band(sim.display_layers(), 1),
             Some(EntityDrawBand::Top)

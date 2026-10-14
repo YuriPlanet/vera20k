@@ -258,7 +258,7 @@ fn flash_team_type_matches_original_member_writes_across_houses() {
             entity.lifecycle.object_alive = false;
             entity.lifecycle.in_limbo = true;
             entity.health.current = 0;
-            entity.start_flash_countdown(int(initial));
+            entity.flashing.start(int(initial));
             sim.substrate.entities.insert(entity);
         }
         for definition in input["teams"].as_array().unwrap() {
@@ -288,7 +288,8 @@ fn flash_team_type_matches_original_member_writes_across_houses() {
                 sim.entities()
                     .get(member as u64 + 1)
                     .unwrap()
-                    .flash_countdown()
+                    .flashing
+                    .frames()
             })
             .collect();
         assert_eq!(
@@ -340,7 +341,7 @@ fn script50_uses_the_existing_signed_flash_owner_and_original_countdown() {
             .map(|(index, count)| {
                 let id = index as u64 + 1;
                 let mut entity = GameEntity::test_default(id, "MTNK", "OWNER", 64, 64);
-                entity.start_flash_countdown(int(count));
+                entity.flashing.start(int(count));
                 sim.substrate.entities.insert(entity);
                 id
             })
@@ -357,7 +358,7 @@ fn script50_uses_the_existing_signed_flash_owner_and_original_countdown() {
         let counters = |sim: &Simulation| {
             members
                 .iter()
-                .map(|&id| sim.substrate.entities.get(id).unwrap().flash_countdown())
+                .map(|&id| sim.substrate.entities.get(id).unwrap().flashing.frames())
                 .collect::<Vec<_>>()
         };
         assert_eq!(
@@ -378,13 +379,7 @@ fn script50_uses_the_existing_signed_flash_owner_and_original_countdown() {
         for step in row["steps"].as_array().unwrap() {
             let active: Vec<_> = members
                 .iter()
-                .map(|&id| {
-                    sim.substrate
-                        .entities
-                        .get_mut(id)
-                        .unwrap()
-                        .tick_elite_flash()
-                })
+                .map(|&id| sim.substrate.entities.get_mut(id).unwrap().flashing.tick())
                 .collect();
             assert_eq!(
                 active,
@@ -1196,7 +1191,8 @@ fn action7_real_members_match_original_identity_rng_placement_and_cleanup() {
             );
             assert_eq!(
                 entity
-                    .veterancy_raw
+                    .veterancy
+                    .raw()
                     .bits()
                     .to_le_bytes()
                     .iter()
@@ -1562,7 +1558,7 @@ fn action4_recruits_real_released_members_then_script50_and_cleanup_share_owners
     );
     for &id in &original_members {
         assert_eq!(
-            sim.entities().get(id).unwrap().flash_countdown(),
+            sim.entities().get(id).unwrap().flashing.frames(),
             int(&native_flash["stored"][0])
         );
     }

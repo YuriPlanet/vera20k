@@ -541,6 +541,7 @@ fn spyplane_missions_match_native() {
                 plane,
                 &config,
                 None,
+                sim.resolved_terrain.as_ref(),
                 false,
                 &sim.interner,
                 4,

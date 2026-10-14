@@ -13,11 +13,9 @@ use crate::sim::pathfinding::cell_entry::{CanEnterCellContext, evaluate_can_ente
 use crate::sim::pathfinding::path_smooth::{self, PathFinishingContext};
 use crate::sim::pathfinding::terrain_cost::TerrainCostGrid;
 use crate::sim::pathfinding::{
-    LayeredEntityBlockMap, LayeredPath, LayeredPathStep, PathGrid, SearchFootEntry,
-    SearchMarkerOverlay,
+    LayeredPath, LayeredPathStep, PathGrid, SearchFootEntry, SearchMarkerOverlay,
 };
 use crate::util::native_x87::NativeF64Bits;
-use std::collections::BTreeSet;
 
 #[derive(Clone, Copy)]
 enum Cell {
@@ -33,9 +31,6 @@ struct Finishing<'a> {
     terrain_costs: Option<&'a TerrainCostGrid>,
     movement_zone: Option<MovementZone>,
     facts: MoverPathFacts,
-    ground_blocks: Option<&'a BTreeSet<(u16, u16)>>,
-    bridge_blocks: Option<&'a BTreeSet<(u16, u16)>>,
-    entity_blocks: Option<&'a LayeredEntityBlockMap>,
     markers: Option<&'a SearchMarkerOverlay>,
 }
 
@@ -112,26 +107,14 @@ impl PathFinishingContext for Finishing<'_> {
             })?;
             return Ok(result);
         }
-        // Legacy callers carry a terrain/occupancy projection rather than a
-        // class receiver. Keep that boundary explicit; the live Foot route
-        // above never reduces CanEnter to a walkability predicate.
+        // Searches without a class receiver carry a terrain projection. Keep
+        // that boundary explicit; the live Foot route above never reduces
+        // CanEnter to a walkability predicate.
         let layer = if self.flags(cell) & 0x100 != 0 && height - self.ground_level(cell) == 4 {
             MovementLayer::Bridge
         } else {
             MovementLayer::Ground
         };
-        let blocks = if layer == MovementLayer::Bridge {
-            self.bridge_blocks
-        } else {
-            self.ground_blocks
-        };
-        if blocks.is_some_and(|blocks| blocks.contains(&target))
-            || self
-                .entity_blocks
-                .is_some_and(|blocks| blocks.contains_key(layer, &target))
-        {
-            return Ok(7);
-        }
         Ok(
             if evaluate_can_enter_cell(CanEnterCellContext {
                 target,
@@ -141,7 +124,6 @@ impl PathFinishingContext for Finishing<'_> {
                 path_grid: Some(self.grid),
                 resolved_terrain: self.context.resolved_terrain,
                 terrain_costs: self.terrain_costs,
-                bypass_grid: false,
                 is_infantry: self.facts.is_infantry,
                 mover_is_crusher: self.facts.mover_is_crusher,
             })
@@ -188,9 +170,6 @@ pub(super) fn finish(
     terrain_costs: Option<&TerrainCostGrid>,
     movement_zone: Option<MovementZone>,
     facts: MoverPathFacts,
-    ground_blocks: Option<&BTreeSet<(u16, u16)>>,
-    bridge_blocks: Option<&BTreeSet<(u16, u16)>>,
-    entity_blocks: Option<&LayeredEntityBlockMap>,
     markers: Option<&SearchMarkerOverlay>,
 ) -> Result<LayeredPath, String> {
     if path.is_empty() {
@@ -207,9 +186,6 @@ pub(super) fn finish(
         terrain_costs,
         movement_zone,
         facts,
-        ground_blocks,
-        bridge_blocks,
-        entity_blocks,
         markers,
     };
     let mut directions = Vec::with_capacity(path.len() - 1);

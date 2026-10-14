@@ -43,7 +43,7 @@ const DEFAULT_DIE_FRAME_DELAY: u16 = 1;
 pub enum SequenceKind {
     /// Standing alert pose. Default state for idle entities (Ready/Guard in INI).
     Stand,
-    /// Walking movement cycle. Active while entity has a MovementTarget.
+    /// Walking movement cycle.
     Walk,
     /// Standing still while prone (Prone= in INI).
     Prone,

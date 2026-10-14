@@ -613,7 +613,7 @@ impl Simulation {
                 crate::sim::combat::combat_weapon::aircraft_strafes(
                     rules,
                     object,
-                    entity.veterancy(),
+                    entity.veterancy.rank(),
                 )
             });
         let locked = aircraft

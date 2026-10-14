@@ -103,7 +103,11 @@ impl Simulation {
             .mission_leaf
             .as_unit()
             .ok_or("simple deploy requires Unit")?;
-        let height = crate::sim::movement::ground_pose::object_altitude_leptons(entity);
+        // GetHeight (vt+0x1C8) at `0x00739ADE` and `0x00739B22`.
+        let height = crate::sim::movement::air_movement::current_fly_height(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
         if deploying {
             if !object.is_simple_deployer
                 || (height > 0 && !object.deploy_to_land)

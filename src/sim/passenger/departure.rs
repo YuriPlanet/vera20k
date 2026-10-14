@@ -128,7 +128,7 @@ fn restore_departure(
                 sim.clear_radio_contacts_for(passenger_id);
                 if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
                     if matches!(failure, DepartureFailure::ParachuteReveal(_)) {
-                        passenger.parachute_state = None;
+                        passenger.finish_fall();
                     }
                     passenger
                         .passenger_role

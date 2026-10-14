@@ -17,20 +17,14 @@ fn request_move(
     registry: &OverlayTypeRegistry,
 ) -> (FindPathResult, Vec<(u16, u16)>, Vec<u8>) {
     let goal = (20, 15);
-    assert!(sim.issue_ground_move(
-        crate::sim::world::GroundMove {
-            entity_id: mover,
-            target: goal,
-            speed: crate::util::fixed_math::SIM_ONE,
-            queue: false,
-            speed_type: Some(crate::rules::locomotor_type::SpeedType::Track),
-            owner_blocks: true,
-            object_destination: None,
-        },
+    sim.assign_destination_represented(
+        mover,
+        Some(crate::sim::components::NavTargetRef::cell(goal.0, goal.1)),
         Some(rules),
         Some(registry),
         crate::sim::world::FrameEffects::default(),
-    ));
+    )
+    .unwrap();
     let destination = cell_centre((goal.0 as i16, goal.1 as i16));
     let request = FootPathRequest::track(
         &sim.substrate.entities,
@@ -38,15 +32,12 @@ fn request_move(
         destination,
         0,
         sim.playfield_bounds,
-        None,
-        Some(rules),
     )
     .unwrap();
     let rng = sim.rng_state();
     let result = sim
         .foot_find_path(
             &request,
-            None,
             rules,
             Some(registry),
             crate::sim::world::FrameEffects::default(),

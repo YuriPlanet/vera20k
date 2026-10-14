@@ -48,7 +48,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::sim::cell_rect::cell_is_in_playfield_height_aware;
 use crate::sim::find_nearby_cell::{
-    NearbyAnchorGate, NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
+    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
 };
 use crate::sim::occupancy::OBJECT_OCCUPATION_BIT;
 use crate::sim::world::Simulation;
@@ -1198,7 +1198,6 @@ fn snap_to_passable_with_radius(
         // gamemd-derived: every FNPC candidate path, including crate placement,
         // calls Is_Cell_In_Playfield_CellClass(cell, 1) @ 0x00578540 before
         // CellRect passability (caller PlaceCrateAtRandomCell @ 0x0056BD40).
-        anchor_gate: NearbyAnchorGate::NativeHeightAware,
         allow_bridge_cells: true,
         check_height: false,
         check_occupancy: false,

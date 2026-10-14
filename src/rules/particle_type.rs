@@ -11,8 +11,8 @@ use glam::IVec3;
 use serde::{Deserialize, Serialize};
 
 use crate::rules::ini_parser::IniSection;
-use crate::util::fixed_math::{SimFixed, sim_from_f32};
-use crate::util::native_x87::NativeF64Bits;
+
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
 /// Interned identifier for a `ParticleType`. Resolved at INI parse time;
 /// cross-references between types (e.g., `NextParticle=`) store the ID, not the name.
@@ -67,9 +67,9 @@ pub struct ParticleType {
 
     // ── [Particles] direct keys (§2.2) ───────────────────────────────
     /// Damage countdown reset value: frames between damage ticks (Gas/Fire).
-    pub max_dc: u16,
+    pub max_dc: i32,
     /// Lifetime in frames (countdown decremented each tick).
-    pub max_ec: u16,
+    pub max_ec: i32,
     /// Damage amount per damage tick.
     pub damage: i32,
     /// Warhead reference name, resolved later against the warhead registry.
@@ -80,12 +80,13 @@ pub struct ParticleType {
     pub num_loop_frames: u16,
     /// Base translucency level: 0, 25, or 50.
     pub translucency: u8,
-    /// Wind sensitivity: 0..=5.
-    pub wind_effect: u8,
-    /// Movement speed (per-tick).
-    pub velocity: SimFixed,
+    /// Native full signed WindEffect, multiplied by the Smoke wind table.
+    pub wind_effect: i32,
+    /// Stored native binary32 speed. Smoke's repeated stores affect rise and
+    /// its spawn cadence/RNG; retain those bits through the numeric owner.
+    pub velocity: NativeF32Bits,
     /// Per-frame deceleration applied to velocity.
-    pub deacc: SimFixed,
+    pub deacc: NativeF32Bits,
     /// Interaction radius (cells).
     pub radius: i32,
     /// Delete the particle when its animation state hits the limit.
@@ -182,19 +183,21 @@ impl ParticleType {
             behaves_like,
             image: section.read_name("Image", 0x19).map(str::to_owned),
 
-            max_dc: section.read_int("MaxDC", 0).clamp(0, u16::MAX as i32) as u16,
-            max_ec: section.read_int("MaxEC", 0).clamp(0, u16::MAX as i32) as u16,
+            // ParticleType644BE0/644F50 retain full signed words; the
+            // instance constructor62B890 alone narrows RemainingEC to16bits.
+            max_dc: section.read_int("MaxDC", 0),
+            max_ec: section.read_int("MaxEC", 1),
             damage: section.read_int("Damage", 0),
             warhead: section.read_name("Warhead", 0x80).map(str::to_owned),
             start_frame: section.read_int("StartFrame", 0).clamp(0, u16::MAX as i32) as u16,
             num_loop_frames: section
-                .read_int("NumLoopFrames", 0)
+                .read_int("NumLoopFrames", 1)
                 .clamp(0, u16::MAX as i32) as u16,
             translucency: section.read_int("Translucency", 0) as u8,
-            wind_effect: section.read_int("WindEffect", 0) as u8,
+            wind_effect: section.read_int("WindEffect", 0),
             // Float fields (`FSTP dword` at `0x006450E9`, `0x00645108`).
-            velocity: sim_from_f32(section.read_float("Velocity", 0.0)),
-            deacc: sim_from_f32(section.read_float("Deacc", 0.0)),
+            velocity: section.read_double_to_float("Velocity", NativeF32Bits::POSITIVE_ZERO),
+            deacc: section.read_double_to_float("Deacc", NativeF32Bits::POSITIVE_ZERO),
             radius: section.read_int("Radius", 0),
             delete_on_state_limit: section.read_bool("DeleteOnStateLimit", false),
             end_state_ai,
@@ -231,7 +234,6 @@ impl ParticleType {
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
-    use crate::util::fixed_math::SIM_ZERO;
 
     #[test]
     fn behaves_like_string_to_enum() {
@@ -301,7 +303,9 @@ mod tests {
         assert_eq!(pt.final_damage_state, pt.end_state_ai);
         assert_eq!(pt.next_particle, None);
         assert_eq!(pt.next_particle_offset, IVec3::ZERO);
-        assert_eq!(pt.velocity, SIM_ZERO);
+        assert_eq!(pt.velocity, NativeF32Bits::POSITIVE_ZERO);
+        assert_eq!(pt.max_ec, 1);
+        assert_eq!(pt.num_loop_frames, 1);
         assert_eq!(pt.color_speed, NativeF64Bits::POSITIVE_ZERO);
     }
 

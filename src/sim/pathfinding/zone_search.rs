@@ -63,12 +63,12 @@
 //!   skirmish, but not zero. Team6EC300 can perform mode1 waypoint lookups
 //!   before endpoint membership. Foot's shared outside-playfield owner now
 //!   calls the single Team6EC300 port, backed by Scenario waypoint authority.
-//! - **Without blocker counts there is no hierarchy search.** Every
-//!   production search supplies blocker counts (`movement_tick`,
-//!   `world_commands`, the miner system, the production queue), and every
-//!   `ZoneGrid` carries levels 0/1/2. A caller without counts gets the plain
-//!   cell A* once the zone test passes, where gamemd would run the
-//!   hierarchy-marked search. No live trigger is established here.
+//! - **Without blocker counts there is no hierarchy search.** The one
+//!   production search, the live Foot search in `movement_tick`, supplies
+//!   blocker counts, and every `ZoneGrid` carries levels 0/1/2. A caller
+//!   without counts gets the plain cell A* once the zone test passes, where
+//!   gamemd would run the hierarchy-marked search. No live trigger is
+//!   established here.
 //! - **gamemd's precheck retries are not modelled.** Its budget is
 //!   `param_6 != -1 ? 1 : 5`, each retry re-running `UpdateHierarchicalEdges`
 //!   and `Zone_precheck` (point 6); VERA runs one precheck.
@@ -79,16 +79,14 @@
 
 pub(crate) mod native_path_entry;
 
-use std::collections::BTreeSet;
-
-use super::{BlockerNeighborCounts, LayeredEntityBlockMap, MoverSearchFacts, SearchMarkerOverlay};
+use super::{BlockerNeighborCounts, MoverSearchFacts, SearchMarkerOverlay};
 
 use super::terrain_cost::TerrainCostGrid;
 use super::zone_hierarchy::{
-    ZoneLevelGraph, ZonePrecheckExclusions, ZonePrecheckOutcome, ZonePrecheckThreat,
+    MarkedZones, ZoneLevelGraph, ZonePrecheckExclusions, ZonePrecheckOutcome, ZonePrecheckThreat,
     zone_precheck_flat,
 };
-use super::zone_map::{ZoneGrid, ZoneId};
+use super::zone_map::ZoneGrid;
 use super::{
     HierarchyGate, LayeredPathStep, PathGrid, find_layered_path_marker, find_path_with_costs_marker,
 };
@@ -206,12 +204,11 @@ fn native_path_zone_equality(
     )
 }
 
-
 /// The level-0 corridor a passed `Zone_precheck` hands the cell A*
 /// (`AStar_main_loop @ 0x00429A90`'s last argument, `allowHS`).
 struct HierarchyCorridor<'a> {
     level0_zones: &'a ZoneLevelGraph,
-    marked_level0: BTreeSet<ZoneId>,
+    marked_level0: MarkedZones,
     blocker_neighbor_counts: &'a BlockerNeighborCounts,
 }
 
@@ -369,13 +366,10 @@ pub fn find_path_zoned(
     start: (u16, u16),
     goal: (u16, u16),
     costs: Option<&TerrainCostGrid>,
-    entity_blocks: Option<&BTreeSet<(u16, u16)>>,
     zone_grid: Option<&ZoneGrid>,
     mz: MovementZone,
     movement_zone: Option<MovementZone>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
-    urgency: u8,
     mover_is_crusher: bool,
     is_infantry: bool,
 ) -> Option<Vec<(u16, u16)>> {
@@ -384,15 +378,12 @@ pub fn find_path_zoned(
         start,
         goal,
         costs,
-        entity_blocks,
         zone_grid,
         mz,
         movement_zone,
         resolved_terrain,
-        entity_block_map,
         None,
         None,
-        urgency,
         mover_is_crusher,
         is_infantry,
         true,
@@ -406,15 +397,12 @@ pub(crate) fn find_path_zoned_marker(
     start: (u16, u16),
     goal: (u16, u16),
     costs: Option<&TerrainCostGrid>,
-    entity_blocks: Option<&BTreeSet<(u16, u16)>>,
     zone_grid: Option<&ZoneGrid>,
     mz: MovementZone,
     movement_zone: Option<MovementZone>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
-    urgency: u8,
     mover_is_crusher: bool,
     is_infantry: bool,
     allow_zone_hierarchy: bool,
@@ -425,19 +413,16 @@ pub(crate) fn find_path_zoned_marker(
         start,
         goal,
         costs,
-        entity_blocks,
         zone_grid,
         mz,
         movement_zone,
         resolved_terrain,
-        entity_block_map,
         marker_overlay,
         blocker_neighbor_counts,
         MoverSearchFacts {
-            urgency,
+            urgency: 0,
             mover_is_crusher,
             is_infantry,
-            search_cost_classifier: None,
             foot_entry: None,
         },
         allow_zone_hierarchy,
@@ -452,12 +437,10 @@ pub(crate) fn find_path_zoned_marker_detailed(
     start: (u16, u16),
     goal: (u16, u16),
     costs: Option<&TerrainCostGrid>,
-    entity_blocks: Option<&BTreeSet<(u16, u16)>>,
     zone_grid: Option<&ZoneGrid>,
     mz: MovementZone,
     movement_zone: Option<MovementZone>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
     facts: MoverSearchFacts<'_>,
@@ -480,12 +463,10 @@ pub(crate) fn find_path_zoned_marker_detailed(
         goal,
         &entry,
         costs,
-        entity_blocks,
         zone_grid,
         mz,
         movement_zone,
         resolved_terrain,
-        entity_block_map,
         marker_overlay,
         facts,
         blocker_neighbor_counts,
@@ -502,14 +483,11 @@ fn find_path_zoned_marker_inner(
     hierarchy_goal: (u16, u16),
     native_zone_equal: Option<bool>,
     costs: Option<&TerrainCostGrid>,
-    entity_blocks: Option<&BTreeSet<(u16, u16)>>,
     zone_grid: Option<&ZoneGrid>,
     mz: MovementZone,
     movement_zone: Option<MovementZone>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
-    urgency: u8,
     mover_is_crusher: bool,
     is_infantry: bool,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
@@ -527,18 +505,15 @@ fn find_path_zoned_marker_inner(
         goal,
         &entry,
         costs,
-        entity_blocks,
         zone_grid,
         mz,
         movement_zone,
         resolved_terrain,
-        entity_block_map,
         marker_overlay,
         MoverSearchFacts {
-            urgency,
+            urgency: 0,
             mover_is_crusher,
             is_infantry,
-            search_cost_classifier: None,
             foot_entry: None,
         },
         blocker_neighbor_counts,
@@ -553,12 +528,10 @@ fn find_flat_path_after_entry(
     goal: (u16, u16),
     entry: &NativePathEntry,
     costs: Option<&TerrainCostGrid>,
-    entity_blocks: Option<&BTreeSet<(u16, u16)>>,
     zone_grid: Option<&ZoneGrid>,
     mz: MovementZone,
     movement_zone: Option<MovementZone>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
     facts: MoverSearchFacts<'_>,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
@@ -607,11 +580,9 @@ fn find_flat_path_after_entry(
         start,
         goal,
         costs,
-        entity_blocks,
         corridor.as_ref().map(HierarchyCorridor::gate),
         movement_zone,
         resolved_terrain,
-        entity_block_map,
         marker_overlay,
         facts,
     )
@@ -620,8 +591,6 @@ fn find_flat_path_after_entry(
 #[cfg(test)]
 pub(crate) fn find_layered_path_zoned_marker(
     grid: &PathGrid,
-    ground_blocks: Option<&BTreeSet<(u16, u16)>>,
-    bridge_blocks: Option<&BTreeSet<(u16, u16)>>,
     start: (u16, u16),
     start_layer: MovementLayer,
     goal: (u16, u16),
@@ -630,10 +599,8 @@ pub(crate) fn find_layered_path_zoned_marker(
     terrain_costs: Option<&TerrainCostGrid>,
     movement_zone: Option<MovementZone>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
-    urgency: u8,
     mover_is_crusher: bool,
     is_infantry: bool,
     allow_zone_hierarchy: bool,
@@ -641,8 +608,6 @@ pub(crate) fn find_layered_path_zoned_marker(
 ) -> Option<Vec<LayeredPathStep>> {
     find_layered_path_zoned_marker_detailed(
         grid,
-        ground_blocks,
-        bridge_blocks,
         start,
         start_layer,
         goal,
@@ -651,14 +616,12 @@ pub(crate) fn find_layered_path_zoned_marker(
         terrain_costs,
         movement_zone,
         resolved_terrain,
-        entity_block_map,
         marker_overlay,
         blocker_neighbor_counts,
         MoverSearchFacts {
-            urgency,
+            urgency: 0,
             mover_is_crusher,
             is_infantry,
-            search_cost_classifier: None,
             foot_entry: None,
         },
         allow_zone_hierarchy,
@@ -669,8 +632,6 @@ pub(crate) fn find_layered_path_zoned_marker(
 
 pub(crate) fn find_layered_path_zoned_marker_detailed(
     grid: &PathGrid,
-    ground_blocks: Option<&BTreeSet<(u16, u16)>>,
-    bridge_blocks: Option<&BTreeSet<(u16, u16)>>,
     start: (u16, u16),
     start_layer: MovementLayer,
     goal: (u16, u16),
@@ -679,7 +640,6 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
     terrain_costs: Option<&TerrainCostGrid>,
     movement_zone: Option<MovementZone>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
     facts: MoverSearchFacts<'_>,
@@ -741,8 +701,6 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
         .or(marker_overlay);
     find_layered_path_marker(
         grid,
-        ground_blocks,
-        bridge_blocks,
         start,
         start_layer,
         goal,
@@ -750,7 +708,6 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
         corridor.as_ref().map(HierarchyCorridor::gate),
         movement_zone,
         resolved_terrain,
-        entity_block_map,
         marker_overlay,
         facts,
     )

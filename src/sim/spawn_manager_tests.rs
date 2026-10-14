@@ -951,9 +951,8 @@ fn a_moving_launcher_holds_its_missile() {
 }
 
 /// The missile slot's stationary gate asks the parent's locomotor, Is_Moving
-/// (`0x006B731E`) and Is_Moving_Now (`0x006B7349`), not its order: a V3 whose
-/// Drive still has a destination holds its missile, and one with an order but
-/// a still Drive launches.
+/// (`0x006B731E`) and Is_Moving_Now (`0x006B7349`): a V3 whose Drive still
+/// has a destination holds its missile.
 #[test]
 fn a_launcher_asks_its_locomotor_whether_it_is_moving() {
     assert!(
@@ -968,12 +967,6 @@ fn a_launcher_asks_its_locomotor_whether_it_is_moving() {
             };
         }),
         "a Drive with a destination holds the missile"
-    );
-    assert!(
-        !missile_held_after(|entity, _| {
-            entity.movement_target = Some(crate::sim::components::MovementTarget::default());
-        }),
-        "an order alone does not"
     );
 }
 
@@ -1840,9 +1833,6 @@ fn a_dead_carriers_airborne_hornet_crashes() {
     // Airborne over the flat level-0 map.
     let entity = sim.substrate.entities.get_mut(hornet).unwrap();
     entity.position.exact_z_leptons = Some(600);
-    if let Some(locomotor) = entity.locomotor.as_mut() {
-        locomotor.altitude = SimFixed::from_num(600);
-    }
 
     sim.uninit_with_rules(carrier, &rules);
 
@@ -1931,9 +1921,6 @@ fn a_dead_carriers_hornets_crash_from_the_last_slot() {
     for &(_, hornet) in &wing {
         let entity = sim.substrate.entities.get_mut(hornet).unwrap();
         entity.position.exact_z_leptons = Some(600);
-        if let Some(locomotor) = entity.locomotor.as_mut() {
-            locomotor.altitude = SimFixed::from_num(600);
-        }
     }
     // The three draws each crash takes, in the order they are taken.
     let mut rng = sim.scenario_rng.clone();
@@ -1971,6 +1958,104 @@ fn a_dead_carriers_hornets_crash_from_the_last_slot() {
             rates[pair].abs() > rates[pair + 1].abs(),
             draws[pair].0 > draws[pair + 1].0,
             "{rates:?} {draws:?}"
+        );
+    }
+}
+
+/// The dock compares the child's Location Z with its owner's
+/// (`0x006B77C7..0x006B77FD`), not the child's height above the ground under
+/// it: over the owner's cell, a ComingHome child less than 0x14 leptons above
+/// its owner docks, and one 0x14 or more above it is recalled.
+#[test]
+fn a_hornet_docks_by_its_z_above_the_carrier() {
+    for (above_owner, docks) in [(0x13, true), (0x14, false)] {
+        let rules = make_spawner_rules();
+        let mut sim = flat_sim();
+        let carrier = sim
+            .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules)
+            .expect("spawn CARRIER");
+        let target = sim
+            .spawn_object("TARGET", "Yuri", 30, 10, 0, &rules)
+            .expect("spawn TARGET");
+        let tick = |sim: &mut Simulation| {
+            if let Some(manager) = sim
+                .substrate
+                .entities
+                .get_mut(carrier)
+                .and_then(|e| e.spawn_manager.as_mut())
+            {
+                manager.update_timer = CdTimer::default();
+            }
+            spawn_manager_ai(
+                sim,
+                &rules,
+                carrier,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            );
+        };
+        for _ in 0..2 {
+            if let Some(manager) = sim
+                .substrate
+                .entities
+                .get_mut(carrier)
+                .and_then(|e| e.spawn_manager.as_mut())
+            {
+                manager.set_target(Some(TargetKind::Entity(target)));
+            }
+            tick(&mut sim);
+        }
+        let (slot, hornet) = sim
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .and_then(|m| {
+                m.slots
+                    .iter()
+                    .position(|s| s.state == SpawnSlotState::InFlight)
+                    .map(|index| (index, m.slots[index].spawn.expect("launched child")))
+            })
+            .expect("a Hornet is off the deck");
+        // The carrier's Location stands 100 leptons above its ground, as on
+        // a deck, so the Hornet's height over the ground is 100 more than its
+        // height over the carrier.
+        let deck = {
+            let owner = sim.substrate.entities.get_mut(carrier).unwrap();
+            let z = owner.position.exact_z_leptons.expect("revealed carrier") + 100;
+            owner.position.exact_z_leptons = Some(z);
+            owner.position
+        };
+        {
+            let manager = sim
+                .substrate
+                .entities
+                .get_mut(carrier)
+                .and_then(|e| e.spawn_manager.as_mut())
+                .unwrap();
+            manager.set_target(None);
+            manager.current_target = None;
+            manager.slots[slot].state = SpawnSlotState::ComingHome;
+        }
+        {
+            let child = sim.substrate.entities.get_mut(hornet).unwrap();
+            child.position = deck;
+            child.position.exact_z_leptons = deck.exact_z_leptons.map(|z| z + above_owner);
+        }
+        tick(&mut sim);
+
+        let state = sim
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .unwrap()
+            .slots[slot]
+            .state;
+        assert_eq!(
+            state == SpawnSlotState::Reloading,
+            docks,
+            "{above_owner} leptons above the carrier: {state:?}"
         );
     }
 }
@@ -2060,9 +2145,6 @@ fn a_landing_hornet_keeps_its_slot_and_reloads() {
     {
         let child = sim.substrate.entities.get_mut(hornet).unwrap();
         child.position = deck;
-        if let Some(locomotor) = child.locomotor.as_mut() {
-            locomotor.altitude = SimFixed::from_num(0);
-        }
     }
     tick(&mut sim);
 

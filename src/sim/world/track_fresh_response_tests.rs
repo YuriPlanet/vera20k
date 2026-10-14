@@ -195,24 +195,12 @@ fn unit(
 
 /// Unit 0x741970(cell, 1) through the ordinary command owner at frame 100.
 fn order(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)) {
-    let speed = sim.resolve_move_info(id, Some(rules)).unwrap().speed;
-    let grid = sim.path_grid.clone().unwrap();
-    assert!(crate::sim::movement::issue_move_command_with_layered(
-        &mut sim.substrate.entities,
-        &grid,
+    assert!(sim.set_unit_destination(
         id,
-        target,
-        speed,
-        false,
-        None,
-        None,
-        sim.resolved_terrain.as_ref(),
-        sim.zone_grid.as_ref(),
-        None,
-        None,
-        sim.playfield_bounds,
-        None,
-        crate::sim::movement::DestinationTiming::new(100, 22),
+        crate::sim::components::NavTargetRef::cell(target.0, target.1),
+        rules,
+        true,
+        crate::sim::world::FrameEffects::default(),
     ));
 }
 
@@ -480,7 +468,6 @@ fn fresh_arm_rows_match_the_original_responses() {
             id,
             family,
             ProcessMovementArgs::OUTER,
-            None,
             &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default(),
@@ -536,7 +523,6 @@ fn first_code7_scold_request_retains_the_native_byte() {
                 allow_retry: false,
                 force_single: false,
             },
-            None,
             &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default(),

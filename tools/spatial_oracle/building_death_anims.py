@@ -654,7 +654,7 @@ def joined_stock_observer(f):
     return dict(f=f,calls=calls,writes=writes,pcs=pcs,pending=pending,snapshot=snapshot)
 
 def joined_fixture(inputs, health, *, seed=31, building_ai=False, drive_startup=False,
-                   damage_sound=False):
+                   damage_sound=False, unit_startup=False):
     import hashlib
     from collections import deque
     from types import SimpleNamespace
@@ -677,6 +677,20 @@ def joined_fixture(inputs, health, *, seed=31, building_ai=False, drive_startup=
                                             pending={}, frame=0, phase='setup')
             self.building_constructor = None
             super().__init__(inputs, seed=seed, arena_size=0x1000000)
+            if unit_startup:
+                # CRT813234 -> whole4E6C60 constructs DynamicVector<Unit*>
+                # at8B4108 before Unit7353C0 registers the selected source.
+                # Its cold inherited header has no virtual removal owner;
+                # Unit7358AB's destructor needs this actual initializer.
+                # Keep historical fixture defaults, never supply a vtable or
+                # emulate removal. The shared VM still owns every native call.
+                self.phase = 'setup_unit_registry_crt'
+                assert 0x7353C0 not in self.executed
+                assert self.read32(0x813234) == 0x4E6C60
+                before = self.rng()
+                bc.invoke(self.u, 0x4E6C60, 0)
+                assert before == self.rng()
+                self.phase = 'setup'
             if building_ai:
                 # Original process CRT table813490 owns Infantry's separate
                 # level104/bridge416 globals. Techno6F28xx does not initialize

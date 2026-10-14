@@ -31,7 +31,7 @@ fn infantry_terminal_held_factory_restore_waits_for_release_before_retiring() {
     // persistence from the separate building-construction lifecycle.
     let building = saved.substrate.entities.get_mut(barracks).unwrap();
     building.finish_building_construction_for_test();
-    building.building_actually_placed = true;
+    building.building_art.set_actually_placed_for_test(true);
     saved.append_house_base_building_for_test(barracks);
     assert!(enqueue_by_type(
         &mut saved,

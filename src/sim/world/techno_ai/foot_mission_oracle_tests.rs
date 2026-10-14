@@ -342,7 +342,8 @@ fn assert_weapon_reader_projection(rules: &RuleSet, expected: &Value, family: &s
             .entities
             .get_mut(fixture.actor)
             .unwrap()
-            .set_veterancy_rank(rank);
+            .veterancy
+            .set_rank_for_test(rank);
         let actor = fixture.sim.substrate.entities.get(fixture.actor).unwrap();
         let ranges = std::array::from_fn(|index| {
             weapon_range(

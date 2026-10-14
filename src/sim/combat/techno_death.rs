@@ -168,19 +168,12 @@ pub(crate) enum FatalLifecycleStage {
 /// the count at `0x007022BA..0x007022C8`, the per-piece pick at `0x0070232B`,
 /// and the VoxelAnim constructor's seven), not the death sounds' stream.
 ///
-/// The entry gate is `0x00702232`..`0x0070227B` and it is a *drop-in* gate, not
-/// a water gate. `0x0070223D MOV AL,[ESI+0x8F] / TEST AL,AL / JZ 0x00702281`
-/// jumps **past** the cell lookup and into the `MaxDebris` test whenever the
-/// byte is CLEAR, so the `CMP [cell+0xEC],2` water skip at `0x00702274` is
-/// reached only while the byte is set. `ObjectClass+0x8F` is written 0 by
-/// `ObjectClass::Constructor @ 0x005F3981` (`MOV [ESI+0x8F],BL` after
-/// `XOR EBX,EBX` at `0x005F3909`) and set to 1 only by
-/// `ObjectClass::DropIn @ 0x005F4171` — the paradrop / free-fall entry, which
-/// sets `+0x8D` in the same breath — and `ObjectClass::AI @ 0x005F4021` reads
-/// it as the gate on its fall arm. A program-wide `search_instructions` for
-/// `+ 0x8f]` finds no third writer. An object that is not currently falling
-/// from a drop-in therefore has the byte clear, so an ordinary death over water
-/// DOES throw debris and consumes the block's draws.
+/// The entry gate `0x00702232..0x0070227B` skips debris only when GetHeight
+/// is <=10, DropAsBomb's persistent `ObjectClass+0x8F` is set and the raw
+/// Location cell is water. `ObjectClass::DropAsBomb @ 0x005F4160` sets the
+/// byte; it remains set after landing. An ordinary water death, or a bomb
+/// killed above ten leptons, reaches MaxDebris and consumes the block's draws.
+/// Original instructions: `tools.native_inspect` on retail gamemd.exe.
 ///
 /// The SHP half constructs a bouncing `AnimClass` per piece (`0x00421EA0`):
 /// every stock debris AnimType is `Bouncer=yes` — all 26 named by `[General]

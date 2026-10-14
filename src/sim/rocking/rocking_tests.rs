@@ -27,7 +27,7 @@ fn integrate_simple() {
     let mut a = SimFixed::lit("0.1");
     let mut v = SimFixed::lit("0.01");
     advance_axis(&mut a, &mut v, SATURATION_PI4, false, FALLBACK);
-    // Integrate: a = 0.1 + 0.01 = 0.11; below cap, stationary + in-range so
+    // Integrate: a = 0.1 + 0.01 = 0.11; below cap, unlinked + in-range so
     // saturation skipped. Dampen by BASE_DECAY_RATE: v = 0.01 - 0.002 = 0.008.
     let eps = SimFixed::lit("0.0001");
     assert!((a - SimFixed::lit("0.11")).abs() < eps);
@@ -35,27 +35,27 @@ fn integrate_simple() {
 }
 
 #[test]
-fn saturation_clamps_when_stationary_and_crossing() {
+fn saturation_clamps_when_unlinked_and_crossing() {
     let mut a = SimFixed::lit("0.78"); // just below π/4 ≈ 0.7854
     let mut v = SimFixed::lit("0.05");
     advance_axis(&mut a, &mut v, SATURATION_PI4, false, FALLBACK);
-    // new = 0.83; crosses π/4 from below; stationary + in_range → clamp.
+    // new = 0.83; crosses π/4 from below; unlinked + in_range → clamp.
     assert_eq!(a, SATURATION_PI4);
     assert_eq!(v, SimFixed::ZERO);
 }
 
 #[test]
-fn saturation_does_not_clamp_when_moving() {
+fn saturation_does_not_clamp_when_direct_rocker_linked() {
     let mut a = SimFixed::lit("0.78");
     let mut v = SimFixed::lit("0.05");
     advance_axis(
         &mut a,
         &mut v,
         SATURATION_PI4,
-        true, /* moving */
+        true, /* DirectRocker-linked */
         FALLBACK,
     );
-    // Moving → saturation skipped; angle drifts past π/4.
+    // Linked → saturation skipped; angle drifts past π/4.
     assert!(a > SATURATION_PI4);
 }
 
@@ -103,23 +103,29 @@ fn convergence_decays_to_zero_over_time() {
 }
 
 #[test]
-fn moving_dampens_more_slowly_than_stationary() {
-    // FALLBACK = 0.1 → moving decay is 0.1 * BASE_DECAY_RATE = 0.0002/tick,
-    // 10× slower than stationary's 0.002/tick. After 100 ticks a moving unit
-    // should still be carrying noticeably more velocity than a stationary one.
-    let mut a_moving = SimFixed::lit("0.1");
-    let mut v_moving = SimFixed::lit("0.04");
-    let mut a_still = SimFixed::lit("0.1");
-    let mut v_still = SimFixed::lit("0.04");
+fn direct_rocker_link_dampens_more_slowly() {
+    // FALLBACK = 0.1 → linked decay is 0.1 * BASE_DECAY_RATE = 0.0002/tick,
+    // 10× slower than the unlinked 0.002/tick. After 50 ticks a linked rocker
+    // should still be carrying noticeably more velocity than an unlinked one.
+    let mut a_linked = SimFixed::lit("0.1");
+    let mut v_linked = SimFixed::lit("0.04");
+    let mut a_unlinked = SimFixed::lit("0.1");
+    let mut v_unlinked = SimFixed::lit("0.04");
     for _ in 0..50 {
-        advance_axis(&mut a_moving, &mut v_moving, SATURATION_PI4, true, FALLBACK);
-        advance_axis(&mut a_still, &mut v_still, SATURATION_PI4, false, FALLBACK);
+        advance_axis(&mut a_linked, &mut v_linked, SATURATION_PI4, true, FALLBACK);
+        advance_axis(
+            &mut a_unlinked,
+            &mut v_unlinked,
+            SATURATION_PI4,
+            false,
+            FALLBACK,
+        );
     }
     assert!(
-        v_moving.abs() > v_still.abs(),
-        "moving v={:?} should retain more velocity than still v={:?}",
-        v_moving,
-        v_still
+        v_linked.abs() > v_unlinked.abs(),
+        "linked v={:?} should retain more velocity than unlinked v={:?}",
+        v_linked,
+        v_unlinked
     );
 }
 

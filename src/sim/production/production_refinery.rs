@@ -3,10 +3,11 @@
 //! Extracted from production_placement.rs for file-size limits.
 
 use crate::map::entities::EntityCategory;
+use crate::rules::locomotor_type::SpeedType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::find_nearby_cell::{
-    NearbyAnchorGate, NearbyFootprint, NearbyQuery, NearbySearchOptions, PassabilityArgs,
-    RADIUS_HARD_CAP, find_nearby_passable_cell_with_options,
+    NearbyFootprint, NearbyQuery, NearbySearchOptions, PassabilityArgs,
+    find_nearby_passable_cell_with_options, map_owned_radius_cap,
 };
 use crate::sim::world::FrameEffects;
 use crate::sim::world::{PlacementEvidence, Simulation};
@@ -281,13 +282,19 @@ fn primary_free_unit_cell(
 }
 
 /// One of the two ordered nearby-cell searches for a refused FreeUnit placement,
-/// routed through the shared search port.
+/// with the arguments OnConstructionComplete pushes (`0x00446BF4..0x00446CCD`,
+/// `0x00446D42..0x00446E10`): the building's Location cell (`+0x9C`, its
+/// north-west footprint cell) as the seed; SpeedType 2 (Wheel), whatever the
+/// free unit's own; the zone `MapClass::GetZoneID @ 0x0056D230` gives the seed
+/// for the free unit's MovementZone (`Type+0x5B4`) without the bridge lookup,
+/// and that MovementZone; not bridge-aware; 1x1; the overlay rejection
+/// `options` carries; the height gate on; no obstacle gate; bridge cells
+/// refused; a zero target cell, so selection is the frame-counter modulo and
+/// draws no RNG; no quadrant skip; no final occupancy check.
 ///
-/// Mirrors the engine's two calls: 1x1 candidates seeded from the building's NW
-/// footprint cell, the free unit's own movement zone, bridge cells refused, the
-/// terrain-level gate on, no target cell — so selection is the frame-counter modulo
-/// over the candidate pool, consuming no RNG. `options` carries the one argument the
-/// two calls differ in.
+/// The seed is under the building, but Cell Recalc's zone class ignores
+/// buildings, except a FirestormWall one (`0x00483D8E`; none in retail), so
+/// the seed answers the zone of the ground around it.
 fn find_free_unit_nearby_cell(
     sim: &Simulation,
     rules: &RuleSet,
@@ -296,50 +303,28 @@ fn find_free_unit_nearby_cell(
     options: NearbySearchOptions,
 ) -> Option<(u16, u16)> {
     let free_unit = rules.object(free_unit_type)?;
+    let (width, height) = sim.map_size_diamond()?;
+    let zone = sim
+        .zone_grid
+        .as_ref()
+        .zip(sim.resolved_terrain.as_ref())
+        .and_then(|(zones, terrain)| {
+            zones.get_zone_id_native(terrain, seed, free_unit.movement_zone, false)
+        });
     let query = NearbyQuery {
         native_cells: None,
-        raw_occupation: None,
+        raw_occupation: Some(&sim.substrate.raw_cell_occupation),
         passability: PassabilityArgs {
-            // SUBSTITUTION, not a match. The engine hardcodes one fixed speed-type
-            // index (2) at both callsites; VERA passes the free unit's own
-            // `SpeedType=` instead. The index-to-`SpeedType=`-string mapping is
-            // UNCHECKED, and the tree's own evidence points the other way: index 2 is
-            // Wheel under `rules::locomotor_type::SpeedType`'s ordering, while
-            // `[CMIN]` and `[HARV]` declare no `SpeedType=` and therefore default to
-            // Track. The substitution is invisible to THIS search under the stock
-            // terrain tables — Track and Wheel are zero together and non-zero together
-            // in all twelve stock land-type sections, and the search reads only the
-            // resulting accept/reject verdict, never the cost percentage — but it is
-            // not a verified equivalence for a modded table or another caller.
-            speed_type: free_unit.speed_type,
-            // The engine requires each candidate to share the seed cell's movement
-            // zone. The seed is always a building-footprint cell, to which the Rust
-            // zone map assigns no zone, so requiring it here would reject every
-            // candidate. Left unrequired — a stated residual, not a substitute rule.
-            required_zone_id: None,
+            speed_type: SpeedType::Wheel,
+            required_zone_id: zone,
             movement_zone: free_unit.movement_zone,
             bridge_aware_zone: false,
         },
         footprint: NearbyFootprint::SINGLE,
-        anchor_gate: NearbyAnchorGate::UnverifiedCompatibilityBypass,
-        // Both callsites reject bridge cells.
         allow_bridge_cells: false,
-        // Both callsites enable the terrain-level gate.
         check_height: true,
-        // DROPPED native constraint, recorded. The per-candidate occupancy rejection
-        // itself is not lost — it lives inside the passability check, which reads the
-        // same occupancy grid. What is lost is the rest of that column: the isometric
-        // playfield-diamond bound (the terrain rectangle still rejects off-grid
-        // cells), the terrain-object block, the slope byte and the ground-building
-        // test. Whether the engine sets its separate rect-occupancy argument at these
-        // two callsites was not re-derived — UNCHECKED. It stays off because the
-        // ported check rejects ANY overlay cell unconditionally, which would cancel
-        // the second attempt's overlay-allowed contract above and leave the two calls
-        // indistinguishable.
         check_occupancy: false,
-        // The engine's cap is `min(map-rect width + height, RADIUS_HARD_CAP)`, which
-        // is the hard cap itself on any playable map.
-        radius_cap: RADIUS_HARD_CAP,
+        radius_cap: map_owned_radius_cap(width, height),
         target_cell: None,
         path_grid: sim.path_grid(),
         resolved_terrain: sim.resolved_terrain.as_ref(),

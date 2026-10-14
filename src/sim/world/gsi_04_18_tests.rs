@@ -562,7 +562,6 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         entity.in_playfield = true;
         let mut loco = LocomotorState::for_test_kind(LocomotorKind::Jumpjet);
         loco.layer = MovementLayer::Air;
-        loco.altitude = crate::util::fixed_math::SimFixed::from_num(208);
         // Keep the admitted high-flight height through the actual Process below.
 
         let runtime = loco.jumpjet_runtime_mut().expect("jumpjet runtime");
@@ -577,6 +576,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
             .with_flight_for_test(flight);
         entity.locomotor = Some(loco);
     }
+    sim.set_object_height_unmarked(2, 208);
     sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
     insert_structure(&mut sim, 1, gapper, "GAGAP", 12);
     sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
@@ -699,9 +699,9 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     insert_sight_unit(&mut sim, 2, owner, 13, 13);
     let mut loco = LocomotorState::for_test_kind(LocomotorKind::Fly);
     loco.layer = MovementLayer::Air;
-    loco.altitude = SimFixed::from_num(207);
     loco.fly_runtime_mut().unwrap().current_speed = SimFixed::from_num(1);
     sim.substrate.entities.get_mut(2).unwrap().locomotor = Some(loco);
+    sim.set_object_height_unmarked(2, 207);
     sim.session.binary_frame = 119;
     sim.refresh_high_flying_sight_before_process(2, None);
     assert_eq!(
@@ -723,9 +723,9 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
             .locomotor
             .as_mut()
             .unwrap();
-        loco.altitude = SimFixed::from_num(208);
         loco.fly_runtime_mut().unwrap().current_speed = SimFixed::from_num(0);
     }
+    sim.set_object_height_unmarked(2, 208);
     sim.refresh_high_flying_sight_before_process(2, None);
     assert_eq!(
         sim.substrate

@@ -284,6 +284,7 @@ impl Probe {
                 terrain: Some(&self.terrain),
                 heights: &heights,
                 lighting: self.lighting.grid(),
+                scenario_lighting: &scene.sim().session.lighting,
                 camera,
                 viewport: SIZE.map(|value| value as f32),
                 origin_y: 0.0,

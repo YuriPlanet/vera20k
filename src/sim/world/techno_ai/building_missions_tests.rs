@@ -1083,7 +1083,6 @@ fn retail_defence_guards_attacks_and_returns(
                 entity_id: truck,
                 target_rx: x + 17,
                 target_ry: y,
-                queue: false,
             },
         )],
     );
@@ -1158,7 +1157,7 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
         let sim = scenario.sim();
         let entity = sim.substrate.entities.get(coil).unwrap();
         let name = |slot: usize| {
-            entity.building_anim_slots[slot].map(|anim| {
+            entity.building_art.anim_slots()[slot].map(|anim| {
                 sim.interner
                     .resolve(sim.anim(anim).unwrap().type_id)
                     .to_string()
@@ -1285,7 +1284,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
         let sim = scenario.sim();
         let entity = sim.substrate.entities.get(id).unwrap();
         let name = |slot: usize| {
-            entity.building_anim_slots[slot].map(|anim| {
+            entity.building_art.anim_slots()[slot].map(|anim| {
                 sim.interner
                     .resolve(sim.anim(anim).unwrap().type_id)
                     .to_string()

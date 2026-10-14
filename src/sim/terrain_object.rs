@@ -839,7 +839,6 @@ mod tests {
                     path_grid: Some(&path_grid),
                     resolved_terrain: Some(&resolved),
                     terrain_costs: None,
-                    bypass_grid: false,
                     is_infantry: false,
                     mover_is_crusher: false,
                 }),

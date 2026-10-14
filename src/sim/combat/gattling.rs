@@ -298,8 +298,7 @@ pub(crate) fn unit_turret_anim_advances(
 
 /// `TechnoClass::IsElite @ 0x00750010`, which picks the elite thresholds.
 pub(crate) fn is_elite(entity: &crate::sim::game_entity::GameEntity) -> bool {
-    crate::sim::combat::veterancy::rank_from_u16(entity.veterancy())
-        == crate::sim::combat::veterancy::VeterancyRank::Elite
+    entity.veterancy.rank_kind() == crate::sim::combat::veterancy::VeterancyRank::Elite
 }
 
 /// The loop-handle owner of a techno's gattling report (`TechnoClass+0x4A4`):
@@ -333,8 +332,12 @@ impl crate::sim::world::Simulation {
             let obj = self.object_type(entity.type_ref(), rules)?;
             Some((
                 obj.is_gattling,
-                crate::sim::combat::combat_weapon::weapon_for_index(obj, entity.veterancy(), 0)
-                    .is_some(),
+                crate::sim::combat::combat_weapon::weapon_for_index(
+                    obj,
+                    entity.veterancy.rank(),
+                    0,
+                )
+                .is_some(),
             ))
         }) else {
             return;
@@ -373,7 +376,7 @@ impl crate::sim::world::Simulation {
         let Some(obj) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        let veterancy = entity.veterancy();
+        let veterancy = entity.veterancy.rank();
         let elite = is_elite(entity);
         let world = Self::movement_sound_world(entity);
         let mut state = entity.gattling;

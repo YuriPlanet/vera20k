@@ -15,17 +15,15 @@ fn produce_move(
     clicked: (u16, u16),
     shift: bool,
 ) -> CommandEnvelope {
-    let resolved = ordinary_cell_move_goal(sim, rules, owner, id, clicked, true, shift)
+    let resolved = ordinary_cell_move_goal(sim, rules, None, owner, id, clicked, shift)
         .expect("original input emits an ordinary Move");
-    assert!(!resolved.queue, "native Shift still emits ordinary Move");
     let issued = CommandEnvelope::new(
         owner,
         sim.session.tick,
         Command::Move {
             entity_id: id,
-            target_rx: resolved.cell.0,
-            target_ry: resolved.cell.1,
-            queue: resolved.queue,
+            target_rx: resolved.0,
+            target_ry: resolved.1,
         },
     );
     let decoded = roundtrip_ordinary_local_megamission(sim, issued.clone()).unwrap();

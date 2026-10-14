@@ -82,8 +82,7 @@ fn award_kill_experience(
         return;
     };
     if let Some(recipient) = entities.get_mut(recipient_id) {
-        super::veterancy::award_kill(
-            recipient,
+        recipient.veterancy.award_kill(
             recipient_cost,
             points,
             true,
@@ -202,11 +201,8 @@ fn record_the_kill(
             interner.resolve(victim_owner),
         )
     });
-    let points = super::veterancy::kill_award_points(
-        victim_cost,
-        super::veterancy::rank_of(victim.veterancy_raw),
-        allied,
-    );
+    let points =
+        super::veterancy::kill_award_points(victim_cost, victim.veterancy.rank_kind(), allied);
     if let Some(killer_id) = killer_id {
         award_kill_experience(
             entities,

@@ -171,7 +171,9 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
         target.health.current = int(&before["health"]);
         target.lifecycle.object_alive = before["alive"] == 1;
         target.lifecycle.in_limbo = before["limbo"] == 1;
-        target.veterancy_raw = NativeF32Bits::from_bits(word(&input["veterancy_bits"]));
+        target
+            .veterancy
+            .set_raw_for_test(NativeF32Bits::from_bits(word(&input["veterancy_bits"])));
         target.armor_multiplier = NativeF64Bits::from_bits(
             u64::from_str_radix(
                 input["armor_multiplier_bits"]

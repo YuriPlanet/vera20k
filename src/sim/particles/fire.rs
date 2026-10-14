@@ -13,8 +13,8 @@
 //!   - The damage counter only resets when `animation_state` is at or
 //!     below `FinalDamageState`. Past that, the counter still decrements
 //!     but stops looping back to MaxDC, so faded fire stops dealing damage.
-//!   - Translucency is animation-state-driven: at `Translucent50State`
-//!     the byte flips to 0x19, at `Translucent25State` to 0x32.
+//!   - Translucency is animation-state-driven: at `Translucent25State`
+//!     the byte flips to25, at `Translucent50State` to50.
 //!
 //! `move_fire` applies the AI-written `prev_delta` and kills the particle
 //! on rising terrain (cliff death) — the canonical "flame hits a wall"
@@ -28,12 +28,10 @@
 //! - Wiring `move_fire` into the per-tick path — needs ground-height
 //!   queries against the map. Today `move_fire` is a tested helper
 //!   waiting for a caller.
-//! - Animation-state auto-advance — the binary's formula is
-//!   `frame_ticks % ((total_frames % 2 + 1) + StateAIAdvance) == 0`,
-//!   where `total_frames` comes from `GetImageFrameCount()` on the SHP
-//!   asset. `sim/` can't reach the asset layer; gas/smoke defer this
-//!   too. The threshold-byte mapping below works correctly once
-//!   something external advances `animation_state`.
+//!
+//! Animation uses the shared native ID/EC cadence owner. It does not read
+//! SHP frame count. This change establishes no complete Fire mechanism.
+//!
 //! - Orbital attached-object tracking in `tick_system` — needs entity
 //!   coordinate access + `RateTimer`. Today the system spawns from its
 //!   fixed `sys.coords` at the SpawnFrames cadence.
@@ -49,7 +47,8 @@ use crate::rules::particle_type::ParticleTypeId;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF32Bits};
 #[cfg(test)]
 use glam::IVec3;
 
@@ -57,56 +56,49 @@ use glam::IVec3;
 /// within the last 4 slots create the non-monotonic flame trail.
 const FIRE_INSERT_RANGE: usize = 4;
 
-/// Per-tick AI for one fire particle.
-///
-/// Order: state-AI advance (animation_state + translucency-state byte writes)
-/// → velocity gate → direction jitter → lifetime → decel → damage counter
-/// (gated by FinalDamageState).
-///
-/// Damage application to cell occupants is deferred to Task C6; this
-/// function only does the counter bookkeeping.
-pub(super) fn tick_particle(
-    p: &mut Particle,
-    pt: &ParticleType,
-    image_frame_count: u16,
-    rng: &mut SimRng,
-) {
-    super::system_ai::advance_state(p, pt, image_frame_count);
-
-    // Velocity-zero death: fire dies the instant its momentum runs out.
-    if p.velocity <= SIM_ZERO {
+/// FireAI62CB10 body; its common EC tail lives in AI_Dispatch62CE40.
+/// Native control/address reading: tools/spatial_oracle/damage_smoke.md.
+/// Fire movement/damage application is a separate incomplete mechanism.
+pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, rng: &mut SimRng) {
+    if matches!(
+        X87::compare(X87::load_f32(p.velocity), X87::load_i32(0)),
+        MaskedX87Ordering::Less | MaskedX87Ordering::Equal
+    ) {
+        p.velocity = NativeF32Bits::POSITIVE_ZERO;
         p.marked_for_deletion = true;
-        return;
+        return; //62CB1F: no jitter, state, speed/DC writes beyond this gate.
     }
-
-    // Direction jitter: signed remainder in [-9, 9] then minus 5 -> raw in
-    // [-14, 4], jitter factor in [0.86, 1.04]. Compute fresh each tick;
-    // direction itself stays stable.
     let raw = rng.next_raw_modulo_signed(10) - 5;
-    let jitter = SimFixed::from_num(1) + SimFixed::from_num(raw) * SimFixed::from_num(0.01);
-    p.prev_delta = [
-        p.direction[0] * jitter,
-        p.direction[1] * jitter,
-        p.direction[2] * jitter,
-    ];
-
-    // Lifetime decrement (matches smoke/gas).
-    p.lifetime_remaining = p.lifetime_remaining.saturating_sub(1);
-    if p.lifetime_remaining <= 0 {
-        p.marked_for_deletion = true;
+    //62CB41..62CBBD: original factor uses double[7EFB40]=0.02.
+    // RESIDUAL: the existing fixed direction/motion representation retains
+    // quantization and incomplete movement; this does not establish Fire parity.
+    let jitter = SimFixed::from_num(1) + SimFixed::from_num(raw) * SimFixed::from_num(0.02);
+    p.prev_delta = p.direction.map(|component| component * jitter);
+    if (p.animation_state as i8) < (pt.end_state_ai as i8)
+        && super::system_ai::state_advance_due(p, pt.max_ec, p.state_ai_advance)
+    {
+        p.animation_state = p.animation_state.wrapping_add(1);
+        //62CC1E/62CC32: exact thresholds, only on an actual increment.
+        if p.animation_state == pt.translucent_25_state {
+            p.translucency = 25;
+        }
+        if p.animation_state == pt.translucent_50_state {
+            p.translucency = 50;
+        }
+        if p.animation_state == pt.end_state_ai && pt.delete_on_state_limit {
+            p.marked_for_deletion = true;
+            return; //End deletion skips decel and DC, but not shared EC tail.
+        }
     }
-
-    // Decel — fire decel is per-frame regardless of velocity sign because
-    // the velocity-zero gate above already handled the zero case.
-    p.velocity = (p.velocity - pt.deacc).max(SIM_ZERO);
-
-    // Damage countdown — only resets when the particle is still in its
-    // damaging window (animation_state ≤ final_damage_state). Past that,
-    // counter drops below zero and stays there: damage stops permanently.
-    p.damage_counter = p.damage_counter.saturating_sub(1);
-    if p.damage_counter <= 0 && p.animation_state <= pt.final_damage_state {
-        // C6 hooks the damage-to-cell-occupants iteration here.
+    p.velocity =
+        X87::store_f32_masked_chop(X87::sub(X87::load_f32(p.velocity), X87::load_f32(pt.deacc)));
+    p.damage_counter = p.damage_counter.wrapping_sub(1);
+    if p.damage_counter == 0
+        && pt.damage != 0
+        && (p.animation_state as i8) <= (pt.final_damage_state as i8)
+    {
         p.damage_counter = pt.max_dc as i16;
+        //62CCB8: occupancy damage remains a separate Fire dependency.
     }
 }
 
@@ -132,7 +124,10 @@ pub(super) fn tick_particle(
 // Ground-height ownership is not wired into the live particle tick yet.
 #[cfg(test)]
 pub(super) fn move_fire(p: &mut Particle, old_ground: i32, new_ground: i32) {
-    if p.velocity <= SIM_ZERO {
+    if matches!(
+        X87::compare(X87::load_f32(p.velocity), X87::load_i32(0)),
+        MaskedX87Ordering::Less | MaskedX87Ordering::Equal
+    ) {
         return;
     }
     let dx = p.prev_delta[0].to_num::<i32>();
@@ -155,13 +150,16 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
 
     // Phase 1 — tick existing particles.
     for p in &mut sys.particles {
-        let pt = rules.particle_type(p.type_id);
-        let frame_count = super::system_ai::resolve_image_frame_count(rules, pt);
-        tick_particle(p, pt, frame_count, sim.particle_rng());
+        super::system_ai::tick_particle(p, sim, rules);
     }
 
     // Phase 2 — prune dead particles. Fire has no NextParticle chaining
     // (the [FireStream] type has none and no fire chain exists in vanilla).
+    for p in &sys.particles {
+        if p.marked_for_deletion {
+            sim.conceal_particle(p.stable_id());
+        }
+    }
     sys.particles.retain(|p| !p.marked_for_deletion);
 
     // Phase 3 — spawn at SpawnFrames cadence via the insert-shuffle helper.
@@ -181,11 +179,12 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
     use crate::sim::particles::ParticleSystem;
+    use crate::util::fixed_math::SIM_ZERO;
     use glam::IVec3;
 
     fn fake_system(type_id: ParticleSystemTypeId) -> ParticleSystem {
         let mut system = ParticleSystem::test_fixture(0, type_id, IVec3::ZERO);
-        system.spawn_timer = SimFixed::from_num(1);
+        system.spawn_timer = NativeF32Bits::ONE;
         system
     }
 
@@ -205,20 +204,21 @@ mod tests {
         );
         let pt = rules.particle_type(ParticleTypeId(0));
         let mut sim = Simulation::new();
-        let mut p = Particle::new(ParticleTypeId(0), IVec3::ZERO, pt, &mut sim);
-        p.velocity = SIM_ZERO;
-        tick_particle(&mut p, pt, 0, sim.particle_rng());
+        let mut p = Particle::new(ParticleTypeId(0), IVec3::ZERO, IVec3::ZERO, pt, &mut sim);
+        p.velocity = NativeF32Bits::POSITIVE_ZERO;
+        tick_particle(&mut p, pt, sim.particle_rng());
         assert!(p.marked_for_deletion, "zero-velocity fire dies immediately");
     }
 
     #[test]
     fn jitter_signed_remainder_dips_below_old_floor() {
-        // Old code: next_range_u32(10) - 5 -> raw in [-5, 4] -> jitter >= 0.95.
+        // Unsigned modulo would limit raw to [-5, 4], so factor0.02
+        // could not reach below0.90.
         // Binary: signed (raw % 10) - 5 -> raw in [-14, 4] -> jitter can reach
-        // 0.86, impossible under the old non-negative draw. Drive a fixed-east
+        // 0.72, impossible under the non-negative draw. Drive a fixed-east
         // unit direction so prev_delta[0] == jitter, and target the seed=1 third
         // raw draw (0xDA63B931, negative): -630_998_735 % 10 = -5 -> raw = -10 ->
-        // jitter = 1 + (-10)*0.01 = 0.90 (below the old 0.95 floor).
+        // jitter = 1 + (-10)*0.02 = 0.80. Fixed motion remains a residual.
         let rules = parse(
             "[Particles]\n\
              1=Fire\n\
@@ -231,24 +231,30 @@ mod tests {
         // Build the particle with a throwaway stream so the jitter draw below is
         // exactly the crafted stream's next draw.
         let mut throwaway = Simulation::with_seed(7);
-        let mut p = Particle::new(ParticleTypeId(0), IVec3::ZERO, pt, &mut throwaway);
+        let mut p = Particle::new(
+            ParticleTypeId(0),
+            IVec3::ZERO,
+            IVec3::ZERO,
+            pt,
+            &mut throwaway,
+        );
         p.direction = [SimFixed::from_num(1), SIM_ZERO, SIM_ZERO];
-        p.velocity = SimFixed::from_num(100);
+        p.velocity = NativeF32Bits::from_bits(0x42c8_0000);
 
         let mut rng = SimRng::new(1);
         rng.next_u32(); // skip draw 1
         rng.next_u32(); // skip draw 2 -> next (3rd) draw is the negative 0xDA63B931
-        tick_particle(&mut p, pt, 0, &mut rng);
+        tick_particle(&mut p, pt, &mut rng);
 
         // prev_delta[0] == direction[0] * jitter == jitter; must be below the
-        // old 0.95 floor (proving the signed range), and near 0.88.
+        // unsigned0.90 floor (proving the signed range), near0.80.
         assert!(
-            p.prev_delta[0] < SimFixed::from_num(0.95),
-            "signed jitter must reach below the old 0.95 floor, got {}",
+            p.prev_delta[0] < SimFixed::from_num(0.81),
+            "signed jitter must reach below the unsigned floor, got {}",
             p.prev_delta[0]
         );
         assert!(
-            p.prev_delta[0] > SimFixed::from_num(0.80),
+            p.prev_delta[0] > SimFixed::from_num(0.79),
             "jitter sanity lower bound"
         );
     }
@@ -271,12 +277,12 @@ mod tests {
         );
         let pt = rules.particle_type(ParticleTypeId(0));
         let mut sim = Simulation::new();
-        let mut p = Particle::new(ParticleTypeId(0), IVec3::ZERO, pt, &mut sim);
+        let mut p = Particle::new(ParticleTypeId(0), IVec3::ZERO, IVec3::ZERO, pt, &mut sim);
         // Force animation_state past final_damage_state (default 14).
         p.animation_state = 20;
         // Drive damage_counter to zero — must NOT reset to MaxDC.
         for _ in 0..5 {
-            tick_particle(&mut p, pt, 0, sim.particle_rng());
+            tick_particle(&mut p, pt, sim.particle_rng());
         }
         assert!(
             p.damage_counter <= 0,
@@ -300,7 +306,13 @@ mod tests {
         );
         let pt = rules.particle_type(ParticleTypeId(0));
         let mut sim = Simulation::new();
-        let mut p = Particle::new(ParticleTypeId(0), IVec3::new(100, 100, 0), pt, &mut sim);
+        let mut p = Particle::new(
+            ParticleTypeId(0),
+            IVec3::new(100, 100, 0),
+            IVec3::ZERO,
+            pt,
+            &mut sim,
+        );
         p.prev_delta = [SimFixed::from_num(5), SIM_ZERO, SIM_ZERO];
         // old_ground=0, new_ground=10 → terrain rises.
         move_fire(&mut p, 0, 10);
@@ -322,7 +334,13 @@ mod tests {
         );
         let pt = rules.particle_type(ParticleTypeId(0));
         let mut sim = Simulation::new();
-        let mut p = Particle::new(ParticleTypeId(0), IVec3::new(100, 100, 0), pt, &mut sim);
+        let mut p = Particle::new(
+            ParticleTypeId(0),
+            IVec3::new(100, 100, 0),
+            IVec3::ZERO,
+            pt,
+            &mut sim,
+        );
         p.prev_delta = [SimFixed::from_num(5), SIM_ZERO, SIM_ZERO];
         move_fire(&mut p, 0, 0);
         assert!(!p.marked_for_deletion);

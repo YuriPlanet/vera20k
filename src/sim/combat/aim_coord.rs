@@ -55,7 +55,7 @@ pub(crate) fn led_target_coordinate(
     }
 
     // 70BD44..70BD74 samples the live Foot getter, Object::Distance, then
-    // GetCurrentWeapon. A cached MovementTarget speed is not the authority.
+    // GetCurrentWeapon.
     let target_type = rules.object(world.interner.resolve(target.type_ref()));
     let target_speed = owner_current_speed(
         target,

@@ -973,7 +973,11 @@ pub(super) fn build_building_anim_instances(
     ];
     for building in sim.entities().values() {
         if building.category != EntityCategory::Structure
-            || building.building_anim_slots.iter().all(Option::is_none)
+            || building
+                .building_art
+                .anim_slots()
+                .iter()
+                .all(Option::is_none)
         {
             continue;
         }
@@ -1075,7 +1079,8 @@ fn emit_building_anims(
         None => return,
     };
     for anim in &art_entry.building_anims {
-        let Some(anim_id) = building.building_anim_slots[usize::from(anim.native_slot)] else {
+        let Some(anim_id) = building.building_art.anim_slots()[usize::from(anim.native_slot)]
+        else {
             continue;
         };
         let Some(instance) = sim.anim(anim_id) else {

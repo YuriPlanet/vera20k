@@ -1417,7 +1417,7 @@ pub(crate) fn handle_death(
                 world_z_leptons,
                 e.owner(),
                 e.category,
-                e.veterancy(),
+                e.veterancy.rank(),
             )
         });
 
@@ -1484,6 +1484,9 @@ pub(crate) fn handle_death(
                         let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
                         (x, y)
                     });
+                // Techno702232..70227B skips this block only for a low
+                // dropped bomb over water; ordinary water deaths still throw.
+                if world.dropped_bomb_water_death_location(dead_id).is_none() {
                 throw_debris_for_death(
                     world,
                     obj,
@@ -1493,6 +1496,7 @@ pub(crate) fn handle_death(
                     &mut voxel_debris,
                     &mut explosion_effects,
                 );
+                }
                 // An exploding object's passengers die with it
                 // (`0x00702603..0x00702667`, FootClass::KillPassengers' loop
                 // inlined, credited to the killing hit's source) before its
@@ -1676,7 +1680,11 @@ fn finish_concrete_death(
         EntityCategory::Unit => {
             if world.unit_sinks_on_death(rules, dead_id) {
                 world.begin_ship_sinking(dead_id, rules, frame_effects);
-            } else {
+            } else if !world.unit_dropped_bomb_water_splash(
+                rules,
+                dead_id,
+                &mut effects.explosion_effects,
+            ) {
                 world.unit_death_explosion(rules, dead_id, &mut effects.explosion_effects);
             }
         }
@@ -2555,6 +2563,15 @@ pub(super) fn sound_enabled(_world: &Simulation) -> bool {
     #[cfg(test)]
     if let Some(fixture) = _world.receiver_fixture.as_ref() {
         return fixture.sound_enabled;
+    }
+    true
+}
+
+#[inline]
+pub(super) fn fog_enabled(_world: &Simulation) -> bool {
+    #[cfg(test)]
+    if let Some(fixture) = _world.receiver_fixture.as_ref() {
+        return fixture.fog_enabled;
     }
     true
 }

@@ -732,6 +732,22 @@ impl Simulation {
             id,
             crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
         );
+        // Foot4D8D31..4D8D53: a Foot whose structural deck disappeared
+        // takes the same DropAsBomb as BlowUpBridge's deck traversal.
+        let deck_gone = self.substrate.entities.get(id).is_some_and(|entity| {
+            entity.on_bridge
+                && self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                    let at = position_world_coord(&entity.position);
+                    cells.flags(cells.lookup_world(at.x, at.y)) & 0x100 == 0
+                })
+        });
+        if deck_gone {
+            self.drop_as_bomb(
+                id,
+                crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+            );
+        }
         // `0x006F5090`'s head lets a held Temporal target go.
         self.temporal_release_if_warping(id);
         self.promote_entity_playfield_membership_after_move(id);
@@ -742,13 +758,9 @@ impl Simulation {
     /// runs even when the class refuses. See
     /// tools/spatial_oracle/walk_percell_stop.{py,json,meta.json}.
     ///
-    /// A Unit whose approach its mission's Approach carries
-    /// (`mission_owns_approach`) takes the whole stop here, as natively, a
-    /// Jumpjet one from its descent; the pursuit stage
-    /// leaves it alone. For any other Unit that stage's in-range halt
-    /// (`world_orders.rs`) stands in for the InRange arm, tested each frame,
-    /// and only the `OpenTopped=` arm runs here. Every infantryman takes Infantry
-    /// `0x0051AA40`, a Rocketeer touching down in range included.
+    /// A Unit takes it from its locomotor's PerCell, a Jumpjet from its
+    /// descent; every infantryman takes Infantry `0x0051AA40`, a Rocketeer
+    /// touching down in range included.
     fn per_cell_range_stop(
         &mut self,
         id: u64,
@@ -764,17 +776,6 @@ impl Simulation {
         else {
             return;
         };
-        if category == EntityCategory::Unit
-            && !self
-                .substrate
-                .entities
-                .get(id)
-                .and_then(|entity| self.object_type(entity.type_ref(), rules))
-                .is_some_and(|obj| obj.open_topped)
-            && !self.mission_owns_approach(id, rules)
-        {
-            return;
-        }
         if !self.foot_per_cell_range_stop(id, rules, registry) {
             return;
         }
@@ -784,7 +785,7 @@ impl Simulation {
             }
             EntityCategory::Infantry => {
                 // With no head and no destination left, the next Walk
-                // Process takes its idle tail and retires the adapter.
+                // Process takes its idle tail.
                 self.set_infantry_null_destination(id, Some(rules), registry, effects);
             }
             _ => {}

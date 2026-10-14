@@ -6,7 +6,6 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::locomotor::LocomotorState;
-use crate::sim::movement::parachute_descent::ParachuteDescentState;
 
 fn output_arrival_fixture() -> (Simulation, RuleSet) {
     use crate::map::entities::EntityCategory;
@@ -202,7 +201,8 @@ fn a_parachute_landing_in_its_own_cell_runs_the_foot_body() {
     entity.type_ref = sim.intern("E1");
     entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
     entity.position.exact_z_leptons = Some(2);
-    entity.parachute_state = Some(ParachuteDescentState { rate: -3 });
+    entity.set_falling_down_for_test(true);
+    entity.set_fall_rate_for_test(-3);
     sim.substrate.entities.insert(entity);
     sim.substrate.next_stable_object_id = 2;
     assert!(matches!(
@@ -215,10 +215,7 @@ fn a_parachute_landing_in_its_own_cell_runs_the_foot_body() {
         .unwrap();
 
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert!(
-        entity.parachute_state.is_none(),
-        "the fall grounded this turn"
-    );
+    assert!(!entity.is_falling_down(), "the fall grounded this turn");
     assert_eq!((entity.position.rx, entity.position.ry), (5, 5));
     assert!(entity.in_playfield, "the landing's Techno tail promotes");
 }

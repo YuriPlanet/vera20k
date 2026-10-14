@@ -134,9 +134,13 @@ impl FogState {
             .collect();
         let width = usize::from(self.width);
         let height = usize::from(self.height);
+        // The gap removals below publish only through the bulk store, so the
+        // next frame's clear visits every cell.
         self.by_owner
             .entry(owner)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
+            .or_insert_with(|| OwnerVisibility::new(self.width, self.height))
+            .tracked
+            .complete = false;
         //4ADEE0, per-object release then remove-gap. Activation sees OLD577A
         //false, deactivation OLD577Atrue; the House owner changes it afterwards.
         for &id in &ids {

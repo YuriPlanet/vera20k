@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Three stock prerequisite-loss controls through original BuildingLimbo, Factory sweep, House dirty suffix, Strip and local event receive. Fixture admission and native process/window startup are bounded.",
+  "assumptions": [
+    "Existing ReadyBuildingFixture physical RULESMD/optional LANGRULE/Battle/Hills readers, ART/sound, initialized VM/arena/map/House/listener priors. Additional whole BuildingType45DD90/45FE50 and UnitType7470D0/747620 readers execute for GAWEAP/GATECH/MGTK; selected715B10..715F9E post-read pass executes.",
+    "Whole CRT4E6C60 (table813234) initializes Unit vector8B4108 before the selected Unit constructor. Whole6A4CE0 and69DCF0 initialize reached tab/scroll gadgets. Sidebar+53A5 is the declared ordinary already-open prior.",
+    "Healthy completed preplaced GAWEAP/GATECH, House technology10, country Americans and flat terrain are admitted priors. Original constructors, Mark/Logic, counters, BeginProduction, linking and paid Factory AI execute. MGTK stage1 is paid; E1 starts later. Original zero-wallet visits reach a common due frame before supplied wallet0/100 and original Limbo.",
+    "55B66A..55B68D executes all factories in native construction order. House suffix4F9265..4F9302 and whole Strip bodies execute. Existing receive 6474C7..6474BF runs original OutList->DoList/ExecuteDoList/Event dispatcher without frame rewrite; all observed events and receive remain same-frame.",
+    "GAWEAP removal reaches earlier Building cleanup HouseAbandon before Limbo UpdateFactoryQueue. This control bounds before-sweep refund, not equivalence of VERA inline cleanup or every factory-loss callsite.",
+    "No code bytes, admission answers, RNG answers, stage/balance/timer or refund are replaced. Code unchanged and all three RNG states unchanged from loss through receive are checked. Queue promotion, network transport, whole sidebar startup/ordering and ordinary full-map loading are excluded."
+  ],
+  "substitutions": [
+    "Reuse existing joined allocator/physical cache/signed-CRC file service, DirectSound and opaque OS transport boundaries. Additional physical asset bytes and pinned absent theater/fallback filenames supply file service inputs; mounted MIX/theater precedence is not established."
+  ],
+  "entry_points": {
+    "building_limbo": "0x00445880",
+    "factory_ai": "0x004C9B20",
+    "logic_factory_sweep": "0x0055B66A",
+    "house_dirty_suffix": "0x004F9265",
+    "strip_recalculate": "0x006AA600",
+    "local_receive": "0x006474C7",
+    "house_abandon": "0x004FAA10",
+    "factory_abandon": "0x004C9FF0"
+  },
+  "retail_inputs": {
+    "RULESMD.INI": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+    "LANGRULE.INI": null,
+    "ARTMD.INI": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31",
+    "SOUNDMD.INI": "0a8e85381aef1a0f97074c953bfe99504da00c6220fae1a023a1afd857023232",
+    "MPBattleMD.ini": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+    "Hills.map": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e",
+    "GGWEAP.SHP": "050efce4278d44e009d20dbb7d15829d69fbb88ea0534715762f405003182076",
+    "GGWEAP_A.SHP": "e8d623bcffb298eae0062817607fe0ed0bc80a83828be1916987ede5a4684061",
+    "GGWEAP_B.SHP": "2be54efd682e97e84cf7c2ba0057a5055f26e794447248b9cd07a258ab0134e2",
+    "GGWEAPBB.SHP": "12007804d0b32f3b7dde1fa1d7d732341246e2394511c479d23beeb9984f7ae1",
+    "GGWEAP_1.SHP": "1d2d40582cc68d575a52547ebf599d43d335caccc4ea8c3c1edecdcabfe0a92c",
+    "GGWEAP_2.SHP": "6da4c4c07f6d5c7caefc3b249eca906d8fff9df3beb38073446d700a7258796a",
+    "GGWEAP_3.SHP": "83bdc33059cd139486d0f587975b6a27ac01b876603c24680189bf30683ad5e2",
+    "GGWEAP_4.SHP": "d3d0b4606471ba14aadc7d1283545abda71ab101f458b939bcf885c9a70abdd3",
+    "GGTECH.SHP": "99a8e1c0e036018aa77b6ff488827ddba82287b64a9ed8d3fdb9b1372acbc256",
+    "GGTECH_A.SHP": "9310912b6c3911e62c6d652872a6182c579d3bc7c0c7d50a541e183274291e31",
+    "RTNK.HVA": "16f3cd28642a66b1a0dc3f6cb4b063889c9f4721e46f12054fd60ed88cdc32ca",
+    "RTNK.VXL": "5ffa424b33fbb14a51743c69a02d9fe0137922e19b474e32402f5aba0f00f985"
+  },
+  "replay_command": "python -m tools.sidebar_oracle.factory_loss",
+  "payload_sha256": "c61241c4473047fead1a6fccf883c5bde35e4ab000b29c4a3202390b21e17742"
+}

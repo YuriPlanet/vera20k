@@ -421,7 +421,7 @@ fn entity_navigation_category(
         }
         // Y7336C0 calls750030 on live raw+150, never the announced-rank cache.
         CategoryNavigationKind::Veterancy => {
-            Some(crate::sim::combat::veterancy::veterancy_level(entity.veterancy_raw) as u8)
+            Some(crate::sim::combat::veterancy::veterancy_level(entity.veterancy.raw()) as u8)
         }
     }
 }

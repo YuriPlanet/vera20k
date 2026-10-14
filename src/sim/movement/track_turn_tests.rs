@@ -636,7 +636,7 @@ fn actual_entry_turn_gate_precedes_speed_and_points_for_both_families() {
 
 #[test]
 fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
-    use crate::sim::components::{FootPathQueue, MovementTarget};
+    use crate::sim::components::FootPathQueue;
     use crate::sim::movement::locomotor::MovementLayer;
     use crate::util::fixed_math::SimFixed;
 
@@ -675,9 +675,6 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
                     cursor: 0,
                     reference_cell: Some((8, 8)),
                 };
-                entity.movement_target = Some(MovementTarget {
-                    speed: SimFixed::from_num(330),
-                });
                 set_retained(
                     entity,
                     kind,
@@ -812,8 +809,7 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
 
 #[test]
 fn live_rotation_returns_before_fresh_selection_with_a_queued_path_and_no_display_target() {
-    use crate::sim::components::{FootPathQueue, MovementTarget};
-    use crate::util::fixed_math::SimFixed;
+    use crate::sim::components::FootPathQueue;
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=TURN\n[TURN]\nSpeed=6\nAccelerates=no\n",
     ))
@@ -859,9 +855,6 @@ fn live_rotation_returns_before_fresh_selection_with_a_queued_path_and_no_displa
             cursor: 0,
             reference_cell: Some((8, 8)),
         };
-        entity.movement_target = Some(MovementTarget {
-            speed: SimFixed::from_num(330),
-        });
         let before_position = super::super::ground_pose::position_world_coord(&entity.position);
         let before_facing = serde_json::to_value(entity.body_facing).unwrap();
         let before_queue = entity.navigation.path_replay.clone();

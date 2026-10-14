@@ -145,7 +145,7 @@ fn assert_read_only_native_aim(duel: &Duel, source_id: u64, row: &serde_json::Va
 
 /// Original70BCB0 runs actual target virtuals, Drive::Is_Moving, Foot's live
 /// speed, GetCurrentWeapon and FacingClass. Keep the same moving actor while
-/// its rank changes: the earlier movement-order speed must not freeze lead.
+/// its rank changes: the lead reads the promoted speed.
 #[test]
 fn original_aim_query_reads_live_motion_rank_and_facing_without_mutation() {
     let corpus = attack_aim_corpus();
@@ -158,16 +158,6 @@ fn original_aim_query_reads_live_motion_rank_and_facing_without_mutation() {
         attack_aim_row(&corpus, "aim_cases", "stationary_target_aim"),
     );
     begin_native_aim_motion(&mut duel, target);
-    let order_speed = duel
-        .sim
-        .substrate
-        .entities
-        .get(target)
-        .unwrap()
-        .movement_target
-        .as_ref()
-        .unwrap()
-        .speed;
     for (facing, name) in [
         (0, "moving_target_aim_0"),
         (0x4000, "moving_target_aim_16384"),
@@ -182,19 +172,13 @@ fn original_aim_query_reads_live_motion_rank_and_facing_without_mutation() {
             .snap(facing, duel.sim.session.binary_frame);
         assert_read_only_native_aim(&duel, source, attack_aim_row(&corpus, "aim_cases", name));
     }
-    super::veterancy::set_veteran(duel.sim.substrate.entities.get_mut(target).unwrap());
-    assert_eq!(
-        duel.sim
-            .substrate
-            .entities
-            .get(target)
-            .unwrap()
-            .movement_target
-            .as_ref()
-            .unwrap()
-            .speed,
-        order_speed
-    );
+    duel.sim
+        .substrate
+        .entities
+        .get_mut(target)
+        .unwrap()
+        .veterancy
+        .set_veteran();
     assert_read_only_native_aim(
         &duel,
         source,
@@ -230,7 +214,7 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
     actor
         .body_facing
         .snap(0xc000, duel.sim.session.binary_frame);
-    super::veterancy::set_veteran(actor);
+    actor.veterancy.set_veteran();
     let row = attack_aim_row(
         &corpus,
         "fireat_cases",
@@ -509,7 +493,7 @@ fn grand_cannon_recoil_follows_successful_launch_ai_and_snapshot() {
         actor.mission,
         actor.attack_target,
         actor.last_fire_frame,
-        actor.building_actually_placed,
+        actor.building_art.actually_placed(),
         actor.building_body_state(),
         actor.body_facing
     );
@@ -695,7 +679,7 @@ impl Duel {
             return format!("{id}: retired");
         };
         format!(
-            "{id}: location={:?}, health={}, mission={:?}, target={:?}, nav={:?}, moving={:?}, fraction={:?}, adapter={}, last_fire={}",
+            "{id}: location={:?}, health={}, mission={:?}, target={:?}, nav={:?}, moving={:?}, fraction={:?}, last_fire={}",
             self.location(id),
             actor.health.current,
             actor.mission,
@@ -703,7 +687,6 @@ impl Duel {
             actor.navigation.nav_com,
             crate::sim::movement::motion_query::is_moving(actor),
             actor.foot_speed.applied_fraction(),
-            actor.movement_target.is_some(),
             actor.last_fire_frame,
         )
     }
@@ -852,7 +835,6 @@ fn a_moving_rhino_is_led() {
             entity_id: rhino,
             target_rx: 20,
             target_ry: 28,
-            queue: false,
         },
     );
     duel.order(
@@ -921,7 +903,6 @@ fn a_homing_missile_fuses_on_the_unled_target() {
             entity_id: rhino,
             target_rx: 20,
             target_ry: 28,
-            queue: false,
         },
     );
     duel.order(

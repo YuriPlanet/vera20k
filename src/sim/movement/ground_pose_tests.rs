@@ -5,7 +5,7 @@ use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::{DriveCoord, MovementTarget};
+use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
 use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
@@ -29,11 +29,6 @@ fn mover(sim: &mut Simulation, kind: LocomotorKind) -> GameEntity {
     entity.locomotor = Some(LocomotorState::for_test_kind(kind));
     entity.body_facing.snap(0x0000, 0);
     entity.position.exact_z_leptons = Some(731);
-    entity.movement_target = Some(MovementTarget {
-        // Gives budget4 in both Drive's integer division and Ship's existing
-        // fixed-point frame product (60 * fixed(1/15) truncates to3).
-        speed: SimFixed::from_num(61),
-    });
     match kind {
         LocomotorKind::Drive => {
             entity.foot_speed.set_speed_fraction(SIM_ONE);
@@ -65,12 +60,7 @@ fn mover(sim: &mut Simulation, kind: LocomotorKind) -> GameEntity {
             entity.category = EntityCategory::Infantry;
             entity.is_voxel = false;
             entity.sub_cell = Some(0);
-            // Walk follows its Foot+5E0 route toward its destination; its
-            // adapter keeps no route cells.
-            entity.movement_target = Some(MovementTarget {
-                speed: SimFixed::from_num(61),
-                ..Default::default()
-            });
+            // Walk follows its Foot+5E0 route toward its destination.
             entity
                 .locomotor
                 .as_mut()
@@ -85,6 +75,24 @@ fn mover(sim: &mut Simulation, kind: LocomotorKind) -> GameEntity {
         _ => unreachable!(),
     }
     entity
+}
+
+/// A rules-less Drive/Ship mover pays `budget` leptons a Process: Foot+578
+/// scales its type speed (the `Speed=4` fallback, 10 leptons a frame), as the
+/// live getter confirms, and the track prefix keeps the class target fraction
+/// it is given.
+fn set_track_budget(entity: &mut GameEntity, budget: i32) {
+    let fraction = (SimFixed::from_num(budget) + SimFixed::lit("0.5")) / SimFixed::from_num(10);
+    entity.foot_speed.set_speed_fraction(fraction);
+    assert_eq!(
+        crate::sim::movement::owner_current_speed(entity, None, 1.0, &Default::default()),
+        budget
+    );
+    let loco = entity.locomotor.as_mut().unwrap();
+    let family =
+        crate::sim::movement::track_process::TrackFamily::from_kind(loco.active_kind()).unwrap();
+    assert!(loco.ensure_installed_track_state());
+    assert!(loco.store_track_target_fraction(family, fraction));
 }
 
 fn seed_track(entity: &mut GameEntity, kind: LocomotorKind, cursor: i32, head: DriveCoord) {
@@ -242,6 +250,7 @@ fn drive_ship_paid_points_sample_before_residual_xy_and_no_paid_point_retains_ra
         let grid = PathGrid::from_resolved_terrain(&terrain);
         let mut sim = Simulation::with_seed(3);
         let mut entity = mover(&mut sim, kind);
+        set_track_budget(&mut entity, 4);
         seed_track(&mut entity, kind, 1, DriveCoord::cell(3, 2, 731));
         // Retail straight-north point0 is (0,245); headY=-128 gives117.
         entity.position.sub_y = SimFixed::from_num(117);
@@ -307,8 +316,7 @@ fn residual_bridge_crossing_preserves_z_and_projects_the_layer_from_on_bridge() 
             MovementLayer::Bridge
         };
         entity.locomotor.as_mut().unwrap().layer = start_layer;
-        let target = entity.movement_target.as_mut().unwrap();
-        target.speed = SimFixed::from_num(105); // budget7, strict paid gate >7
+        set_track_budget(&mut entity, 7); // strict paid gate >7
         // This route continues beyond the first retained segment. Native
         // owner NavCom must survive that terminal; a route without it admits
         // EnterIdleMode and its Foot SetSpeedFraction(0) at that first end.
@@ -354,14 +362,7 @@ fn residual_bridge_crossing_preserves_z_and_projects_the_layer_from_on_bridge() 
         assert_eq!(sim.substrate.occupancy.count_on_layer(3, 2, end_layer), 1);
         let relinked_generation = sim.substrate.occupancy.generation();
 
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .movement_target
-            .as_mut()
-            .unwrap()
-            .speed = SimFixed::from_num(30);
+        set_track_budget(sim.substrate.entities.get_mut(1).unwrap(), 2);
         tick(&mut sim, &terrain, &grid, 1);
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(entity.position.exact_z_leptons, Some(416));
@@ -371,14 +372,7 @@ fn residual_bridge_crossing_preserves_z_and_projects_the_layer_from_on_bridge() 
             "no duplicate cell entry at paid point"
         );
         assert_eq!(entity.locomotor.as_ref().unwrap().layer, end_layer);
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .movement_target
-            .as_mut()
-            .unwrap()
-            .speed = SimFixed::from_num(105);
+        set_track_budget(sim.substrate.entities.get_mut(1).unwrap(), 7);
         tick(&mut sim, &terrain, &grid, 2);
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(track(entity).cursor, 13);
@@ -439,9 +433,7 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
             Some(&grid),
         );
         let prior_paid_z = entity.position.exact_z_leptons;
-        let target = entity.movement_target.as_mut().unwrap();
-        // Budget7 for both locomotors, including Ship's fixed-point product.
-        target.speed = SimFixed::from_num(106);
+        set_track_budget(&mut entity, 7);
         seed_track(&mut entity, kind, 11, DriveCoord::cell(3, 2, 731));
         insert(&mut sim, entity);
         tick(&mut sim, &terrain, &grid, 0);
@@ -546,6 +538,31 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
     }
 }
 
+/// A Drive or Ship crossing into a higher cell stores that cell's level, as a
+/// Walk boundary does: sight, radar and crew placement read it. Before, the
+/// track kept the level it was spawned at, so a vehicle that climbed onto a
+/// plateau still saw from the valley floor.
+#[test]
+fn drive_ship_crossing_stores_the_entered_cell_level() {
+    for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
+        let mut terrain = terrain();
+        terrain.cell_mut(3, 2).unwrap().level = 5;
+        let grid = PathGrid::from_resolved_terrain(&terrain);
+        let mut sim = Simulation::with_seed(71);
+        let mut entity = mover(&mut sim, kind);
+        entity.position.z = 0;
+        entity.position.sub_y = SimFixed::from_num(7);
+        set_track_budget(&mut entity, 7);
+        seed_track(&mut entity, kind, 11, DriveCoord::cell(3, 2, 731));
+        insert(&mut sim, entity);
+        tick(&mut sim, &terrain, &grid, 0);
+        let entity = sim.substrate.entities.get(1).unwrap();
+        assert_eq!((entity.position.rx, entity.position.ry), (3, 2), "{kind:?}");
+        assert!(!entity.on_bridge, "{kind:?}");
+        assert_eq!(entity.position.z, 5, "{kind:?}");
+    }
+}
+
 #[test]
 fn walking_bridge_entry_commits_new_surface_and_object_list_plane() {
     let mut terrain = terrain();
@@ -612,9 +629,6 @@ fn fresh_walk_refusal_preserves_xyz_before_head_selection() {
     let mut blocker = GameEntity::test_default(2, "BLOCKER", "Americans", 3, 2);
     blocker.owner = sim.intern("Americans");
     blocker.type_ref = sim.intern("BLOCKER");
-    blocker.movement_target = Some(MovementTarget {
-        speed: SimFixed::from_num(61),
-    });
     // Moving: its Foot+5E0 head word steps east from (3,2).
     blocker.navigation.path_replay = crate::sim::movement::fixture_path_replay(&[(3, 2), (4, 2)]);
     sim.substrate.occupancy.add(
@@ -630,7 +644,7 @@ fn fresh_walk_refusal_preserves_xyz_before_head_selection() {
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!((entity.position.rx, entity.position.ry), (3, 3));
     assert!(
-        entity.movement_target.is_some(),
+        crate::sim::movement::motion_query::is_moving(&entity) == Some(true),
         "waiting refusal must not run arrival finalizer"
     );
     assert_eq!(
@@ -659,8 +673,7 @@ fn terminal_drive_snap_updates_ramp_height_with_stashed_teleport_owner() {
     let mut loco = LocomotorState::for_test_kind(LocomotorKind::Teleport);
     assert!(loco.begin_piggyback(LocomotorKind::Drive, 0));
     entity.locomotor = Some(loco);
-    let target = entity.movement_target.as_mut().unwrap();
-    target.speed = SimFixed::from_num(120);
+    set_track_budget(&mut entity, 8);
     seed_track(
         &mut entity,
         LocomotorKind::Drive,
@@ -671,7 +684,7 @@ fn terminal_drive_snap_updates_ramp_height_with_stashed_teleport_owner() {
     insert(&mut sim, entity);
     tick(&mut sim, &terrain, &grid, 0);
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert!(entity.movement_target.is_none());
+    assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
     assert!(super::track_head::committed_track_head(entity).is_none());
     assert_eq!(
         (entity.position.sub_x, entity.position.sub_y),
@@ -691,8 +704,6 @@ fn terminal_centre_height_commits_before_next_process_turn_without_finalizer() {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let mut sim = Simulation::new();
     let mut entity = mover(&mut sim, LocomotorKind::Drive);
-    let target = entity.movement_target.as_mut().unwrap();
-    target.speed = SimFixed::from_num(120);
     seed_track(
         &mut entity,
         LocomotorKind::Drive,
@@ -711,7 +722,7 @@ fn terminal_centre_height_commits_before_next_process_turn_without_finalizer() {
     tick_with_rules(&mut sim, &terrain, &grid, 0, Some(&mover_rules()));
     let entity = sim.substrate.entities.get(1).unwrap();
     assert!(
-        entity.movement_target.is_some(),
+        crate::sim::movement::motion_query::is_moving(&entity) == Some(true),
         "unfinished route must not run finalizer"
     );
     assert!(super::track_head::committed_track_head(entity).is_none());
@@ -726,7 +737,7 @@ fn terminal_centre_height_commits_before_next_process_turn_without_finalizer() {
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!(entity.body_facing.destination(), 0x4000);
     assert_eq!(entity.position.exact_z_leptons, Some(52));
-    assert!(entity.movement_target.is_some());
+    assert!(crate::sim::movement::motion_query::is_moving(&entity) == Some(true));
 }
 
 #[test]
@@ -838,7 +849,6 @@ fn idle_drive_keeps_supplied_raw_height() {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let mut sim = Simulation::new();
     let mut entity = mover(&mut sim, LocomotorKind::Drive);
-    entity.movement_target = None;
     // A completed TubeMovement can leave an arbitrary raw Z without an active
     // tube state. An ordinary idle visit has no native SetHeight call.
     entity.position.exact_z_leptons = Some(-347);
@@ -887,8 +897,7 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
     terrain.cell_mut(3, 4).unwrap().level = 2;
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let mut sim = Simulation::new();
-    let mut entity = mover(&mut sim, LocomotorKind::Drive);
-    entity.movement_target = None;
+    let entity = mover(&mut sim, LocomotorKind::Drive);
     insert(&mut sim, entity);
     sim.resolved_terrain = Some(terrain.clone());
     assert!(sim.force_track(
@@ -950,40 +959,33 @@ fn ordinary_drive_ship_command_keeps_subcell_origin_through_terminal_cleanup() {
             let mut sim = Simulation::new();
             let grid = crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
             let mut entity = mover(&mut sim, kind);
-            entity.movement_target = None;
             entity.position.sub_x = SimFixed::from_num(sub_x);
             entity.position.sub_y = SimFixed::from_num(sub_y);
             entity.body_facing.snap(u16::from(facing) << 8, 0);
             insert(&mut sim, entity);
-            assert!(crate::sim::movement::issue_move_command(
-                &mut sim.substrate.entities,
-                &grid,
+            assert!(sim.set_unit_destination(
                 1,
-                destination,
-                SimFixed::from_num(128),
-                false,
-                None,
-                None,
-                None,
-                crate::sim::movement::DestinationTiming::new(0, 60),
+                crate::sim::components::NavTargetRef::cell(destination.0, destination.1),
+                &rules,
+                true,
+                crate::sim::world::FrameEffects::default(),
             ));
             for frame in 0..128 {
                 sim.session.binary_frame = frame;
                 sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
                     .unwrap();
-                if sim
-                    .substrate
-                    .entities
-                    .get(1)
-                    .unwrap()
-                    .movement_target
-                    .is_none()
+                if crate::sim::movement::motion_query::is_moving(
+                    sim.substrate.entities.get(1).unwrap(),
+                ) != Some(true)
                 {
                     break;
                 }
             }
             let entity = sim.substrate.entities.get(1).unwrap();
-            assert!(entity.movement_target.is_none(), "{kind:?} must arrive");
+            assert!(
+                crate::sim::movement::motion_query::is_moving(&entity) != Some(true),
+                "{kind:?} must arrive"
+            );
             assert_eq!(
                 ground_pose::position_world_xy(&entity.position),
                 [
@@ -1082,9 +1084,6 @@ fn chained_mover(sim: &mut Simulation, kind: LocomotorKind) -> (GameEntity, Driv
         }
         _ => unreachable!(),
     }
-    entity.movement_target = Some(MovementTarget {
-        speed: SimFixed::from_num(128),
-    });
     (entity, head)
 }
 

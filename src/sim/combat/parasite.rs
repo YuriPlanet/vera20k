@@ -297,11 +297,13 @@ impl Simulation {
     }
 
     /// Release tail shared by AttachTo refusal, ExitUnit and PointerExpired:
-    /// VERA has no planning path (Foot vtable +0x4AC is false), so the owner
-    /// clears its target and destination (`vt+0x480(0, 1)` at `0x0062A78A`,
-    /// `0x0062A3ED`, `0x0062AAB9`), then Enter_Idle_Mode(0,1). Only ExitUnit
-    /// (`0x0062A771`) and PointerExpired (`0x0062A3D4`) also clear the archive
-    /// target; the AttachTo refusal (`0x0062AA96..0x0062AAC9`) keeps it.
+    /// unless the owner is on an attack-move (HaveMegaMission, vt+0x4AC at
+    /// `0x0062A763`, `0x0062A3C6`, `0x0062AA9B`), it clears its target and
+    /// destination (`vt+0x480(0, 1)` at `0x0062A78A`, `0x0062A3ED`,
+    /// `0x0062AAB9`); then Enter_Idle_Mode(0,1), whose RefreshMegaMission
+    /// resumes such an order. Only ExitUnit (`0x0062A771`) and PointerExpired
+    /// (`0x0062A3D4`) also clear the archive target; the AttachTo refusal
+    /// (`0x0062AA96..0x0062AAC9`) keeps it.
     fn parasite_released_owner_orders(
         &mut self,
         owner: u64,
@@ -309,15 +311,14 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        if let Some(entity) = self.substrate.entities.get_mut(owner) {
-            if clear_archive {
-                entity.set_archive_target(None);
+        if !self.mega_mission(owner).is_attack_move() {
+            if let Some(entity) = self.substrate.entities.get_mut(owner) {
+                if clear_archive {
+                    entity.set_archive_target(None);
+                }
+                crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
             }
-            crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
-        }
-        self.assign_null_destination(owner, Some(rules), None, effects);
-        if let Some(entity) = self.substrate.entities.get_mut(owner) {
-            entity.movement_target = None;
+            self.assign_null_destination(owner, Some(rules), None, effects);
         }
         crate::sim::world::enter_idle_mode(self, owner, rules, None, effects);
     }
@@ -384,7 +385,7 @@ impl Simulation {
         if owner_uses_grapple(owner_object) {
             return;
         }
-        let Some(weapon) = weapon_zero(rules, owner_object, owner_entity.veterancy()) else {
+        let Some(weapon) = weapon_zero(rules, owner_object, owner_entity.veterancy.rank()) else {
             return;
         };
         let Some(warhead_name) = weapon.warhead.as_deref() else {
@@ -502,7 +503,8 @@ impl Simulation {
             .as_deref()
             .is_some_and(|s| s.suppression.remaining(frame as i32) != 0);
         let (speed_type, movement_zone) = (owner_object.speed_type, owner_object.movement_zone);
-        let rof = weapon_zero(rules, owner_object, owner_entity.veterancy()).map_or(0, |w| w.rof);
+        let rof =
+            weapon_zero(rules, owner_object, owner_entity.veterancy.rank()).map_or(0, |w| w.rof);
         let Some(victim_entity) = self.substrate.entities.get(victim) else {
             return;
         };

@@ -59,6 +59,7 @@ fn stock_refinery_completion_rules() -> RuleSet {
          Refinery=yes\nDockUnload=yes\n\
          FreeUnit=HARV\n\
          [CMIN]\n\
+         SpeedType=Track\n\
          Harvester=yes\n\
          Dock=GAREFN\n\
          Cost=1400\n\
@@ -248,15 +249,12 @@ const FREE_UNIT_FACING_FALLBACK: u8 = 0xA0;
 /// same reason, leaving these five in this order. The fixture grid is flat, so
 /// every survivor classifies as a direct candidate and the per-ring early-out
 /// stops collection at ring 1: this list IS the pool the frame-counter modulo
-/// indexes, not merely a subset of it. On raised ground the direct
-/// classification — and with it the early-out — is a recorded residual of the
-/// shared search port, so the pool there is wider than this.
+/// indexes, not merely a subset of it.
 ///
-/// UNCHECKED as parity: which cell gamemd's own search returns for a completed
-/// stock refinery has not been derived. This pool is what VERA's search produces,
-/// so these tests are a regression ratchet on the search mechanism (seed, ring
-/// order, occupancy, frame-counter selection) — NOT evidence that the landing cell
-/// matches gamemd's.
+/// Not parity: the search takes the arguments OnConstructionComplete pushes
+/// (instruction reading) through the shared search port, but no native run of
+/// this scene has derived the landing cell. These tests ratchet the mechanism
+/// (seed, ring order, occupancy, frame-counter selection), not gamemd's cell.
 const STOCK_4X3_FALLBACK_POOL: [(u16, u16); 5] = [(19, 19), (19, 21), (20, 19), (21, 19), (19, 20)];
 
 /// Build the stock Allied refinery-completion fixture and run the single tick that
@@ -275,6 +273,22 @@ fn complete_stock_allied_refinery(
     start_frame: u32,
     extra_blockers: &[(u16, u16)],
 ) -> (Simulation, u64) {
+    let (sim, refinery_id, spawned) =
+        complete_stock_allied_refinery_on(start_frame, extra_blockers, |_| {});
+    assert!(
+        spawned,
+        "frame {start_frame}: refinery completion should report the free unit"
+    );
+    (sim, refinery_id)
+}
+
+/// [`complete_stock_allied_refinery`] on clear ground that `override_cell`
+/// edits; also returns whether the completion tick reported a spawn.
+fn complete_stock_allied_refinery_on(
+    start_frame: u32,
+    extra_blockers: &[(u16, u16)],
+    override_cell: impl FnMut(&mut ResolvedTerrainCell),
+) -> (Simulation, u64, bool) {
     let mut sim = placement_sim();
     sim.session.binary_frame = start_frame;
     let rules = stock_refinery_completion_rules();
@@ -286,15 +300,11 @@ fn complete_stock_allied_refinery(
         sim.spawn_object("BLOCKER", "Russians", rx, ry, 0, &rules)
             .expect("fixture blocker should spawn");
     }
-    install_refinery_test_terrain(&mut sim);
+    install_refinery_test_terrain_on(&mut sim, override_cell);
     set_ticks_until_completion(&mut sim, refinery_id, 1);
 
     let completion = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
-    assert!(
-        completion.spawned_entities,
-        "frame {start_frame}: refinery completion should report the free unit"
-    );
-    (sim, refinery_id)
+    (sim, refinery_id, completion.spawned_entities)
 }
 
 fn resolved_clear_grid_with_override(
@@ -337,10 +347,19 @@ fn placement_sim() -> Simulation {
     sim
 }
 
-/// Install the MapClass inputs that active UnitClass::Unlimbo always sees.
-/// Blocker fixtures are inserted before this call so they model objects already
-/// occupying the bay rather than a second constructor placement.
+/// Install the MapClass inputs that active UnitClass::Unlimbo and the
+/// FreeUnit searches always see: the playfield, the Map Size, the cells and
+/// their zones. Blocker fixtures are inserted before this call so they model
+/// objects already occupying the bay rather than a second constructor
+/// placement.
 fn install_refinery_test_terrain(sim: &mut Simulation) {
+    install_refinery_test_terrain_on(sim, |_| {});
+}
+
+fn install_refinery_test_terrain_on(
+    sim: &mut Simulation,
+    override_cell: impl FnMut(&mut ResolvedTerrainCell),
+) {
     sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -100,
@@ -348,7 +367,18 @@ fn install_refinery_test_terrain(sim: &mut Simulation) {
         off_104: 200,
         off_108: 200,
     });
-    sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
+    sim.playfield_size_height = Some(64);
+    let terrain = resolved_clear_grid_with_override(64, 64, override_cell);
+    sim.zone_grid = Some(
+        crate::sim::pathfinding::zone_map::ZoneGrid::build_with_terrain(
+            &PathGrid::from_resolved_terrain(&terrain),
+            &terrain,
+            &[],
+            64,
+            64,
+        ),
+    );
+    sim.resolved_terrain = Some(terrain);
 }
 
 fn naval_yard_placement_rules() -> RuleSet {
@@ -1123,7 +1153,7 @@ fn stock_refinery_free_unit_spawns_on_building_up_completion_once() {
         building.building_ready_latch(),
         building.building_body_state(),
         building.native_stage(),
-        building.building_actually_placed,
+        building.building_art.actually_placed(),
         unit_ids(&sim, "Americans", "CMIN")
     );
     assert!(
@@ -1202,6 +1232,42 @@ fn stock_4x3_refinery_free_unit_is_refused_its_footprint_and_placed_by_the_nearb
             "frame {frame}: a placement made by the nearby search uses the fallback facing"
         );
         assert_eq!(miner.mission.current().known(), Some(MissionType::Harvest));
+    }
+}
+
+/// OnConstructionComplete's searches push SpeedType 2, Wheel (`0x00446CC0`,
+/// `0x00446E03`), not the free unit's own. Ground a Wheel unit crosses but a
+/// Track unit cannot therefore stays a candidate: when the frame modulo
+/// picks it, the Track CMIN's own Can_Enter_Cell refuses it on both
+/// searches and the house is refunded (`0x00446E71..0x00446E8F`); on every
+/// other frame the CMIN lands on the stock pool as before.
+#[test]
+fn free_unit_search_asks_wheel_ground_whatever_the_free_units_speed_type() {
+    const WHEEL_ONLY: (u16, u16) = (19, 19);
+    for frame in 0..(STOCK_4X3_FALLBACK_POOL.len() as u32 * 2) {
+        let (sim, _, spawned) = complete_stock_allied_refinery_on(frame, &[], |cell| {
+            if (cell.rx, cell.ry) == WHEEL_ONLY {
+                cell.speed_costs.track = Some(0);
+                cell.base_speed_costs.track = Some(0);
+            }
+        });
+        let pick = STOCK_4X3_FALLBACK_POOL[(frame as usize) % STOCK_4X3_FALLBACK_POOL.len()];
+        let cmin_ids = unit_ids(&sim, "Americans", "CMIN");
+        if pick == WHEEL_ONLY {
+            assert!(
+                !spawned && cmin_ids.is_empty(),
+                "frame {frame}: the Wheel-only pick is refused and refunded"
+            );
+            continue;
+        }
+        assert!(spawned, "frame {frame}");
+        assert_eq!(cmin_ids.len(), 1, "frame {frame}: the FreeUnit is placed");
+        let miner = sim.substrate.entities.get(cmin_ids[0]).unwrap();
+        assert_eq!(
+            (miner.position.rx, miner.position.ry),
+            pick,
+            "frame {frame}"
+        );
     }
 }
 

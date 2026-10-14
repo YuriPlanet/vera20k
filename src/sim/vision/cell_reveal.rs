@@ -29,6 +29,22 @@ impl Default for MapCellEdgeCache {
         }
     }
 }
+impl MapCellEdgeCache {
+    /// This cell's state hash record.
+    fn hash_record(&self) -> [u8; 4] {
+        let Self {
+            initialized,
+            fog_open,
+            frames: [first, second],
+        } = *self;
+        [
+            u8::from(initialized),
+            u8::from(fog_open),
+            first as u8,
+            second as u8,
+        ]
+    }
+}
 
 /// The canonical map Dummy has one retained visibility record per represented
 /// player plane, shared by every missing coordinate. Its coordinate/height
@@ -144,21 +160,13 @@ impl OwnerVisibility {
     }
 
     pub(crate) fn hash_map_cell_edge_cache(&self, hasher: &mut impl Hasher) {
-        let populated = self
-            .map_cell_edge_cache
-            .iter()
-            .filter(|cache| cache.initialized)
-            .count();
-        if populated != 0 {
-            b"native-map-cell-edge-cache-v1".hash(hasher);
-            (populated as u64).hash(hasher);
-            for (index, cache) in self.map_cell_edge_cache.iter().enumerate() {
-                if cache.initialized {
-                    (index as u64).hash(hasher);
-                    cache.hash(hasher);
-                }
-            }
-        }
+        // Every cell's fields, initialized or not: the reveal and edge-frame
+        // readers consult `frames` and `fog_open` of uninitialized cells too.
+        crate::sim::state_hasher::hash_records(
+            &self.map_cell_edge_cache,
+            hasher,
+            MapCellEdgeCache::hash_record,
+        );
         if self.dummy_visibility != DummyVisibility::default() {
             b"native-dummy-visibility-v1".hash(hasher);
             self.dummy_visibility.hash(hasher);
@@ -270,12 +278,19 @@ impl FogState {
             state.reveal();
         }
         state.transient_visible = matches!(key, VisibilityCell::Real(_));
-        if state.open {
+        let open = state.open;
+        if open {
             *ground |= GROUND_VISIBLE | GROUND_OPEN;
         } else {
             *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
         }
         if let VisibilityCell::Real(index) = key {
+            vis.tracked.transient.push(index as u32);
+            if !open {
+                // The next pass's sight puts back cleared ground bits under
+                // its footprints (`SightApply::Mark`), so it visits them all.
+                vis.tracked.complete = false;
+            }
             vis.publish_knowledge(index);
         }
         let ground = self.map_cell_edge_frame(viewer, cell, false, native_cells);

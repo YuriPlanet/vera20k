@@ -1188,7 +1188,6 @@ fn foot_move_here(
     let Some(rules) = rules else {
         return RadioResponse::None;
     };
-    let aircraft = entity.category == EntityCategory::Aircraft;
     let now = sim.session.binary_frame;
     // 0x004D919A..0x004D91BA.
     if entity.mission.effective() == MissionId::from_known(MissionType::Guard)
@@ -1212,15 +1211,7 @@ fn foot_move_here(
         sim.mission_host_promote(foot, now, rules);
     }
     // 0x004D91E1..0x004D91EB: the class setter vt+0x480(*P, 1).
-    match (payload.target, aircraft) {
-        (target, true) => sim.assign_aircraft_destination(foot, target, rules, effects),
-        (Some(target), false) => {
-            sim.set_unit_destination(foot, target, rules, true, effects);
-        }
-        (None, false) => {
-            sim.assign_null_destination(foot, Some(rules), None, effects);
-        }
-    }
+    let _ = sim.assign_destination_represented(foot, payload.target, Some(rules), None, effects);
     // 0x004D91F1..0x004D920D: UpdateTimer (+0xC8) = {Frame, -, 0}. Inside a
     // mission dispatch the MissionClass::AI epilogue overwrites it.
     if let Some(entity) = sim.substrate.entities.get_mut(foot) {

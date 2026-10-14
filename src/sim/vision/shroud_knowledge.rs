@@ -2,7 +2,9 @@
 //! projection. Original487630/487690/4876F0,6FB170/6FB470 and578100.
 //! Native counter arithmetic wraps; pending is not equivalent to current sight.
 use crate::sim::intern::InternedId;
+use crate::sim::state_hasher::hash_records;
 use serde::{Deserialize, Serialize};
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct ShroudKnowledge {
@@ -28,6 +30,27 @@ impl Default for ShroudKnowledge {
     }
 }
 impl ShroudKnowledge {
+    /// This cell's state hash record: the four counters little-endian, then
+    /// the flags.
+    pub(super) fn hash_record(&self) -> [u8; 17] {
+        let Self {
+            counter,
+            gap_counter,
+            open,
+            pending,
+            local_sources,
+            allied_sources,
+            transient_visible,
+        } = *self;
+        let mut record = [0u8; 17];
+        record[..4].copy_from_slice(&counter.to_le_bytes());
+        record[4..8].copy_from_slice(&gap_counter.to_le_bytes());
+        record[8..12].copy_from_slice(&local_sources.to_le_bytes());
+        record[12..16].copy_from_slice(&allied_sources.to_le_bytes());
+        record[16] = u8::from(open) | u8::from(pending) << 1 | u8::from(transient_visible) << 2;
+        record
+    }
+
     pub fn reveal(&mut self) {
         if self.counter == 1 {
             self.counter = 0;
@@ -90,12 +113,32 @@ impl ShroudKnowledge {
 /// clears the admission latch then releases that stored footprint, retaining
 /// the stored geometry. Reconciliation must not
 /// turn an unchanged source into another reveal event.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct SightAdmission {
     pub owner: InternedId,
     pub origin: (u16, u16, i32),
     pub radius: u16,
     pub cells: Vec<(u16, u16)>,
+}
+
+impl Hash for SightAdmission {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        let Self {
+            owner,
+            origin,
+            radius,
+            cells,
+        } = self;
+        owner.hash(hasher);
+        origin.hash(hasher);
+        radius.hash(hasher);
+        // The footprint lists every cell of the sight circle.
+        hash_records(cells, hasher, |&(rx, ry)| {
+            let [x0, x1] = rx.to_le_bytes();
+            let [y0, y1] = ry.to_le_bytes();
+            [x0, x1, y0, y1]
+        });
+    }
 }
 
 /// Native Foot65C/664 countdown, one logical native client per viewer. The
@@ -121,5 +164,42 @@ impl SightRefreshTimers {
             viewer,
             crate::sim::timer::CdTimer::started(frame as i32, 15),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ShroudKnowledge;
+    use crate::sim::state_hasher::{StateHasher, hash_records};
+    use std::hash::Hasher;
+
+    fn grid_hash(cells: &[ShroudKnowledge]) -> u64 {
+        let mut hasher = StateHasher::new();
+        hash_records(cells, &mut hasher, ShroudKnowledge::hash_record);
+        hasher.finish()
+    }
+
+    #[test]
+    fn every_field_of_every_cell_moves_the_grid_hash() {
+        // 300 cells span two 240-record batches.
+        let grid = vec![ShroudKnowledge::default(); 300];
+        let base = grid_hash(&grid);
+        let edits: [fn(&mut ShroudKnowledge); 7] = [
+            |cell| cell.counter = 2,
+            |cell| cell.gap_counter = 1,
+            |cell| cell.open = true,
+            |cell| cell.pending = true,
+            |cell| cell.local_sources = 1,
+            |cell| cell.allied_sources = 1,
+            |cell| cell.transient_visible = true,
+        ];
+        for index in [0, 239, 240, 299] {
+            for edit in edits {
+                let mut changed = grid.clone();
+                edit(&mut changed[index]);
+                assert_ne!(grid_hash(&changed), base, "cell {index}");
+            }
+        }
+        assert_ne!(grid_hash(&grid[..299]), base);
     }
 }

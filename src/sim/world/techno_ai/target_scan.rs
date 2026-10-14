@@ -137,7 +137,7 @@ pub(super) fn retaliate_and_scan<H: ScanHost>(host: &mut H, mask: ScanMission) -
 }
 
 /// Run the scan for `id` with the caller's mask literal.
-pub(super) fn scan(
+pub(crate) fn scan(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
@@ -164,15 +164,14 @@ pub(super) fn scan(
 /// after mission dispatch:
 /// - only once the targeting timer has run out (a stopped timer counts as
 ///   run out only with a zero duration);
-/// - only on Move (2), Harvest (10) or Guard (5);
+/// - an attack-mover (MegaMissionIsAttackMove, vt+0x4C4) runs its
+///   Arrival_Target_Handler (vt+0x4CC) instead
+///   ([`Simulation::foot_arrival_target_handler`], `0x006FA681..0x006FA695`);
+/// - otherwise only on Move (2), Harvest (10) or Guard (5);
 /// - then [`passive_target_acquire`]'s body, which the block inlines.
 ///
-/// RESIDUALS:
-/// - The attack-move divert (`vt+0x4C4`: a saved mission `+0x5C4 == 0x1D`,
-///   then `vt+0x4CC` instead of this block) belongs to attack-move, which VERA
-///   drives from its own order path; such an object reaches this block.
-/// - The block has no health gate: a dying infantryman reaches it from its
-///   corpse visit (`techno_ai::dying_infantry_techno_ai`).
+/// RESIDUAL: the block has no health gate: a dying infantryman reaches it
+/// from its corpse visit (`techno_ai::dying_infantry_techno_ai`).
 pub(super) fn passive_acquire_step(
     sim: &mut Simulation,
     id: u64,
@@ -187,6 +186,10 @@ pub(super) fn passive_acquire_step(
         return;
     };
     if !entity.passive_scan_timer.due(now) {
+        return;
+    }
+    if entity.mega_mission.is_attack_move() {
+        sim.foot_arrival_target_handler(id, rules, ctx);
         return;
     }
     let mission = entity.passive_acquire_mission();

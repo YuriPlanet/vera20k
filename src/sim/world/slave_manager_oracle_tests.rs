@@ -531,8 +531,8 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
     }
     // The refinery: the relocation's queued Selling selector (`+0xB4`),
     // independent of an already-current Selling mission, and its ArchiveTarget. The
-    // relocation's `+0x4F8` (the undeploy voice's silencer) has no VERA
-    // counterpart (`slave_manager::relocate_refinery`).
+    // relocation's +4F8 voice suppression is retained by the Techno owner;
+    // its complete reader/voice controls live in slave_miner_pack_voice.json.
     if !native["building"].is_null() && holder == s.refinery {
         let refinery = sim.substrate.entities.get(s.refinery).unwrap();
         let expected = &native["building"];
@@ -545,6 +545,11 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
             refinery.mission.queued().known() == Some(MissionType::Selling),
             queued,
             "{context}: refinery Selling (undeploy)"
+        );
+        assert_eq!(
+            refinery.deploy_voice_suppressed(),
+            expected["silent"].as_u64().unwrap() != 0,
+            "{context}: original relocation silencer"
         );
         let archive = match refinery.archive_target() {
             Some(TargetKind::Cell(x, y)) => serde_json::json!([x, y]),

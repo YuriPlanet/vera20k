@@ -402,11 +402,6 @@ pub struct HouseState {
     /// tools/spatial_oracle/tag_lifecycle (active_cleanup histories).
     #[serde(default)]
     allow_win_timer: CdTimer,
-    /// House+1FC: constructor4F5746 requests the first tech-tree tail;
-    /// House4F927C/4F92ED consumes it before hold/revoke50AF10 and grant50B1D0.
-    /// Lifecycle/discovery writers and changed Super status request it again.
-    #[serde(default = "initial_tech_tree_recheck")]
-    tech_tree_recheck: bool,
     /// Stable rules-owned side index. Stock YR uses 0=Allied, 1=Soviet,
     /// 2=Yuri, 3=Civilian, and 4=Mutant.
     pub side_index: u8,
@@ -488,6 +483,13 @@ pub struct HouseState {
     /// owner change.
     #[serde(default)]
     pub(crate) tracking: crate::sim::house_tracking::HouseTracking,
+    /// House+1FC: retained tech-tree invalidation, initially set by
+    /// HouseCtor4F5746. Building Limbo445D99, GrandOpening446A61,
+    /// DiscoveredBy44D61A and ChangeOwner44936E/449379 set it again.
+    /// The late House4F9265..4F9302 consumer clears it after the Factory
+    /// sweep; cancellation is an event, never a synchronous refund here.
+    #[serde(default)]
+    tech_recheck: bool,
     /// Tech Hospital self-heal capacity — `HouseClass+0x164`.
     ///
     /// `BuildingClass::OnConstructionComplete` adds the built type's
@@ -745,10 +747,6 @@ impl Default for HouseSuperWeaponCells {
     }
 }
 
-fn initial_tech_tree_recheck() -> bool {
-    true
-}
-
 impl HouseState {
     /// Original50D610 appends even when an earlier snapshot already exists.
     pub(crate) fn retain_initial_techno(&mut self, type_id: InternedId, cell: (i16, i16)) {
@@ -770,25 +768,6 @@ impl HouseState {
         if !self.initial_techno_records.is_empty() {
             b"house-initial-techno-records-v1".hash(hasher);
             self.initial_techno_records.hash(hasher);
-        }
-    }
-
-    pub(crate) fn recheck_tech_tree(&mut self) {
-        self.tech_tree_recheck = true;
-    }
-
-    pub(crate) fn take_tech_tree_recheck(&mut self) -> bool {
-        std::mem::take(&mut self.tech_tree_recheck)
-    }
-
-    pub(crate) fn hash_tech_tree_recheck(&self, hasher: &mut impl std::hash::Hasher) {
-        // As with the other retained House fields, constructor state does not
-        // change older fixture hashes. Consuming the pending 0x1FC tail is a
-        // simulation transition, so its non-constructor value must be folded.
-        use std::hash::Hash;
-        if !self.tech_tree_recheck {
-            b"house-tech-tree-recheck-v1".hash(hasher);
-            self.tech_tree_recheck.hash(hasher);
         }
     }
 
@@ -1010,6 +989,21 @@ impl HouseState {
     /// House+54E0, read by a computer engineer's Greatest_Threat.
     pub(crate) fn lost_building(&self) -> Option<u64> {
         self.lost_building
+    }
+
+    /// Shared House+1FC writer. Constructor4F5746 requests the first tail;
+    /// House4F927C/4F92ED consumes it before strips, hold/revoke50AF10 and
+    /// grant50B1D0. Lifecycle/discovery and changed Super status reuse it.
+    pub(crate) fn request_tech_recheck(&mut self) {
+        self.tech_recheck = true;
+    }
+
+    pub(crate) fn take_tech_recheck(&mut self) -> bool {
+        std::mem::take(&mut self.tech_recheck)
+    }
+
+    pub(crate) fn tech_recheck_pending(&self) -> bool {
+        self.tech_recheck
     }
 
     /// `BuildingClass::Infiltrate`'s tech arm (`0x004573C6..0x004573E4`): the
@@ -1506,10 +1500,10 @@ impl HouseState {
             outcome_state: None,
             allow_win_tags: 0,
             allow_win_timer: CdTimer::default(),
-            tech_tree_recheck: true,
             map_is_clear: false,
             spy_sat_active: false,
             tracking: Default::default(),
+            tech_recheck: true,
             self_heal_infantry: 0,
             self_heal_units: 0,
             base_center: None,

@@ -26,8 +26,7 @@
 //! - the ramp rows that Unlimbo at the exact coordinate compare the floor
 //!   under the XY: native keeps the cell centre's Z, VERA's reveal grounds
 //!   the object;
-//! - `dropped_as_bomb` is skipped: VERA has no IsABomb byte (`+0x8F`), so
-//!   its passengers escape where native kills them (`0x007380AF`).
+//! The dropped-as-bomb row includes the retained +8F passenger kill gate.
 
 use super::refinery_dock_oracle_tests::{cell, world_with};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -203,6 +202,9 @@ fn scene(input: &Value) -> Scene {
     let facing = input["facing"].as_u64().unwrap_or(0xC000) as u16;
     {
         let unit = sim.substrate.entities.get_mut(transport).unwrap();
+        if input["dropped"] == true {
+            unit.begin_bomb_fall();
+        }
         // make_fixture supplies the transport's full Object+9C XYZ after
         // construction; the held constructor itself leaves Location zero.
         crate::sim::movement::ground_pose::put_location(
@@ -558,10 +560,6 @@ fn passenger_escape_matches_the_original_rows() {
     let mut failures = Vec::new();
     for row in rows {
         let name = row["input"]["name"].as_str().unwrap().to_string();
-        // RESIDUAL: no IsABomb byte (module doc).
-        if name == "dropped_as_bomb" {
-            continue;
-        }
         if let Err(cause) = std::panic::catch_unwind(|| compare(row)) {
             let message = cause
                 .downcast_ref::<String>()

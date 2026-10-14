@@ -61,12 +61,13 @@ fn adjust_for_z_lift_px(leptons: i32) -> f32 {
     crate::util::native_x87::adjust_for_z_standard(leptons) as f32
 }
 
-/// Total upward screen lift for an entity, in pixels.
+/// Upward screen lift of an entity's exact Location Z, in pixels.
 ///
 /// Positive lifts the entity toward the top of the screen (screen Y decreases).
 ///
-/// An exact object coordinate is total world Z and therefore replaces every
-/// decomposed height source below, including the coarse terrain level.
+/// The exact Z is total world Z, the terrain level included. An object
+/// without one has no lift here: [`screen_position`] draws it at its stored
+/// level.
 ///
 /// The height term reproduces gamemd's `AdjustForZ` exactly, quantisation
 /// included: the startup scale, the 728-lepton correction, and the `+ 0.5`
@@ -79,12 +80,7 @@ fn adjust_for_z_lift_px(leptons: i32) -> f32 {
 /// `ObjectClass__GetCoords` at `0x005F65A0`, which copies exact XYZ and adds no
 /// walking sine bob. Grounded objects therefore have zero additional lift.
 pub fn height_lift_px(entity: &GameEntity) -> f32 {
-    if let Some(exact_z_leptons) = entity.position.exact_z_leptons {
-        return adjust_for_z_lift_px(exact_z_leptons);
-    }
-    adjust_for_z_lift_px(crate::sim::movement::ground_pose::object_altitude_leptons(
-        entity,
-    ))
+    adjust_for_z_lift_px(entity.position.exact_z_leptons.unwrap_or(0))
 }
 
 /// Where this entity is drawn, in world-space screen pixels.
@@ -105,19 +101,16 @@ pub fn screen_position(entity: &GameEntity) -> (f32, f32) {
 }
 
 /// The whole upward lift [`screen_position`] draws `entity` with, in pixels:
-/// `AdjustForZ` of its exact Location Z, or of its stored level plus
-/// [`height_lift_px`]. A draw that cancels its lift for depth or per-pixel Z
+/// `AdjustForZ` of its exact Location Z, or of its stored level. A draw that
+/// cancels its lift for depth or per-pixel Z
 /// cancels this, as the building draw's `NormalZAdjust - AdjustForZ(Z)` seed
 /// does (`BuildingClass_DrawBody`).
 pub fn screen_lift_px(entity: &GameEntity) -> i32 {
     match entity.position.exact_z_leptons {
         Some(z) => crate::util::native_x87::adjust_for_z_standard(z),
-        None => {
-            crate::util::native_x87::adjust_for_z_standard(
-                i32::from(entity.position.z as i8)
-                    * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
-            ) + height_lift_px(entity) as i32
-        }
+        None => crate::util::native_x87::adjust_for_z_standard(
+            i32::from(entity.position.z as i8) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+        ),
     }
 }
 
@@ -192,15 +185,14 @@ mod tests {
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::LocomotorState;
     use crate::sim::movement::locomotor::MovementLayer;
-    use crate::util::fixed_math::SimFixed;
 
     fn air_unit(kind: LocomotorKind, altitude: i32) -> GameEntity {
         let mut entity = GameEntity::test_default(1, "BEAG", "Americans", 5, 5);
         entity.category = EntityCategory::Aircraft;
         let mut loco = LocomotorState::for_test_kind(kind);
         loco.layer = MovementLayer::Air;
-        loco.altitude = SimFixed::from_num(altitude);
         entity.locomotor = Some(loco);
+        entity.position.exact_z_leptons = Some(altitude);
         entity
     }
 
@@ -304,10 +296,9 @@ mod tests {
     }
 
     #[test]
-    fn adjust_for_z_exact_signed_z_ignores_coarse_level_and_locomotor_altitude() {
-        let mut entity = air_unit(LocomotorKind::Fly, 1500);
+    fn adjust_for_z_exact_signed_z_ignores_the_coarse_level() {
+        let mut entity = air_unit(LocomotorKind::Fly, -400);
         entity.position.z = 9;
-        entity.position.exact_z_leptons = Some(-400);
 
         let z_free = z_free_screen_position(&entity.position);
         let drawn = screen_position(&entity);
@@ -351,23 +342,7 @@ mod tests {
         );
     }
 
-    /// A ground locomotor's altitude is not a height source. Only the air layer
-    /// lifts, which is what keeps a deployed or docked unit on the floor.
-    #[test]
-    fn a_ground_layer_locomotor_never_lifts() {
-        let mut entity = air_unit(LocomotorKind::Drive, 1500);
-        entity.category = EntityCategory::Unit;
-        if let Some(loco) = entity.locomotor.as_mut() {
-            loco.layer = MovementLayer::Ground;
-        }
-        assert_eq!(
-            screen_position(&entity),
-            ground_screen_position(&entity.position),
-        );
-    }
-
-    /// A falling object is drawn at its Location Z, whatever altitude its
-    /// locomotor holds.
+    /// A falling object is drawn at its Location Z, which its drop set.
     #[test]
     fn a_falling_object_is_drawn_at_its_location_z() {
         use crate::sim::entity_store::EntityStore;
@@ -382,8 +357,8 @@ mod tests {
 
         let (_, ground_sy) = ground_screen_position(&entity.position);
         let (_, sy) = screen_position(entity);
-        // The fall's 400 leptons, not the locomotor's 1500, and below the
-        // extra-pixel threshold.
+        // The drop's 400 leptons, not the 1500 the object held before it,
+        // and below the extra-pixel threshold.
         assert_eq!(
             ground_sy - sy,
             57.0,

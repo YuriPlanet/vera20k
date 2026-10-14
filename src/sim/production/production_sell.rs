@@ -8,7 +8,7 @@
 //! later frame the building's LogicVector visit
 //! (`Simulation::visit_building_down`) runs `BuildingClass::Mission_Selling @
 //! 0x00449C30` ([`BuildingDown`], `sim::building_construction`):
-//! - stage 0 ([`sell_stage_zero`]): an undeploy's `DeploySound=`, the bunker
+//! - stage 0 ([`sell_stage_zero`]): an undeploy's voice then `DeploySound=`, the bunker
 //!   release, RUN_AWAY to every contact and the damage fires put out;
 //! - stage 1 ([`sell_stage_one`]): OVER_OUT to every contact, then (unless a
 //!   dock still tethers the building) its absorbed passengers, garrison and
@@ -64,6 +64,10 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation, UninitContext};
 
 use crate::rules::foundation::foundation_dimensions;
+
+#[cfg(test)]
+#[path = "pack_voice_tests.rs"]
+mod pack_voice_tests;
 
 /// `TechnoTypeClass::GetRefund @ 0x00711F60` (type vtable `+0xB8`) for a live
 /// house (`RET 8`), in its x87 order under the chop control word:
@@ -209,7 +213,8 @@ pub(crate) fn sell_back(
     true
 }
 
-/// `Queue_Mission(Selling, 0)` then Commence (Sell_Back, `0x00447176`): the
+/// `Queue_Mission(Selling, 0)` then Commence (Sell_Back,
+/// `0x0044717D..0x00447185`, with literal mission `0x13`): the
 /// building leaves its mission for Selling, whose visits start the next
 /// frame ([`BuildingDown`]). `undeploy_order` marks the player's undeploy
 /// order. A building already Selling keeps its sale (Queue_Mission refuses
@@ -331,7 +336,7 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
 
 /// Sell's stage-0 visit (`0x0044A8DF..0x0044ABAC`): an undeploy's
 /// `DeploySound=` (`+0x56C`) at the building's Location (after its undeploy
-/// voice `vt+0x36C`, unplayed: VERA parses no `VoiceDeploy=`), a Tank
+/// voice `vt+0x36C`, Building459C20/common708E00), a Tank
 /// Bunker's vehicle released (`+0x2E4`, `0x004593A0`), RUN_AWAY to every
 /// contact (`0x0044AB68`) and the damage-fire anims released (`+0x5C8`,
 /// `0x0044AB87..0x0044ABAA`).
@@ -354,6 +359,17 @@ pub(crate) fn sell_stage_zero(
     if let Some(rules) = rules
         && qualifying_undeploy(sim, rules, id)
     {
+        // MissionSelling44A9DF: QueueVoice only latches. Techno6F9EBB was
+        // already reached in this visit, so playback waits for its next head.
+        // Select before native44AA3D HandleReturnedSlaves. Its Building
+        // Archive rewrite remains the separate residual documented above.
+        if let Some(sound_id) = sim.deploy_voice_request(rules, id, true) {
+            let sound_id = sound_id.to_owned();
+            sim.sound_events.push(SimSoundEvent::UnitVoiceRequested {
+                owner: id,
+                sound_id,
+            });
+        }
         let sound = sim.substrate.entities.get(id).and_then(|entity| {
             let sound = sim
                 .object_type(entity.type_ref(), rules)?

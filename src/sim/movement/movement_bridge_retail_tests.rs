@@ -325,7 +325,7 @@ fn prepare_commanding_house(scenario: &mut crate::headless_scenario::HeadlessSce
     name
 }
 
-/// Report why the order never became a `MovementTarget`, so a harness failure is
+/// Report why the order never became a NavCom, so a harness failure is
 /// distinguishable from a height defect.
 ///
 /// Takes the span geometry as loose cells rather than a `HighBridgeSpan` so the
@@ -342,7 +342,7 @@ fn diagnose_rejected_order(
 ) {
     use crate::sim::pathfinding::{AStarOptions, astar_search, find_path};
 
-    /// Borrowed view so the ablation body below reads identically for a high
+    /// Borrowed view so the body below reads identically for a high
     /// span (`HighBridgeSpan`) and a low one (`LowBridgeSpan`).
     struct SpanView<'a> {
         approach_a: (u16, u16),
@@ -390,11 +390,9 @@ fn diagnose_rejected_order(
         Err(cause) => println!("layered A*: {cause:?}"),
     }
 
-    // Ablation over the four production inputs the bare `astar_search` above did
-    // not carry, to name which one refuses a route the raw search finds.
+    // The mover's search inputs and the zones on the span. Orders no longer
+    // search; the Foot's first Process does, through its live receiver.
     {
-        use super::PathfindingContext;
-        use super::movement_path::find_move_path;
         use crate::rules::locomotor_type::MovementZone;
         use crate::sim::movement::locomotor::MovementLayer;
 
@@ -406,220 +404,13 @@ fn diagnose_rejected_order(
             "in_playfield={} speed_type={:?} movement_zone={:?}",
             entity.in_playfield, speed_type, movement_zone
         );
-        let costs = speed_type.and_then(|st| sim.terrain_costs.get(&st));
         println!(
             "terrain cost grid for {speed_type:?}: {}, zone_grid: {}, resolved_terrain: {}, playfield_bounds: {:?}",
-            costs.is_some(),
+            speed_type.is_some_and(|st| sim.terrain_costs.contains_key(&st)),
             sim.zone_grid.is_some(),
             sim.resolved_terrain.is_some(),
             sim.playfield_bounds.is_some(),
         );
-        let (blocks, block_map) = crate::sim::movement::block_index::build_owner_block_set(
-            sim.entities(),
-            sim.resolved_terrain.as_ref(),
-            owner_name,
-            &sim.house_alliances,
-            &sim.interner,
-            Some(&scenario.runtime.resources.rules),
-        );
-        println!("entity blocks: {} cell(s)", blocks.len());
-        let on_span: Vec<&(u16, u16)> = blocks
-            .iter()
-            .filter(|cell| span.deck.contains(cell) || **cell == span.approach_b)
-            .collect();
-        println!("  blocks on the span or its far approach: {on_span:?}");
-
-        // The two production inputs the plain block set does not carry: the live
-        // vehicle occupation plane, folded into the same set, and the blocker
-        // neighbour counts the edge-cost walk reads.
-        let mut occupation_blocks = blocks.clone();
-        occupation_blocks.extend(
-            scenario
-                .sim()
-                .substrate
-                .cell_occupation
-                .occupied_cells_ignoring(MovementLayer::Ground, entity_id),
-        );
-        println!(
-            "entity blocks + ground vehicle occupation: {} cell(s); on span: {:?}",
-            occupation_blocks.len(),
-            occupation_blocks
-                .iter()
-                .filter(|cell| span.deck.contains(cell)
-                    || **cell == span.approach_b
-                    || **cell == span.approach_a)
-                .collect::<Vec<_>>()
-        );
-        let neighbor_counts =
-            crate::sim::movement::bump_crush::build_blocker_neighbor_counts_with_overlays(
-                sim.entities(),
-                grid.width(),
-                grid.height(),
-                sim.resolved_terrain.as_ref(),
-                sim.overlay_grid.as_ref(),
-                &sim.interner,
-                Some(&scenario.runtime.resources.rules),
-            );
-
-        for (label, use_zone, use_costs, use_terrain, use_bounds, use_blocks) in [
-            ("bare", false, false, false, false, false),
-            ("+zone", true, false, false, false, false),
-            ("+costs", false, true, false, false, false),
-            ("+terrain", false, false, true, false, false),
-            ("+bounds", false, false, false, true, false),
-            ("+blocks", false, false, false, false, true),
-            ("all", true, true, true, true, true),
-        ] {
-            let ctx = PathfindingContext {
-                path_grid: Some(&grid),
-                zone_grid: if use_zone {
-                    sim.zone_grid.as_ref()
-                } else {
-                    None
-                },
-                resolved_terrain: if use_terrain {
-                    sim.resolved_terrain.as_ref()
-                } else {
-                    None
-                },
-                playfield_bounds: if use_bounds {
-                    sim.playfield_bounds
-                } else {
-                    None
-                },
-                blocker_neighbor_counts: None,
-            };
-            let block_ref = use_blocks.then_some(&blocks);
-            let result = find_move_path(
-                ctx,
-                true,
-                start_cell,
-                MovementLayer::Ground,
-                span.approach_b,
-                if use_costs { costs } else { None },
-                block_ref,
-                block_ref,
-                block_ref,
-                movement_zone.unwrap_or(MovementZone::Normal),
-                movement_zone,
-                use_blocks.then_some(&block_map),
-                super::MoverPathFacts::fixture(0, false, false),
-                true,
-            );
-            println!(
-                "  find_move_path[{label}] -> {:?}",
-                result.map(|(path, _)| path.len())
-            );
-        }
-
-        // Exact production argument set.
-        let production = find_move_path(
-            PathfindingContext {
-                path_grid: Some(&grid),
-                zone_grid: sim.zone_grid.as_ref(),
-                resolved_terrain: sim.resolved_terrain.as_ref(),
-                playfield_bounds: sim.playfield_bounds,
-                blocker_neighbor_counts: Some(&neighbor_counts),
-            },
-            true,
-            start_cell,
-            MovementLayer::Ground,
-            span.approach_b,
-            costs,
-            Some(&occupation_blocks),
-            Some(&occupation_blocks),
-            Some(&occupation_blocks),
-            movement_zone.unwrap_or(MovementZone::Normal),
-            movement_zone,
-            Some(&block_map),
-            super::MoverPathFacts::fixture(0, true, false),
-            true,
-        );
-        println!(
-            "  find_move_path[production] -> {:?}",
-            production.as_ref().map(|(path, _)| path.len())
-        );
-
-        // Same, minus one input at a time.
-        let without_occupation = find_move_path(
-            PathfindingContext {
-                path_grid: Some(&grid),
-                zone_grid: sim.zone_grid.as_ref(),
-                resolved_terrain: sim.resolved_terrain.as_ref(),
-                playfield_bounds: sim.playfield_bounds,
-                blocker_neighbor_counts: Some(&neighbor_counts),
-            },
-            true,
-            start_cell,
-            MovementLayer::Ground,
-            span.approach_b,
-            costs,
-            Some(&blocks),
-            Some(&blocks),
-            Some(&blocks),
-            movement_zone.unwrap_or(MovementZone::Normal),
-            movement_zone,
-            Some(&block_map),
-            super::MoverPathFacts::fixture(0, true, false),
-            true,
-        );
-        println!(
-            "  find_move_path[production - occupation] -> {:?}",
-            without_occupation.as_ref().map(|(path, _)| path.len())
-        );
-        let without_neighbors = find_move_path(
-            PathfindingContext {
-                path_grid: Some(&grid),
-                zone_grid: sim.zone_grid.as_ref(),
-                resolved_terrain: sim.resolved_terrain.as_ref(),
-                playfield_bounds: sim.playfield_bounds,
-                blocker_neighbor_counts: None,
-            },
-            true,
-            start_cell,
-            MovementLayer::Ground,
-            span.approach_b,
-            costs,
-            Some(&occupation_blocks),
-            Some(&occupation_blocks),
-            Some(&occupation_blocks),
-            movement_zone.unwrap_or(MovementZone::Normal),
-            movement_zone,
-            Some(&block_map),
-            super::MoverPathFacts::fixture(0, true, false),
-            true,
-        );
-        println!(
-            "  find_move_path[production - neighbors] -> {:?}",
-            without_neighbors.as_ref().map(|(path, _)| path.len())
-        );
-        let without_block_map = find_move_path(
-            PathfindingContext {
-                path_grid: Some(&grid),
-                zone_grid: sim.zone_grid.as_ref(),
-                resolved_terrain: sim.resolved_terrain.as_ref(),
-                playfield_bounds: sim.playfield_bounds,
-                blocker_neighbor_counts: Some(&neighbor_counts),
-            },
-            true,
-            start_cell,
-            MovementLayer::Ground,
-            span.approach_b,
-            costs,
-            Some(&occupation_blocks),
-            Some(&occupation_blocks),
-            Some(&occupation_blocks),
-            movement_zone.unwrap_or(MovementZone::Normal),
-            movement_zone,
-            None,
-            super::MoverPathFacts::fixture(0, true, false),
-            true,
-        );
-        println!(
-            "  find_move_path[production - block_map] -> {:?}",
-            without_block_map.as_ref().map(|(path, _)| path.len())
-        );
-
         if let Some(zones) = sim
             .zone_grid
             .as_ref()
@@ -638,74 +429,28 @@ fn diagnose_rejected_order(
             }
             println!("         approach_b {}", show(span.approach_b));
         }
-
-        // How far along the span does the production search get before the gate
-        // shuts? Read-only: nothing here mutates the simulation.
-        println!("  production-config search to successive goals along the span:");
-        let mut goals: Vec<(u16, u16)> = vec![span.approach_a];
-        goals.extend(span.deck.iter().copied());
-        goals.push(span.approach_b);
-        for goal in goals {
-            let reached = find_move_path(
-                PathfindingContext {
-                    path_grid: Some(&grid),
-                    zone_grid: sim.zone_grid.as_ref(),
-                    resolved_terrain: sim.resolved_terrain.as_ref(),
-                    playfield_bounds: sim.playfield_bounds,
-                    blocker_neighbor_counts: Some(&neighbor_counts),
-                },
-                true,
-                start_cell,
-                MovementLayer::Ground,
-                goal,
-                costs,
-                Some(&occupation_blocks),
-                Some(&occupation_blocks),
-                Some(&occupation_blocks),
-                movement_zone.unwrap_or(MovementZone::Normal),
-                movement_zone,
-                Some(&block_map),
-                super::MoverPathFacts::fixture(0, true, false),
-                true,
-            );
-            println!(
-                "    -> {goal:?}: {:?}",
-                reached.as_ref().map(|(path, _)| path.len())
-            );
-        }
     }
 
     let SimRuntime {
         simulation,
         resources,
     } = &mut scenario.runtime;
-    println!(
-        "resolve_move_info: {:?}",
-        simulation
-            .resolve_move_info(entity_id, Some(&resources.rules))
-            .is_some()
-    );
     let applied = simulation.apply_command(
         owner_name,
         &Command::Move {
             entity_id,
             target_rx: span.approach_b.0,
             target_ry: span.approach_b.1,
-            queue: false,
         },
         Some(&resources.rules),
     );
     println!("direct apply_command(Move) -> {applied}");
     println!(
-        "movement_target after direct apply: {:?}",
-        simulation
-            .entities()
-            .get(entity_id)
-            .and_then(|entity| entity.movement_target.as_ref().map(|_| entity
-                .navigation
-                .path_replay
-                .route_cells()
-                .len()))
+        "NavCom and route length after direct apply: {:?}",
+        simulation.entities().get(entity_id).map(|entity| (
+            entity.navigation.nav_com,
+            entity.navigation.path_replay.route_cells().len()
+        ))
     );
 }
 
@@ -727,13 +472,13 @@ fn route_reinstalled(
 
 /// The accepted order's Foot+5E0 route still ahead: the reference cell plus
 /// the cells its remaining words step through. Empty until the first Drive
-/// Process installs it; `None` when the order was refused (no adapter).
+/// Process installs it; `None` when the order was refused (no NavCom).
 fn accepted_route(
     scenario: &crate::headless_scenario::HeadlessScenario,
     entity_id: u64,
 ) -> Option<Vec<(u16, u16)>> {
     let entity = scenario.sim().entities().get(entity_id)?;
-    entity.movement_target.as_ref()?;
+    entity.navigation.nav_com?;
     Some(entity.navigation.path_replay.route_cells())
 }
 
@@ -761,7 +506,6 @@ fn issue_ordinary_move(
             entity_id,
             target_rx: target.0,
             target_ry: target.1,
-            queue: false,
         },
         Some(&resources.rules),
     )
@@ -777,16 +521,15 @@ fn issue_ordinary_move(
 enum OrderSource {
     /// `Command::Move` — the plain right-click.
     Move,
-    /// `Command::AttackMove` — the A-click. Its *move* half calls
-    /// `movement::issue_move_command_with_layered` with an argument list
-    /// identical to `Command::Move`'s (`world_commands.rs`, the `Move` arm and
-    /// the `AttackMove` arm), so what this variant adds over `Move` is the
-    /// surrounding order machinery: the `MissionType::AttackMove` megamission,
-    /// the `attack_target`/`passively_acquired_target` clear, the
-    /// `OrderIntent::AttackMove` stamp, and the per-tick resume in
-    /// `tick_order_intents_post_combat_*` that re-issues the move whenever
-    /// combat interrupts it. That resume is the part a plain Move never
-    /// exercises, and it is the part that can strand a unit at a bridgehead.
+    /// `Command::AttackMove` — the attack-move. It runs `Command::Move`'s
+    /// handler (`world_commands.rs`, `apply_move_command`), where
+    /// Assign_Target_Command stores the cell as the MegaDestination and
+    /// answers Move (`sim::mission::mega_mission`), so what this variant adds
+    /// over `Move` is the order machinery around it: the targeting slot's
+    /// Arrival_Target_Handler scans on the way, and RefreshMegaMission
+    /// resumes the move whenever an engagement ends. That resume is the part
+    /// a plain Move never exercises, and it is the part that can strand a
+    /// unit at a bridgehead.
     AttackMove,
 }
 
@@ -797,13 +540,11 @@ impl OrderSource {
                 entity_id,
                 target_rx: target.0,
                 target_ry: target.1,
-                queue: false,
             },
             OrderSource::AttackMove => Command::AttackMove {
                 entity_id,
-                target_rx: target.0,
-                target_ry: target.1,
-                queue: false,
+                target: None,
+                destination: Some(crate::sim::combat::TargetKind::Cell(target.0, target.1)),
             },
         }
     }
@@ -1002,7 +743,7 @@ fn drive_across_high_bridge_with_order(
             loco_layer,
             prefix_z: facts.effective_cell_z_for_layer(loco_layer),
         });
-        if entity.movement_target.is_none() {
+        if crate::sim::movement::motion_query::is_moving(&entity) != Some(true) {
             idle_frames += 1;
             if idle_frames >= 30 {
                 break;
@@ -1659,7 +1400,6 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
             entity_id,
             target_rx: span.approach_b.0,
             target_ry: span.approach_b.1,
-            queue: false,
         },
     );
     scenario
@@ -1723,7 +1463,7 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
             loco_layer,
             prefix_z: facts.effective_cell_z_for_layer(loco_layer),
         });
-        if entity.movement_target.is_none() {
+        if crate::sim::movement::motion_query::is_moving(&entity) != Some(true) {
             idle_frames += 1;
             if idle_frames >= 30 {
                 break;
@@ -2119,22 +1859,17 @@ fn infantry_crosses_hills_high_bridge_at_deck_height() {
 // Evidence gap 5 said "order sources other than a single ordinary Move have
 // zero observations". These are the first attack-move crossings in the project.
 //
-// What an attack-move adds over a Move, read from `world_commands.rs`: the
-// `AttackMove` arm and the `Move` arm hand `movement::issue_move_command_with_layered`
-// the *same* fourteen arguments, so the path build is not a separate code path
-// and the A* goal is resolved identically. What differs is the order machinery
-// wrapped round it — `queue_megamission(MissionType::AttackMove)`,
-// the `attack_target` / `passively_acquired_target` clear, and the
-// `OrderIntent::AttackMove` stamp, which arms a per-tick resume in
-// `tick_order_intents_post_combat_except` (`world_orders.rs`)
-// that re-issues the move from wherever the unit is standing every time it
-// finds itself with no attack target and no movement target.
+// What an attack-move adds over a Move, read from `world_commands.rs`: both
+// commands run `apply_move_command`, so the path build is not a separate code
+// path and the A* goal is resolved identically. What differs is the order
+// machinery around it (`sim::mission::mega_mission`): the targeting slot's
+// Arrival_Target_Handler scans on the way, and when an engagement ends,
+// RefreshMegaMission and ContinueMegaMission hand the class destination
+// setter the MegaDestination again from wherever the unit is standing.
 //
 // That resume is the reason these rows are worth running rather than collapsing
 // onto T1-03/T1-01 by argument-list inspection alone: it re-plans mid-crossing
-// from a *deck cell*, with a reduced argument set (no terrain cost grid, no
-// entity blocks, no entity block map, `mover_is_crusher = false`), which is a
-// combination no Move ever produces.
+// from a *deck cell*.
 // ---------------------------------------------------------------------------
 
 /// Matrix rows T2-01 (Drive) and T2-04 (Hover) — attack-move onto an intact high
@@ -2288,7 +2023,7 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
         .sim()
         .entities()
         .get(crosser)
-        .filter(|entity| entity.movement_target.is_some())
+        .filter(|entity| crate::sim::movement::motion_query::is_moving(&entity) == Some(true))
         // The route the first Process installed from the near approach.
         .map(|entity| {
             entity
@@ -2382,7 +2117,7 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
         if blocker_parked.is_none()
             && let Some(parked) = sim.entities().get(blocker).filter(|parked| {
                 (parked.position.rx, parked.position.ry) == park_cell
-                    && parked.movement_target.is_none()
+                    && crate::sim::movement::motion_query::is_moving(&parked) != Some(true)
             })
         {
             let deck = sim
@@ -2409,7 +2144,7 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
         {
             ground_layer_deck_frames.push(row);
         }
-        if entity.movement_target.is_some() {
+        if crate::sim::movement::motion_query::is_moving(&entity) == Some(true) {
             let route = &entity.navigation.path_replay;
             if route_reinstalled(&previous_route, route) {
                 path_rebuilds += 1;
@@ -2814,7 +2549,6 @@ fn tank_ordered_across_the_deadman_collapse_gap_never_drives_into_it() {
                     entity_id,
                     target_rx: gap.far_stub.0,
                     target_ry: gap.far_stub.1,
-                    queue: false,
                 },
             )],
             SIM_TICK_MS,
@@ -3025,7 +2759,6 @@ fn tank_cannot_cross_a_destroyed_shrapnel_low_bridge() {
                     entity_id,
                     target_rx: span.approach_b.0,
                     target_ry: span.approach_b.1,
-                    queue: false,
                 },
             )],
             SIM_TICK_MS,
@@ -3443,7 +3176,6 @@ fn retail_under_high_span_geometry() {
                             None,
                             sim.resolved_terrain.as_ref(),
                             costs,
-                            false,
                             infantry,
                             false,
                         )
@@ -3664,7 +3396,7 @@ fn record_until(
             loco_layer,
             prefix_z: facts.effective_cell_z_for_layer(loco_layer),
         });
-        if entity.movement_target.is_none() {
+        if crate::sim::movement::motion_query::is_moving(&entity) != Some(true) {
             idle_frames += 1;
             if idle_frames >= 30 {
                 break;
@@ -3792,7 +3524,6 @@ fn order_under_high_span(map_file: &str, unit_type: &str) -> Option<UnderSpanRun
                     entity_id,
                     target_rx: under_b.0,
                     target_ry: under_b.1,
-                    queue: false,
                 },
             )],
             SIM_TICK_MS,
@@ -3881,53 +3612,20 @@ fn judge_under_span_run(run: &UnderSpanRun, unit_type: &str, map_file: &str) {
 
 /// Matrix row T1-13 — Drive **under** an intact high span, `Hills.mmx`.
 ///
-/// Until 2026-09-15 this row pinned that an ordinary undisabled `Command::Move`
-/// from one side of the span's footprint to the other was **refused outright**.
-/// The diagnosis below is kept because it names the mechanism that was acting;
-/// the settlement paragraph at the end names the native contract that retired it.
+/// Order `(87,71)` → `(87,78)`: the valley floor beneath the span (terrain
+/// level 2, deck at 6) is ordinary passable land in the same Normal ground
+/// zone as both ends, and the structural band is four cells wide
+/// (`y = 73..76`). Until 2026-09-15 an ordinary Move here was refused: with a
+/// movement zone supplied, the cell-entry leaf answered
+/// `has_bridge && !is_bridge → LevelMismatch` (`CellClass::CheckCellPassability`
+/// @ `0x004834A0`) for every under-span step, and the zone hierarchy then
+/// removed even the detour over the deck.
 ///
-/// Measured on `Hills.mmx`, order `(87,71)` → `(87,78)`, valley floor at terrain
-/// level 2 with the deck at 6:
-///
-/// * The terrain under the span is **ordinary passable land**, not a chasm:
-///   `is_water=false`, `is_cliff_like=false`, `ground_walk_blocked=false`,
-///   `zone_type=0`, `Track` cost 100, and Normal ground zone **2** — the same
-///   zone as `(87,71)` and `(87,78)` either side. So this row is not excluded
-///   by geometry.
-/// * The structural band is **four** cells wide (`y = 73..76`) at every span
-///   position, not the one-cell drive line the ledger names.
-/// * The straight 8-node ground-plane route exists and is found by the flat A*,
-///   by the layered A*, and by `find_move_path` with the zone grid, the terrain
-///   cost grid, resolved terrain, playfield bounds and entity blocks all
-///   supplied. It is lost by exactly one input: dropping
-///   `blocker_neighbor_counts` from the production argument set restores it
-///   (`find_move_path[production] -> None`,
-///   `find_move_path[production - neighbors] -> Some(8)`), and that flag is
-///   what selects the hierarchy branch of `find_layered_path_zoned_marker`
-///   (`sim/pathfinding/zone_search.rs`).
-/// * Two things fire on that branch, and both are real.
-///   (b) The hierarchy branch is the only one that forwards `movement_zone`
-///   into the cell-entry predicate, and with a speed type present
-///   `evaluate_shared_cell_leaf` (`sim/pathfinding/cell_entry.rs`) stops
-///   short-circuiting and reaches `evaluate_is_clear_to_move`'s
-///   `has_bridge && !is_bridge → LevelMismatch` (`sim/cell_rect.rs`,
-///   `CellClass::CheckCellPassability` @ `0x004834A0`). **(b) alone is
-///   sufficient:** `retail_under_high_span_geometry` runs a bare `astar_search`
-///   with terrain costs, resolved terrain and `movement_zone` supplied and *no*
-///   hierarchy gate at all, and it already abandons the 8-node straight route
-///   for a 92-step detour that climbs the east bridgehead, drives the span's
-///   `y = 76` lane on the Bridge layer and comes back round.
-///   (a) The hierarchy gate then removes even that detour — production returns
-///   no path at all. Its deck exemption in `core.rs`
-///   (`!neighbor_is_bridge_deck`) is keyed on the mover already carrying deck
-///   height, so an under-span step never receives it. The ablation cannot
-///   isolate (a) on its own, because dropping `blocker_neighbor_counts` also
-///   drops the `movement_zone` forwarding that causes (b).
-/// * Ordering *to* a cell under the span is separately impossible:
-///   `astar_search` resolves the goal height of any bridge-passable goal cell to
-///   `bridge_deck_level`, so a Move naming a stamped cell always aims at the
-///   deck. `deck_and_ground_under_one_high_bridge_cell_are_separate_occupancy_planes`
-///   shows that arm working as designed.
+/// Ordering *to* a cell under the span is separately impossible: `astar_search`
+/// resolves the goal height of any bridge-passable goal cell to
+/// `bridge_deck_level`, so a Move naming a stamped cell always aims at the deck.
+/// `deck_and_ground_under_one_high_bridge_cell_are_separate_occupancy_planes`
+/// shows that arm working as designed.
 ///
 /// **Settled 2026-09-15 as a positive crossing.** `UnitClass::Can_Enter_Cell`
 /// @ `0x0073F0A0` never calls `CheckCellPassability` @ `0x004834A0` (its callers
@@ -4102,7 +3800,6 @@ fn ground_entry_under_a_high_span_is_admitted_on_every_lane() {
             costs,
             false,
             false,
-            false,
         )
     };
     let mut sealed = Vec::new();
@@ -4184,7 +3881,6 @@ fn tank_cannot_reach_the_riverbed_beside_bay_of_pigs_high_bridge() {
             None,
             sim.resolved_terrain.as_ref(),
             track,
-            false,
             false,
             false,
         );
@@ -4511,7 +4207,6 @@ fn scale_benchmark_many_movers_on_hills() {
                     entity_id: id,
                     target_rx: rx.wrapping_add(30),
                     target_ry: ry,
-                    queue: false,
                 },
             )
         })
@@ -4541,15 +4236,11 @@ fn scale_benchmark_many_movers_on_hills() {
         })
         .count();
     println!(
-        "SCALE movers={} live_objects={live_objects} frames={frames} avg_ms={:.2} worst_ms={:.2} moved={moved} entity_bytes={} world_reads={}/{}",
+        "SCALE movers={} live_objects={live_objects} frames={frames} avg_ms={:.2} worst_ms={:.2} moved={moved} entity_bytes={} world_reads={}",
         ids.len(),
         total.as_secs_f64() * 1000.0 / frames as f64,
         worst.as_secs_f64() * 1000.0,
         std::mem::size_of::<crate::sim::game_entity::GameEntity>(),
-        scenario
-            .sim()
-            .movement_pass_cache
-            .block_index_world_rebuilds(),
         scenario
             .sim()
             .movement_pass_cache

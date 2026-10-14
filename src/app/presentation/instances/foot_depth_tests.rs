@@ -181,7 +181,6 @@ fn shp_uses_exact_height_and_category_while_raw_unit_depth_keeps_foot() {
         LocomotorState::from_object_type(runtime.resources.rules.object("TANK").unwrap(), 0);
     locomotor.kind = LocomotorKind::Jumpjet;
     locomotor.layer = MovementLayer::Air;
-    locomotor.altitude = SimFixed::from_num(0);
     tank.locomotor = Some(locomotor);
     tank.position.exact_z_leptons = None;
     assert_eq!(
@@ -189,7 +188,7 @@ fn shp_uses_exact_height_and_category_while_raw_unit_depth_keeps_foot() {
         17.0,
         "air layer alone is not GetHeight"
     );
-    tank.locomotor.as_mut().unwrap().altitude = SimFixed::from_num(104);
+    tank.position.exact_z_leptons = Some(104);
     assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &tank), -17.0);
     assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), 4);
     aircraft.position.exact_z_leptons = Some(104);

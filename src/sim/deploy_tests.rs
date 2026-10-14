@@ -345,7 +345,10 @@ fn a_computer_mcv_deploys_into_a_yard_that_follows_the_native_deploy_route() {
         ));
         let yard = deployed_type(&sim, "GACNST");
         let id = yard.stable_id;
-        assert!(!yard.building_actually_placed, "{name}: opened at deploy");
+        assert!(
+            !yard.building_art.actually_placed(),
+            "{name}: opened at deploy"
+        );
         assert_eq!(yard.mission.current(), MissionId::NONE, "{name}");
         assert_eq!(
             yard.mission.queued(),

@@ -7,8 +7,9 @@
 //! live-target Approach is an explicit external return seam. The fixture's
 //! unarmed targets and stationary source reproduce its no-navigation answer;
 //! actual shooting/death is connected separately by harvest_field_cycle_tests.
-//! Compare every represented step's mission/cursor, dispatch and passive timer,
-//! Target, NavCom, archive, latch, Stage, cargo/ore, spread and full Scenario RNG.
+//! Compare every represented step's mission/cursor, MegaMission, dispatch and
+//! passive timer, Target, NavCom, archive, latch, Stage, cargo/ore, spread and
+//! full Scenario RNG.
 //! Raw pointers/event allocation bytes and unused timer padding are not state
 //! identities in Rust. Facing/refinery fields are pinned by existing dock tests.
 
@@ -107,6 +108,14 @@ impl Replay {
         });
         entity.lifecycle.object_alive = before["alive"] == 1;
         entity.health.current = int(&before["health"]);
+        // Foot+6B3 is the original constructor's 0: the corpus runs no
+        // Unlimbo, whose Enter_Idle_Mode set it here.
+        entity.mission_leaf.set_foot_idle_entry_latch(0);
+        // Foot+5C4: the corpus supplies MegaMission 29 with neither a
+        // MegaDestination nor a MegaTarget.
+        if int(&before["saved_mission"]) == 29 {
+            entity.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(None);
+        }
         entity.passive_scan_timer = MissionTimer {
             start_frame: int(&before["targeting_words"][0]) as u32,
             duration: int(&before["targeting_words"][2]) as u32,
@@ -179,6 +188,11 @@ impl Replay {
             e.mission.suspended().raw(),
             int(&native["suspended"]),
             "{context}: suspended"
+        );
+        assert_eq!(
+            e.mega_mission.is_attack_move(),
+            int(&native["saved_mission"]) == 29,
+            "{context}: MegaMission"
         );
         assert_eq!(
             e.mission.handler_state(),
@@ -310,7 +324,6 @@ impl Replay {
                                 entity_id: s.miner,
                                 target_rx,
                                 target_ry,
-                                queue: false,
                             }
                         }
                         other => panic!("{context}: command {other}"),
@@ -434,12 +447,6 @@ fn attack_expiry_idle_and_harvest_match_original_executable_steps() {
     let mut compared = 0;
     for row in corpus["rows"].as_array().unwrap() {
         let name = row["input"]["name"].as_str().unwrap();
-        // Retained AttackMove is a separate mechanism lacking the native +5C4
-        // owner; ordinary player Attack clears it. Preserve its original row
-        // as a residual instead of supplying a fake Rust equivalence.
-        if name == "saved_attack_move" {
-            continue;
-        }
         let mut replay = Replay::new(row);
         replay.compare(&row["before"], &row["input"], &format!("{name}: initial"));
         for (index, step) in row["steps"].as_array().unwrap().iter().enumerate() {
@@ -449,7 +456,7 @@ fn attack_expiry_idle_and_harvest_match_original_executable_steps() {
         }
         compared += 1;
     }
-    assert_eq!(compared, 52);
+    assert_eq!(compared, 53);
 }
 
 #[test]

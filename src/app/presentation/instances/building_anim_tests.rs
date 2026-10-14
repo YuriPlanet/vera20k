@@ -136,7 +136,12 @@ fn bunker_slot_emitter_interleaves_front_and_back_around_the_unit() {
     .unwrap();
     for damaged in [false, true] {
         let (mut sim, rules, building, atlas) = fixture("NATBNK", damaged);
-        let slots = sim.entities().get(building).unwrap().building_anim_slots;
+        let slots = sim
+            .entities()
+            .get(building)
+            .unwrap()
+            .building_art
+            .anim_slots();
         let back = slots[11].unwrap();
         let front = slots[10].unwrap();
         let unit = sim.allocate_stable_id();
@@ -222,7 +227,13 @@ fn bunker_slot_emitter_interleaves_front_and_back_around_the_unit() {
 fn bunker_migration_keeps_active_anim_offsets_start_and_independent_membership() {
     for name in ["CAOILD", "GAHPAD"] {
         let (mut sim, rules, building, atlas) = fixture(name, false);
-        let anim_id = sim.entities().get(building).unwrap().building_anim_slots[3].unwrap();
+        let anim_id = sim
+            .entities()
+            .get(building)
+            .unwrap()
+            .building_art
+            .anim_slots()[3]
+            .unwrap();
         let order = NativeDisplayOrder::new(&[anim_id]);
         let before = emit(&sim, &rules, building, &atlas, &order);
         assert_eq!(before.len(), 1);

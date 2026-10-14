@@ -78,6 +78,30 @@ pub struct OverlayCell {
     pub rubble_building_type: Option<InternedId>,
 }
 
+impl OverlayCell {
+    /// This cell's state hash record. `rubble_building_type` has no
+    /// simulation reader (see its note), so the hash leaves it out.
+    pub(crate) fn hash_record(&self) -> [u8; 8] {
+        let Self {
+            overlay_id,
+            overlay_data,
+            wall_owner,
+            rubble_building_type: _,
+        } = *self;
+        let [o0, o1, o2, o3] = wall_owner.map_or(0, InternedId::index).to_le_bytes();
+        [
+            u8::from(overlay_id.is_some()),
+            overlay_id.unwrap_or(0),
+            overlay_data,
+            u8::from(wall_owner.is_some()),
+            o0,
+            o1,
+            o2,
+            o3,
+        ]
+    }
+}
+
 /// Mutable overlay state grid — seeded from map [OverlayPack] at init,
 /// mutated during gameplay by ore growth, wall damage, bridge damage.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -395,6 +419,11 @@ impl OverlayGrid {
     }
 
     /// Read cell at (rx, ry). Returns default (no overlay) for out-of-bounds.
+    /// Every cell in row-major order (`ry * width + rx`).
+    pub(crate) fn cells(&self) -> &[OverlayCell] {
+        &self.cells
+    }
+
     pub fn cell(&self, rx: u16, ry: u16) -> &OverlayCell {
         match index_of(self.width, self.height, rx, ry) {
             Some(idx) => &self.cells[idx],

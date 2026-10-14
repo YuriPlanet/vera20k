@@ -293,9 +293,6 @@ pub(super) fn spark_spawn_pass(
 /// never fires on this path; it is named here so the ledger is complete rather
 /// than merely correct.
 ///
-/// VERA-internal, gamemd equivalent UNCHECKED, both unreachable for the four
-/// stock Spark types: `(max_ec).max(1)` guards the `IDIV` by zero native would
-/// fault on, and `saturating_add` replaces native's 16-bit `ADD AX` wrap.
 fn construct_spark_particle(
     sim: &mut Simulation,
     particle_type: &ParticleType,
@@ -323,16 +320,14 @@ where
 {
     // The shared constructor allocates AbstractClass+10 before its lifetime
     // draw, as original62B5E0 does for every particle behavior.
-    let mut particle = Particle::new(particle_type_id, system_coords, particle_type, sim);
-
-    // `CellClass::GetGroundHeight` floor: native queries once for the compare,
-    // then repeats the same lookup only when `nZ <= ground` and assigns that
-    // second result. Both calls route misses through the shared dummy.
-    //
-    // VERA-internal, gamemd equivalent UNCHECKED: a world that cannot be built
-    // — no resolved terrain — is treated as "no floor". Native always has a
-    // map, so that branch remains a fixture-only compatibility policy.
-    let coords = floor_constructor_coords_with(system_coords, |x, y| ground_height(sim, x, y))?;
+    let mut particle = Particle::new_with_ground(
+        particle_type_id,
+        system_coords,
+        system_coords,
+        particle_type,
+        sim,
+        &mut ground_height,
+    )?;
 
     // The colour seed. Native reads the list only when it has entries, and
     // takes the interpolated arm only when at least one of the six
@@ -354,8 +349,6 @@ where
         )?
     };
 
-    particle.coords = coords;
-    particle.origin = coords;
     // Both coordinate arguments are the system's own coordinate, so direction
     // normalization is a no-op; the caller supplies the Spark velocity.
     particle.spark = Some(SparkRuntimeState {
@@ -366,23 +359,8 @@ where
         color_index: 0,
         color_accumulator: NativeF64Bits::POSITIVE_ZERO,
     });
+    sim.reveal_particle(particle.stable_id());
     Ok(particle)
-}
-
-fn floor_constructor_coords_with<E, F>(
-    system_coords: IVec3,
-    mut ground_height: F,
-) -> Result<IVec3, E>
-where
-    F: FnMut(i32, i32) -> Result<Option<i32>, E>,
-{
-    let first_ground = ground_height(system_coords.x, system_coords.y)?;
-    let z = if first_ground.is_some_and(|ground| system_coords.z <= ground) {
-        ground_height(system_coords.x, system_coords.y)?.unwrap_or(system_coords.z)
-    } else {
-        system_coords.z
-    };
-    Ok(IVec3::new(system_coords.x, system_coords.y, z))
 }
 
 /// `FUN_00661020(start1, start2, t)` — per-channel linear blend on the scaled
@@ -468,6 +446,7 @@ fn abs_modulo(raw: i32, divisor: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use super::super::floor_constructor_coords_with;
     use super::*;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::particle_system_type::ParticleSystemTypeId;

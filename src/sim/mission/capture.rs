@@ -65,7 +65,7 @@ pub(crate) fn mission_capture(
             .is_some_and(|object| {
                 object.c4
                     || veterancy::has_weapon_ability(
-                        veterancy::rank_from_u16(entity.veterancy()),
+                        entity.veterancy.rank_kind(),
                         object,
                         Ability::C4,
                     )

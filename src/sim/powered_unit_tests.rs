@@ -269,7 +269,6 @@ fn order_move(sim: &mut Simulation, id: u64, target: (u16, u16)) {
             entity_id: id,
             target_rx: target.0,
             target_ry: target.1,
-            queue: false,
         },
     ));
 }
@@ -543,6 +542,157 @@ fn a_robot_tank_without_a_powered_center_goes_offline_when_it_moves() {
     );
     assert!(offline(&sim, tank));
     assert_eq!(sounds(&events, "RobotTankOffline"), 1);
+}
+
+/// Retail ROBO through the production frame: an established hover survives
+/// water while GAROBO works. Losing its center or the center's last power
+/// plant spins it down, admits DropAsBomb below the native 104-lepton gate,
+/// then lands the fall through the C4 receiver and removes its occupation.
+/// The same power edges on land leave a living, grounded offline tank.
+#[test]
+fn losing_robot_power_drops_water_hover_and_keeps_land_hover_alive() {
+    use crate::sim::movement::locomotor::MovementLayer;
+
+    let Some(mut rules) = retail_rules() else {
+        return;
+    };
+    for lose_center in [false, true] {
+        let wake = rules.general.wake.name.clone();
+        rules.bind_anim_frame_count_for_test(&wake, 100);
+        for splash in rules.combat_damage.splash_list.clone() {
+            rules.bind_anim_frame_count_for_test(&splash, 100);
+        }
+        let (mut sim, grid) = arena(&rules);
+        let americans = sim.interner.get("Americans").unwrap();
+        let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 3, 3);
+        let center = spawn(&mut sim, &rules, "GAROBO", "Americans", 8, 3);
+        // A second structure keeps the house active after its plant dies.
+        spawn(&mut sim, &rules, "GAPILE", "Americans", 3, 8);
+        let water_cell = (12, 14);
+        let land_cell = (18, 14);
+        let water_tank = spawn(
+            &mut sim,
+            &rules,
+            "ROBO",
+            "Americans",
+            water_cell.0,
+            water_cell.1,
+        );
+        let land_tank = spawn(
+            &mut sim,
+            &rules,
+            "ROBO",
+            "Americans",
+            land_cell.0,
+            land_cell.1,
+        );
+        let mut events = Vec::new();
+        let established = run_until(&mut sim, &rules, &grid, 300, &mut events, |sim| {
+            sim.has_powered_center(americans) && height(sim, water_tank) > 0
+        });
+        assert!(
+            established,
+            "center={} water_height={} land_height={} water_offline={} land_offline={}",
+            sim.has_powered_center(americans),
+            height(&sim, water_tank),
+            height(&sim, land_tank),
+            offline(&sim, water_tank),
+            offline(&sim, land_tank)
+        );
+        // Change only the terrain under an already established hover. This
+        // fixture does not invent altitude, spring offset or locomotor state.
+        let terrain_cell = sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut(water_cell.0, water_cell.1)
+            .unwrap();
+        terrain_cell.land_type = 2;
+        terrain_cell.base_land_type = 2;
+        terrain_cell.yr_cell_land_type = 2;
+        terrain_cell.base_yr_cell_land_type = 2;
+        terrain_cell.is_water = true;
+        run_until(&mut sim, &rules, &grid, 60, &mut events, |sim| {
+            let tank = sim
+                .substrate
+                .entities
+                .get(water_tank)
+                .expect("powered water hover remains alive");
+            assert!(!tank.deactivated && !tank.was_dropped_as_bomb());
+            assert!(tank.health.current > 0);
+            false
+        });
+        assert!(
+            sim.substrate
+                .occupancy
+                .contains_entity(water_cell.0, water_cell.1, water_tank)
+        );
+        events.clear();
+        destroy(&mut sim, &rules, if lose_center { center } else { plant });
+        let mut saw_bomb = false;
+        let splash = rules.combat_damage.splash_list.last();
+        let mut saw_splash = false;
+        assert!(
+            run_until(&mut sim, &rules, &grid, 300, &mut events, |sim| {
+                if let Some(tank) = sim.substrate.entities.get(water_tank) {
+                    saw_bomb |= tank.was_dropped_as_bomb();
+                }
+                if let Some(splash) = splash {
+                    saw_splash |= sim.substrate.anims.iter().any(|(_, anim)| {
+                        sim.interner.resolve(anim.type_id) == splash.as_str()
+                            && anim.world_coord.to_cell_sub_z().0 == water_cell.0
+                            && anim.world_coord.to_cell_sub_z().1 == water_cell.1
+                    });
+                }
+                sim.substrate.entities.get(water_tank).is_none()
+            }),
+            "water hover must die after losing {}",
+            if lose_center { "center" } else { "power" }
+        );
+        assert!(saw_bomb, "the production water gate admitted DropAsBomb");
+        if splash.is_some() {
+            assert!(
+                saw_splash,
+                "the native Unit water-death arm emitted the last SplashList animation"
+            );
+        }
+        assert!(!sim.has_powered_center(americans));
+        assert!(
+            !sim.substrate
+                .occupancy
+                .contains_entity(water_cell.0, water_cell.1, water_tank)
+        );
+        assert_eq!(
+            sim.substrate.cell_occupation.vehicle_bits(
+                water_cell.0,
+                water_cell.1,
+                MovementLayer::Ground
+            ),
+            0
+        );
+        assert_eq!(
+            sim.substrate
+                .raw_cell_occupation
+                .ground_bits(water_cell.0, water_cell.1)
+                & crate::sim::occupancy::VEHICLE_OCCUPATION_BIT,
+            0
+        );
+        run_until(&mut sim, &rules, &grid, 120, &mut events, |_| false);
+        let land_tank = sim
+            .substrate
+            .entities
+            .get(land_tank)
+            .expect("land hover stays represented");
+        assert!(land_tank.deactivated && land_tank.health.current > 0);
+        assert!(!land_tank.was_dropped_as_bomb() && !land_tank.is_falling_down());
+        assert_eq!(
+            crate::sim::movement::air_movement::current_fly_height(
+                land_tank,
+                sim.resolved_terrain.as_ref()
+            ),
+            0
+        );
+    }
 }
 
 /// The latch (Techno `+0x1C8`), a building's share (`+0x662`) and the

@@ -125,7 +125,7 @@ fn save(
         &presentation.house_color_map,
         presentation.lighting.saved_config(),
         clock_save.accumulated_buckets(),
-        presentation.local_player_handle.as_deref(),
+        state.match_state.session.local_player_name(),
         state.audio.theme.saved_slots(),
     );
     let resources = crate::sim::snapshot::scenario_resources::SavedScenarioResourcesRef::capture(

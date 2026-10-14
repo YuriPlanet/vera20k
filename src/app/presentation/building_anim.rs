@@ -150,7 +150,8 @@ impl SoundPlaybackInputs<'_> {
                 // effect above visits that latch, in the simulation's live order.
                 GameSoundEvent::UnitSelected { speaker_id, .. }
                 | GameSoundEvent::UnitMoveOrder { speaker_id, .. }
-                | GameSoundEvent::UnitAttackOrder { speaker_id, .. } => {
+                | GameSoundEvent::UnitAttackOrder { speaker_id, .. }
+                | GameSoundEvent::UnitVoiceRequested { speaker_id, .. } => {
                     sfx.queue_unit_voice(*speaker_id, event.sound_id());
                 }
                 // `VoxClass::PlayEVA @ 0x00752700`: routing (pending slot, the

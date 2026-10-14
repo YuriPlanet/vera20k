@@ -67,16 +67,16 @@ def read_voice(m, typ, sections):
     return voice_binding(m, typ)
 
 
-def read_guard(m, rules, sections):
+def read_guard(m, rules, sections, field_offset=0x724):
     # The adjacent single-reference readers share pushes. Running the complete
     # AudioVisual body avoids inventing an interior stack/prefix contract.
     m.make_ini(sections)
     admitted = m.invoke(0x6691E0, rules, (INI,)) & 255
-    index = i32(m.u, rules + 0x724)
+    index = i32(m.u, rules + field_offset)
     return dict(admitted=admitted, id=index, name=sound_name(m, index))
 
 
-def constructor_rows():
+def constructor_rows(scatter=False):
     """Execute the common Event constructor in the existing keyboard VM."""
     q = KeyboardFixture()
     u = q.uc
@@ -96,13 +96,19 @@ def constructor_rows():
                   ('ordinary_guard_cell',[0,173,0x34,11,50087,11,0,0,173,0]),
                   ('ordinary_guard_object',[0,173,0x34,11,194,0x34,0,0,173,0]),
                   ('ordinary_guard_null',[0,173,0x34,11,0,0,0,0,173,0])]]
+    if scatter:
+        controls = [(name, args, 'Original target-event constructor; supplied UID/issuer/frame')
+                    for name, args in [('scatter', [0,7,173,0x34]),
+                                       ('scatter_negative_uid', [0,7,0xffffffff,0x34]),
+                                       ('scatter_negative_house', [0xffffffff,7,173,0x34])]]
     for name,args,boundary in controls:
         u.mem_write(pointer, before)
         u.mem_write(q.stack, dwords(RET_MAGIC, *args))
         u.reg_write(UC_X86_REG_ESP, q.stack)
         u.reg_write(UC_X86_REG_ECX, pointer)
-        run_checked(u, 0x4C6860, RET_MAGIC, required_addresses=[0x4C6860])
-        assert u.reg_read(UC_X86_REG_ESP) == q.stack + 44
+        entry = 0x4C65E0 if scatter else 0x4C6860
+        run_checked(u, entry, RET_MAGIC, required_addresses=[entry])
+        assert u.reg_read(UC_X86_REG_ESP) == q.stack + 4 * (len(args) + 1)
         after = bytes(u.mem_read(pointer, 111))
         rows.append(dict(name=name, boundary=boundary, frame=frame, args=args, before=before.hex(),
                          after=after.hex(), returned_receiver=u.reg_read(UC_X86_REG_EAX) == pointer,
@@ -220,9 +226,20 @@ class GuardHistory(GIMoveHistory):
         0x51F640: ('InfantryAreaGuard', 0),
     })
 
-    def __init__(self, owner, name):
+    def __init__(self, owner, name, scatter=False):
         from tools.spatial_oracle import building_construction as bc
         self.owner, self.u, self.r = owner, owner.u, owner.m.read32
+        self.scatter_mode = scatter
+        if scatter:
+            self.WATCH = dict(self.WATCH)
+            self.WATCH.update({
+                0x536D80: ('ScatterCommand', 4), 0x730FE0: ('ScatterSelection', 0),
+                0x6FFE00: ('Techno_ClickedEvent', 4), 0x51D0D0: ('InfantryScatter', 12),
+                0x6386E0: ('ClearPlanningTokens', 4),
+            })
+            self.WATCH[0x750920] = ('ScatterSound', 8)
+            self.UNIT_WATCH = dict(self.UNIT_WATCH)
+            self.UNIT_WATCH[0x4C65E0] = ('TargetEvent_Construct', 16)
         self.f, self.bc = FootObservation(owner), bc
         self.require, self.copy, self.hashlib = require, copy, hashlib
         self.name, self.unit = name, True
@@ -266,6 +283,13 @@ class GuardHistory(GIMoveHistory):
                        dispatch_timer=self.ints(pointer+0xC8,3),
                        voice=voice_binding(self.owner.m, self.owner.e1_type if pointer == self.owner.e1 else self.owner.typ))
             states[name] = row
+            if self.scatter_mode:
+                row.update(tether=self.u.mem_read(pointer+0x418,1)[0],
+                           scatter_bookkeeping=self.u.mem_read(pointer+0x6B2,1)[0])
+                if pointer == self.owner.e1:
+                    # Original Walk IsMoving75AB30 reads interface+30;
+                    # do not infer moving from a destination or path adapter.
+                    row['moving'] = self.u.mem_read(self.r(pointer+0x674)+0x30,1)[0]
         return dict(frame=self.r(self.bc.FRAME), actors=states, rng=self.rng(),
                     rings=self.rings(),game_mode=self.r(0xA8B238),current_house=self.r(0xA83D4C),
                     planning=self.u.mem_read(0xAC4CF4, 1)[0],
@@ -281,7 +305,7 @@ class GuardHistory(GIMoveHistory):
                                     before=bytes(u.mem_read(address, size)).hex(), owners=labels))
 
     def observe(self, u, pc, size, data):
-        if pc in (0x53EC9A, 0x646F20):
+        if pc in (0x53EC9A, 0x646F20, 0x6FFE81):
             # One existing owner supplies the OS import and exact stack effect.
             # G has no key query; Ctrl+Alt comparisons use live_cell_input.
             EngineerJoinedFixture.hook(self.f, u, pc, size, data)
@@ -295,6 +319,9 @@ class GuardHistory(GIMoveHistory):
         elif pc == 0x708D90:
             index=i32(u, u.reg_read(UC_X86_REG_ESP) + 4)
             self.events[-1].update(sound_id=index, sound_name=sound_name(self.owner.m, index))
+        elif self.scatter_mode and pc == 0x51D0D0:
+            pointer = self.events[-1]['args'][0]
+            self.events[-1]['source_coordinate'] = list(struct.unpack('<3i', u.mem_read(pointer,12)))
 
     def finish(self):
         for hook in self.hooks:
@@ -331,7 +358,7 @@ class GuardHistory(GIMoveHistory):
                     complete_rng_states=self.streams, pending_calls=self.pending)
 
 
-def histories():
+def histories(scatter=False):
     q = FootMissions()
     root = Path(os.environ['VERA20K_SHRAPNEL_INPUTS'])
     # Keep the inherited impact names and add the two actual Guard consumers
@@ -363,16 +390,22 @@ def histories():
         if not path.exists():
             runtime_layers.append(dict(file=name,absent=True));continue
         raw=path.read_bytes();sections,lines=lexical(raw,{'AudioVisual'})
-        value=sections.get('AudioVisual',{}).get('GuardSound')
-        selected={'AudioVisual':{'GuardSound':value}} if value is not None else {}
+        key = 'ScatterSound' if scatter else 'GuardSound'
+        value=sections.get('AudioVisual',{}).get(key)
+        selected={'AudioVisual':{key:value}} if value is not None else {}
         runtime_layers.append(dict(file=name,sha256=hashlib.sha256(raw).hexdigest(),sections=selected,
-                                   guard=read_guard(q.m,q.rules,selected)))
+                                   guard=read_guard(q.m,q.rules,selected,0x728 if scatter else 0x724)))
     q.m.invoke(0x4E7E20,0)
     selected=q.m.alloc(64)
     q.u.mem_write(0xA8ECBC,dwords(selected,16,1,0))
     q.u.mem_write(0xAC4CF4,b'\0')
     q.u.mem_write(0x822CF2,b'\1')
     q.u.mem_write(0x87E2A0,dwords(0))
+    if scatter:
+        # Scatter's immediate Process reaches AStar, unlike Guard ingress.
+        # Reuse the original constructor/heap setup; supply no path answer.
+        from tools.spatial_oracle.fv_cell_attack.pursuit import Continuation
+        Continuation.pathfinder(q)
     # Independently observe the physical input cells before any Guard case.
     # In particular, the other post's height is not inferred from the later
     # destination-setter result. Original virtual+48 writes its actual XYZ.
@@ -403,6 +436,7 @@ def histories():
     # It restores every mapped byte and CPU state between independent inputs.
     saved=[(a,bytes(q.u.mem_read(a,b-a+1))) for a,b,_ in q.u.mem_regions()]
     cpu=q.u.context_save();cursor=q.m.cursor
+    long_heap = q.m.long_heap if scatter else None
     rows=[]
     cases=[dict(name='stock_mtnk_current_cell',selection=['MTNK'],dispatch=True,handler=True,acquire_in_range=True),
            dict(name='stock_e1_current_cell',selection=['E1'],dispatch=True,handler=True,acquire_in_range=True),
@@ -425,9 +459,19 @@ def histories():
            dict(name='ordinary_move_event',selection=['MTNK'],direct='other_cell',mission=2,dispatch=True),
            dict(name='outlist_full_still_acknowledges',selection=['E1','MTNK'],outlist_full=True),
            dict(name='guard_then_move_clears_post',selection=['MTNK'],dispatch=True,retask_move=True)]
+    if scatter:
+        cases = [dict(name='resting_gi',selection=['E1'],dispatch=True),
+                 dict(name='moving_gi_second_press',selection=['E1'],dispatch=True,repeat=2),
+                 dict(name='deployed_gi_refusal',selection=['E1'],dispatch=True,doing=28),
+                 dict(name='tethered_gi_refusal',selection=['E1'],dispatch=True,tether=True),
+                 dict(name='empty_selection',selection=[]),
+                 dict(name='all_skipped_selection',selection=[None,'Cell','enemy_MTNK']),
+                 dict(name='mixed_ordered_selection',selection=[None,'enemy_MTNK','E1','Cell','MTNK']),
+                 dict(name='full_outlist',selection=['E1','MTNK'],outlist_full=True)]
     for case in cases:
         for a,raw in saved:q.u.mem_write(a,raw)
         q.u.context_restore(cpu);q.m.cursor=cursor
+        if scatter:q.m.long_heap=long_heap
         q.events.clear();q.pending.clear();q.resident.trace.clear();q.resident.pending.clear()
         authored_readers=[]
         if case.get('voice_lists'):
@@ -438,12 +482,14 @@ def histories():
                 authored_readers.append(dict(type=name,value=value,
                     result=read_voice(q.m,q.e1_type if name=='E1' else q.typ,{name:{'VoiceSpecialAttack':value}})))
             q.u.mem_write(0x87E2A0,dwords(0))
-        h=GuardHistory(q,case['name'])
+        h=GuardHistory(q,case['name'],scatter)
         pointers={**h.actors,None:0,'Cell':q.resident.ptrs[87,52]}
         actors=[pointers[name] for name in case['selection']]
         q.u.mem_write(selected,dwords(*actors))
         q.u.mem_write(0xA8ECC8,dwords(len(actors)))
         fields=[]
+        if 'doing' in case:fields.append((q.e1+0x6C4,4,case['doing']))
+        if case.get('tether'):fields.append((q.e1+0x418,1,1))
         if case.get('offline'):fields += [(p+0x1C8,1,1) for p in actors]
         if not case.get('voice_enabled',True):fields.append((0x822CF2,1,0))
         if not case.get('human',True):fields.append((q.house+0x1EC,1,0))
@@ -462,9 +508,16 @@ def histories():
                 args=(mission,0,post,0) if mission==2 else (mission,post,0,0)
                 h.invoke('original_direct_Player_Send_Command',0x6FFBE0,actors[0],*args)
             else:
+                delivered = 0
                 for repeat in range(case.get('repeat',1)):
-                    h.invoke('original_Guard_execute'+('' if repeat==0 else '_'+str(repeat+1)),0x536D00,0,0)
-            if case.get('dispatch'):
+                    h.invoke(('original_Scatter_execute' if scatter else 'original_Guard_execute')+
+                             ('' if repeat==0 else '_'+str(repeat+1)),0x536D80 if scatter else 0x536D00,0,0)
+                    if scatter and case.get('dispatch'):
+                        for event in h.rings()['outlist']['events'][delivered:]:
+                            pointer=0xA802D4+event['slot']*0x6F
+                            h.invoke('delivered_original_Scatter_Event_'+str(event['slot']),0x4C6CB0,pointer)
+                            delivered += 1
+            if case.get('dispatch') and not scatter:
                 # Existing Mission setup likewise supplies Event delivery.
                 # Keep original issuer bytes and execute each actual OutList
                 # record, without claiming the omitted network/House pump.
@@ -495,10 +548,12 @@ def histories():
                 ('CurrentCell','QueueVoice','GuardSound','Event_Construct')]
             rows.append(result)
         except Exception:
-            print('guard_case',case,'recent',[hex(pc) for pc in h.recent],file=sys.stderr)
+            print('input_case',case,'recent',[hex(pc) for pc in h.recent],file=sys.stderr)
             for hook in h.hooks:q.u.hook_del(hook)
+            if scatter:Continuation.close(q)
             raise
         assert bytes(q.u.mem_read(0x401000,0x3E0000))==original_code
+    if scatter:Continuation.close(q)
     return dict(inputs=q.inputs,world=q.world,sound_registry=registry,guard_layers=runtime_layers,post_cells=post_cells,
         actor_pointers={name:hex(pointer) for name,pointer in
             (('MTNK',q.src),('E1',q.e1),('allied_MTNK',q.victim),('enemy_MTNK',q.candidate))},
@@ -516,6 +571,48 @@ def generate():
         voice_receipts=sum(len(row['voice_receipts']) for row in result['histories']['rows']),
         main_voice_draws=sum(len(voice['main_raw']) for row in result['histories']['rows'] for voice in row['voice_receipts']))
     return result
+
+
+def generate_scatter():
+    """Small consumed controls using the same constructed actors and transport."""
+    history = histories(scatter=True)
+    rows = []
+    wanted = {'ScatterCommand','ScatterSelection','Techno_ClickedEvent',
+              'TargetEvent_Construct','ScatterSound','InfantryScatter',
+              'RNG_RandomRanged','RNG_Random','original_RNG_advance_site',
+              'GI_SetDestination','Walk_Process','QueueMission','ClearPlanningTokens'}
+    for source in history['rows']:
+        row = {key: source[key] for key in ('name','input','boundaries','complete_rng_states')}
+        row['ordered_calls'] = [dict(call) for call in source['ordered_calls'] if call['kind'] in wanted]
+        for call in row['ordered_calls']:
+            for field in ('before','after','at_ret8'):
+                if call['kind'] in ('RNG_RandomRanged','RNG_Random') and field in call:
+                    call[field] = {'rng':call[field]['rng']}
+                elif call['kind'] != 'InfantryScatter':
+                    call.pop(field, None)
+            if 'args' in call:
+                call['args'] = call['args'][:max(0,(call['declared_cleanup'] or 0)//4)]
+        for boundary in row['boundaries']:
+            for field in ('before','after'):
+                # Raw Event constructor bytes carry the actual issued data;
+                # retain only queue counters at the invocation boundaries.
+                for ring in boundary[field]['rings'].values():
+                    ring.pop('events', None)
+            boundary.pop('requests',None)
+            boundary.pop('advances',None)
+        references = set()
+        def collect(value):
+            if isinstance(value,dict):
+                for item in value.values(): collect(item)
+            elif isinstance(value,list):
+                for item in value: collect(item)
+            elif isinstance(value,str) and value in source['complete_rng_states']:
+                references.add(value)
+        collect(row['boundaries']);collect(row['ordered_calls'])
+        row['complete_rng_states'] = {key:source['complete_rng_states'][key] for key in sorted(references)}
+        rows.append(row)
+    return dict(native_sha256=image_sha256(),constructor_rows=constructor_rows(scatter=True),
+                command_sound_layers=history['guard_layers'],rows=rows)
 
 
 def source_paths():
@@ -548,6 +645,22 @@ def metadata():
 
 
 if __name__ == '__main__':
+    if '--scatter' in sys.argv:
+        scatter_args = [arg for arg in sys.argv[1:] if arg != '--scatter']
+        def scatter_metadata():
+            result = provenance(
+                scope='Eight selected-object Scatter controls and three target-event constructor controls',
+                entry_points={'command':0x536D80,'selection':0x730FE0,'clicked_event':0x6FFE00,
+                              'constructor':0x4C65E0,'execute':0x4C6CB0,'gi_scatter':0x51D0D0},
+                assumptions=['Existing FootMissions constructed actors, physical rules and retained map crop.',
+                             'Selected list and resting/deployed/tethered scalar priors supplied explicitly.',
+                             'Original emitted events delivered once in order, with a second input after the first receiver.'],
+                substitutions=['Existing native fixture OS/allocation boundaries; disabled audio backend. Shared timeGetTime transport supplies wall-ms0 to ring metadata.',
+                               'Manual original Event delivery; no native network/House pump or whole-match claim.'])
+            result['command'] = 'python -m tools.input_oracle.area_guard --scatter --check'
+            return result
+        finish_vectors(generate_scatter, HERE/'player_scatter.json', provenance=scatter_metadata, argv=scatter_args)
+        sys.exit(0)
     guarded_sources=source_paths()
     def checked_metadata():
         assert set(source_paths()) <= set(guarded_sources), sorted(set(source_paths())-set(guarded_sources))

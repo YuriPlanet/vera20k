@@ -48,9 +48,9 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get(id) else {
                 return;
             };
-            let anim = entity.building_anim_slots[usize::from(slot)];
-            let placed = entity.building_actually_placed;
-            let replay = entity.building_anim_effect_replay[usize::from(slot)];
+            let anim = entity.building_art.anim_slots[usize::from(slot)];
+            let placed = entity.building_art.actually_placed;
+            let replay = entity.building_art.anim_effect_replay[usize::from(slot)];
             if flags.powered {
                 if let Some(anim) = anim.and_then(|anim| self.substrate.anims.get_mut(anim)) {
                     anim.runtime.paused = !restoring;
@@ -78,14 +78,16 @@ impl Simulation {
                         .entities
                         .get_mut(id)
                         .unwrap()
-                        .building_anim_effect_replay[usize::from(slot)] = false;
+                        .building_art
+                        .anim_effect_replay[usize::from(slot)] = false;
                     self.create_power_slot(id, slot, rules);
                 } else if !restoring && anim.is_some() {
                     self.substrate
                         .entities
                         .get_mut(id)
                         .unwrap()
-                        .building_anim_effect_replay[usize::from(slot)] = true;
+                        .building_art
+                        .anim_effect_replay[usize::from(slot)] = true;
                     self.clear_building_anim_slot(id, slot);
                     if slot == 16 {
                         self.create_power_slot(id, 20, rules);
@@ -290,7 +292,8 @@ mod tests {
                 .entities
                 .get_mut(id)
                 .unwrap()
-                .building_damage_state_active = damaged;
+                .building_art
+                .damage_state_active = damaged;
             let old = i.occupied.then(|| {
                 sim.set_building_anim_slot(id, i.slot, damaged, false, 0, rules)
                     .unwrap()
@@ -299,17 +302,25 @@ mod tests {
                 sim.substrate.anims.get_mut(old).unwrap().runtime.paused = i.restoring;
             }
             let entity = sim.substrate.entities.get_mut(id).unwrap();
-            entity.building_actually_placed = i.placed;
-            entity.building_anim_effect_replay[usize::from(i.slot)] = i.replay;
+            entity.building_art.actually_placed = i.placed;
+            entity.building_art.anim_effect_replay[usize::from(i.slot)] = i.replay;
             sim.apply_building_anim_power(id, i.restoring, rules);
             let entity = sim.entities().get(id).unwrap();
             assert_eq!(
-                entity.building_anim_slots.map(|id| id.is_some()).as_slice(),
+                entity
+                    .building_art
+                    .anim_slots
+                    .map(|id| id.is_some())
+                    .as_slice(),
                 row.output.occupied,
                 "occupied row {index}"
             );
             assert_eq!(
-                entity.building_anim_effect_replay.map(u8::from).as_slice(),
+                entity
+                    .building_art
+                    .anim_effect_replay
+                    .map(u8::from)
+                    .as_slice(),
                 row.output.replay,
                 "replay row {index}"
             );
@@ -370,7 +381,7 @@ mod tests {
             None,
             crate::sim::world::FrameEffects::default(),
         );
-        let anim = sim.entities().get(id).unwrap().building_anim_slots[3].unwrap();
+        let anim = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
         assert!(
             sim.anim(anim).unwrap().runtime.paused,
             "4467D0 initial pause"
@@ -467,7 +478,8 @@ mod tests {
                 .entities
                 .get_mut(id)
                 .unwrap()
-                .building_damage_state_active = damaged;
+                .building_art
+                .damage_state_active = damaged;
             let old3 = sim
                 .set_building_anim_slot(id, 3, damaged, false, 0, &rules)
                 .unwrap();
@@ -476,7 +488,7 @@ mod tests {
                 .unwrap();
             sim.substrate.anims.get_mut(old3).unwrap().runtime.paused = false;
             let entity = sim.substrate.entities.get_mut(id).unwrap();
-            entity.building_actually_placed = true;
+            entity.building_art.actually_placed = true;
             entity.building_last_operational = i["old"].as_bool().unwrap();
             let owner = entity.owner();
             let state = sim.power_states.entry(owner).or_default();
@@ -507,7 +519,8 @@ mod tests {
             let occupied: Vec<bool> = serde_json::from_value(o["occupied"].clone()).unwrap();
             assert_eq!(
                 entity
-                    .building_anim_slots
+                    .building_art
+                    .anim_slots
                     .map(|slot| slot.is_some())
                     .as_slice(),
                 occupied,

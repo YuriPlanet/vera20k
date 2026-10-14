@@ -606,7 +606,7 @@ class ReadyBuildingFixture:
     CPU context and transport state. It is not a scenario replacement producer.
     """
 
-    def __init__(self, inputs, root):
+    def __init__(self, inputs, root, *, unit_startup=False):
         from tools.spatial_oracle import building_construction as bc
         from tools.spatial_oracle import building_death_anims as death
         from tools.spatial_oracle import engineer_repair_admission as er
@@ -614,7 +614,8 @@ class ReadyBuildingFixture:
         from unicorn.x86_const import UC_X86_REG_EDI
         from unicorn import UC_HOOK_MEM_WRITE
         self.bc, self.er, self.inputs = bc, er, inputs
-        self.f = death.joined_fixture(inputs, 750, seed=2, building_ai=True)
+        self.f = death.joined_fixture(inputs, 750, seed=2, building_ai=True,
+                                      unit_startup=unit_startup)
         self.u, self.get = self.f.u, self.f.read32
         self.calls, self.writes, self.transport = [], [], []
         self.call_trace = NativeCallTrace(self.u, self.get, self.calls)

@@ -59,11 +59,6 @@
 //!   and no scenario initialization under way (`0x00A8E7AC`,
 //!   `0x0050E088..0x0050E0C4`); the walks push the line without them.
 //!   Inaudible: retail `evamd.ini` has no entries for either line.
-//! - Hover Process's water arm (`0x00514BB7..0x00514C0C`) drops an
-//!   unpowered Hover that settles below one level over water through
-//!   `ObjectClass::DropAsBomb @ 0x005F4160`, which VERA does not port
-//!   (`crew_survival`'s bridge-fall residual, #1492): an offline Robot Tank
-//!   over water floats at the surface instead of falling in and dying.
 //! - A rules-less lifecycle (fixture paths) cannot read `PowersUnit=`:
 //!   Removed_From_Game still uncounts the building but walks nothing.
 

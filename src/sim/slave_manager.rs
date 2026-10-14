@@ -862,12 +862,13 @@ impl Simulation {
     /// ([`Simulation::finish_undeploy`]) hands the manager over and sends the
     /// Slave Miner to the archived cell. The byte `+0x4F8` written first
     /// silences the undeploy voice Selling plays (`0x0044A9DF`: `0x00459C20`
-    /// -> `0x00708E00`), which VERA does not play (`VoiceDeploy=` is
-    /// unparsed), so it has no counterpart.
+    /// -> `0x00708E00`). The resource-Archive VoiceHarvest override in
+    /// Building459C20 bypasses that suppression and leaves the byte set.
     fn relocate_refinery(&mut self, master: u64, rules: &RuleSet) {
         let Some(owner) = self.substrate.entities.get_mut(master) else {
             return;
         };
+        owner.suppress_next_deploy_voice();
         let (x, y) = owner_cell(owner);
         owner.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
             x as u16, y as u16,
@@ -1106,7 +1107,7 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Option<(u16, u16)> {
         use crate::sim::find_nearby_cell::{
-            NearbyAnchorGate, NearbyFootprint, NearbyQuery, NearbySearchOptions, PassabilityArgs,
+            NearbyFootprint, NearbyQuery, NearbySearchOptions, PassabilityArgs,
             find_nearby_passable_cell_with_options, map_owned_radius_cap,
         };
         let owner = self.substrate.entities.get(master)?;
@@ -1148,7 +1149,6 @@ impl Simulation {
                     bridge_aware_zone: search.bridge_aware,
                 },
                 footprint: NearbyFootprint::new(search.footprint.0, search.footprint.1),
-                anchor_gate: NearbyAnchorGate::NativeHeightAware,
                 allow_bridge_cells: search.allow_bridge_cells,
                 check_height: search.check_height,
                 check_occupancy: search.check_occupancy,
@@ -1233,16 +1233,14 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        match self.set_infantry_destination(
+        if let Err(cause) = self.assign_destination_represented(
             slave,
-            crate::sim::components::NavTargetRef::cell(cell.0, cell.1),
-            rules,
+            Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
+            Some(rules),
             registry,
             frame_effects,
         ) {
-            Ok(true) => {}
-            Ok(false) => log::debug!("slave {slave} has no Walk setter for {cell:?}"),
-            Err(cause) => log::debug!("slave {slave} could not be sent to {cell:?}: {cause}"),
+            log::debug!("slave {slave} could not be sent to {cell:?}: {cause}");
         }
         self.queue_slave_mission(slave, MissionType::Move);
     }

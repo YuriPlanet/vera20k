@@ -324,7 +324,8 @@ fn stock_cloak_producer_honors_rank_selected_cloak_ability() {
         .entities
         .get_mut(ranked)
         .unwrap()
-        .set_veterancy_rank(100);
+        .veterancy
+        .set_rank_for_test(100);
     tick_stock_cloak_producer(
         &mut sim,
         ranked,

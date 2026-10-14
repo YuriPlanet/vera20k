@@ -212,9 +212,7 @@ impl App {
                 cursor.leave_menus(locked);
             }
         }
-        if was_open != will_be_open
-            && !crate::app::match_runtime::sim_tick::current_session_mode(state).is_network()
-        {
+        if was_open != will_be_open && !state.match_state.session.mode().is_network() {
             let now_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
                 state,
                 Instant::now(),

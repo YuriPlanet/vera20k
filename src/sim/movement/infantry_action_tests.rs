@@ -1,6 +1,5 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::util::fixed_math::SimFixed;
 use serde_json::Value;
 
 #[test]
@@ -243,7 +242,6 @@ fn rocketeer(input: &Value) -> (Simulation, RuleSet, u64) {
         1,
     ));
     let locomotor = entity.locomotor.as_mut().expect("Jumpjet locomotor");
-    locomotor.altitude = SimFixed::from_num(height);
     let runtime = locomotor.jumpjet_runtime_mut().expect("Jumpjet runtime");
     *runtime = runtime
         .clone()

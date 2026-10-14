@@ -110,20 +110,6 @@ impl NearbyFootprint {
     }
 }
 
-/// Ownership of FNPC's independent candidate-anchor playfield predicate.
-///
-/// Every active native candidate runs the height-aware MapClass diamond gate
-/// before rectangle passability. Callers not yet parity-bound must name their
-/// compatibility bypass explicitly; an exact query therefore cannot silently
-/// lose the mandatory gate because a bounds `Option` was absent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NearbyAnchorGate {
-    /// Use this query's `playfield_bounds`; missing MapClass authority rejects
-    /// every candidate through the native predicate instead of bypassing it.
-    NativeHeightAware,
-    UnverifiedCompatibilityBypass,
-}
-
 /// Per-call arguments the CALLER varies between otherwise identical searches.
 ///
 /// The engine's free-unit placement is the worked example: it runs the same search
@@ -149,8 +135,6 @@ pub struct NearbyQuery<'a> {
     /// Top-left rectangle dimensions forwarded to passability and, when enabled,
     /// final occupancy.
     pub footprint: NearbyFootprint,
-    /// Independent candidate-anchor gate that runs before rectangle passability.
-    pub anchor_gate: NearbyAnchorGate,
     /// Bridge filter applied AFTER passability (an FNPC filter, not a passability arg).
     pub allow_bridge_cells: bool,
     /// Caller's terrain-level gate. When set, a candidate is admitted only while it
@@ -173,8 +157,9 @@ pub struct NearbyQuery<'a> {
     pub entities: Option<&'a EntityStore>,
     pub zone_grid: Option<&'a ZoneGrid>,
     /// The map's isometric playfield diamond ([Map] Size width + LocalSize), used
-    /// by the exact candidate-anchor gate and the occupancy check's later corner
-    /// test. Active native queries have no rectangular substitute when absent.
+    /// by the candidate-anchor gate every candidate runs and by the occupancy
+    /// check's later corner test. Absent bounds reject every candidate: there is
+    /// no rectangular substitute.
     pub playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
 }
 
@@ -557,18 +542,13 @@ fn candidate_passes(
     cx: i32,
     cy: i32,
 ) -> bool {
-    match q.anchor_gate {
-        NearbyAnchorGate::NativeHeightAware => {
-            if !cell_is_in_playfield_height_aware_in_query(
-                (cx, cy),
-                q.playfield_bounds,
-                q.resolved_terrain,
-                q.native_cells,
-            ) {
-                return false;
-            }
-        }
-        NearbyAnchorGate::UnverifiedCompatibilityBypass => {}
+    if !cell_is_in_playfield_height_aware_in_query(
+        (cx, cy),
+        q.playfield_bounds,
+        q.resolved_terrain,
+        q.native_cells,
+    ) {
+        return false;
     }
 
     let rect = CellRect::new(cx, cy, q.footprint.width, q.footprint.height);
@@ -773,12 +753,14 @@ impl crate::sim::world::Simulation {
     }
 
     /// `MapClass::Find_Nearby_Passable_Cell` in the argument shape
-    /// NearbyLocation (`0x00703590`) and Teleport Update_Position
-    /// (`0x0071854F..0x007185D5`) push: one cell, the height-aware anchor,
-    /// bridge cells allowed, no height or occupancy check, the map's radius
-    /// cap and no target cell; each caller supplies the seed and the
-    /// passability inputs. `None` when nothing passes or the map size is
-    /// unknown.
+    /// NearbyLocation (`0x00703590`), Teleport Update_Position
+    /// (`0x0071854F..0x007185D5`), PickupCrate's goodie
+    /// (`0x0048231E..0x00482366`) and Mission_Unload's pre-move and vehicle
+    /// passenger (`0x0073D772..0x0073D7B0`, `0x0073DA96..0x0073DADD`) push: one
+    /// cell, no overlay rejection, no height, obstacle or occupancy check,
+    /// bridge cells allowed, a zero target cell, no quadrant skip, and the
+    /// map's radius cap; each caller supplies the seed and the passability
+    /// inputs. `None` when nothing passes or the map size is unknown.
     pub(crate) fn nearby_location_cell(
         &self,
         seed: (i32, i32),
@@ -796,7 +778,6 @@ impl crate::sim::world::Simulation {
                 raw_occupation: Some(&self.substrate.raw_cell_occupation),
                 passability,
                 footprint: NearbyFootprint::SINGLE,
-                anchor_gate: NearbyAnchorGate::NativeHeightAware,
                 allow_bridge_cells: true,
                 check_height: false,
                 check_occupancy: false,
@@ -874,7 +855,6 @@ mod tests {
             raw_occupation: None,
             passability: track_args(),
             footprint: NearbyFootprint::SINGLE,
-            anchor_gate: NearbyAnchorGate::UnverifiedCompatibilityBypass,
             allow_bridge_cells: true,
             check_height: false,
             check_occupancy: false,
@@ -886,7 +866,19 @@ mod tests {
             occupancy: None,
             entities: None,
             zone_grid: None,
-            playfield_bounds: None,
+            playfield_bounds: Some(covering_bounds()),
+        }
+    }
+
+    /// A playfield diamond that admits every cell of these small grids, so the
+    /// leaf tests isolate the predicates after the anchor gate.
+    fn covering_bounds() -> crate::sim::cell_rect::PlayfieldBounds {
+        crate::sim::cell_rect::PlayfieldBounds {
+            base: 0,
+            off_fc: -100,
+            off_100: -100,
+            off_104: 200,
+            off_108: 200,
         }
     }
 
@@ -1116,14 +1108,6 @@ mod tests {
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
         let mut q = base_query(&terrain, &path_grid);
         q.footprint = NearbyFootprint::new(8, 8);
-        q.anchor_gate = NearbyAnchorGate::NativeHeightAware;
-        q.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
-            base: 0,
-            off_fc: -100,
-            off_100: -100,
-            off_104: 200,
-            off_108: 200,
-        });
         q.radius_cap = 1;
 
         let candidates = collect_candidates((5, 5), &q, NearbySearchOptions::default());
@@ -1574,13 +1558,6 @@ mod tests {
         q.check_occupancy = true;
         q.occupancy = Some(&occupancy);
         q.entities = Some(&entities);
-        q.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
-            base: 0,
-            off_fc: -100,
-            off_100: -100,
-            off_104: 200,
-            off_108: 200,
-        });
 
         let found = find_nearby_passable_cell((2, 2), &q, 0);
         // The seed (2,2) is occupied; FNPC must pick a different, free cell.
@@ -1798,11 +1775,13 @@ mod tests {
         assert_eq!(rows.len(), 6);
     }
 
-    /// With the map's playfield diamond threaded into the query, occupancy rejects
-    /// rectangle-inside but diamond-outside cells. Missing fields reject the exact
-    /// MapClass query rather than substituting the retired rectangle fallback.
+    /// The final occupancy check tests the footprint's four corners against the
+    /// playfield diamond (`CellRect::CheckOccupancy @ 0x00586780`); the anchor
+    /// gate tests only the anchor. A 2x2 footprint whose anchor is inside the
+    /// diamond but whose far corner is outside passes without the occupancy
+    /// check and fails with it. Missing bounds reject every candidate.
     #[test]
-    fn find_nearby_occupancy_rejects_off_diamond_cells_when_bounds_threaded() {
+    fn find_nearby_occupancy_rejects_a_footprint_corner_off_the_diamond() {
         use crate::sim::cell_rect::PlayfieldBounds;
         // Diamond (same fixture as the cell_rect acceptance tests): pass iff
         // 12 < x+y <= 26, x−y < 14, y−x < 6.
@@ -1816,35 +1795,19 @@ mod tests {
         let terrain = flat_terrain(30, 30);
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
         let mut q = base_query(&terrain, &path_grid);
+        q.footprint = NearbyFootprint::new(2, 2);
+        q.radius_cap = 1;
+        q.playfield_bounds = Some(bounds);
+        // Anchor (13,12): sum 25, inside; far corner (14,13): sum 27, outside.
+        assert_eq!(find_nearby_passable_cell((13, 12), &q, 0), Some((13, 12)));
         q.check_occupancy = true;
-
-        // Without configured MapClass fields no exact query can be made.
+        assert_eq!(find_nearby_passable_cell((13, 12), &q, 0), None);
+        q.check_occupancy = false;
+        q.playfield_bounds = None;
         assert_eq!(
-            find_nearby_passable_cell((14, 13), &q, 0),
+            find_nearby_passable_cell((13, 12), &q, 0),
             None,
             "missing bounds must not approximate MapClass with a rectangle"
-        );
-
-        // With the diamond: the seed and every other sum>26 ring cell are rejected;
-        // the pool is exactly the three in-diamond ring-1 survivors in ring order
-        // ((13,12), (14,12), (13,13)) and the frame counter walks that pool.
-        q.playfield_bounds = Some(bounds);
-        let in_diamond = |c: (u16, u16)| {
-            let (x, y) = (c.0 as i32, c.1 as i32);
-            12 < x + y && x + y <= 26 && x - y < 14 && y - x < 6
-        };
-        for frame in 0..6u32 {
-            let pick = find_nearby_passable_cell((14, 13), &q, frame)
-                .expect("in-diamond candidates exist on ring 1");
-            assert!(
-                in_diamond(pick),
-                "FNPC picked off-diamond cell {pick:?} with bounds threaded"
-            );
-        }
-        assert_eq!(
-            find_nearby_passable_cell((14, 13), &q, 0),
-            Some((13, 12)),
-            "frame 0 picks the first in-diamond survivor in engine ring order"
         );
     }
 }

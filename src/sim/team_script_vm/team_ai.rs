@@ -427,8 +427,12 @@ impl Simulation {
     fn guard_slower_weight(&self, entity: &GameEntity, rules: &RuleSet) -> bool {
         self.object_type(entity.type_ref(), rules)
             .is_some_and(|object| {
-                crate::sim::combat::combat_weapon::weapon_for_index(object, entity.veterancy(), 0)
-                    .is_none()
+                crate::sim::combat::combat_weapon::weapon_for_index(
+                    object,
+                    entity.veterancy.rank(),
+                    0,
+                )
+                .is_none()
                     || object.tech_level == -1
                     || object.deploys_into.is_some()
                     || object.speed <= 13
@@ -600,7 +604,11 @@ impl Simulation {
             let armed = self
                 .object_type(head.type_ref(), rules)
                 .and_then(|object| {
-                    crate::sim::combat::combat_weapon::weapon_for_index(object, head.veterancy(), 0)
+                    crate::sim::combat::combat_weapon::weapon_for_index(
+                        object,
+                        head.veterancy.rank(),
+                        0,
+                    )
                 })
                 .is_some();
             if head.category == EntityCategory::Aircraft
@@ -787,9 +795,8 @@ mod tests {
         let mut sim = crate::sim::world::Simulation::new();
         let mut member =
             crate::sim::game_entity::GameEntity::test_default(1, "HOVER", "Americans", 4, 4);
-        let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Hover);
-        locomotor.altitude = crate::util::fixed_math::SimFixed::from_num(120);
-        member.locomotor = Some(locomotor);
+        member.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Hover));
+        member.position.exact_z_leptons = Some(120);
         sim.substrate.entities.insert(member);
         let member = sim.substrate.entities.get(1).expect("member");
         // The cell target is (4, 4)'s centre at its floor, straight below, so

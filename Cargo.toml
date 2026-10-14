@@ -109,6 +109,11 @@ anyhow = "1"
 log = "0.4"
 env_logger = "0.11"
 
+# --- Parallel simulation work ---
+# The persistent worker pool behind `sim::parallel::map`; its threads keep their
+# thread-local search scratch between frames. Already in the lock via `image`.
+rayon = "1.11"
+
 # --- Image processing ---
 # Used for texture atlas creation and debug image output, not for asset parsing.
 image = "0.25"

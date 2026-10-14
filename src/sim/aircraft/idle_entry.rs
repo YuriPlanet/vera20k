@@ -379,8 +379,11 @@ pub(crate) fn enter_idle_mode_for(
             .is_some_and(|cargo| cargo.count() != 0),
         human: sim.owner_is_human(entity.owner()),
         armed: crate::sim::combat::combat_weapon::is_armed(entity, object),
-        weapon: crate::sim::combat::combat_weapon::primary_for_tier(object, entity.veterancy())
-            .is_some(),
+        weapon: crate::sim::combat::combat_weapon::primary_for_tier(
+            object,
+            entity.veterancy.rank(),
+        )
+        .is_some(),
         ammo: entity
             .aircraft_ammo
             .as_ref()

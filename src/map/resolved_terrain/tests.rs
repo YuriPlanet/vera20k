@@ -1038,6 +1038,41 @@ fn gsi_04_02_last_tiles_does_not_translate_fill_or_dummy_only_pack_misses() {
     assert_eq!(dummy.snapshot().coord, (99, 99));
 }
 
+/// A detached Dummy stamps and reads a private copy of its cell word; the
+/// shared word, other threads and other Dummies keep their own.
+#[test]
+fn a_detached_dummy_stamps_a_private_cell_word() {
+    let dummy = SharedCellDummy::fresh();
+    dummy.stamp_coord(-7, 11);
+    dummy.set_level(-3);
+    let other = SharedCellDummy::fresh();
+    let (inside, forked, elsewhere) = dummy.detached(|| {
+        dummy.clone().stamp_coord(40, -2);
+        other.stamp_coord(5, 6);
+        let elsewhere = std::thread::scope(|scope| {
+            scope
+                .spawn(|| dummy.snapshot().coord)
+                .join()
+                .expect("reader thread")
+        });
+        (
+            dummy.snapshot(),
+            dummy.fork_query_identity().snapshot().coord,
+            elsewhere,
+        )
+    });
+    assert_eq!(inside.coord, (40, -2));
+    assert_eq!(inside.level, -3, "a stamp keeps the level byte");
+    assert_eq!(forked, (40, -2), "a fork copies this thread's view");
+    assert_eq!(elsewhere, (-7, 11), "another thread reads the shared word");
+    assert_eq!(dummy.snapshot().coord, (-7, 11), "the shared word is kept");
+    assert_eq!(
+        other.snapshot().coord,
+        (5, 6),
+        "another Dummy is not detached"
+    );
+}
+
 #[test]
 fn gsi_04_01_resize_clears_bridge_bits_without_replacing_dummy_identity() {
     let dummy = SharedCellDummy::fresh();

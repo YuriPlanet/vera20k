@@ -265,18 +265,24 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
         let object = sim.substrate.entities.get(id).unwrap();
         assert!(!object.on_bridge && object.lifecycle.cell_marked);
         assert_eq!(
-            object.position.z, 0,
-            "existing represented ground snap retained"
+            object.position.z, 4,
+            "DropAsBomb retains the stored Location level"
         );
+        assert_eq!(
+            object.position.exact_z_leptons,
+            Some(if id == building { 0 } else { 416 })
+        );
+        assert!(object.was_dropped_as_bomb() && object.is_falling_down());
     }
     assert_eq!(sim.substrate.next_air_tracker_order.current(), next_order);
     let twin = sim.substrate.entities.get(unmarked).unwrap();
     assert!(twin.on_bridge && twin.lifecycle.in_limbo && !twin.lifecycle.cell_marked);
     assert_eq!(twin.position.z, 4);
-    assert_eq!(
+    assert_ne!(
         sim.substrate.raw_cell_occupation, raw_before,
-        "raw callback/falling drift is not rewritten from the legacy snapped Z"
+        "the stationary Unit's raw receiver clears its old deck occupation"
     );
+    let raw_after = sim.substrate.raw_cell_occupation.clone();
     assert_eq!(
         bincode::serialize(
             sim.substrate
@@ -365,7 +371,7 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
         ),
         0
     );
-    assert_eq!(restored.substrate.raw_cell_occupation, raw_before);
+    assert_eq!(restored.substrate.raw_cell_occupation, raw_after);
     assert_eq!(
         restored.substrate.next_air_tracker_order.current(),
         next_order,

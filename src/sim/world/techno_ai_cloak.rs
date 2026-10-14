@@ -30,7 +30,7 @@ fn stock_cloak_tick_facts(
         return None;
     }
     let object = rules.object(sim.interner.resolve(entity.type_ref()))?;
-    let rank_cloak = has_weapon_ability(rank_from_u16(entity.veterancy()), object, Ability::Cloak);
+    let rank_cloak = has_weapon_ability(entity.veterancy.rank_kind(), object, Ability::Cloak);
     if !object.cloakable && !rank_cloak {
         return None;
     }
@@ -591,7 +591,7 @@ pub(super) fn tick_stock_cloak_producer(
         .substrate
         .entities
         .get(id)
-        .map(|entity| (entity.category, entity.type_ref(), entity.veterancy()))
+        .map(|entity| (entity.category, entity.type_ref(), entity.veterancy.rank()))
     else {
         return;
     };

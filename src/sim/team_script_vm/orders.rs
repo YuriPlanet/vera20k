@@ -6,7 +6,6 @@
 //! `Enter_Idle_Mode` (`vt+0x484`, [`crate::sim::world::enter_idle_mode`])
 //! and `Set_ArchiveTarget` (`0x0070C610`).
 
-use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::mission::authority::LiveReadyInputProvider;
@@ -82,8 +81,8 @@ impl Simulation {
         }
     }
 
-    /// `vt+0x480` `Set_Destination(target, 1)`: Infantry `0x0051AA40` and Unit
-    /// `0x00741970` (Jumpjet included), Aircraft `0x0041AA80`.
+    /// `vt+0x480` `Set_Destination(target, 1)` through the class setters
+    /// ([`Simulation::assign_destination_represented`]).
     pub(super) fn team_member_set_destination(
         &mut self,
         id: u64,
@@ -92,36 +91,18 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(target) = target else {
-            self.assign_null_destination(id, Some(rules), None, frame_effects);
-            return;
-        };
-        let requested = match target {
+        let requested = target.map(|target| match target {
             TeamTarget::Cell { x, y } => {
                 crate::sim::components::NavTargetRef::cell(x as u16, y as u16)
             }
             TeamTarget::Object(id) => crate::sim::components::NavTargetRef::object(id),
-        };
-        let Some(category) = self
-            .substrate
-            .entities
-            .get(id)
-            .map(|entity| entity.category)
-        else {
-            return;
-        };
-        match category {
-            EntityCategory::Infantry => {
-                let _ =
-                    self.set_infantry_destination(id, requested, rules, registry, frame_effects);
-            }
-            EntityCategory::Unit if self.unit_setter_receiver(id, Some(rules)) => {
-                self.set_unit_destination(id, requested, rules, true, frame_effects);
-            }
-            EntityCategory::Aircraft => {
-                self.assign_aircraft_destination(id, Some(requested), rules, frame_effects);
-            }
-            _ => {}
-        }
+        });
+        let _ = self.assign_destination_represented(
+            id,
+            requested,
+            Some(rules),
+            registry,
+            frame_effects,
+        );
     }
 }

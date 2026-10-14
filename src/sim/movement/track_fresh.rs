@@ -31,9 +31,13 @@
 //!   without the OverlayType table answers as a cell without a crate (the
 //!   native early exit `0x481A39`). Production always binds it.
 //! - Terrain blockers in the code-4/5 arm (`Find_Blocking_Object 0x47C5A0`
-//!   returning a TerrainClass): VERA targets only objects and cells, so no
-//!   Override is issued for a tree. Unreachable today: VERA's A* never routes
-//!   through a terrain object (native prices a Wood route at 20).
+//!   returning a TerrainClass): native's Is_Ally (`0x004F9A90`) is false for a
+//!   tree, which has no house, so it orders Attack on it; VERA targets only
+//!   objects and cells, so no Override is issued. Trigger: a Unit whose
+//!   selected weapon's warhead has `Wood=` meets a tree Cell on its route (the
+//!   class answers 5 there, which A* prices at 20). Effect: it drops its head
+//!   without turning on the tree. Frequency: not measured. Hover shares this
+//!   arm (`override_movement_blocker_at`); Walk's has the same gap (#1517).
 //! - Drive+64 (`0x4B400C`, the straight byte): Process_Drive_Track reads it
 //!   at `0x4B19AA`/`0x4B1A04` for the wall-crush tilt (+334 = -0.05) and the
 //!   CrusherAll Unit flag (+6B5, the speed ramp's crush clamp). Trigger: a
@@ -56,7 +60,6 @@
 //!   at the tube entrance instead of entering. Frequency: maps with tunnels.
 //!   Risk: tube travel for vehicles is missing until that receiver lands.
 
-use super::block_index::HeldBlockSets;
 use super::foot_path::{FindPathResult, FootPathOutcome, coord_cell};
 use super::ground_pose;
 use super::infantry_entry::InfantryEntryArgs;
@@ -74,7 +77,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_kernel::native_xyz_distance;
 use crate::sim::combat::TargetKind;
-use crate::sim::combat::veterancy::{has_weapon_ability, rank_from_u16};
+use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -129,14 +132,12 @@ impl Simulation {
     /// `Process_Movement(&out, args)` for a Drive/Ship Unit. Returns the out
     /// byte: true when the Foot is gone (0x4B3A21, 0x4B3F4E and the no-queue
     /// continuation 0x4B28BE) or an idle Move's Enter_Idle_Mode answered true
-    /// (0x4B26C5). `held`: the owner block sets of the movement pass that
-    /// makes the call, which its path requests search with.
+    /// (0x4B26C5).
     pub(crate) fn run_track_process_movement(
         &mut self,
         id: u64,
         family: TrackFamily,
         args: ProcessMovementArgs,
-        held: Option<&mut HeldBlockSets>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
@@ -149,14 +150,10 @@ impl Simulation {
             registry,
             frame_effects,
         };
-        self.track_process_movement(&call, held)
+        self.track_process_movement(&call)
     }
 
-    fn track_process_movement(
-        &mut self,
-        call: &FreshCall<'_>,
-        held: Option<&mut HeldBlockSets>,
-    ) -> Result<bool, String> {
+    fn track_process_movement(&mut self, call: &FreshCall<'_>) -> Result<bool, String> {
         let id = call.id;
         let actor = self
             .substrate
@@ -220,8 +217,8 @@ impl Simulation {
         };
         match head {
             //4B281C: the no-queue arm and its continuations (track_path).
-            None => self.track_no_queue_arm(call, held),
-            Some(direction) => self.track_fresh_arm(call, direction, held),
+            None => self.track_no_queue_arm(call),
+            Some(direction) => self.track_fresh_arm(call, direction),
         }
     }
 
@@ -274,11 +271,7 @@ impl Simulation {
 
     /// 0x4B281C..0x4B2845 then track_path's request and continuations. A found
     /// route resumes head selection in the same call (0x4B3282..0x4B3298).
-    fn track_no_queue_arm(
-        &mut self,
-        call: &FreshCall<'_>,
-        mut held: Option<&mut HeldBlockSets>,
-    ) -> Result<bool, String> {
+    fn track_no_queue_arm(&mut self, call: &FreshCall<'_>) -> Result<bool, String> {
         let id = call.id;
         let frame = self.session.binary_frame as i32;
         let actor = self
@@ -291,10 +284,18 @@ impl Simulation {
             return Ok(false);
         }
         let destination = track_destination(actor).ok_or("no-queue arm without destination")?;
+        // A batched request waits for the next frame's batch as if the timer
+        // still ran (`path_batch`, a proposed deviation). A retry recursion
+        // (0x4B397F, 0x4B4480, 0x4B4552) runs at once: its timer was just
+        // expired, and native searches there with the retry spent.
+        if call.args == ProcessMovementArgs::OUTER
+            && self.defer_path_search(id, super::path_batch::WaitingRequest::NoQueue)
+        {
+            return Ok(false);
+        }
         let request = self.track_path_request(call, destination, 0)?;
         match self.run_track_path_request(
             &request,
-            held.as_deref_mut(),
             Some(call.rules),
             call.registry,
             call.frame_effects,
@@ -308,7 +309,7 @@ impl Simulation {
                     .get(id)
                     .and_then(|actor| path_word(actor, 0));
                 match head {
-                    Some(direction) => self.track_fresh_arm(call, direction, held),
+                    Some(direction) => self.track_fresh_arm(call, direction),
                     None => Ok(false),
                 }
             }
@@ -327,19 +328,12 @@ impl Simulation {
             destination,
             urgency,
             self.playfield_bounds,
-            Some(&self.type_handles),
-            Some(call.rules),
         )
         .ok_or_else(|| "retired Drive/Ship Find_Path requester".into())
     }
 
     /// The fresh arm, from 0x4B3298 with the live path head `direction`.
-    fn track_fresh_arm(
-        &mut self,
-        call: &FreshCall<'_>,
-        direction: u8,
-        held: Option<&mut HeldBlockSets>,
-    ) -> Result<bool, String> {
+    fn track_fresh_arm(&mut self, call: &FreshCall<'_>, direction: u8) -> Result<bool, String> {
         let id = call.id;
         let rules = call.rules;
         //4B3298: a tube word returns to the tube receiver (unported; see residual).
@@ -421,29 +415,23 @@ impl Simulation {
         let dispatch = dispatch_entry(FreshStage::First, code, call.args.allow_retry, true)
             .ok_or("fresh dispatch outside 0..7")?;
         match dispatch {
-            FreshDispatch::Accept => self.track_fresh_accept(
-                call,
-                direction,
-                candidate,
-                cell,
-                height,
-                crush_overlay,
-                held,
-            ),
+            FreshDispatch::Accept => {
+                self.track_fresh_accept(call, direction, candidate, cell, height, crush_overlay)
+            }
             FreshDispatch::UncloakContacts { retry } => {
                 //4B394D..4B3984: ground contact callbacks, then recursion.
                 self.uncloak_contacts_at_cell(cell, rules)?;
                 if retry.is_some() {
                     self.clear_path_head(id);
                     return self
-                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY), held);
+                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY));
                 }
                 //4B398E..4B39CC then 4B31FC: clear the head, stop or take
                 //the next waypoint.
                 self.stop_or_take_next_waypoint(id, rules, call.frame_effects);
                 Ok(false)
             }
-            FreshDispatch::BlockedDelay => self.track_blocked_delay(call, held),
+            FreshDispatch::BlockedDelay => self.track_blocked_delay(call),
             FreshDispatch::Gate { .. } => {
                 //4B35EC..4B3602: the gate question, answer discarded.
                 let _ = crate::sim::gate_runtime::request_gate_open_for_cell(
@@ -463,7 +451,7 @@ impl Simulation {
                     self.clear_path_head(id);
                     self.expire_movement_timer(id);
                     return self
-                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY), held);
+                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY));
                 }
                 //4B3B03..4B3BE9: attack the non-allied blocking object, or
                 //the wall cell when the cell holds none.
@@ -487,7 +475,7 @@ impl Simulation {
                     self.clear_path_head(id);
                     self.expire_movement_timer(id);
                     return self
-                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY), held);
+                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY));
                 }
                 //4B3742..4B38A1: close enough to the destination, level and
                 //off a Tunnel: stop or take the next waypoint.
@@ -519,7 +507,7 @@ impl Simulation {
                     self.clear_path_head(id);
                     self.expire_movement_timer(id);
                     return self
-                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY), held);
+                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY));
                 }
                 //4B3C26..4B3C62 then 4B31FC.
                 self.stop_or_take_next_waypoint(id, rules, call.frame_effects);
@@ -546,11 +534,7 @@ impl Simulation {
     }
 
     /// 0x4B3607..0x4B3A94: the first candidate's code-2 ladder.
-    fn track_blocked_delay(
-        &mut self,
-        call: &FreshCall<'_>,
-        held: Option<&mut HeldBlockSets>,
-    ) -> Result<bool, String> {
+    fn track_blocked_delay(&mut self, call: &FreshCall<'_>) -> Result<bool, String> {
         let id = call.id;
         let rules = call.rules;
         let frame = self.session.binary_frame;
@@ -573,16 +557,17 @@ impl Simulation {
         }
         //4B36BC..4B36EF / 4B39D1..4B3A0E: urgency 2 once the latched
         //blockage timer expired, else 1; Find_Path(cell(destination), 0, u).
-        let urgency = if runtime.path_blocked && runtime.blocked_timer.expired(frame as i32) {
-            2
-        } else {
-            1
-        };
-        let destination =
-            track_destination(actor).ok_or("Drive/Ship code-2 ladder without destination")?;
+        let urgency = runtime.code2_urgency(frame);
+        let destination = super::path_batch::code2_ladder_destination(actor)
+            .ok_or("Drive/Ship code-2 ladder without destination")?;
+        // A batched re-path waits for the next frame's batch as if the timer
+        // still ran (`path_batch`, a proposed deviation).
+        if self.defer_path_search(id, super::path_batch::WaitingRequest::Code2Ladder) {
+            self.track_first_rejected_tail(id);
+            return Ok(false);
+        }
         let request = self.track_path_request(call, destination, urgency)?;
-        let found =
-            self.foot_find_path(&request, held, rules, call.registry, call.frame_effects)?;
+        let found = self.foot_find_path(&request, rules, call.registry, call.frame_effects)?;
         //4B3A13..4B3A2A: a vanished Foot sets the out byte.
         if self.substrate.entities.get(id).is_none() {
             return Ok(true);
@@ -615,7 +600,6 @@ impl Simulation {
         cell: (i16, i16),
         height: i32,
         crush_overlay: bool,
-        mut held: Option<&mut HeldBlockSets>,
     ) -> Result<bool, String> {
         let id = call.id;
         let rules = call.rules;
@@ -648,13 +632,8 @@ impl Simulation {
             if distance > 0x200 {
                 //Find_Path(cell(destination), IsTrain, 0); see the train residual.
                 let request = self.track_path_request(call, destination, 0)?;
-                let found = self.foot_find_path(
-                    &request,
-                    held.as_deref_mut(),
-                    rules,
-                    call.registry,
-                    call.frame_effects,
-                )?;
+                let found =
+                    self.foot_find_path(&request, rules, call.registry, call.frame_effects)?;
                 if found == FindPathResult::Failed {
                     //4B3F40..4B3F55: a vanished Foot sets the out byte.
                     if self.substrate.entities.get(id).is_none() {
@@ -795,25 +774,19 @@ impl Simulation {
             }
             FreshDispatch::Retry(retry) => {
                 //4B420B..4B4219: recurse with arg3 = 1, nothing cleared.
-                self.track_process_movement(
-                    &call.with_args(ProcessMovementArgs {
+                self.track_process_movement(&call.with_args(ProcessMovementArgs {
                         allow_retry: retry.allow_retry,
                         force_single: retry.force_single_direction,
-                    }),
-                    held,
-                )
+                }))
             }
             FreshDispatch::ClearSecondThenRetry(retry) => {
                 //4B41B3..4B41F7: clear, then recurse with arg3 = 1.
                 self.clear_path_head(id);
                 self.track_retire_selector(id);
-                self.track_process_movement(
-                    &call.with_args(ProcessMovementArgs {
+                self.track_process_movement(&call.with_args(ProcessMovementArgs {
                         allow_retry: retry.allow_retry,
                         force_single: retry.force_single_direction,
-                    }),
-                    held,
-                )
+                }))
             }
             FreshDispatch::ScatterOrStop { retry, .. } => {
                 if retry.is_some() {
@@ -821,7 +794,7 @@ impl Simulation {
                     self.clear_path_head(id);
                     self.expire_movement_timer(id);
                     return self
-                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY), held);
+                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY));
                 }
                 //4B4273..4B43BE: the CloseEnough stop.
                 if self.track_close_enough_stop(id, rules)? {
@@ -846,7 +819,7 @@ impl Simulation {
                 if retry.is_some() {
                     self.clear_path_head(id);
                     return self
-                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY), held);
+                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY));
                 }
                 //4B448F..4B450D.
                 self.stop_or_take_next_waypoint(id, rules, call.frame_effects);
@@ -858,7 +831,7 @@ impl Simulation {
                     self.clear_path_head(id);
                     self.expire_movement_timer(id);
                     return self
-                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY), held);
+                        .track_process_movement(&call.with_args(ProcessMovementArgs::RETRY));
                 }
                 //4B4561..4B45C8.
                 self.stop_or_take_next_waypoint(id, rules, call.frame_effects);
@@ -1097,9 +1070,7 @@ impl Simulation {
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 })
     }
 
-    /// Foot+5E0 = -1 on the live path word. The scheduling adapter's route is
-    /// a cache of the same words, so it empties with them; otherwise the next
-    /// visit would read the Foot as a Rust route adapter.
+    /// Foot+5E0 = -1 on the live path word.
     fn clear_path_head(&mut self, id: u64) {
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.clear_live_path_head();
@@ -1269,7 +1240,7 @@ impl Simulation {
         };
         //Type+D28, or HasWeaponAbility(0x11) by rank (0x70D0D0).
         let crusher = object.crusher
-            || has_weapon_ability(rank_from_u16(actor.veterancy()), object, Ability::Crusher);
+            || has_weapon_ability(actor.veterancy.rank_kind(), object, Ability::Crusher);
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
         let native = cells.lookup(cell);
         let deck = cells.flags(native) & 0x100 != 0 && {

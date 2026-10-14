@@ -504,6 +504,7 @@ impl App {
                 capture_dimensions.map(|(w, h)| PhysicalSize::new(w, h)),
             ),
             match_state: crate::app::match_runtime::state::MatchState {
+                session: Default::default(),
                 startup: Default::default(),
                 sim_runtime: None,
                 input: crate::app::input::state::MatchInputState::new(hotkey_bindings),
@@ -568,7 +569,6 @@ impl App {
                     overlay_radar_colors: HashMap::new(),
                     house_color_map: HashMap::new(),
                     house_roster: HouseRoster::default(),
-                    local_player_handle: None,
                     lighting: Default::default(),
                     tile_atlas: None,
                     unit_atlas: None,

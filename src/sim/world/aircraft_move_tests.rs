@@ -416,7 +416,6 @@ fn retail_harrier_sent_onto_a_tank_stops_beside_it_and_crashes_without_an_airfie
                     entity_id: harrier,
                     target_rx: target_cell.0,
                     target_ry: target_cell.1,
-                    queue: false,
                 },
             )]
         } else {

@@ -85,7 +85,7 @@ fn building(sim: &mut Simulation, id: u64, owner: InternedId, kind: &str, health
     entity.lifecycle.in_limbo = false;
     entity.lifecycle.cell_marked = true;
     entity.in_playfield = true;
-    entity.building_actually_placed = true;
+    entity.building_art.set_actually_placed_for_test(true);
     entity.finish_building_construction_for_test();
     mission(&mut entity, MissionType::Guard as i32, -1);
     sim.substrate.entities.insert(entity);

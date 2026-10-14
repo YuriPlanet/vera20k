@@ -226,10 +226,6 @@ mod tests {
         for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
             let mut mover = entity(kind, 0, SIM_ONE);
             mover.drive_accelerates = false;
-            mover.movement_target = Some(crate::sim::components::MovementTarget {
-                speed: SimFixed::from_num(150),
-                ..Default::default()
-            });
             assert_eq!(
                 advance(
                     &mut mover,
@@ -255,39 +251,29 @@ mod tests {
                 ),
                 11
             );
-            assert_eq!(
-                mover.movement_target.as_ref().unwrap().speed,
-                SimFixed::from_num(150)
-            );
         }
     }
 
     #[test]
-    fn live_type_speed_wins_over_the_path_speed_cache() {
+    fn track_budget_reads_the_live_type_speed() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\nSpeed=6\nAccelerates=no\n",
         ))
         .unwrap();
         for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
-            for cached_speed in [15, 1500] {
-                let mut mover = entity(kind, 0, SIM_ONE);
-                mover.drive_accelerates = false;
-                mover.movement_target = Some(crate::sim::components::MovementTarget {
-                    speed: SimFixed::from_num(cached_speed),
-                    ..Default::default()
-                });
-                assert_eq!(
-                    advance(
-                        &mut mover,
-                        rules.object("MTNK"),
-                        Some(&rules),
-                        &Default::default(),
-                        None,
-                        None
-                    ),
-                    15
-                );
-            }
+            let mut mover = entity(kind, 0, SIM_ONE);
+            mover.drive_accelerates = false;
+            assert_eq!(
+                advance(
+                    &mut mover,
+                    rules.object("MTNK"),
+                    Some(&rules),
+                    &Default::default(),
+                    None,
+                    None
+                ),
+                15
+            );
         }
     }
 

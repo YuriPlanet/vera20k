@@ -52,7 +52,9 @@ fn fixture(row: &Value) -> (Simulation, RuleSet) {
     };
     let mut source = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
     source.category = EntityCategory::Aircraft;
-    source.set_veterancy_rank((case["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
+    source
+        .veterancy
+        .set_rank_for_test((case["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
     source.aircraft_ammo = Some(AircraftAmmo::new(2));
     source.mission.set_current_for_test(
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Attack),
@@ -118,7 +120,10 @@ fn assert_native_in_range_result(sim: &Simulation, row: &Value) {
         "the range branch only authorizes the next mission state"
     );
     assert_eq!(aircraft.aircraft_ammo.as_ref().unwrap().current, 2);
-    assert!(aircraft.movement_target.is_none(), "{row}");
+    assert!(
+        crate::sim::movement::motion_query::is_moving(&aircraft) != Some(true),
+        "{row}"
+    );
     assert!(sim.projectiles.is_empty());
 }
 
@@ -136,7 +141,7 @@ fn selected_strafe_range_branch_matches_native_and_dispatches_when_in_range() {
         assert_eq!(distance, row["distance"].as_i64().unwrap() as i32, "{row}");
         let weapon = crate::sim::combat::combat_weapon::primary_for_tier(
             rules.object("ORCA").unwrap(),
-            aircraft.veterancy(),
+            aircraft.veterancy.rank(),
         )
         .unwrap();
         assert_eq!(

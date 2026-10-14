@@ -5,7 +5,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::type_handle_table::TypeHandleTable;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::NativeF32Bits;
 use std::collections::BTreeMap;
 
@@ -24,55 +24,28 @@ pub(crate) fn owner_speed_bonus(
         })
 }
 
-/// The speed a move order stamps into `MovementTarget::speed`: the adjusted
-/// type speed of `FootClass::GetCurrentSpeed @ 0x004DB1A0` (stages 1 and 2),
-/// in leptons/second. Every order, resume, scatter and rally calls this.
-///
-/// The stamp is VERA's; native keeps no order speed and re-queries the getter
-/// (or a Fly/Jumpjet/Rocket locomotor its own speed) each Process frame. The
-/// track, walk and Fly steps already re-query live; the stamp's remaining
-/// production reader is the Jumpjet order speed (`jumpjet_order_speed`).
+/// The adjusted type speed of `FootClass::GetCurrentSpeed @ 0x004DB1A0`
+/// (stages 1 and 2), in leptons/second, read live: native keeps no order
+/// speed and re-queries the getter each Process frame. Like the getter,
+/// nothing about the other units ordered with this one enters it.
 ///
 /// No minimum: none of the getter's truncations (`0x004DB1DB`, `0x004DB200`,
-/// `0x004DB213`) clamp, so a `Speed=0` type stamps 0. Every retail mover that
-/// authors `Speed=` reads at least 1. A rules-less fixture without a type moves
-/// as `Speed=4`.
-pub(crate) fn order_speed(
-    entity: &GameEntity,
-    object: Option<&ObjectType>,
-    rules: Option<&RuleSet>,
-    houses: &BTreeMap<InternedId, HouseState>,
-) -> SimFixed {
-    crate::sim::combat::veterancy::entity_mover_speed_leptons_per_second(
-        entity,
-        object,
-        object.map_or(4, |object| object.speed),
-        rules.map_or(1.0, |rules| rules.general.veteran_speed),
-        owner_speed_bonus(houses, entity, object),
-    )
-}
-
-/// Resolve live type/veterancy speed. A MovementTarget speed is a path cache,
-/// not the type authority. Like gamemd's getter (`0x004DB1A0`), nothing about
-/// the other units ordered with this one enters it.
+/// `0x004DB213`) clamp, so a `Speed=0` type moves at 0. Every retail mover
+/// that authors `Speed=` reads at least 1. A rules-less fixture without a
+/// type moves as `Speed=4`.
 pub(super) fn adjusted_speed(
     entity: &GameEntity,
     object: Option<&ObjectType>,
     veteran_speed: f64,
     houses: &BTreeMap<InternedId, HouseState>,
 ) -> SimFixed {
-    object
-        .map(|object| {
-            crate::sim::combat::veterancy::entity_mover_speed_leptons_per_second(
-                entity,
-                Some(object),
-                object.speed,
-                veteran_speed,
-                owner_speed_bonus(houses, entity, Some(object)),
-            )
-        })
-        .or_else(|| entity.movement_target.as_ref().map(|target| target.speed))
-        .unwrap_or(SIM_ZERO)
+    crate::sim::combat::veterancy::entity_mover_speed_leptons_per_second(
+        entity,
+        object,
+        object.map_or(4, |object| object.speed),
+        veteran_speed,
+        owner_speed_bonus(houses, entity, object),
+    )
 }
 
 /// Foot4DB1A0: truncate adjusted type speed, then apply Foot+578 and truncate.
@@ -164,7 +137,7 @@ impl crate::sim::world::Simulation {
 
 #[cfg(test)]
 mod tests {
-    /// The retail movers `order_speed`'s missing minimum can reach: every
+    /// The retail movers `adjusted_speed`'s missing minimum can reach: every
     /// registered infantry, vehicle and aircraft type whose `Speed=` reads
     /// below 1 through the production reader. They are exactly the five
     /// registry entries that author no `Speed=` (the Visceroids come from

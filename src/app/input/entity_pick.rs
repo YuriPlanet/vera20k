@@ -108,6 +108,8 @@ pub(crate) fn pick_any_target_stable_id(
     .map(|hover| hover.stable_id)
 }
 
+/// The object under the cursor that DetermineAction sees, for the cursor and
+/// the click, among those [`pick_admits_object`] admits.
 pub(crate) fn hover_target_at_point(
     sim: &crate::sim::world::Simulation,
     world_x: f32,
@@ -118,9 +120,14 @@ pub(crate) fn hover_target_at_point(
     height_map: &std::collections::BTreeMap<(u16, u16), u8>,
     bridge_cells: Option<&dyn TacticalBridgeLookup>,
 ) -> Option<HoverTargetKindWithId> {
-    let local_owner_id: InternedId = sim.interner.get(local_owner).unwrap_or_default();
+    let player = sim.interner.get(local_owner);
+    let local_owner_id: InternedId = player.unwrap_or_default();
+    let fog = (!ignore_visibility).then_some(&sim.fog);
     let mut best: Option<(u64, f32)> = None;
     for entity in sim.entities().values() {
+        if !pick_admits_object(entity, fog, player) {
+            continue;
+        }
         let is_structure = entity.category == EntityCategory::Structure;
         let type_str = sim.interner.resolve(entity.type_ref());
         let owner_str = sim.interner.resolve(entity.owner());
@@ -426,6 +433,40 @@ pub(crate) fn band_rect_contains_drawn_object(
         let owner_str = interner.map_or("", |i| i.resolve(entity.owner()));
         is_drawn_for_local_owner(fog, local_owner, owner_str, entity, local_owner_id)
     })
+}
+
+/// Whether `Tactical::PickObjectAtScreenPoint @ 0x006DA380` considers a
+/// Techno under the cursor: alive and out of limbo, and, unless the player
+/// owns it (`+0x41A`), not cloaked (CloakState 2) or on a cell the player's
+/// sensors cover. `+0x41A` is the owned-by-the-local-player byte
+/// (`TechnoClass::PointerExpired @ 0x007077C0` clears it with `pOwner`), so
+/// an ally's cloaked object is not exempt. `DisplayClass::ProcessClickCoords`
+/// asks the cloak test again of the object it returns (`0x00692529..0x0069257F`),
+/// and that one object is what both DetermineAction and BandBox_LeftUp get
+/// (`ScrollClass::HandleMouseMessage`, `0x00693271` → `0x0069328B`). So an
+/// unsensed submerged submarine is no object to hover, click or select.
+///
+/// Without fog (sandbox full visibility) or a known player, only the first
+/// part applies. ProcessClickCoords also drops another house's object whose
+/// type sets `Invisible=` (`+0xC9A`, `0x0069256B..0x0069257F`), which no
+/// retail type sets; that test is not ported.
+pub(crate) fn pick_admits_object(
+    entity: &crate::sim::game_entity::GameEntity,
+    fog: Option<&FogState>,
+    player: Option<InternedId>,
+) -> bool {
+    if !entity.lifecycle.object_alive || entity.lifecycle.in_limbo {
+        return false;
+    }
+    let (Some(fog), Some(player)) = (fog, player) else {
+        return true;
+    };
+    entity.owner() == player
+        || !entity
+            .cloak
+            .as_ref()
+            .is_some_and(|cloak| cloak.is_fully_cloaked())
+        || fog.has_sensor_for_house(player, entity.position.rx, entity.position.ry)
 }
 
 /// Would the local player see this object drawn right now?
@@ -1204,33 +1245,12 @@ pub(crate) fn pick_entity_at_point(
         let Some(entity) = entities.get(stable_id) else {
             continue;
         };
-        if !entity.lifecycle.object_alive || entity.lifecycle.in_limbo {
+        if !pick_admits_object(entity, fog, local_owner_id) {
             continue;
         }
         let owner_str = interner.map_or("", |i| i.resolve(entity.owner()));
         if entity.category != EntityCategory::Structure
             && !is_drawn_for_local_owner(fog, local_owner, owner_str, entity, local_owner_id)
-        {
-            continue;
-        }
-        // `Tactical::PickObjectAtScreenPoint @ 0x006DA380` admits a
-        // render-tracked object only when
-        //   `InLimbo == 0 && (+0x41A != 0 || CloakState != 2
-        //                     || SensorCountForHouse(itsCell, PlayerPtr->ArrayIndex))`.
-        // `+0x41A` is the owned-by-the-local-player byte — `TechnoClass::
-        // PointerExpired @ 0x007077C0` clears it together with `pOwner` — so
-        // being merely allied does NOT exempt a cloaked object. The same filter
-        // guards `DisplayClass::DetermineAction @ 0x00692610` and the
-        // object-name-under-cursor helper, which is why an unsensed submerged
-        // submarine cannot be moused over at all and no explicit attack order
-        // against it can be issued.
-        if let (Some(fog_state), Some(owner_id)) = (fog, local_owner_id)
-            && entity.owner() != owner_id
-            && entity
-                .cloak
-                .as_ref()
-                .is_some_and(|cloak| cloak.is_fully_cloaked())
-            && !fog_state.has_sensor_for_house(owner_id, entity.position.rx, entity.position.ry)
         {
             continue;
         }
@@ -1427,6 +1447,56 @@ mod tests {
         entity.lifecycle.in_limbo = false;
         entity.selected = selected;
         entity
+    }
+
+    /// The cursor's picker admits only what `Tactical::PickObjectAtScreenPoint`
+    /// admits (`0x006DA380`, [`pick_admits_object`]), as the selection picker
+    /// does: another house's fully cloaked object only over a cell the
+    /// player's sensors cover, the player's own always, nothing in limbo.
+    #[test]
+    fn the_cursor_picker_skips_an_unsensed_cloaked_enemy() {
+        use crate::sim::world::Simulation;
+        let mut sim = Simulation::new();
+        sim.fog.width = 32;
+        sim.fog.height = 32;
+        let player = sim.interner.intern("Americans");
+        let enemy = sim.interner.intern("Russians");
+        let sub = sim.interner.intern("SUB");
+        let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
+        cloak.state = 2;
+        for (id, owner, rx) in [(1, enemy, 10), (2, player, 20)] {
+            let mut entity = item83_entity(id, rx, 10, owner, sub, EntityCategory::Unit, false);
+            entity.cloak = Some(cloak);
+            sim.entities_mut().insert(entity);
+        }
+        let heights = std::collections::BTreeMap::new();
+        let hover = |sim: &Simulation, id: u64, ignore_visibility: bool| {
+            let (x, y) = crate::app::presentation::instances::interpolated_screen_position_entity(
+                sim.entities().get(id).unwrap(),
+            );
+            hover_target_at_point(
+                sim,
+                x,
+                y,
+                "Americans",
+                ignore_visibility,
+                None,
+                &heights,
+                None,
+            )
+            .map(|hover| hover.stable_id)
+        };
+        assert_eq!(hover(&sim, 1, false), None);
+        assert_eq!(hover(&sim, 2, false), Some(2));
+        assert_eq!(
+            hover(&sim, 1, true),
+            Some(1),
+            "full visibility asks no cloak test"
+        );
+        sim.fog.increment_sensor_at(player, 10, 10);
+        assert_eq!(hover(&sim, 1, false), Some(1));
+        sim.entities_mut().get_mut(1).unwrap().lifecycle.in_limbo = true;
+        assert_eq!(hover(&sim, 1, true), None);
     }
 
     /// `CanBeSelectedNow`'s byte `+0x1C8` is the Robot-Tank-offline latch, not a

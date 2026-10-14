@@ -103,6 +103,7 @@ fn a_paratroopers_fall_moves_its_location_z_to_the_ground_or_deck() {
                 .collect(),
         ));
         let mut paratrooper = GameEntity::test_default(1, "E1", "Americans", 10, 10);
+        paratrooper.lifecycle.in_limbo = false;
         paratrooper.lifecycle.cell_marked = true;
         paratrooper.on_bridge = on_bridge;
         sim.substrate.entities.insert(paratrooper);

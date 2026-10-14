@@ -458,7 +458,7 @@ mod tests {
     #[test]
     fn numeric_payloads_keep_historical_roundtrip_and_have_no_bindings() {
         let value = json!({"issue_after_step": 2, "owner": "Computer1",
-            "payload": {"Move": {"entity_id": 19, "target_rx": 20, "target_ry": 21, "queue": false}}});
+            "payload": {"Move": {"entity_id": 19, "target_rx": 20, "target_ry": 21}}});
         let command: MapScheduledCommand = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(command.symbolic_count(), 0);
         assert_eq!(serde_json::to_value(&command).unwrap(), value);
@@ -500,7 +500,7 @@ mod tests {
         }
         for payload in [
             json!({"Select": {"entity_ids": vec![selector; 257], "additive": false}}),
-            json!({"Move": {"entity_id": 1, "target_rx": "MTNK", "target_ry": 2, "queue": false}}),
+            json!({"Move": {"entity_id": 1, "target_rx": "MTNK", "target_ry": 2}}),
             json!({"QueueProduction": {"type_id": "", "ignored": true}}),
         ] {
             assert!(

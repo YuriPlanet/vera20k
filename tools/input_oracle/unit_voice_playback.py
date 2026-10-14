@@ -4,6 +4,9 @@ G/selection/event transport, object AI, the audio pool, codecs and worker execut
 original instructions. Explicit map/House and single-thread OS inputs bound the
 comparison; the post-delivery movement route stops before held FindPath work.
 """
+# --slave-miner-pack-voice selects a separate small request comparison, with
+# VERA20K_SLAVE_PACK_INPUTS and VERA20K_SLAVE_PACK_MAP physical inputs. The
+# original module docstring is retained because the GI sidecar records it.
 from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,11 +14,15 @@ import copy
 import hashlib
 import os
 import struct
+import sys
 
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
 from tools import native_inspect as inspect
-from tools.native_oracle import RET_MAGIC, finish_vectors, image_bytes, provenance, run_checked
+from tools.native_oracle import (RET_MAGIC, SCRATCH, call as native_call,
+                                finish_vectors, image_bytes, provenance, run_checked)
+from tools.rules_oracle.bridge_anim_inputs import Reader
+from tools.spatial_oracle.anytown_damage.mtnk_attack import sound_inputs
 from tools.spatial_oracle import engineer_repair_admission as er
 from tools.spatial_oracle import building_construction as bc
 # JoinedFixture's lazy dependencies must be loaded before the source guard.
@@ -975,6 +982,229 @@ def clock_controls(m):
     return [h.project()]
 
 
+def slave_pack_voice_inputs():
+    """Reuse the selected Sound/INI owner for original scalar reference reads."""
+    root = Path(os.environ['VERA20K_SLAVE_PACK_INPUTS'])
+    map_path = Path(os.environ['VERA20K_SLAVE_PACK_MAP'])
+    m = Reader(root, {})
+    physical = sections((root / 'RULESMD.INI').read_bytes())['YAREFN']
+    wanted = {physical[key] for key in ('VoiceDeploy', 'VoiceHarvest', 'DeploySound')}
+    registry = sound_inputs(m, root, {}, wanted_names=wanted)
+    typ = m.alloc(0x2000)
+    m.invoke(0x45DD90, typ, (m.cstring('YAREFN'),))
+
+    def binding():
+        result = {key: signed(m.u, typ + offset) for key, offset in (
+            ('deploy_sound', 0x56C), ('voice_harvest', 0x57C),
+            ('voice_deploy', 0x590), ('voice_undeploy', 0x594))}
+        for key, index in tuple(result.items()):
+            result[key + '_name'] = sound_name(m, index)
+        result.update(resource_gatherer=bool(m.u.mem_read(typ + 0x5EC, 1)[0]),
+                      resource_destination=bool(m.u.mem_read(typ + 0x5ED, 1)[0]))
+        return result
+
+    constructor = binding()
+
+    def read(values):
+        m.make_ini({'YAREFN': values} if values else {})
+        # Adjacent single-reference readers share pushes and delayed stores.
+        # Each complete balanced block retains the preceding slot's value.
+        for begin, end, preceding in (
+            (0x713553, 0x7135CB, None),
+            (0x71363D, 0x7136C1, 0x578),
+            (0x713769, 0x713823, 0x58C),
+            (0x7143D0, 0x714404, None),
+        ):
+            for register, value in (
+                (UC_X86_REG_ESP, SP), (UC_X86_REG_EBP, typ),
+                (UC_X86_REG_EBX, typ + 0x24), (UC_X86_REG_ESI, INI),
+            ):
+                m.u.reg_write(register, value)
+            if preceding is not None:
+                m.u.reg_write(UC_X86_REG_EAX, m.read32(typ + preceding))
+            run_checked(m.u, begin, end, required_addresses=(
+                0x5295F0 if begin == 0x7143D0 else 0x528A10,))
+            require(m.u.reg_read(UC_X86_REG_ESP) == SP,
+                    'Pack voice reader block changed its stack boundary')
+        return binding()
+
+    layers = []
+    for filename, path in [(name, root / name) for name in (
+        'RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini',
+    )] + [(map_path.name, map_path)]:
+        if not path.exists():
+            require(filename == 'LANGRULE.INI', 'Missing physical input: ' + str(path))
+            layers.append(dict(file=filename, absent=True))
+            continue
+        raw = path.read_bytes()
+        values = sections(raw).get('YAREFN', {})
+        layers.append(dict(file=filename, bytes=len(raw),
+            sha256=hashlib.sha256(raw).hexdigest(),
+            keys={key: value for key, value in values.items() if key in (
+                'VoiceDeploy', 'VoiceUndeploy', 'VoiceHarvest', 'DeploySound',
+                'ResourceGatherer', 'ResourceDestination', 'UndeploysInto')},
+            after=read(values)))
+    stock = binding()
+    controls = []
+    for name, values in (
+        ('missing', {}), ('invalid', {'VoiceDeploy': 'AbsentSlaveVoice'}),
+        ('empty', {'VoiceDeploy': ''}),
+        ('mixed_sound_case_changes_binding', {'VoiceDeploy': 'sLaVeMiNeRhArVeSt'}),
+        ('wrong_key_case_retains_binding', {'voicedeploy': physical['VoiceDeploy']}),
+        ('invalid_after_replacement', {'VoiceDeploy': 'AbsentSlaveVoice'}),
+        ('restore_stock', {'VoiceDeploy': physical['VoiceDeploy']}),
+        ('undeploy_valid', {'VoiceUndeploy': physical['VoiceHarvest']}),
+        ('undeploy_missing_retains_binding', {}),
+        ('undeploy_invalid_retains_binding', {'VoiceUndeploy': 'AbsentSlaveVoice'}),
+        ('undeploy_wrong_key_case_retains_binding', {'voiceundeploy': physical['VoiceDeploy']}),
+        ('undeploy_mixed_sound_case_changes_binding', {'VoiceUndeploy': 'sLaVeMiNeRuNdEpLoYvOiCe'}),
+    ):
+        before = binding()
+        controls.append(dict(name=name, keys=values, before=before, after=read(values)))
+    read(physical)
+    return m, typ, dict(type_constructor=constructor, sound_registry=registry,
+                        retail_layers=layers, reader_controls=controls), stock
+
+
+def slave_pack_voice_controls(stock):
+    """Complete original voice bodies in the shared fresh-call runner."""
+    actor, typ, house, cell = (SCRATCH + offset for offset in (0x1000, 0x3000, 0x6000, 0xD000))
+    names = {stock[key]: stock[key + '_name'] for key in (
+        'voice_deploy', 'voice_harvest', 'deploy_sound')}
+    cases = (
+        dict(name='ordinary_without_archive'),
+        dict(name='ordinary_clear_cell', archive=True),
+        dict(name='resource_override', archive=True, resource=True),
+        dict(name='ordinary_suppressed', suppressed=True),
+        dict(name='resource_override_keeps_suppression', archive=True, resource=True, suppressed=True),
+        dict(name='resource_missing_harvest_falls_back', archive=True, resource=True, harvest=-1),
+        dict(name='resource_missing_harvest_consumes_suppression', archive=True, resource=True, harvest=-1, suppressed=True),
+        dict(name='deploy_slot_missing', deploy=-1),
+        dict(name='queue_disabled', enabled=False),
+        dict(name='non_local_house', local=False),
+        dict(name='resource_not_destination', archive=True, resource=True, destination=False),
+        dict(name='resource_not_gatherer', archive=True, resource=True, gatherer=False),
+        dict(name='suppressed_retains_previous_pending', suppressed=True, pending=stock['deploy_sound']),
+        dict(name='ordinary_replaces_previous_pending', pending=stock['deploy_sound']),
+    )
+    rows = []
+    for case in cases:
+        entity, kind, owner, archived = bytearray(0x800), bytearray(0x2000), bytes(0x6000), bytearray(0x200)
+        for offset, value in ((0, 0x7E3EBC), (0x520, typ), (0x21C, house),
+                              (0x218, cell if case.get('archive') else 0)):
+            struct.pack_into('<I', entity, offset, value)
+        struct.pack_into('<i', entity, 0x4F0, case.get('pending', -1))
+        struct.pack_into('<i', entity, 0x4F4, -1)
+        entity[0x4F8] = case.get('suppressed', False)
+        struct.pack_into('<i', kind, 0x590, case.get('deploy', stock['voice_deploy']))
+        struct.pack_into('<i', kind, 0x57C, case.get('harvest', stock['voice_harvest']))
+        kind[0x5EC] = case.get('gatherer', stock['resource_gatherer'])
+        kind[0x5ED] = case.get('destination', stock['resource_destination'])
+        struct.pack_into('<I', archived, 0, 0x7E4EEC)
+        struct.pack_into('<I', archived, 0xEC, 5 if case.get('resource') else 0)
+        writes = {actor: bytes(entity), typ: bytes(kind), house: owner, cell: bytes(archived),
+                  0x822CF2: bytes([case.get('enabled', True)]), 0xA8B238: dwords(5),
+                  0xA83D4C: dwords(house if case.get('local', True) else house + 0x100)}
+        output = native_call(0x459C20, ecx=actor, writes=writes,
+            dumps={'pending': (actor + 0x4F0, 4), 'last': (actor + 0x4F4, 4),
+                   'suppression': (actor + 0x4F8, 1), 'archive': (actor + 0x218, 4)},
+            required_addresses=(0x459C20,), context=case)['dumps']
+        pending = struct.unpack('<i', bytes.fromhex(output['pending']))[0]
+        rows.append(dict(name=case['name'], input=dict(
+            archive_cell=bool(case.get('archive')), resource_cell=bool(case.get('resource')),
+            suppression=bool(case.get('suppressed')), voices_enabled=case.get('enabled', True),
+            owner_is_local=case.get('local', True),
+            resource_gatherer=bool(case.get('gatherer', stock['resource_gatherer'])),
+            resource_destination=bool(case.get('destination', stock['resource_destination'])),
+            voice_deploy=names.get(case.get('deploy', stock['voice_deploy'])),
+            voice_harvest=names.get(case.get('harvest', stock['voice_harvest'])),
+            pending=names.get(case.get('pending', -1))), output=dict(
+                pending=names.get(pending), pending_index=pending,
+                last=struct.unpack('<i', bytes.fromhex(output['last']))[0],
+                suppression=bool(int(output['suppression'], 16)),
+                archive_retained=int.from_bytes(bytes.fromhex(output['archive']), 'little')
+                                 == (cell if case.get('archive') else 0))))
+    return rows
+
+
+def slave_pack_selling_cues(m, typ):
+    """Original admitted stage0 branch to its positional PlayAt call boundary."""
+    actor, house, cell = m.alloc(0x800), m.alloc(0x6000), m.alloc(0x200)
+    m.u.mem_write(actor, dwords(0x7E3EBC))
+    m.u.mem_write(actor + 0x520, dwords(typ))
+    m.u.mem_write(actor + 0x21C, dwords(house))
+    m.u.mem_write(actor + 0x9C, dwords(1664, 1920, 0))
+    m.u.mem_write(cell, dwords(0x7E4EEC))
+    m.u.mem_write(0x822CF2, b'\1')
+    m.u.mem_write(0xA8B238, dwords(5))
+    m.u.mem_write(0xA83D4C, dwords(house))
+    rows = []
+    for name, resource in (('ordinary_destination', False), ('resource_destination', True)):
+        m.u.mem_write(actor + 0x218, dwords(cell))
+        m.u.mem_write(actor + 0x4F0, dwords(-1, -1))
+        m.u.mem_write(actor + 0x4F8, b'\0')
+        m.u.mem_write(cell + 0xEC, dwords(5 if resource else 0))
+        calls = []
+
+        def observe(u, pc, _size, _data):
+            if pc == 0x708D90:
+                index = signed(u, u.reg_read(UC_X86_REG_ESP) + 4)
+                calls.append(dict(kind='QueueVoice', sound=sound_name(m, index)))
+
+        hook = m.u.hook_add(UC_HOOK_CODE, observe)
+        try:
+            m.u.reg_write(UC_X86_REG_ESP, SP)
+            m.u.reg_write(UC_X86_REG_EBP, actor)
+            run_checked(m.u, 0x44A9DA, 0x44AA38,
+                        required_addresses=(0x459C20, 0x708D90, 0x44AA30))
+        finally:
+            m.u.hook_del(hook)
+        calls.append(dict(kind='positional_PlayAt_boundary',
+            sound=sound_name(m, m.u.reg_read(UC_X86_REG_ECX)),
+            coords=list(struct.unpack('<3i', m.u.mem_read(m.u.reg_read(UC_X86_REG_EDX), 12)))))
+        rows.append(dict(name=name, calls=calls,
+                         pending=sound_name(m, signed(m.u, actor + 0x4F0)),
+                         suppression=bool(m.u.mem_read(actor + 0x4F8, 1)[0])))
+    return rows
+
+
+def slave_pack_voice_generate():
+    m, typ, retail, stock = slave_pack_voice_inputs()
+    rows = slave_pack_voice_controls(stock)
+    selling = slave_pack_selling_cues(m, typ)
+    actor = m.alloc(0x800)
+    m.u.mem_write(actor + 0x4F0, dwords(stock['voice_deploy'], stock['voice_harvest']))
+    m.u.mem_write(actor + 0x4F8, b'\1')
+    for register, value in ((UC_X86_REG_ESP, SP), (UC_X86_REG_ESI, actor), (UC_X86_REG_EBX, 0)):
+        m.u.reg_write(register, value)
+    run_checked(m.u, 0x70C21F, 0x70C246, required_addresses=(0x405BE0, 0x70C240))
+    reset = dict(pending=signed(m.u, actor + 0x4F0), last=signed(m.u, actor + 0x4F4),
+                 suppression=bool(m.u.mem_read(actor + 0x4F8, 1)[0]))
+    return dict(schema_version=1, **retail, voice_controls=rows,
+                selling_cue_controls=selling, loaded_voice_reset=reset)
+
+
+def slave_pack_voice_metadata():
+    return dict(provenance(
+        scope='YAREFN original layered sound references and complete undeploy voice requests; bounded Selling stage0 cue ordering and loaded audio-reset suffix',
+        assumptions=[
+            'Original BuildingType45DD90/TechnoType710AF0 constructors establish defaults independently of physical values. Selected balanced scalar-reader blocks consume YAREFN RULESMD, optional LANGRULE, MPBattleMD and the explicitly selected physical map; original parsers/name lookup own results.',
+            'Fresh native_oracle.call instances execute complete459C20/708E00/708D90 and House50B6F0 with supplied object/type/House/Cell priors and original Building/Cell vtables. This does not establish their startup, placement, ArchiveTarget writer or a manual input route.',
+            'Selling rows enter the already-admitted UndeploysInto stage0 branch44A9DA and stop before original positional PlayAt7509E0 at44AA38. Original voice request runs before that boundary; positional playback, full Selling/Logic frames and audio RNG are excluded.',
+            'Original loaded voice-reset suffix70C21F..70C246 reconstructs the handle and resets pending/last, retaining supplied suppression. Full native save/load and stream swizzling are excluded.',
+            'The complete request bodies contain no RNG draw or timer write. Downstream PlayAt/audio sampling is covered separately by the existing unit voice/audio comparisons, not newly certified for these Slave Miner samples.'],
+        substitutions=[
+            'Existing Reader/Sound owners supply physical lexical INI caches and arena/TLS transport. Existing sound_inputs maps selected physical sample names to fixture-relative AudioIndex ordinals; no sample decoding or device output runs.',
+            'Object/House/Cell fields are declared priors. No request-body instruction, gameplay return or vtable is substituted.'],
+        entry_points=dict(type_constructor=0x45DD90, voice_deploy_reader=0x713769,
+            voice_harvest_reader=0x71363D, resource_flag_readers=0x7143D0,
+            building_undeploy_voice=0x459C20, techno_voice_deploy=0x708E00,
+            queue_voice=0x708D90, selling_cue=0x44A9DA,
+            positional_call_boundary=0x44AA38, loaded_voice_reset=0x70C21F)),
+        command='python -m tools.input_oracle.unit_voice_playback --slave-miner-pack-voice --check',
+        input_environment=['VERA20K_SLAVE_PACK_INPUTS', 'VERA20K_SLAVE_PACK_MAP'])
+
+
 def generate():
     root = Path(os.environ['VERA20K_UNIT_VOICE_INPUTS'])
     m, retail = prepare(root)
@@ -1020,5 +1250,11 @@ def metadata():
 
 if __name__ == '__main__':
     GUARDED = source_paths()
-    finish_vectors(generate, HERE / 'unit_voice_playback.json', provenance=metadata,
-                   source_paths=GUARDED)
+    argv = list(sys.argv[1:])
+    if '--slave-miner-pack-voice' in argv:
+        argv.remove('--slave-miner-pack-voice')
+        finish_vectors(slave_pack_voice_generate, HERE / 'slave_miner_pack_voice.json',
+                       provenance=slave_pack_voice_metadata, argv=argv, source_paths=GUARDED)
+    else:
+        finish_vectors(generate, HERE / 'unit_voice_playback.json', provenance=metadata,
+                       argv=argv, source_paths=GUARDED)

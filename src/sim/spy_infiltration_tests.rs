@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
-use crate::sim::combat::veterancy::{VeterancyRank, rank_of};
+use crate::sim::combat::veterancy::VeterancyRank;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
@@ -569,7 +569,7 @@ fn factory_infiltration_makes_later_objects_veteran() {
     let americans = sim.interner.get("Americans").unwrap();
     let rank = |sim: &mut Simulation, kind: &str, rx: u16| {
         let id = spawn(sim, &rules, kind, "Americans", rx, 20);
-        rank_of(sim.entities().get(id).unwrap().veterancy_raw)
+        sim.entities().get(id).unwrap().veterancy.rank_kind()
     };
     assert_eq!(rank(&mut sim, "GI", 2), VeterancyRank::Rookie);
     assert_eq!(rank(&mut sim, "TANK", 4), VeterancyRank::Rookie);

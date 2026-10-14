@@ -187,16 +187,15 @@ fn world_queries_match_all_original_foot_coordinate_rows_and_snapshot() {
 }
 
 #[test]
-fn hover_projects_altitude_once_and_at_coord_ignores_tube_exit() {
+fn hover_reads_its_location_z_and_at_coord_ignores_tube_exit() {
     let raw = DriveCoord::cell(5, 5, 37);
     let mut e = entity(1, LocomotorKind::Hover, raw, NULL_COORD);
-    e.locomotor.as_mut().unwrap().altitude = SimFixed::from_num(125);
     assert_eq!(navigation_coordinate(&e, None).unwrap().z, 37);
-    // Exact Object Z already includes height. Only a legacy coarse position
-    // needs the independent controller displacement projected into it.
+    // Exact Object Z already includes height; an object without one stands
+    // on its coarse level.
     e.position.exact_z_leptons = None;
     e.position.z = 1;
-    assert_eq!(navigation_coordinate(&e, None).unwrap().z, 229);
+    assert_eq!(navigation_coordinate(&e, None).unwrap().z, 104);
     e.low_bridge_tube_state = Some(LowBridgeTubeMovementState {
         tube_id: TubeId(0),
         cursor: 0,
@@ -213,8 +212,8 @@ fn hover_projects_altitude_once_and_at_coord_ignores_tube_exit() {
         DriveCoord::cell(9, 10, 0)
     );
     let at = crate::sim::movement::at_coord::AtCoordQuery::from_entity(&e).unwrap();
-    assert_eq!(at.head_z(), 229);
-    assert!(at.matches(DriveCoord { z: 229, ..raw }));
+    assert_eq!(at.head_z(), 104);
+    assert!(at.matches(DriveCoord { z: 104, ..raw }));
 }
 
 #[test]
@@ -344,18 +343,15 @@ fn flight_queries_follow_live_altitude_producers_and_keep_jumpjet_exact_z() {
         crate::sim::world::FrameEffects::default(),
     );
     let e = sim.substrate.entities.get(1).unwrap();
-    let altitude = e.locomotor.as_ref().unwrap().altitude;
-    assert!(altitude > SimFixed::from_num(0));
-    assert_eq!(
-        sim.foot_navigation_coordinate(1).unwrap().z,
-        104 + altitude.to_num::<i32>()
-    );
-    let mut jumpjet = entity(
+    let height =
+        crate::sim::movement::air_movement::current_fly_height(e, sim.resolved_terrain.as_ref());
+    assert!(height > 0);
+    assert_eq!(sim.foot_navigation_coordinate(1).unwrap().z, 104 + height);
+    let jumpjet = entity(
         3,
         LocomotorKind::Jumpjet,
         DriveCoord { z: 604, ..base },
         NULL_COORD,
     );
-    jumpjet.locomotor.as_mut().unwrap().altitude = SimFixed::from_num(500);
     assert_eq!(navigation_coordinate(&jumpjet, None).unwrap().z, 604);
 }

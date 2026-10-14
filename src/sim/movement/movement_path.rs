@@ -4,20 +4,11 @@
 //! retries after blockages through the zone-aware search, and determines whether
 //! an entity's locomotor supports layered bridge pathing.
 
-use std::collections::BTreeSet;
-
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
-use crate::sim::find_nearby_cell::{
-    NearbyAnchorGate, NearbyFootprint, NearbyQuery, PassabilityArgs, RADIUS_HARD_CAP,
-    find_nearby_passable_cell,
-};
+use crate::rules::locomotor_type::{LocomotorKind, MovementZone};
 use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
-use crate::sim::pathfinding::LayeredEntityBlockMap;
 #[path = "path_finishing.rs"]
 mod path_finishing;
 use crate::sim::pathfinding::terrain_cost::TerrainCostGrid;
-use crate::sim::pathfinding::zone_map::{ZONE_INVALID, ZoneGrid};
 use crate::sim::pathfinding::zone_search;
 use crate::sim::pathfinding::{
     LayeredPath, MAX_PATH_SEGMENT_STEPS, PathGrid, SearchMarkerOverlay, truncate_layered_path,
@@ -136,7 +127,7 @@ fn is_bridge_layer_walkable(grid: Option<&PathGrid>, cell: (u16, u16)) -> bool {
 }
 
 /// **VERA-internal, gamemd has no equivalent.** A goal reachable only on the
-/// bridge layer makes `find_move_path` drop the order outright.
+/// bridge layer fails the flat `find_move_path` before any A*.
 /// `FootClass::Find_Path` @ `0x004D3920` has exactly **one** clear-and-return-0
 /// exit — `vtable+0x2CC` at `0x004D3989`, whose tail is
 /// `POP/POP/POP; ADD ESP,0x1F9C; RET 0xC` at `0x004D3993`. Its other two
@@ -147,213 +138,22 @@ fn is_bridge_layer_walkable(grid: Option<&PathGrid>, cell: (u16, u16)) -> bool {
 /// `Cell+0x140 & 0x100` in its *failure* tail, when it decides scatter and
 /// team-removal, but that is after the search, not instead of it.
 ///
-/// Trigger: a move ordered onto a cell whose ground plane is impassable but
-/// whose bridge deck is walkable. Player effect: VERA refuses the order where
-/// retail runs the search. Frequency: clicks on a bridge deck over water or a
-/// cliff — a few times a match on any map with a high bridge. Downstream risk:
+/// Trigger: a mover outside [`supports_layered_bridge_pathing`] searching to a
+/// cell whose ground plane is impassable but whose bridge deck is walkable;
+/// Drive, Walk and Hover movers take the layered branch and never reach it.
+/// Player effect: VERA's search fails where retail runs it. Downstream risk:
 /// removing it re-opens the layered-goal case the bridge-parity boundary at
 /// the top of this module records, so it must land with that work.
 fn is_bridge_only_goal(grid: &PathGrid, goal: (u16, u16)) -> bool {
     !grid.is_walkable(goal.0, goal.1) && is_bridge_layer_walkable(Some(grid), goal)
 }
 
-pub(super) fn is_move_goal_walkable(
-    grid: &PathGrid,
-    goal: (u16, u16),
-    movement_zone: Option<MovementZone>,
-    resolved_terrain: Option<&ResolvedTerrainGrid>,
-) -> bool {
-    if movement_zone.is_some_and(|mz| mz.is_water_mover()) {
-        return crate::sim::pathfinding::is_cell_passable_for_mover(
-            grid,
-            goal.0,
-            goal.1,
-            movement_zone,
-            resolved_terrain,
-        );
-    }
-    grid.is_any_layer_walkable(goal.0, goal.1)
-}
-
-fn nearest_move_goal(
-    grid: &PathGrid,
-    goal: (u16, u16),
-    max_radius: u16,
-    blocked_cells: Option<&BTreeSet<(u16, u16)>>,
-    movement_zone: Option<MovementZone>,
-    resolved_terrain: Option<&ResolvedTerrainGrid>,
-) -> Option<(u16, u16)> {
-    if !movement_zone.is_some_and(|mz| mz.is_water_mover()) {
-        return grid.nearest_walkable_any_layer(goal.0, goal.1, max_radius, blocked_cells, None);
-    }
-
-    let check = |x: u16, y: u16| {
-        is_move_goal_walkable(grid, (x, y), movement_zone, resolved_terrain)
-            && blocked_cells.is_none_or(|blocks| !blocks.contains(&(x, y)))
-    };
-    if check(goal.0, goal.1) {
-        return Some(goal);
-    }
-    for radius in 1..=max_radius {
-        let r = radius as i32;
-        for d in -r..=r {
-            let candidates = [
-                (goal.0 as i32 + d, goal.1 as i32 - r),
-                (goal.0 as i32 + d, goal.1 as i32 + r),
-                (goal.0 as i32 - r, goal.1 as i32 + d),
-                (goal.0 as i32 + r, goal.1 as i32 + d),
-            ];
-            for (x, y) in candidates {
-                if x < 0 || y < 0 || x >= grid.width() as i32 || y >= grid.height() as i32 {
-                    continue;
-                }
-                let candidate = (x as u16, y as u16);
-                if check(candidate.0, candidate.1) {
-                    return Some(candidate);
-                }
-            }
-        }
-    }
-    None
-}
-
-pub(super) fn resolve_requested_move_goal(
-    grid: &PathGrid,
-    goal: (u16, u16),
-    blocked_cells: Option<&BTreeSet<(u16, u16)>>,
-    movement_zone: Option<MovementZone>,
-    resolved_terrain: Option<&ResolvedTerrainGrid>,
-    max_radius: u16,
-) -> Option<(u16, u16)> {
-    if is_move_goal_walkable(grid, goal, movement_zone, resolved_terrain)
-        && blocked_cells.is_none_or(|blocks| !blocks.contains(&goal))
-    {
-        return Some(goal);
-    }
-
-    nearest_move_goal(
-        grid,
-        goal,
-        max_radius,
-        blocked_cells,
-        movement_zone,
-        resolved_terrain,
-    )
-}
-
-/// Which zone layer a destination cell is resolved on.
-///
-/// Gamemd passes the destination cell's own bridge bit into `Can_Reach_Zone` and
-/// into the nearby-passable-cell search from the ground-click destination
-/// resolver, so a click on a bridge deck is answered on the bridge layer.
-fn goal_zone_layer(
-    resolved_terrain: Option<&ResolvedTerrainGrid>,
-    goal: (u16, u16),
-) -> MovementLayer {
-    let on_bridge = resolved_terrain
-        .and_then(|terrain| terrain.cell(goal.0, goal.1))
-        .is_some_and(|cell| cell.bridge_facts.has_structural_bridge());
-    if on_bridge {
-        MovementLayer::Bridge
-    } else {
-        MovementLayer::Ground
-    }
-}
-
-/// Gamemd's order-time reachability gate and zone-constrained destination
-/// substitution.
-///
-/// The ground-click destination resolver runs `Can_Reach_Zone(myCell, clicked,
-/// mzRow, myLayer, clickedBridgeBit, 0)` before the mission is installed:
-///
-/// * success — the clicked cell is used verbatim;
-/// * failure — **the order is still accepted**. The resolver takes the mover's
-///   own zone id and runs the nearby-passable-cell search seeded at the clicked
-///   cell, requiring that zone, so the unit drives to the near bank of the river
-///   / the near side of the cliff instead of standing still. Only a search that
-///   finds no candidate at all drops the order (the engine's null-cell branch).
-///
-/// Returns `Some(goal)` unchanged when there is no zone data — that is the
-/// engine's `mzRow == -1` short-circuit, which returns "reachable".
-///
-/// Selection mode: the search is given the clicked cell as its distance
-/// reference, so the substitute is the nearest surviving candidate to the click.
-/// The engine's alternative frame-counter selection is reached only when the
-/// reference coord is the null cell; which of the two this call site takes is
-/// UNCHECKED, and nearest-to-click is the deterministic choice that needs no
-/// frame input threaded through every move-order caller.
-pub(super) fn resolve_reachable_move_goal(
-    grid: &PathGrid,
-    zone_grid: Option<&ZoneGrid>,
-    resolved_terrain: Option<&ResolvedTerrainGrid>,
-    start: (u16, u16),
-    start_layer: MovementLayer,
-    goal: (u16, u16),
-    zone_mz: MovementZone,
-    speed_type: SpeedType,
-) -> Option<(u16, u16)> {
-    let Some(zone_grid) = zone_grid else {
-        return Some(goal);
-    };
-    let goal_layer = goal_zone_layer(resolved_terrain, goal);
-    if start == goal || zone_grid.can_reach(zone_mz, start, start_layer, goal, goal_layer) {
-        return Some(goal);
-    }
-
-    let Some(zone_map) = zone_grid.map_for(zone_mz) else {
-        return Some(goal);
-    };
-    let reduced_zone = zone_map.zone_at(start.0, start.1, start_layer);
-    if reduced_zone == ZONE_INVALID {
-        // The mover itself has no zone — a unit standing on a footprint cell, a
-        // factory exit or an unmapped bridge cell. There is no zone to require,
-        // so the order passes through unchanged rather than being refused.
-        // VERA-internal; the engine labels such a node rather than leaving it
-        // undefined, so the gamemd equivalent here is UNCHECKED.
-        return Some(goal);
-    }
-
-    // Engine radius cap: min(map width + map height, 32).
-    let radius_cap = grid
-        .width()
-        .saturating_add(grid.height())
-        .min(RADIUS_HARD_CAP);
-    let query = NearbyQuery {
-        native_cells: None,
-        raw_occupation: None,
-        passability: PassabilityArgs {
-            speed_type,
-            // The candidates' zones come from GetZoneID (`0x0056D230`) when
-            // terrain is present (cell_rect), so the required zone must too.
-            required_zone_id: match resolved_terrain {
-                Some(terrain) => zone_grid.get_zone_id_native(
-                    terrain,
-                    start,
-                    zone_mz,
-                    start_layer == MovementLayer::Bridge,
-                ),
-                None => Some(u32::from(reduced_zone)),
-            },
-            movement_zone: zone_mz,
-            bridge_aware_zone: goal_layer == MovementLayer::Bridge,
-        },
-        footprint: NearbyFootprint::SINGLE,
-        anchor_gate: NearbyAnchorGate::UnverifiedCompatibilityBypass,
-        allow_bridge_cells: true,
-        check_height: false,
-        check_occupancy: false,
-        radius_cap,
-        target_cell: Some((goal.0 as i32, goal.1 as i32)),
-        path_grid: Some(grid),
-        resolved_terrain,
-        overlay_grid: None,
-        occupancy: None,
-        entities: None,
-        zone_grid: Some(zone_grid),
-        playfield_bounds: None,
-    };
-    // `target_cell` is set, so the frame counter is not consulted for selection.
-    find_nearby_passable_cell((goal.0 as i32, goal.1 as i32), &query, 0)
+/// Internal request failures retain the layer where the return originated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum MovePathFailure {
+    MissingGrid,
+    BridgeOnlyGoal,
+    Search(zone_search::PathSearchFailure),
 }
 
 pub(super) fn find_move_path(
@@ -363,94 +163,8 @@ pub(super) fn find_move_path(
     start_layer: MovementLayer,
     goal: (u16, u16),
     terrain_costs: Option<&TerrainCostGrid>,
-    entity_blocks: Option<&BTreeSet<(u16, u16)>>,
-    ground_blocks: Option<&BTreeSet<(u16, u16)>>,
-    bridge_blocks: Option<&BTreeSet<(u16, u16)>>,
     zone_mz: MovementZone,
     movement_zone: Option<MovementZone>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
-    facts: MoverPathFacts,
-    allow_zone_hierarchy: bool,
-) -> Option<LayeredPath> {
-    find_move_path_with_marker(
-        ctx,
-        layered_pathing,
-        start,
-        start_layer,
-        goal,
-        terrain_costs,
-        entity_blocks,
-        ground_blocks,
-        bridge_blocks,
-        zone_mz,
-        movement_zone,
-        entity_block_map,
-        None,
-        facts,
-        allow_zone_hierarchy,
-    )
-}
-
-pub(super) fn find_move_path_with_marker(
-    ctx: PathfindingContext<'_>,
-    layered_pathing: bool,
-    start: (u16, u16),
-    start_layer: MovementLayer,
-    goal: (u16, u16),
-    terrain_costs: Option<&TerrainCostGrid>,
-    entity_blocks: Option<&BTreeSet<(u16, u16)>>,
-    ground_blocks: Option<&BTreeSet<(u16, u16)>>,
-    bridge_blocks: Option<&BTreeSet<(u16, u16)>>,
-    zone_mz: MovementZone,
-    movement_zone: Option<MovementZone>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
-    marker_overlay: Option<&SearchMarkerOverlay>,
-    facts: MoverPathFacts,
-    allow_zone_hierarchy: bool,
-) -> Option<LayeredPath> {
-    find_move_path_with_marker_detailed(
-        ctx,
-        layered_pathing,
-        start,
-        start_layer,
-        goal,
-        terrain_costs,
-        entity_blocks,
-        ground_blocks,
-        bridge_blocks,
-        zone_mz,
-        movement_zone,
-        entity_block_map,
-        marker_overlay,
-        facts,
-        allow_zone_hierarchy,
-        None,
-    )
-    .ok()
-}
-
-/// Internal request failures retain the layer where the return originated.
-/// Option callers preserve their established API through the facade below.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum MovePathFailure {
-    MissingGrid,
-    BridgeOnlyGoal,
-    Search(zone_search::PathSearchFailure),
-}
-
-pub(super) fn find_move_path_with_marker_detailed(
-    ctx: PathfindingContext<'_>,
-    layered_pathing: bool,
-    start: (u16, u16),
-    start_layer: MovementLayer,
-    goal: (u16, u16),
-    terrain_costs: Option<&TerrainCostGrid>,
-    entity_blocks: Option<&BTreeSet<(u16, u16)>>,
-    ground_blocks: Option<&BTreeSet<(u16, u16)>>,
-    bridge_blocks: Option<&BTreeSet<(u16, u16)>>,
-    zone_mz: MovementZone,
-    movement_zone: Option<MovementZone>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
     facts: MoverPathFacts,
     allow_zone_hierarchy: bool,
@@ -463,28 +177,9 @@ pub(super) fn find_move_path_with_marker_detailed(
         PATH_SEARCH_USED_ZONE_GRID.with(|used| used.set(true));
     }
     let resolved_terrain = ctx.resolved_terrain;
-    let merged_entity_blocks = entity_blocks.cloned().unwrap_or_default();
-    let entity_blocks = (!merged_entity_blocks.is_empty()).then_some(&merged_entity_blocks);
-    // A slave's deposit Cells answer through its own `Can_Enter_Cell` arm
-    // (`sim::slave_deposit`) where no live Foot receiver prices the search.
-    let slave_classifier = (facts.slave_deposit_cells != [None, None]).then_some(
-        crate::sim::pathfinding::cell_entry::SlaveDepositSearchClassifier {
-            cells: facts.slave_deposit_cells,
-            path_grid: Some(grid),
-            resolved_terrain,
-            terrain_costs,
-            movement_zone,
-            speed_type: facts.speed_type,
-        },
-    );
-    let search_cost_classifier = slave_classifier
-        .as_ref()
-        .map(|c| c as &dyn crate::sim::pathfinding::SearchCellCostClassifier);
     if layered_pathing {
         let layered_result = zone_search::find_layered_path_zoned_marker_detailed(
             grid,
-            ground_blocks,
-            bridge_blocks,
             start,
             start_layer,
             goal,
@@ -493,14 +188,12 @@ pub(super) fn find_move_path_with_marker_detailed(
             terrain_costs,
             movement_zone,
             resolved_terrain,
-            entity_block_map,
             marker_overlay,
             ctx.blocker_neighbor_counts,
             crate::sim::pathfinding::MoverSearchFacts {
                 urgency: facts.urgency,
                 mover_is_crusher: facts.mover_is_crusher,
                 is_infantry: facts.is_infantry,
-                search_cost_classifier,
                 foot_entry,
             },
             allow_zone_hierarchy,
@@ -522,9 +215,6 @@ pub(super) fn find_move_path_with_marker_detailed(
             terrain_costs,
             movement_zone,
             facts,
-            ground_blocks,
-            bridge_blocks,
-            entity_block_map,
             marker_overlay,
         )
         .map_err(|cause| {
@@ -543,19 +233,16 @@ pub(super) fn find_move_path_with_marker_detailed(
         start,
         goal,
         terrain_costs,
-        entity_blocks,
         zone_grid,
         zone_mz,
         movement_zone,
         resolved_terrain,
-        entity_block_map,
         marker_overlay,
         ctx.blocker_neighbor_counts,
         crate::sim::pathfinding::MoverSearchFacts {
             urgency: facts.urgency,
             mover_is_crusher: facts.mover_is_crusher,
             is_infantry: facts.is_infantry,
-            search_cost_classifier,
             foot_entry,
         },
         allow_zone_hierarchy,
@@ -571,9 +258,6 @@ pub(super) fn find_move_path_with_marker_detailed(
         terrain_costs,
         movement_zone,
         facts,
-        entity_blocks,
-        entity_blocks,
-        entity_block_map,
         marker_overlay,
     )
     .map_err(|cause| {
@@ -593,7 +277,6 @@ mod tests {
         ResolvedTerrainCell, ResolvedTerrainGrid, YR_CELL_LAND_TUNNEL,
     };
     use crate::map::tube_facts::{TubeFact, TubeId};
-    use crate::sim::pathfinding::passability::LandType;
     use crate::sim::pathfinding::zone_map::ZoneGrid;
 
     fn make_resolved_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
@@ -606,7 +289,7 @@ mod tests {
     fn path_failure_detail_distinguishes_missing_grid_from_executed_search() {
         use crate::sim::pathfinding::zone_search::PathSearchFailure;
         fn search(grid: Option<&PathGrid>) -> Result<LayeredPath, MovePathFailure> {
-            find_move_path_with_marker_detailed(
+            find_move_path(
                 PathfindingContext {
                     path_grid: grid,
                     zone_grid: None,
@@ -619,12 +302,8 @@ mod tests {
                 MovementLayer::Ground,
                 (4, 1),
                 None,
-                None,
-                None,
-                None,
                 MovementZone::Normal,
                 Some(MovementZone::Normal),
-                None,
                 None,
                 super::MoverPathFacts::fixture(0, false, true),
                 false,
@@ -645,45 +324,6 @@ mod tests {
             Err(MovePathFailure::Search(
                 PathSearchFailure::CellSearchExhausted
             ))
-        );
-    }
-
-    #[test]
-    fn water_mover_goal_redirect_stays_on_water_cells() {
-        let mut cells = Vec::new();
-        for ry in 0..3 {
-            for rx in 0..3 {
-                let is_water = matches!((rx, ry), (0, 1) | (1, 1) | (2, 1));
-                cells.push(ResolvedTerrainCell {
-                    land_type: if is_water {
-                        LandType::Water.as_index()
-                    } else {
-                        LandType::Clear.as_index()
-                    },
-                    is_water,
-                    ..make_resolved_cell(rx, ry)
-                });
-            }
-        }
-        let terrain = ResolvedTerrainGrid::from_cells(3, 3, cells);
-        let grid = PathGrid::from_resolved_terrain(&terrain);
-        let mut blocked = BTreeSet::new();
-        blocked.insert((1, 1));
-
-        let redirected = resolve_requested_move_goal(
-            &grid,
-            (1, 1),
-            Some(&blocked),
-            Some(MovementZone::Water),
-            Some(&terrain),
-            2,
-        )
-        .expect("water mover should find an alternate water goal");
-
-        assert!(
-            matches!(redirected, (0, 1) | (2, 1)),
-            "water mover redirect should stay on water, got {:?}",
-            redirected
         );
     }
 
@@ -718,14 +358,12 @@ mod tests {
             MovementLayer::Ground,
             (4, 0),
             None,
-            None,
-            None,
-            None,
             MovementZone::Normal,
             Some(MovementZone::Normal),
             None,
             super::MoverPathFacts::fixture(0, false, false),
             true,
+            None,
         )
         .expect("movement path should use explicit tube despite disconnected zones");
 
@@ -741,7 +379,7 @@ mod tests {
         marker_overlay.toggle((2, 1));
         marker_overlay.toggle((3, 1));
 
-        let (path, layers) = find_move_path_with_marker(
+        let (path, layers) = find_move_path(
             PathfindingContext {
                 path_grid: Some(&grid),
                 zone_grid: None,
@@ -754,15 +392,12 @@ mod tests {
             MovementLayer::Ground,
             (4, 1),
             None,
-            None,
-            None,
-            None,
             MovementZone::Normal,
             Some(MovementZone::Normal),
-            None,
             Some(&marker_overlay),
             super::MoverPathFacts::fixture(0, false, false),
             true,
+            None,
         )
         .expect("marker overlay should still allow a path");
 
@@ -800,14 +435,12 @@ mod tests {
             MovementLayer::Ground,
             (2, 0),
             None,
-            None,
-            None,
-            None,
             MovementZone::Normal,
             Some(MovementZone::Normal),
             None,
             super::MoverPathFacts::fixture(0, false, false),
             true,
+            None,
         )
         .expect("fixture must prove the removed ground-only retry could succeed");
         assert_eq!(flat.0.last().copied(), Some((2, 0)));
@@ -825,18 +458,16 @@ mod tests {
             MovementLayer::Bridge,
             (2, 0),
             None,
-            None,
-            None,
-            None,
             MovementZone::Normal,
             Some(MovementZone::Normal),
             None,
             super::MoverPathFacts::fixture(0, false, false),
             true,
+            None,
         );
 
         assert!(
-            layered.is_none(),
+            layered.is_err(),
             "a failed layered search must remain failed instead of launching a second flat A*"
         );
     }
@@ -859,6 +490,7 @@ mod tests {
     #[test]
     fn a_wall_line_that_disconnects_the_map_is_refused_before_the_cost_class_runs() {
         use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
+        use crate::rules::locomotor_type::SpeedType;
         use crate::sim::pathfinding::{SearchEntryCandidate, SearchEntryQuery, SearchFootEntry};
 
         let mut cells = Vec::with_capacity(15);
@@ -893,7 +525,7 @@ mod tests {
             }
         }
         let entry = WallLine(std::cell::Cell::new(0));
-        let path = find_move_path_with_marker_detailed(
+        let path = find_move_path(
             PathfindingContext {
                 path_grid: Some(&grid),
                 zone_grid: Some(&zone_grid),
@@ -906,12 +538,8 @@ mod tests {
             MovementLayer::Ground,
             (4, 1),
             Some(&costs),
-            None,
-            None,
-            None,
             MovementZone::Normal,
             Some(MovementZone::Normal),
-            None,
             None,
             super::MoverPathFacts::fixture(0, false, true),
             true,

@@ -122,7 +122,7 @@ impl OpeningCapture {
                 OpeningTarget::Flash => sim
                     .entities()
                     .iter_sorted()
-                    .any(|(_, entity)| entity.is_active() && entity.flash_countdown() & 2 != 0),
+                    .any(|(_, entity)| entity.is_active() && entity.flashing.flashed()),
                 OpeningTarget::Arrows => sim.anims().any(|(_, anim)| anim.no_effects()),
                 OpeningTarget::Unlocked => self.saw_unlock && !locked,
                 OpeningTarget::RestoreUnlocked => {
@@ -429,9 +429,9 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                 "health": entity.health.current,
                 "estimated_health": entity.estimated_health.get(),
                 "sampled_power_health": entity.building_power_health_sample(),
-                "damaged_mode": entity.building_damage_state_active,
+                "damaged_mode": entity.building_art.damage_state_active(),
                 "damage_smoke_system": entity.damage_smoke_system_id,
-                "anim_slots": entity.building_anim_slots.iter().enumerate()
+                "anim_slots": entity.building_art.anim_slots().iter().enumerate()
                     .filter_map(|(slot, id)| {
                         let id = (*id)?;
                         let anim = sim.anim(id)?;
@@ -446,7 +446,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                 })),
             }));
         }
-        if entity.flash_countdown() & 2 != 0 {
+        if entity.flashing.flashed() {
             let cell = (entity.position.rx, entity.position.ry);
             flashing.push(json!({"id": entity.stable_id(), "type": name,
                 "cell": cell, "cell_shrouded": cell_shrouded(cell)}));

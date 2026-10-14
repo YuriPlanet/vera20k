@@ -584,7 +584,6 @@ impl Simulation {
                 &mut sim.substrate.entities,
                 stable_id,
                 current_grid.as_deref(),
-                &sim.house_alliances,
                 &mut sim.substrate.occupancy,
                 &mut sim.substrate.cell_occupation,
                 &mut sim.substrate.raw_cell_occupation,
@@ -594,9 +593,7 @@ impl Simulation {
                 sim.playfield_bounds,
                 &mut sim.interner,
                 rules,
-                Some(&sim.type_handles),
                 &sim.houses,
-                &mut sim.movement_pass_cache,
             )
         };
         // Process_Movement's no-queue request and the Process_Track after it.
@@ -623,9 +620,8 @@ impl Simulation {
                 )
                 .map_err(|cause| frame_error(sim, cause))?;
             if let Some(request) = pending_movement.take_foot_path_request() {
-                let held = Some(pending_movement.held_block_sets());
                 let outcome = sim
-                    .run_foot_path_request(&request, held, rules, overlay_registry, effects)
+                    .run_foot_path_request(&request, rules, overlay_registry, effects)
                     .map_err(|cause| frame_error(sim, cause))?;
                 if outcome == movement::FootPathOutcome::Resume {
                     pending_movement.reenter_mover(
@@ -637,13 +633,7 @@ impl Simulation {
             }
             if let Some(request) = pending_movement.take_walk_admission_request() {
                 let retry = sim
-                    .run_walk_admission_request(
-                        request,
-                        Some(pending_movement.held_block_sets()),
-                        rules,
-                        overlay_registry,
-                        effects,
-                    )
+                    .run_walk_admission_request(request, rules, overlay_registry, effects)
                     .map_err(|cause| frame_error(sim, cause))?;
                 if let Some(request) = retry {
                     //75B716/75BABB/75BC04: one recursive Process(0),
@@ -665,7 +655,6 @@ impl Simulation {
                         id,
                         family,
                         movement::ProcessMovementArgs::OUTER,
-                        Some(pending_movement.held_block_sets()),
                         rules,
                         overlay_registry,
                         effects,
@@ -738,7 +727,6 @@ impl Simulation {
         if let Some((id, head)) = pending_movement.take_walk_per_cell() {
             outcome.bridge_state_changed |=
                 sim.run_completed_walk_step(id, head, rules, overlay_registry, effects)?;
-            pending_movement.retain_walk_completion(id, &sim.substrate.entities);
         }
         if let Some((id, coord)) = pending_movement.take_walk_boundary() {
             sim.run_walk_boundary(id, coord, rules, overlay_registry, effects);
@@ -749,8 +737,6 @@ impl Simulation {
             .movement
             .merge(movement::movement_tick::finish_movement_pass(
                 pending_movement,
-                &mut sim.substrate.entities,
-                &mut sim.movement_pass_cache,
             ));
         if let Some(tube_active) = movement_before {
             // Tube exits Unit73603F / Infantry51BA9B call vt+0x18C(2).
@@ -778,6 +764,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: super::FrameEffects<'_>,
     ) -> Result<LiveObjectPassOutcome, super::FrameAdvanceError> {
+        self.answer_batched_path_searches(rules, overlay_registry);
         let miner_config = rules.map(crate::sim::miner::MinerConfig::from_rules);
         let terrain_spawner_cells = self
             .production
@@ -793,7 +780,7 @@ impl Simulation {
         };
 
         let mut outcome = LiveObjectPassOutcome::default();
-        self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
+        let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
             let turn = sim.advance_live_object_turn(stable_id, rules, object_ctx)?;
             outcome.movement.merge(turn.movement);
             outcome.destroyed_structure |= turn.destroyed_structure;
@@ -803,7 +790,9 @@ impl Simulation {
                 outcome.tube_turn_owned_ids.insert(stable_id);
             }
             Ok(())
-        })?;
+        });
+        self.finish_batched_path_searches();
+        walked?;
         Ok(outcome)
     }
 
@@ -833,7 +822,11 @@ impl Simulation {
             .entities
             .get(stable_id)
             .is_some_and(|entity| entity.category == EntityCategory::Structure);
-        let ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
+        let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
+        if let Some(error) = ai.fall_error.take() {
+            return Err(error);
+        }
+        let mut per_cell_ran = ai.landed;
         outcome.bridge_state_changed |= ai.bridge_state_changed;
         outcome.ownership_changed |= ai.ownership_changed();
         if was_structure
@@ -884,37 +877,6 @@ impl Simulation {
             )
         {
             entity.mission_leaf.set_foot_idle_entry_latch(0);
-        }
-
-        // ObjectClass::AI's fall step (`0x005F3F11..0x005F3FA4`), which the
-        // Foot's TechnoClass::AI call (`0x004DA539`) reaches before Process.
-        //
-        // RESIDUAL: VERA runs it after the whole Techno visit, not at
-        // ObjectClass::AI's start. Trigger: a paradropped object landing.
-        // Effect: that frame's mission dispatch still sees it falling.
-        // Frequency: once per paradrop landing. Risk: the first mission
-        // Commence after landing waits one frame.
-        let mut per_cell_ran = false;
-        if let Some(rules) = rules
-            && sim.advance_fall(
-                stable_id,
-                rules.general.parachute_max_fall_rate,
-                Some(rules),
-                overlay_registry,
-                object_ctx.effects,
-            )
-        {
-            // Object AI5F3F8D: grounded fall completion calls vt+0x18C(2)
-            // before the parachute animation's wind-down.
-            outcome.bridge_state_changed |= sim.per_cell_process(
-                stable_id,
-                movement::PerCellReason::Arrival,
-                Some(rules),
-                overlay_registry,
-                object_ctx.effects,
-            )?;
-            per_cell_ran = true;
-            sim.wind_down_parachute_anim(rules, stable_id);
         }
 
         if !tube_active_at_entry {
@@ -1009,6 +971,7 @@ impl Simulation {
                     cadence,
                     hover_attack,
                     deploy_to_land,
+                    sim.resolved_terrain.as_ref(),
                     sim.session.binary_frame,
                 );
             }

@@ -2,13 +2,13 @@
 //! path_delay_rules and track_blocked_timers corpora, not full fresh movement.
 //! In particular Ship's current fresh admission adapter does not prove code2.
 
+use super::DestinationTiming;
 use super::locomotor::LocomotorState;
-use super::{DestinationTiming, issue_move_command};
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::{DriveCoord, FootPathQueue, Health, MovementTarget};
+use crate::sim::components::{DriveCoord, FootPathQueue, Health};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
 use crate::sim::occupancy::OccupancyGrid;
@@ -16,7 +16,7 @@ use crate::sim::pathfinding::PathGrid;
 use crate::sim::snapshot::GameSnapshot;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::fixed_math::SimFixed;
 use serde_json::Value;
 
 fn rules(path_delay: &str, blockage: &str, walk: bool) -> RuleSet {
@@ -101,7 +101,6 @@ fn accepted_direct_and_regular_orders_keep_signed_rules_delays_and_retry_word() 
     ))
     .unwrap();
     let rows = native["blockage_path_delay"].as_array().unwrap();
-    let grid = PathGrid::new(20, 20);
     for raw in ["0", "-1", "65536", "2147483648", "4294967295"] {
         let expected = rows
             .iter()
@@ -126,18 +125,17 @@ fn accepted_direct_and_regular_orders_keep_signed_rules_delays_and_retry_word() 
                     let timing = DestinationTiming::from_rules(frame, Some(&rules));
                     match command {
                         0 => timing.accept(sim.substrate.entities.get_mut(1).unwrap()),
-                        1 => assert!(issue_move_command(
-                            &mut sim.substrate.entities,
-                            &grid,
-                            1,
-                            (10, 8),
-                            SimFixed::from_num(165),
-                            false,
-                            None,
-                            None,
-                            None,
-                            timing,
-                        )),
+                        1 => {
+                            sim.session.binary_frame = frame;
+                            sim.assign_destination_represented(
+                                1,
+                                Some(crate::sim::components::NavTargetRef::cell(10, 8)),
+                                Some(&rules),
+                                None,
+                                crate::sim::world::FrameEffects::default(),
+                            )
+                            .unwrap();
+                        }
                         _ => unreachable!(),
                     }
                     let entity = sim.substrate.entities.get(1).unwrap();
@@ -164,7 +162,6 @@ fn install_stationary_path_request(sim: &mut Simulation) {
         cursor: 0,
         reference_cell: Some((8, 8)),
     };
-    entity.movement_target = Some(MovementTarget { speed: SIM_ZERO });
 }
 
 #[test]
@@ -325,10 +322,6 @@ fn paid_walk_progress_clears_only_blocked_latch_and_retains_timer_words() {
             y: 8 * 256 + 128,
             z: 0,
         }));
-    entity.movement_target = Some(MovementTarget {
-        speed: SimFixed::from_num(165),
-        ..Default::default()
-    });
     entity
         .navigation
         .path_runtime

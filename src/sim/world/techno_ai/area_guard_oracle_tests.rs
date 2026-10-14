@@ -4,7 +4,7 @@
 //! Logic/Display/occupancy order and retail readers. This adapter supplies the
 //! observed event-boundary state and transports pointers/Abstract IDs only.
 //! It neither constructs expected gameplay nor runs missing intervening ticks.
-//! Native network scheduling, locomotor Process and pursuit are excluded.
+//! Native network scheduling, locomotor Process and Approach are excluded.
 
 use super::*;
 use crate::sim::command::{
@@ -341,7 +341,10 @@ fn delivered_command(f: &SuppliedFootFixture, row: &Value, boundary: &Value) -> 
             entity_id: id(record.source_id),
             target_rx: target_x as u16,
             target_ry: target_y as u16,
-            queue: false,
+        },
+        MegaMissionOrder::MoveToObject { id: native_id } => Command::MoveToObject {
+            entity_id: id(record.source_id),
+            target_id: id(native_id),
         },
     }
 }

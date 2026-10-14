@@ -349,9 +349,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     crate::app::reset_scenario_exit_runtime(state);
     let startup = result.scenario.startup;
     let returns_scenario_rng_to_offline_shell = startup.launch_session().is_some();
-    state.match_state.match_presentation.local_player_handle = startup
-        .launch_session()
-        .map(|launch| launch.player_name.clone());
     // A loaded world is not timed until the launch handoff reaches InGame.
     state.match_state.scenario_elapsed_clock.reset();
     crate::app::loading::pump::clear_loading_state(state);
@@ -385,6 +382,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     state.match_state.sim_runtime = incoming.map(|(mut simulation, rules)| {
         simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
         simulation.session.set_started(true);
+        simulation.batch_path_searches();
         crate::sim::runtime::SimRuntime {
             simulation,
             resources: crate::sim::runtime::SimResources {

@@ -5,7 +5,7 @@
 //! `TechnoClass::CanFireAtTarget` 0x006F7780 ([`can_fire_at_target`]) asks both
 //! for the weapon it selects. The 2D [`lepton_distance_sq_raw`] +
 //! [`is_within_range_leptons`] twin remains only as the fallback of the fire
-//! gate, the threat scan, pursuit and the cursor for a world without resolved
+//! gate, the threat scan and the cursor for a world without resolved
 //! terrain. Implements 3D distance, IsLowFlying ground-snap, AirRange bonus,
 //! bunker and open-topped range bonuses, the elevation bonus for a shot fired
 //! downhill (`0x006F6F60`, `0x006F70E0`), the arcing arm's 2-D distance,
@@ -267,29 +267,6 @@ fn minimum_range_blocks(weapon: &WeaponType, src: (i64, i64, i64), tgt: (i64, i6
         [src.0 as i32, src.1 as i32, src.2 as i32],
         [tgt.0 as i32, tgt.1 as i32, tgt.2 as i32],
     ) < weapon.minimum_range_leptons
-}
-
-/// Whether the attacker is standing INSIDE `weapon`'s `MinimumRange` — the one
-/// `InRange` refusal that walking toward the target cannot fix.
-///
-/// Pursuit needs to tell this refusal apart from the others because VERA's
-/// approach produces a single candidate (the target's own cell) where native's
-/// approach search 0x004D5690 scans many: for a too-close refusal the target's
-/// cell is the worst candidate in the set, not the best.
-pub(crate) fn inside_minimum_range(
-    src: (i64, i64, i64),
-    target: &TargetKind,
-    weapon: &WeaponType,
-    rules: &RuleSet,
-    interner: &StringInterner,
-    entities: &EntityStore,
-    terrain: &ResolvedTerrainGrid,
-) -> bool {
-    let cells = NativeCellQuery::canonical(terrain);
-    let Some(tgt) = resolve_target_coords_3d(target, entities, rules, interner, &cells) else {
-        return false;
-    };
-    minimum_range_blocks(weapon, src, tgt)
 }
 
 /// Full 3D range check. Returns true if `attacker` (firing from `src`) can
@@ -867,6 +844,35 @@ pub(crate) fn can_fire_at_target(
     )
 }
 
+impl crate::sim::world::Simulation {
+    /// [`can_fire_at_target`] for the object `id` against `target`, on the
+    /// live map with the house alliances; false without a map.
+    pub(crate) fn techno_can_fire_at_target(
+        &self,
+        id: u64,
+        target: TargetKind,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) -> bool {
+        self.resolved_terrain.as_ref().is_some_and(|terrain| {
+            can_fire_at_target(
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+                id,
+                &target,
+                terrain,
+                Some(&self.house_alliances),
+                &LineOfFireInputs {
+                    overlay_grid: self.overlay_grid.as_ref(),
+                    overlay_registry: registry,
+                    alliances: Some(&self.house_alliances),
+                },
+            )
+        })
+    }
+}
+
 /// CanFireAtTarget6F7780 with an explicit native map-query identity. This is
 /// the same selected-weapon/source/InRange chain for simulation and input.
 /// Ordinary callers select against `Some(target)`; the deployed Unit action
@@ -978,9 +984,9 @@ pub(crate) fn lepton_distance_sq_raw(
 /// `combat_weapon::occupied_reach_cells`) and this function does none.
 ///
 /// Every reader is a fallback for a world without resolved terrain (headless
-/// fixtures, pre-map bring-up): the fire gate, the threat scan, pursuit and
-/// the cursor. None of them can run a walk, so they agree with each other
-/// rather than diverging.
+/// fixtures, pre-map bring-up): the fire gate, the threat scan and the
+/// cursor. None of them can run a walk, so they agree with each other rather
+/// than diverging.
 pub(crate) fn is_within_range_leptons(dist_sq_leptons: i64, range_cells: SimFixed) -> bool {
     let range_leptons: i64 = (i64::from(range_cells.to_bits()) * 256) >> 16;
     let range_sq: i64 = range_leptons * range_leptons;
@@ -1010,12 +1016,13 @@ mod tests {
         e
     }
 
+    /// An aircraft `altitude_lep` above level-0 flat ground.
     fn aircraft_at_altitude(altitude_lep: i64) -> GameEntity {
         let mut e = GameEntity::test_default(2, "ORCA", "Test", 10, 10);
         e.category = EntityCategory::Aircraft;
         e.lifecycle.cell_marked = true;
+        e.position.exact_z_leptons = Some(altitude_lep as i32);
         let mut loco = LocomotorState::for_test_kind(LocomotorKind::Fly);
-        loco.altitude = SimFixed::from_num(altitude_lep as i32);
         loco.speed_type = SpeedType::Winged;
         loco.movement_zone = MovementZone::Fly;
         e.locomotor = Some(loco);
@@ -1034,28 +1041,8 @@ mod tests {
     }
 
     #[test]
-    fn world_z_airborne_aircraft_adds_altitude() {
-        let mut e = aircraft_at_altitude(1500);
-        e.position.z = 0;
-        let terrain = flat_terrain(16, 16);
-        assert_eq!(
-            crate::sim::movement::ground_pose::object_world_z_leptons(&e, Some(&terrain)),
-            1500
-        );
-
-        let mut e2 = aircraft_at_altitude(800);
-        e2.position.z = 2;
-        let mut elevated = flat_terrain(16, 16);
-        elevated.cells[10 * 16 + 10].level = 2;
-        assert_eq!(
-            crate::sim::movement::ground_pose::object_world_z_leptons(&e2, Some(&elevated)),
-            1008
-        );
-    }
-
-    #[test]
-    fn gsi_04_03b_world_z_uses_exact_sloped_subcell_and_air_altitude() {
-        let mut entity = aircraft_at_altitude(500);
+    fn gsi_04_03b_world_z_uses_exact_sloped_subcell() {
+        let mut entity = ground_entity_at_level(2);
         entity.position.sub_x = SimFixed::from_num(64);
         entity.position.sub_y = SimFixed::from_num(192);
         let mut terrain = flat_terrain(16, 16);
@@ -1064,7 +1051,7 @@ mod tests {
         cell.slope_type = 1;
         assert_eq!(
             crate::sim::movement::ground_pose::object_world_z_leptons(&entity, Some(&terrain)),
-            734
+            234
         );
     }
 
@@ -2304,7 +2291,14 @@ mod tests {
         entities.insert(ground_target(6, 5, 0, "TGT"));
         let target = TargetKind::Entity(200);
 
-        let cruising = kirov_at(5, 5, KIROV_JUMPJET_HEIGHT_LEPTONS);
+        let mut cruising = kirov_at(5, 5, KIROV_JUMPJET_HEIGHT_LEPTONS);
+        crate::sim::movement::ground_pose::set_height(
+            &mut cruising.position,
+            false,
+            KIROV_JUMPJET_HEIGHT_LEPTONS as i32,
+            Some(&terrain),
+            None,
+        );
         let src = fire_source_coords(
             &cruising,
             &target,
@@ -2333,7 +2327,14 @@ mod tests {
 
         // The same airship one lepton below the split is NOT high-flying, so
         // native charges its altitude and the shot is refused.
-        let climbing = kirov_at(5, 5, HIGH_FLIGHT_THRESHOLD_LEPTONS - 1);
+        let mut climbing = kirov_at(5, 5, HIGH_FLIGHT_THRESHOLD_LEPTONS - 1);
+        crate::sim::movement::ground_pose::set_height(
+            &mut climbing.position,
+            false,
+            (HIGH_FLIGHT_THRESHOLD_LEPTONS - 1) as i32,
+            Some(&terrain),
+            None,
+        );
         let climbing_src = fire_source_coords(
             &climbing,
             &target,

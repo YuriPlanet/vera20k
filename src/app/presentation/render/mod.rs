@@ -75,6 +75,7 @@ pub(crate) struct GameRenderOutput {
     pub sidebar_view: Option<SidebarView>,
     pub instance_counts: GameRenderInstanceCounts,
     pub times: GameRenderTimes,
+    pub particle_draws: Option<Vec<crate::app::presentation::instances::ParticleDrawObservation>>,
 }
 
 /// Actual HUD update inputs observed by the frame owner, and the radar draw
@@ -335,6 +336,7 @@ pub(crate) fn render_game(
         instance_counts: sidebar.emitted_instance_counts(),
         sidebar_view: sidebar.view,
         times,
+        particle_draws: world.particle_draws,
     })
 }
 
@@ -417,9 +419,6 @@ fn upload_to_gpu(
         "spotlight_type16",
         &world.spotlight_type16,
     );
-    for (page, page_inst) in world.particle_paged.iter().enumerate() {
-        pool.upload_page(&state.renderer.gpu, "particle_page", page, page_inst);
-    }
 
     // UI overlays
     pool.upload(&state.renderer.gpu, "drag", &ui.drag);

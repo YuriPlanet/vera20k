@@ -1,7 +1,8 @@
 //! Rust regression tests for a hunting computer engineer's way to a capture:
 //! Mission_Hunt's engineer arm sends it to capture what its scan holds
 //! (`0x004D53BA`), and that scan returns the building its house last lost
-//! while it lies in reach (House+54E0, `0x0051E16E`). Expected values come
+//! while it lies in reach (House+54E0, `0x0051E16E`). A `VehicleThief=` man
+//! takes the same tail from his own arm (`0x004D546C`). Expected values come
 //! from instruction reading; the only draw on these paths is the shared rate
 //! epilogue's.
 
@@ -13,11 +14,15 @@ use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
 use crate::sim::world::ObjectAiCtx;
 
-/// Retail's engineer, DefuseKit and power plant, trimmed. Hunt's rate is
+/// Retail's engineer, DefuseKit and power plant, trimmed, and a vehicle thief
+/// with a plain gun and a tank, which no retail section is. Hunt's rate is
 /// raised from retail's `.016` so the cadence shows whose rate it took.
 const RULES: &str = "\
 [InfantryTypes]
 0=ENGINEER
+1=THIEF
+[VehicleTypes]
+0=TANK
 [BuildingTypes]
 0=GAPOWR
 [Warheads]
@@ -37,10 +42,27 @@ Primary=DefuseKit
 GuardRange=9
 ThreatPosed=0
 Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}
+[THIEF]
+Strength=75
+Speed=4
+VehicleThief=yes
+Primary=ThiefGun
+Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}
+[TANK]
+Strength=300
+Armor=heavy
+Speed=6
+Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}
 [GAPOWR]
 Strength=750
 Armor=wood
 Capturable=true
+[ThiefGun]
+Damage=10
+ROF=20
+Range=1.5
+Projectile=InvisibleAll
+Warhead=HITWH
 [DefuseKit]
 Damage=1
 Range=1.5
@@ -147,6 +169,31 @@ fn a_hunting_engineer_commences_capture_of_what_its_scan_holds() {
     assert_eq!(target(&sim, engineer), Some(TargetKind::Entity(plant)));
     assert_eq!(heading(&sim, engineer), Some(plant));
     let mission = &sim.substrate.entities.get(engineer).unwrap().mission;
+    assert_eq!(
+        (mission.current(), mission.queued()),
+        (CAPTURE, MissionId::NONE)
+    );
+    let delay = mission.dispatch_timer().delay();
+    assert!((14..=16).contains(&delay), "delay {delay}");
+}
+
+/// The VehicleThief arm (`0x004D546C..0x004D548F`) asks nothing of the
+/// target: the thief takes the tank his scan holds as his destination
+/// (vt+0x480(target, 1)) and joins the engineer arm's tail, which commences
+/// Capture at Capture's rate.
+#[test]
+fn a_hunting_vehicle_thief_commences_capture_of_what_its_scan_holds() {
+    let rules = rules();
+    let mut sim = arena(&rules);
+    let tank = spawn(&mut sim, &rules, "TANK", "Americans", 16, 10);
+    let thief = spawn(&mut sim, &rules, "THIEF", "Russians", 10, 10);
+    assign(&mut sim, thief, MissionType::Hunt);
+
+    sim.object_ai_visit_one(thief, Some(&rules), ObjectAiCtx::default());
+
+    assert_eq!(target(&sim, thief), Some(TargetKind::Entity(tank)));
+    assert_eq!(heading(&sim, thief), Some(tank));
+    let mission = &sim.substrate.entities.get(thief).unwrap().mission;
     assert_eq!(
         (mission.current(), mission.queued()),
         (CAPTURE, MissionId::NONE)

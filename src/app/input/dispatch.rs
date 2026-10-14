@@ -39,6 +39,10 @@ use crate::ui::sidebar::{SidebarAction, SidebarTab};
 #[path = "area_guard_tests.rs"]
 mod area_guard_tests;
 
+#[cfg(test)]
+#[path = "player_scatter_tests.rs"]
+mod player_scatter_tests;
+
 /// Click radius for single-click selection (pixels in world space).
 pub(crate) const CLICK_SELECT_RADIUS: f32 = 30.0;
 
@@ -848,9 +852,6 @@ mod item83_click_route_tests {
                     false,
                     1,
                     9,
-                    20,
-                    20,
-                    true,
                 ))
             },
         );
@@ -872,7 +873,6 @@ mod item83_click_route_tests {
                     entity_id: 1,
                     target_rx: 14,
                     target_ry: 15,
-                    queue: false,
                 })
             },
         );
@@ -1721,6 +1721,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // cannot commit every selected unit's path at one instant, cannot edit
         // nodes before committing, and cannot loop a path.
         HotkeyCommand::PlanningMode => {}
+        HotkeyCommand::ScatterObject => queue_scatter_for_selected(state),
         HotkeyCommand::VeterancyNav => selection_navigation::execute_category_navigation(
             state,
             crate::app::types::CategoryNavigationKind::Veterancy,
@@ -1741,7 +1742,6 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         | HotkeyCommand::PlaceBeacon
         | HotkeyCommand::AllToCheer
         | HotkeyCommand::PageUser
-        | HotkeyCommand::ScatterObject
         | HotkeyCommand::Delete
         | HotkeyCommand::Taunt(_) => {}
     }
@@ -2579,6 +2579,66 @@ fn queue_guard_for_selected(state: &mut AppState) {
     ) {
         state.match_state.match_audio.sound_events.push(event);
     }
+}
+
+/// ScatterCommand536D80 ->730FE0 uses the same pending selection-order
+/// owner as Guard. No per-object voice or selection-voice latch is involved.
+fn queue_scatter_for_selected(state: &mut AppState) {
+    let selected = selected_stable_ids_in_order(
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    );
+    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+        return;
+    };
+    for sound in queue_scatter_orders(&mut runtime.simulation, &runtime.resources.rules, &selected)
+    {
+        state.match_state.match_audio.sound_events.push(sound);
+    }
+}
+
+fn queue_scatter_orders(
+    sim: &mut crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected: &[u64],
+) -> Vec<crate::audio::events::GameSoundEvent> {
+    use crate::audio::events::GameSoundEvent;
+
+    if selected.is_empty() {
+        return Vec::new();
+    }
+    let Some(owner) = sim.session.current_house else {
+        return Vec::new();
+    };
+    let owner = sim.interner.resolve(owner).to_owned();
+    for &entity_id in selected {
+        let Some(payload) = sim.scatter_key_command(entity_id, rules) else {
+            continue;
+        };
+        if crate::app::input::commands::schedule_command_in_sim(sim, &owner, payload).is_none() {
+            return Vec::new();
+        }
+    }
+    // 731032..73104A: one PlayAtPos750920, gain1, center2000, arg0.
+    // A nonempty selection that admits no actor still produces this cue.
+    // PlanningMode637AA0/639FD0 remains its separate unimplemented route.
+    // The existing offline ingress bypasses bounded native OutList admission;
+    // its saturation and network-pump integration remain outside this path.
+    rules
+        .general
+        .scatter_sound
+        .as_ref()
+        .map_or_else(Vec::new, |sound_id| {
+            vec![GameSoundEvent::UiSound {
+                sound_id: sound_id.clone(),
+            }]
+        })
 }
 
 /// The ordinary Guard selection loop730D79..730E8A. Simulation owns each

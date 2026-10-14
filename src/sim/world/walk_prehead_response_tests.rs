@@ -10,7 +10,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cloak_disguise::CloakRuntime;
 use crate::sim::combat::TargetKind;
-use crate::sim::components::{DriveCoord, MovementTarget, NavTargetRef};
+use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::{MissionDispatchTimer, MissionId, state::MissionTestFixture};
 use crate::sim::movement::fresh_oracle_seam::{self, FreshCallRecord, SuppliedPath};
 use crate::sim::movement::locomotor::MovementLayer;
@@ -204,7 +204,6 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     p.path_blocked = before["blocked"] == 1;
     p.retries_left = before["retries"].as_i64().unwrap() as u32;
     p.set_scold_latch_for_test(before["flag68a"].as_u64().unwrap() as u8);
-    e.movement_target = Some(MovementTarget::default());
     if input["radio"] == true {
         e.radio_contacts.insert(999);
     }
@@ -484,7 +483,6 @@ fn ordinary_and_recursive_walk_responses_match_original_decoder() {
                 let request = retry.ok_or("missing recursive Walk request")?;
                 let found = sim.run_walk_path_request(
                     &request,
-                    None,
                     Some(&rules),
                     Some(&registry),
                     crate::sim::world::FrameEffects::default(),
@@ -492,7 +490,6 @@ fn ordinary_and_recursive_walk_responses_match_original_decoder() {
                 if found {
                     let again = sim.run_walk_admission_request(
                         request.into_walk_admission_for_test(),
-                        None,
                         Some(&rules),
                         Some(&registry),
                         crate::sim::world::FrameEffects::default(),
@@ -568,7 +565,6 @@ fn exhausted_walk_retry_emits_native_retained_scold_request() {
             .unwrap();
         let result = sim.run_walk_path_request(
             &request,
-            None,
             Some(&rules),
             Some(&registry),
             crate::sim::world::FrameEffects::default(),

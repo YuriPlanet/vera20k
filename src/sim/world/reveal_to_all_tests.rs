@@ -97,7 +97,8 @@ fn a_computer_houses_opening_shows_the_current_house_its_sight_until_it_dies() {
             .entities
             .get(id)
             .unwrap()
-            .building_actually_placed
+            .building_art
+            .actually_placed()
     );
     assert_eq!(radar_events(&sim), [OPENED]);
     let keys: Vec<_> = sim.fog.alternate_sight_admissions.keys().copied().collect();
@@ -163,7 +164,8 @@ fn a_human_houses_opening_shows_no_one_else_its_sight() {
             .entities
             .get(id)
             .unwrap()
-            .building_actually_placed
+            .building_art
+            .actually_placed()
     );
     assert!(radar_events(&sim).is_empty());
     assert!(sim.fog.alternate_sight_admissions.is_empty());
@@ -412,7 +414,7 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
     let building = sim.substrate.entities.get(id).unwrap();
     assert_eq!((building.position.rx, building.position.ry), SITE);
     assert!(building.building_up());
-    assert!(!building.building_actually_placed);
+    assert!(!building.building_art.actually_placed());
     assert!(sim.fog.alternate_sight_admissions.is_empty());
 
     sim.reset_shroud_for_owner(americans, &rules);

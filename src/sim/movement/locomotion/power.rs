@@ -23,8 +23,7 @@
 //!
 //! | edge | direction | wired in |
 //! |---|---|---|
-//! | a destination is accepted (command-time adapter locomotors) | on | the move-command entry |
-//! | bunker sell/death release4593A0 | on | `docking::bunker_link::release_sell_destroy` |
+//! //! | bunker sell/death release4593A0 | on | `docking::bunker_link::release_sell_destroy` |
 //! | bunker normal release4595C0 | on | `docking::bunker_link::release_normal` |
 //! | Unit destination tail742F48, on a repair/bunker building's ground cell | on | `track_path::unit_destination_power_on` |
 //! | depot MissionRepair44B780 pending admission / servicing / state1 release | on / off / on | `docking::building_dock::mission_repair` |
@@ -45,8 +44,7 @@
 //! Repair state0 admission failure restores power at44C808; state1's
 //! NEED_MOVE failure restores an unpowered contact at44C61B. The same corpus
 //! compares both fallbacks and their distance/moving/powered controls.
-//! Infantry51AA40 has no PowerOn. The remaining command-time adapter locomotors still power on
-//! when they accept a destination. A deploy-powered-off unit is powered on by
+//! Infantry51AA40 has no PowerOn. A deploy-powered-off unit is powered on by
 //! its undeploy, and a bunkered one by its release.
 //!
 //! ## The one observable effect
@@ -138,7 +136,6 @@ mod tests {
 
         assert_eq!(state.kind, before.kind);
         assert_eq!(state.layer, before.layer);
-        assert_eq!(state.altitude, before.altitude);
         assert_eq!(state.piggyback, before.piggyback);
     }
 }

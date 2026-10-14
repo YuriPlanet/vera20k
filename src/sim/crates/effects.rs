@@ -131,14 +131,14 @@ pub(super) fn apply_veteran_crate(
         let entity = sim.substrate.entities.get_mut(id).expect("checked above");
         let mut level = 0_i32;
         loop {
-            if veterancy::raw_is_veteran(entity.veterancy_raw) {
-                veterancy::set_elite(entity);
+            if veterancy::raw_is_veteran(entity.veterancy.raw()) {
+                entity.veterancy.set_elite();
             }
-            if veterancy::raw_is_rookie(entity.veterancy_raw) {
-                veterancy::set_veteran(entity);
+            if veterancy::raw_is_rookie(entity.veterancy.raw()) {
+                entity.veterancy.set_veteran();
             }
-            if veterancy::raw_is_negative(entity.veterancy_raw) {
-                veterancy::set_rookie(entity);
+            if veterancy::raw_is_negative(entity.veterancy.raw()) {
+                entity.veterancy.set_rookie();
             }
             level += 1;
             if !ordered_less(f64::from(level), magnitude) {
@@ -347,10 +347,8 @@ pub(super) fn place_unit_crate(
     center: DriveCoord,
     frame_effects: FrameEffects<'_>,
 ) -> UnitCrateOutcome {
-    use crate::sim::find_nearby_cell::{
-        NearbyAnchorGate, NearbyFootprint, NearbyQuery, NearbySearchOptions, PassabilityArgs,
-        RADIUS_HARD_CAP, find_nearby_passable_cell_with_options,
-    };
+    use crate::rules::locomotor_type::MovementZone;
+    use crate::sim::find_nearby_cell::PassabilityArgs;
     use crate::sim::world::PlacementEvidence;
     let (Ok(rx), Ok(ry)) = (u16::try_from(cell.0), u16::try_from(cell.1)) else {
         return UnitCrateOutcome::NoObject;
@@ -387,37 +385,17 @@ pub(super) fn place_unit_crate(
     let nearby = rules
         .object_in_category(ObjectCategory::Vehicle, type_id)
         .and_then(|object| {
-            // `(cell, SpeedType, -1, 0, 0, 1, 1, 0, 0, 0, 1, &0, 0, 0)`: the
-            // free-unit query shape, bridge cells refused, the level gate on.
-            let query = NearbyQuery {
-                native_cells: None,
-                raw_occupation: None,
-                passability: PassabilityArgs {
+            // `0x0048231E..0x00482366` push `(cell, Type+0x67C, -1, 0, 0, 1,
+            // 1, 0, 0, 0, 1, &0, 0, 0)`: the type's SpeedType, zone -1 and
+            // MovementZone Normal in the NearbyLocation shape.
+            sim.nearby_location_cell(
+                (i32::from(rx), i32::from(ry)),
+                PassabilityArgs {
                     speed_type: object.speed_type,
                     required_zone_id: None,
-                    movement_zone: object.movement_zone,
+                    movement_zone: MovementZone::Normal,
                     bridge_aware_zone: false,
                 },
-                footprint: NearbyFootprint::SINGLE,
-                anchor_gate: NearbyAnchorGate::UnverifiedCompatibilityBypass,
-                allow_bridge_cells: false,
-                check_height: true,
-                check_occupancy: false,
-                radius_cap: RADIUS_HARD_CAP,
-                target_cell: None,
-                path_grid: sim.path_grid(),
-                resolved_terrain: sim.resolved_terrain.as_ref(),
-                overlay_grid: sim.overlay_grid.as_ref(),
-                occupancy: Some(&sim.substrate.occupancy),
-                entities: Some(&sim.substrate.entities),
-                zone_grid: sim.zone_grid.as_ref(),
-                playfield_bounds: sim.playfield_bounds,
-            };
-            find_nearby_passable_cell_with_options(
-                (i32::from(rx), i32::from(ry)),
-                &query,
-                NearbySearchOptions::default(),
-                sim.session.binary_frame,
             )
         });
     if let Some((nx, ny)) = nearby {

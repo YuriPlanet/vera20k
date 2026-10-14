@@ -250,12 +250,17 @@ def metadata():
  ])
 
 if __name__=='__main__':
- parser=argparse.ArgumentParser(add_help=False);parser.add_argument('--continuation',type=Path);mode=parser.add_mutually_exclusive_group();mode.add_argument('--foot-missions',action='store_true');mode.add_argument('--unit-unlimbo',action='store_true');args,remaining=parser.parse_known_args()
+ parser=argparse.ArgumentParser(add_help=False);parser.add_argument('--continuation',type=Path);mode=parser.add_mutually_exclusive_group();mode.add_argument('--foot-missions',action='store_true');mode.add_argument('--foot-capture',action='store_true');mode.add_argument('--unit-unlimbo',action='store_true');args,remaining=parser.parse_known_args()
  supplied=json.loads(args.continuation.read_text()) if args.continuation else None
  if args.foot_missions:
   assert args.continuation is None,'--foot-missions has explicit per-row state inputs'
   from .foot_missions import publish
   publish(remaining)
+  raise SystemExit(0)
+ if args.foot_capture:
+  assert args.continuation is None,'--foot-capture has explicit per-row state inputs'
+  from .foot_missions import publish_capture
+  publish_capture(remaining)
   raise SystemExit(0)
  if args.unit_unlimbo:
   assert args.continuation is None,'--unit-unlimbo has explicit per-row state inputs'

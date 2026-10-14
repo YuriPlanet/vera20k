@@ -58,18 +58,6 @@
 //!   its occupation result may differ; final below-floor Z is clamped in
 //!   both engines. Not executed (the sale oracle map is flat).
 //! - A dying unit's passengers ([`Simulation::release_dying_unit_passengers`]):
-//!   - IsABomb (`+0x8F`) kills every passenger (`0x007380AF`). Only
-//!     `ObjectClass::DropAsBomb @ 0x005F4160` sets it: the deck pass of
-//!     `CellClass::BlowUpBridge` (`0x0047DDC9`), a Foot whose deck vanished
-//!     (`0x004D8D53`) and a locomotor below its floor (`0x00514C0C`). The
-//!     object then falls and, once landed, takes its Strength as
-//!     C4Warhead with IgnoreDefenses (`ObjectClass::AI` `0x005F4021`),
-//!     which kills its passengers too. VERA's DropIn
-//!     (`drop_in_bridge_member`) sets no byte and lands the object alive.
-//!     Trigger: a loaded transport on a collapsing bridge. Effect: the
-//!     transport and its passengers live on, and escape if it dies later.
-//!     Frequency: rare. Risk: unit counts. Part of the bridge-fall
-//!     mechanism.
 //!   - A computer passenger of a unit in a Team joins it (`TeamClass::
 //!     Add_Member @ 0x006EA500`) instead of Hunting, and KillPassengers
 //!     takes each passenger out of its own Team (`0x006EA870`). VERA skips
@@ -799,6 +787,7 @@ impl Simulation {
         let frame = self.session.binary_frame;
         let unit_owner = unit.owner();
         let on_bridge = unit.on_bridge;
+        let dropped_as_bomb = unit.was_dropped_as_bomb();
         let (rx, ry, unit_z) = (unit.position.rx, unit.position.ry, unit.position.z);
         let (sub_x, sub_y) = (unit.position.sub_x, unit.position.sub_y);
         let location = position_world_coord(&unit.position);
@@ -836,9 +825,9 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(passenger) {
             entity.on_bridge = on_bridge;
         }
-        // `0x007380A3..0x007380BF`. The unit's IsABomb (`+0x8F`) kills too;
-        // VERA has no such byte (module residuals).
-        if dying.ignore_defenses || !admitted {
+        // `0x007380A3..0x007380BF`: bomb passengers never escape, even
+        // when another hit kills the falling transport without IgnoreDefenses.
+        if dying.ignore_defenses || dropped_as_bomb || !admitted {
             self.record_kill_and_uninit(passenger, dying.attacker, rules, registry, effects);
             return;
         }

@@ -9,7 +9,6 @@
 //! residuals. JumpJet=true Infantry's +4F4/+4F8 conversion is a separate
 //! locomotor mechanism; its unrepresented continuation is reported explicitly.
 
-use super::block_index::HeldBlockSets;
 use super::foot_path::{FindPathResult, coord_cell};
 use super::ground_pose;
 use super::infantry_entry::InfantryEntryArgs;
@@ -36,7 +35,6 @@ impl Simulation {
     pub(crate) fn run_walk_admission_request(
         &mut self,
         request: WalkAdmissionRequest,
-        held: Option<&mut HeldBlockSets>,
         rules: Option<&RuleSet>,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
@@ -106,7 +104,6 @@ impl Simulation {
             request,
             candidate,
             code,
-            held,
             rules,
             registry,
             frame_effects,
@@ -120,7 +117,6 @@ impl Simulation {
         request: WalkAdmissionRequest,
         candidate: DriveCoord,
         code: u8,
-        held: Option<&mut HeldBlockSets>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
@@ -162,7 +158,7 @@ impl Simulation {
                 self.walk_retry_admission(request)
             }
             2 => {
-                self.walk_blocked_delay(request, held, rules, registry, frame_effects)?;
+                self.walk_blocked_delay(request, rules, registry, frame_effects)?;
                 Ok(None)
             }
             3 => {
@@ -214,7 +210,6 @@ impl Simulation {
                     .ok_or("Walk stop owner retired during its callback")?;
                 //75BB84/75BB90: both override/Stop exits clear the byte.
                 actor.navigation.path_runtime.clear_scold_latch();
-                super::retain_committed_movement(actor);
                 Ok(None)
             }
             6 => {
@@ -244,18 +239,13 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Result<Option<FootPathRequest>, String> {
-        let request = WalkAdmissionRequest::for_response_test(
-            &self.substrate.entities,
-            id,
-            allow_retry,
-            rules,
-        )
-        .ok_or("missing Walk corpus receiver")?;
+        let request =
+            WalkAdmissionRequest::for_response_test(&self.substrate.entities, id, allow_retry)
+                .ok_or("missing Walk corpus receiver")?;
         self.finish_walk_admission_response(
             request,
             candidate,
             code,
-            None,
             rules,
             registry,
             crate::sim::world::FrameEffects::default(),
@@ -273,27 +263,26 @@ impl Simulation {
     ///75B6A3 then+548: Infantry521B20 clears Doing3/6/17 only; Unit4DBA30
     ///returns without writes. This is independent of locomotor IsMoving+34.
     fn walk_refused_animation(&mut self, id: u64) -> Result<(), String> {
-        let actor = self
-            .substrate
+        self.substrate
             .entities
             .get_mut(id)
-            .ok_or("retired Walk refusal owner")?;
-        actor
+            .ok_or("retired Walk refusal owner")?
             .locomotor
             .as_mut()
             .ok_or("Walk refusal requires locomotor")?
             .stop_movement_animation();
-        if actor.category == EntityCategory::Infantry
-            && actor
-                .mission_leaf
-                .as_infantry()
-                .is_some_and(|leaf| matches!(leaf.doing(), 3 | 6 | 17))
-        {
-            actor
-                .mission_leaf
-                .set_infantry_doing_verified(-1)
-                .map_err(|error| format!("{error:?}"))?;
-        }
+        self.walk_owner_clear_doing(id)
+    }
+
+    /// The Walk owner's vt+0x548: Infantry 0x521B20 clears Doing 3/6/17
+    /// only; Unit 0x4DBA30 returns without writes.
+    pub(super) fn walk_owner_clear_doing(&mut self, id: u64) -> Result<(), String> {
+        let actor = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .ok_or("retired Walk owner")?;
+        clear_walk_doing(actor);
         Ok(())
     }
 
@@ -344,7 +333,6 @@ impl Simulation {
     fn walk_blocked_delay(
         &mut self,
         request: WalkAdmissionRequest,
-        held: Option<&mut HeldBlockSets>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
@@ -363,13 +351,15 @@ impl Simulation {
         ) else {
             return Ok(());
         };
-        let destination = actor
-            .locomotor
-            .as_ref()
-            .and_then(|loco| loco.walk_destination())
+        let destination = super::path_batch::code2_ladder_destination(actor)
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
+        // A batched re-path waits for the next frame's batch as if the +640
+        // timer still ran (`path_batch`, a proposed deviation).
+        if self.defer_path_search(id, super::path_batch::WaitingRequest::Code2Ladder) {
+            return Ok(());
+        }
         let request = request.into_path_request(destination, urgency);
-        let found = self.foot_find_path(&request, held, rules, registry, frame_effects)?;
+        let found = self.foot_find_path(&request, rules, registry, frame_effects)?;
         self.substrate
             .entities
             .get_mut(id)
@@ -392,13 +382,6 @@ impl Simulation {
                 self.walk_failed_path_receiver(id, rules, frame_effects)?;
             } else {
                 self.assign_null_destination(id, Some(rules), None, frame_effects);
-            }
-            if let Some(actor) = self.substrate.entities.get_mut(id)
-                && actor.locomotor.as_ref().is_some_and(|loco| {
-                    loco.walk_destination().is_none() && loco.step_head().is_none()
-                })
-            {
-                actor.movement_target = None;
             }
         } else {
             self.walk_short_path_receiver(id, rules)?;
@@ -450,9 +433,6 @@ impl Simulation {
                 .set_speed_fraction(SIM_ZERO);
             self.assign_null_destination(id, Some(rules), None, frame_effects);
             self.clear_walk_admission_path(id)?;
-            if let Some(actor) = self.substrate.entities.get_mut(id) {
-                super::retain_committed_movement(actor);
-            }
             return Ok(());
         }
         let terrain = self
@@ -499,9 +479,20 @@ impl Simulation {
                 }
                 Some(TargetKind::Entity(blocker))
             }
-            Some(BlockingObject::Terrain) => {
-                return Err("Walk Override requires a Terrain target owner".into());
-            }
+            // 75BACE..75BAEB asks Is_Ally (0x004F9A90) for the tree too. A
+            // TerrainClass has no house (vt+0x3C is 0x004104A0, which returns
+            // NULL), so native orders Attack on it.
+            // RESIDUAL: VERA targets only objects and cells, so no Override is
+            // issued and the Foot keeps its mission; the stop below still runs.
+            // Trigger: the Cell's raw byte answers for a non-allied
+            // infantryman (one stepping in, or the owner a departed one left
+            // beside a terrain object's own sub-cell bits, which keep 0x1C
+            // set; 0x00521850) while its ground list holds no Techno, so
+            // Find_Blocking_Object falls to the terrain object (0x0047C5A0).
+            // Seen in 20,000-unit battles (#1517). Effect: native's walker
+            // turns on the tree, VERA's keeps its mission. Risk: that
+            // walker's mission for the frames native spends on the tree.
+            Some(BlockingObject::Terrain) => None,
             None => {
                 //75BAF3..75BB49: three lookups of the Cell, for its +0x44,
                 //its OverlayType's +0x2A8 and the Attack target.
@@ -611,18 +602,73 @@ fn walk_code2_gate(
     if !runtime.movement_timer.expired(frame as i32) {
         return None;
     }
-    Some(
-        if runtime.path_blocked && runtime.blocked_timer.expired(frame as i32) {
-            2
-        } else {
-            1
-        },
-    )
+    Some(runtime.code2_urgency(frame))
+}
+
+/// Whether the Walk owner's vt+0x548 changes `actor`; see
+/// [`Simulation::walk_owner_clear_doing`].
+pub(super) fn walk_doing_to_clear(actor: &crate::sim::game_entity::GameEntity) -> bool {
+    actor.category == EntityCategory::Infantry
+        && actor
+            .mission_leaf
+            .as_infantry()
+            .is_some_and(|leaf| matches!(leaf.doing(), 3 | 6 | 17))
+}
+
+/// The Walk owner's vt+0x548 on `actor`; see
+/// [`Simulation::walk_owner_clear_doing`].
+pub(super) fn clear_walk_doing(actor: &mut crate::sim::game_entity::GameEntity) {
+    if walk_doing_to_clear(actor) {
+        actor
+            .mission_leaf
+            .set_infantry_doing_verified(-1)
+            .expect("-1 is in the Doing table");
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::sim::timer::CdTimer;
+
+    /// The code-4/5 response (`0x0075BA46..0x0075BB90`) for a Cell whose only
+    /// object is a tree: `Find_Blocking_Object` returns the tree, which VERA
+    /// cannot target. The response issues no Override and still stops the
+    /// walker, where it used to stop the whole frame (#1517).
+    #[test]
+    fn a_tree_blocker_stops_the_walker_without_an_override() {
+        use crate::sim::terrain_object::{TerrainObjectState, mark_terrain_raw_occupation};
+        let (mut sim, rules, registry) =
+            crate::sim::world::entry_test_fixture::fixture_with_rules("");
+        let id = sim
+            .spawn_object("ENGINEER", "Americans", 10, 10, 0, &rules)
+            .expect("spawns");
+        let tree = (11, 10);
+        let type_ref = sim.interner.intern("TREE01");
+        sim.production.terrain_objects.insert(
+            900,
+            TerrainObjectState::for_test(900, type_ref, tree.0, tree.1),
+        );
+        sim.production.terrain_object_cells.insert(tree, 900);
+        mark_terrain_raw_occupation(&mut sim.substrate.raw_cell_occupation, tree, 5);
+        assert!(matches!(
+            sim.find_blocking_object(tree, crate::sim::movement::locomotor::MovementLayer::Ground,),
+            Some(super::BlockingObject::Terrain)
+        ));
+        let mission = sim.substrate.entities.get(id).unwrap().mission.current();
+        let candidate = crate::sim::movement::foot_path::cell_centre((11, 10));
+
+        let retry = sim
+            .replay_walk_admission_response(id, false, candidate, 5, &rules, Some(&registry))
+            .expect("the response completes");
+
+        assert!(retry.is_none());
+        let walker = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(walker.mission.current(), mission, "no Attack override");
+        assert_eq!(
+            walker.foot_speed.applied_fraction(),
+            crate::util::fixed_math::SIM_ZERO
+        );
+    }
 
     /// Original instructions 0x75B8A0..0x75B979 / 0x75C1F1, recheck with
     /// `python -m tools.infantry_scatter_oracle --check`: the grace latch and

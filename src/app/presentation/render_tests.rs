@@ -569,7 +569,7 @@ fn test_pick_enemy_target_ignores_hidden_entities() {
     let soviet_id = sim.interner.intern("Soviet");
     let e1_id = sim.interner.intern("E1");
 
-    let hidden = GameEntity::new_at_frame_zero_for_test(
+    let mut hidden = GameEntity::new_at_frame_zero_for_test(
         2,
         10,
         10,
@@ -583,6 +583,7 @@ fn test_pick_enemy_target_ignores_hidden_entities() {
         5,
         false,
     );
+    hidden.lifecycle.in_limbo = false;
     sim.entities_mut().insert(hidden);
     let (hx, hy) =
         crate::render::locomotor_visual::screen_position(sim.entities().get(2).expect("hidden"));
@@ -595,7 +596,7 @@ fn test_pick_enemy_target_ignores_hidden_entities() {
         "Hidden enemy must not be targetable"
     );
 
-    let visible = GameEntity::new_at_frame_zero_for_test(
+    let mut visible = GameEntity::new_at_frame_zero_for_test(
         3,
         11,
         10,
@@ -609,6 +610,7 @@ fn test_pick_enemy_target_ignores_hidden_entities() {
         5,
         false,
     );
+    visible.lifecycle.in_limbo = false;
     sim.entities_mut().insert(visible);
     let (vx, vy) =
         crate::render::locomotor_visual::screen_position(sim.entities().get(3).expect("visible"));
@@ -634,7 +636,7 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
 
     // Hover coordinates come from the drawn position, which is the cell
     // centre — the point `screen_to_iso` resolves back to the right cell.
-    let friendly = GameEntity::new_at_frame_zero_for_test(
+    let mut friendly = GameEntity::new_at_frame_zero_for_test(
         10,
         5,
         5,
@@ -648,11 +650,12 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
         5,
         false,
     );
+    friendly.lifecycle.in_limbo = false;
     sim.entities_mut().insert(friendly);
     let (friendly_sx, friendly_sy) =
         crate::render::locomotor_visual::screen_position(sim.entities().get(10).expect("friendly"));
 
-    let enemy = GameEntity::new_at_frame_zero_for_test(
+    let mut enemy = GameEntity::new_at_frame_zero_for_test(
         11,
         20,
         5,
@@ -666,6 +669,7 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
         5,
         false,
     );
+    enemy.lifecycle.in_limbo = false;
     sim.entities_mut().insert(enemy);
     let (enemy_sx, enemy_sy) =
         crate::render::locomotor_visual::screen_position(sim.entities().get(11).expect("enemy"));

@@ -76,8 +76,6 @@ pub(crate) fn issue_order(
     // Queue's same-mission guard keeps the handler and timer on a repeated D.
     sim.assign_null_destination(id, Some(rules), None, effects);
     let _ = sim.assign_target_represented(id, None, Some(rules), None, effects);
-    let entity = sim.substrate.entities.get_mut(id).unwrap();
-    entity.order_intent = None;
     sim.mission_queue_exact(
         id,
         MissionId::from_known(MissionType::Unload),
@@ -242,7 +240,7 @@ impl Simulation {
             //70E1A0. The existing GetWeapon owner resolves the live tier.
             let actor = self.substrate.entities.get(id).expect("same Unload actor");
             let slot = if object.spray_attack { 0 } else { 1 };
-            let area_fire = combat_weapon::weapon_for_index(object, actor.veterancy(), slot)
+            let area_fire = combat_weapon::weapon_for_index(object, actor.veterancy.rank(), slot)
                 .and_then(|(weapon, _)| rules.weapon(weapon))
                 .is_some_and(|weapon| weapon.area_fire);
             if area_fire {

@@ -352,22 +352,22 @@ fn the_warp_drops_attack_locks_on_its_owner() {
 #[test]
 fn a_restored_destination_warps_at_the_teleport_process_entry() {
     use crate::sim::components::NavTargetRef;
-    use crate::sim::mission::concrete_effects::represented_assign_destination_mode_one;
+    use crate::sim::mission::concrete_effects::represented_assign_destination;
     let rules = rules(false);
     let mut sim = relocating_legionnaire((8, 9));
     install_destination_cells(&mut sim, &rules);
     let mover = sim.substrate.entities.get_mut(1).unwrap();
     mover.install_teleport_state_for_test(None);
-    represented_assign_destination_mode_one(mover, Some(NavTargetRef::cell(8, 9)));
-    mover.navigation.pending_arrival_clear = true;
+    represented_assign_destination(mover, Some(NavTargetRef::cell(8, 9)));
+    mover.navigation.pending_destination_setter = true;
 
     sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let mover = sim.substrate.entities.get(1).unwrap();
     assert_eq!((mover.position.rx, mover.position.ry), (8, 9));
-    assert!(!mover.navigation.pending_arrival_clear);
-    assert!(mover.movement_target.is_none());
+    assert!(!mover.navigation.pending_destination_setter);
+    assert!(crate::sim::movement::motion_query::is_moving(&mover) != Some(true));
 }
 
 /// Supplied Clear-overlay inputs exercise the production callback context,
@@ -465,7 +465,6 @@ fn restoration_callbacks_forward_overlay_inputs_before_any_destination_write() {
 /// which arms the warp, not a route no Process follows.
 #[test]
 fn a_ground_order_arms_the_warp() {
-    use crate::sim::world::GroundMove;
     let rules = rules(false);
     let mut sim = relocating_legionnaire((8, 9));
     install_destination_cells(&mut sim, &rules);
@@ -475,24 +474,16 @@ fn a_ground_order_arms_the_warp() {
         .unwrap()
         .install_teleport_state_for_test(None);
 
-    let accepted = sim.issue_ground_move(
-        GroundMove {
-            entity_id: 1,
-            target: (12, 7),
-            speed: crate::util::fixed_math::SimFixed::from_num(4),
-            queue: false,
-            speed_type: None,
-            owner_blocks: true,
-            object_destination: None,
-        },
+    sim.assign_destination_represented(
+        1,
+        Some(crate::sim::components::NavTargetRef::cell(12, 7)),
         Some(&rules),
         None,
         crate::sim::world::FrameEffects::default(),
-    );
+    )
+    .unwrap();
 
-    assert!(accepted);
     let mover = sim.substrate.entities.get(1).unwrap();
-    assert!(mover.movement_target.is_none());
     let warp = mover.teleport_state().expect("armed warp");
     assert_eq!(warp.target_cell().unwrap(), (12, 7));
 }

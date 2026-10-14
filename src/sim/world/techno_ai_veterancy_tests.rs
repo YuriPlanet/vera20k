@@ -3,9 +3,8 @@
 use super::*;
 use crate::map::playfield::PlayfieldBounds;
 use crate::rules::ini_parser::IniFile;
-use crate::sim::combat::veterancy::{self, LEVEL_ELITE, LEVEL_ROOKIE, LEVEL_UNSAMPLED};
+use crate::sim::combat::veterancy::{LEVEL_ELITE, LEVEL_ROOKIE, LEVEL_UNSAMPLED};
 use crate::sim::world::SimSoundEvent;
-use crate::util::fixed_math::SimFixed;
 
 /// `[MTNK]` carries the stock Grizzly's own lines verbatim (`rulesmd.ini`:
 /// `Strength=300`, `Speed=7`, `Cost=700`,
@@ -56,7 +55,12 @@ fn spawned_vehicle(type_id: &str) -> (Simulation, RuleSet, u64) {
 fn gsi_08_12_promotion_step_announces_each_crossing_once() {
     let (mut sim, rules, id) = spawned_grizzly();
     assert_eq!(
-        sim.substrate.entities.get(id).unwrap().veterancy_rank_cache,
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .veterancy
+            .rank_cache(),
         LEVEL_UNSAMPLED
     );
     veterancy_promotion_step(&mut sim, id, &rules);
@@ -65,11 +69,21 @@ fn gsi_08_12_promotion_step_announces_each_crossing_once() {
         "the first sample caches silently"
     );
     assert_eq!(
-        sim.substrate.entities.get(id).unwrap().veterancy_rank_cache,
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .veterancy
+            .rank_cache(),
         LEVEL_ROOKIE
     );
 
-    veterancy::set_veteran(sim.substrate.entities.get_mut(id).unwrap());
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .veterancy
+        .set_veteran();
     veterancy_promotion_step(&mut sim, id, &rules);
     let owner = sim.substrate.entities.get(id).unwrap().owner;
     assert!(matches!(
@@ -81,11 +95,16 @@ fn gsi_08_12_promotion_step_announces_each_crossing_once() {
             ..
         }] if *o == owner && sim.interner.resolve(*sound) == "UpgradeVeteran"
     ));
-    assert_eq!(sim.substrate.entities.get(id).unwrap().flash_countdown(), 0);
+    assert_eq!(sim.substrate.entities.get(id).unwrap().flashing.frames(), 0);
     veterancy_promotion_step(&mut sim, id, &rules);
     assert_eq!(sim.sound_events.len(), 1, "no repeat while the rank holds");
 
-    veterancy::set_elite(sim.substrate.entities.get_mut(id).unwrap());
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .veterancy
+        .set_elite();
     veterancy_promotion_step(&mut sim, id, &rules);
     assert!(matches!(
         sim.sound_events.last(),
@@ -96,24 +115,23 @@ fn gsi_08_12_promotion_step_announces_each_crossing_once() {
         }) if sim.interner.resolve(*sound) == "UpgradeElite"
     ));
     let entity = sim.substrate.entities.get(id).unwrap();
-    assert_eq!(entity.veterancy_rank_cache, LEVEL_ELITE);
-    assert_eq!(entity.flash_countdown(), 150);
+    assert_eq!(entity.veterancy.rank_cache(), LEVEL_ELITE);
+    assert_eq!(entity.flashing.frames(), 150);
     veterancy_promotion_step(&mut sim, id, &rules);
     assert_eq!(
-        sim.substrate.entities.get(id).unwrap().flash_countdown(),
+        sim.substrate.entities.get(id).unwrap().flashing.frames(),
         150
     );
     //Techno6FAC4D runs the countdown in the later shared AI slot.
-    elite_flash_step(&mut sim, id);
+    flash_step(&mut sim, id);
     assert_eq!(
-        sim.substrate.entities.get(id).unwrap().flash_countdown(),
+        sim.substrate.entities.get(id).unwrap().flashing.frames(),
         149
     );
 }
 
-/// Issue the ordinary player `Command::Move` and read its order-speed stamp.
-/// Native keeps no such stamp: Drive queries the live getter each Process.
-fn move_order_speed(sim: &mut Simulation, rules: &RuleSet, id: u64) -> SimFixed {
+/// Issue the ordinary player `Command::Move`.
+fn order_move(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
     sim.install_fixture_path_grid(Some(&grid));
     let (rx, ry) = {
@@ -126,98 +144,104 @@ fn move_order_speed(sim: &mut Simulation, rules: &RuleSet, id: u64) -> SimFixed 
             entity_id: id,
             target_rx: rx + 6,
             target_ry: ry + 6,
-            queue: false,
         },
         Some(rules),
     );
     assert!(issued, "the ordinary move command must issue");
-    sim.substrate
-        .entities
-        .get(id)
-        .and_then(|e| e.movement_target.as_ref())
-        .expect("the move order attached a movement target")
-        .speed
 }
 
-/// Fresh ordinary `Command::Move` orders stamp the adjusted type speed via
-/// `Simulation::resolve_move_info` and the canonical Unit destination setter.
-/// Each rank starts without a NavCom: Unit741970 returns without any write
-/// for a repeated destination unless forced. That separate case is replayed
-/// by `repeated_move_orders_keep_the_stamp_but_sample_live_native_speed`.
-///
-/// gamemd asks the getter for the speed on every frame a ground mover steps
-/// (vtable slot `+0x538` from `DriveLocomotionClass::Process_Drive_Track
-/// @ 0x004B1274`), so an ordered move by a `FASTER` holder is 20% faster at
-/// stock `VeteranSpeed=1.2`. Stock Grizzly `Speed=7` → per-frame 17 →
-/// `ftol(17 * 1.2)` = 20; stock Rhino-shaped control `Speed=6` → 15, unchanged
-/// because its ability list omits `FASTER`.
+/// The mover's live GetCurrentSpeed (`0x004DB1A0`) at full Foot+578. Native
+/// keeps no order speed: Drive queries the getter each Process.
+fn full_speed(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .expect("mover")
+        .foot_speed
+        .set_speed_fraction(crate::util::fixed_math::SIM_ONE);
+    sim.current_speed_for_test(id, rules)
+}
+
+/// A mover's live speed carries `FASTER`. gamemd asks the getter for the
+/// speed on every frame a ground mover steps (vtable slot `+0x538` from
+/// `DriveLocomotionClass::Process_Drive_Track @ 0x004B1274`), so a `FASTER`
+/// holder moves 20% faster at stock `VeteranSpeed=1.2`. Stock Grizzly
+/// `Speed=7` → per-frame 17 → `ftol(17 * 1.2)` = 20; stock Rhino-shaped
+/// control `Speed=6` → 15, unchanged because its ability list omits `FASTER`.
 /// Native getter and retained order/prefix evidence: track_speed_native.json.
 #[test]
-fn gsi_08_12_faster_reaches_the_ordinary_move_order() {
-    const FRAMES_PER_SECOND: i32 = 15;
+fn gsi_08_12_faster_reaches_the_movers_speed() {
     let (mut sim, rules, id) = spawned_grizzly();
-
-    let rookie = move_order_speed(&mut sim, &rules, id);
     assert_eq!(
-        rookie,
-        SimFixed::from_num(17 * FRAMES_PER_SECOND),
+        full_speed(&mut sim, &rules, id),
+        17,
         "a rookie Grizzly moves at its plain Speed=7"
     );
 
     let (mut sim, rules, id) = spawned_grizzly();
-    veterancy::set_veteran(sim.substrate.entities.get_mut(id).unwrap());
-    let veteran = move_order_speed(&mut sim, &rules, id);
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .veterancy
+        .set_veteran();
     assert_eq!(
-        veteran,
-        SimFixed::from_num(20 * FRAMES_PER_SECOND),
-        "the veteran list carries FASTER, so the ordered move takes ftol(17 * 1.2) = 20"
+        full_speed(&mut sim, &rules, id),
+        20,
+        "the veteran list carries FASTER, so the mover takes ftol(17 * 1.2) = 20"
     );
 
     let (mut sim, rules, id) = spawned_grizzly();
-    veterancy::set_elite(sim.substrate.entities.get_mut(id).unwrap());
-    let elite = move_order_speed(&mut sim, &rules, id);
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .veterancy
+        .set_elite();
     assert_eq!(
-        elite,
-        SimFixed::from_num(20 * FRAMES_PER_SECOND),
+        full_speed(&mut sim, &rules, id),
+        20,
         "HasWeaponAbility @ 0x0070D0D0: elite inherits the veteran list"
     );
 
     // Negative control: same rank, no FASTER in either list.
     let (mut sim, rules, control_id) = spawned_vehicle("HTNK");
-    veterancy::set_elite(sim.substrate.entities.get_mut(control_id).unwrap());
+    sim.substrate
+        .entities
+        .get_mut(control_id)
+        .unwrap()
+        .veterancy
+        .set_elite();
     assert_eq!(
-        move_order_speed(&mut sim, &rules, control_id),
-        SimFixed::from_num(15 * FRAMES_PER_SECOND),
+        full_speed(&mut sim, &rules, control_id),
+        15,
         "no FASTER token means no multiply, whatever the rank"
     );
 }
 
-/// The promotion detector also refreshes VERA's scheduling adapter stamp.
-/// Drive and Ship query their speed independently every Process; the native
-/// repeated-order history tests that live getter without this AI refresh.
+/// A promotion mid-move speeds the mover up on its next query, with no new
+/// order: the order caches no speed, and Drive and Ship read the live getter
+/// every Process.
 #[test]
-fn gsi_08_12_promotion_mid_move_refreshes_the_order_speed_stamp() {
-    const FRAMES_PER_SECOND: i32 = 15;
+fn gsi_08_12_promotion_mid_move_reaches_the_live_speed() {
     let (mut sim, rules, id) = spawned_grizzly();
-    assert_eq!(
-        move_order_speed(&mut sim, &rules, id),
-        SimFixed::from_num(17 * FRAMES_PER_SECOND)
-    );
+    order_move(&mut sim, &rules, id);
+    assert_eq!(full_speed(&mut sim, &rules, id), 17);
 
     // Silent first sample, then the veteran crossing while the path is live.
     veterancy_promotion_step(&mut sim, id, &rules);
-    veterancy::set_veteran(sim.substrate.entities.get_mut(id).unwrap());
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .veterancy
+        .set_veteran();
     veterancy_promotion_step(&mut sim, id, &rules);
 
     assert_eq!(
-        sim.substrate
-            .entities
-            .get(id)
-            .and_then(|e| e.movement_target.as_ref())
-            .expect("still moving")
-            .speed,
-        SimFixed::from_num(20 * FRAMES_PER_SECOND),
-        "the promotion detector refreshed the adapter without a new order"
+        full_speed(&mut sim, &rules, id),
+        20,
+        "the promoted mover's getter carries FASTER without a new order"
     );
 }
 
@@ -241,7 +265,12 @@ fn gsi_08_12_self_heal_pulses_one_point_on_the_repair_rate_cadence() {
         "a rookie without SelfHealing= never pulses"
     );
 
-    veterancy::set_elite(sim.substrate.entities.get_mut(id).unwrap());
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .veterancy
+        .set_elite();
     self_heal_step(&mut sim, id, &rules);
     assert_eq!(sim.substrate.entities.get(id).unwrap().health.current, 101);
     sim.session.binary_frame = 15;

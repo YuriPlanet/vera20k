@@ -60,7 +60,7 @@ fn run_cycle(sim: &mut Simulation, rules: &RuleSet, orca: u64, airfield: u64) ->
             && mission(sim, orca) == Some(MissionType::Guard)
             && height == 0
             && linked
-            && !air_movement::fly_moving(entity)
+            && !air_movement::tests::fly_moving(entity)
         {
             seen.guarding_frames += 1;
             if seen.guarding_frames == 300 {
@@ -131,7 +131,7 @@ fn a_guarding_aircraft_with_a_target_leaves_its_pad_to_attack() {
         let _ = sim.advance_tick(&[], Some(&rules), None, None, 33);
         let entity = sim.substrate.entities.get(orca).expect("aircraft survives");
         if entity.mission.current() == MissionId::from_known(MissionType::Attack)
-            && air_movement::fly_moving(entity)
+            && air_movement::tests::fly_moving(entity)
         {
             relaunched = true;
             break;
@@ -305,7 +305,7 @@ fn retail_harriers_strike_return_reload_and_guard_at_their_airfield() {
                 && mission(sim, harrier) == Some(MissionType::Guard)
                 && height == 0
                 && linked
-                && !air_movement::fly_moving(entity)
+                && !air_movement::tests::fly_moving(entity)
             {
                 seen.guarding_frames += 1;
             }

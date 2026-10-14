@@ -2,7 +2,6 @@
 //! null-coordinate arm and the away-from-a-coordinate arm. The walk both arms
 //! end in is the shared Foot one (`scatter_cell`); class entry and navigation
 //! keep their owners.
-use super::bump_crush::scatter_movement_speed;
 use super::infantry_action::DO_UNDEPLOY;
 use super::scatter::{ScatterFlags, mission_permits_scatter};
 use crate::map::resolved_terrain::NativeCellQuery;
@@ -13,7 +12,6 @@ use crate::sim::components::NavTargetRef;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::SimFixed;
 
 /// Whether the Infantry class setter (`0x0051AA40`) is represented for this
 /// infantryman: his active locomotor is Walk, Teleport or Jumpjet, whose
@@ -144,7 +142,7 @@ impl Simulation {
             has_target: infantry.attack_target.is_some(),
             player_scatter: rules.general.player_scatter,
             scatter_ability: crate::sim::combat::veterancy::has_weapon_ability(
-                crate::sim::combat::veterancy::rank_from_u16(infantry.veterancy()),
+                infantry.veterancy.rank_kind(),
                 object,
                 crate::rules::object_type::Ability::Scatter,
             ),
@@ -294,11 +292,9 @@ impl Simulation {
             .get(id)
             .ok_or("Scatter lost its infantryman")?;
         let kind = infantry.locomotor.as_ref().map(|loco| loco.active_kind());
-        let speed = scatter_movement_speed(infantry, Some(rules), &self.interner, &self.houses);
         self.assign_infantry_destination(
             id,
             NavTargetRef::cell(cell.0, cell.1),
-            speed,
             rules,
             registry,
             frame_effects,
@@ -580,7 +576,6 @@ impl Simulation {
         &mut self,
         id: u64,
         requested: NavTargetRef,
-        speed: SimFixed,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
@@ -675,9 +670,7 @@ impl Simulation {
                 super::DestinationTiming::from_rules(frame, Some(rules)).accept(actor);
                 Ok(accepted)
             }
-            LocomotorKind::Jumpjet => {
-                Ok(self.jumpjet_foot_destination(id, requested, speed, rules))
-            }
+            LocomotorKind::Jumpjet => Ok(self.jumpjet_foot_destination(id, requested, rules)),
             _ => {
                 let coord = super::navcom::nav_target_coordinate(
                     requested,
@@ -690,7 +683,6 @@ impl Simulation {
                     &mut self.substrate.entities,
                     id,
                     (requested, coord),
-                    speed,
                     self.resolved_terrain.as_ref(),
                     super::DestinationTiming::from_rules(self.session.binary_frame, Some(rules)),
                 );
@@ -722,27 +714,6 @@ impl Simulation {
         cell(here) == cell(there)
     }
 
-    /// [`Self::assign_infantry_destination`] at the mover's own
-    /// movement speed (`GetCurrentSpeed`, as an ordinary Move order).
-    pub(crate) fn set_infantry_destination(
-        &mut self,
-        id: u64,
-        requested: NavTargetRef,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) -> Result<bool, String> {
-        let speed = {
-            let infantry = self
-                .substrate
-                .entities
-                .get(id)
-                .ok_or("destination lost infantry actor")?;
-            scatter_movement_speed(infantry, Some(rules), &self.interner, &self.houses)
-        };
-        self.assign_infantry_destination(id, requested, speed, rules, registry, frame_effects)
-    }
-
     /// The Infantry class setter `vt+0x480(NULL, 1)` (`0x0051AA40`), every
     /// infantryman's whatever his locomotor:
     /// - a human owner's deploy action (Doing 27..30) refuses before any
@@ -757,10 +728,9 @@ impl Simulation {
     ///   moving Jumpjet's re-targets the cell under him, a Teleport's drops
     ///   an armed warp.
     ///
-    /// NavQueue is not touched. The scheduling adapter is the caller's. The
-    /// Jumpjet Stop's failed search uses the caller's overlay registry for
-    /// synchronous damage. Walk's virtual class callers
-    /// dispatch through [`Self::assign_null_destination`].
+    /// NavQueue is not touched. The Jumpjet Stop's failed search uses the
+    /// caller's overlay registry for synchronous damage. Walk's virtual class
+    /// callers dispatch through [`Self::assign_null_destination`].
     pub(crate) fn set_infantry_null_destination(
         &mut self,
         id: u64,

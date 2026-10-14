@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::rules::ini_parser::IniSection;
 use crate::rules::particle_type::ParticleTypeId;
 use crate::util::fixed_math::{SimFixed, sim_from_f32};
-use crate::util::native_x87::NativeF64Bits;
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
 /// Default `ParticlesPerCoord` from the constructor (Railgun field, parsed
 /// for every system).
@@ -78,17 +78,17 @@ pub struct ParticleSystemType {
     /// Whether this system spawns new particles over time (vs. a one-shot).
     pub spawns: bool,
     /// Frame interval between spawns (default 1).
-    pub spawn_frames: u32,
+    pub spawn_frames: i32,
     /// Rate at which smoke particles decelerate (default 0.0).
-    pub slowdown: SimFixed,
+    pub slowdown: NativeF32Bits,
     /// Maximum particles this system can hold simultaneously (default 50).
     pub particle_cap: u32,
     /// Random radius for spawn position offset.
     pub spawn_radius: i32,
     /// Distance threshold to stop spawning new particles.
-    pub spawn_cutoff: SimFixed,
+    pub spawn_cutoff: NativeF32Bits,
     /// Distance threshold to start fading new particles.
-    pub spawn_translucency_cutoff: SimFixed,
+    pub spawn_translucency_cutoff: NativeF32Bits,
     /// System lifetime in frames. -1 = infinite (system stays alive until all
     /// particles die). Default -1 per constructor.
     pub lifetime: i32,
@@ -172,15 +172,14 @@ impl ParticleSystemType {
             behaves_like,
             holds_what: None,
             spawns: section.read_bool("Spawns", false),
-            spawn_frames: section.read_int("SpawnFrames", 1).max(0) as u32,
+            spawn_frames: section.read_int("SpawnFrames", 1),
             // Float fields (`FSTP dword` at `0x0064439F..0x006443DD`).
-            slowdown: sim_from_f32(section.read_float("Slowdown", 0.0)),
+            slowdown: section.read_double_to_float("Slowdown", NativeF32Bits::POSITIVE_ZERO),
             particle_cap: section.read_int("ParticleCap", 50).max(0) as u32,
             spawn_radius: section.read_int("SpawnRadius", 0),
-            spawn_cutoff: sim_from_f32(section.read_float("SpawnCutoff", 0.0)),
-            spawn_translucency_cutoff: sim_from_f32(
-                section.read_float("SpawnTranslucencyCutoff", 0.0),
-            ),
+            spawn_cutoff: section.read_double_to_float("SpawnCutoff", NativeF32Bits::POSITIVE_ZERO),
+            spawn_translucency_cutoff: section
+                .read_double_to_float("SpawnTranslucencyCutoff", NativeF32Bits::POSITIVE_ZERO),
             lifetime: section.read_int("Lifetime", -1),
             // A float vector natively; VERA keeps whole components for its
             // integer velocity math. Retail sets no `SpawnDirection=`.
@@ -233,7 +232,6 @@ impl ParticleSystemType {
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
-    use crate::util::fixed_math::SIM_ZERO;
 
     #[test]
     fn behaves_like_string_to_enum() {
@@ -316,7 +314,7 @@ mod tests {
         assert_eq!(pst.particles_per_coord, SimFixed::lit("0.1"));
         assert_eq!(pst.spiral_delta_per_coord, SimFixed::lit("0.025"));
         assert_eq!(pst.spiral_radius, SimFixed::lit("25"));
-        assert_eq!(pst.slowdown, SIM_ZERO);
+        assert_eq!(pst.slowdown, NativeF32Bits::POSITIVE_ZERO);
         assert_eq!(pst.spawn_radius, 0);
         assert_eq!(pst.spawn_direction, IVec3::ZERO);
         assert!(!pst.spawns);
@@ -349,7 +347,9 @@ mod tests {
         assert!(pst.spawns);
         assert_eq!(pst.spawn_frames, 18);
         assert_eq!(pst.particle_cap, 15);
-        assert_eq!(pst.slowdown, sim_from_f32(0.4));
+        // ReadDouble5283D0 scans %f before widening. The subsequent chop
+        // store preserves that already-rounded binary32 value.
+        assert_eq!(pst.slowdown.bits(), 0x3ecc_cccd);
         assert_eq!(pst.lifetime, 200);
     }
 

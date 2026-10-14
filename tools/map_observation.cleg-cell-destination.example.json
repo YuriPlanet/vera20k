@@ -269,8 +269,7 @@
         "Move": {
           "entity_id": 1635,
           "target_rx": 34,
-          "target_ry": 94,
-          "queue": false
+          "target_ry": 94
         }
       }
     },
@@ -281,8 +280,7 @@
         "Move": {
           "entity_id": 1635,
           "target_rx": 35,
-          "target_ry": 94,
-          "queue": false
+          "target_ry": 94
         }
       }
     }

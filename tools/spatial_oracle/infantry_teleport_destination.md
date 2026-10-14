@@ -168,8 +168,9 @@ production integration, separate from the original pre-Process comparison above.
 
 Release executable SHA256 is
 `d786d6a2ee35cef18cbd7ac2ca50108e27bbfa63094af034252710016e1d2ff7`.
-The profile SHA256 is
-`b2add10d8c9145038873dadb5c5fc948f35892f873e36d169927d6e6e13c3486`;
+The profile SHA256 was
+`b2add10d8c9145038873dadb5c5fc948f35892f873e36d169927d6e6e13c3486`
+(before its Move payloads lost the never-read `queue` field);
 capture/run SHA256 values are
 `9c24377620ff5d9d9eb251cb0a2e9d0535ccd31d68ecfbfa6c6eb09fa77c89a3` and
 `ec10f21b9f1799d9cd2c22b10a77956a9fb966720ecd9e53da1c7b50668e97b5`.

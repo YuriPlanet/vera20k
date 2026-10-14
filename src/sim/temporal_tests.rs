@@ -270,11 +270,15 @@ fn place(sim: &mut Simulation, id: u64, coord: [i32; 3]) {
 
 fn set_elite(sim: &mut Simulation, id: u64) {
     let entity = sim.substrate.entities.get_mut(id).unwrap();
-    entity.veterancy_raw = crate::util::native_x87::NativeF32Bits::from_bits(2.0f32.to_bits());
+    entity
+        .veterancy
+        .set_raw_for_test(crate::util::native_x87::NativeF32Bits::from_bits(
+            2.0f32.to_bits(),
+        ));
 }
 
 fn veterancy(sim: &Simulation, id: u64) -> f32 {
-    f32::from_bits(entity(sim, id).veterancy_raw.bits())
+    f32::from_bits(entity(sim, id).veterancy.raw().bits())
 }
 
 fn put_on_attack(sim: &mut Simulation, id: u64) {
@@ -596,8 +600,7 @@ fn native_update_corpus() {
                     add[3].as_i64().unwrap() as i32,
                 );
                 for _ in 0..2 {
-                    crate::sim::combat::veterancy::award_kill(
-                        &mut expected,
+                    expected.veterancy.award_kill(
                         owner_cost,
                         target_cost,
                         true,
@@ -608,7 +611,7 @@ fn native_update_corpus() {
             }
             assert_eq!(
                 veterancy(&sim, attackers[0]),
-                f32::from_bits(expected.veterancy_raw.bits()),
+                f32::from_bits(expected.veterancy.raw().bits()),
                 "{name}: VeterancyStruct::Add"
             );
             let kills = house_stats(&sim, "Russians");
@@ -693,8 +696,7 @@ fn erase_awards_price_each_cost_by_its_house() {
     // (legionnaire cost, tank cost): Russian and American Houses, then both
     // American.
     for (owner_cost, target_cost) in [(750, 450), (1500, 450)] {
-        crate::sim::combat::veterancy::award_kill(
-            &mut expected,
+        expected.veterancy.award_kill(
             owner_cost,
             target_cost,
             true,
@@ -711,7 +713,7 @@ fn erase_awards_price_each_cost_by_its_house() {
     assert!(erased(&sim, tank));
     assert_eq!(
         veterancy(&sim, cleg),
-        f32::from_bits(expected.veterancy_raw.bits())
+        f32::from_bits(expected.veterancy.raw().bits())
     );
     let russians = sim.interner.get("Russians").unwrap();
     assert_eq!(sim.houses[&russians].economy.score(), 450);
@@ -1195,8 +1197,7 @@ fn a_chrono_legionnaire_erases_a_tank() {
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
     let mut experienced = entity(&sim, cleg).clone();
     for _ in 0..2 {
-        crate::sim::combat::veterancy::award_kill(
-            &mut experienced,
+        experienced.veterancy.award_kill(
             1500,
             900,
             true,
@@ -1240,7 +1241,7 @@ fn a_chrono_legionnaire_erases_a_tank() {
     assert_eq!(house_stats(&sim, "Americans").units_lost(), 1);
     assert_eq!(
         veterancy(&sim, cleg),
-        f32::from_bits(experienced.veterancy_raw.bits()),
+        f32::from_bits(experienced.veterancy.raw().bits()),
         "experience twice"
     );
     assert!(!entity(&sim, cleg).temporal.is_warping_someone());
@@ -1386,7 +1387,6 @@ fn moving_releases_the_target() {
             entity_id: cleg,
             target_rx: 4,
             target_ry: 10,
-            queue: false,
         },
     ));
     for _ in 0..120 {
@@ -1729,13 +1729,16 @@ fn a_released_mover_does_not_resume_its_order() {
             entity_id: tank,
             target_rx: 28,
             target_ry: 16,
-            queue: false,
         },
     ));
     for _ in 0..40 {
         step(&mut sim);
     }
-    assert!(entity(&sim, tank).movement_target.is_some(), "under way");
+    assert_eq!(
+        crate::sim::movement::motion_query::is_moving(entity(&sim, tank)),
+        Some(true),
+        "under way"
+    );
     sim.temporal_initiate_warp(
         cleg,
         Some(tank),
@@ -1746,9 +1749,10 @@ fn a_released_mover_does_not_resume_its_order() {
     for _ in 0..10 {
         step(&mut sim);
     }
-    assert!(
-        entity(&sim, tank).movement_target.is_none(),
-        "the path ends"
+    assert_eq!(
+        entity(&sim, tank).navigation.nav_com,
+        None,
+        "the order ends"
     );
     let frozen_at = entity(&sim, tank).position.rx;
     sim.temporal_let_go(cleg);
@@ -1756,11 +1760,95 @@ fn a_released_mover_does_not_resume_its_order() {
         step(&mut sim);
     }
     let tank_entity = entity(&sim, tank);
-    assert!(tank_entity.movement_target.is_none(), "no order resumed");
+    assert!(
+        crate::sim::movement::motion_query::is_moving(&tank_entity) != Some(true),
+        "no order resumed"
+    );
     assert!(
         tank_entity.position.rx <= frozen_at + 1,
         "it finishes at most its current track: {} from {frozen_at}",
         tank_entity.position.rx
+    );
+}
+
+/// The freeze calls `Set_Destination(0, 1)` only for a non-NULL NavCom
+/// (Unit `0x00736337..0x0073634D`). Without one, a warped tank whose
+/// Techno+0x1F8 override would make the Unit setter run anyway (`0x00741A88`)
+/// keeps that override and the NavQueue the setter would clear.
+#[test]
+fn a_warped_foot_without_a_navcom_skips_the_null_setter() {
+    use crate::sim::components::NavTargetRef;
+    let rules = rules();
+    let (mut sim, _grid) = arena(10, &rules);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    sim.temporal_initiate_warp(
+        cleg,
+        Some(tank),
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    {
+        let tank = sim.substrate.entities.get_mut(tank).unwrap();
+        assert!(tank.navigation.nav_com.is_none());
+        tank.navigation.nav_queue.push(NavTargetRef::cell(9, 16));
+        tank.setter_force_reassign = true;
+    }
+    assert!(
+        sim.temporal_ai_prologue(
+            tank,
+            &rules,
+            crate::sim::world::ObjectAiCtx::default(),
+            &mut false,
+        ),
+        "frozen"
+    );
+    let tank = entity(&sim, tank);
+    assert!(tank.setter_force_reassign, "no setter call");
+    assert_eq!(tank.navigation.nav_queue, vec![NavTargetRef::cell(9, 16)]);
+}
+
+/// The Infantry setter's null arm has no NavCom early return, so only the
+/// freeze's gate (Infantry `0x0051BBF5`) keeps a warped infantryman's Walk
+/// destination from the locomotor Stop: without a NavCom the freeze makes no
+/// setter call and the destination stays.
+#[test]
+fn a_warped_infantryman_without_a_navcom_keeps_his_walk_destination() {
+    use crate::sim::components::DriveCoord;
+    let rules = rules();
+    let (mut sim, _grid) = arena(10, &rules);
+    let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    sim.temporal_initiate_warp(
+        cleg,
+        Some(gi),
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    let destination = DriveCoord::cell(14, 10, 0);
+    {
+        let gi = sim.substrate.entities.get_mut(gi).unwrap();
+        assert!(gi.navigation.nav_com.is_none());
+        gi.locomotor
+            .as_mut()
+            .unwrap()
+            .set_walk_destination(Some(destination));
+    }
+    assert!(
+        sim.temporal_ai_prologue(
+            gi,
+            &rules,
+            crate::sim::world::ObjectAiCtx::default(),
+            &mut false,
+        ),
+        "frozen"
+    );
+    let gi = entity(&sim, gi);
+    assert_eq!(
+        gi.locomotor.as_ref().unwrap().walk_destination(),
+        Some(destination)
     );
 }
 

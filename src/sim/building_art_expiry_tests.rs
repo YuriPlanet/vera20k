@@ -234,7 +234,7 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
         entity.health.current = health as i32;
     }
     if case["unmatched"] == true {
-        entity.building_anim_slots[usize::from(slot)] = None;
+        entity.building_art.anim_slots[usize::from(slot)] = None;
         sim.rebuild_building_anim_slot_indices();
     }
     (sim, rules, id, expired)
@@ -302,7 +302,8 @@ fn assert_boundary(sim: &Simulation, id: u64, native: &Value, name: &str) {
         .entities()
         .get(id)
         .unwrap()
-        .building_anim_slots
+        .building_art
+        .anim_slots
         .iter()
         .map(|id| id.map(|id| sim.anim(id).unwrap().native_unique_id))
         .collect();

@@ -1799,7 +1799,7 @@ fn harvester_caps_extraction_at_remaining_capacity() {
     );
 
     let entity = sim.substrate.entities.get(miner_id).expect("miner entity");
-    assert!(entity.movement_target.is_none());
+    assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
     assert!(entity.teleport_state().is_none());
 
     let after_remaining = crate::sim::tiberium::test_support::stock_amount_at(&sim, (20, 20));
@@ -1857,7 +1857,7 @@ fn filling_extraction_waits_for_full_gate_before_war_return() {
         );
         assert_eq!(entity.archive_target(), None);
         assert_eq!(miner.reserved_refinery, None);
-        assert!(entity.movement_target.is_none());
+        assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
         assert!(entity.teleport_state().is_none());
         let overlay = entity.harvest_overlay.expect("harvest overlay");
         assert!(overlay.visible);
@@ -1884,7 +1884,7 @@ fn filling_extraction_waits_for_full_gate_before_war_return() {
         );
         assert_eq!(entity.archive_target(), None);
         assert_eq!(miner.reserved_refinery, None);
-        assert!(entity.movement_target.is_none());
+        assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
         let overlay = entity.harvest_overlay.expect("harvest overlay");
         assert!(overlay.visible);
         assert_eq!(
@@ -1916,7 +1916,7 @@ fn filling_extraction_waits_for_full_gate_before_war_return() {
             Some(crate::sim::combat::TargetKind::Cell(31, 30))
         );
         assert_eq!(miner.reserved_refinery, None);
-        assert!(entity.movement_target.is_none());
+        assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
         assert!(entity.teleport_state().is_none());
         let overlay = entity.harvest_overlay.expect("harvest overlay");
         assert!(!overlay.visible);
@@ -2189,6 +2189,8 @@ fn megamission_before_the_unload_breaks_the_refinery_contact() {
         sim.queue_megamission(
             miner_id,
             crate::sim::mission::MissionType::Move,
+            None,
+            None,
             Some(&rules),
             crate::sim::world::FrameEffects::default(),
         );
@@ -2230,6 +2232,8 @@ fn megamission_mid_unload_abandons_the_unload_and_commences_the_order() {
     sim.queue_megamission(
         miner_id,
         crate::sim::mission::MissionType::Move,
+        None,
+        None,
         Some(&rules),
         crate::sim::world::FrameEffects::default(),
     );
@@ -2580,7 +2584,7 @@ fn stop_commits_guard_and_takes_a_harvesting_miner_off_the_loop() {
         "Stop force-assigns Guard to a miner that was on Harvest"
     );
     assert_eq!(miner.mission.queued(), MissionId::NONE);
-    assert!(miner.movement_target.is_none());
+    assert!(crate::sim::movement::motion_query::is_moving(&miner) != Some(true));
 
     // And the harvest handler must decline it from here on, so the FSM cursor
     // stops advancing.
@@ -3186,7 +3190,8 @@ fn trace_unload_presentation(
                 .entities
                 .get(2)
                 .expect("refinery")
-                .building_anim_slots[10]
+                .building_art
+                .anim_slots()[10]
                 .and_then(|id| sim.anim(id))
                 .is_some_and(|anim| anim.type_id == special),
         );
@@ -3901,7 +3906,7 @@ fn captured_harvesting_miner_requeues_harvest_for_the_new_owner() {
     );
     assert!(miner.attack_target.is_none());
     assert!(miner.navigation.nav_com.is_none());
-    assert!(miner.movement_target.is_none());
+    assert!(crate::sim::movement::motion_query::is_moving(&miner) != Some(true));
 }
 
 /// Same owner change, miner standing off ore, captured by a HUMAN house

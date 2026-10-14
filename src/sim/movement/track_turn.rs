@@ -170,16 +170,9 @@ impl Simulation {
                     rules.map(|rules| (rules, &self.interner)),
                 )
             {
-                let speed = self.resolve_move_info(id, rules).map(|info| info.speed);
                 let terrain = self.resolved_terrain.as_ref();
-                if let Some(entity) = self.substrate.entities.get_mut(id)
-                    && super::navcom::track_move_to(entity, coord, terrain)
-                    && entity.movement_target.is_none()
-                    && let Some(speed) = speed
-                {
-                    // The empty-route adapter for its readers; the next
-                    // visit's Process_Movement follows +34 without it.
-                    super::movement_commands::schedule_track_process(entity, speed);
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    super::navcom::track_move_to(entity, coord, terrain);
                 }
             }
             return false;

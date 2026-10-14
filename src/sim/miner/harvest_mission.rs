@@ -53,7 +53,7 @@ pub(crate) fn mission_harvest(
         return Some(450);
     }
     let config = config?;
-    let mut snap = build_miner_snapshot(sim, rules, id)?;
+    let mut snap = build_miner_snapshot(sim, id)?;
     harvest_mission_step(
         sim,
         rules,

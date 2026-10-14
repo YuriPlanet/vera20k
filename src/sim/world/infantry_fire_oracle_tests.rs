@@ -830,7 +830,7 @@ fn original_ground_and_supplied_layer_fire_error_uses_the_live_class_owner() {
         assert_rng(&fixture.sim, &case["rng_initial"], name);
         compared += 1;
     }
-    // Two opposite-layer controls execute only GetFireError. No pursuit,
+    // Two opposite-layer controls execute only GetFireError. No approach,
     // pathfinding or whole-AI refusal result is supplied by the native corpus.
     assert_eq!(compared, 8);
 }

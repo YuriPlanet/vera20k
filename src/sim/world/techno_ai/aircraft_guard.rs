@@ -73,7 +73,7 @@ impl Simulation {
             team: self.team_script_vm.team_for_member(id).is_some(),
             nav_com: entity.navigation.nav_com.is_some(),
             weapon: object.is_some_and(|object| {
-                crate::sim::combat::combat_weapon::primary_for_tier(object, entity.veterancy())
+                crate::sim::combat::combat_weapon::primary_for_tier(object, entity.veterancy.rank())
                     .is_some()
             }),
             armed: object

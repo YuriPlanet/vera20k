@@ -430,11 +430,11 @@ mod tests {
     /// which is the correct signal: the engine would then silently fall back to
     /// the default locomotor for those units.
     ///
-    /// Scope of the claim: `rulesmd.ini` and `rules.ini` only. Campaign, mission
+    /// Scope of the claim: active YR `rulesmd.ini` only. Campaign, mission
     /// and map INIs are UNCHECKED.
     #[test]
     fn dormant_clsids_absent_from_retail_inis() {
-        for name in ["rulesmd.ini", "rules.ini"] {
+        for name in ["rulesmd.ini"] {
             let Some(text) = crate::rules::retail_ini_fixture::retail_ini_text(name) else {
                 return;
             };

@@ -58,7 +58,9 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         });
     entity.aircraft_ammo = Some(AircraftAmmo::new(2));
     entity.aircraft_ammo.as_mut().unwrap().current = input["ammo"].as_i64().unwrap_or(2) as i32;
-    entity.set_veterancy_rank((input["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
+    entity
+        .veterancy
+        .set_rank_for_test((input["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
     entity.body_facing = FacingClass::new(0, 5);
     entity.barrel_facing = Some(FacingClass::new(0, 5));
     entity.attack_target = Some(AttackTarget::for_cell(10, 9));

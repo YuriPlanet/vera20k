@@ -1,8 +1,7 @@
 //! Entity spawning for the Simulation.
 //!
 //! Handles spawning entities from map data (`spawn_from_map`) and from
-//! production (`spawn_object`). All entities are stored in EntityStore only
-//! (BTreeMap<u64, GameEntity>).
+//! production (`spawn_object`). All entities are stored in EntityStore only.
 //!
 //! Dependency rules: same as sim/ (depends on rules/, map/; never render/ui/audio/net).
 
@@ -535,7 +534,7 @@ impl Simulation {
                 // the shared constructor installed; explicit zero resets it.
                 // Executed setter controls: input_oracle/selection_navigation.
                 if let Some(percent) = map_ent.veterancy {
-                    ge.set_veterancy_from_percent(percent);
+                    ge.veterancy.set_from_percent(percent);
                 }
                 // Authored ReadFromINI resolves/births the Tag after the
                 // concrete constructor and before class Unlimbo. Shared
@@ -1871,7 +1870,7 @@ impl Simulation {
             self.substrate.entities.get(stable_id).map(|entity| {
                 (
                     entity.category,
-                    entity.veterancy(),
+                    entity.veterancy.rank(),
                     entity.in_playfield,
                     entity.type_ref(),
                 )
@@ -2013,7 +2012,7 @@ impl Simulation {
                 yard_obj.deploy_facing,
                 (
                     entity.selected,
-                    entity.veterancy_raw,
+                    entity.veterancy.clone(),
                     entity.attack_target.as_ref().map(|t| t.target),
                 ),
                 // Native rounds FacingClass::Current, including wrap at 0xff80.
@@ -2296,7 +2295,7 @@ impl Simulation {
         // 0x007397D2..0x007397DE: the unit's veterancy (`+0x150`); the rank
         // cache (`+0x13C`) stays the building's own.
         if let Some(building) = self.substrate.entities.get_mut(new_sid) {
-            building.veterancy_raw = veterancy;
+            building.veterancy.inherit(&veterancy);
         }
         // 0x007397E4..0x007397F4: a building deployed for a house other than
         // the local player's (`IsHumanPlayer`, here whether a human controls
@@ -2477,7 +2476,11 @@ impl Simulation {
                     rules.object(self.interner.resolve(unit_type_id))?,
                     crate::sim::conversion_health::ConversionKind::Building,
                 );
-                Some((health, building.archive_target(), building.veterancy_raw))
+                Some((
+                    health,
+                    building.archive_target(),
+                    building.veterancy.clone(),
+                ))
             })
         else {
             return;
@@ -2549,7 +2552,7 @@ impl Simulation {
             unit.selected = was_selected;
             // The VeterancyClass (`+0x150`); the rank cache (`+0x13C`) stays
             // the unit's own.
-            unit.veterancy_raw = veterancy;
+            unit.veterancy.inherit(&veterancy);
         }
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
         // A building's archive is a cell. Of its VERA writers (the Slave

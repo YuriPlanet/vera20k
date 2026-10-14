@@ -209,7 +209,7 @@ impl Fixture {
         for &id in &spawned {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             assert!(
-                entity.building_anim_slots.iter().all(Option::is_none),
+                entity.building_art.anim_slots().iter().all(Option::is_none),
                 "the oracle's anim slots start empty"
             );
             entity.mission.apply_test_fixture(MissionTestFixture {
@@ -302,7 +302,9 @@ impl Fixture {
             entity.prism_support_count = count as i32;
         }
         if let Some(veterancy) = state["veterancy"].as_f64() {
-            entity.set_veterancy_rank((veterancy * 100.0) as u16);
+            entity
+                .veterancy
+                .set_rank_for_test((veterancy * 100.0) as u16);
         }
         let countdown = state["countdown"].as_i64().unwrap_or(0) as i32;
         let payload = |axis: usize| state["payload"][axis].as_i64().unwrap_or(0) as i32;
@@ -427,7 +429,13 @@ fn location(sim: &Simulation, id: u64) -> [i32; 3] {
 }
 
 fn slot_anim(sim: &Simulation, id: u64, slot: usize) -> Option<String> {
-    sim.substrate.entities.get(id).unwrap().building_anim_slots[slot].map(|anim| {
+    sim.substrate
+        .entities
+        .get(id)
+        .unwrap()
+        .building_art
+        .anim_slots()[slot]
+        .map(|anim| {
         sim.interner
             .resolve(sim.anim(anim).unwrap().type_id)
             .to_string()

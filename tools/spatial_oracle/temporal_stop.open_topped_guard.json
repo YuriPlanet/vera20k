@@ -1,0 +1,1027 @@
+{
+  "inputs": {
+    "art_sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31",
+    "layers": [
+      {
+        "attack_lexical": {
+          "AARate": ".016",
+          "Rate": ".016",
+          "Scatter": "no"
+        },
+        "attack_record": "01000000000001000100000000000000000000e04d62903f000000e04d62903f",
+        "file": "RULESMD.INI",
+        "selected_input_sha256": "23146bcf5590b73a3766ff5bc93c92d66b94b53f9542bc4aa827d5d831118936",
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      {
+        "absent": true,
+        "file": "LANGRULE.INI"
+      },
+      {
+        "attack_lexical": null,
+        "attack_record": "01000000000001000100000000000000000000e04d62903f000000e04d62903f",
+        "file": "MPBattleMD.ini",
+        "selected_input_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+      },
+      {
+        "attack_lexical": null,
+        "attack_record": "01000000000001000100000000000000000000e04d62903f000000e04d62903f",
+        "file": "XMP03T4.MAP",
+        "selected_input_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+      }
+    ],
+    "sequence": "ClegSequence",
+    "sequence_bytes": "000000000100000001000000ffffffff0000000000000000000000000000000000000000000000000100000001000000ffffffff0000000000000000000000000000000000000000000000000100000001000000ffffffff0000000000000000000000000000000000000000750000000600000006000000ffffffff0000000000000000000000000000000000000000440000000600000006000000ffffffff0000000000000000000000000000000000000000000000000100000001000000ffffffff0000000000000000000000000000000000000000000000000100000001000000ffffffff0000000000000000000000000000000000000000000000000100000001000000ffffffff0000000000000000000000000000000000000000440000000600000006000000ffffffff0000000000000000000000000000000000000000080000000f00000000000000040000000000000000000000000000000000000000000000170000000f00000000000000020000000000000000000000000000000000000000000000260000000f00000000000000ffffffff0000000000000000000000000000000000000000350000000f00000000000000ffffffff0000000000000000000000000000000000000000000000000100000001000000ffffffff0000000000000000000000000000000000000000000000000100000001000000ffffffff0000000000000000000000000000000000000000000000000100000001000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000a60000000800000000000000020000000000000000000000000000000000000000000000740000000100000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000080000000600000006000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000"
+  },
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "rows": [
+    {
+      "calls": [
+        {
+          "arg0": 0,
+          "frame": 103,
+          "kind": "infantry_target",
+          "pc": "0x51b1f0",
+          "phase": "carrier_stop_open_topped_suffix",
+          "return_pc": "0x710572",
+          "this": "0x2401d8d0"
+        },
+        {
+          "arg0": 0,
+          "frame": 103,
+          "kind": "infantry_action",
+          "pc": "0x51d6f0",
+          "phase": "carrier_stop_open_topped_suffix",
+          "return_pc": "0x51b255",
+          "this": "0x2401d8d0"
+        },
+        {
+          "frame": 103,
+          "kind": "techno_target",
+          "pc": "0x6fcdb0",
+          "phase": "carrier_stop_open_topped_suffix",
+          "return_pc": "0x51b2b1",
+          "this": "0x2401d8d0"
+        },
+        {
+          "frame": 103,
+          "kind": "mission_dispatch",
+          "pc": "0x5b3060",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x30000000",
+          "this": "0x2401d8d0"
+        },
+        {
+          "frame": 116,
+          "kind": "mission_dispatch",
+          "pc": "0x5b3060",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x30000000",
+          "this": "0x2401d8d0"
+        },
+        {
+          "args": [
+            0,
+            2147483646
+          ],
+          "frame": 116,
+          "kind": "range",
+          "pc": "0x65c7e0",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x51ce04",
+          "this": "0x24011be8"
+        },
+        {
+          "frame": 116,
+          "kind": "raw_range",
+          "pc": "0x65c84b",
+          "phase": "hidden_guard_dispatch",
+          "raw_u32": 3440660545,
+          "return_pc": "0x2401d8d0",
+          "this": "0xfa2be109"
+        },
+        {
+          "args": [
+            0,
+            10
+          ],
+          "frame": 116,
+          "kind": "range",
+          "pc": "0x65c7e0",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x51ce9a",
+          "this": "0x24011be8"
+        },
+        {
+          "frame": 116,
+          "kind": "raw_range",
+          "pc": "0x65c84b",
+          "phase": "hidden_guard_dispatch",
+          "raw_u32": 3176385826,
+          "return_pc": "0x2401d8d0",
+          "this": "0xe3210a37"
+        },
+        {
+          "arg0": 10,
+          "frame": 116,
+          "kind": "infantry_action",
+          "pc": "0x51d6f0",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x51cf52",
+          "this": "0x2401d8d0"
+        },
+        {
+          "args": [
+            0,
+            2
+          ],
+          "frame": 116,
+          "kind": "range",
+          "pc": "0x65c7e0",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x4d5334",
+          "this": "0x24011be8"
+        },
+        {
+          "frame": 116,
+          "kind": "raw_range",
+          "pc": "0x65c84b",
+          "phase": "hidden_guard_dispatch",
+          "raw_u32": 2593740275,
+          "return_pc": "0x2401d8d0",
+          "this": "0x5b1956ca"
+        },
+        {
+          "frame": 116,
+          "kind": "raw_range",
+          "pc": "0x65c84b",
+          "phase": "hidden_guard_dispatch",
+          "raw_u32": 2728140612,
+          "return_pc": "0x2401d8d0",
+          "this": "0x330055b9"
+        },
+        {
+          "frame": 150,
+          "kind": "mission_dispatch",
+          "pc": "0x5b3060",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x30000000",
+          "this": "0x2401d8d0"
+        },
+        {
+          "args": [
+            0,
+            2
+          ],
+          "frame": 150,
+          "kind": "range",
+          "pc": "0x65c7e0",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x4d5334",
+          "this": "0x24011be8"
+        },
+        {
+          "frame": 150,
+          "kind": "raw_range",
+          "pc": "0x65c84b",
+          "phase": "hidden_guard_dispatch",
+          "raw_u32": 2838140518,
+          "return_pc": "0x2401d8d0",
+          "this": "0xbcca57b5"
+        },
+        {
+          "frame": 300,
+          "kind": "mission_dispatch",
+          "pc": "0x5b3060",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x30000000",
+          "this": "0x2401d8d0"
+        },
+        {
+          "args": [
+            0,
+            2
+          ],
+          "frame": 300,
+          "kind": "range",
+          "pc": "0x65c7e0",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x4d5334",
+          "this": "0x24011be8"
+        },
+        {
+          "frame": 300,
+          "kind": "raw_range",
+          "pc": "0x65c84b",
+          "phase": "hidden_guard_dispatch",
+          "raw_u32": 1608506294,
+          "return_pc": "0x2401d8d0",
+          "this": "0xfafab416"
+        },
+        {
+          "frame": 1000,
+          "kind": "mission_dispatch",
+          "pc": "0x5b3060",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x30000000",
+          "this": "0x2401d8d0"
+        },
+        {
+          "args": [
+            0,
+            2
+          ],
+          "frame": 1000,
+          "kind": "range",
+          "pc": "0x65c7e0",
+          "phase": "hidden_guard_dispatch",
+          "return_pc": "0x4d5334",
+          "this": "0x24011be8"
+        },
+        {
+          "frame": 1000,
+          "kind": "raw_range",
+          "pc": "0x65c84b",
+          "phase": "hidden_guard_dispatch",
+          "raw_u32": 889517989,
+          "return_pc": "0x2401d8d0",
+          "this": "0x9d61bdcd"
+        }
+      ],
+      "code_unchanged": true,
+      "input": {
+        "carrier_open_topped": true,
+        "guard_visit_frames": [
+          103,
+          116,
+          150,
+          300,
+          1000
+        ],
+        "in_limbo": true,
+        "mission": 5,
+        "name": "carrier_stop_retained_hidden_guard",
+        "raw_open_top": true,
+        "source_coords": [
+          2688,
+          2688,
+          0
+        ],
+        "source_raw_damage": 8,
+        "stop_frame": 103,
+        "target_coords": [
+          2944,
+          2688,
+          0
+        ],
+        "timer_duration": 16,
+        "timer_start": 100,
+        "warp_remaining": 3500
+      },
+      "native_entries": [
+        {
+          "kind": "passenger_target_broadcast",
+          "pc": "0x710550",
+          "phase": "carrier_stop_open_topped_suffix",
+          "this": "0x240259a0"
+        },
+        {
+          "kind": "infantry_fire_at_target",
+          "pc": "0x5206b0",
+          "phase": "hidden_fire_at_target_null",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "infantry_guard",
+          "pc": "0x51f620",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "deployed_guard_shim",
+          "pc": "0x521320",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "foot_guard",
+          "pc": "0x4d5070",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "get_weapon",
+          "pc": "0x70e140",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "idle_action",
+          "pc": "0x51cdb0",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "infantry_fire_at_target",
+          "pc": "0x5206b0",
+          "phase": "hidden_fire_at_target_null",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "infantry_guard",
+          "pc": "0x51f620",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "deployed_guard_shim",
+          "pc": "0x521320",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "foot_guard",
+          "pc": "0x4d5070",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "get_weapon",
+          "pc": "0x70e140",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "idle_action",
+          "pc": "0x51cdb0",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "infantry_fire_at_target",
+          "pc": "0x5206b0",
+          "phase": "hidden_fire_at_target_null",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "infantry_guard",
+          "pc": "0x51f620",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "deployed_guard_shim",
+          "pc": "0x521320",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "foot_guard",
+          "pc": "0x4d5070",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "get_weapon",
+          "pc": "0x70e140",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "idle_action",
+          "pc": "0x51cdb0",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "infantry_fire_at_target",
+          "pc": "0x5206b0",
+          "phase": "hidden_fire_at_target_null",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "infantry_guard",
+          "pc": "0x51f620",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "deployed_guard_shim",
+          "pc": "0x521320",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "foot_guard",
+          "pc": "0x4d5070",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "get_weapon",
+          "pc": "0x70e140",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "idle_action",
+          "pc": "0x51cdb0",
+          "phase": "hidden_guard_dispatch",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "infantry_fire_at_target",
+          "pc": "0x5206b0",
+          "phase": "hidden_fire_at_target_null",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "target_head_update",
+          "pc": "0x71a760",
+          "phase": "target_head_update_after_stop",
+          "this": "0x2401f8d0"
+        },
+        {
+          "kind": "infantry_select_weapon",
+          "pc": "0x5218e0",
+          "phase": "target_head_update_after_stop",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "techno_select_weapon",
+          "pc": "0x6f3330",
+          "phase": "target_head_update_after_stop",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "get_weapon",
+          "pc": "0x70e140",
+          "phase": "target_head_update_after_stop",
+          "this": "0x2401d8d0"
+        },
+        {
+          "kind": "get_weapon",
+          "pc": "0x70e140",
+          "phase": "target_head_update_after_stop",
+          "this": "0x2401d8d0"
+        }
+      ],
+      "output": {
+        "after_stop": {
+          "dispatch": [
+            100,
+            16
+          ],
+          "doing": 0,
+          "mission": 5,
+          "queued": -1,
+          "rng_sha256": {
+            "main": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+            "mapgen": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+            "scenario": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36"
+          },
+          "target_is_null": true,
+          "temporal_head": 604109008,
+          "temporal_target": 604104912,
+          "victim_warped": true,
+          "warp_remaining": 3500
+        },
+        "after_target_update": {
+          "dispatch": [
+            1000,
+            27
+          ],
+          "doing": 10,
+          "mission": 5,
+          "queued": -1,
+          "rng_sha256": {
+            "main": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+            "mapgen": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+            "scenario": "360f389c495a21ffdcd108e4ea18eb5f1886a22a5c449676e8776ebed4441daa"
+          },
+          "target_is_null": true,
+          "temporal_head": 604109008,
+          "temporal_target": 604104912,
+          "victim_warped": true,
+          "warp_remaining": 3492
+        },
+        "before": {
+          "dispatch": [
+            100,
+            16
+          ],
+          "doing": 1,
+          "mission": 5,
+          "queued": -1,
+          "rng_sha256": {
+            "main": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+            "mapgen": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+            "scenario": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36"
+          },
+          "target_is_null": false,
+          "temporal_head": 604109008,
+          "temporal_target": 604104912,
+          "victim_warped": true,
+          "warp_remaining": 3500
+        },
+        "before_target_update": {
+          "dispatch": [
+            1000,
+            27
+          ],
+          "doing": 10,
+          "mission": 5,
+          "queued": -1,
+          "rng_sha256": {
+            "main": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+            "mapgen": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+            "scenario": "360f389c495a21ffdcd108e4ea18eb5f1886a22a5c449676e8776ebed4441daa"
+          },
+          "target_is_null": true,
+          "temporal_head": 604109008,
+          "temporal_target": 604104912,
+          "victim_warped": true,
+          "warp_remaining": 3500
+        },
+        "guard_visits": [
+          {
+            "frame": 103,
+            "state": {
+              "dispatch": [
+                100,
+                16
+              ],
+              "doing": 0,
+              "mission": 5,
+              "queued": -1,
+              "rng_sha256": {
+                "main": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+                "mapgen": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+                "scenario": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36"
+              },
+              "target_is_null": true,
+              "temporal_head": 604109008,
+              "temporal_target": 604104912,
+              "victim_warped": true,
+              "warp_remaining": 3500
+            }
+          },
+          {
+            "frame": 116,
+            "state": {
+              "dispatch": [
+                116,
+                26
+              ],
+              "doing": 10,
+              "mission": 5,
+              "queued": -1,
+              "rng_sha256": {
+                "main": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+                "mapgen": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+                "scenario": "b1df5b4fa8d90102fc7bbc01e53b60ecdeb2292fe4ade870eb3f95b4800517d9"
+              },
+              "target_is_null": true,
+              "temporal_head": 604109008,
+              "temporal_target": 604104912,
+              "victim_warped": true,
+              "warp_remaining": 3500
+            }
+          },
+          {
+            "frame": 150,
+            "state": {
+              "dispatch": [
+                150,
+                28
+              ],
+              "doing": 10,
+              "mission": 5,
+              "queued": -1,
+              "rng_sha256": {
+                "main": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+                "mapgen": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+                "scenario": "c45c84881154d1dc77d00674166dd09ce02d90a9816733a3f7c59985fbf2a44c"
+              },
+              "target_is_null": true,
+              "temporal_head": 604109008,
+              "temporal_target": 604104912,
+              "victim_warped": true,
+              "warp_remaining": 3500
+            }
+          },
+          {
+            "frame": 300,
+            "state": {
+              "dispatch": [
+                300,
+                28
+              ],
+              "doing": 10,
+              "mission": 5,
+              "queued": -1,
+              "rng_sha256": {
+                "main": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+                "mapgen": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+                "scenario": "d10975e79eb8ebe9668a07e920ac0212893129f0f937f8140097d0c51bd9efc0"
+              },
+              "target_is_null": true,
+              "temporal_head": 604109008,
+              "temporal_target": 604104912,
+              "victim_warped": true,
+              "warp_remaining": 3500
+            }
+          },
+          {
+            "frame": 1000,
+            "state": {
+              "dispatch": [
+                1000,
+                27
+              ],
+              "doing": 10,
+              "mission": 5,
+              "queued": -1,
+              "rng_sha256": {
+                "main": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+                "mapgen": "1835f4eecb11223cc6c5aac6efe37bbe8d8bc74eed3e776495a095880f65cc36",
+                "scenario": "360f389c495a21ffdcd108e4ea18eb5f1886a22a5c449676e8776ebed4441daa"
+              },
+              "target_is_null": true,
+              "temporal_head": 604109008,
+              "temporal_target": 604104912,
+              "victim_warped": true,
+              "warp_remaining": 3500
+            }
+          }
+        ]
+      },
+      "writes": [
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x68d",
+          "pc": "0x51b20e",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 1,
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x6c4",
+          "pc": "0x51d9d2",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x100",
+          "pc": "0x51da34",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 4,
+          "value": 103
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x104",
+          "pc": "0x51da3e",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 4,
+          "value": 5400649
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x108",
+          "pc": "0x51da41",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x10c",
+          "pc": "0x51da44",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0xf8",
+          "pc": "0x51da8c",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x5e0",
+          "pc": "0x51b2a2",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 4,
+          "value": 4294967295
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x50c",
+          "pc": "0x6fcdc4",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 1,
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x2b4",
+          "pc": "0x6fcf3e",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x3b8",
+          "pc": "0x6fcf5b",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x68e",
+          "pc": "0x51b33f",
+          "phase": "carrier_stop_open_topped_suffix",
+          "size": 1,
+          "value": 0
+        },
+        {
+          "frame": 103,
+          "object": "actor",
+          "offset": "0x68d",
+          "pc": "0x520ad2",
+          "phase": "hidden_fire_at_target_null",
+          "size": 1,
+          "value": 0
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0x168",
+          "pc": "0x51ce35",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 116
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0x16c",
+          "pc": "0x51ce3b",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 604100816
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0x170",
+          "pc": "0x51ce3e",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 104
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0x6c4",
+          "pc": "0x51d9d2",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 10
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0x100",
+          "pc": "0x51da13",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 116
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0x104",
+          "pc": "0x51da3e",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 8541516
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0x108",
+          "pc": "0x51da41",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 5
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0x10c",
+          "pc": "0x51da44",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 5
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0xf8",
+          "pc": "0x51da8c",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 0
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0xc8",
+          "pc": "0x5b32f9",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 116
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0xcc",
+          "pc": "0x5b32ff",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 5011029
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0xd0",
+          "pc": "0x5b3302",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 26
+        },
+        {
+          "frame": 116,
+          "object": "actor",
+          "offset": "0x68d",
+          "pc": "0x520ad2",
+          "phase": "hidden_fire_at_target_null",
+          "size": 1,
+          "value": 0
+        },
+        {
+          "frame": 150,
+          "object": "actor",
+          "offset": "0xc8",
+          "pc": "0x5b32f9",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 150
+        },
+        {
+          "frame": 150,
+          "object": "actor",
+          "offset": "0xcc",
+          "pc": "0x5b32ff",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 5011029
+        },
+        {
+          "frame": 150,
+          "object": "actor",
+          "offset": "0xd0",
+          "pc": "0x5b3302",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 28
+        },
+        {
+          "frame": 150,
+          "object": "actor",
+          "offset": "0x68d",
+          "pc": "0x520ad2",
+          "phase": "hidden_fire_at_target_null",
+          "size": 1,
+          "value": 0
+        },
+        {
+          "frame": 300,
+          "object": "actor",
+          "offset": "0xc8",
+          "pc": "0x5b32f9",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 300
+        },
+        {
+          "frame": 300,
+          "object": "actor",
+          "offset": "0xcc",
+          "pc": "0x5b32ff",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 5011029
+        },
+        {
+          "frame": 300,
+          "object": "actor",
+          "offset": "0xd0",
+          "pc": "0x5b3302",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 28
+        },
+        {
+          "frame": 300,
+          "object": "actor",
+          "offset": "0x68d",
+          "pc": "0x520ad2",
+          "phase": "hidden_fire_at_target_null",
+          "size": 1,
+          "value": 0
+        },
+        {
+          "frame": 1000,
+          "object": "actor",
+          "offset": "0xc8",
+          "pc": "0x5b32f9",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 1000
+        },
+        {
+          "frame": 1000,
+          "object": "actor",
+          "offset": "0xcc",
+          "pc": "0x5b32ff",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 5011029
+        },
+        {
+          "frame": 1000,
+          "object": "actor",
+          "offset": "0xd0",
+          "pc": "0x5b3302",
+          "phase": "hidden_guard_dispatch",
+          "size": 4,
+          "value": 27
+        },
+        {
+          "frame": 1000,
+          "object": "actor",
+          "offset": "0x68d",
+          "pc": "0x520ad2",
+          "phase": "hidden_fire_at_target_null",
+          "size": 1,
+          "value": 0
+        },
+        {
+          "frame": 1000,
+          "object": "link",
+          "offset": "0x4c",
+          "pc": "0x71a881",
+          "phase": "target_head_update_after_stop",
+          "size": 4,
+          "value": 8
+        },
+        {
+          "frame": 1000,
+          "object": "link",
+          "offset": "0x48",
+          "pc": "0x71a88a",
+          "phase": "target_head_update_after_stop",
+          "size": 4,
+          "value": 3492
+        }
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc"
+}

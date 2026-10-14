@@ -131,8 +131,7 @@
         "Move": {
           "entity_id": 942,
           "target_rx": 98,
-          "target_ry": 74,
-          "queue": false
+          "target_ry": 74
         }
       }
     },
@@ -143,8 +142,7 @@
         "Move": {
           "entity_id": 943,
           "target_rx": 87,
-          "target_ry": 74,
-          "queue": false
+          "target_ry": 74
         }
       }
     },
@@ -155,8 +153,7 @@
         "Move": {
           "entity_id": 945,
           "target_rx": 88,
-          "target_ry": 75,
-          "queue": false
+          "target_ry": 75
         }
       }
     },
@@ -167,8 +164,7 @@
         "Move": {
           "entity_id": 944,
           "target_rx": 87,
-          "target_ry": 71,
-          "queue": false
+          "target_ry": 71
         }
       }
     },
@@ -179,8 +175,7 @@
         "Move": {
           "entity_id": 947,
           "target_rx": 87,
-          "target_ry": 78,
-          "queue": false
+          "target_ry": 78
         }
       }
     }

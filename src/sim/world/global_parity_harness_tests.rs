@@ -171,9 +171,16 @@ pub(super) fn print_replay_summary(name: &str, sim: &Simulation) {
 pub(super) fn assert_announcement_feed_retirement_hash_control(
     name: &str,
     sim: &Simulation,
-    incoming_pin: u64,
+    expected_state_hasher_pin: u64,
 ) {
     let current = sim.state_hash();
+    let retained_authority = bincode::serialize(sim).expect("retained replay authority");
+    let retained_dummy = sim.effective_shared_cell_dummy().snapshot();
+    let retained_streams = (
+        sim.scenario_rng.state(),
+        sim.main_rng.state(),
+        sim.mapgen_rng.state(),
+    );
     let control =
         crate::sim::trigger_runtime::with_legacy_announcement_hash_control_for_test(|| {
             sim.state_hash()
@@ -182,10 +189,24 @@ pub(super) fn assert_announcement_feed_retirement_hash_control(
         "[announcement hash attribution {name}] current={current:016X} control={control:016X}"
     );
     assert_eq!(
-        control, incoming_pin,
-        "restoring only the retired None feed must recover the incoming Rust pin"
+        control, expected_state_hasher_pin,
+        "restoring only the retired None feed must recover the main StateHasher pin"
     );
     assert_eq!(sim.state_hash(), current, "the diagnostic feed is scoped");
+    assert_eq!(
+        bincode::serialize(sim).expect("unchanged replay authority"),
+        retained_authority,
+        "diagnostic feeds cannot alter serialized gameplay state"
+    );
+    assert_eq!(sim.effective_shared_cell_dummy().snapshot(), retained_dummy);
+    assert_eq!(
+        (
+            sim.scenario_rng.state(),
+            sim.main_rng.state(),
+            sim.mapgen_rng.state()
+        ),
+        retained_streams
+    );
 }
 
 const HARNESS_SEED: u64 = 0xC0FFEE1234;
@@ -198,20 +219,20 @@ const HARNESS_COORD_SHIFT: u16 = HARNESS_MAP_SIZE / 2;
 /// (after the tick at this index executes).
 const STREAM_CHECKPOINT_TICKS: &[u64] = &[149, 299, 449, 599];
 
-/// Rust regression receipts, not native whole-skirmish goldens. Incoming-main
-/// integration v25 preserves all 600 record/replay frames and three-stream
-/// checkpoints. Saved main and candidate full hashes match through frame279.
-/// The first difference is the ROF word521608482: main's global combat tail
-/// emits at280, the native Unit own-slot owner (`7365E1`, Logic55B613) at281.
-/// Event IDLE (`4C74CB..4C76BB`) then retains Attack after299, suppressing
-/// main's frame300 passive draw1945012778 (`6FA697` reads committed mission).
-/// Downstream raw Scenario words by producer: mission203->200, idle31->33,
-/// scan69->73, ROF20->18 (bounded-RNG retries included). The entire323-word
-/// main sequence is a prefix of the324-word candidate sequence; Main/MapGen
-/// are unchanged. The13-shot duel leaves tank6 at12 HP. Since the turretless
-/// hull turn (#690) target expiry587, Guard Commence589 and first passive
-/// scan590 pass the transition checks below (588/595/596 before it).
-/// Original conditional native Stop/FV evidence and reproduction entry points:
+/// Rust regression receipts, not native whole-skirmish goldens. Record and
+/// replay agree on all 600 frames and the three-stream checkpoints. Against
+/// main at c6d6cd7e0 the first difference is tank 4's attack-move order at
+/// frame 40: main queued raw mission 29 and committed it at 41, while
+/// Assign_Target_Command answers Move, which Queue_Mission's same-mission guard
+/// (`0x005B3601..0x005B3612`) leaves as the committed Move. From frame 46 its
+/// targeting timer runs Arrival_Target_Handler, whose scan draws Scenario
+/// `RandomRanged(0, 2)` each time; main/MapGen are unchanged. The scan finds
+/// the infantryman at frame 297 (main's per-visit scan found tank 6 at 281),
+/// and Event IDLE (`4C74CB..4C76BB`) after 299 keeps its committed Attack and
+/// its order. The 15-shot fight leaves tank 6 at 108 HP; target expiry 556,
+/// Guard Commence 568 and the first passive scan 569 pass the transition
+/// checks below. Original conditional native Stop/FV evidence and
+/// reproduction entry points:
 /// `tools/spatial_oracle/fv_cell_attack/README.md`. These fixture observations
 /// refresh a Rust regression pin; they do not establish native world parity.
 const FINAL_STREAM_STATES: (u64, u64, u64) = (
@@ -234,13 +255,16 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
     // (see GLOBAL_HARNESS_FINAL_HASH). Main/MapGen are unchanged.
     // 2026-10-01 Stop through the Unit setter (#952): see
     // GLOBAL_HARNESS_FINAL_HASH. Main/MapGen are unchanged.
-    0x59F4_735D_FB94_7D28,
+    // 2026-10-13 native attack-move (Foot MegaMission): tank 4 scans only on
+    // its targeting timer, so its fight and its draws start at frame 297
+    // (see GLOBAL_HARNESS_FINAL_HASH). Main/MapGen are unchanged.
+    0x5F1A_988D_BB0A_157F,
     0x39F3_258B_A550_EB7C,
     0x1CE8_1848_7043_6163,
 );
 
 // 2026-09-23 Drive/Ship Process path request (behavior, not composition):
-// Drive/Ship orders from every producer (player, pursuit, rally, miners) are
+// Drive/Ship orders from every producer (player, Approach, rally, miners) are
 // accepted by the Unit setter without an order-time A*, PowerOn or redirect.
 // This fixture has no native zone topology, so the first Process searches in
 // the legacy inline lane, not the Find_Path owner. The pins move with that
@@ -626,14 +650,47 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // Snapshot332 drops the C4 walk-up intent, whose empty value every entity's
 // fold hashed. This fixture has no C4 infantry; per-frame replay, combat/mining
 // and all three RNG gates remain unchanged.
-// Snapshot345 retires TriggerRuntime's duplicate last_announcement=None
-// feed and the global Super initializer. This fixture's empty house_order
-// runs no House AI; the old initializer nevertheless inserted an empty
-// Americans Super registry, whose owner ID alone reached the hash. The
-// same-binary control below restores only those two feeds to recover the
-// previous Rust pin; gameplay, stream and replay checks remain independent.
+// 2026-10-13 native attack-move (Foot MegaMission, snapshot 340): tank 4's
+// order is the MegaMission. Arrival_Target_Handler scans only when its
+// targeting timer runs out, so it finds the infantryman at frame 297 instead
+// of the per-visit OrderIntent scan finding tank 6 at 281, and the fight that
+// follows changes (story at the end of the test). The Scenario stream moves
+// with it; Main/MapGen, per-frame replay and the miner tripwires are
+// unchanged.
+// Snapshot342 retains House+1FC. Neither fixture House joins house_order,
+// so both retain the constructor's pending recheck. Clearing only those two
+// flags in the same finished replay recovers the incoming 9F0CFB4D01682378;
+// all per-frame replay, gameplay and absolute RNG gates remain unchanged.
+// The diagnostic control was removed.
+// 2026-10-14: hash composition and coverage only. state_hash folds
+// through the pinned StateHasher instead of std's DefaultHasher (a
+// temporary control folding the finished replay through DefaultHasher
+// still gave the previous 0x08F7_A04E_1574_71DE), fog grids and entities fold
+// as per-House and per-entity digests, cell grids and footprint lists
+// fold as packed byte records, and the edge cache also covers
+// uninitialized cells: code that writes no simulation state.
+// Snapshot349 drops the move-order adapter (`MovementTarget`, #689), whose
+// presence and speed stamp every entity's fold hashed. Hash composition
+// only: a control binary (main with a hash that skips only that fold)
+// gives this value in the same test, with every tripwire above green.
+// Control removed. Previous: 0x6F38_B6BF_3787_953B.
+// Snapshot350 drops the locomotor's altitude copy (#692), which every
+// locomotor's fold hashed. Hash composition only: a control binary (main
+// with a hash that skips only that fold) gives this value in the same
+// test, with every tripwire above green.
+// Control removed. Previous: 0xE527_F567_DC13_C55E.
+// Integrated StateHasher pin after executed scoped feed attribution. The test
+// below recovers current main exactly with retired feeds and preserves serialized
+// gameplay, the live Dummy and all three RNG streams; this is a Rust ratchet.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x69E4_BD1F_0A5C_4319;
+
+// ALL01 r6 (fork-local schema345) used DefaultHasher before main's
+// pinned StateHasher, entity/fog digests and owner migrations. These remain
+// historical Rust receipts; they are not comparable to current u64 outputs.
 const GLOBAL_HARNESS_INCOMING_HASH: u64 = 0x0D69_4099_AD39_5D63;
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x488E_0917_87DF_8E1A;
+const GLOBAL_HARNESS_R6_FINAL_HASH: u64 = 0x488E_0917_87DF_8E1A;
+// The legacy-feed control uses this main StateHasher reference.
+const GLOBAL_HARNESS_MAIN_HASH: u64 = 0x0B64_C58D_B313_2AB4;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -833,16 +890,17 @@ fn harness_script() -> Vec<(u64, Command)> {
                 entity_id: 4,
                 target_rx: 24 + HARNESS_COORD_SHIFT,
                 target_ry: 8 + HARNESS_COORD_SHIFT,
-                queue: false,
             },
         ),
         (
             40,
             Command::AttackMove {
                 entity_id: 4,
-                target_rx: 38 + HARNESS_COORD_SHIFT,
-                target_ry: 8 + HARNESS_COORD_SHIFT,
-                queue: false,
+                target: None,
+                destination: Some(crate::sim::combat::TargetKind::Cell(
+                    38 + HARNESS_COORD_SHIFT,
+                    8 + HARNESS_COORD_SHIFT,
+                )),
             },
         ),
         (
@@ -851,7 +909,6 @@ fn harness_script() -> Vec<(u64, Command)> {
                 entity_id: 6,
                 target_rx: 28 + HARNESS_COORD_SHIFT,
                 target_ry: 10 + HARNESS_COORD_SHIFT,
-                queue: false,
             },
         ),
         (300, Command::Stop { entity_id: 4 }),
@@ -862,7 +919,6 @@ fn harness_script() -> Vec<(u64, Command)> {
                 entity_id: 4,
                 target_rx: 36 + HARNESS_COORD_SHIFT,
                 target_ry: 8 + HARNESS_COORD_SHIFT,
-                queue: false,
             },
         ),
     ]
@@ -942,35 +998,33 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         };
         record_replay_diagnostic(&mut diagnostic, &rec, Some(&result), &due, &draws);
 
-        // Event IDLE clears TarCom after Logic frame 299; it does not queue
-        // Stop or reset MissionCom. The overdue passive timer still cannot
-        // scan while the committed selector is Attack (native 0x006FA697).
-        if (299..319).contains(&tick) {
+        // Tank 4's attack-move scan (Arrival_Target_Handler on its targeting
+        // timer, `0x006FA681..0x006FA695`) finds the infantryman at frame 297
+        // and commits Attack there (Queue_Mission(Attack, 1), `0x004DF418`).
+        // Event IDLE after Logic frame 299 clears TarCom and NavCom; it queues
+        // nothing, keeps MissionCom and calls no MegaMission body, so Attack
+        // stays committed with its dispatch timer and the engaged order
+        // survives, until tank 6's first hit (frame 302) draws retaliation.
+        if (299..302).contains(&tick) {
             let tank = rec.substrate.entities.get(4).expect("stopped tank lives");
             assert_eq!(
                 tank.mission.current(),
                 MissionId::from_known(MissionType::Attack)
             );
             assert_eq!(tank.mission.queued(), MissionId::NONE);
-            assert_eq!(tank.mission.mission_start_frame(), 40);
-            assert_eq!(tank.mission.ai_counter(), tick as u32 - 39);
+            assert_eq!(tank.mission.mission_start_frame(), 297);
             assert_eq!(
                 (
                     tank.mission.dispatch_timer().start_frame(),
                     tank.mission.dispatch_timer().delay()
                 ),
-                (40, 450),
+                (298, 16),
                 "Stop retains the active dispatch timer"
             );
             assert!(tank.attack_target.is_none());
-            assert_eq!(tank.last_target_scan_frame, 0);
-            assert_eq!(
-                (
-                    tank.passive_scan_timer.start_frame,
-                    tank.passive_scan_timer.duration
-                ),
-                (0, 45)
-            );
+            assert!(tank.navigation.nav_com.is_none());
+            assert!(tank.mega_mission.is_attack_move());
+            assert_eq!(tank.last_target_scan_frame, 297);
         }
         // The fatal Bullet detaches TarCom after the Unit's own visit. The
         // literal committed Attack gate cannot scan before a due Attack
@@ -1043,26 +1097,20 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         "Guard follows target expiry"
     );
     assert_eq!(post_guard_scan, guard_commenced.map(|frame| frame + 1));
-    // The movement pass keeps its owner block sets current from the entity
-    // store's touch log. Anything that hands out every entity mutably each
-    // frame (`values_mut`) would quietly turn that back into a whole-world
-    // read per frame, with correct results and no other symptom.
     assert_eq!(
         first_uncommitted_frame, None,
         "all scripted frames must commit"
     );
-    let world_reads = rec.movement_pass_cache.block_index_world_rebuilds();
-    // The blocker plane follows the same log. It is rebuilt from the whole map
-    // only when the terrain epoch or the wall plane moves (or a reader misses
-    // Foot deltas); a rebuild per moving object's turn would be thousands.
+    // The blocker plane follows the entity store's touch log. Anything that
+    // hands out every entity mutably each frame (`values_mut`) would quietly
+    // turn that back into a whole-world read per frame, with correct results
+    // and no other symptom. It is rebuilt from the whole map only when the
+    // terrain epoch or the wall plane moves (or a reader misses Foot deltas);
+    // a rebuild per moving object's turn would be thousands.
     let plane_reads = rec.movement_pass_cache.blocker_plane_world_rebuilds();
     assert!(
         plane_reads <= 60,
         "the blocker plane was rebuilt from the whole map {plane_reads} times"
-    );
-    assert!(
-        world_reads <= 2,
-        "the block index read every entity {world_reads} times; look for a new all-entity mutable walk"
     );
     assert!(
         miner_acquired_field && miner_moved && miner_cut_ore,
@@ -1169,17 +1217,19 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         rep.substrate
             .entities
             .values()
-            .all(|e| e.building_storage == Default::default() && e.aircraft_ammo.is_none()),
+            .all(|e| *e.building_art.storage() == Default::default() && e.aircraft_ammo.is_none()),
         "the fixture contains no storage or aircraft state"
     );
 
-    // Tank 4 first fires at frame 281; tank 6 retaliates at 283. Stop clears
-    // tank 4's target at 299 and Move is issued at 319. A later hit overrides
-    // that Move with Attack; tank 4 turns to fire once its Drive stops at 365.
-    // Six returned hits leave tank 6 at 12 HP; its seventh hit kills tank 4 at
-    // frame 587. These are Rust regression values,
+    // Tank 4's attack-move finds the infantryman at frame 297 and fires on
+    // it; tank 6's first hit at 302 draws its retaliation. Stop at 299 leaves
+    // the engaged order (the Stop window above); the Move at 319 ends it
+    // (Assign_Target_Command clears the MegaMission). Tank 4 kills the
+    // infantryman with its second shot, then trades four hits with tank 6,
+    // which ends at 108 HP; tank 6's sixth hit, after the infantryman's three,
+    // kills tank 4 (target expiry at 556). These are Rust regression values,
     // not a native execution of this synthetic whole-skirmish fixture.
-    assert_eq!(rep.fire_events.len(), 13);
+    assert_eq!(rep.fire_events.len(), 15);
     assert_eq!(
         rep.substrate
             .entities
@@ -1193,8 +1243,8 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             .entities
             .get(6)
             .map(|tank| tank.health.current),
-        Some(12),
-        "tank 6 takes six 105mm hits (65 * 75% heavy)"
+        Some(108),
+        "tank 6 takes four 105mm hits (65 * 75% heavy)"
     );
     let legacy_super_owner = rep.interner.get("Americans").expect("building owner");
     assert!(
@@ -1225,11 +1275,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             rep.state_hash_with_legacy_empty_super_owner_for_test(legacy_super_owner)
         });
     println!(
-        "[global retired hash feeds] current={final_hash:016X} control={incoming_hash_control:016X}"
+        "[global retired hash feeds] current={final_hash:016X} control={incoming_hash_control:016X} main={GLOBAL_HARNESS_MAIN_HASH:016X} archived_default_incoming={GLOBAL_HARNESS_INCOMING_HASH:016X} archived_r6={GLOBAL_HARNESS_R6_FINAL_HASH:016X}"
     );
     assert_eq!(
-        incoming_hash_control, GLOBAL_HARNESS_INCOMING_HASH,
-        "restoring only the retired None and empty Super owner feeds must recover the incoming Rust pin"
+        incoming_hash_control, GLOBAL_HARNESS_MAIN_HASH,
+        "restoring only the retired None and empty Super owner feeds must recover the main StateHasher pin; other drift needs attribution"
     );
     assert_eq!(rep.state_hash(), final_hash, "diagnostic feeds stay scoped");
     assert!(
@@ -1309,7 +1359,6 @@ fn dense_converging_setup() -> (
                 entity_id: 1 + i,
                 target_rx: 25,
                 target_ry: y,
-                queue: false,
             },
         ));
         script.push((
@@ -1319,7 +1368,6 @@ fn dense_converging_setup() -> (
                 entity_id: 11 + i,
                 target_rx: 25,
                 target_ry: y,
-                queue: false,
             },
         ));
     }
@@ -1454,7 +1502,6 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
                         entity_id: 1,
                         target_rx: 25,
                         target_ry: 5,
-                        queue: false,
                     },
                 )]
             } else {

@@ -21,51 +21,6 @@ pub(crate) struct SlaveDepositQuery<'a> {
     pub interner: &'a StringInterner,
 }
 
-/// The Cells `0x006B0880` admits for `slave` as coordinates: the primary
-/// deposit Cell (a Building master's cell plus `(width - 1, height / 2)`,
-/// else its own cell) and, for a Building, the Cell north of it when that
-/// Cell lies in the master's own footprint, so the master is its first
-/// Building. Empty unless the master's manager holds `slave`. The Walk step
-/// and the path search (`AStar_main_loop 0x00429A90` asks every neighbour's
-/// `Can_Enter_Cell`) admit a slave into them past the master's footprint.
-pub(crate) fn slave_deposit_cells(
-    entities: &EntityStore,
-    slave: u64,
-    foundation: &dyn Fn(&crate::sim::game_entity::GameEntity) -> Option<(u16, u16)>,
-) -> [Option<(u16, u16)>; 2] {
-    let Some(master) = entities.get(slave).and_then(|entity| entity.slave.owner()) else {
-        return [None, None];
-    };
-    let Some(owner) = entities.get(master) else {
-        return [None, None];
-    };
-    if !owner
-        .slave_manager
-        .as_ref()
-        .is_some_and(|manager| manager.holds(slave))
-    {
-        return [None, None];
-    }
-    let as_cell = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);
-    let building = owner.category == EntityCategory::Structure;
-    let dimensions = if building { foundation(owner) } else { None };
-    let Some(primary) = crate::sim::slave_manager::deploy_center(owner, dimensions) else {
-        return [None, None];
-    };
-    let Some((width, height)) = dimensions else {
-        return [Some(as_cell(primary)), None];
-    };
-    // The north Cell's first building is the master exactly when it lies in
-    // the master's rectangular footprint.
-    let base = crate::sim::slave_manager::owner_cell(owner);
-    let north = (primary.0, primary.1.wrapping_sub(1));
-    let in_footprint = (north.0 - base.0) >= 0
-        && i32::from(north.0 - base.0) < i32::from(width)
-        && (north.1 - base.1) >= 0
-        && i32::from(north.1 - base.1) < i32::from(height);
-    [Some(as_cell(primary)), in_footprint.then(|| as_cell(north))]
-}
-
 impl SlaveDepositQuery<'_> {
     /// The caller tests both child+2DC and master+2D8 before6B0880. An
     /// existing empty manager remains admitted to the geometry/lookup body.

@@ -89,7 +89,8 @@ pub(in crate::sim) use self::factory_lifecycle::construct_active_factory_fixture
 #[cfg(test)]
 pub(in crate::sim) use self::factory_lifecycle::release_delivered_mobile;
 pub(in crate::sim) use self::factory_lifecycle::{
-    abandon_house_factories, refresh_factory_rates_for_house, revalidate_and_step_factories,
+    abandon_house_factories, recalculate_strips, refresh_factory_rates_for_house,
+    revalidate_and_step_factories,
 };
 #[cfg(test)]
 pub(in crate::sim) use self::production_queue::exit_produced_object;

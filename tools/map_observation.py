@@ -23,6 +23,7 @@ Right gestures use their own policy and the same ordinary mouse-edge driver.
 from __future__ import annotations
 
 import argparse
+from bisect import bisect_left
 from dataclasses import dataclass
 import math
 import struct
@@ -86,7 +87,8 @@ ORDER_VARIANTS = frozenset(('Select', 'Move', 'Stop', 'Attack', 'ForceAttack', '
 PRODUCTION_VARIANTS = frozenset(('QueueProduction', 'PlaceReadyBuilding'))
 EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe_types',
                               'observe_projectiles', 'observe_anim_types', 'observe_action_line_inputs',
-                              'observe_disguise_inputs', 'observe_lasers', 'observe_electric_bolts', 'observe_bombs',
+                              'observe_disguise_inputs', 'observe_lasers', 'observe_electric_bolts',
+                              'observe_electric_bolt_steps', 'observe_bombs',
                               'observe_audio', 'allow_load_segments',
                               'camera_cell', 'cursor_position', 'terrain_cells',
                               'observe_super_weapons', 'observe_diplomacy', 'observe_sidebar_steps'))
@@ -551,6 +553,16 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
     for key in ('observe_lasers', 'observe_electric_bolts', 'observe_bombs'):
         if key in profile and type(profile[key]) is not bool:
             raise ValidationError(f'profile.{key} must be a boolean')
+    if 'observe_electric_bolt_steps' in profile:
+        if profile.get('observe_electric_bolts') is not True:
+            raise ValidationError('profile.observe_electric_bolt_steps requires observe_electric_bolts')
+        steps = require_array(profile['observe_electric_bolt_steps'], 'profile.observe_electric_bolt_steps')
+        if not 1 <= len(steps) <= MAX_OBSERVATION_SAMPLES:
+            raise ValidationError('profile.observe_electric_bolt_steps must contain 1..100000 entries')
+        previous = -1
+        for index, step in enumerate(steps):
+            previous = _bounded_int(step, f'profile.observe_electric_bolt_steps[{index}]',
+                                    previous + 1, profile['ticks'])
     for key in ('observe_super_weapons', 'observe_diplomacy'):
         if key in profile and type(profile[key]) is not bool:
             raise ValidationError(f'profile.{key} must be a boolean')
@@ -1032,10 +1044,23 @@ def _lasers(value: Any, label: str) -> int:
     return 1 + len(live)
 
 
+def _observes_electric_step(profile: Mapping[str, Any], step: int) -> bool:
+    if profile.get('observe_electric_bolts') is not True:
+        return False
+    if 'observe_electric_bolt_steps' not in profile:
+        return True
+    steps = profile['observe_electric_bolt_steps']
+    index = bisect_left(steps, step)
+    return index < len(steps) and steps[index] == step
+
+
 def _electric_bolts(value: Any, label: str) -> int:
     snapshot = require_object(value, label)
-    require_exact_keys(snapshot, ('detail', 'live', 'lights', 'particle_systems', 'native_id_cursor', 'rng'), label)
+    require_exact_keys(snapshot, ('detail', 'live', 'lights', 'particle_systems', 'native_id_cursor', 'rng',
+                                 *(('game_detail_level',) if 'game_detail_level' in snapshot else ())), label)
     _detail(snapshot['detail'], f'{label}.detail')
+    if 'game_detail_level' in snapshot:
+        _bounded_int(snapshot['game_detail_level'], f'{label}.game_detail_level', 0, (1 << 32) - 1)
     _bounded_int(snapshot['native_id_cursor'], f'{label}.native_id_cursor', 0, (1 << 32) - 1)
     rng = require_object(snapshot['rng'], f'{label}.rng')
     require_exact_keys(rng, ('main', 'scenario', 'mapgen'), f'{label}.rng')
@@ -1075,14 +1100,24 @@ def _electric_bolts(value: Any, label: str) -> int:
     systems = require_array(snapshot['particle_systems'], f'{label}.particle_systems')
     count = 4 + len(live) + len(lights) + len(systems)
     previous = 0
+    particle_identities = set()
     for index, value in enumerate(systems):
         at = f'{label}.particle_systems[{index}]'
         system = require_object(value, at)
         require_exact_keys(system, ('stable_id', 'native_id', 'type_id', 'coord', 'lifetime', 'spawn_frames',
-                                   'done_spawning', 'in_logic_vector', 'owner_entity', 'attached_entity', 'particles'), at)
+                                   'done_spawning', 'in_logic_vector', 'owner_entity', 'attached_entity', 'particles',
+                                   *(('spawn_timer_bits',) if 'spawn_timer_bits' in system else ()),
+                                   *(('in_limbo',) if 'in_limbo' in system else ()),
+                                   *(('display_layer',) if 'display_layer' in system else ())), at)
         previous = _bounded_int(system['stable_id'], f'{at}.stable_id', previous + 1, (1 << 64) - 1)
         for key in ('native_id', 'lifetime', 'spawn_frames'):
             _bounded_int(system[key], f'{at}.{key}', -(1 << 31), (1 << 31) - 1)
+        if 'spawn_timer_bits' in system:
+            _bounded_int(system['spawn_timer_bits'], f'{at}.spawn_timer_bits', 0, (1 << 32) - 1)
+        if 'in_limbo' in system and type(system['in_limbo']) is not bool:
+            raise ValidationError(f'{at}.in_limbo must be a boolean')
+        if system.get('display_layer') is not None:
+            _bounded_int(system['display_layer'], f'{at}.display_layer', 0, 4)
         require_string(system['type_id'], f'{at}.type_id')
         _coordinate(system['coord'], f'{at}.coord', leptons=True)
         for key in ('done_spawning', 'in_logic_vector'):
@@ -1096,7 +1131,13 @@ def _electric_bolts(value: Any, label: str) -> int:
         for index, value in enumerate(particles):
             row = f'{at}.particles[{index}]'
             particle = require_object(value, row)
-            require_exact_keys(particle, ('native_id', 'type_id', 'coord', 'lifetime', 'damage_counter', 'marked_for_deletion'), row)
+            # Additive production projections preserve historical sealed receipts.
+            # A missing extension supplies no velocity, drift or animation state.
+            fields = ('stable_id', 'display_layer', 'velocity_bits', 'origin', 'drift',
+                      'animation_state', 'state_ai_advance', 'translucency')
+            extended = any(key in particle for key in fields)
+            require_exact_keys(particle, ('native_id', 'type_id', 'coord', 'lifetime', 'damage_counter',
+                                         'marked_for_deletion', *(fields if extended else ())), row)
             _bounded_int(particle['native_id'], f'{row}.native_id', -(1 << 31), (1 << 31) - 1)
             for key in ('lifetime', 'damage_counter'):
                 _bounded_int(particle[key], f'{row}.{key}', -(1 << 15), (1 << 15) - 1)
@@ -1104,27 +1145,103 @@ def _electric_bolts(value: Any, label: str) -> int:
             _coordinate(particle['coord'], f'{row}.coord', leptons=True)
             if type(particle['marked_for_deletion']) is not bool:
                 raise ValidationError(f'{row}.marked_for_deletion must be a boolean')
+            if extended:
+                _bounded_int(particle['stable_id'], f'{row}.stable_id', 1, (1 << 64) - 1)
+                if particle['stable_id'] in particle_identities:
+                    raise ValidationError(f'{row}.stable_id repeats an owned particle identity')
+                particle_identities.add(particle['stable_id'])
+                if particle['display_layer'] is not None:
+                    _bounded_int(particle['display_layer'], f'{row}.display_layer', 0, 4)
+                _bounded_int(particle['velocity_bits'], f'{row}.velocity_bits', 0, (1 << 32) - 1)
+                for key in ('origin', 'drift'):
+                    _coordinate(particle[key], f'{row}.{key}', leptons=True)
+                for key in ('animation_state', 'state_ai_advance', 'translucency'):
+                    _bounded_int(particle[key], f'{row}.{key}', 0, 255)
     return count
+
+
+def _particle_draws(value: Any, label: str) -> int:
+    """Validate actual builder pieces; never reconstruct draw choices or pixels."""
+    rows = require_array(value, label)
+    seen = set()
+    for index, value in enumerate(rows):
+        at = f'{label}[{index}]'
+        row = require_object(value, at)
+        require_exact_keys(row, ('system_id', 'particle_id', 'particle_native_id', 'display_layer', 'display_order',
+                                 'image', 'frame', 'atlas_page', 'source_palette', 'position', 'size',
+                                 'uv_origin', 'uv_size', 'native_flags', 'z_adjust', 'z_gradient',
+                                 'palette_light', 'render_z'), at)
+        _bounded_int(row['system_id'], f'{at}.system_id', 1, (1 << 64) - 1)
+        _bounded_int(row['particle_id'], f'{at}.particle_id', 1, (1 << 64) - 1)
+        _bounded_int(row['particle_native_id'], f'{at}.particle_native_id', -(1 << 31), (1 << 31) - 1)
+        identity = row['particle_id']
+        if identity in seen:
+            raise ValidationError(f'{at} repeats a particle draw identity')
+        seen.add(identity)
+        _bounded_int(row['display_layer'], f'{at}.display_layer', 0, 4)
+        _bounded_int(row['display_order'], f'{at}.display_order', 0, (1 << 64) - 1)
+        if not require_string(row['image'], f'{at}.image'):
+            raise ValidationError(f'{at}.image is empty')
+        _bounded_int(row['frame'], f'{at}.frame', 0, (1 << 16) - 1)
+        for key in ('atlas_page', 'source_palette', 'native_flags', 'z_gradient'):
+            _bounded_int(row[key], f'{at}.{key}', 0, (1 << 32) - 1)
+        for key in ('position', 'size', 'uv_origin', 'uv_size'):
+            pair = require_array(row[key], f'{at}.{key}')
+            if len(pair) != 2:
+                raise ValidationError(f'{at}.{key} must contain two numbers')
+            for component in pair:
+                _finite_number(component, f'{at}.{key}')
+        _finite_number(row['z_adjust'], f'{at}.z_adjust')
+        words = require_array(row['palette_light'], f'{at}.palette_light')
+        if len(words) != 4:
+            raise ValidationError(f'{at}.palette_light must contain four words')
+        for word in words:
+            _bounded_int(word, f'{at}.palette_light', 0, (1 << 32) - 1)
+        require_value(row['render_z'], 'read_only', f'{at}.render_z')
+    return len(rows)
 
 
 def _electric_bolt_draws(value: Any, profile: Mapping[str, Any], segments: list, tail_draws: int) -> int:
     label = 'observations.electric_bolt_draws'
     receipt = require_object(value, label)
     require_exact_keys(receipt, ('policy', 'frames'), label)
-    require_value(receipt['policy'], 'electric-bolt-after-each-tactical-composite-v1', f'{label}.policy')
+    policy = ('electric-bolt-after-requested-tactical-composite-v2'
+              if 'observe_electric_bolt_steps' in profile else 'electric-bolt-after-each-tactical-composite-v1')
+    require_value(receipt['policy'], policy, f'{label}.policy')
     frames = require_array(receipt['frames'], f'{label}.frames')
-    if len(frames) != max(1, profile['ticks']) + tail_draws:
-        raise ValidationError('electric bolt draw observations must include every tactical composite and audio-tail draw')
+    steps = [step for step in range(1, profile['ticks'] + 1) if _observes_electric_step(profile, step)]
+    if profile['ticks'] == 0 and _observes_electric_step(profile, 0):
+        steps.append(0)
+    if _observes_electric_step(profile, profile['ticks']):
+        steps.extend([profile['ticks']] * tail_draws)
+    if len(frames) != len(steps):
+        raise ValidationError('electric bolt draw observations must include each requested composite and audio-tail draw')
     count = 0
     for index, value in enumerate(frames):
         at = f'{label}.frames[{index}]'
         row = require_object(value, at)
-        require_exact_keys(row, ('ordinal', 'completed_steps', 'simulation_tick', 'binary_frame', 'effects'), at)
-        step = min(index + 1, profile['ticks'])
+        require_exact_keys(row, ('ordinal', 'completed_steps', 'simulation_tick', 'binary_frame', 'effects',
+                                *(('particle_draws',) if 'particle_draws' in row else ())), at)
+        step = steps[index]
         tick, frame = _segment_clock(step, segments)
         for key, expected in (('ordinal', index), ('completed_steps', step), ('simulation_tick', tick), ('binary_frame', frame)):
             require_value(row[key], expected, f'{at}.{key}')
         count += _electric_bolts(row['effects'], f'{at}.effects')
+        if 'particle_draws' in row:
+            count += _particle_draws(row['particle_draws'], f'{at}.particle_draws')
+            # Join two read-only projections of the same draw boundary. This
+            # checks ownership/identity without deriving frame, Z or colour.
+            owned = {particle['stable_id']: (system['stable_id'], particle)
+                     for system in row['effects']['particle_systems']
+                     for particle in system['particles'] if 'stable_id' in particle}
+            for piece in row['particle_draws']:
+                if piece['particle_id'] not in owned:
+                    raise ValidationError(f'{at}.particle_draws names an absent owned particle')
+                system_id, particle = owned[piece['particle_id']]
+                for key, expected in (('system_id', system_id),
+                                      ('particle_native_id', particle['native_id']),
+                                      ('display_layer', particle['display_layer'])):
+                    require_value(piece[key], expected, f'{at}.particle_draws.{key}')
     return count
 def _bombs(value: Any, label: str) -> int:
     snapshot = require_object(value, label)
@@ -1172,7 +1289,7 @@ def _fire(value: Any, label: str) -> None:
 def _actor(value: Any, label: str, *, building_state: bool = True,
            docking_state: bool = True, walk_state: bool = True,
            action_line_inputs: bool = False, disguise_inputs: bool = False,
-           lasers: bool = False, bombs: bool = False) -> tuple[int, str]:
+           lasers: bool = False, bombs: bool = False, damage_smoke: bool = False) -> tuple[int, str]:
     actor = require_object(value, label)
     require_exact_keys(actor, ('stable_id', 'owner', 'type_id', 'category', 'cell',
                               'physical_leptons', 'on_bridge', 'health', 'active',
@@ -1192,6 +1309,7 @@ def _actor(value: Any, label: str, *, building_state: bool = True,
                               *(('action_line_inputs',) if action_line_inputs else ()),
                               *(('disguise_inputs',) if disguise_inputs else ()),
                               *(('prism',) if lasers else ()),
+                              *(('damage_smoke_system_id',) if damage_smoke and 'damage_smoke_system_id' in actor else ()),
                               *(('fire',) if bombs else ()),
                               *(('miner', 'radio') if docking_state else ())), label)
     identity = _bounded_int(actor['stable_id'], f'{label}.stable_id', 1, (1 << 64) - 1)
@@ -1207,6 +1325,8 @@ def _actor(value: Any, label: str, *, building_state: bool = True,
         _disguise_inputs(actor['disguise_inputs'], category, f'{label}.disguise_inputs')
     if lasers:
         _prism(actor['prism'], category, f'{label}.prism')
+    if damage_smoke and actor.get('damage_smoke_system_id') is not None:
+        _bounded_int(actor['damage_smoke_system_id'], f'{label}.damage_smoke_system_id', 1, (1 << 64) - 1)
     if bombs:
         _fire(actor['fire'], f'{label}.fire')
     if docking_state:
@@ -2184,7 +2304,7 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
                                  *(('input',) if gesture_input else ()),
                                  *(('effects',) if effects else ()),
                                  *(('lasers',) if profile.get('observe_lasers', False) else ()),
-                                 *(('electric_bolts',) if profile.get('observe_electric_bolts', False) else ()),
+                                 *(('electric_bolts',) if _observes_electric_step(profile, step) else ()),
                                  *(('bombs',) if profile.get('observe_bombs', False) else ()),
                                  *(('audio_state',) if 'observe_audio' in profile else ()),
                                  *(('houses',) if docking_state else ())), row_label)
@@ -2210,7 +2330,8 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
                                      action_line_inputs=profile.get('observe_action_line_inputs', False),
                                      disguise_inputs=profile.get('observe_disguise_inputs', False),
                                      lasers=profile.get('observe_lasers', False) or profile.get('observe_electric_bolts', False),
-                                     bombs=profile.get('observe_bombs', False))
+                                     bombs=profile.get('observe_bombs', False),
+                                     damage_smoke=profile.get('observe_electric_bolts', False))
             if identity <= previous_id:
                 raise ValidationError(f'{actor_label}.stable_id is repeated or out of order')
             if identity not in seen and owner not in owners:
@@ -2237,7 +2358,7 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
             sample_count += _effects(row['effects'], profile, f'{row_label}.effects')
         if profile.get('observe_lasers', False):
             sample_count += _lasers(row['lasers'], f'{row_label}.lasers')
-        if profile.get('observe_electric_bolts', False):
+        if _observes_electric_step(profile, step):
             sample_count += _electric_bolts(row['electric_bolts'], f'{row_label}.electric_bolts')
         if profile.get('observe_bombs', False):
             sample_count += _bombs(row['bombs'], f'{row_label}.bombs')

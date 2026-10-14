@@ -53,11 +53,12 @@
 //!   and `MovementZone=CrusherAll`, and admits a `Crushable=` one only to a
 //!   crusher or CrusherAll. Native answers 4 or 5 to a mover whose primary
 //!   warhead can shoot the wall, and 4 to a crusher on an allied crushable
-//!   wall. Trigger: an order-time route search (`MoverPathFacts::from_entity`
-//!   residual) to a goal reachable only through a wall the mover's warhead
-//!   hits. Effect: the order is redirected or refused where retail accepts it.
-//!   Frequency: rare; Drive, Ship, Hover, Walk and Teleport orders and
-//!   Jumpjet cell orders accept without that search.
+//!   wall. No route search reads this arm: every order takes its class setter,
+//!   and Find_Path asks the live receiver. Its remaining caller is the move
+//!   cursor's per-cell probe (`app::input::cursor`), which shows No-Move for
+//!   any answer above 1, so a shootable wall reads the same. Trigger: a
+//!   crusher hovering an allied crushable wall. Effect: the cursor shows Move
+//!   where native shows No-Move. Frequency: rare. Risk: the cursor only.
 //! - **`MovementRestrictedTo=`** (`UnitTypeClass+0xDFC`, Unit only): when set,
 //!   the cell's land type must equal it. LandType 10 (Tunnel) is exempt from the
 //!   equality test but carries its own rule — `g_IsometricTileTypeClass_Array`
@@ -190,7 +191,6 @@ pub struct CanEnterCellContext<'a> {
     pub path_grid: Option<&'a PathGrid>,
     pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
     pub terrain_costs: Option<&'a TerrainCostGrid>,
-    pub bypass_grid: bool,
     /// Selects the infantry view of terrain-object occupation. Retail terrain
     /// objects occupy sub-cells, and only the infantry entry gate reads that
     /// mask; vehicles stay blocked by the whole cell.
@@ -199,43 +199,6 @@ pub struct CanEnterCellContext<'a> {
     /// the crusher route of the Unit wall arm (`0x0073F438`). Infantry never
     /// takes that route; pass `false` where the mover is unknown.
     pub mover_is_crusher: bool,
-}
-
-/// The Foot `+0x1AC` cost class for a slave: `InfantryClass::Can_Enter_Cell`
-/// (`0x0051C29E..0x0051C2CA`) clears the master Building's occupation on the
-/// slave's own deposit Cells (`SlaveManagerClass 0x006B0880`), so
-/// `AStar_main_loop @ 0x00429A90` can end a path inside the refinery. The
-/// ground Cell's terrain still decides; every other refused Cell stays 7.
-pub struct SlaveDepositSearchClassifier<'a> {
-    pub cells: [Option<(u16, u16)>; 2],
-    pub path_grid: Option<&'a PathGrid>,
-    pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
-    pub terrain_costs: Option<&'a TerrainCostGrid>,
-    pub movement_zone: Option<MovementZone>,
-    pub speed_type: Option<SpeedType>,
-}
-
-impl crate::sim::pathfinding::SearchCellCostClassifier for SlaveDepositSearchClassifier<'_> {
-    fn classify(&self, _from: (u16, u16), candidate: (u16, u16), bridge: bool) -> u8 {
-        if !bridge && self.cells.contains(&Some(candidate)) {
-            return match evaluate_can_enter_cell(CanEnterCellContext {
-                target: candidate,
-                terrain_layer: MovementLayer::Ground,
-                movement_zone: self.movement_zone,
-                speed_type: self.speed_type,
-                path_grid: self.path_grid,
-                resolved_terrain: self.resolved_terrain,
-                terrain_costs: self.terrain_costs,
-                bypass_grid: true,
-                is_infantry: true,
-                mover_is_crusher: false,
-            }) {
-                CanEnterCellResult::Clear => 0,
-                CanEnterCellResult::HardBlocked => 7,
-            };
-        }
-        7
-    }
 }
 
 /// Evaluate the shared terrain/layer slice of Can_Enter_Cell.
@@ -274,12 +237,11 @@ fn evaluate_ground_cell_entry(ctx: CanEnterCellContext<'_>) -> CanEnterCellResul
     }
 
     let grid_ok = ctx.path_grid.is_none_or(|grid| {
-        ctx.bypass_grid
-            || if ctx.is_infantry {
-                grid.is_walkable_for_infantry(x, y)
-            } else {
-                grid.is_walkable(x, y)
-            }
+        if ctx.is_infantry {
+            grid.is_walkable_for_infantry(x, y)
+        } else {
+            grid.is_walkable(x, y)
+        }
     });
     let speed_type = ctx.speed_type.or_else(|| {
         if ctx.terrain_costs.is_some() && !ctx.is_infantry {
@@ -389,8 +351,8 @@ fn evaluate_shared_cell_leaf(
                 .and_then(|grid| grid.cell(ctx.target.0, ctx.target.1))
                 .is_none()
         {
-            // Retain the prior live-adapter missing-target rejection, including
-            // bypass_grid callers. This does not model native dummy-cell access.
+            // Retain the prior live-adapter missing-target rejection. This does
+            // not model native dummy-cell access.
             return CanEnterCellResult::HardBlocked;
         }
         let wall = terrain_cell.is_some_and(|cell| cell.zone_type == zone_class::WALL);
@@ -470,27 +432,6 @@ pub(crate) fn speed_type_allows_cell(cell: &ResolvedTerrainCell, speed_type: Spe
     cell.speed_costs
         .cost_for_speed_type(speed_type)
         .is_none_or(|cost| cost > 0)
-}
-
-/// Layer selections used by Can_Enter_Cell-style checks.
-///
-/// The common case uses one layer for all phases. Bridge traversal may select
-/// the bridge object list while the post-traversal occupancy bits remain ground.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CanEnterLayerContext {
-    pub terrain_layer: MovementLayer,
-    pub object_list_layer: MovementLayer,
-    pub occupancy_bits_layer: MovementLayer,
-}
-
-impl CanEnterLayerContext {
-    pub fn single(layer: MovementLayer) -> Self {
-        Self {
-            terrain_layer: layer,
-            object_list_layer: layer,
-            occupancy_bits_layer: layer,
-        }
-    }
 }
 
 /// Vehicle-only building entry branch that may reach the live row helper.
@@ -609,13 +550,6 @@ pub(crate) fn unit_tail_is_crushable_by(
         && bump_crush::object_is_crushable_by(capability.omni_crusher, target)
 }
 
-/// An object's native coordinate triple in leptons: cell origin plus sub-cell
-/// offset, and the exact Z when the mover retains one, else the level height.
-pub(crate) fn entity_world_leptons(entity: &GameEntity) -> [i32; 3] {
-    let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
-    [coord.x, coord.y, coord.z]
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -655,7 +589,6 @@ mod tests {
             path_grid: Some(grid),
             resolved_terrain: Some(terrain),
             terrain_costs: None,
-            bypass_grid: false,
             is_infantry,
             mover_is_crusher,
         })
@@ -737,7 +670,6 @@ mod tests {
             path_grid: Some(&grid),
             resolved_terrain: Some(&terrain),
             terrain_costs: None,
-            bypass_grid: false,
             is_infantry: false,
             mover_is_crusher: false,
         });
@@ -773,11 +705,8 @@ mod tests {
                 (0, 4),
                 (6, 4),
                 None,
-                None,
                 Some(MovementZone::Normal),
                 Some(&terrain),
-                None,
-                0,
                 mover_is_crusher,
                 false,
             )

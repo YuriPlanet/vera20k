@@ -558,11 +558,7 @@ pub fn finish_particle_tick(
         color_count,
     )?;
 
-    let lifetime = particle.lifetime_remaining.wrapping_sub(1);
-    particle.lifetime_remaining = lifetime;
-    if lifetime == 0 {
-        particle.marked_for_deletion = true;
-    }
+    super::system_ai::finish_lifetime(particle);
 
     Ok(SparkTickResult {
         motion,

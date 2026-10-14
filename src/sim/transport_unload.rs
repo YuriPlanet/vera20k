@@ -20,10 +20,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::{
     IsClearToMoveResult, LiveCellPassabilityQuery, evaluate_live_cell_passability,
 };
-use crate::sim::find_nearby_cell::{
-    NearbyAnchorGate, NearbyFootprint, NearbyQuery, NearbySearchOptions, PassabilityArgs,
-    RADIUS_HARD_CAP, find_nearby_passable_cell_with_options,
-};
+use crate::sim::find_nearby_cell::PassabilityArgs;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
@@ -33,9 +30,8 @@ use crate::sim::passenger::{
     DepartureFailure, DepartureRoute, depart_cargo_head, reveal_unloaded_passenger,
 };
 use crate::sim::pathfinding::passability::LandType;
-use crate::sim::world::{FrameEffects, GroundMove, SimSoundEvent, Simulation};
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 use crate::util::direction_tables::CELL_DELTAS;
-use crate::util::fixed_math::SIM_ZERO;
 use crate::util::lepton::CELL_CENTER_LEPTON;
 
 /// `DAT_008458D0`: `[4, 5, 6, 7, 0, 1, 2, 3]` — the octant the transport
@@ -279,88 +275,6 @@ fn passenger_can_enter(
     )
 }
 
-/// `FootClass::Find_Nearby_Passable_Cell` seeded at `seed` for `mover`'s own
-/// speed type — the state-0 water→land pre-move (`0x0073D7B0`) and the
-/// vehicle-passenger placement search (`0x0073DADD`, seeded at the exit cell
-/// with the passenger's `Type+0x67C` SpeedType). Bridge cells are refused
-/// and the terrain-level gate is on; the remaining flag arguments are not
-/// individually decoded (bounded reuse of the free-unit query shape).
-fn find_nearby_passable_for(
-    sim: &Simulation,
-    rules: &RuleSet,
-    mover: &GameEntity,
-    seed: (u16, u16),
-    speed_type_override: Option<SpeedType>,
-) -> Option<(u16, u16)> {
-    let obj = sim.object_type(mover.type_ref(), rules)?;
-    let speed_type = speed_type_override.unwrap_or_else(|| {
-        mover
-            .locomotor
-            .as_ref()
-            .map_or(obj.speed_type, |loco| loco.speed_type)
-    });
-    let query = NearbyQuery {
-        native_cells: None,
-        raw_occupation: None,
-        passability: PassabilityArgs {
-            speed_type,
-            required_zone_id: None,
-            movement_zone: obj.movement_zone,
-            bridge_aware_zone: false,
-        },
-        footprint: NearbyFootprint::SINGLE,
-        anchor_gate: NearbyAnchorGate::UnverifiedCompatibilityBypass,
-        allow_bridge_cells: false,
-        check_height: true,
-        check_occupancy: false,
-        radius_cap: RADIUS_HARD_CAP,
-        target_cell: None,
-        path_grid: sim.path_grid(),
-        resolved_terrain: sim.resolved_terrain.as_ref(),
-        overlay_grid: sim.overlay_grid.as_ref(),
-        occupancy: Some(&sim.substrate.occupancy),
-        entities: Some(&sim.substrate.entities),
-        zone_grid: sim.zone_grid.as_ref(),
-        playfield_bounds: sim.playfield_bounds,
-    };
-    find_nearby_passable_cell_with_options(
-        (i32::from(seed.0), i32::from(seed.1)),
-        &query,
-        NearbySearchOptions::default(),
-        sim.session.binary_frame,
-    )
-}
-
-/// `Set_Destination(cell, 1)` through the shared ground-order dispatcher.
-/// A represented Drive Unit reaches its class setter without a path grid;
-/// its later Process owns route search. Other callers retain their adapters.
-fn issue_ground_destination(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    id: u64,
-    dest: (u16, u16),
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
-) {
-    let Some(info) = sim.resolve_move_info(id, Some(rules)) else {
-        return;
-    };
-    let _ = sim.issue_ground_move(
-        GroundMove {
-            entity_id: id,
-            target: dest,
-            speed: info.speed,
-            queue: false,
-            speed_type: Some(info.speed_type),
-            owner_blocks: true,
-            object_destination: None,
-        },
-        Some(rules),
-        overlay_registry,
-        effects,
-    );
-}
-
 fn queue_guard(sim: &mut Simulation, id: u64) {
     let now = sim.session.binary_frame;
     let _ = sim.mission_queue_exact(
@@ -525,8 +439,25 @@ fn eject_head_passenger(
                     .entities
                     .get(pax_id)
                     .expect("passenger resolved above");
-                let cell =
-                    find_nearby_passable_for(sim, rules, passenger, exit, None).unwrap_or(exit);
+                // `0x0073DA96..0x0073DADD`: the passenger type's SpeedType
+                // (`+0x67C`), zone -1, MovementZone Normal, seeded at the exit.
+                // Residual: native Unlimbos at the null cell's coordinate when
+                // nothing passes; VERA keeps the exit cell. That needs the exit
+                // outside the playfield with no admitted cell within 32 rings.
+                let cell = sim
+                    .object_type(passenger.type_ref(), rules)
+                    .and_then(|object| {
+                        sim.nearby_location_cell(
+                            (i32::from(exit.0), i32::from(exit.1)),
+                            PassabilityArgs {
+                                speed_type: object.speed_type,
+                                required_zone_id: None,
+                                movement_zone: MovementZone::Normal,
+                                bridge_aware_zone: false,
+                            },
+                        )
+                    })
+                    .unwrap_or(exit);
                 (cell, None)
             };
             if passenger_is_infantry && sub_cell.is_none() {
@@ -563,12 +494,19 @@ fn eject_head_passenger(
             if let Some(passenger) = sim.substrate.entities.get_mut(pax_id) {
                 passenger.attack_target = None;
                 passenger.passively_acquired_target = false;
-                passenger.order_intent = None;
             }
             // Unit73DBDB queues the passenger's Move directly, before
             // class destination73DC06; it does not execute a player event.
             sim.queue_order_mission(pax_id, MissionType::Move);
-            issue_ground_destination(sim, rules, pax_id, dest, overlay_registry, effects);
+            if let Err(cause) = sim.assign_destination_represented(
+                pax_id,
+                Some(crate::sim::components::NavTargetRef::cell(dest.0, dest.1)),
+                Some(rules),
+                overlay_registry,
+                effects,
+            ) {
+                log::warn!("Unload destination {pax_id}: {cause}");
+            }
             // `0x0073DC0C..0x0073DC19`: a transport in a team takes the
             // passenger into it (`Add_Member(passenger, 0)`); boarding's
             // Conceal had removed it from its own.
@@ -628,13 +566,30 @@ pub(crate) fn unit_mission_unload(
                 // Track 1, Wheel 2, Hover 3, ...), a land-only type — not for
                 // the transport's own (hover) type, which is what makes a
                 // hover transport leave the water before it unloads.
-                let seed = (entity.position.rx, entity.position.ry);
-                if let Some(cell) =
-                    find_nearby_passable_for(sim, rules, entity, seed, Some(SpeedType::Wheel))
-                {
+                // Zone -1, MovementZone Normal, seeded at the transport's own
+                // cell (`0x0073D772..0x0073D7B0`). Residual: when nothing
+                // passes, native still sets the destination to the null cell
+                // (`0x0073D7B5..0x0073D7D1`); VERA sets none and waits. That
+                // needs no Wheel ground within 32 rings of the transport.
+                let seed = (i32::from(entity.position.rx), i32::from(entity.position.ry));
+                let wheel_land = PassabilityArgs {
+                    speed_type: SpeedType::Wheel,
+                    required_zone_id: None,
+                    movement_zone: MovementZone::Normal,
+                    bridge_aware_zone: false,
+                };
+                if let Some(cell) = sim.nearby_location_cell(seed, wheel_land) {
                     // `Set_Destination` only — the committed selector stays
                     // Unload and state 0 re-runs once the drive has ended.
-                    issue_ground_destination(sim, rules, id, cell, overlay_registry, effects);
+                    if let Err(cause) = sim.assign_destination_represented(
+                        id,
+                        Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
+                        Some(rules),
+                        overlay_registry,
+                        effects,
+                    ) {
+                        log::warn!("Unload destination {id}: {cause}");
+                    }
                 }
                 return WAIT_MOVING_FRAMES;
             }
@@ -695,17 +650,15 @@ pub(crate) fn unit_mission_unload(
     }
 }
 
-/// Whether the aircraft is on the ground: `GetHeight() == 0` (vtable `+0x1C8`,
-/// `0x004151F0`) and the flight-altitude float `+0x2E8 == 0.0` (`0x00415200`).
+/// Whether the aircraft is on the ground: `GetHeight() == 0` (vtable `+0x1C8`
+/// at `0x004151FF`) and the Fly approach pitch `+0x2E8 == 0.0` (`fld` at
+/// `0x0041520D`, compared through `0x0041521E`).
 fn aircraft_landed(
     entity: &GameEntity,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> bool {
     crate::sim::movement::air_movement::current_fly_height(entity, terrain) == 0
-        && entity
-            .locomotor
-            .as_ref()
-            .is_none_or(|loco| loco.altitude == SIM_ZERO)
+        && entity.flight_attitude.is_level()
 }
 
 /// The Aircraft Unload slot `0x004151E0`, for a `Passengers > 0` aircraft;
@@ -974,13 +927,20 @@ fn eject_from_aircraft(
             if let Some(passenger) = sim.substrate.entities.get_mut(pax_id) {
                 passenger.attack_target = None;
                 passenger.passively_acquired_target = false;
-                passenger.order_intent = None;
             }
             // Aircraft415C05 queues Move directly before destination415C21,
             // followed by its radio callbacks. No Event Archive clear.
             sim.queue_order_mission(pax_id, MissionType::Move);
-            if let Some(dest) = scan_cell {
-                issue_ground_destination(sim, rules, pax_id, dest, overlay_registry, effects);
+            if let Some(dest) = scan_cell
+                && let Err(cause) = sim.assign_destination_represented(
+                    pax_id,
+                    Some(crate::sim::components::NavTargetRef::cell(dest.0, dest.1)),
+                    Some(rules),
+                    overlay_registry,
+                    effects,
+                )
+            {
+                log::warn!("Unload destination {pax_id}: {cause}");
             }
             Ok(())
         },

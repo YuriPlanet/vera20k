@@ -780,9 +780,8 @@ mod tests {
 
     #[test]
     fn sidebar_credit_gate_matrix() {
-        use crate::app::match_runtime::sim_tick::{
-            RuntimePassInputs, SessionMode, decide_runtime_pass,
-        };
+        use crate::app::match_runtime::session::SessionMode;
+        use crate::app::match_runtime::sim_tick::{RuntimePassInputs, decide_runtime_pass};
 
         // Baseline wall-clock pass: active window, accepted startup receipt,
         // elapsed pacer window, nothing paused, no menu. Every freeze case

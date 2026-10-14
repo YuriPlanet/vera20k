@@ -372,8 +372,14 @@ fn mcv_building_slots_wait_for_completion_and_use_converted_health() {
     assert_eq!(destination.health.current, 250);
     assert_eq!(destination.techno_ctor_random_word, constructor_word);
     assert!(destination.building_up());
-    assert!(!destination.building_actually_placed);
-    assert!(destination.building_anim_slots.iter().all(Option::is_none));
+    assert!(!destination.building_art.actually_placed());
+    assert!(
+        destination
+            .building_art
+            .anim_slots()
+            .iter()
+            .all(Option::is_none)
+    );
     assert_eq!(sim.substrate.anims.len(), 0);
     assert_eq!(sim.substrate.next_stable_object_id, destination_id + 1);
     assert_eq!(sim.scenario_rng.state(), before_rng);
@@ -383,9 +389,9 @@ fn mcv_building_slots_wait_for_completion_and_use_converted_health() {
     }
     let destination = sim.entities().get(destination_id).unwrap();
     assert!(!destination.building_up());
-    assert!(destination.building_actually_placed);
+    assert!(destination.building_art.actually_placed());
     let anim = sim
-        .anim(destination.building_anim_slots[18].unwrap())
+        .anim(destination.building_art.anim_slots()[18].unwrap())
         .unwrap();
     assert_eq!(sim.interner.resolve(anim.type_id), "D");
     let expected_rate = expected_rng.next_range_u32_inclusive(1, 5) as u16;

@@ -420,7 +420,9 @@ fn native_trigger_reveal_whole_area_histories_match_original_cache_and_residents
 fn discovery_building(sim: &mut Simulation, owner: InternedId, input: &Value) -> u64 {
     let id = actor(sim, owner, (9, 10), (128, 128), EntityCategory::Structure);
     let entity = sim.substrate.entities.get_mut(id).unwrap();
-    entity.building_actually_placed = input["actually_placed"] == 1;
+    entity
+        .building_art
+        .set_actually_placed_for_test(input["actually_placed"] == 1);
     let mission = &entity.mission;
     let fixture = crate::sim::mission::state::MissionTestFixture {
         current: crate::sim::mission::MissionId::from_raw(
@@ -531,7 +533,8 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
                     .entities
                     .get(id)
                     .unwrap()
-                    .building_actually_placed
+                    .building_art
+                    .actually_placed()
             )),
             history["actually_placed"]
         );

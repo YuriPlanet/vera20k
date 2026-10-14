@@ -333,7 +333,6 @@ fn a_rhino_stops_short_of_its_approach_cell_when_its_target_closes_in() {
             entity_id: tank,
             target_rx: 4,
             target_ry: 13,
-            queue: false,
         },
     );
     let frames = chase(&mut sim, &rules, rhino, tank);
@@ -382,7 +381,7 @@ fn an_area_guarding_rhino_approaches_its_target_and_stops_in_range() {
     let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (18, 10));
     target(&mut sim, rhino, tank);
     start_mission(&mut sim, rhino, MissionType::AreaGuard);
-    assert!(sim.mission_owns_approach(rhino, &rules));
+    assert!(sim.owns_foot_approach(rhino, &rules));
     let frames = chase(&mut sim, &rules, rhino, tank);
     let reach = range(&rules, "120mm");
     let Some(NavTargetRef::Cell { rx, ry }) = frames[0].nav_com else {
@@ -401,7 +400,7 @@ fn an_area_guarding_rhino_approaches_its_target_and_stops_in_range() {
 
 /// A Chrono Legionnaire on Area Guard takes the same Foot body through
 /// Infantry `0x00522340` as on Attack: Approach picks a cell in range, not
-/// the Target's own, and the pursuit pass leaves it alone.
+/// the Target's own.
 #[test]
 fn an_area_guarding_chrono_legionnaire_approaches_through_the_foot_body() {
     let Some(rules) = retail_rules() else {
@@ -412,7 +411,7 @@ fn an_area_guarding_chrono_legionnaire_approaches_through_the_foot_body() {
     let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (24, 14));
     target(&mut sim, legionnaire, tank);
     start_mission(&mut sim, legionnaire, MissionType::AreaGuard);
-    assert!(sim.mission_owns_approach(legionnaire, &rules));
+    assert!(sim.owns_foot_approach(legionnaire, &rules));
     sim.approach_target(
         legionnaire,
         &rules,
@@ -510,7 +509,7 @@ fn a_rocketeer_flies_to_a_cell_in_range_of_the_tank_he_attacks() {
             break;
         }
     }
-    assert!(sim.mission_owns_approach(rocketeer, &rules));
+    assert!(sim.owns_foot_approach(rocketeer, &rules));
     let Some(NavTargetRef::Cell { rx, ry }) = first else {
         panic!("Approach sets a cell: {first:?}");
     };
@@ -531,7 +530,7 @@ fn a_night_hawks_approach_picks_a_cell_in_range() {
     let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (24, 14));
     target(&mut sim, hawk, tank);
     start_mission(&mut sim, hawk, MissionType::Attack);
-    assert!(sim.mission_owns_approach(hawk, &rules));
+    assert!(sim.owns_foot_approach(hawk, &rules));
     sim.approach_target(
         hawk,
         &rules,
@@ -598,7 +597,6 @@ fn a_hunting_conscript_drops_his_walk_to_approach_his_quarry() {
             entity_id: conscript,
             target_rx: 4,
             target_ry: 20,
-            queue: false,
         },
     );
     let walk = Some(NavTargetRef::cell(4, 20));
@@ -658,7 +656,7 @@ fn an_area_guarding_gi_approaches_his_target_and_stops_in_range() {
     let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (17, 10));
     target(&mut sim, gi, tank);
     start_mission(&mut sim, gi, MissionType::AreaGuard);
-    assert!(sim.mission_owns_approach(gi, &rules));
+    assert!(sim.owns_foot_approach(gi, &rules));
     let frames = chase(&mut sim, &rules, gi, tank);
     let reach = range(&rules, "M60");
     let Some(NavTargetRef::Cell { rx, ry }) = frames[0].nav_com else {
@@ -833,7 +831,7 @@ fn a_brute_beside_a_tank_takes_the_spot_in_his_cell_nearer_it() {
     target(&mut sim, brute, tank);
     start_mission(&mut sim, brute, MissionType::Attack);
     assert!(frame(&sim, brute, tank).distance > range(&rules, "Smash"));
-    assert!(sim.mission_owns_approach(brute, &rules));
+    assert!(sim.owns_foot_approach(brute, &rules));
     let mut one_draw = sim.scenario_rng.clone();
     one_draw.next_range_u32(4);
     sim.approach_target(
@@ -968,7 +966,7 @@ fn a_brutes_approach_picks_a_cell_beside_the_tank() {
     let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (16, 10));
     target(&mut sim, brute, tank);
     start_mission(&mut sim, brute, MissionType::Attack);
-    assert!(sim.mission_owns_approach(brute, &rules));
+    assert!(sim.owns_foot_approach(brute, &rules));
     let first = |sim: &Simulation| {
         sim.substrate
             .occupancy

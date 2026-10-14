@@ -15,6 +15,7 @@ pub(crate) mod concrete_effects;
 pub(crate) mod enter;
 pub mod control;
 pub(crate) mod leaf;
+pub(crate) mod mega_mission;
 pub(crate) mod readiness;
 pub mod retask;
 pub mod state;

@@ -298,7 +298,6 @@ fn retail_chrono_remote_transport_enter_keeps_object_and_boards() {
                     entity_id: passenger,
                     target_rx: 12,
                     target_ry: 16,
-                    queue: false,
                 },
                 Some(rules)
             ));
@@ -496,7 +495,6 @@ fn retail_replacement_move_cancels_pending_vehicle_boarding() {
             entity_id: passenger,
             target_rx: 16,
             target_ry: 17,
-            queue: false,
         },
         Some(rules)
     ));

@@ -1,7 +1,8 @@
 //! Gas `BehavesLike` system + particle AI.
 //!
 //! Per-tick gas logic for both the system and the individual particles
-//! (lifetime, decel, damage countdown). `ParticleSystemClass::AI_Gas @
+//! (state and damage countdown; the dispatcher owns lifetime).
+//! `ParticleSystemClass::AI_Gas @
 //! 0x0062E6D0` has no periodic spawn arm and no `Slowdown`/`SpawnCutoff`
 //! accumulator — those belong to `AI_Smoke @ 0x0062ED40` alone. Gas differs
 //! from smoke in two further ways:
@@ -19,9 +20,9 @@
 //!   ↔ IVec3 leptons converter; lands with Task C6. The "no friend-or-foe
 //!   filter" parity rule lives there. C3 only does the countdown bookkeeping.
 //! - Bridge collision in `move_gas`.
-//! - Wiring `move_gas` into the per-tick path — needs `[General] WindDirection=`
-//!   to be parsed first; today `move_gas` is a tested helper waiting for a caller.
-//! - Per-particle animation state machine + 1-in-8 even-frame random drift.
+//! - Wiring `move_gas` into the per-tick path; General's WindDirection reader
+//!   is available, but this separate Gas mechanism remains incomplete.
+//! - Per-particle 1-in-8 even-frame random drift.
 //! - Gravity (Z velocity = -2.0 - RulesClass.Gravity).
 
 use super::wind::{GAS_WIND_DX, GAS_WIND_DY};
@@ -29,7 +30,7 @@ use super::{Particle, ParticleSystem};
 use crate::rules::particle_type::{ParticleType, ParticleTypeId};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::native_x87::NativeF32Bits;
 use glam::IVec3;
 
 /// Advance one gas `ParticleSystem` by one tick.
@@ -55,9 +56,7 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
     //
     // Phase 1 — tick existing particles.
     for p in sys.particles.iter_mut().rev() {
-        let pt = rules.particle_type(p.type_id);
-        let frame_count = super::system_ai::resolve_image_frame_count(rules, pt);
-        tick_particle(p, pt, frame_count);
+        super::system_ai::tick_particle(p, sim, rules);
     }
 
     // Phase 2 — collect NextParticle children for any dying particle, then prune.
@@ -82,6 +81,11 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
             drift_z: p.drift_z,
         });
     }
+    for p in &sys.particles {
+        if p.marked_for_deletion {
+            sim.conceal_particle(p.stable_id());
+        }
+    }
     sys.particles.retain(|p| !p.marked_for_deletion);
     for spec in child_specs {
         if sys.particles.len() >= cap {
@@ -102,23 +106,23 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
     // what native does.
 }
 
-/// Per-tick AI for one gas particle. Tier-2 form: state-AI advance →
-/// lifetime countdown → velocity decel → damage-counter bookkeeping
-/// (reset on zero). Actual damage application to cell occupants is
-/// deferred to Task C6 — see module-level notes.
-pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, image_frame_count: u16) {
-    super::system_ai::advance_state(p, pt, image_frame_count);
-    p.lifetime_remaining = p.lifetime_remaining.saturating_sub(1);
-    if p.lifetime_remaining <= 0 {
-        p.marked_for_deletion = true;
-    }
-    if p.velocity > SIM_ZERO {
-        p.velocity = (p.velocity - pt.deacc).max(SIM_ZERO);
-    }
-    p.damage_counter = p.damage_counter.saturating_sub(1);
-    if p.damage_counter <= 0 {
-        // C6 will hook the damage-to-cell-occupants iteration here.
+/// GasAI62BD50 scalar/cadence suffix. Its motion/damage application prefix
+/// remains a separate incomplete Gas mechanism; no native scalar decel exists.
+pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType) {
+    p.damage_counter = p.damage_counter.wrapping_sub(1);
+    if p.damage_counter == 0 && pt.damage != 0 {
+        //62C229: reload precedes occupancy damage, which remains unported.
         p.damage_counter = pt.max_dc as i16;
+    }
+    if super::system_ai::state_advance_due(p, pt.max_ec, pt.state_ai_advance) {
+        p.animation_state = p.animation_state.wrapping_add(1);
+    }
+    if p.animation_state == pt.end_state_ai {
+        if pt.delete_on_state_limit {
+            p.marked_for_deletion = true;
+        } else {
+            p.animation_state = 0;
+        }
     }
 }
 
@@ -166,7 +170,7 @@ fn gas_wind_dir() -> u8 {
 struct ChildSpec {
     next_id: ParticleTypeId,
     coords: IVec3,
-    velocity: SimFixed,
+    velocity: NativeF32Bits,
     translucency: u8,
     drift_x: i32,
     drift_y: i32,
@@ -174,7 +178,7 @@ struct ChildSpec {
 }
 
 fn make_child(spec: ChildSpec, pt: &ParticleType, sim: &mut Simulation) -> Particle {
-    let mut p = Particle::new(spec.next_id, spec.coords, pt, sim);
+    let mut p = Particle::new(spec.next_id, spec.coords, IVec3::ZERO, pt, sim);
     p.velocity = spec.velocity;
     p.translucency = spec.translucency;
     p.drift_x = spec.drift_x;
@@ -193,7 +197,7 @@ mod tests {
 
     fn fake_system(type_id: ParticleSystemTypeId) -> ParticleSystem {
         let mut system = ParticleSystem::test_fixture(0, type_id, IVec3::ZERO);
-        system.spawn_timer = SimFixed::from_num(1);
+        system.spawn_timer = NativeF32Bits::ONE;
         system
     }
 
@@ -226,10 +230,15 @@ mod tests {
         let mut sim = Simulation::new();
         let mut sys = fake_system(ParticleSystemTypeId(0));
         let pt_a = rules.particle_type(ParticleTypeId(0));
-        let mut parent =
-            Particle::new(ParticleTypeId(0), IVec3::new(1000, 2000, 0), pt_a, &mut sim);
+        let mut parent = Particle::new(
+            ParticleTypeId(0),
+            IVec3::new(1000, 2000, 0),
+            IVec3::ZERO,
+            pt_a,
+            &mut sim,
+        );
         parent.lifetime_remaining = 1;
-        parent.velocity = SimFixed::from_num(3);
+        parent.velocity = NativeF32Bits::from_bits(0x4040_0000);
         parent.drift_x = 7;
         parent.drift_y = -4;
         parent.drift_z = 11;
@@ -242,7 +251,7 @@ mod tests {
         let child = &sys.particles[0];
         assert_eq!(child.type_id, ParticleTypeId(1));
         // Parent's velocity carries to the child.
-        assert_eq!(child.velocity, SimFixed::from_num(3));
+        assert_eq!(child.velocity, NativeF32Bits::from_bits(0x4040_0000));
         // Parent's drift carries too — a moving plume keeps drifting.
         assert_eq!(child.drift_x, 7);
         assert_eq!(child.drift_y, -4);
@@ -266,11 +275,11 @@ mod tests {
         );
         let pt = rules.particle_type(ParticleTypeId(0));
         let mut sim = Simulation::new();
-        let mut p = Particle::new(ParticleTypeId(0), IVec3::ZERO, pt, &mut sim);
+        let mut p = Particle::new(ParticleTypeId(0), IVec3::ZERO, IVec3::ZERO, pt, &mut sim);
         // The shared constructor initializes damage_counter = pt.max_dc.
         assert_eq!(p.damage_counter, 5);
         for _ in 0..5 {
-            tick_particle(&mut p, pt, 0);
+            tick_particle(&mut p, pt);
         }
         assert_eq!(
             p.damage_counter, 5,
@@ -294,7 +303,7 @@ mod tests {
         );
         let pt = rules.particle_type(ParticleTypeId(0));
         let mut sim = Simulation::new();
-        let mut p = Particle::new(ParticleTypeId(0), IVec3::ZERO, pt, &mut sim);
+        let mut p = Particle::new(ParticleTypeId(0), IVec3::ZERO, IVec3::ZERO, pt, &mut sim);
         move_gas_with_wind(&mut p, pt, 5, 3);
         assert_eq!(p.coords.x, 1, "GAS_WIND_DX[3] == 1");
         assert_eq!(p.coords.y, 2, "GAS_WIND_DY[3] == 2");
@@ -373,7 +382,7 @@ mod tests {
         );
         assert_eq!(
             sys.spawn_timer,
-            SimFixed::from_num(1),
+            NativeF32Bits::ONE,
             "no accumulator advances the Gas spawn timer"
         );
     }

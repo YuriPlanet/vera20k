@@ -133,7 +133,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
     producer.lifecycle.in_limbo = false;
     producer.in_playfield = true;
     producer.finish_building_construction_for_test();
-    producer.building_actually_placed = true;
+    producer.building_art.set_actually_placed_for_test(true);
     saved.substrate.entities.insert(producer);
     saved.add_entity_occupancy(producer_id);
     saved.append_house_base_building_for_test(producer_id);

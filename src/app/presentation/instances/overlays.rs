@@ -552,6 +552,41 @@ pub(super) fn anim_world_render_coords(
     (screen_x, screen_y, rx, ry, z, lift_px)
 }
 
+/// The Convert and scalar 0047F6A0 passes for one overlay body, in its branch
+/// order: ordinary cell Convert/common; resource (+0x2A9) and veins use global
+/// ordinary Convert, with resource brightness fixed at 1000. Walls (OverlayType+0x2A8,
+/// 0047F96A..0047F9C1) take the current house's ColorScheme Convert
+/// (A83D4C+0x16054 -> B054D4[]+0x30C) at the cell's +0x10A scalar. Every
+/// Convert reads A, so unexplored shroud selects palette row 0 (black).
+///
+/// RESIDUAL: that scheme's house remap of wall art is absent from this RGBA
+/// atlas; walls keep their unremapped colours. Trigger: every wall draw.
+/// Effect: remap-range wall pixels show source colours. Presentation only.
+fn ordinary_overlay_palette_light(
+    flags: Option<&OverlayTypeFlags>,
+    light_grid: &crate::map::lighting::CellLightGrid,
+    scenario_lighting: &crate::sim::scenario_session::ScenarioLightingState,
+    cell: (u16, u16),
+) -> crate::render::palette_light::PaletteLight {
+    use crate::render::palette_light::PaletteLight;
+    match flags {
+        Some(f) if f.tiberium => PaletteLight::plain(53, 1000),
+        Some(f) if f.wall => crate::app::presentation::lighting::body_palette_light(
+            light_grid,
+            scenario_lighting,
+            cell,
+            0,
+        ),
+        Some(f) if f.is_veins => PaletteLight::plain(
+            53,
+            light_grid
+                .cell_light_at(cell)
+                .map_or(1000, |l| l.common_scalar),
+        ),
+        _ => PaletteLight::cell(light_grid, cell, false),
+    }
+}
+
 /// Borrowed inputs for the ordinary CellClass overlay pass. Live identity and
 /// frame stay owned by OverlayGrid; the source entries only retain draw order.
 struct CellOverlayInputs<'a> {
@@ -567,6 +602,8 @@ struct CellOverlayInputs<'a> {
     terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
     heights: &'a std::collections::BTreeMap<(u16, u16), u8>,
     lighting: &'a crate::map::lighting::CellLightGrid,
+    /// Scenario light selecting the ColorScheme Convert's RGB for walls.
+    scenario_lighting: &'a crate::sim::scenario_session::ScenarioLightingState,
     camera: [f32; 2],
     viewport: [f32; 2],
     origin_y: f32,
@@ -712,28 +749,12 @@ fn build_cell_overlay_instances(
         let (policy, z_adjust, z_gradient) =
             ordinary_overlay_z(overlay_flags, slope_type.unwrap_or(0), depth_z);
         let tint: [f32; 3] = input.lighting.overlay_tint_at((entry.rx, entry.ry));
-        // 0047F6A0: ordinary cell Convert/common; resource and veins use
-        // global ordinary Convert, with resource brightness fixed at 1000.
-        // Wall owner palette remapping is still absent from this atlas.
-        let light_grid = input.lighting;
-        let palette_light = if is_wall {
-            Default::default()
-        } else if overlay_flags.is_some_and(|f| f.tiberium) {
-            crate::render::palette_light::PaletteLight::plain(53, 1000)
-        } else if overlay_flags.is_some_and(|f| f.is_veins) {
-            crate::render::palette_light::PaletteLight::plain(
-                53,
-                light_grid
-                    .cell_light_at((entry.rx, entry.ry))
-                    .map_or(1000, |l| l.common_scalar),
-            )
-        } else {
-            crate::render::palette_light::PaletteLight::cell(
-                light_grid,
-                (entry.rx, entry.ry),
-                false,
-            )
-        };
+        let palette_light = ordinary_overlay_palette_light(
+            overlay_flags,
+            input.lighting,
+            input.scenario_lighting,
+            (entry.rx, entry.ry),
+        );
         planned_cells.push(
             crate::app::presentation::render::draw_plan_lowering::PlannedCellInstance {
                 draw: crate::render::tactical_draw_plan::CellDraw {
@@ -808,6 +829,7 @@ pub(crate) fn build_overlay_instances(
         .map(|g| (g.origin_y, g.world_height))
         .unwrap_or((0.0, 1.0));
 
+    let no_scenario_lighting = crate::sim::scenario_session::ScenarioLightingState::default();
     build_cell_overlay_instances(
         &CellOverlayInputs {
             entries: state.match_state.match_presentation.overlays.as_slice(),
@@ -829,6 +851,13 @@ pub(crate) fn build_overlay_instances(
             terrain: state.terrain_template(),
             heights: state.height_map(),
             lighting: state.match_state.match_presentation.lighting.grid(),
+            scenario_lighting: state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .map_or(&no_scenario_lighting, |runtime| {
+                    &runtime.simulation.session.lighting
+                }),
             camera: [cam_x, cam_y],
             viewport: [sw, sh],
             origin_y,
@@ -1474,6 +1503,39 @@ mod tests {
             RenderZPolicy::ReadWrite
         );
         assert_eq!(ordinary_overlay_z(None, 0, 0).0, RenderZPolicy::None);
+    }
+
+    /// Walls and fences (Wall=yes overlays) draw through a native Convert,
+    /// so unexplored shroud's A=2 stores black instead of a dimmed silhouette.
+    #[test]
+    fn wall_overlay_convert_reads_shroud_a_like_other_overlays() {
+        let grid = crate::map::lighting::CellLightGrid::new();
+        let scenario = crate::sim::scenario_session::ScenarioLightingState::default();
+        let wall = OverlayTypeFlags {
+            wall: true,
+            ..Default::default()
+        };
+        let light = super::ordinary_overlay_palette_light(Some(&wall), &grid, &scenario, (3, 4));
+        assert_eq!(
+            (light.rows(), light.brightness()),
+            (53, 1000),
+            "current-house ColorScheme Convert at the cell scalar"
+        );
+        let stone = [150, 110, 90];
+        // SHROUD frame 15 stores A=2 in every unexplored pixel.
+        assert_eq!(light.rgb565(stone, 100, 2), 0, "unexplored shroud");
+        assert_ne!(light.rgb565(stone, 100, 127), 0, "explored ground");
+        for other in [
+            OverlayTypeFlags::default(),
+            OverlayTypeFlags {
+                tiberium: true,
+                ..Default::default()
+            },
+        ] {
+            let light =
+                super::ordinary_overlay_palette_light(Some(&other), &grid, &scenario, (3, 4));
+            assert_eq!(light.rgb565(stone, 100, 2), 0);
+        }
     }
 
     #[test]

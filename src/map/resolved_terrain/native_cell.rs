@@ -62,13 +62,22 @@ struct SharedCellDummyState {
     neighbor_count: AtomicU8,
 }
 
+thread_local! {
+    /// The Dummy (by its state's address) whose packed cell word this thread
+    /// has detached, and its private copy; see [`SharedCellDummy::detached`].
+    static DETACHED_CELL: std::cell::Cell<Option<(usize, u64)>> =
+        const { std::cell::Cell::new(None) };
+}
+
 /// One native map-query identity domain. Bulk terrain is borrowed; input
 /// producers fork only the small fallback CellClass and retain it across every
 /// nested miss. Cloning ResolvedTerrainGrid would share its canonical Dummy.
+/// A canonical query borrows the map's Dummy: cloning its `Arc` per query
+/// would make every parallel path search contend on one reference count.
 #[derive(Debug)]
 pub struct NativeCellQuery<'a> {
     terrain: &'a ResolvedTerrainGrid,
-    dummy: SharedCellDummy,
+    dummy: std::borrow::Cow<'a, SharedCellDummy>,
 }
 
 /// MapClass's shared LocalSize iterator words +11C/+120. The simulation
@@ -214,14 +223,14 @@ impl<'a> NativeCellQuery<'a> {
     pub(crate) fn canonical(terrain: &'a ResolvedTerrainGrid) -> Self {
         Self {
             terrain,
-            dummy: terrain.shared_cell_dummy.clone(),
+            dummy: std::borrow::Cow::Borrowed(&terrain.shared_cell_dummy),
         }
     }
 
     pub(crate) fn isolated(terrain: &'a ResolvedTerrainGrid) -> Self {
         Self {
             terrain,
-            dummy: terrain.shared_cell_dummy.fork_query_identity(),
+            dummy: std::borrow::Cow::Owned(terrain.shared_cell_dummy.fork_query_identity()),
         }
     }
 
@@ -229,7 +238,7 @@ impl<'a> NativeCellQuery<'a> {
         self.terrain
     }
     pub(crate) fn dummy(&self) -> SharedCellDummy {
-        self.dummy.clone()
+        self.dummy.as_ref().clone()
     }
 
     pub(crate) fn lookup(&self, coord: (i16, i16)) -> NativeCellIdentity {
@@ -351,7 +360,7 @@ impl SharedCellDummy {
     pub(crate) fn fork_query_identity(&self) -> Self {
         Self {
             state: Arc::new(SharedCellDummyState {
-                cell: AtomicU64::new(self.state.cell.load(Ordering::Relaxed)),
+                cell: AtomicU64::new(self.cell_word()),
                 land_type: AtomicI32::new(self.land_type()),
                 raw_flags: AtomicU32::new(self.state.raw_flags.load(Ordering::Relaxed)),
                 native_anchor: AtomicU64::new(self.state.native_anchor.load(Ordering::Relaxed)),
@@ -376,7 +385,7 @@ impl SharedCellDummy {
     /// (`0x0047BD22`). Other constructor-owned fields are not represented by
     /// this handle yet.
     pub(crate) fn reconstruct_for_map_resize(&self) {
-        self.state.cell.store(0, Ordering::Relaxed);
+        self.update_cell_word(|_| 0);
         self.state.land_type.store(0, Ordering::Relaxed);
         // Constructor47BBF0: AND FF800000 at47BCE1; preserve upper residue.
         self.state
@@ -394,7 +403,7 @@ impl SharedCellDummy {
     }
 
     pub fn snapshot(&self) -> SharedCellDummySnapshot {
-        let packed = self.state.cell.load(Ordering::Relaxed);
+        let packed = self.cell_word();
         SharedCellDummySnapshot {
             coord: (
                 i32::from((packed as u16) as i16),
@@ -439,10 +448,8 @@ impl SharedCellDummy {
         self.state
             .land_type
             .store(prepared.land_type(), Ordering::Relaxed);
-        self.state.cell.store(
-            prepared.state.cell.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
+        let word = prepared.cell_word();
+        self.update_cell_word(|_| word);
         self.state.overlay.store(
             prepared.state.overlay.load(Ordering::Relaxed),
             Ordering::Relaxed,
@@ -466,12 +473,51 @@ impl SharedCellDummy {
     /// Stamp only CellClass+0x24, preserving the live level and slope bytes.
     pub fn stamp_coord(&self, x: i32, y: i32) {
         let coord = u64::from(x as i16 as u16) | (u64::from(y as i16 as u16) << 16);
-        let _ = self
-            .state
+        self.update_cell_word(|current| (current & !0xffff_ffff) | coord);
+    }
+
+    /// Run `work` with this Dummy's packed coordinate/level/slope word private
+    /// to the current thread: its stamps and reads use a copy taken now, and
+    /// the shared word stays as it is. Path searches running side by side
+    /// (`movement::path_batch`) stamp through it, so they neither race on
+    /// the Dummy nor change what later lookups on the simulation thread see.
+    pub(crate) fn detached<R>(&self, work: impl FnOnce() -> R) -> R {
+        struct Restore(Option<(usize, u64)>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                DETACHED_CELL.set(self.0);
+            }
+        }
+        let word = self.cell_word();
+        let _restore = Restore(DETACHED_CELL.replace(Some((self.address(), word))));
+        work()
+    }
+
+    fn address(&self) -> usize {
+        Arc::as_ptr(&self.state) as usize
+    }
+
+    fn cell_word(&self) -> u64 {
+        match DETACHED_CELL.get() {
+            Some((address, word)) if address == self.address() => word,
+            _ => self.state.cell.load(Ordering::Relaxed),
+        }
+    }
+
+    fn update_cell_word(&self, update: impl Fn(u64) -> u64) {
+        match DETACHED_CELL.get() {
+            Some((address, word)) if address == self.address() => {
+                DETACHED_CELL.set(Some((address, update(word))));
+            }
+            _ => {
+                let _ =
+                    self.state
             .cell
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                Some((current & !0xffff_ffff) | coord)
+                            Some(update(current))
             });
+    }
+        }
     }
 
     pub fn same_identity(&self, other: &Self) -> bool {
@@ -673,23 +719,13 @@ impl SharedCellDummy {
     pub(crate) fn set_level_slope(&self, level: i8, slope_type: u8) {
         const LEVEL_SLOPE_MASK: u64 = 0xffff << 32;
         let value = (u64::from(level as u8) << 32) | (u64::from(slope_type) << 40);
-        let _ = self
-            .state
-            .cell
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                Some((current & !LEVEL_SLOPE_MASK) | value)
-            });
+        self.update_cell_word(|current| (current & !LEVEL_SLOPE_MASK) | value);
     }
 
     pub(crate) fn set_level(&self, level: i8) {
         const LEVEL_MASK: u64 = 0xff << 32;
         let value = u64::from(level as u8) << 32;
-        let _ = self
-            .state
-            .cell
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                Some((current & !LEVEL_MASK) | value)
-            });
+        self.update_cell_word(|current| (current & !LEVEL_MASK) | value);
     }
 }
 

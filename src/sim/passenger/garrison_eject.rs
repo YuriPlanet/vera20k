@@ -1045,10 +1045,6 @@ pub(crate) mod tests {
             "successful Scatter should set a cell NavCom after its RNG draw: {:?}",
             passenger.navigation.nav_com
         );
-        assert!(
-            passenger.order_intent.is_none(),
-            "Rust has no exact infantry MissionClass queue surface yet; do not fake mission 0xF as OrderIntent"
-        );
     }
 
     #[test]

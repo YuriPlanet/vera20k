@@ -1247,7 +1247,8 @@ fn script_action_9_clears_the_site_before_the_mcv_deploys() {
     assert!(team.sim.substrate.occupancy.contains_entity(20, 22, mcv));
     let e1_entity = team.sim.substrate.entities.get(e1).unwrap();
     assert!(
-        e1_entity.navigation.nav_com.is_some() || e1_entity.movement_target.is_some(),
+        e1_entity.navigation.nav_com.is_some()
+            || crate::sim::movement::motion_query::is_moving(&e1_entity) == Some(true),
         "the E1 was scattered"
     );
 
@@ -1303,7 +1304,8 @@ fn deploy_refused_for_a_computer_owner_clears_the_site() {
         for _ in 0..300 {
             team.tick();
             told_to_leave |= team.sim.substrate.entities.get(e1).is_some_and(|entity| {
-                entity.navigation.nav_com.is_some() || entity.movement_target.is_some()
+                entity.navigation.nav_com.is_some()
+                    || crate::sim::movement::motion_query::is_moving(&entity) == Some(true)
             });
             if !team.yards().is_empty() {
                 break;

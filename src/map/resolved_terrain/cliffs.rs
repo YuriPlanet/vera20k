@@ -34,6 +34,26 @@ pub(crate) enum DestroyableCliffFamily {
     B,
 }
 
+/// The destroyable-cliff IsoTile a cell belongs to
+/// ([`ResolvedTerrainGrid::destroyable_cliff_tile`]).
+pub(crate) struct DestroyableCliffTile<'a> {
+    /// The tile's top-left cell: the cell less its subtile's column and row.
+    pub origin: (i16, i16),
+    pub width: u8,
+    pub height: u8,
+    entries: &'a [Option<DynamicTilePrototype>],
+}
+
+impl DestroyableCliffTile<'_> {
+    /// Whether the tile's TMP has an image for this subtile (a nonzero
+    /// offset in its table).
+    pub(crate) fn has_image(&self, column: u8, row: u8) -> bool {
+        self.entries
+            .get(usize::from(row) * usize::from(self.width) + usize::from(column))
+            .is_some_and(Option::is_some)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct DestroyableCliffMutation {
     #[cfg(test)]
@@ -53,6 +73,38 @@ impl ResolvedTerrainGrid {
         self.cell(rx, ry).is_some_and(|cell| {
             cell.final_tile_index == i32::from(catalog.destroyable_start)
                 || cell.final_tile_index == i32::from(catalog.destroyable_start) + 1
+        })
+    }
+
+    /// The destroyable-cliff tile under `(rx, ry)`, as `MapClass @
+    /// 0x00586FC0` reads it: the cell's IsoTile (`+0x38`), whose subtile
+    /// (`+0x11A`) splits into column and row by the tile's width
+    /// (`0x0058705A..0x00587095`). None off a destroyable cliff.
+    pub(crate) fn destroyable_cliff_tile(
+        &self,
+        rx: u16,
+        ry: u16,
+    ) -> Option<DestroyableCliffTile<'_>> {
+        let catalog = self.destroyable_cliff_catalog.as_ref()?;
+        let cell = self.cell(rx, ry)?;
+        let template = match cell.final_tile_index {
+            tile if tile == i32::from(catalog.destroyable_start) => &catalog.old[0],
+            tile if tile == i32::from(catalog.destroyable_start) + 1 => &catalog.old[1],
+            _ => return None,
+        };
+        if template.width == 0 {
+            return None;
+        }
+        let column = cell.final_sub_tile % template.width;
+        let row = cell.final_sub_tile / template.width;
+        Some(DestroyableCliffTile {
+            origin: (
+                (rx as i16).wrapping_sub(i16::from(column)),
+                (ry as i16).wrapping_sub(i16::from(row)),
+            ),
+            width: template.width,
+            height: template.height,
+            entries: &template.entries,
         })
     }
 

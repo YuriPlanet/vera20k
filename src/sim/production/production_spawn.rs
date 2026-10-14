@@ -443,7 +443,7 @@ fn nearby_query_for_naval_unit_delivery<'a>(
     map_size: Option<(i32, i32)>,
 ) -> Option<crate::sim::find_nearby_cell::NearbyQuery<'a>> {
     use crate::sim::find_nearby_cell::{
-        NearbyAnchorGate, NearbyFootprint, NearbyQuery, PassabilityArgs, map_owned_radius_cap,
+        NearbyFootprint, NearbyQuery, PassabilityArgs, map_owned_radius_cap,
     };
     let (size_width, size_height) = map_size?;
     Some(NearbyQuery {
@@ -458,7 +458,6 @@ fn nearby_query_for_naval_unit_delivery<'a>(
             bridge_aware_zone: false,
         },
         footprint: NearbyFootprint::SINGLE,
-        anchor_gate: NearbyAnchorGate::NativeHeightAware,
         allow_bridge_cells: true,
         check_height: false,
         // Arguments 11 and 15 are both false. Immediate UnitClass::Unlimbo,
@@ -668,7 +667,7 @@ fn nearby_query_for_spawn<'a>(
     map_size: Option<(i32, i32)>,
 ) -> Option<crate::sim::find_nearby_cell::NearbyQuery<'a>> {
     use crate::sim::find_nearby_cell::{
-        NearbyAnchorGate, NearbyFootprint, NearbyQuery, PassabilityArgs, map_owned_radius_cap,
+        NearbyFootprint, NearbyQuery, PassabilityArgs, map_owned_radius_cap,
     };
     let (size_width, size_height) = map_size?;
     let movement_zone = if require_water {
@@ -689,7 +688,6 @@ fn nearby_query_for_spawn<'a>(
         // gamemd-derived: every FNPC candidate path calls
         // Is_Cell_In_Playfield_CellClass(cell, 1) @ 0x00578540 immediately
         // before CellRect passability, including production spawn/exit callers.
-        anchor_gate: NearbyAnchorGate::NativeHeightAware,
         allow_bridge_cells: true,
         check_height: false,
         check_occupancy: true,
@@ -1688,24 +1686,6 @@ mod tests {
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
         ))
         .expect("minimal spawn rules");
-
-        let query = nearby_query_for_spawn(
-            movement_profile,
-            &path_grid,
-            &occupancy,
-            &entities,
-            Some(&terrain),
-            None,
-            None,
-            false,
-            Some(bounds),
-            Some((bounds.base, 10)),
-        )
-        .expect("installed MapClass authority");
-        assert!(matches!(
-            query.anchor_gate,
-            crate::sim::find_nearby_cell::NearbyAnchorGate::NativeHeightAware
-        ));
 
         assert_eq!(
             find_spawn_cell_near_structure(

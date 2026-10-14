@@ -52,7 +52,9 @@ fn mission_only_aircraft_reveal_matches_original_flag_histories() {
             !entity.is_mission_only(),
             "construction is not successful Unlimbo"
         );
-        entity.set_veterancy_rank(input["veterancy"].as_u64().unwrap() as u16 * 100);
+        entity
+            .veterancy
+            .set_rank_for_test(input["veterancy"].as_u64().unwrap() as u16 * 100);
         if flag("previous") {
             entity.mark_mission_only();
         }
@@ -288,10 +290,13 @@ fn aircraft_unlimbo_height_and_tail_match_original_runs() {
         );
         let z = row["unlimbo_coord"][2].as_i64().unwrap() as i32;
         assert_eq!(entity.position.exact_z_leptons, Some(z), "{row}");
-        // The altitude cache mirrors the committed GetHeight.
+        // GetHeight reads the committed Location Z.
         assert_eq!(
-            entity.locomotor.as_ref().unwrap().altitude,
-            crate::util::fixed_math::SimFixed::from_num(z - int("ground")),
+            crate::sim::movement::air_movement::current_fly_height(
+                entity,
+                sim.resolved_terrain.as_ref()
+            ),
+            z - int("ground"),
             "{row}"
         );
         let fraction = match row["speed_fraction_bits"].as_str().unwrap() {

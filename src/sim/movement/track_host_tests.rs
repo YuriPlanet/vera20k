@@ -966,9 +966,12 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
     }
 }
 
+/// The terminal retires its completed head before the PerCell callback, and
+/// a new order the callback installs (NavCom and Foot+5E0 words) survives the
+/// tail; nothing is owed to a later Process.
 #[test]
-fn terminal_retires_only_completed_adapter_before_callback() {
-    use crate::sim::components::{MovementTarget, NavTargetRef};
+fn terminal_retires_the_head_before_callback_and_keeps_a_new_order() {
+    use crate::sim::components::NavTargetRef;
     for retarget in [false, true] {
         let (mut sim, invocation, budget) = fixture(TrackFamily::Drive, 15);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
@@ -985,20 +988,14 @@ fn terminal_retires_only_completed_adapter_before_callback() {
                 progress
             ));
         };
-        entity.movement_target = Some(MovementTarget {
-            ..Default::default()
-        });
-        // A stopped committed segment has no NavCom, but its completed path
+        // A stopped committed segment has no NavCom, but its completed head
         // must still retire before callbacks begin a deployment body turn.
         sim.run_track_points_observed(invocation, budget, None, None, &mut |sim, id, event| {
             if event == TrackWorldEvent::PerCell {
                 let entity = sim.substrate.entities.get_mut(id).unwrap();
-                assert!(entity.movement_target.is_none());
+                assert!(crate::sim::movement::track_head::committed_track_head(entity).is_none());
                 if retarget {
                     entity.navigation.nav_com = Some(NavTargetRef::cell(12, 9));
-                    entity.movement_target = Some(MovementTarget {
-                        ..Default::default()
-                    });
                     // The callback's new route: Foot+5E0 words from (10,9).
                     entity.navigation.path_replay =
                         crate::sim::movement::fixture_path_replay(&[(10, 9), (11, 9), (12, 9)]);
@@ -1006,8 +1003,16 @@ fn terminal_retires_only_completed_adapter_before_callback() {
             }
         });
         let entity = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(entity.movement_target.is_some(), retarget);
-        assert!(!entity.navigation.pending_arrival_clear);
+        assert_eq!(entity.navigation.nav_com.is_some(), retarget);
+        assert_eq!(
+            entity
+                .navigation
+                .path_replay
+                .remaining_directions()
+                .is_empty(),
+            !retarget
+        );
+        assert!(!entity.navigation.pending_destination_setter);
     }
 }
 

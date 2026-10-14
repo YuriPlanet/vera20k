@@ -604,9 +604,9 @@ pub(crate) fn build_occupant_pip_instances(
         // Rookie draws nothing: native's rookie frame is the flagged variant,
         // reached only from the veterancy < 0 branch, which a freshly built unit
         // is not in.
-        let rank: u32 = if e.veterancy() >= 200 {
+        let rank: u32 = if e.veterancy.rank() >= 200 {
             2
-        } else if e.veterancy() >= 100 {
+        } else if e.veterancy.rank() >= 100 {
             1
         } else {
             continue;

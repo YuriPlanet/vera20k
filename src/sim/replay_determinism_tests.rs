@@ -45,7 +45,6 @@ fn make_move_command() -> CommandEnvelope {
             entity_id: 1,
             target_rx: 12,
             target_ry: 2,
-            queue: false,
         },
     )
 }

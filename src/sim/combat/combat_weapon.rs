@@ -955,7 +955,7 @@ pub(crate) fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerF
     };
     AttackerFacts {
         kind,
-        veterancy: entity.veterancy(),
+        veterancy: entity.veterancy.rank(),
         current_weapon_number: entity.current_weapon_number(),
         open_transport_weapon: open_transport_weapon(
             entity.passenger_role.in_open_transport(),
@@ -1188,7 +1188,7 @@ fn occupied_weapon<'r>(
     Some(occupant.and_then(|occupant| {
         rules
             .object(interner.resolve(occupant.type_ref()))
-            .and_then(|kind| occupant_weapon(rules, kind, occupant.veterancy()))
+            .and_then(|kind| occupant_weapon(rules, kind, occupant.veterancy.rank()))
     }))
 }
 
@@ -1207,7 +1207,7 @@ pub(crate) fn get_weapon<'r>(
     interner: &StringInterner,
 ) -> Option<&'r WeaponType> {
     occupied_weapon(entity, obj, entities, rules, interner).unwrap_or_else(|| {
-        weapon_for_index(obj, entity.veterancy(), index).and_then(|(id, _)| rules.weapon(id))
+        weapon_for_index(obj, entity.veterancy.rank(), index).and_then(|(id, _)| rules.weapon(id))
     })
 }
 
@@ -1273,7 +1273,7 @@ mod tests {
                     5,
                     EntityCategory::Infantry,
                 );
-                inside.set_veterancy_rank(veterancy);
+                inside.veterancy.set_rank_for_test(veterancy);
                 entities.insert(inside);
                 let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0);
                 assert!(cargo.board(2, 1));
@@ -2005,7 +2005,7 @@ IsLocomotor=yes
         target: &TargetFacts,
     ) -> Option<SelectedWeapon<'a>> {
         let mut entity = GameEntity::test_default(1, attacker, "Test", 0, 0);
-        entity.set_veterancy_rank(facts.veterancy);
+        entity.veterancy.set_rank_for_test(facts.veterancy);
         resolve_selected_weapon(
             rules,
             &entity,

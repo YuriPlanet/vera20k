@@ -36,14 +36,6 @@
 //!   ID) relative to the objects after this one.
 //! - The vein tag (0x00486920) is not ported: the vein cell has no retail
 //!   user.
-//! - DropIn over water below one level (vt+0xEC, 0x00514BB7..0x00514C0C) is
-//!   not ported: it is `ObjectClass::DropAsBomb @ 0x005F4160`, the unported
-//!   bridge-fall mechanism (`crew_survival`, #1492). Trigger: an unpowered
-//!   Hover that settles over water, an offline Robot Tank
-//!   (`sim::powered_unit`; Move_To's ion-storm test 0x0053A130 is constant
-//!   false). Effect: it floats at the surface where native's falls in and
-//!   dies. Frequency: uncommon (a Robot Tank over water when its house loses
-//!   its last powered center).
 //! - An explicit map tube word (direction 8, 0x0051503B..0x005152CE) is
 //!   answered as the invalid-tube arm: VERA's tube entry is bound to the Drive
 //!   route adapter. Trigger: a Hover route through a map `[Tubes]` tube.
@@ -337,24 +329,10 @@ impl Simulation {
         let rules = rules.ok_or_else(|| self.hover_error(id, "Hover Process requires rules"))?;
         let mut out = HoverProcessOutcome::default();
         if self.hover_is_moving(id) && !self.hover_move(id, rules, registry, &mut out, effects)? {
-            self.retire_hover_adapter(id);
             return Ok(out);
         }
-        self.hover_process_tail(id, rules);
-        self.retire_hover_adapter(id);
+        self.hover_process_tail(id, rules, registry, effects);
         Ok(out)
-    }
-
-    /// The `movement_target` a Hover order installs
-    /// (`prepare_destination_execution`) tells its readers that the Foot
-    /// moves; it drops once Is_Moving (0x00514C30) is false, with the
-    /// waypoints the corridor lane dropped at arrival (#689 residual).
-    fn retire_hover_adapter(&mut self, id: u64) {
-        if let Some(entity) = self.substrate.entities.get_mut(id)
-            && runtime(entity).is_some_and(|hover| !hover.is_moving())
-        {
-            entity.movement_target = None;
-        }
     }
 
     /// Process 0x00514325..0x00514A1E. Returns false when Process returns
@@ -576,7 +554,8 @@ impl Simulation {
         let terrain = self.resolved_terrain.as_ref();
         if let (Some(terrain), Some(entity)) = (terrain, self.substrate.entities.get(id)) {
             let cells = NativeCellQuery::canonical(terrain);
-            let structural = cells.flags(cells.lookup_world(x, y)) & 0x100 != 0;
+            let entered = cells.lookup_world(x, y);
+            let structural = cells.flags(entered) & 0x100 != 0;
             let height = super::super::air_movement::current_fly_height(entity, Some(terrain));
             let on_bridge =
                 if !entity.on_bridge && structural && height >= BRIDGE_DECK_HEIGHT_LEPTONS {
@@ -586,18 +565,71 @@ impl Simulation {
                 } else {
                     entity.on_bridge
                 };
+            let level = cells.ground_fields(entered).0;
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.on_bridge = on_bridge;
+                entity.position.z = super::super::movement_bridge::stored_level(level, on_bridge);
             }
         }
         self.foot_mark_put(id, Some(rules), registry, effects);
     }
 
     /// Process 0x00514A21..0x00514C12: the altitude controller and the
-    /// Shove tail (see the module residuals for the wake, vein and DropIn).
-    fn hover_process_tail(&mut self, id: u64, rules: &RuleSet) {
-        let frame = self.session.binary_frame;
+    /// Shove tail and the water DropAsBomb gate.
+    fn hover_process_tail(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
         self.hover_altitude(id, rules);
+        self.hover_spin_tail(id, rules, registry, effects);
+    }
+
+    /// Original Process suffix514AD0..514C12, after altitude adjustment.
+    fn hover_spin_tail(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        //514AD0..514AD5: an object not spinning on entry skips the entire
+        // tail, including water admission. Power_Off516BF0 starts the spin.
+        let was_spinning = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(runtime)
+            .is_some_and(|hover| hover.shove_turning);
+        self.hover_shove(id);
+        //514B49..514C0C: when this spin ends, water below floor+104 drops
+        //the Foot as a bomb. Startup513AE0 initializes A8F1C0=104;
+        //this is a positive threshold, not one level below the surface.
+        let drop = was_spinning
+            && self.substrate.entities.get(id).is_some_and(|entity| {
+                runtime(entity).is_some_and(|h| !h.shove_turning)
+                    && self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                        let cells = NativeCellQuery::canonical(terrain);
+                        let at = ground_pose::position_world_coord(&entity.position);
+                        let cell = cells.lookup_world(at.x, at.y);
+                        cells.land_type(cell) == 2
+                            && ground_pose::query_ground_height(&cells, at).is_ok_and(|floor| {
+                                at.z < floor.wrapping_add(GROUND_LEVEL_HEIGHT_LEPTONS)
+                            })
+                    })
+            });
+        if drop {
+            self.drop_as_bomb(
+                id,
+                crate::sim::world::UninitContext::new(Some(rules), registry).with_effects(effects),
+            );
+        }
+    }
+
+    fn hover_shove(&mut self, id: u64) {
+        let frame = self.session.binary_frame;
         let powered = self
             .substrate
             .entities
@@ -800,12 +832,10 @@ impl Simulation {
             destination,
             urgency,
             self.playfield_bounds,
-            Some(&self.type_handles),
-            Some(rules),
         )
         .ok_or_else(|| self.hover_error(id, "retired Hover Find_Path requester"))?;
         let found = self
-            .foot_find_path(&request, None, rules, registry, effects)
+            .foot_find_path(&request, rules, registry, effects)
             .map_err(|cause| self.hover_error(id, cause))?;
         //51668B..5166BA / 5168D0..516904: +640 = (Frame, PathDelay).
         if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -1295,4 +1325,60 @@ enum Arrival {
     Tail,
     /// Take the step, then the tail.
     Step,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn production_hover_spin_exit_water_gate_matches_native() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/drop_as_bomb.json",
+        ))
+        .unwrap();
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut count = 0;
+        for row in rows
+            .iter()
+            .filter(|row| row["input"]["kind"] == "hover_water")
+        {
+            let input = &row["input"];
+            let name = input["name"].as_str().unwrap();
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0);
+            let cell = sim
+                .resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut(10, 10)
+                .unwrap();
+            cell.land_type = input["land"].as_u64().unwrap_or(2) as u8;
+            cell.yr_cell_land_type = cell.land_type;
+            let mut entity = GameEntity::test_default(1, "ROBO", "Americans", 10, 10);
+            entity.position.exact_z_leptons = Some(input["z"].as_i64().unwrap() as i32);
+            let mut loco = crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Hover,
+            );
+            loco.powered = input["powered"].as_u64().unwrap_or(0) != 0;
+            let hover = loco.hover_runtime_mut().unwrap();
+            hover.shove_turning = input["spinning"].as_u64().unwrap_or(0) != 0;
+            hover.shove_steps = input["steps"].as_i64().unwrap_or(2) as i32;
+            entity.locomotor = Some(loco);
+            sim.substrate.entities.insert(entity);
+            sim.hover_spin_tail(1, &rules, None, FrameEffects::default());
+            let entity = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(
+                entity.was_dropped_as_bomb(),
+                row["bomb"].as_bool().unwrap(),
+                "{name}"
+            );
+            assert_eq!(
+                entity.is_falling_down(),
+                row["falling"].as_bool().unwrap(),
+                "{name}"
+            );
+            count += 1;
+        }
+        assert_eq!(count, 8);
+    }
 }

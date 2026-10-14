@@ -1,0 +1,856 @@
+{
+  "loaded_voice_reset": {
+    "last": -1,
+    "pending": -1,
+    "suppression": true
+  },
+  "reader_controls": [
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "keys": {},
+      "name": "missing"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "keys": {
+        "VoiceDeploy": "AbsentSlaveVoice"
+      },
+      "name": "invalid"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "keys": {
+        "VoiceDeploy": ""
+      },
+      "name": "empty"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 0,
+        "voice_deploy_name": "SlaveMinerHarvest",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "keys": {
+        "VoiceDeploy": "sLaVeMiNeRhArVeSt"
+      },
+      "name": "mixed_sound_case_changes_binding"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 0,
+        "voice_deploy_name": "SlaveMinerHarvest",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 0,
+        "voice_deploy_name": "SlaveMinerHarvest",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "keys": {
+        "voicedeploy": "SlaveMinerUnDeployVoice"
+      },
+      "name": "wrong_key_case_retains_binding"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 0,
+        "voice_deploy_name": "SlaveMinerHarvest",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 0,
+        "voice_deploy_name": "SlaveMinerHarvest",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "keys": {
+        "VoiceDeploy": "AbsentSlaveVoice"
+      },
+      "name": "invalid_after_replacement"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 0,
+        "voice_deploy_name": "SlaveMinerHarvest",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "keys": {
+        "VoiceDeploy": "SlaveMinerUnDeployVoice"
+      },
+      "name": "restore_stock"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": 0,
+        "voice_undeploy_name": "SlaveMinerHarvest"
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "keys": {
+        "VoiceUndeploy": "SlaveMinerHarvest"
+      },
+      "name": "undeploy_valid"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": 0,
+        "voice_undeploy_name": "SlaveMinerHarvest"
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": 0,
+        "voice_undeploy_name": "SlaveMinerHarvest"
+      },
+      "keys": {},
+      "name": "undeploy_missing_retains_binding"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": 0,
+        "voice_undeploy_name": "SlaveMinerHarvest"
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": 0,
+        "voice_undeploy_name": "SlaveMinerHarvest"
+      },
+      "keys": {
+        "VoiceUndeploy": "AbsentSlaveVoice"
+      },
+      "name": "undeploy_invalid_retains_binding"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": 0,
+        "voice_undeploy_name": "SlaveMinerHarvest"
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": 0,
+        "voice_undeploy_name": "SlaveMinerHarvest"
+      },
+      "keys": {
+        "voiceundeploy": "SlaveMinerUnDeployVoice"
+      },
+      "name": "undeploy_wrong_key_case_retains_binding"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": 2,
+        "voice_undeploy_name": "SlaveMinerUnDeployVoice"
+      },
+      "before": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": 0,
+        "voice_undeploy_name": "SlaveMinerHarvest"
+      },
+      "keys": {
+        "VoiceUndeploy": "sLaVeMiNeRuNdEpLoYvOiCe"
+      },
+      "name": "undeploy_mixed_sound_case_changes_binding"
+    }
+  ],
+  "retail_layers": [
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "bytes": 743215,
+      "file": "RULESMD.INI",
+      "keys": {
+        "DeploySound": "SlaveMinerUndeploy",
+        "ResourceDestination": "yes",
+        "ResourceGatherer": "yes",
+        "UndeploysInto": "SMIN",
+        "VoiceDeploy": "SlaveMinerUnDeployVoice",
+        "VoiceHarvest": "SlaveMinerHarvest"
+      },
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "absent": true,
+      "file": "LANGRULE.INI"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "bytes": 295,
+      "file": "MPBattleMD.ini",
+      "keys": {},
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+    },
+    {
+      "after": {
+        "deploy_sound": 1,
+        "deploy_sound_name": "SlaveMinerUndeploy",
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "voice_deploy": 2,
+        "voice_deploy_name": "SlaveMinerUnDeployVoice",
+        "voice_harvest": 0,
+        "voice_harvest_name": "SlaveMinerHarvest",
+        "voice_undeploy": -1,
+        "voice_undeploy_name": null
+      },
+      "bytes": 156269,
+      "file": "XMP03T4.MAP",
+      "keys": {},
+      "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+    }
+  ],
+  "schema_version": 1,
+  "selling_cue_controls": [
+    {
+      "calls": [
+        {
+          "kind": "QueueVoice",
+          "sound": "SlaveMinerUnDeployVoice"
+        },
+        {
+          "coords": [
+            1664,
+            1920,
+            0
+          ],
+          "kind": "positional_PlayAt_boundary",
+          "sound": "SlaveMinerUndeploy"
+        }
+      ],
+      "name": "ordinary_destination",
+      "pending": "SlaveMinerUnDeployVoice",
+      "suppression": false
+    },
+    {
+      "calls": [
+        {
+          "kind": "QueueVoice",
+          "sound": "SlaveMinerHarvest"
+        },
+        {
+          "coords": [
+            1664,
+            1920,
+            0
+          ],
+          "kind": "positional_PlayAt_boundary",
+          "sound": "SlaveMinerUndeploy"
+        }
+      ],
+      "name": "resource_destination",
+      "pending": "SlaveMinerHarvest",
+      "suppression": false
+    }
+  ],
+  "sound_registry": {
+    "boundary": "Original selected SoundList/Defaults/type readers and retained-name lookup; AudioIndex sample names mapped to local indexes; playback7509E0 is a recording boundary, excluding audio Main RNG/device output.",
+    "rows": [
+      {
+        "fixture_index": 0,
+        "name": "SlaveMinerHarvest",
+        "samples": [
+          "vslahaa",
+          "vslahab",
+          "vslahac",
+          "vslahad",
+          "vslamod"
+        ]
+      },
+      {
+        "fixture_index": 2,
+        "name": "SlaveMinerUnDeployVoice",
+        "samples": [
+          "vslamob"
+        ]
+      },
+      {
+        "fixture_index": 1,
+        "name": "SlaveMinerUndeploy",
+        "samples": [
+          "vslade2a"
+        ]
+      }
+    ],
+    "selected": {
+      "Defaults": {
+        "Limit": "5",
+        "MinVolume": "50",
+        "Priority": "NORMAL",
+        "Range": "10",
+        "Type": "NORMAL SCREEN UNSHROUD",
+        "Volume": "80"
+      },
+      "SlaveMinerHarvest": {
+        "Control": "random",
+        "Sounds": "$vslahaa $vslahab $vslahac $vslahad $vslamod",
+        "Volume": "85"
+      },
+      "SlaveMinerUnDeployVoice": {
+        "Control": "random",
+        "Sounds": "$vslamob",
+        "Volume": "85"
+      },
+      "SlaveMinerUndeploy": {
+        "Sounds": "vslade2a"
+      },
+      "SoundList": {
+        "703": "SlaveMinerHarvest",
+        "848": "SlaveMinerUndeploy",
+        "853": "SlaveMinerUnDeployVoice"
+      }
+    },
+    "sha256": "0a8e85381aef1a0f97074c953bfe99504da00c6220fae1a023a1afd857023232"
+  },
+  "type_constructor": {
+    "deploy_sound": -1,
+    "deploy_sound_name": null,
+    "resource_destination": false,
+    "resource_gatherer": false,
+    "voice_deploy": -1,
+    "voice_deploy_name": null,
+    "voice_harvest": -1,
+    "voice_harvest_name": null,
+    "voice_undeploy": -1,
+    "voice_undeploy_name": null
+  },
+  "voice_controls": [
+    {
+      "input": {
+        "archive_cell": false,
+        "owner_is_local": true,
+        "pending": null,
+        "resource_cell": false,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": false,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": true
+      },
+      "name": "ordinary_without_archive",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": "SlaveMinerUnDeployVoice",
+        "pending_index": 2,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": true,
+        "owner_is_local": true,
+        "pending": null,
+        "resource_cell": false,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": false,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": true
+      },
+      "name": "ordinary_clear_cell",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": "SlaveMinerUnDeployVoice",
+        "pending_index": 2,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": true,
+        "owner_is_local": true,
+        "pending": null,
+        "resource_cell": true,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": false,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": true
+      },
+      "name": "resource_override",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": "SlaveMinerHarvest",
+        "pending_index": 0,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": false,
+        "owner_is_local": true,
+        "pending": null,
+        "resource_cell": false,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": true,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": true
+      },
+      "name": "ordinary_suppressed",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": null,
+        "pending_index": -1,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": true,
+        "owner_is_local": true,
+        "pending": null,
+        "resource_cell": true,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": true,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": true
+      },
+      "name": "resource_override_keeps_suppression",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": "SlaveMinerHarvest",
+        "pending_index": 0,
+        "suppression": true
+      }
+    },
+    {
+      "input": {
+        "archive_cell": true,
+        "owner_is_local": true,
+        "pending": null,
+        "resource_cell": true,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": false,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": null,
+        "voices_enabled": true
+      },
+      "name": "resource_missing_harvest_falls_back",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": "SlaveMinerUnDeployVoice",
+        "pending_index": 2,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": true,
+        "owner_is_local": true,
+        "pending": null,
+        "resource_cell": true,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": true,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": null,
+        "voices_enabled": true
+      },
+      "name": "resource_missing_harvest_consumes_suppression",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": null,
+        "pending_index": -1,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": false,
+        "owner_is_local": true,
+        "pending": null,
+        "resource_cell": false,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": false,
+        "voice_deploy": null,
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": true
+      },
+      "name": "deploy_slot_missing",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": null,
+        "pending_index": -1,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": false,
+        "owner_is_local": true,
+        "pending": null,
+        "resource_cell": false,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": false,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": false
+      },
+      "name": "queue_disabled",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": null,
+        "pending_index": -1,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": false,
+        "owner_is_local": false,
+        "pending": null,
+        "resource_cell": false,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": false,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": true
+      },
+      "name": "non_local_house",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": null,
+        "pending_index": -1,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": true,
+        "owner_is_local": true,
+        "pending": null,
+        "resource_cell": true,
+        "resource_destination": false,
+        "resource_gatherer": true,
+        "suppression": false,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": true
+      },
+      "name": "resource_not_destination",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": "SlaveMinerUnDeployVoice",
+        "pending_index": 2,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": true,
+        "owner_is_local": true,
+        "pending": null,
+        "resource_cell": true,
+        "resource_destination": true,
+        "resource_gatherer": false,
+        "suppression": false,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": true
+      },
+      "name": "resource_not_gatherer",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": "SlaveMinerUnDeployVoice",
+        "pending_index": 2,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": false,
+        "owner_is_local": true,
+        "pending": "SlaveMinerUndeploy",
+        "resource_cell": false,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": true,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": true
+      },
+      "name": "suppressed_retains_previous_pending",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": "SlaveMinerUndeploy",
+        "pending_index": 1,
+        "suppression": false
+      }
+    },
+    {
+      "input": {
+        "archive_cell": false,
+        "owner_is_local": true,
+        "pending": "SlaveMinerUndeploy",
+        "resource_cell": false,
+        "resource_destination": true,
+        "resource_gatherer": true,
+        "suppression": false,
+        "voice_deploy": "SlaveMinerUnDeployVoice",
+        "voice_harvest": "SlaveMinerHarvest",
+        "voices_enabled": true
+      },
+      "name": "ordinary_replaces_previous_pending",
+      "output": {
+        "archive_retained": true,
+        "last": -1,
+        "pending": "SlaveMinerUnDeployVoice",
+        "pending_index": 2,
+        "suppression": false
+      }
+    }
+  ]
+}

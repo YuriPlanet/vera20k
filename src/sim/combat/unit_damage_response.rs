@@ -19,7 +19,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{Ability, ObjectType, PipScale};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::veterancy::{has_weapon_ability, rank_from_u16};
+use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::authority::EntityReadyInputProvider;
@@ -283,7 +283,7 @@ impl Simulation {
         };
         CrushCharge {
             crusher: object.crusher
-                || has_weapon_ability(rank_from_u16(unit.veterancy()), object, Ability::Crusher),
+                || has_weapon_ability(unit.veterancy.rank_kind(), object, Ability::Crusher),
             crushable: object_is_crushable_by(
                 object.omni_crusher,
                 CrushTarget::from_entity(victim, self.session.binary_frame),

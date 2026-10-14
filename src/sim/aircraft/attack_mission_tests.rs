@@ -520,8 +520,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
         ));
         // In flight, on the map: a grounded plane takes Enter_Idle_Mode's
         // landed arm, and an unmarked one is not in the air (vt+0x54).
-        plane.locomotor.as_mut().unwrap().altitude =
-            crate::util::fixed_math::SimFixed::from_num(1500);
+        plane.position.exact_z_leptons = Some(1500);
         plane.lifecycle.cell_marked = true;
         sim.substrate.entities.insert(plane);
         sim.set_logic_order_for_test(vec![1]);

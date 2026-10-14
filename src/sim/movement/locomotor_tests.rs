@@ -158,7 +158,7 @@ fn test_drive_locomotor() {
     let state = LocomotorState::from_object_type(&obj, 0);
     assert_eq!(state.kind, LocomotorKind::Drive);
     assert_eq!(state.layer, MovementLayer::Ground);
-    assert_eq!(state.air_phase(), AirMovePhase::Landed);
+    assert_eq!(state.air_phase(0), AirMovePhase::Landed);
     assert!(state.is_ground_mover());
     assert!(!state.is_air_mover());
 }
@@ -188,7 +188,7 @@ fn test_fly_locomotor_air_layer() {
     let state = LocomotorState::from_object_type(&obj, 0);
     assert_eq!(state.kind, LocomotorKind::Fly);
     assert_eq!(state.layer, MovementLayer::Air);
-    assert_eq!(state.air_phase(), AirMovePhase::Landed);
+    assert_eq!(state.air_phase(0), AirMovePhase::Landed);
     assert!(!state.is_ground_mover());
     assert!(state.is_air_mover());
     assert_eq!(state.fly_target_height(), 0);

@@ -553,3 +553,24 @@ fn reveal_cell_opens_a_surrounded_neighbor_without_storing_its_frame() {
         -1
     );
 }
+
+/// `reveal_cell` reads `frames` and `map_cell_edge_frame` reads `fog_open` of
+/// cells whose cache is not initialized, so the state hash covers them too.
+#[test]
+fn uninitialized_edge_cache_fields_move_the_state_hash() {
+    use crate::sim::state_hasher::StateHasher;
+    use std::hash::Hasher;
+    let hash = |visibility: &OwnerVisibility| {
+        let mut hasher = StateHasher::new();
+        visibility.hash_cells(&mut hasher);
+        hasher.finish()
+    };
+    let base = OwnerVisibility::new(4, 4);
+    assert!(!base.map_cell_edge_cache[5].initialized);
+    let mut open = base.clone();
+    open.map_cell_edge_cache[5].fog_open = true;
+    let mut framed = base.clone();
+    framed.map_cell_edge_cache[5].frames[0] = 3;
+    assert_ne!(hash(&open), hash(&base));
+    assert_ne!(hash(&framed), hash(&base));
+}

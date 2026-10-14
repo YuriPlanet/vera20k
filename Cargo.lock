@@ -4275,6 +4275,7 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "pollster 0.4.0",
+ "rayon",
  "rfd",
  "rodio",
  "ron",

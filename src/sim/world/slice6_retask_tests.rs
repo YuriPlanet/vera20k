@@ -19,7 +19,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::AttackTarget;
 use crate::sim::command::{Command, CommandEnvelope};
-use crate::sim::components::OrderIntent;
+use crate::sim::mission::mega_mission::MegaMission;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
@@ -92,7 +92,7 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // See docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 attribution.
 // Infantry ctor 517BBD supplies PrimaryFacing ROT 127 (asserted below).
 // 2026-09-23 Drive/Ship Process path request (behavior, not composition):
-// Drive/Ship orders from every producer (player, pursuit, rally, miners) are
+// Drive/Ship orders from every producer (player, Approach, rally, miners) are
 // accepted by the Unit setter without an order-time A*, PowerOn or redirect.
 // This fixture has no native zone topology, so the first Process searches in
 // the legacy inline lane, not the Find_Path owner. The pins move with that
@@ -331,14 +331,36 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // Infantry Approach: the GI's Attack now walks him to a cell in M60 range of
 // the tank (pinned in the loop) instead of the tank's own cell, so his NavCom
 // and path change. Replay, retasking and all three RNG gates remain unchanged.
-// Snapshot345 retires the duplicate announcement None hash feed. The common
-// map fixture also installs its freshly created64x64 grid through the map
-// owner, capturing4096 zero real-cell flag slots instead of absent dimensions/
-// storage. Scoped hash-only controls below recover the incoming pin and the
-// announcement-only intermediate without changing the corrected map state.
+// 2026-10-14: hash composition and coverage only. state_hash folds
+// through the pinned StateHasher instead of std's DefaultHasher (a
+// temporary control folding the finished replay through DefaultHasher
+// still gave the previous 0xC4B5_83A9_D807_77FD), fog grids and entities fold
+// as per-House and per-entity digests, cell grids and footprint lists
+// fold as packed byte records, and the edge cache also covers
+// uninitialized cells: code that writes no simulation state.
+// Snapshot349 drops the move-order adapter (`MovementTarget`, #689), whose
+// presence and speed stamp every entity's fold hashed. Hash composition
+// only: a control binary (main with a hash that skips only that fold)
+// gives this value in the same test, with every tripwire above green.
+// Control removed. Previous: 0xA729_2F39_E67E_51D9.
+// Snapshot350 drops the locomotor's altitude copy (#692), which every
+// locomotor's fold hashed. Hash composition only: a control binary (main
+// with a hash that skips only that fold) gives this value in the same
+// test, with every tripwire above green.
+// Control removed. Previous: 0xE3F1_10CD_1C40_81A1.
+// Integrated StateHasher pin after executed scoped feed attribution. The test
+// below recovers current main exactly with retired feeds and preserves serialized
+// gameplay, the live Dummy and all three RNG streams; this is a Rust ratchet.
+const SLICE6_BASELINE_HASH: u64 = 0x2884_EE4E_0340_B160;
+
+// ALL01 r6 (fork-local schema345) used DefaultHasher before main's
+// pinned StateHasher, entity/fog digests and owner migrations. These remain
+// historical Rust receipts; they are not comparable to current u64 outputs.
 const SLICE6_INCOMING_HASH: u64 = 0xC4B5_83A9_D807_77FD;
 const SLICE6_ANNOUNCEMENT_ONLY_HASH: u64 = 0x4645_6FE7_BB02_4917;
-const SLICE6_BASELINE_HASH: u64 = 0x9041_91B9_31BD_8D18;
+const SLICE6_R6_BASELINE_HASH: u64 = 0x9041_91B9_31BD_8D18;
+// The legacy-feed control uses this main StateHasher reference.
+const SLICE6_MAIN_HASH: u64 = 0x7DBF_3798_6DCA_6E31;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -380,16 +402,14 @@ fn replay_hash_stable_through_slice6() {
                 entity_id: 1,
                 target_rx: 10,
                 target_ry: 10,
-                queue: false,
             },
         ),
         (
             3,
             Command::AttackMove {
                 entity_id: 1,
-                target_rx: 15,
-                target_ry: 3,
-                queue: false,
+                target: None,
+                destination: Some(crate::sim::combat::TargetKind::Cell(15, 3)),
             },
         ),
         (
@@ -648,15 +668,19 @@ fn replay_hash_stable_through_slice6() {
             sim.state_hash_with_legacy_absent_real_cell_authority_for_test()
         });
     println!(
-        "[slice6 fixture hash feeds] current={current_hash:016X} old_map={announcement_only_hash:016X} control={incoming_hash_control:016X}"
+        "[slice6 fixture hash feeds] current={current_hash:016X} old_map={announcement_only_hash:016X} control={incoming_hash_control:016X} main={SLICE6_MAIN_HASH:016X} archived_default_incoming={SLICE6_INCOMING_HASH:016X} archived_default_announcement={SLICE6_ANNOUNCEMENT_ONLY_HASH:016X} archived_r6={SLICE6_R6_BASELINE_HASH:016X}"
+    );
+    assert_ne!(
+        announcement_only_hash, current_hash,
+        "the captured real-cell authority contributes to the current hash"
+    );
+    assert_ne!(
+        announcement_only_hash, incoming_hash_control,
+        "the retired announcement None feed contributes independently"
     );
     assert_eq!(
-        announcement_only_hash, SLICE6_ANNOUNCEMENT_ONLY_HASH,
-        "restoring only the absent saved real-cell feed recovers the announcement-only intermediate"
-    );
-    assert_eq!(
-        incoming_hash_control, SLICE6_INCOMING_HASH,
-        "restoring only the retired None and absent saved real-cell feeds recovers the incoming Rust pin"
+        incoming_hash_control, SLICE6_MAIN_HASH,
+        "restoring only the retired None and absent saved real-cell feeds must recover the main StateHasher pin; other drift needs attribution"
     );
     assert_eq!(
         sim.state_hash(),
@@ -700,10 +724,7 @@ fn slice6_move_command_retasks_via_mission_substrate_and_clears_state() {
     {
         let e = sim.substrate.entities.get_mut(1).expect("unit");
         e.attack_target = Some(AttackTarget::new(2));
-        e.order_intent = Some(OrderIntent::AttackMove {
-            goal_rx: 3,
-            goal_ry: 3,
-        });
+        e.mega_mission = MegaMission::attack_move(Some(crate::sim::combat::TargetKind::Cell(3, 3)));
     }
 
     let issued = sim.apply_command(
@@ -712,7 +733,6 @@ fn slice6_move_command_retasks_via_mission_substrate_and_clears_state() {
             entity_id: 1,
             target_rx: 10,
             target_ry: 10,
-            queue: false,
         },
         Some(&rules),
     );
@@ -728,5 +748,8 @@ fn slice6_move_command_retasks_via_mission_substrate_and_clears_state() {
         e.attack_target.is_none(),
         "Move tore down the attack target"
     );
-    assert!(e.order_intent.is_none(), "Move tore down the order intent");
+    assert!(
+        !e.mega_mission.is_attack_move(),
+        "Move's Assign_Target_Command cleared the attack-move"
+    );
 }

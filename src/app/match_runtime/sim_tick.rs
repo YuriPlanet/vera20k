@@ -12,6 +12,7 @@ use std::time::Instant;
 
 use crate::app::AppState;
 use crate::app::input::commands::{preferred_local_owner, preferred_local_owner_name};
+use crate::app::match_runtime::session::SessionMode;
 
 use crate::app::types::SIM_TICK_HZ;
 use crate::app::types::SIM_TICK_MS;
@@ -274,7 +275,7 @@ fn build_score_screen_model(
         sim,
         raw_snapshot,
         &ScoreRowSources {
-            handle: presentation.local_player_handle.as_deref(),
+            handle: state.match_state.session.local_player_name(),
             computer: &computer,
             schemes: state
                 .rules()
@@ -418,55 +419,6 @@ pub(crate) fn pump_audio_service(state: &mut AppState, now_ms: u64) {
     );
 }
 
-/// Front-end session mode, as the modal pump reads it to decide whether the
-/// simulation advances behind an open modal dialog. Mirrors gamemd's `g_GameMode`
-/// discriminator; the values are writer-proofed — the active engine only ever
-/// writes 0/3/4/5, so any other raw value is a legacy (modem/serial) or
-/// uninitialized mode the pump treats conservatively as non-advancing. This type
-/// is read ONLY by the app loop, never by `sim/` (the layering rule).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "VERA launches only offline skirmish (`current_session_mode`); the other game modes gamemd writes are kept for the modal pump and command bar"
-    )
-)]
-pub enum SessionMode {
-    /// Campaign / single-player. The modal pump freezes the world.
-    Campaign,
-    /// LAN / IPX network. The modal pump keeps the world advancing.
-    Lan,
-    /// WOL / Internet network. The modal pump keeps the world advancing.
-    Wol,
-    /// Offline skirmish. The modal pump freezes the world.
-    Skirmish,
-    /// Any raw value the active engine never writes (legacy modem/serial, or
-    /// uninitialized). Treated as non-advancing.
-    Other,
-}
-
-impl SessionMode {
-    /// Map gamemd's raw `g_GameMode` int to a session mode. Writer-proofed:
-    /// 0=Campaign, 3=Lan, 4=Wol, 5=Skirmish; every other value is `Other`.
-    #[cfg(test)]
-    pub fn from_game_mode(raw: i32) -> Self {
-        match raw {
-            0 => SessionMode::Campaign,
-            3 => SessionMode::Lan,
-            4 => SessionMode::Wol,
-            5 => SessionMode::Skirmish,
-            _ => SessionMode::Other,
-        }
-    }
-
-    /// Whether this is a network session (LAN/WOL). Only network sessions keep the
-    /// simulation advancing behind an open modal; offline modes freeze it.
-    pub fn is_network(self) -> bool {
-        matches!(self, SessionMode::Lan | SessionMode::Wol)
-    }
-}
-
 /// Pure modal-pump decision: should the simulation advance one frame while a
 /// modal dialog is open? Mirrors the pump body: advance only on the network
 /// branch (LAN/WOL), only when neither service-only blocker is set, and only
@@ -514,14 +466,6 @@ fn wall_clock_service_admission(
         },
         tactical_mutation,
     }
-}
-
-/// Live front-end session mode for the running client. This build is offline
-/// only, and offline campaign and skirmish freeze the world identically behind a
-/// modal, so it reports `Skirmish`. When networking lands, this reads the live
-/// game-mode discriminator and maps it via `SessionMode::from_game_mode`.
-pub(crate) fn current_session_mode(_state: &AppState) -> SessionMode {
-    SessionMode::Skirmish
 }
 
 /// Raw per-pass predicates for one in-game runtime advance. The wall-clock and
@@ -575,9 +519,9 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
             scroll_input: true,
         };
     }
-    // The current build has no network-session owner, so neither native
-    // service-only blocker can be active here. Networking must supply their
-    // combined state when `current_session_mode` becomes live.
+    // The session owner (`MatchSession`) carries no network service-only
+    // blocker yet; the in-game network service of a later networking stage
+    // supplies their combined state.
     let service = wall_clock_service_admission(
         inputs.paused,
         inputs.menu_open,
@@ -604,7 +548,7 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
         // wait must neither scroll nor latch a right drag. Native executions:
         // tools/input_oracle/fast_scroll.json (throttle_cases).
         // Retain VERA's developer-pause camera and existing network policy;
-        // current_session_mode is offline-only, so the latter is not parity.
+        // no network session can be launched yet, so the latter is not parity.
         scroll_input: inputs.window_active
             && inputs.startup_admitted
             && service.tactical_mutation
@@ -734,7 +678,7 @@ fn advance_in_game_runtime_mode(
         frame_stepping,
         paused: state.match_state.paused(),
         menu_open: state.match_state.match_presentation.in_game_menu.is_open(),
-        session_mode: current_session_mode(state),
+        session_mode: state.match_state.session.mode(),
         pacer_timing_admits,
     });
     if frame_stepping {
@@ -1597,16 +1541,6 @@ fn load_iso_palette(asset_manager: &AssetManager, theater_ext: &str) -> Option<P
         .and_then(|bytes| Palette::from_bytes(bytes).ok())
 }
 
-/// Check if a cell is walkable on either the ground or bridge layer.
-/// Delegates to the unified `PathGrid::is_any_layer_walkable()` method.
-pub(crate) fn is_any_layer_walkable(
-    grid: &crate::sim::pathfinding::PathGrid,
-    x: u16,
-    y: u16,
-) -> bool {
-    grid.is_any_layer_walkable(x, y)
-}
-
 pub(crate) fn screen_point_to_world(state: &AppState, screen_x: f32, screen_y: f32) -> (f32, f32) {
     screen_point_to_world_with_camera(
         (screen_x, screen_y),
@@ -1698,15 +1632,7 @@ pub(crate) fn nearest_walkable_cell(
     start: (u16, u16),
     max_radius: u16,
 ) -> Option<(u16, u16)> {
-    grid.nearest_walkable_any_layer(start.0, start.1, max_radius, None, None)
-}
-
-pub(crate) fn nearest_walkable_cell_layered(
-    grid: &crate::sim::pathfinding::PathGrid,
-    start: (u16, u16),
-    max_radius: u16,
-) -> Option<(u16, u16)> {
-    grid.nearest_walkable_any_layer(start.0, start.1, max_radius, None, None)
+    grid.nearest_walkable_any_layer(start.0, start.1, max_radius)
 }
 
 pub(crate) fn clamp_cell_to_grid(
@@ -2071,20 +1997,6 @@ mod modal_pump_tests {
                 denied
             );
         }
-    }
-
-    #[test]
-    fn session_mode_maps_writer_proofed_game_mode_values() {
-        assert_eq!(SessionMode::from_game_mode(0), SessionMode::Campaign);
-        assert_eq!(SessionMode::from_game_mode(3), SessionMode::Lan);
-        assert_eq!(SessionMode::from_game_mode(4), SessionMode::Wol);
-        assert_eq!(SessionMode::from_game_mode(5), SessionMode::Skirmish);
-        // Legacy modem/serial (1/2) and any unrecognized value -> Other. The active
-        // engine never writes these, so the pump treats them as non-advancing.
-        assert_eq!(SessionMode::from_game_mode(1), SessionMode::Other);
-        assert_eq!(SessionMode::from_game_mode(2), SessionMode::Other);
-        assert_eq!(SessionMode::from_game_mode(-1), SessionMode::Other);
-        assert_eq!(SessionMode::from_game_mode(99), SessionMode::Other);
     }
 
     #[test]

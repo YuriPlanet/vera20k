@@ -56,7 +56,8 @@ pub struct ParticleSystem {
     #[serde(with = "ivec3_serde")]
     pub offset: IVec3,
     pub particles: Vec<Particle>,
-    pub spawn_timer: SimFixed,
+    // Native +E8, owned by ParticleSystem: repeatedly stored binary32.
+    spawn_timer: NativeF32Bits,
     pub lifetime: i32,
     pub spark_spawn_frames: i32,
     pub facing: u8,
@@ -82,6 +83,8 @@ pub struct ParticleSystem {
     /// `Lifetime=-1` (which every stock Spark system has, since none authors
     /// `Lifetime=`) finish spawning, empty out, and then never retire.
     pub done_spawning: bool,
+    alive: bool,
+    in_limbo: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -96,6 +99,8 @@ pub struct SparkRuntimeState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Particle {
+    /// Shared Object handle for its native Display AIR entry.
+    stable_id: u64,
     /// Original630100 reads each owned Particle's GetUniqueID for its CRC;
     /// ParticleSave62D810 -> AbstractSave410320 also retains this signed word.
     native_unique_id: i32,
@@ -105,7 +110,8 @@ pub struct Particle {
     #[serde(with = "ivec3_serde")]
     pub origin: IVec3,
     pub direction: [SimFixed; 3],
-    pub velocity: SimFixed,
+    // Native +E4. All class bodies mutate this one stored scalar.
+    velocity: NativeF32Bits,
     pub lifetime_remaining: i16,
     pub damage_counter: i16,
     pub state_ai_advance: u8,
@@ -124,49 +130,98 @@ pub struct Particle {
     /// Fire-only scratch: per-tick velocity delta computed by fire AI and
     /// consumed by `move_fire` (jitter * direction). Zero for smoke/gas.
     pub prev_delta: [SimFixed; 3],
-
-    /// Per-particle sub-tick accumulator for the state-AI advance.
-    /// Increments every tick; when it hits the per-type denominator
-    /// `(image_frame_count % 2 + 1) + StateAIAdvance`, animation_state
-    /// bumps by 1. Wraps at 256 (denom is always small in practice).
-    pub state_advance_counter: u8,
 }
 
 impl Particle {
+    pub fn stable_id(&self) -> u64 {
+        self.stable_id
+    }
+    #[cfg(test)]
+    pub(crate) fn set_velocity_for_test(&mut self, velocity: NativeF32Bits) {
+        self.velocity = velocity;
+    }
+
+    pub fn velocity(&self) -> NativeF32Bits {
+        self.velocity
+    }
+
     pub fn native_unique_id(&self) -> i32 {
         self.native_unique_id
     }
 
     /// Constructor state shared by every particle spawn: the type's velocity,
     /// damage counter, state-AI advance, start state and translucency, with
-    /// no direction, drift or spark runtime. Original Particle62B5E0 reaches
+    /// normalized direction and drift. Original Particle62B5E0 reaches
     /// Abstract410230 -> Scenario68BCB0 before its lifetime draw. Spark, Fire,
     /// Smoke and Gas all use this boundary; children never join global Logic.
     /// Executed constructor/CRC controls: tools/procedural_drawing_oracle/electric_bolt.
     pub(super) fn new(
         type_id: ParticleTypeId,
         coords: IVec3,
+        target: IVec3,
         pt: &ParticleType,
         sim: &mut Simulation,
     ) -> Self {
+        let particle = Self::new_with_ground(type_id, coords, target, pt, sim, |sim, x, y| {
+            spark_world::constructor_ground_height(sim, x, y)
+        })
+        .expect("particle construction requires supported ground facts");
+        sim.reveal_particle(particle.stable_id);
+        particle
+    }
+
+    /// Constructor62B5E0 terrain seam used by the existing Spark controls.
+    /// Spark registers only after its conditional color initialization.
+    pub(super) fn new_with_ground<E, F>(
+        type_id: ParticleTypeId,
+        coords: IVec3,
+        target: IVec3,
+        pt: &ParticleType,
+        sim: &mut Simulation,
+        mut ground: F,
+    ) -> Result<Self, E>
+    where
+        F: FnMut(&Simulation, i32, i32) -> Result<Option<i32>, E>,
+    {
         let native_unique_id = sim.next_native_runtime_id();
+        let stable_id = sim.allocate_stable_id();
         let divisor = if pt.behaves_like == ParticleBehavesLike::Railgun {
             10
         } else {
-            (pt.max_ec as u32).max(1)
+            pt.max_ec as u32
         };
+        // Particle62B7DE..62B811: Smoke alone takes this signed-remainder
+        // raw draw before the shared lifetime draw (issue1413).
+        let velocity = if pt.behaves_like == ParticleBehavesLike::Smoke {
+            let delta = sim.particle_rng().next_raw_modulo_signed(2);
+            crate::util::native_x87::MaskedX87Chop53::store_f32_masked_chop(
+                crate::util::native_x87::MaskedX87Chop53::add(
+                    crate::util::native_x87::MaskedX87Chop53::load_f32(pt.velocity),
+                    crate::util::native_x87::MaskedX87Chop53::load_i32(delta),
+                ),
+            )
+        } else {
+            pt.velocity
+        };
+        assert_ne!(divisor, 0, "native Particle constructor divides by MaxEC");
         let lifetime_extra = sim.particle_rng().next_raw_abs_modulo(divisor) as i16;
-        let lifetime_remaining = (pt.max_ec as i16).saturating_add(lifetime_extra);
-        Particle {
+        let lifetime_remaining = (pt.max_ec as i16).wrapping_add(lifetime_extra);
+        let location = floor_constructor_coords_with(coords, |x, y| ground(sim, x, y))?;
+        let direction = spawn::native_velocity(coords, target);
+        let advance = spawn::spawn_state_ai_advance(pt, coords, target, direction, velocity);
+        Ok(Particle {
+            stable_id,
             native_unique_id,
             type_id,
-            coords,
+            coords: location,
             origin: coords,
-            direction: [SIM_ZERO; 3],
-            velocity: pt.velocity,
+            direction: direction.map(|component| {
+                SimFixed::from_bits((f32::from_bits(component.bits()) * 65536.0) as i32)
+            }),
+            velocity,
             lifetime_remaining,
             damage_counter: pt.max_dc as i16,
-            state_ai_advance: pt.state_ai_advance,
+            state_ai_advance: advance,
             animation_state: pt.start_state_ai,
             translucency: pt.translucency,
             marked_for_deletion: false,
@@ -175,12 +230,26 @@ impl Particle {
             drift_z: 0,
             spark: None,
             prev_delta: [SIM_ZERO; 3],
-            state_advance_counter: 0,
-        }
+        })
     }
 }
 
 impl ParticleSystem {
+    pub fn alive(&self) -> bool {
+        self.alive
+    }
+    pub fn in_limbo(&self) -> bool {
+        self.in_limbo
+    }
+    #[cfg(test)]
+    pub(crate) fn set_spawn_timer_for_test(&mut self, value: NativeF32Bits) {
+        self.spawn_timer = value;
+    }
+
+    pub fn spawn_timer(&self) -> NativeF32Bits {
+        self.spawn_timer
+    }
+
     pub fn native_unique_id(&self) -> i32 {
         self.native_unique_id
     }
@@ -201,7 +270,7 @@ impl ParticleSystem {
             coords,
             offset: IVec3::ZERO,
             particles: Vec::new(),
-            spawn_timer: SIM_ZERO,
+            spawn_timer: NativeF32Bits::ONE,
             lifetime: -1,
             spark_spawn_frames: 0,
             facing: 0x1D,
@@ -210,6 +279,8 @@ impl ParticleSystem {
             target_coords: IVec3::ZERO,
             owner_house: None,
             done_spawning: false,
+            alive: true,
+            in_limbo: false,
         }
     }
 }
@@ -219,12 +290,13 @@ impl Particle {
     /// Synthetic particle state without allocating a runtime identity or RNG draw.
     pub(crate) fn test_fixture(type_id: ParticleTypeId, coords: IVec3) -> Self {
         Self {
+            stable_id: 0,
             native_unique_id: 0,
             type_id,
             coords,
             origin: coords,
             direction: [SIM_ZERO; 3],
-            velocity: SIM_ZERO,
+            velocity: NativeF32Bits::POSITIVE_ZERO,
             lifetime_remaining: 0,
             damage_counter: 0,
             state_ai_advance: 0,
@@ -236,9 +308,26 @@ impl Particle {
             drift_z: 0,
             spark: None,
             prev_delta: [SIM_ZERO; 3],
-            state_advance_counter: 0,
         }
     }
+}
+
+// ParticleCtor62B8B1/62B8C2: repeat the lookup only on the floor arm.
+// Missing-terrain None is the existing fixture policy; retail always has a map.
+pub(super) fn floor_constructor_coords_with<E, F>(
+    system_coords: IVec3,
+    mut ground_height: F,
+) -> Result<IVec3, E>
+where
+    F: FnMut(i32, i32) -> Result<Option<i32>, E>,
+{
+    let first_ground = ground_height(system_coords.x, system_coords.y)?;
+    let z = if first_ground.is_some_and(|ground| system_coords.z <= ground) {
+        ground_height(system_coords.x, system_coords.y)?.unwrap_or(system_coords.z)
+    } else {
+        system_coords.z
+    };
+    Ok(IVec3::new(system_coords.x, system_coords.y, z))
 }
 
 mod ivec3_serde {
@@ -263,7 +352,7 @@ mod ivec3_serde {
 
 /// Deterministic store for `ParticleSystem` instances.
 ///
-/// Mirrors `EntityStore`: BTreeMap-backed so storage iteration is deterministic.
+/// BTreeMap-backed so storage iteration is deterministic.
 /// Identity is assigned by `ObjectSubstrate`; this store deliberately has no
 /// allocator of its own.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -274,6 +363,27 @@ pub struct ParticleSystemStore {
 impl ParticleSystemStore {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// SystemPointerExpired62FE90: target+E4 only clears; owner+E0
+    /// clears and ends emission, independently of the broadcast control byte.
+    pub(crate) fn pointer_expired(&mut self, listener: u64, expired: u64) {
+        if let Some(sys) = self.systems.get_mut(&listener) {
+            if sys.attached_entity == Some(expired) {
+                sys.attached_entity = None;
+            }
+            if sys.owner_entity == Some(expired) {
+                sys.owner_entity = None;
+                sys.done_spawning = true;
+            }
+        }
+    }
+
+    pub(crate) fn enter_limbo(&mut self, id: u64) {
+        if let Some(sys) = self.systems.get_mut(&id) {
+            sys.alive = false;
+            sys.in_limbo = true;
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&u64, &ParticleSystem)> + '_ {
@@ -391,7 +501,7 @@ mod tests {
             let mut particle = Particle::test_fixture(ParticleTypeId(4), IVec3::new(1, 2, 3));
             particle.origin = IVec3::new(7, 8, 9);
             particle.direction = [SimFixed::from_num(1); 3];
-            particle.velocity = SimFixed::from_num(2);
+            particle.velocity = NativeF32Bits::from_bits(0x4000_0000);
             particle.lifetime_remaining = 31;
             particle.damage_counter = 5;
             particle.state_ai_advance = 2;
@@ -401,7 +511,8 @@ mod tests {
             particle.drift_y = 2;
             particle.drift_z = -3;
             particle.prev_delta = [SimFixed::from_num(4); 3];
-            particle.state_advance_counter = 7;
+            particle.stable_id = 24;
+            particle.native_unique_id = -25;
             particle
         });
         store.insert(system);
@@ -416,6 +527,8 @@ mod tests {
         assert_eq!(restored.target_coords, IVec3::new(101, -202, 303));
         assert_eq!(restored.particles.len(), 1);
         assert_eq!(restored.particles[0].origin, IVec3::new(7, 8, 9));
-        assert_eq!(restored.particles[0].state_advance_counter, 7);
+        assert_eq!(restored.particles[0].stable_id(), 24);
+        assert_eq!(restored.particles[0].native_unique_id(), -25);
+        assert_eq!(restored.particles[0].velocity().bits(), 0x4000_0000);
     }
 }

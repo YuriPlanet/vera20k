@@ -1474,13 +1474,11 @@ mod tests {
                 if aircraft {
                     // Aircraft object-list membership requires its real Fly
                     // host; a category-only fixture has no valid receiver.
-                    let mut locomotor =
+                    victim.locomotor = Some(
                         crate::sim::movement::locomotor::LocomotorState::for_test_kind(
                             crate::rules::locomotor_type::LocomotorKind::Fly,
-                        );
-                    locomotor.altitude = SimFixed::from_num(100);
-
-                    victim.locomotor = Some(locomotor);
+                        ),
+                    );
                 }
                 assert!(matches!(sim.reveal(source), RevealOutcome::Revealed { .. }));
                 assert!(matches!(sim.reveal(target), RevealOutcome::Revealed { .. }));

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "YAREFN original layered sound references and complete undeploy voice requests; bounded Selling stage0 cue ordering and loaded audio-reset suffix",
+  "assumptions": [
+    "Original BuildingType45DD90/TechnoType710AF0 constructors establish defaults independently of physical values. Selected balanced scalar-reader blocks consume YAREFN RULESMD, optional LANGRULE, MPBattleMD and the explicitly selected physical map; original parsers/name lookup own results.",
+    "Fresh native_oracle.call instances execute complete459C20/708E00/708D90 and House50B6F0 with supplied object/type/House/Cell priors and original Building/Cell vtables. This does not establish their startup, placement, ArchiveTarget writer or a manual input route.",
+    "Selling rows enter the already-admitted UndeploysInto stage0 branch44A9DA and stop before original positional PlayAt7509E0 at44AA38. Original voice request runs before that boundary; positional playback, full Selling/Logic frames and audio RNG are excluded.",
+    "Original loaded voice-reset suffix70C21F..70C246 reconstructs the handle and resets pending/last, retaining supplied suppression. Full native save/load and stream swizzling are excluded.",
+    "The complete request bodies contain no RNG draw or timer write. Downstream PlayAt/audio sampling is covered separately by the existing unit voice/audio comparisons, not newly certified for these Slave Miner samples."
+  ],
+  "substitutions": [
+    "Existing Reader/Sound owners supply physical lexical INI caches and arena/TLS transport. Existing sound_inputs maps selected physical sample names to fixture-relative AudioIndex ordinals; no sample decoding or device output runs.",
+    "Object/House/Cell fields are declared priors. No request-body instruction, gameplay return or vtable is substituted."
+  ],
+  "entry_points": {
+    "type_constructor": "0x0045DD90",
+    "voice_deploy_reader": "0x00713769",
+    "voice_harvest_reader": "0x0071363D",
+    "resource_flag_readers": "0x007143D0",
+    "building_undeploy_voice": "0x00459C20",
+    "techno_voice_deploy": "0x00708E00",
+    "queue_voice": "0x00708D90",
+    "selling_cue": "0x0044A9DA",
+    "positional_call_boundary": "0x0044AA38",
+    "loaded_voice_reset": "0x0070C21F"
+  },
+  "command": "python -m tools.input_oracle.unit_voice_playback --slave-miner-pack-voice --check",
+  "input_environment": [
+    "VERA20K_SLAVE_PACK_INPUTS",
+    "VERA20K_SLAVE_PACK_MAP"
+  ],
+  "replay_command": "python -m tools.input_oracle.unit_voice_playback --slave-miner-pack-voice",
+  "payload_sha256": "9223c8b186c5b54bee918a2a483d0369fa32375b65ba00e4f85f4ba846be789b"
+}

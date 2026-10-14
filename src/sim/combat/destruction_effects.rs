@@ -27,6 +27,10 @@
 //! `tools/spatial_oracle/building_death_anims.py` (joined fatal lifecycle),
 //! gamemd SHA1cdd1180e49024fbda8ad568caac2e86e.
 //!
+//! A dropped bomb over water at height <= 10 takes the water splash
+//! (`0x00737E78..0x00737F6B`) instead of `Death_Explosion`; this owner
+//! constructs Wake and the last SplashList entry inline.
+//!
 //! RESIDUALS:
 //! - Unit NowDead gates ahead of `Death_Explosion` (`0x00737DA7..0x00737F6F`):
 //!   - The ship sink (`0x00737DE2..0x00737E5E`) skips these explosion draws.
@@ -36,11 +40,6 @@
 //!   - `DeathFrames=` (`+0xE20` > 0) defers the explosion to `UnitClass::AI`
 //!     (`0x00736381`) when the death frames end. No stock type sets it and
 //!     VERA does not parse it.
-//!   - The water splash (`0x00737E78..0x00737F6B`): a unit at height <= 10
-//!     whose `+0x8F` byte is set, over water, gets two splash anims (Rules
-//!     `+0x94` and the last Rules `+0xBC4` entry) instead. VERA has no
-//!     producer of the byte (`drop_in_bridge_member` snaps a falling unit
-//!     to the ground, recorded DRIFT there).
 //! - A `Crashable=` (`+0xD95`) unit's crash impact calls `Death_Explosion`
 //!   once more (`0x007461D1`, the Jumpjet's 0x117C notice), outside any
 //!   receiver transaction: [`Simulation::unit_death_explosion`] builds
@@ -209,6 +208,71 @@ impl Simulation {
         &list[index]
     }
 
+    /// The shared low dropped-bomb water gate in Techno ReceiveDamage
+    /// (`0x00702232..0x0070227B`), Unit (`0x00737E78..0x00737EBA`) and
+    /// Infantry (`0x005181B5..0x00518200`). The bomb byte persists after
+    /// landing. GetHeight is relative to the live ground; the cell lookup
+    /// and the subsequent anims use raw Location, not GetCoords or floor Z.
+    /// Original instructions: `python -m tools.native_inspect disasm
+    /// 0x70222E --bytes 96` (also 0x737E78/260, 0x5181B5/255), supported
+    /// retail gamemd SHA256 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600.
+    pub(crate) fn dropped_bomb_water_death_location(&self, id: u64) -> Option<AnimWorldCoord> {
+        let entity = self.substrate.entities.get(id)?;
+        if crate::sim::movement::air_movement::current_fly_height(
+            entity,
+            self.resolved_terrain.as_ref(),
+        ) > 10
+            || !entity.was_dropped_as_bomb()
+        {
+            return None;
+        }
+        let location = position_world_coord(&entity.position);
+        (super::detonation_anim::land_at(
+            self,
+            super::ProjectileCoord::new(location.x, location.y, location.z),
+        ) == i32::from(LandType::Water.as_index()))
+        .then_some(AnimWorldCoord {
+            x: location.x,
+            y: location.y,
+            z: location.z,
+        })
+    }
+
+    /// Unit737EBA..737F6B, after the ship-sinking gate: Wake at Location,
+    /// then the last SplashList entry five leptons higher. Neither selection
+    /// draws RNG; each Anim421EA0 constructor runs before the next one.
+    pub(crate) fn unit_dropped_bomb_water_splash(
+        &mut self,
+        rules: &RuleSet,
+        id: u64,
+        anims: &mut Vec<ExplosionEffect>,
+    ) -> bool {
+        let Some(coord) = self.dropped_bomb_water_death_location(id) else {
+            return false;
+        };
+        self.emit_death_anim(
+            rules,
+            anims,
+            &rules.general.wake.name,
+            DeathAnimSpawn::at(coord, 0),
+        );
+        if let Some(splash) = rules.combat_damage.splash_list.last() {
+            self.emit_death_anim(
+                rules,
+                anims,
+                splash,
+                DeathAnimSpawn::at(
+                    AnimWorldCoord {
+                        z: coord.z.wrapping_add(5),
+                        ..coord
+                    },
+                    0,
+                ),
+            );
+        }
+        true
+    }
+
     /// The ship-sinking gate of the Unit NowDead block
     /// (`UnitClass::ReceiveDamage @ 0x00737C90`, `0x00737DE2..0x00737E32`):
     /// `Naval=` (`+0xCCE`), not `Underwater=` (`+0xD69`) or `Organic=`
@@ -266,7 +330,7 @@ impl Simulation {
         // `Explosion=` entry; the pick has been drawn already.
         let explodes = object.explodes
             || super::veterancy::has_weapon_ability(
-                super::veterancy::rank_of(entity.veterancy_raw),
+                entity.veterancy.rank_kind(),
                 object,
                 Ability::Explodes,
             );

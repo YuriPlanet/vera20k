@@ -2236,7 +2236,6 @@ mod tests {
     use crate::rules::terrain_rules::TerrainClass;
     use crate::sim::combat::threat_posed::live_threat_posed;
     use crate::sim::intern::test_interner;
-    use crate::util::fixed_math::SimFixed;
 
     #[test]
     fn occupied_scan_bound_matches_original_override_slice() {
@@ -2500,14 +2499,7 @@ mod tests {
                 // A supplied positive low height changes the existing live query
                 // while retained Cell order and AirTracker registration stay put.
                 // Below target_is_high_flying, weapon selection alone allows AG.
-                sim.substrate
-                    .entities
-                    .get_mut(3)
-                    .unwrap()
-                    .locomotor
-                    .as_mut()
-                    .unwrap()
-                    .altitude = SimFixed::from_num(1);
+                sim.set_object_height_unmarked(3, 1);
                 assert_eq!(acquire(&sim), if aa { Some(3) } else { Some(2) });
                 sim.substrate
                     .entities
@@ -2607,8 +2599,8 @@ mod tests {
         sim.interner = test_interner();
         let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Jumpjet);
         locomotor.layer = MovementLayer::Air;
-        locomotor.altitude = SimFixed::from_num(altitude);
         sim.substrate.entities.get_mut(2).unwrap().locomotor = Some(locomotor);
+        sim.set_object_height_unmarked(2, altitude);
         sim.add_entity_occupancy(1);
         // The fixture starts after native takeoff's explicit AirTracker Add;
         // Mark alone does not register a Jumpjet or establish its+560 Cell.
@@ -2650,7 +2642,7 @@ mod tests {
         ] {
             let obj = rules.object(kind).unwrap();
             let mut entity = GameEntity::test_default(1, kind, "Americans", 5, 5);
-            entity.set_veterancy_rank(veterancy);
+            entity.veterancy.set_rank_for_test(veterancy);
             entity.set_gunner_selection_for_test(slot, -1);
             let entities = EntityStore::new();
             let interner = test_interner();
@@ -3180,8 +3172,8 @@ mod tests {
         sim.interner = test_interner();
         let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Jumpjet);
         locomotor.layer = MovementLayer::Air;
-        locomotor.altitude = SimFixed::from_num(1200);
         sim.substrate.entities.get_mut(2).unwrap().locomotor = Some(locomotor);
+        sim.set_object_height_unmarked(2, 1200);
         sim.add_entity_occupancy(1);
         sim.aircraft_tracker_add(2);
         let target = super::super::acquire_best_target_for_entity(

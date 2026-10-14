@@ -780,7 +780,10 @@ pub enum SpecialDetonationAction {
     /// Dead in stock YR: `rulesmd.ini` carries no live `DirectRocker=` line
     /// (its one textual occurrence is inside a `;` comment), so the arm never
     /// fires in stock play. Kept correct anyway; the impulse body is
-    /// deliberately NOT implemented.
+    /// deliberately NOT implemented, nor the link it sets, which
+    /// RockingUpdate (`0x0070B76C`), FootClass::AI (`0x004DA832`),
+    /// ClickedAction (`0x004D74FA`), What_Action (`0x006FFED7`) and
+    /// `UnitClass::GetFireError` (`0x00741014`) read.
     DirectRocker,
     /// `BombDisarm=` (`+0x16e`), test `0x004699ca` ->
     /// `BombClass::Defuse @ 0x004389b0`, ported in `bomb`.

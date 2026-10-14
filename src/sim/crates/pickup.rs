@@ -253,7 +253,7 @@ fn multiplayer_eligible_slot(
         // one already elite.
         POWERUP_VETERAN => {
             object.is_some_and(|object| object.trainable)
-                && !crate::sim::combat::veterancy::raw_is_elite(actor.veterancy_raw)
+                && !crate::sim::combat::veterancy::raw_is_elite(actor.veterancy.raw())
         }
         _ => true,
     };

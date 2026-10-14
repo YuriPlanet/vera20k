@@ -131,8 +131,7 @@
         "Move": {
           "entity_id": 1372,
           "target_rx": 91,
-          "target_ry": 49,
-          "queue": false
+          "target_ry": 49
         }
       }
     },
@@ -143,8 +142,7 @@
         "Move": {
           "entity_id": 1381,
           "target_rx": 87,
-          "target_ry": 54,
-          "queue": false
+          "target_ry": 54
         }
       }
     },
@@ -155,8 +153,7 @@
         "Move": {
           "entity_id": 1383,
           "target_rx": 87,
-          "target_ry": 53,
-          "queue": false
+          "target_ry": 53
         }
       }
     },
@@ -167,8 +164,7 @@
         "Move": {
           "entity_id": 1380,
           "target_rx": 84,
-          "target_ry": 51,
-          "queue": false
+          "target_ry": 51
         }
       }
     },
@@ -179,8 +175,7 @@
         "Move": {
           "entity_id": 1384,
           "target_rx": 86,
-          "target_ry": 54,
-          "queue": false
+          "target_ry": 54
         }
       }
     },
@@ -191,8 +186,7 @@
         "Move": {
           "entity_id": 1386,
           "target_rx": 105,
-          "target_ry": 35,
-          "queue": false
+          "target_ry": 35
         }
       }
     },
@@ -203,8 +197,7 @@
         "Move": {
           "entity_id": 1386,
           "target_rx": 87,
-          "target_ry": 40,
-          "queue": false
+          "target_ry": 40
         }
       }
     },

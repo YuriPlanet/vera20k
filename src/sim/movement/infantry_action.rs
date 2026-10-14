@@ -725,7 +725,7 @@ impl Simulation {
                 .and_then(|actor| actor.navigation.nav_com);
             if let Some(destination) = destination {
                 if let Err(cause) =
-                    self.set_infantry_destination(id, destination, rules, registry, effects)
+                    self.assign_infantry_destination(id, destination, rules, registry, effects)
                 {
                     log::debug!("Infantry {id} stopped Move destination: {cause}");
                 }

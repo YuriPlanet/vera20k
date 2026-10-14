@@ -189,7 +189,11 @@ impl Simulation {
             return None;
         }
         if aircraft
-            && crate::sim::combat::combat_weapon::weapon_for_index(object, entity.veterancy(), 0)
+            && crate::sim::combat::combat_weapon::weapon_for_index(
+                object,
+                entity.veterancy.rank(),
+                0,
+            )
                 .is_some()
             && entity
                 .aircraft_ammo

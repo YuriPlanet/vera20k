@@ -3,7 +3,7 @@
 //!
 //! A store that routes every `&mut` to its objects through itself notes each
 //! hand-out, so a product derived from those objects (the movement pass's
-//! owner block sets, the kept Ground display sort keys) re-derives only what
+//! blocker plane, the kept Ground display sort keys) re-derives only what
 //! was noted instead of walking the world. A log records the hand-out, not a
 //! change, so it over-reports, which is harmless. Transient: never saved,
 //! never hashed, and no simulation result reads it.

@@ -199,6 +199,11 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         state.match_state.input.cursor_y,
     );
     let owner_id = sim.interner.get(&owner);
+    let modifier = crate::app::input::context_order::resolve_order_modifiers(
+        crate::app::input::dispatch::is_ctrl_held(state),
+        crate::app::input::dispatch::is_shift_held(state),
+        crate::app::input::dispatch::is_alt_held(state),
+    );
     if crate::app::presentation::instances::cell_visibility_for_local_owner(
         owner_id,
         Some(&sim.fog),
@@ -207,21 +212,24 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         state.match_state.sandbox_full_visibility,
     ) != CellVisibilityState::Visible
     {
-        // Over shrouded/fogged cells the player can still issue move orders,
-        // so show the queued-order-mode cursor (Move / AttackMove)
-        // instead of reverting to the default arrow.
-        return Some(match state.match_state.input.queued_order_mode {
-            crate::app::presentation::render::OrderMode::Move => CursorFeedbackKind::Move,
-            crate::app::presentation::render::OrderMode::AttackMove => {
-                CursorFeedbackKind::AttackMove
-            }
-        });
-    }
-    let modifier = crate::app::input::context_order::resolve_order_modifiers(
-        crate::app::input::dispatch::is_ctrl_held(state),
-        crate::app::input::dispatch::is_shift_held(state),
-        crate::app::input::dispatch::is_alt_held(state),
+        // Over a shrouded or fogged cell no object is offered; the empty-cell
+        // ladder answers, and Foot's shroud rung bars a type without
+        // MoveToShroud.
+        let best_id = select_best_for_action(
+            sim,
+            &selected,
+            ActionDistanceTarget::CellCentre(hover_rx, hover_ry),
+            state.rules(),
     );
+        return Some(empty_cell_feedback(
+            state,
+            sim,
+            owner_id,
+            best_id,
+            (hover_rx, hover_ry),
+            modifier,
+        ));
+    }
     let hover = crate::app::input::entity_pick::hover_target_at_point(
         sim,
         world_x,
@@ -246,7 +254,7 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
 
     // Unit73FD7C post-processes the base Ctrl/Alt action too; only Shift and
     // the single-object self action precede that arm. Ctrl+Alt also repairs.
-    if modifier != crate::app::input::context_order::OrderModifier::Queue
+    if modifier != crate::app::input::context_order::OrderModifier::Shift
         && let Some(kind) = hover.as_ref().and_then(|hover| {
             unit_repair_feedback(sim, &selected, best_id, hover, state.rules(), owner_id)
         })
@@ -292,7 +300,7 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     }
     if let Some(hover) = hover.as_ref() {
         // Shift's native action8 returns before Unit's healing override.
-        if modifier == crate::app::input::context_order::OrderModifier::Queue
+        if modifier == crate::app::input::context_order::OrderModifier::Shift
             && unit_repair_feedback(sim, &selected, best_id, hover, state.rules(), owner_id)
                 .is_some()
         {
@@ -309,34 +317,69 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         return Some(kind);
     }
 
-    // No object under the cursor. gamemd runs the full What_Action_OnCell ladder
-    // for the resolved object and answers Move or No-Move, so an unreachable or
-    // blocked destination shows the barred cursor instead of the move cursor.
-    let cell_action = what_action_on_cell(
+    Some(empty_cell_feedback(
+        state,
         sim,
+        owner_id,
         best_id,
         (hover_rx, hover_ry),
-        sim.path_grid(),
         modifier,
-    );
-    if cell_action == CellAction::NoMove {
-        return Some(CursorFeedbackKind::Invalid);
+    ))
+}
+
+/// The cursor over a Cell with no object offered: the resolved object's
+/// What_Action on the Cell, then the harvest substitution for its Move.
+fn empty_cell_feedback(
+    state: &AppState,
+    sim: &crate::sim::world::Simulation,
+    viewer: Option<crate::sim::intern::InternedId>,
+    best_id: Option<u64>,
+    cell: (u16, u16),
+    modifier: crate::app::input::context_order::OrderModifier,
+) -> CursorFeedbackKind {
+    empty_cell_cursor(
+        sim,
+        state.rules(),
+        state.overlay_registry(),
+        viewer,
+        best_id,
+        cell,
+        modifier,
+        state.match_state.input.queued_order_mode,
+    )
+}
+
+fn empty_cell_cursor(
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    viewer: Option<crate::sim::intern::InternedId>,
+    best_id: Option<u64>,
+    cell: (u16, u16),
+    modifier: crate::app::input::context_order::OrderModifier,
+    order_mode: crate::app::presentation::render::OrderMode,
+) -> CursorFeedbackKind {
+    use crate::sim::world::MoveAction;
+    match what_action_on_cell(sim, viewer, best_id, cell, modifier, rules) {
+        MoveAction::None => return CursorFeedbackKind::Default,
+        MoveAction::NoMove => return CursorFeedbackKind::Invalid,
+        MoveAction::Move => {}
     }
 
     // Ore/gem harvest hangs off the cell action: UnitClass only substitutes the
-    // harvest action when the base action came back Move, and it tests the one
+    // harvest action when the base action came back Move over a Cell the
+    // viewer has mapped (`0x007405DB..0x007405E6`), and it tests the one
     // resolved object's harvester flags, not the whole selection.
-    let has_ore = match (
-        sim.overlay_grid.as_ref(),
-        state.overlay_registry(),
-        state.rules(),
-    ) {
+    let shrouded =
+        viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true));
+    let has_ore = !shrouded
+        && match (sim.overlay_grid.as_ref(), registry, rules) {
         (Some(grid), Some(registry), Some(rules)) if !rules.tiberium_types.is_empty() => {
             crate::sim::tiberium::tiberium_cell_view(
                 grid,
                 registry,
                 &rules.tiberium_types,
-                (hover_rx, hover_ry),
+                    cell,
             )
             .is_some()
         }
@@ -345,165 +388,50 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     if has_ore
         && best_id.is_some_and(|id| sim.entities().get(id).is_some_and(|e| e.miner.is_some()))
     {
-        return Some(CursorFeedbackKind::Harvest);
+        return CursorFeedbackKind::Harvest;
     }
-    Some(match state.match_state.input.queued_order_mode {
+    match order_mode {
         crate::app::presentation::render::OrderMode::Move => CursorFeedbackKind::Move,
         crate::app::presentation::render::OrderMode::AttackMove => CursorFeedbackKind::AttackMove,
-    })
+    }
 }
 
-/// gamemd's `What_Action_OnCell` outcome for an empty cell: action 1 (Move) or
-/// action 2 (No-Move).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CellAction {
-    Move,
-    NoMove,
-}
-
-/// Resolve the empty-cell action for the object that owns the cursor.
+/// The resolved object's What_Action on an empty Cell, as the cursor update
+/// asks it: DetermineAction (`0x00692610`) from `0x0069300B` sets the
+/// mouse-over argument, so the sim's [`Simulation::cell_move_action`] never
+/// asks Can_Enter_Cell here and a Cell the click will redirect shows Move.
+/// A selected structure answers Move: VERA answers a rally-point click there.
+/// Without a local House, a resolved object or rules, or for a query the sim
+/// cannot answer (no map cells), the cursor keeps Move: VERA-internal, as a
+/// live gamemd session always has a map and a selection here.
 ///
-/// gamemd's ladder, in order: outside the playfield answers No-Move; Shift
-/// answers Move and returns *before* the occupancy probe; Alt with the
-/// force-move capability answers Move; a unit that cannot accept move orders
-/// answers No-Move; otherwise the cell occupancy probe decides Move vs No-Move.
-///
-/// VERA implements the playfield test, all three modifier short-circuits, and
-/// the terrain slice of the cell-entry probe through the same
-/// `evaluate_can_enter_cell` the mover itself asks, on both ground and bridge
-/// planes. What remains unmodelled is recorded rather than hidden:
-///
-/// * The probe's **occupancy** half. Native's `Can_Enter_Cell` also weighs the
-///   cell's occupants and returns a cost class, so a cell blocked only by a unit
-///   or a building still shows the move cursor here.
-/// * The rung at 0x00700B84-0x00700BCE, which is NOT a gap: after the probe
-///   rejects a cell, an object whose RTTI is 6 with a non-null type `+0x408`
-///   whose `+0x5EC` is set still returns ACTION_MOVE at 0x00700BC5. RTTI 6 is
-///   `BuildingClass` (vtable 0x007E3EBC, COL 0x007FC360, slot `+0x2C` at
-///   0x00459EC0 returning 6), and the structure arm above already answers Move
-///   before reaching the probe at all. Recorded so a later session does not add
-///   a gate for it.
-/// * A destroyed LOW bridge keeps its `bridge_walkable` bit from the resolved
-///   cell (`PathGrid::from_resolved_terrain_with_bridges` gates only the
-///   structural branch on intactness), so the walkable-deck gate closes only the
-///   structural half of the destroyed-bridge class.
-/// * The `vtable+0xA0` rung at 0x00700B43 — "this object cannot accept move
-///   orders at all" — whose `JZ` lands on the ACTION_NOMOVE return at
-///   0x00700C17. VERA has no equivalent test, so an object gamemd refuses
-///   outright still gets the terrain answer.
-/// * The **order path is looser than this cursor**. `nearest_reachable_goal`
-///   still admits a goal from the coarse `is_any_layer_walkable` bit and, on
-///   failure, retargets rather than refusing, so a click on open water still
-///   walks the unit to the shoreline while the cursor over it is now barred.
-///   Reconciling the two belongs to the move order's own row.
-///
-/// Aircraft and subterranean movers answer Move for any in-playfield cell.
-///
-/// With no path grid or no resolved object the cursor keeps its previous
-/// behaviour and reports Move: VERA-internal, gamemd equivalent UNCHECKED (a
-/// live gamemd session always has a map and a selection here).
+/// [`Simulation::cell_move_action`]: crate::sim::world::Simulation::cell_move_action
 fn what_action_on_cell(
     sim: &crate::sim::world::Simulation,
+    viewer: Option<crate::sim::intern::InternedId>,
     best_id: Option<u64>,
     cell: (u16, u16),
-    path_grid: Option<&crate::sim::pathfinding::PathGrid>,
     modifier: crate::app::input::context_order::OrderModifier,
-) -> CellAction {
-    use crate::sim::movement::locomotor::MovementLayer;
-
-    let Some(grid) = path_grid else {
-        return CellAction::Move;
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> crate::sim::world::MoveAction {
+    use crate::sim::world::{CellActionQuery, MoveAction};
+    let (Some(viewer), Some(id), Some(rules)) = (viewer, best_id, rules) else {
+        return MoveAction::Move;
     };
-    if cell.0 >= grid.width() || cell.1 >= grid.height() {
-        return CellAction::NoMove;
-    }
-    let Some(entity) = best_id.and_then(|id| sim.entities().get(id)) else {
-        return CellAction::Move;
-    };
-    // Only mobile objects run this ladder; a selected structure takes a
-    // different override in gamemd, and VERA answers a rally-point click there.
-    if entity.category == crate::map::entities::EntityCategory::Structure {
-        return CellAction::Move;
-    }
-    // Native returns ACTION_MOVE before the probe for all three: the Shift latch,
-    // the Alt force-move capability, and the force-fire flag `param_3` at
-    // 0x00700B51. Force-fire only arrives here at all when the resolved object
-    // is unarmed — an armed one already took the attack-reticle branch above —
-    // and gamemd still answers Move for it rather than running the probe.
-    if matches!(
-        modifier,
-        crate::app::input::context_order::OrderModifier::Queue
-            | crate::app::input::context_order::OrderModifier::ForceMove
-            | crate::app::input::context_order::OrderModifier::ForceFire
-    ) {
-        return CellAction::Move;
-    }
-    match entity.movement_layer_or_ground() {
-        MovementLayer::Air | MovementLayer::Underground => CellAction::Move,
-        MovementLayer::Ground | MovementLayer::Bridge => {
-            // Native asks the mover's own cell-entry virtual here, not a coarse
-            // walkability bit: the tail of What_Action_OnCell 0x00700600 calls
-            // vtable +0x1AC on the target cell and answers ACTION_NOMOVE (2)
-            // when the result is > 1. Asking the same predicate the move order
-            // asks is the point — otherwise the cursor promises a move the unit
-            // then refuses, which is what a PathGrid-walkable water cell did to
-            // every ordinary ground mover.
-            //
-            // The callsite pushes `(cell, -1, -1, 0, 1)` at 0x00700B5F, and in
-            // `UnitClass::Can_Enter_Cell` 0x0073F0A0 the LEVEL argument is the
-            // second of those two (guarded by `param_4 != -1`); the first is a
-            // facing, feeding `param_3 - 4U & 7` into the step-by-direction
-            // lookup. Passing -1 for the level is what makes the TARGET CELL
-            // select the plane rather than the mover's current layer, and that
-            // distinction is the whole bridge case: a tank on open ground
-            // hovering a deck cell, and a tank already on the deck hovering open
-            // ground, both have to answer Move. So the probe runs on both planes.
-            //
-            // The bridge plane additionally requires a walkable DECK, not merely
-            // the structural bit. `PathGrid::from_resolved_terrain_with_bridges`
-            // keeps `bridge_structural` set after a span collapses and clears
-            // only `bridge_walkable`, and the bridge leaf answers Clear off the
-            // structural bit alone — so without this the barred cursor would
-            // disappear from a blown span, which is where a player most needs it.
-            //
-            // Only one probe, not native's two. The second is gated on
-            // `Type+0xD2C`, the derived `MovementZone == Subterannean` flag
-            // (`CMP EAX,0x6; SETZ` at 0x0071607E-0x0071608A), which is zero for
-            // every stock YR type — so native always takes the `return 2` above
-            // it and the second probe is Tiberian Sun legacy that stock cannot
-            // reach.
-            let speed_type = entity.locomotor.as_ref().map(|l| l.speed_type);
-            let terrain_costs = speed_type.and_then(|st| sim.terrain_costs.get(&st));
-            let admits = |layer| {
-                crate::sim::pathfinding::cell_entry::evaluate_can_enter_cell(
-                    crate::sim::pathfinding::cell_entry::CanEnterCellContext {
-                        target: cell,
-                        terrain_layer: layer,
-                        movement_zone: entity.locomotor.as_ref().map(|l| l.movement_zone),
-                        speed_type,
-                        path_grid: Some(grid),
-                        resolved_terrain: sim.resolved_terrain.as_ref(),
-                        terrain_costs,
-                        bypass_grid: false,
-                        is_infantry: entity.category
-                            == crate::map::entities::EntityCategory::Infantry,
-                        mover_is_crusher: crate::sim::movement::bump_crush::CrushCapability::of(
-                            entity,
-                        )
-                        .wall_arm_crusher(),
-                    },
-                )
-                .is_clear()
-            };
-            let bridge_deck_open = grid.is_walkable_on_layer(cell.0, cell.1, MovementLayer::Bridge);
-            if admits(MovementLayer::Ground) || (bridge_deck_open && admits(MovementLayer::Bridge))
+    if sim
+        .entities()
+        .get(id)
+        .is_none_or(|entity| entity.category == crate::map::entities::EntityCategory::Structure)
             {
-                CellAction::Move
-            } else {
-                CellAction::NoMove
-            }
-        }
+        return MoveAction::Move;
     }
+    let query = CellActionQuery {
+        mouse_over: true,
+        shift: modifier == crate::app::input::context_order::OrderModifier::Shift,
+    };
+    // The mouse-over query reads no overlay type: it never asks Can_Enter_Cell.
+    sim.cell_move_action(viewer, id, cell, query, rules, None)
+        .unwrap_or(MoveAction::Move)
 }
 
 /// Determine the cursor feedback kind for a hover target, checking ObjectType
@@ -720,7 +648,7 @@ pub(super) fn capability_cursor_for_hover(
         {
             if let Some(rules) = rules {
                 use super::context_order::AttackAction;
-                match super::context_order::armed_attack_action(
+                match super::context_order::attack_action(
                     sim,
                     rules,
                     best_id,
@@ -805,7 +733,7 @@ pub(super) fn capability_cursor_for_hover(
         HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure => {
             if let (Some(rules), Some(id)) = (rules, best_id) {
                 use super::context_order::AttackAction;
-                match super::context_order::armed_attack_action(
+                match super::context_order::attack_action(
                     sim,
                     rules,
                     id,
@@ -880,11 +808,15 @@ fn unit_repair_feedback(
 /// Unforced, the base action stays Attack only while the Ivan's GetFireError
 /// for the target is not ILLEGAL (`refused`, [`click_refused`]), and a bombed
 /// target is ILLEGAL to him at any distance (`0x006FCBAD`). An ILLEGAL action
-/// falls back to None over another house's object and to Select over his own
-/// (`TechnoClass::What_Action_OnObject`, `0x0070056C..0x007005E9`).
+/// falls to the Techno tail (`TechnoClass::What_Action_OnObject`,
+/// `0x0070056C..0x007005E6`), which answers 0 over another house's object
+/// and Select over his own house's object the player may select; the
+/// Infantry tail turns that 0 into NoMove (`0x0051F05E..0x0051F08B`).
 ///
-/// RESIDUAL: VERA shows Select for both; over another house's object retail
-/// shows the plain arrow of None.
+/// RESIDUAL: VERA shows Select for both. Trigger: an Ivan over another
+/// house's object that carries a bomb or that his shot cannot hit. Effect:
+/// the Select cursor where native shows NoMove, which the click orders.
+/// Occasional.
 fn ivan_attack_feedback(
     kind: CursorFeedbackKind,
     selector_is_ivan: bool,
@@ -1372,7 +1304,7 @@ pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionDistanceTarget, CellAction, capability_cursor_for_hover, force_fire_feedback,
+        ActionDistanceTarget, capability_cursor_for_hover, empty_cell_cursor, force_fire_feedback,
         select_best_for_action, super_weapon_cursor_id, what_action_on_cell,
     };
     use crate::app::input::entity_pick::HoverTargetKindWithId;
@@ -1758,9 +1690,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 
     #[test]
     fn bunker_attack_actions_follow_native_entry_and_display_corpus() {
-        use crate::app::input::context_order::{
-            AttackAction, armed_attack_action, force_fire_action,
-        };
+        use crate::app::input::context_order::{AttackAction, attack_action, force_fire_action};
         use crate::sim::combat::TargetKind;
         use crate::sim::game_entity::BunkerLink;
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -1803,7 +1733,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 other => panic!("unsupported original action {other}"),
             };
             let action = if case["ctrl"] == false {
-                armed_attack_action(&sim, &rules, actor, &target, None)
+                attack_action(&sim, &rules, actor, &target, None)
             } else {
                 force_fire_action(&sim, &rules, actor, &target, None).unwrap()
             };
@@ -2197,6 +2127,9 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         use crate::sim::combat::{TargetKind, in_range, line_of_fire::LineOfFireInputs};
 
         let (mut sim, rules, actor_id) = sim_with_tank();
+        // The attack rung is a human player's (`0x007003ED`).
+        sim.session.game_mode_nonzero = true;
+        sim.session.current_house = Some(sim.entities().get(actor_id).unwrap().owner());
         let target_id = sim
             .spawn_object("MTNK", "Soviets", 3, 2, 0, &rules)
             .expect("enemy target");
@@ -2289,227 +2222,88 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         assert_ne!(sim.state_hash(), initial_hash);
     }
 
-    /// gamemd answers action 2 (no-move) for a cell its occupancy probe rejects,
-    /// so the barred cursor appears before the click — the move cursor is not a
-    /// constant over empty ground.
+    /// The cursor asks the sim's What_Action as the cursor update does, with
+    /// the mouse-over argument (`0x0069300B`), so no Can_Enter_Cell: a retail
+    /// Grizzly shows Move over the river that its click resolves to its own
+    /// bank.
     #[test]
-    fn blocked_cell_resolves_to_no_move() {
+    fn the_cursor_shows_move_where_the_click_redirects() {
         use crate::app::input::context_order::OrderModifier;
-        use crate::sim::pathfinding::PathGrid;
-
-        let (sim, _rules, tank) = sim_with_tank();
-        let mut grid = PathGrid::new(8, 8);
-        grid.set_blocked(6, 6, true);
-
-        assert_eq!(
-            what_action_on_cell(&sim, Some(tank), (4, 4), Some(&grid), OrderModifier::Normal),
-            CellAction::Move,
-            "an open cell inside the playfield answers move",
-        );
-        assert_eq!(
-            what_action_on_cell(&sim, Some(tank), (6, 6), Some(&grid), OrderModifier::Normal),
-            CellAction::NoMove,
-            "a blocked cell answers no-move",
-        );
-    }
-
-    /// The probe runs on the TARGET cell's planes, not the mover's current one.
-    ///
-    /// Native passes the level argument to `vtable+0x1AC` as -1, so the cell
-    /// picks the plane. Pinning it to the mover's layer instead barred the
-    /// cursor over every high-bridge deck — a tank on open ground would see the
-    /// no-move cursor over a crossing, and a tank already on the deck would see
-    /// it over the entire rest of the map.
-    #[test]
-    fn a_bridge_only_cell_answers_move_for_a_ground_mover() {
-        use crate::app::input::context_order::OrderModifier;
-        use crate::sim::movement::locomotor::MovementLayer;
-        use crate::sim::pathfinding::PathGrid;
-
-        let (sim, _rules, tank) = sim_with_tank();
-        let mut grid = PathGrid::new(8, 8);
-        // Deck cell: walkable on the bridge plane, closed on the ground plane.
-        grid.set_cell_for_test(6, 6, 0, true, false);
-        grid.set_blocked(6, 6, true);
-        assert!(!grid.is_walkable_on_layer(6, 6, MovementLayer::Ground));
-        assert!(grid.is_walkable_on_layer(6, 6, MovementLayer::Bridge));
-
-        assert_eq!(
-            what_action_on_cell(&sim, Some(tank), (6, 6), Some(&grid), OrderModifier::Normal),
-            CellAction::Move,
-            "a ground mover must be offered the deck",
-        );
-
-        // And a cell closed on both planes still answers no-move.
-        grid.set_blocked(5, 5, true);
-        assert!(!grid.is_walkable_on_layer(5, 5, MovementLayer::Bridge));
-        assert_eq!(
-            what_action_on_cell(&sim, Some(tank), (5, 5), Some(&grid), OrderModifier::Normal),
-            CellAction::NoMove,
-        );
-    }
-
-    /// A collapsed span keeps its structural bit and loses only its deck, and the
-    /// bridge leaf answers Clear off the structural bit alone — so without the
-    /// walkable-deck gate the barred cursor would vanish from a blown bridge,
-    /// which is exactly where a player needs it. `DestroyableBridges=yes` is the
-    /// stock default, so this is ordinary mid-game play.
-    #[test]
-    fn a_destroyed_span_answers_no_move_for_a_ground_mover() {
-        use crate::app::input::context_order::OrderModifier;
-        use crate::sim::pathfinding::{PathCell, PathGrid};
-
-        // A mover WITH a speed type: without one the shared leaf short-circuits
-        // on `land_passable` and never reaches the bridge-plane branch the deck
-        // gate guards, so the test would pass with the gate deleted.
-        let (sim, _rules, tank) = sim_with_track_tank();
-        let open = PathCell {
-            ground_walkable: true,
-            bridge_walkable: false,
-            bridge_structural: false,
-            bridge_marker_0x80: false,
-            transition: false,
-            ground_level: 0,
-            bridge_deck_level: 0,
-            slope_type: 0,
-            tube_index: None,
-            low_bridge_tube_cell: false,
+        use crate::sim::world::MoveAction;
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
         };
-        let mut cells = vec![open; 8 * 8];
-        // The production shape after a span collapses: structural still set, deck
-        // cleared, and the water underneath closed to ground movement.
-        cells[6 * 8 + 6] = PathCell {
-            ground_walkable: false,
-            bridge_walkable: false,
-            bridge_structural: true,
-            bridge_deck_level: 4,
-            ..open
-        };
-        // An intact deck on the same map, to prove the gate did not simply close
-        // the bridge plane altogether.
-        cells[3 * 8 + 3] = PathCell {
-            ground_walkable: false,
-            bridge_walkable: true,
-            bridge_structural: true,
-            bridge_deck_level: 4,
-            ..open
-        };
-        let grid = PathGrid::from_cells(cells, 8, 8);
-
-        assert_eq!(
-            what_action_on_cell(&sim, Some(tank), (6, 6), Some(&grid), OrderModifier::Normal),
-            CellAction::NoMove,
-            "a blown span must still show the barred cursor",
-        );
-        assert_eq!(
-            what_action_on_cell(&sim, Some(tank), (3, 3), Some(&grid), OrderModifier::Normal),
-            CellAction::Move,
-            "an intact deck must still be offered",
-        );
-    }
-
-    /// The change's motivating case. `PathGrid::from_resolved_terrain_with_bridges`
-    /// leaves water cells `ground_walkable`, so the old coarse bit showed the
-    /// move cursor over open water for a Track mover; the shared predicate weighs
-    /// the mover's SpeedType against the resolved LandType and refuses.
-    #[test]
-    fn open_water_answers_no_move_for_a_track_mover() {
-        use crate::app::input::context_order::OrderModifier;
-
-        let (mut sim, rules, tank) = sim_with_track_tank();
-        const SIZE: u16 = 16;
-        let mut cells = Vec::new();
-        for ry in 0..SIZE {
-            for rx in 0..SIZE {
-                cells.push(crate::map::resolved_terrain::test_flat_cell(rx, ry));
-            }
-        }
-        let mut terrain =
-            crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(SIZE, SIZE, cells);
-        let water = crate::rules::terrain_rules::LandType::Water.as_index();
-        let cell = terrain.cell_mut(9, 9).expect("water cell inside the grid");
-        cell.land_type = water;
-        cell.yr_cell_land_type = water;
-        cell.base_land_type = water;
-        cell.base_yr_cell_land_type = water;
-        cell.is_water = true;
-        // Production water is ground-blocked and becomes `ground_walkable` only
-        // through the `|| is_water` clause in the PathGrid derivation. Tie the
-        // fixture to that so it cannot keep passing if the clause is dropped.
-        cell.ground_walk_blocked = true;
-        cell.base_ground_walk_blocked = true;
-        // Water's retail speed row is zero for every land SpeedType; that zero
-        // is what the shared predicate reads and the coarse walkable bit does not.
-        cell.speed_costs = crate::rules::terrain_rules::SpeedCostProfile {
-            foot: Some(0),
-            track: Some(0),
-            wheel: Some(0),
-            float: Some(100),
-            amphibious: Some(100),
-            float_beach: Some(100),
-            hover: Some(100),
-        };
-        cell.base_speed_costs = cell.speed_costs;
-        sim.resolved_terrain = Some(terrain);
-        sim.rebuild_dynamic_navigation(&rules);
-        let grid = sim.path_grid().cloned().expect("navigation rebuilt a grid");
-
-        assert!(
-            grid.is_walkable(9, 9),
-            "the fixture only bites while the coarse bit still calls water walkable",
-        );
-        assert_eq!(
-            what_action_on_cell(&sim, Some(tank), (9, 9), Some(&grid), OrderModifier::Normal),
-            CellAction::NoMove,
-            "a Track mover cannot enter water, so the cursor must say so",
-        );
-        assert_eq!(
-            what_action_on_cell(&sim, Some(tank), (4, 4), Some(&grid), OrderModifier::Normal),
-            CellAction::Move,
-        );
-    }
-
-    /// Outside the playfield the ladder answers no-move before it looks at the
-    /// cell at all.
-    #[test]
-    fn cell_outside_the_playfield_resolves_to_no_move() {
-        use crate::app::input::context_order::OrderModifier;
-        use crate::sim::pathfinding::PathGrid;
-
-        let (sim, _rules, tank) = sim_with_tank();
-        let grid = PathGrid::new(8, 8);
-
-        assert_eq!(
-            what_action_on_cell(&sim, Some(tank), (8, 3), Some(&grid), OrderModifier::Normal),
-            CellAction::NoMove,
-        );
-    }
-
-    /// gamemd returns action 1 on Shift and on Alt *before* running the
-    /// occupancy probe, so both show the move cursor even over a blocked cell.
-    #[test]
-    fn shift_and_alt_skip_the_occupancy_probe() {
-        use crate::app::input::context_order::OrderModifier;
-        use crate::sim::pathfinding::PathGrid;
-
-        let (sim, _rules, tank) = sim_with_tank();
-        let mut grid = PathGrid::new(8, 8);
-        grid.set_blocked(6, 6, true);
-
-        assert_eq!(
-            what_action_on_cell(&sim, Some(tank), (6, 6), Some(&grid), OrderModifier::Queue),
-            CellAction::Move,
-        );
-        assert_eq!(
+        let (mut sim, rules, _) = Simulation::walk_cell_input_test_scene_with(battle.rules, false);
+        let owner = sim.interner.get("Local").unwrap();
+        let tank = sim.spawn_object("MTNK", "Local", 6, 4, 0, &rules).unwrap();
+        sim.resolve_type_handles(&rules);
+        let cursor = |modifier| {
             what_action_on_cell(
                 &sim,
+                Some(owner),
                 Some(tank),
-                (6, 6),
-                Some(&grid),
-                OrderModifier::ForceMove
-            ),
-            CellAction::Move,
+                (9, 5),
+                modifier,
+                Some(&rules),
+            )
+        };
+        assert_eq!(cursor(OrderModifier::Normal), MoveAction::Move);
+        assert_eq!(cursor(OrderModifier::ForceMove), MoveAction::Move);
+        let goal = sim
+            .cell_click_destination(owner, tank, (9, 5), false, &rules, None)
+            .unwrap()
+            .unwrap();
+        assert!(goal.0 < 8, "{goal:?}");
+    }
+
+    /// The Unit harvest arms run only over a Cell the viewer has mapped
+    /// (`0x007405DB..0x007405E6`): a retail War Miner shows Harvest over ore
+    /// it can see and Move over ore under shroud.
+    #[test]
+    fn a_miner_shows_harvest_only_over_mapped_ore() {
+        use crate::app::input::context_order::OrderModifier;
+        use crate::app::presentation::render::OrderMode;
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+            &battle.processed_rules,
+            Some(&battle.fixed_art),
         );
+        let (mut sim, rules, _) = Simulation::walk_cell_input_test_scene_with(battle.rules, false);
+        let owner = sim.interner.get("Local").unwrap();
+        let miner = sim.spawn_object("HARV", "Local", 6, 4, 0, &rules).unwrap();
+        sim.resolve_type_handles(&rules);
+        assert!(sim.entities().get(miner).unwrap().miner.is_some());
+        let ore = registry.id_for_name("TIB01").unwrap();
+        let (seen, hidden) = ((11, 5), (12, 5));
+        let grid = sim
+            .overlay_grid
+            .get_or_insert_with(|| crate::sim::overlay_grid::OverlayGrid::new(16, 16));
+        for (x, y) in [seen, hidden] {
+            grid.place_overlay(x, y, ore, 6);
+        }
+        sim.fog = crate::sim::vision::FogState::new(16, 16);
+        sim.fog.reveal_cells_for_owner(
+            owner,
+            (0..16)
+                .flat_map(|y| (0..16).map(move |x| (x, y)))
+                .filter(|&cell| cell != hidden),
+        );
+        let cursor = |cell| {
+            empty_cell_cursor(
+                &sim,
+                Some(&rules),
+                Some(&registry),
+                Some(owner),
+                Some(miner),
+                cell,
+                OrderModifier::Normal,
+                OrderMode::Move,
+            )
+        };
+        assert_eq!(cursor(seen), CursorFeedbackKind::Harvest);
+        assert_eq!(cursor(hidden), CursorFeedbackKind::Move);
     }
 
     /// `Is_Armed` reads the current weapon slot, slot 0 without `TurretCount=`,

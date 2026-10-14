@@ -74,7 +74,6 @@ fn finish(sim: &mut Simulation, rules: &RuleSet, id: u64) -> usize {
                 .and_then(|l| l.selected_drive_runtime())
                 .and_then(|r| r.retained())
                 .cloned(),
-            &e.movement_target,
             &e.body_facing,
             e.mcv_deploy_pending,
             &e.mission,
@@ -293,19 +292,14 @@ fn moving_mcv_finishes_committed_segment_then_deploys_once() {
             entity_id: id,
             target_rx: 30,
             target_ry: 22,
-            queue: false,
         }),
     );
     for _ in 0..8 {
         tick(&mut sim, &rules, None);
     }
-    assert!(
-        sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .movement_target
-            .is_some()
+    assert_eq!(
+        crate::sim::movement::motion_query::is_moving(sim.substrate.entities.get(id).unwrap()),
+        Some(true)
     );
     let position = sim.substrate.entities.get(id).unwrap().position;
     tick(&mut sim, &rules, Some(Command::DeployMcv { entity_id: id }));
@@ -365,7 +359,6 @@ fn move_order_during_turn_prevents_conversion_at_the_old_site() {
             entity_id: id,
             target_rx: 40,
             target_ry: 22,
-            queue: false,
         }),
     );
     for _ in 0..10 {
@@ -781,7 +774,8 @@ fn with_no_site_a_computer_mcv_scatters_and_a_human_one_waits() {
             crate::sim::world::FrameEffects::default()
         ));
         let mcv = sim.substrate.entities.get(id).unwrap();
-        let scattered = mcv.movement_target.is_some() || mcv.navigation.nav_com.is_some();
+        let scattered = crate::sim::movement::motion_query::is_moving(&mcv) == Some(true)
+            || mcv.navigation.nav_com.is_some();
         assert_eq!(scattered, !human, "human={human}");
         // The Unit receiver's null arm draws nothing (0x00743A50).
         assert!(sim.scenario_rng.logical_state() == rng, "human={human}");

@@ -344,7 +344,7 @@ pub(crate) mod native_route {
             "{context}: queued BState"
         );
         assert_eq!(
-            entity.building_actually_placed,
+            entity.building_art.actually_placed(),
             frame["grand_opening"].as_bool().unwrap(),
             "{context}: opening is visible to the next object"
         );
@@ -358,7 +358,7 @@ pub(crate) mod native_route {
             frame["stage"].as_i64().unwrap(),
             "{context}: stage"
         );
-        entity.building_actually_placed
+        entity.building_art.actually_placed()
     }
 }
 

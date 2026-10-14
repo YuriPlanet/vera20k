@@ -46,7 +46,7 @@ fn scene(damage: i32, firepower: u64) -> (Simulation, RuleSet) {
         entity.owner = sim.interner.get(owner).unwrap();
         entity.type_ref = sim.interner.intern(kind);
         // The estimator fixture's retained raw rank is2.0 (40000000).
-        entity.set_veterancy_rank(200);
+        entity.veterancy.set_rank_for_test(200);
         entity.firepower_multiplier = NativeF64Bits::from_bits(if id == 1 {
             1f64.to_bits()
         } else {

@@ -248,11 +248,11 @@ fn house_hold_pass_matches_original_retained_power_histories() {
             power.total_output = int(row, "retained_output");
             power.total_drain = int(row, "retained_drain");
             power.is_low_power = row["low_power_before_call"].as_bool().unwrap();
-            sim.houses.get_mut(&owner).unwrap().take_tech_tree_recheck();
+            sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
             update_owned_supers(&mut sim, &rules, owner);
             assert_state(&sim.super_weapons[&owner][&type_id], &row["output"], &label);
             assert_eq!(
-                sim.houses.get_mut(&owner).unwrap().take_tech_tree_recheck(),
+                sim.houses.get_mut(&owner).unwrap().take_tech_recheck(),
                 row["house_sidebar_dirty"].as_bool().unwrap(),
                 "{label}: House tail request"
             );
@@ -276,7 +276,7 @@ fn pending_house_tech_tree_tail_is_hashed_and_saved() {
     let owner = sim.interner.intern("Confederation");
     sim.houses
         .insert(owner, HouseState::new(owner, 2, None, false, 0, 10));
-    assert!(sim.houses.get_mut(&owner).unwrap().take_tech_tree_recheck());
+    assert!(sim.houses.get_mut(&owner).unwrap().take_tech_recheck());
     let clean_hash = sim.state_hash();
     sim.request_house_tech_tree_recheck(owner);
     let dirty_hash = sim.state_hash();
@@ -286,20 +286,8 @@ fn pending_house_tech_tree_tail_is_hashed_and_saved() {
         .unwrap()
         .sim;
     assert_eq!(restored.state_hash(), dirty_hash);
-    assert!(
-        restored
-            .houses
-            .get_mut(&owner)
-            .unwrap()
-            .take_tech_tree_recheck()
-    );
-    assert!(
-        !restored
-            .houses
-            .get_mut(&owner)
-            .unwrap()
-            .take_tech_tree_recheck()
-    );
+    assert!(restored.houses.get_mut(&owner).unwrap().take_tech_recheck());
+    assert!(!restored.houses.get_mut(&owner).unwrap().take_tech_recheck());
     assert_eq!(restored.state_hash(), clean_hash);
 }
 

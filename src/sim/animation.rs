@@ -3,7 +3,7 @@
 //! Manages animation sequences (stand, walk, attack, die) for SHP sprite entities.
 //! Each entity with an `Animation` component has a current sequence, frame index,
 //! and reached-frame counter. The `tick_animations()` function advances frames and
-//! handles auto-transitions (e.g., stand ↔ walk based on MovementTarget).
+//! follows each completed sequence's transition.
 //!
 //! ## SHP frame layout
 //! Infantry SHP files pack multiple sequences contiguously:
@@ -18,14 +18,15 @@
 //!   `shp_frame = start + frame_within_sequence`
 //!
 //! ## Auto-transitions
-//! - Entity gains MovementTarget → switch to Walk
-//! - Entity loses MovementTarget → switch back to Stand
 //! - Attack sequence finishes → switch to Stand (TransitionTo)
 //! - Die sequence finishes → hold last frame (HoldLast)
 //!
+//! Motion switches no sequence: Infantry's Doing/Stage owns its own, and the
+//! Unit SHP draw picks Walk or Stand by the locomotor's Is_Moving.
+//!
 //! ## Dependency rules
-//! - Part of sim/ — depends on sim/components (MovementTarget, TypeRef) and
-//!   re-exports the rules-owned sequence vocabulary below.
+//! - Part of sim/ — reads entity, movement and rules state, and re-exports the
+//!   rules-owned sequence vocabulary below.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use std::collections::BTreeMap;
@@ -258,6 +259,7 @@ pub(crate) fn tick_unit_body_frame_counter(
     cadence: ShpVehicleCadence,
     hover_attack: bool,
     deploy_to_land: bool,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     binary_frame: u32,
 ) {
     if entity.category != crate::map::entities::EntityCategory::Unit
@@ -284,8 +286,9 @@ pub(crate) fn tick_unit_body_frame_counter(
         moving || (entity.attack_target.is_some() && hover_attack && !entity.is_fully_deployed());
     let due = (walking && (binary_frame as i32) % cadence.walk_rate == 0)
         || (cadence.idle_rate != 0 && !moving && (binary_frame as i32) % cadence.idle_rate == 0)
+        // GetHeight (vt+0x1C8) at `0x004DA9CD`.
         || (deploy_to_land
-            && crate::sim::movement::ground_pose::object_altitude_leptons(entity) > 0);
+            && crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0);
     if due {
         entity.body_frame_counter = entity.body_frame_counter.wrapping_add(1);
     }
@@ -374,13 +377,10 @@ pub fn advance_animation(
 
 /// Advance all animated entities by one reached native gameplay frame.
 ///
-/// 1. Dying entities: skip auto-transitions, only advance death animation.
-///    Returns IDs of dying entities whose death animation has finished.
-/// 2. Auto-transitions: entities with MovementTarget switch to Walk;
-///    entities without MovementTarget switch back to Stand.
-/// 3. Attack transitions: stationary entities with attack_target switch to
-///    Attack (or FireProne/DeployedFire depending on stance).
-/// 4. Advances frame timing for each entity's current sequence.
+/// 1. Dying entities: only advance the death animation. Returns IDs of
+///    dying entities whose death animation has finished.
+/// 2. Advances frame timing for each entity's current sequence, following a
+///    completed sequence's `TransitionTo`.
 ///
 /// `sequences` maps type_id → SequenceSet for frame timing lookup.
 /// Entities whose type_id isn't in the map are skipped (no animation advance).
@@ -452,16 +452,11 @@ fn tick_animations_impl(
             continue;
         }
 
-        let has_movement: bool = entity.movement_target.is_some();
         // Infantry never enters this cascade: Doing/Stage is its only
-        // sequence clock. Retain the existing non-Infantry visual transitions.
+        // sequence clock. Motion does not switch the sequence either: the Unit
+        // SHP draw picks Walk or Stand by the locomotor's Is_Moving (vt+0x10 at
+        // `0x0073C696`, `resolve_shp_vehicle_body_frame`).
         let seq_set = sequence_set_for_type(sequences, rules, interner.resolve(type_ref));
-        if has_movement && anim.sequence == SequenceKind::Stand {
-            anim.switch_to(SequenceKind::Walk);
-        } else if !has_movement && matches!(anim.sequence, SequenceKind::Walk | SequenceKind::Crawl)
-        {
-            anim.switch_to(SequenceKind::Stand);
-        }
 
         // Advance frame timing.
         let Some(set) = seq_set else {

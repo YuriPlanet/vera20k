@@ -200,7 +200,8 @@ fn construction_matches_the_original_mission_visits() {
                 .iter()
                 .any(|call| call[0] == "grand_opening");
             assert_eq!(
-                entity.building_actually_placed, opening,
+                entity.building_art.actually_placed(),
+                opening,
                 "{context}: opening"
             );
         }

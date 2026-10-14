@@ -382,7 +382,7 @@ fn original_unit_fire_update_rows() {
             );
             entity.turret_anim_frame = i32_of(&field("unit", "turret_anim"));
             if elite_of(&field("unit", "veterancy")) {
-                crate::sim::combat::veterancy::set_elite(entity);
+                entity.veterancy.set_elite();
             }
         }
         sim.main_rng = SimRng::new(0x2A61).into();

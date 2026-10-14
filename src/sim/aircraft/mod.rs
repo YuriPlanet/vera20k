@@ -96,8 +96,10 @@ pub(crate) fn attack_state(entity: &GameEntity) -> Option<u8> {
 /// Every other slot of the aircraft's table is a MissionClass stub that
 /// returns 450 frames (`0x005B2E10..0x005B2FB0`): Sleep, Harmless, Ambush,
 /// Harvest, Return, Stop, Construction, Selling, Repair, Missile, Open and
-/// Wait, and the Sleep slot QMove, an AttackMove order's mission 29, NONE
-/// and any id past 0x1F reach (`0x005B30BB`, `0x005B34C4`).
+/// Wait, and the Sleep slot QMove, Attack Move (29), NONE and any id past
+/// 0x1F reach (`0x005B30BB`, `0x005B34C4`). An attack-move order never queues
+/// 29 for an aircraft: its type refuses to attack-move, so
+/// `Assign_Target_Command` answers Move.
 ///
 /// RESIDUAL: Patrol (`0x00417300`) and the Foot handlers of Capture
 /// and Sabotage (`0x004D4B20`), Eaten (`0x004D4CB0`) and Rescue

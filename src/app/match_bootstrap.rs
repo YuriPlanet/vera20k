@@ -165,6 +165,20 @@ impl LoadingStartup {
         }
     }
 
+    /// The `GameMode` the shell wrote before this launch: 0 for a campaign
+    /// (`0x0052E175`), 5 for every Battle launch (`0x0052E10F`). A generic map
+    /// load has no campaign either, matching the simulation's own
+    /// `game_mode_nonzero = campaign.is_none()` classification.
+    pub(crate) fn session_mode(&self) -> crate::app::match_runtime::session::SessionMode {
+        use crate::app::match_runtime::session::SessionMode;
+        match self {
+            Self::Campaign(_) => SessionMode::Campaign,
+            Self::Accepted(_) | Self::UnverifiedLegacy { .. } | Self::Generic { .. } => {
+                SessionMode::Skirmish
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn seed_or_else(&self, unverified_fallback: impl FnOnce() -> u32) -> u32 {
         match self {
@@ -520,6 +534,43 @@ mod tests {
             reads: 0,
         };
         prepare_match_startup(correlation, accepted_session(), &mut clock)
+    }
+
+    #[test]
+    fn launch_writes_the_shell_game_mode() {
+        use crate::app::match_runtime::session::SessionMode;
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[Battles]\n0=ALL1\n[ALL1]\nCD=2\nScenario=ALL01UMD.MAP\n",
+        );
+        let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
+        campaigns.apply_ini(&ini, &crate::rules::movies::MovieRegistry::default(), None);
+        let mut clock = CountingClock { value: 7, reads: 0 };
+        let campaign = prepare_campaign_startup(&campaigns, "ALL1", 1, &mut clock)
+            .expect("synthetic campaign catalog admits a selected campaign");
+        assert_eq!(
+            LoadingStartup::Campaign(campaign).session_mode(),
+            SessionMode::Campaign
+        );
+        assert_eq!(
+            LoadingStartup::Accepted(prepared(9)).session_mode(),
+            SessionMode::Skirmish
+        );
+        let seed = prepared(9).seed;
+        assert_eq!(
+            LoadingStartup::UnverifiedLegacy {
+                session: explicit_session(),
+                seed,
+            }
+            .session_mode(),
+            SessionMode::Skirmish
+        );
+        assert_eq!(
+            LoadingStartup::Generic {
+                selected_map_file: "x.map".into()
+            }
+            .session_mode(),
+            SessionMode::Skirmish
+        );
     }
 
     fn assert_unverified(session: &SkirmishLaunchSession, expected: UnverifiedStartupReason) {

@@ -94,7 +94,7 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // v190 adds saved Foot neighbor history. Before(190) reproduces the full v189
 // fixture; its legacy grid has no retained plane. Route/RNG pins are unchanged.
 // 2026-09-23 Drive/Ship Process path request (behavior, not composition):
-// Drive/Ship orders from every producer (player, pursuit, rally, miners) are
+// Drive/Ship orders from every producer (player, Approach, rally, miners) are
 // accepted by the Unit setter without an order-time A*, PowerOn or redirect.
 // The fixture then had no native zone topology, so the first Process searched
 // in the since-removed legacy inline lane (see the 2026-10-01 entry below).
@@ -338,10 +338,35 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // Snapshot332 drops the C4 walk-up intent, whose empty value every entity's
 // fold hashed. This fixture orders no C4; route, per-frame replay and all
 // three RNG gates remain unchanged.
-// Snapshot345 retires only the duplicated announcement None hash feed in
-// this no-Tag scene. The end-of-test control must reproduce the incoming pin.
+// 2026-10-14: hash composition and coverage only. state_hash folds
+// through the pinned StateHasher instead of std's DefaultHasher (a
+// temporary control folding the finished replay through DefaultHasher
+// still gave the previous 0x38EB_6DC4_C87D_4E43), fog grids and entities fold
+// as per-House and per-entity digests, cell grids and footprint lists
+// fold as packed byte records, and the edge cache also covers
+// uninitialized cells: code that writes no simulation state.
+// Snapshot349 drops the move-order adapter (`MovementTarget`, #689), whose
+// presence and speed stamp every entity's fold hashed. Hash composition
+// only: a control binary (main with a hash that skips only that fold)
+// gives this value in the same test, with every tripwire above green.
+// Control removed. Previous: 0x5D16_9C8A_E6B9_8915.
+// Snapshot350 drops the locomotor's altitude copy (#692), which every
+// locomotor's fold hashed. Hash composition only: a control binary (main
+// with a hash that skips only that fold) gives this value in the same
+// test, with every tripwire above green.
+// Control removed. Previous: 0x13A7_184B_5F5F_A088.
+// Integrated StateHasher pin after executed scoped feed attribution. The test
+// below recovers current main exactly with retired feeds and preserves serialized
+// gameplay, the live Dummy and all three RNG streams; this is a Rust ratchet.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x4C4F_3B6D_6A3A_B21F;
+
+// ALL01 r6 (fork-local schema345) used DefaultHasher before main's
+// pinned StateHasher, entity/fog digests and owner migrations. These remain
+// historical Rust receipts; they are not comparable to current u64 outputs.
 const BRIDGE_HARNESS_INCOMING_HASH: u64 = 0x38EB_6DC4_C87D_4E43;
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xA333_077C_B5E5_6DA3;
+const BRIDGE_HARNESS_R6_FINAL_HASH: u64 = 0xA333_077C_B5E5_6DA3;
+// The legacy-feed control uses this main StateHasher reference.
+const BRIDGE_HARNESS_MAIN_HASH: u64 = 0x7762_A172_3DBE_DA89;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -604,7 +629,6 @@ fn bridge_script() -> Vec<(u64, Command)> {
             entity_id: TANK_ID,
             target_rx: APPROACH_B_X,
             target_ry: SPAN_Y,
-            queue: false,
         },
     )]
 }
@@ -709,7 +733,7 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         // Nodes of the route the first Find_Path installed: the start cell
         // plus one Foot+5E0 word per later cell.
         if order_accepted_path.is_none()
-            && entity.movement_target.is_some()
+            && crate::sim::movement::motion_query::is_moving(&entity) == Some(true)
             && !entity.navigation.path_replay.directions.is_empty()
         {
             order_accepted_path = Some(entity.navigation.path_replay.directions.len() + 1);
@@ -863,7 +887,7 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         "arrival must retire the paid track head"
     );
     assert!(
-        arrived.movement_target.is_none(),
+        crate::sim::movement::motion_query::is_moving(&arrived) != Some(true),
         "arrival must retire the completed path"
     );
 
@@ -920,10 +944,13 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         "bridge absolute RNG states changed",
     );
     let final_hash = *replayed.last().expect("at least one tick replayed");
+    println!(
+        "[bridge historical hash receipts] archived_default_incoming={BRIDGE_HARNESS_INCOMING_HASH:016X} archived_r6={BRIDGE_HARNESS_R6_FINAL_HASH:016X}"
+    );
     super::global_parity_harness_tests::assert_announcement_feed_retirement_hash_control(
         "bridge",
         &rep,
-        BRIDGE_HARNESS_INCOMING_HASH,
+        BRIDGE_HARNESS_MAIN_HASH,
     );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,

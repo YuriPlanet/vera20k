@@ -3,11 +3,11 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::sim::components::{DriveCoord, MovementTarget};
+use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::locomotor::LocomotorState;
 
-fn mirage(order: bool, destination: Option<DriveCoord>) -> (Simulation, RuleSet) {
+fn mirage(destination: Option<DriveCoord>) -> (Simulation, RuleSet) {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=MGTK\n[MGTK]\nStrength=400\nSpeed=6\nCanDisguise=yes\nDisguiseWhenStill=yes\n",
     ))
@@ -28,7 +28,6 @@ fn mirage(order: bool, destination: Option<DriveCoord>) -> (Simulation, RuleSet)
                     .with_destination_for_test(destination)
             ))
     );
-    entity.movement_target = order.then(MovementTarget::default);
     sim.substrate.entities.insert(entity);
     sim.interner = crate::sim::intern::test_interner();
     (sim, rules)
@@ -51,7 +50,7 @@ fn an_idle_retail_mirage_retains_its_disguise_without_another_scenario_draw() {
         return;
     };
     assert!(retail.rules.general.default_mirage_disguises.len() > 1);
-    let (mut sim, _) = mirage(false, None);
+    let (mut sim, _) = mirage(None);
     sim.session.binary_frame = 100;
     sim.update_unit_disguise(1, &retail.rules).unwrap();
     assert!(disguised(&sim));
@@ -74,7 +73,7 @@ fn an_idle_retail_mirage_hides_from_an_ordinary_enemy_observer() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
-    let (mut sim, _) = mirage(false, None);
+    let (mut sim, _) = mirage(None);
     let enemy = sim.interner.intern("Russians");
     sim.update_unit_disguise(1, &retail.rules).unwrap();
     let entity = sim.substrate.entities.get(1).unwrap();
@@ -87,24 +86,12 @@ fn an_idle_retail_mirage_hides_from_an_ordinary_enemy_observer() {
     ));
 }
 
-/// `UnitClass::UpdateDisguise @ 0x007468C0` asks the locomotor's Is_Moving
-/// (ILocomotion+0x10 at `0x007468F4`), which reads the Drive's own destination
-/// and head, not the owner's order. A Mirage holding an order its Drive has
-/// not taken up is still, so it takes a disguise. No production path is known
-/// to leave a Mirage in that state; this pins the owner's answer.
-#[test]
-fn a_mirage_whose_drive_has_not_started_its_order_disguises() {
-    let (mut sim, rules) = mirage(true, None);
-    sim.update_unit_disguise(1, &rules).unwrap();
-    assert!(disguised(&sim));
-}
-
 /// A Mirage whose Drive has a destination is moving, so UpdateDisguise takes
 /// its clear arm (Is_Moving at `0x0074693D`, then ClearDisguise at
 /// `0x00746AFF`) even without an order.
 #[test]
 fn a_disguised_mirage_whose_drive_has_a_destination_drops_its_disguise() {
-    let (mut sim, rules) = mirage(false, Some(DriveCoord::cell(9, 5, 0)));
+    let (mut sim, rules) = mirage(Some(DriveCoord::cell(9, 5, 0)));
     let tree = sim.interner.intern("TREE01");
     let entity = sim.substrate.entities.get_mut(1).expect("mirage");
     entity

@@ -67,8 +67,7 @@ impl VoxelAnimObject {
 
 /// Deterministic store, keyed by the shared object id.
 ///
-/// `BTreeMap` for the same reason `EntityStore` uses one: the tick walk and the
-/// state hash must see a fixed order.
+/// `BTreeMap` so the tick walk and the state hash see a fixed order.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct VoxelAnimStore(BTreeMap<u64, VoxelAnimObject>);
 

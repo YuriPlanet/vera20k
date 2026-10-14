@@ -3,8 +3,8 @@
 //!
 //! - Targets: `attack_target` (the held target and its coordinates),
 //!   `combat_targeting`, `greatest_threat`, `threat_range`, `threat_mask` and
-//!   `threat_posed` (acquisition), `pursuit` (closing in), `in_range` and
-//!   `line_of_fire` (the range gate), `combat_weapon` (weapon choice), and
+//!   `threat_posed` (acquisition), `in_range` and `line_of_fire` (the range
+//!   gate), `combat_weapon` (weapon choice), and
 //!   `fire_error` and `fire_error_world` (legality).
 //! - Firing: `world_fire` (FireAt and the combat tick), `projectile_delivery`
 //!   (the shot's BulletType facts and the Bullet's admission), `aim_coord`,
@@ -49,7 +49,6 @@ pub(crate) mod line_of_fire;
 mod object_health;
 pub(crate) mod parasite;
 mod projectile_delivery;
-mod pursuit;
 mod receiver_call;
 mod receiver_health;
 mod record_kill;
@@ -83,8 +82,6 @@ mod combat_cloak_legality_tests;
 #[cfg(test)]
 mod combat_force_fire_cell_tests;
 #[cfg(test)]
-mod combat_pursuit_tests;
-#[cfg(test)]
 mod combat_tests;
 #[cfg(test)]
 mod combat_turret_facing_tests;
@@ -113,6 +110,8 @@ mod open_topped_fire_tests;
 mod prone_damage_tests;
 #[cfg(test)]
 mod unit_damage_response_tests;
+#[cfg(test)]
+mod walk_attack_tests;
 
 pub use attack_target::{AttackTarget, TargetKind};
 pub(crate) use attack_target::{object_distance_to, resolve_target_coords, target_present};
@@ -128,9 +127,6 @@ pub(crate) use in_range::{
     lepton_distance_sq_raw,
 };
 pub(crate) use projectile_delivery::{FiredBullet, admit_fired_bullet};
-pub(crate) use pursuit::{
-    PursuitRangeVerdict, pursuit_in_range, pursuit_selected_weapon, pursuit_selection,
-};
 pub use receiver_call::TerrainDamageEvent;
 pub(crate) use receiver_call::{
     BaseDefenseResponseCallSite, EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags,
@@ -142,11 +138,9 @@ pub(crate) use techno_death::{
 };
 pub(crate) use threat_posed::live_threat_posed;
 /// The threat mask an acquisition callsite pushes into
-/// `TechnoClass::Greatest_Threat @ 0x006F8DF0`, plus the passive block's own
-/// derivation of it. Re-exported because the mask is chosen by the mission
-/// handlers in `sim/world/`, not inside `combat/`.
+/// `TechnoClass::Greatest_Threat @ 0x006F8DF0`. Re-exported because the mask
+/// is chosen by the mission handlers in `sim/world/`, not inside `combat/`.
 pub use threat_range::ScanMission;
-pub(crate) use threat_range::scan_mission_for;
 pub(crate) use world_fire::estimated_damage_on;
 
 // Shared between combat's children, which reach them through `super::`.
@@ -189,7 +183,7 @@ use techno_death::fire_death_weapon_payload;
 use std::collections::{BTreeMap, BTreeSet};
 
 use self::combat_targeting::{AttackerSnapshot, GarrisonSnapshot};
-use self::combat_weapon::{WeaponSlot, select_weapon_against};
+use self::combat_weapon::WeaponSlot;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;

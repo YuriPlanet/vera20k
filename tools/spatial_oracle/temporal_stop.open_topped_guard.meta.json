@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Carrier Stop broadcasts NULL; a hidden Guard rider retains its Temporal link.\n\n The already-active single-head link is supplied. Execute the actual carrier\n OpenTopped Stop suffix, original concrete passenger target setter, retained\n Guard dispatch and FireAtTarget no-target arm. One later original target-head\n Update proves the raw-damage step despite the cleared source TarCom. No full\n Event admission, BFRT constructor, original shot, whole AI or frame cadence.\n ",
+  "assumptions": [
+    "Inherited original CLEG type constructor and physical ART sequence reader; unrelated InfantryType rule fields remain constructor defaults. MissionControl original constructor/readers and RNG seeds from Probe. Existing raw already-warping Infantry/Unit runtime preparation is not an original shot producer.",
+    "Prepared carrier with original Unit vtable7F5C70, type+5E4 OpenTopped true and cargo head/count pointing to one retained Infantry. No BFRT constructor/full rule reader, full boarding or whole Event admission/earlier hull Stop effects.",
+    "Passenger retained Guard5, Limbo+81 and raw open-top+82, original parent+11C, existing single Temporal head/link, live target; timer start100 duration16 and sampled absolute visits are supplied controls, not full game cadence.",
+    "After NULL target/Guard controls, prepared raw weaponDamage8 is installed in primary slot and nearby target coords supplied. Actual InfantrySelectWeapon, TechnoSelectWeapon, GetWeapon and TemporalUpdate execute; no weapon/full type reader closure claimed.",
+    "No full Infantry or target AI scheduling, full scene, erase callbacks or rendered BFRT Stop claim. A different passenger current mission such as Attack has distinct dispatch-to-Idle behavior in the original default corpus."
+  ],
+  "substitutions": [
+    "Inherited bounded heap/delete/TLS/file transport, CRT atexit no-op and imported Interlocked transport. No reached native gameplay body, target setter, mission return, RNG, Temporal release or Update result is substituted. Additional entry hook observes only."
+  ],
+  "entry_points": {
+    "carrier_stop_suffix": 5011001,
+    "suffix_end": 5011029,
+    "broadcast": 7406928,
+    "infantry_target": 5353968,
+    "techno_target": 7327152,
+    "dispatch": 5976160,
+    "infantry_guard": 5371424,
+    "foot_guard": 5066864,
+    "idle_action": 5361072,
+    "fire_at_target": 5375664,
+    "target_head_update": 7448416,
+    "infantry_select_weapon": 5380320,
+    "techno_select_weapon": 7287600,
+    "get_weapon": 7397696,
+    "let_go": 7449536,
+    "enter_idle": 7379520
+  },
+  "write_trace_policy": "UC_HOOK_MEM_WRITE values are masked to the actual store width; high bits outside the written byte/word/dword are not native state.",
+  "replay_command": "python -m tools.spatial_oracle.temporal_stop --open-topped-guard",
+  "payload_sha256": "69b0c65fb231ce618ee53d4b1a560f97ff18fcf0699748d5d0ad23f7fff4dc10"
+}

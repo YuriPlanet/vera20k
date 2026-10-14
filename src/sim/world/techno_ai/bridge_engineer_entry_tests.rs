@@ -142,7 +142,6 @@ fn capture_probe(
         "mission_only":actor.is_mission_only(), "lifecycle":actor.lifecycle,
         "tube":actor.low_bridge_tube_state, "locomotor":actor.locomotor,
         "mission":actor.mission, "navigation":actor.navigation,
-        "movement_target":actor.movement_target,
         "team_present":sim.team_script_vm.team_for_member(engineer).is_some(),
         "navigation_coord":navigation_coord, "destination_coord":destination,
         "current_coord":crate::sim::movement::ground_pose::position_world_coord(&actor.position),
@@ -373,10 +372,12 @@ fn retail_hills_engineer_enters_hut_and_repairs() {
                 engineer_navigation_state(actor.unwrap()),
             ));
         }
-        let mut state=actor.map_or(Value::Null,|e|json!({
-            "position":e.position,"lifecycle":e.lifecycle,"mission":e.mission,
-            "navigation":e.navigation,"locomotor":e.locomotor,"movement_target":e.movement_target,
-        }));
+        let mut state = actor.map_or(Value::Null, |e| {
+            json!({
+                "position":e.position,"lifecycle":e.lifecycle,"mission":e.mission,
+                "navigation":e.navigation,"locomotor":e.locomotor,
+            })
+        });
         if let Some(mission) = state.get_mut("mission").and_then(Value::as_object_mut) {
             mission.remove("ai_counter");
         }
@@ -465,7 +466,6 @@ fn engineer_navigation_state(actor: &crate::sim::game_entity::GameEntity) -> Val
     json!({
         "position":actor.position, "mission":actor.mission,
         "navigation":actor.navigation, "locomotor":actor.locomotor,
-        "movement_target":actor.movement_target,
     })
 }
 

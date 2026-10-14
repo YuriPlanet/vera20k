@@ -96,7 +96,7 @@ impl Simulation {
             return;
         }
         let entity = self.substrate.entities.get_mut(id).unwrap();
-        crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
+        crate::sim::mission::concrete_effects::represented_assign_destination(
             entity,
             Some(destination),
         );

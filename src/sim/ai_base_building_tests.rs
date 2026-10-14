@@ -535,7 +535,7 @@ fn a_computer_yards_building_follows_the_native_computer_route() {
         assert_eq!(exit, BuildingExit::Placed, "{name}");
         let building = sim.substrate.entities.get(product).unwrap();
         assert!(
-            !building.building_actually_placed,
+            !building.building_art.actually_placed(),
             "{name}: opened at placement"
         );
         assert_eq!(

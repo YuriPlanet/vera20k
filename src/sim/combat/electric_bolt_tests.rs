@@ -845,7 +845,8 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                     .entities
                     .get(source)
                     .unwrap()
-                    .building_anim_slots[3]
+                    .building_art
+                    .anim_slots()[3]
                     .is_none(),
                 "{name} a live SpecialAnim has not restored Active"
             );
@@ -858,7 +859,8 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             .entities
             .get(source)
             .unwrap()
-            .building_anim_slots[3]
+            .building_art
+            .anim_slots()[3]
             .expect("normal delayed-fire completion restores the Active slot");
         assert_eq!(
             sim.resolve(sim.anim(idle).unwrap().type_id),

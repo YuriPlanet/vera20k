@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -31,14 +31,7 @@
     "let_go": "0x0071ABC0",
     "range": "0x0065C7E0"
   },
-  "harness_sha256": "f99833e5b4e40f26faffb506143691d09f74e5561258007ff58a3a1f0b68e328",
-  "source_pins": {
-    "tools/native_oracle.py": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-    "tools/projectile_oracle/bridge_render_inputs.py": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
-    "tools/rules_oracle/bridge_anim_inputs.py": "f7f2941e11bbede50ffab19554a789e4e3e42f4969b04ad4e9697973e659d316",
-    "tools/rules_oracle/bridge_anim_lists.py": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
-    "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-    "tools/projectile_oracle/flat_art.py": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6"
-  },
-  "payload_sha256": "6da654193046fcaa64e93cf3b21d696bae466fd8a691ad91a83af92d07a9da2e"
+  "write_trace_policy": "UC_HOOK_MEM_WRITE values are masked to the actual store width; high bits outside the written byte/word/dword are not native state.",
+  "replay_command": "python -m tools.spatial_oracle.temporal_stop",
+  "payload_sha256": "f611e7128df0c944c2f366a10252672c4e823598f003f68d4e36d1695e71cb5f"
 }

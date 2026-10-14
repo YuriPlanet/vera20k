@@ -48,6 +48,7 @@ pub(crate) mod crew_survival; // building SpawnSurvivors and vehicle crew escape
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
 pub mod entity_store;
 pub(crate) mod estimated_health;
+pub(crate) mod flashing;
 pub mod game_entity;
 pub(crate) mod house_threat;
 pub mod intern;
@@ -58,6 +59,7 @@ pub(crate) mod powered_unit; // Robot Tanks offline without a PowersUnit= buildi
 pub(crate) mod light_sources;
 pub mod multiplayer_checksum;
 pub(crate) mod native_identity;
+pub(crate) mod parallel; // order-preserving work over scoped threads
 pub(crate) mod radiation_light;
 pub mod rng;
 pub(crate) mod scenario_bootstrap;
@@ -67,6 +69,7 @@ pub(crate) mod score;
 pub mod sensor_lifecycle;
 pub mod spy_infiltration; // BuildingClass::Infiltrate (a spy's effects on the building it enters)
 pub(crate) mod stage;
+pub(crate) mod state_hasher;
 pub mod temporal;
 pub mod timer; // signed frame-anchored countdown primitive
 pub(crate) mod touch_log; // which stored objects were handed out mutably, per reader
@@ -120,6 +123,7 @@ pub(crate) mod unit_simple_deploy;
 
 // --- Persistent cell occupancy ---
 pub mod cell_kernel;
+pub(crate) mod cell_map;
 pub mod cell_rect;
 pub mod find_nearby_cell;
 pub mod occupancy;

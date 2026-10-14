@@ -141,7 +141,7 @@ fn retail_legionnaire_attacks_distant_object_after_teleport_recovery() {
         let target = sim
             .spawn_object_at_height(target_type, "Russians", target_x, 10, 0, 0, &rules)
             .unwrap();
-        // A supplied stationary target separates the pursuit bug from enemy
+        // A supplied stationary target separates the approach under test from enemy
         // movement/fire. The factory has no attack weapon in stock rules.
         sim.substrate
             .entities
@@ -317,4 +317,121 @@ fn retail_balloons_take_their_target_with_vertical_weapons() {
             weapon.id
         );
     }
+}
+
+/// A tank with a 4-cell gun, and nothing else.
+fn tank_rules() -> RuleSet {
+    RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n\
+         [TANK]\nStrength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=TankGun\n\
+         Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [TankGun]\nDamage=10\nROF=20\nRange=4\nProjectile=InvisibleAll\nWarhead=HITWH\n\
+         [InvisibleAll]\nInviso=yes\nAA=yes\nAG=yes\n\
+         [HITWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("tank rules")
+}
+
+/// Stamps the test catalog's DestroyableCliffs A tile (6x4, its four corners
+/// without image, so no cell holds them) with its top-left cell at (8, 9).
+fn stamp_destroyable_cliff(sim: &mut Simulation) {
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    terrain.test_install_destroyable_cliff_catalog(100);
+    for row in 0..4u8 {
+        for column in 0..6u8 {
+            let sub_tile = row * 6 + column;
+            if [0, 5, 18, 23].contains(&sub_tile) {
+                continue;
+            }
+            let cell = terrain
+                .cell_mut(8 + u16::from(column), 9 + u16::from(row))
+                .unwrap();
+            cell.final_tile_index = 100;
+            cell.final_sub_tile = sub_tile;
+        }
+    }
+}
+
+/// `MapClass @ 0x00586FC0`: of the tile's imaged cells in the playfield, the
+/// one nearest the mover's cell, the first row by row on a tie. From (4, 8)
+/// the imageless corner (8, 9) would be nearest, so (8, 10) is taken; from
+/// (14, 8), (12, 9) and (13, 10) tie and the upper row wins. A cell off any
+/// destroyable tile answers itself.
+#[test]
+fn the_destroyable_cliff_redirect_takes_the_nearest_imaged_cell() {
+    let mut sim = Simulation::new();
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
+        32,
+    ));
+    sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+    stamp_destroyable_cliff(&mut sim);
+
+    for (target, own, nearest) in [
+        ((10, 10), (4, 8), (8, 10)),
+        ((12, 11), (14, 8), (12, 9)),
+        ((20, 20), (4, 8), (20, 20)),
+    ] {
+        assert_eq!(
+            sim.destroyable_cliff_nearest_cell(target, own),
+            nearest,
+            "{target:?} from {own:?}"
+        );
+    }
+}
+
+/// Approach's DestroyableCliffs arm (`0x004D5ABE..0x004D5B60`): a tank out of
+/// range of a Cell on the tile takes the tile's cell nearest its own as its
+/// target (vt+0x3C8) and searches for a firing cell against that.
+#[test]
+fn approach_retargets_a_destroyable_cliff_cell_to_its_nearest_imaged_cell() {
+    let rules = tank_rules();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4D5ABE);
+    stamp_destroyable_cliff(&mut sim);
+    let tank = sim
+        .spawn_object_at_height("TANK", "Americans", 2, 8, 0, 0, &rules)
+        .expect("tank spawns");
+    sim.substrate.entities.get_mut(tank).unwrap().attack_target =
+        Some(combat::AttackTarget::for_cell(10, 10));
+
+    sim.approach_target(tank, &rules, None, FrameEffects::default());
+
+    let tank = sim.substrate.entities.get(tank).unwrap();
+    assert_eq!(
+        tank.attack_target.as_ref().map(|attack| attack.target),
+        Some(TargetKind::Cell(8, 10))
+    );
+    assert!(
+        matches!(tank.navigation.nav_com, Some(NavTargetRef::Cell { .. })),
+        "{:?}",
+        tank.navigation.nav_com
+    );
+}
+
+/// Approach's NavQueue arm (`0x004D5A4D..0x004D5ABB`): out of range, the
+/// first queued destination, an object as much as a Cell, is set (vt+0x480
+/// with 0), leaves the queue and is the answer, ahead of any search.
+#[test]
+fn approach_takes_the_first_queued_destination_of_any_kind() {
+    let rules = tank_rules();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4D5A4D);
+    let spawn = |sim: &mut Simulation, owner: &str, rx: u16| {
+        sim.spawn_object_at_height("TANK", owner, rx, 10, 0, 0, &rules)
+            .expect("tank spawns")
+    };
+    let tank = spawn(&mut sim, "Americans", 4);
+    let enemy = spawn(&mut sim, "Russians", 20);
+    let escort = spawn(&mut sim, "Americans", 8);
+    let queued = [NavTargetRef::object(escort), NavTargetRef::cell(5, 5)];
+    let actor = sim.substrate.entities.get_mut(tank).unwrap();
+    actor.attack_target = Some(combat::AttackTarget::new(enemy));
+    actor.navigation.nav_queue = queued.to_vec();
+
+    let answer = sim
+        .approach_foot_target(tank, &rules, None, FrameEffects::default())
+        .unwrap();
+
+    let actor = sim.substrate.entities.get(tank).unwrap();
+    assert_eq!(answer, Some(queued[0]));
+    assert_eq!(actor.navigation.nav_com, Some(queued[0]));
+    assert_eq!(actor.navigation.nav_queue, queued[1..]);
 }

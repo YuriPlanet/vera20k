@@ -11,6 +11,9 @@ its complete execution boundary and substitutions in the associated metadata.
   retained removal and recharge-reader boundaries; includes localized UTF-16
   names and house-adjusted costs. The shared retained strip owner consumes
   these outputs; admission and complete tech-tree timing have separate bounds.
+- [`factory_loss`](factory_loss.md): three stock MGTK/E1 prerequisite-loss
+  controls through the original Factory sweep, House dirty suffix and local
+  event tail; production tests consume wallet/progress and cancellation timing.
 - `geometry`: 21 screen/theme layouts and ten signed gadget size cases.
   Native 6A5090/6A5130 owns the 168-pixel sidebar and Y158 body. The 60x48
   cameo hit rectangle (6A8220/6ABF6E) is distinct from 63/64 column stride,

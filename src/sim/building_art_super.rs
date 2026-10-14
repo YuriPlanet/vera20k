@@ -141,9 +141,8 @@ impl Simulation {
             } else {
                 (SUPER_ANIM_OPEN, SUPER_ANIM_CLOSING)
             };
-            let present =
-                self.substrate.entities.get(id).is_some_and(|entity| {
-                    entity.building_anim_slots[usize::from(occupied)].is_some()
+            let present = self.substrate.entities.get(id).is_some_and(|entity| {
+                entity.building_art.anim_slots[usize::from(occupied)].is_some()
                 });
             if !present {
                 continue;
@@ -289,7 +288,7 @@ mod tests {
         let entity = sim.substrate.entities.get(id).unwrap();
         (SUPER_ANIM..=SUPER_ANIM_CLOSING)
             .filter_map(|slot| {
-                let anim = entity.building_anim_slots[usize::from(slot)]?;
+                let anim = entity.building_art.anim_slots[usize::from(slot)]?;
                 let anim = sim.substrate.anims.get(anim)?;
                 Some((slot, sim.interner.resolve(anim.type_id).to_string()))
             })

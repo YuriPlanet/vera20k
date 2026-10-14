@@ -324,7 +324,9 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
     building.has_been_captured = flag("captured", false);
     building.ai_repairable = flag("ai_repairable", true);
     building.was_attacked_by_enemy = flag("attacked", false);
-    building.building_damage_state_active = flag("damaged", health * 2 <= 1000);
+    building
+        .building_art
+        .set_damage_state_active_for_test(flag("damaged", health * 2 <= 1000));
     let mission = |key: &str, default: &str| match input[key].as_str().unwrap_or(default) {
         "guard" => MissionId::from_known(MissionType::Guard),
         "selling" => MissionId::from_known(MissionType::Selling),
@@ -393,7 +395,8 @@ fn update_repair_and_power_matches_the_original() {
             .entities
             .get(1)
             .unwrap()
-            .building_damage_state_active;
+            .building_art
+            .damage_state_active();
         production::update_repair_and_power(
             &mut sim,
             &rules,
@@ -409,7 +412,7 @@ fn update_repair_and_power_matches_the_original() {
                 building.health.current,
                 building.estimated_health.get(),
                 u8::from(building.repairing),
-                u8::from(building.building_damage_state_active),
+                u8::from(building.building_art.damage_state_active()),
             ]),
             json!([
                 row["health"],
@@ -451,7 +454,7 @@ fn update_repair_and_power_matches_the_original() {
             .any(|event| event[0] == "slot_anim");
         assert_eq!(
             native_anims,
-            damaged_before != building.building_damage_state_active,
+            damaged_before != building.building_art.damage_state_active(),
             "{name}: the slot anims follow the flag"
         );
         let selling = building.mission.effective().known() == Some(MissionType::Selling)
@@ -529,7 +532,8 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
                 .entities
                 .get(1)
                 .unwrap()
-                .building_actually_placed;
+                .building_art
+                .actually_placed();
             sim.object_ai_visit_one(1, Some(&rules), super::techno_ai::ObjectAiCtx::default());
             let after = cursors(&sim);
             let completed = !placed_before
@@ -538,7 +542,8 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
                     .entities
                     .get(1)
                     .unwrap()
-                    .building_actually_placed;
+                    .building_art
+                    .actually_placed();
             assert_eq!(
                 completed, frame["grand_opening"],
                 "{name} {now}: the build-up completes"

@@ -545,7 +545,7 @@ pub(super) fn spawn_structure(
     ge.lifecycle.in_limbo = false;
     ge.in_playfield = true;
     ge.finish_building_construction_for_test();
-    ge.building_actually_placed = true;
+    ge.building_art.set_actually_placed_for_test(true);
     ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
         crate::map::entities::EntityCategory::Structure,
         rules.object(type_id),
@@ -1420,8 +1420,12 @@ fn naval_rally_destination_and_move_survive_without_path_grid() {
         "Queue_Mission(Move, 0) is not gated by PathGrid availability"
     );
     assert!(
-        produced.movement_target.is_none(),
-        "no-grid delivery has no immediate A* execution path"
+        produced
+            .navigation
+            .path_replay
+            .remaining_directions()
+            .is_empty(),
+        "the class setter searches no route; the Ship's first Process does"
     );
 }
 
@@ -1497,7 +1501,10 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
         "ExitObject queues the native deferred Move mission"
     );
     // Unit741970 -> Ship69F450 installs no route; the first Process asks.
-    assert!(produced.movement_target.is_some(), "scheduled Process");
+    assert!(
+        crate::sim::movement::motion_query::is_moving(&produced) == Some(true),
+        "scheduled Process"
+    );
     assert!(
         produced
             .navigation

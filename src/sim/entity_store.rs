@@ -1,8 +1,10 @@
-//! BTreeMap-backed entity storage with deterministic sorted iteration.
+//! Dense entity storage with deterministic sorted iteration.
 //!
-//! `EntityStore` replaces `hecs::World` as the container for all game entities.
-//! Entities are keyed by their stable_id (u64) for O(log n) lookup. BTreeMap
-//! provides deterministic sorted iteration natively — no manual cache needed.
+//! `EntityStore` holds every game entity, boxed, in ascending stable_id order
+//! in one vector, with an id -> slot index for O(1) lookup. Stable ids are
+//! monotonic and never reused, so a new entity normally appends; a removed one
+//! leaves an empty slot until the next compaction, which keeps the order.
+//! Iteration is always in ascending stable_id order, which lockstep relies on.
 //!
 //! ## Borrow patterns
 //! - Single entity mutation: `store.get_mut(id)` borrows only that entry
@@ -11,13 +13,13 @@
 //! - Batch iteration with mutation: collect `keys_sorted()`, loop with
 //!   `get_mut_if()` so an entity the walk leaves unchanged is not handed out
 //!   (every hand-out enters the touch logs; see `touched`)
-//! - One entity held out of the store for its turn: `store.take_turn(id)`
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends only on sim/game_entity.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::hash::{BuildHasherDefault, Hasher};
 
 use crate::sim::game_entity::GameEntity;
 use crate::sim::touch_log::{TouchLog, Touched};
@@ -26,43 +28,46 @@ use crate::sim::touch_log::{TouchLog, Touched};
 /// Payload consumers can read owner identity but cannot construct this capability.
 pub(crate) struct OwnerChangeAuthority(());
 
-/// One entity held out of the store for its turn; see [`EntityStore::take_turn`].
-pub(crate) struct EntityTurn<'a> {
-    store: &'a mut EntityStore,
-    entity: Option<Box<GameEntity>>,
-}
+/// Hashes a stable id for the slot index (FxHash's multiply). The index is
+/// only looked up, never iterated, so its order cannot reach a result.
+#[derive(Default)]
+struct IdHasher(u64);
 
-impl EntityTurn<'_> {
-    /// The entity whose turn it is.
-    pub(crate) fn entity(&mut self) -> &mut GameEntity {
-        self.entity.as_mut().expect("held until drop")
-    }
-}
-
-impl Drop for EntityTurn<'_> {
-    fn drop(&mut self) {
-        if let Some(entity) = self.entity.take() {
-            self.store.entities.insert(entity.stable_id(), entity);
+impl Hasher for IdHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.write_u64(u64::from(byte));
         }
+    }
+
+    fn write_u64(&mut self, id: u64) {
+        self.0 = (self.0.rotate_left(5) ^ id).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
     }
 }
 
 /// Container for all game entities, keyed by stable_id.
 ///
-/// Uses `BTreeMap<u64, GameEntity>` for deterministic sorted iteration
-/// and O(log n) lookup. All iteration methods return entities in
-/// ascending stable_id order, which is critical for lockstep multiplayer.
+/// All iteration methods return entities in ascending stable_id order, which
+/// is critical for lockstep multiplayer.
 ///
 /// A House's buildings in native order are its House+0x68 list
 /// (`HouseBaseState::buildings`); its per-type counts are its
 /// `HouseTracking`.
 #[derive(Debug)]
 pub struct EntityStore {
-    /// Primary storage: stable_id -> GameEntity. Boxed: an entity is about 3 KB,
-    /// and map nodes that hold pointers keep insert, remove and `take_turn` from
-    /// moving entities around. serde writes a `Box<T>` as its `T`, so the saved
-    /// form is unchanged.
-    entities: BTreeMap<u64, Box<GameEntity>>,
+    /// The stored ids in ascending order, one per slot. A removed entity's
+    /// slot keeps its id, with no entity, until [`Self::compact`].
+    ids: Vec<u64>,
+    /// The entity of each slot. Boxed: an entity is about 3 KB, so insert,
+    /// remove and compaction move pointers, not entities. serde writes a
+    /// `Box<T>` as its `T`.
+    entities: Vec<Option<Box<GameEntity>>>,
+    /// stable_id -> slot, for every slot that holds an entity.
+    slot_of: HashMap<u64, u32, BuildHasherDefault<IdHasher>>,
     /// Derived InfantryClass registry, in monotonic construction-ID order.
     /// Uninit retains an entry; remove compacts it. Class/category is immutable
     /// while stored, like indexed identity (replace through remove/insert).
@@ -72,7 +77,8 @@ pub struct EntityStore {
     /// see construction33/55,world_spawn::store_with_constructor_managers,
     /// authored_health::unlimbo and reinforcement construction. Stable ID is
     /// authoritative, this cache is rebuilt on restore and never serialized.
-    /// UnInit keeps a row; physical remove compacts it; take_turn retains it.
+    /// UnInit keeps a row; physical remove compacts the registry independently
+    /// of the dense storage's empty slots and compaction schedule.
     /// RMG PreconsumedGenerated registration parity is not established here.
     techno_registry: Vec<u64>,
     /// Which entities may have changed since each reader last took its log
@@ -85,9 +91,8 @@ pub struct EntityStore {
 /// Each reads its own log, so one reader's take leaves the others' intact.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum TouchReader {
-    /// The movement pass's owner block index, which passes on what it takes
-    /// to the blocker plane.
-    BlockIndex = 0,
+    /// The movement pass's kept blocker plane.
+    BlockerPlane = 0,
     /// The kept Ground display sort keys.
     GroundKeys = 1,
 }
@@ -140,7 +145,9 @@ impl Clone for EntityStore {
     /// from the original says nothing certain about the copy's future.
     fn clone(&self) -> Self {
         Self {
+            ids: self.ids.clone(),
             entities: self.entities.clone(),
+            slot_of: self.slot_of.clone(),
             infantry_registry: self.infantry_registry.clone(),
             techno_registry: self.techno_registry.clone(),
             touched: TouchLogs::everything(),
@@ -163,7 +170,9 @@ impl EntityStore {
     /// Create an empty store.
     pub fn new() -> Self {
         Self {
-            entities: BTreeMap::new(),
+            ids: Vec::new(),
+            entities: Vec::new(),
+            slot_of: HashMap::default(),
             infantry_registry: Vec::new(),
             techno_registry: Vec::new(),
             touched: TouchLogs::everything(),
@@ -174,9 +183,27 @@ impl EntityStore {
     /// monotonic). Returns its stable_id.
     pub fn insert(&mut self, entity: GameEntity) -> u64 {
         let id = entity.stable_id();
-        self.touched.note(id, self.entities.len());
+        self.touched.note(id, self.len());
         let infantry = entity.category == crate::map::entities::EntityCategory::Infantry;
-        self.entities.insert(id, Box::new(entity));
+        let entity = Some(Box::new(entity));
+        if let Some(&slot) = self.slot_of.get(&id) {
+            self.entities[slot as usize] = entity;
+        } else if self.ids.last().is_none_or(|&last| last < id) {
+            self.slot_of.insert(id, self.ids.len() as u32);
+            self.ids.push(id);
+            self.entities.push(entity);
+        } else {
+            // An id below the newest: a fixture's, or a removed id stored again.
+            let slot = self.ids.partition_point(|&stored| stored < id);
+            if self.ids[slot] == id {
+                self.entities[slot] = entity;
+                self.slot_of.insert(id, slot as u32);
+            } else {
+                self.ids.insert(slot, id);
+                self.entities.insert(slot, entity);
+                self.reindex_from(slot);
+            }
+        }
         if let Err(index) = self.techno_registry.binary_search(&id) {
             self.techno_registry.insert(index, id);
         }
@@ -192,26 +219,62 @@ impl EntityStore {
 
     /// Remove an entity by stable_id. Returns the removed entity if it existed.
     pub fn remove(&mut self, stable_id: u64) -> Option<GameEntity> {
-        let removed = self.entities.remove(&stable_id).map(|entity| *entity);
-        if removed.is_some() {
-            self.touched.note(stable_id, self.entities.len());
+        let slot = self.slot_of.remove(&stable_id)? as usize;
+        let removed = self.entities[slot].take().map(|entity| *entity);
+        self.touched.note(stable_id, self.len());
+        self.remove_infantry_index(stable_id);
+        if let Ok(index) = self.techno_registry.binary_search(&stable_id) {
+            self.techno_registry.remove(index);
         }
-        if removed.is_some() {
-            self.remove_infantry_index(stable_id);
-            if let Ok(index) = self.techno_registry.binary_search(&stable_id) {
-                self.techno_registry.remove(index);
-            }
+        // Compact once a quarter of the slots are empty, so a walk skips few
+        // and compaction's cost spreads over many removals.
+        let empty = self.ids.len() - self.slot_of.len();
+        if empty >= 64 && empty * 4 >= self.ids.len() {
+            self.compact();
         }
         removed
+    }
+
+    /// Drop the empty slots, keeping the order, and re-index.
+    fn compact(&mut self) {
+        let mut kept = 0;
+        for slot in 0..self.ids.len() {
+            if self.entities[slot].is_some() {
+                self.ids.swap(kept, slot);
+                self.entities.swap(kept, slot);
+                kept += 1;
+            }
+        }
+        self.ids.truncate(kept);
+        self.entities.truncate(kept);
+        self.reindex_from(0);
+    }
+
+    /// Re-point the index at every stored slot from `first` on.
+    fn reindex_from(&mut self, first: usize) {
+        for slot in first..self.ids.len() {
+            if self.entities[slot].is_some() {
+                self.slot_of.insert(self.ids[slot], slot as u32);
+            }
+        }
+    }
+
+    /// The stored entities in ascending stable_id order, with their ids.
+    fn stored(&self) -> Stored<'_> {
+        Stored {
+            ids: self.ids.iter(),
+            entities: self.entities.iter(),
+            remaining: self.len(),
+        }
     }
 
     /// Clear all RadioClass-style live contacts involving `stable_id`.
     ///
     /// Idempotent. Safe if `stable_id` is absent.
     pub fn clear_radio_contacts_for(&mut self, stable_id: u64) {
-        let stored = self.entities.len();
+        let stored = self.len();
         self.touched.note(stable_id, stored);
-        for entity in self.entities.values_mut() {
+        for entity in self.entities.iter_mut().filter_map(Option::as_deref_mut) {
             if entity.has_live_contact_with(stable_id)
                 || entity.dock_entered_with == Some(stable_id)
             {
@@ -232,7 +295,8 @@ impl EntityStore {
 
     /// Look up an entity by stable_id (immutable).
     pub fn get(&self, stable_id: u64) -> Option<&GameEntity> {
-        self.entities.get(&stable_id).map(Box::as_ref)
+        let slot = *self.slot_of.get(&stable_id)?;
+        self.entities[slot as usize].as_deref()
     }
 
     /// Mutate ordinary entity payload. Indexed identity is read through accessors;
@@ -240,10 +304,9 @@ impl EntityStore {
     /// Replacing a stored entity wholesale is unsupported: remove/insert through
     /// the owning lifecycle instead so its indexes and registrations are updated.
     pub fn get_mut(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
-        let stored = self.entities.len();
-        let entity = self.entities.get_mut(&stable_id)?;
-        self.touched.note(stable_id, stored);
-        Some(entity.as_mut())
+        let slot = *self.slot_of.get(&stable_id)?;
+        self.touched.note(stable_id, self.slot_of.len());
+        self.entities[slot as usize].as_deref_mut()
     }
 
     /// `get_mut` for an entity `admit` accepts, which it reads first: one it
@@ -254,41 +317,28 @@ impl EntityStore {
         stable_id: u64,
         admit: impl FnOnce(&GameEntity) -> bool,
     ) -> Option<&mut GameEntity> {
-        let stored = self.entities.len();
-        let entity = self.entities.get_mut(&stable_id)?;
+        let slot = *self.slot_of.get(&stable_id)?;
+        let entity = self.entities[slot as usize].as_deref_mut()?;
         if !admit(entity) {
             return None;
         }
-        self.touched.note(stable_id, stored);
-        Some(entity.as_mut())
-    }
-
-    /// Lift one entity out of the store for its own turn. The entity returns
-    /// to the map when the guard drops, on every exit path. Its indexed identity (owner,
-    /// type, infantry registry) never leaves the indexes, which is sound because
-    /// payload access cannot change it, exactly as with `get_mut`.
-    pub(crate) fn take_turn(&mut self, stable_id: u64) -> Option<EntityTurn<'_>> {
-        let entity = self.entities.remove(&stable_id)?;
-        self.touched.note(stable_id, self.entities.len());
-        Some(EntityTurn {
-            store: self,
-            entity: Some(entity),
-        })
+        self.touched.note(stable_id, self.slot_of.len());
+        Some(entity)
     }
 
     /// Check if an entity exists.
     pub fn contains(&self, stable_id: u64) -> bool {
-        self.entities.contains_key(&stable_id)
+        self.slot_of.contains_key(&stable_id)
     }
 
     /// Number of entities in the store.
     pub fn len(&self) -> usize {
-        self.entities.len()
+        self.slot_of.len()
     }
 
     /// Whether the store is empty.
     pub fn is_empty(&self) -> bool {
-        self.entities.is_empty()
+        self.slot_of.is_empty()
     }
 
     /// Get sorted keys for deterministic iteration.
@@ -301,7 +351,21 @@ impl EntityStore {
     /// }
     /// ```
     pub fn keys_sorted(&self) -> Vec<u64> {
-        self.entities.keys().copied().collect()
+        self.stored().map(|(id, _)| id).collect()
+    }
+
+    /// The ids of the stored entities `keep` selects, in ascending stable_id
+    /// order. `keep` runs on worker threads ([`crate::sim::parallel`]), so it
+    /// only reads.
+    pub(crate) fn par_select(&self, keep: impl Fn(u64, &GameEntity) -> bool + Sync) -> Vec<u64> {
+        crate::sim::parallel::select_indices(self.ids.len(), |slot| {
+            self.entities[slot]
+                .as_deref()
+                .is_some_and(|entity| keep(self.ids[slot], entity))
+        })
+        .into_iter()
+        .map(|slot| self.ids[slot])
+        .collect()
     }
 
     /// Action14's full Techno array, independent of Logic and Display order.
@@ -332,26 +396,26 @@ impl EntityStore {
     }
 
     /// Iterate all entities in deterministic stable_id order (immutable).
-    pub fn iter_sorted(&self) -> impl DoubleEndedIterator<Item = (u64, &GameEntity)> {
-        self.entities.iter().map(|(&k, v)| (k, v.as_ref()))
+    pub fn iter_sorted(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (u64, &GameEntity)> + ExactSizeIterator {
+        self.stored()
     }
 
     /// Iterate all entity values in deterministic stable_id order (immutable).
-    pub fn values_sorted(&self) -> impl Iterator<Item = &GameEntity> {
-        self.entities.values().map(Box::as_ref)
+    pub fn values_sorted(&self) -> impl ExactSizeIterator<Item = &GameEntity> {
+        self.stored().map(|(_, entity)| entity)
     }
 
     /// Iterate all entities in stable_id order (immutable).
-    /// With BTreeMap, this is always deterministic.
-    pub fn values(&self) -> impl Iterator<Item = &GameEntity> {
-        self.entities.values().map(Box::as_ref)
+    pub fn values(&self) -> impl ExactSizeIterator<Item = &GameEntity> {
+        self.stored().map(|(_, entity)| entity)
     }
 
     /// Iterate all entities mutably in stable_id order.
-    /// With BTreeMap, this is always deterministic.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut GameEntity> {
         self.touched.note_all();
-        self.entities.values_mut().map(Box::as_mut)
+        self.entities.iter_mut().filter_map(Option::as_deref_mut)
     }
 
     /// Move an entity to a new owner. It does NOT touch the houses' tracking
@@ -359,8 +423,9 @@ impl EntityStore {
     /// moves them.
     /// No-op if the entity is absent or already owned by `new_owner`.
     pub fn change_owner(&mut self, stable_id: u64, new_owner: crate::sim::intern::InternedId) {
-        self.touched.note(stable_id, self.entities.len());
-        if let Some(e) = self.entities.get_mut(&stable_id)
+        self.touched.note(stable_id, self.len());
+        if let Some(&slot) = self.slot_of.get(&stable_id)
+            && let Some(e) = self.entities[slot as usize].as_deref_mut()
             && e.owner() != new_owner
         {
             e.set_owner_from_store(new_owner, OwnerChangeAuthority(()));
@@ -370,34 +435,86 @@ impl EntityStore {
     /// Rebuild the infantry registry from primary storage. Owned by
     /// Deserialize; synthetic fixtures may also rebuild after raw setup.
     pub(crate) fn rebuild_infantry_registry(&mut self) {
-        self.infantry_registry.clear();
-        for (&id, entity) in &self.entities {
-            if entity.category == crate::map::entities::EntityCategory::Infantry {
-                self.infantry_registry.push(id);
-            }
-        }
-        // The entities BTreeMap iterates in ascending stable_id order, so the
-        // infantry registry comes out sorted.
+        let infantry: Vec<u64> = self
+            .stored()
+            .filter(|(_, entity)| entity.category == crate::map::entities::EntityCategory::Infantry)
+            .map(|(id, _)| id)
+            .collect();
+        // Storage iterates in ascending stable_id order, so the infantry
+        // registry comes out sorted.
+        self.infantry_registry = infantry;
     }
 }
 
+/// [`EntityStore`]'s stored entities in ascending stable_id order, skipping
+/// empty slots. Its length is exact, so a collect allocates once.
+struct Stored<'a> {
+    ids: std::slice::Iter<'a, u64>,
+    entities: std::slice::Iter<'a, Option<Box<GameEntity>>>,
+    /// Stored entities not yet yielded from either end.
+    remaining: usize,
+}
+
+impl<'a> Iterator for Stored<'a> {
+    type Item = (u64, &'a GameEntity);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let id = *self.ids.next()?;
+            if let Some(entity) = self.entities.next()?.as_deref() {
+                self.remaining -= 1;
+                return Some((id, entity));
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+
+impl DoubleEndedIterator for Stored<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        loop {
+            let id = *self.ids.next_back()?;
+            if let Some(entity) = self.entities.next_back()?.as_deref() {
+                self.remaining -= 1;
+                return Some((id, entity));
+            }
+        }
+    }
+}
+
+impl ExactSizeIterator for Stored<'_> {}
+
 impl serde::Serialize for EntityStore {
+    /// The stored entities as a map from stable_id, in ascending order: the
+    /// form the former `BTreeMap` storage wrote.
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.entities.serialize(serializer)
+        use serde::ser::SerializeMap;
+        // bincode needs the length up front, which a filtering iterator
+        // cannot give `collect_map`.
+        let mut map = serializer.serialize_map(Some(self.len()))?;
+        for (id, entity) in self.stored() {
+            map.serialize_entry(&id, entity)?;
+        }
+        map.end()
     }
 }
 
 impl<'de> serde::Deserialize<'de> for EntityStore {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let entities = BTreeMap::<u64, Box<GameEntity>>::deserialize(deserializer)?;
-        let mut store = Self {
-            entities,
-            infantry_registry: Vec::new(),
-            techno_registry: Vec::new(),
-            touched: TouchLogs::everything(),
-        };
+        let mut store = Self::new();
+        store.ids.reserve(entities.len());
+        store.entities.reserve(entities.len());
+        for (id, entity) in entities {
+            store.slot_of.insert(id, store.ids.len() as u32);
+            store.ids.push(id);
+            store.entities.push(Some(entity));
+        }
         store.rebuild_infantry_registry();
-        store.techno_registry = store.entities.keys().copied().collect();
+        store.techno_registry = store.ids.clone();
         Ok(store)
     }
 }
@@ -426,12 +543,12 @@ mod tests {
             store.insert(make_entity(id));
         }
         // Nothing has been derived from a fresh store yet.
-        assert_eq!(store.take_touched(TouchReader::BlockIndex), Touched::All);
+        assert_eq!(store.take_touched(TouchReader::BlockerPlane), Touched::All);
         assert_eq!(store.take_touched(TouchReader::GroundKeys), Touched::All);
         store.get_mut(2).unwrap().position.rx += 1;
-        drop(store.take_turn(3));
+        store.get_mut(3);
         assert_eq!(
-            store.take_touched(TouchReader::BlockIndex),
+            store.take_touched(TouchReader::BlockerPlane),
             Touched::Ids(vec![2, 3])
         );
         store.get_mut(1);
@@ -440,39 +557,135 @@ mod tests {
             Touched::Ids(vec![2, 3, 1])
         );
         assert_eq!(
-            store.take_touched(TouchReader::BlockIndex),
+            store.take_touched(TouchReader::BlockerPlane),
             Touched::Ids(vec![1])
         );
         let mut copy = store.clone();
         assert_eq!(copy.take_touched(TouchReader::GroundKeys), Touched::All);
-        assert_eq!(copy.take_touched(TouchReader::BlockIndex), Touched::All);
+        assert_eq!(copy.take_touched(TouchReader::BlockerPlane), Touched::All);
         let _ = store.values_mut().count();
         assert_eq!(store.take_touched(TouchReader::GroundKeys), Touched::All);
-        assert_eq!(store.take_touched(TouchReader::BlockIndex), Touched::All);
+        assert_eq!(store.take_touched(TouchReader::BlockerPlane), Touched::All);
     }
 
+    /// Insert, remove and lookup answer as the former `BTreeMap` storage did,
+    /// across compactions, re-stored ids and ids below the newest.
     #[test]
-    fn a_turn_lifts_one_entity_out_and_returns_it_on_every_exit() {
+    fn storage_answers_as_an_ordered_map_through_compactions() {
         let mut store = EntityStore::new();
-        for id in [1, 2, 3] {
+        let mut model: BTreeMap<u64, u16> = BTreeMap::new();
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = |bound: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % bound
+        };
+        let mut newest = 0;
+        let mut compactions = 0;
+        let mut largest_compaction = 0;
+        for step in 0..20_000 {
+            let slots = store.ids.len();
+            // 4,000 steps of growth alternate with 2,000 of heavy removal, so
+            // the store passes 4,000 slots and compaction runs repeatedly, at
+            // small and large sizes.
+            let removing = step % 6_000 >= 4_000;
+            match next(10) {
+                // Mostly appends, as monotonic ids do.
+                0..=4 if !removing => {
+                    newest += 1 + next(3);
+                    let mut entity = make_entity(newest);
+                    entity.position.rx = step as u16;
+                    store.insert(entity);
+                    model.insert(newest, step as u16);
+                }
+                // A fixture's id below the newest, or a removed id stored again.
+                5 => {
+                    let id = next(newest + 1);
+                    let mut entity = make_entity(id);
+                    entity.position.rx = step as u16;
+                    store.insert(entity);
+                    model.insert(id, step as u16);
+                }
+                0..=8 => {
+                    // While removing, pick a stored id most of the time.
+                    let id = if removing && !model.is_empty() && next(4) > 0 {
+                        *model.keys().nth(next(model.len() as u64) as usize).unwrap()
+                    } else {
+                        next(newest + 1)
+                    };
+                    assert_eq!(store.remove(id).map(|e| e.position.rx), model.remove(&id));
+                }
+                _ => {
+                    let id = next(newest + 1);
+                    if let Some(entity) = store.get_mut(id) {
+                        entity.position.rx = step as u16;
+                    }
+                    if let Some(rx) = model.get_mut(&id) {
+                        *rx = step as u16;
+                    }
+                }
+            }
+            if store.ids.len() < slots {
+                compactions += 1;
+                largest_compaction = largest_compaction.max(slots);
+            }
+            let probe = next(newest + 1);
+            assert_eq!(store.contains(probe), model.contains_key(&probe));
+            assert_eq!(
+                store.get(probe).map(|e| e.position.rx),
+                model.get(&probe).copied()
+            );
+            if step % 97 == 0 {
+                assert_eq!(store.len(), model.len());
+                assert_eq!(
+                    store.keys_sorted(),
+                    model.keys().copied().collect::<Vec<_>>()
+                );
+                assert_eq!(
+                    store.techno_registry,
+                    model.keys().copied().collect::<Vec<_>>(),
+                    "native registration rows must not follow dense empty slots"
+                );
+                let stored: Vec<(u64, u16)> = store
+                    .iter_sorted()
+                    .rev()
+                    .map(|(id, e)| (id, e.position.rx))
+                    .collect();
+                let expected: Vec<(u64, u16)> = model.iter().rev().map(|(&k, &v)| (k, v)).collect();
+                assert_eq!(stored, expected);
+                assert!(
+                    store.ids.len() - store.len() < 64
+                        || (store.ids.len() - store.len()) * 4 < store.ids.len()
+                );
+                assert_eq!(store.iter_sorted().len(), model.len());
+            }
+        }
+        assert!(
+            compactions >= 5 && largest_compaction >= 2_000,
+            "{compactions} compactions, the largest at {largest_compaction} slots"
+        );
+    }
+
+    /// A save writes the store as the former `BTreeMap` storage did, so the
+    /// snapshot format is unchanged, and a restore reads it back in order.
+    #[test]
+    fn saved_form_is_the_ordered_map_form() {
+        let mut store = EntityStore::new();
+        for id in [4, 9, 2, 7] {
             store.insert(make_entity(id));
         }
-        {
-            let mut turn = store.take_turn(2).expect("entity 2 is stored");
-            turn.entity().position.rx = 17;
-        }
-        assert_eq!(store.get(2).unwrap().position.rx, 17);
-        assert_eq!(store.len(), 3);
-
-        fn leaves_early(store: &mut EntityStore) -> Option<()> {
-            let mut turn = store.take_turn(3)?;
-            turn.entity().position.ry = 99;
-            None
-        }
-        assert!(leaves_early(&mut store).is_none());
-        assert_eq!(store.get(3).unwrap().position.ry, 99);
-        assert!(store.take_turn(42).is_none());
-        assert_eq!(store.keys_sorted(), [1, 2, 3]);
+        store.remove(9);
+        let map: BTreeMap<u64, Box<GameEntity>> = [2, 4, 7]
+            .into_iter()
+            .map(|id| (id, Box::new(store.get(id).unwrap().clone())))
+            .collect();
+        let saved = bincode::serialize(&store).unwrap();
+        assert_eq!(saved, bincode::serialize(&map).unwrap());
+        let restored: EntityStore = bincode::deserialize(&saved).unwrap();
+        assert_eq!(restored.keys_sorted(), [2, 4, 7]);
+        assert_eq!(restored.techno_registry, [2, 4, 7]);
+        assert_eq!(bincode::serialize(&restored).unwrap(), saved);
     }
 
     #[test]

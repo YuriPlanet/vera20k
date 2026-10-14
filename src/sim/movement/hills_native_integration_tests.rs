@@ -271,10 +271,8 @@ fn installed_route(
     route
 }
 
-/// Order-time MovementTarget is an empty scheduling adapter and the order
-/// installs no route. The normal Drive Process owns Find_Path and installs
-/// the Foot+5E0 queue on a subsequent tick
-/// (movement_commands::prepare_destination_execution / movement_tick).
+/// The order installs no route. The normal Drive Process owns Find_Path and
+/// installs the Foot+5E0 queue on a subsequent tick (`movement_tick`).
 fn await_ordinary_route(
     scenario: &mut crate::headless_scenario::HeadlessScenario,
     id: u64,
@@ -291,7 +289,7 @@ fn await_ordinary_route(
         let sim = scenario.sim();
         let actor = sim.entities().get(id).expect("live ordinary Move receiver");
         assert!(
-            actor.movement_target.is_some(),
+            crate::sim::movement::motion_query::is_moving(&actor) == Some(true),
             "Move remains scheduled before Find_Path"
         );
         let start = (actor.position.rx, actor.position.ry);
@@ -315,8 +313,8 @@ fn await_ordinary_route(
     panic!("ordinary Move never published its first route within {MAX_TICKS} ticks");
 }
 
-/// Stop may retain a paid curve in the Rust scheduling adapter. The native
-/// occupied Unit arm reads mission/NavCom/Facing/Drive, not adapter presence.
+/// Stop may retain a paid curve. The native occupied Unit arm reads
+/// mission/NavCom/Facing/Drive.
 fn await_stopped_deck_pose(
     scenario: &mut crate::headless_scenario::HeadlessScenario,
     id: u64,
@@ -593,7 +591,7 @@ fn hills_opposing_ordinary_moves_repath_on_the_deck() {
                 && actor.position.rx.abs_diff(other.position.rx) <= 2
                 && actor.position.ry.abs_diff(other.position.ry) <= 1;
         }
-        if actor.movement_target.is_some() {
+        if crate::sim::movement::motion_query::is_moving(&actor) == Some(true) {
             let queue = &actor.navigation.path_replay;
             if route_reinstalled(&previous, queue) && facts.bridge_structural {
                 deck_rebuilds += 1;
@@ -622,7 +620,6 @@ fn hills_opposing_ordinary_moves_repath_on_the_deck() {
 #[test]
 #[ignore = "requires physical retail Hills.mmx and original same-type marker receipt"]
 fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
-    use crate::sim::components::MovementTarget;
     use crate::sim::mission::{MissionId, MissionType};
     use crate::sim::movement::FindPathResult;
     use crate::sim::movement::movement_tick::FootPathRequest;
@@ -758,7 +755,6 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
             crate::sim::movement::motion_query::is_moving(actor),
             Some(true)
         );
-        actor.movement_target = Some(MovementTarget::default());
         install_path_replay(&mut actor.navigation.path_replay, peer_cell, &peer_path, 1);
         assert_eq!(
             actor.navigation.path_replay.reference_cell,
@@ -769,13 +765,6 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
         );
         assert_eq!(actor.navigation.path_replay.remaining_directions(), &[0, 0]);
         let peer_queue = actor.navigation.path_replay.clone();
-        sim.substrate
-            .entities
-            .get_mut(mover)
-            .unwrap()
-            .movement_target = Some(MovementTarget {
-            ..Default::default()
-        });
         assert_eq!(
             sim.substrate.entities.get(peer).unwrap().type_ref(),
             sim.substrate.entities.get(mover).unwrap().type_ref()
@@ -783,6 +772,9 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
         let rng = sim.rng_state();
         // Concrete Unit73F0A0 produces code2 for both supplied Foot+578
         // speed controls; no class answer is substituted in the Rust search.
+        // The live chain from the peer's ground list prices it as 429830 did:
+        // a stopped peer heads for its queue head, a moving one along its
+        // facing, and the cell north of it lists nothing.
         for control in packet["costs"].as_array().unwrap() {
             let speed = match control["supplied_speed_f64_bits"].as_str().unwrap() {
                 "0000000000000000" => SIM_ZERO,
@@ -814,6 +806,21 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
             assert_eq!(
                 u64::from(entry),
                 control["concrete_class"].as_u64().unwrap()
+            );
+            let urgency = control["urgency"].as_u64().unwrap() as u8;
+            let multiplier = crate::sim::pathfinding::code2_multiplier(urgency, || {
+                sim.astar_code2_chain_jams(
+                    peer_cell,
+                    crate::sim::movement::locomotor::MovementLayer::Ground,
+                    None,
+                )
+            })
+            .unwrap();
+            assert_eq!(
+                f64::from(multiplier),
+                control["cost"].as_f64().unwrap(),
+                "native Foot+578={} urgency={urgency}",
+                control["supplied_speed_f64_bits"]
             );
             assert_eq!(control["rng_before"], control["rng_after"]);
         }
@@ -867,7 +874,15 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
                 playfield_bounds: sim.playfield_bounds,
             }
             .reading(&sim.substrate.entities, &sim.substrate.raw_cell_occupation);
-            let search = context.build(&sim.substrate.occupancy, mover, source, 0, false, urgency);
+            let search = context.build(
+                &sim.substrate.occupancy,
+                mover,
+                source,
+                0,
+                false,
+                urgency,
+                None,
+            );
             let transactions = case["marker_transactions"].as_array().unwrap();
             let expected_urgency = transactions.first().map_or(urgency, |transaction| {
                 transaction["effective_urgency"].as_u64().unwrap() as u8
@@ -907,14 +922,11 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
             },
             urgency,
             sim.playfield_bounds,
-            None,
-            Some(&resources.rules),
         )
         .unwrap();
         assert_eq!(
             sim.foot_find_path(
                 &request,
-                None,
                 &resources.rules,
                 Some(&resources.overlay_registry),
                 crate::sim::world::FrameEffects::default()
@@ -923,7 +935,6 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
             FindPathResult::Route
         );
         let actor = sim.substrate.entities.get(mover).unwrap();
-        assert!(actor.movement_target.is_some());
         let queue = &actor.navigation.path_replay;
         assert_eq!(queue.cursor, 0, "Find_Path installs an unconsumed queue");
         assert_original_route(

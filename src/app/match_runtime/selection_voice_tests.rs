@@ -1,7 +1,9 @@
 //! Native VoiceSelect708EB0 / QueueVoice708D90 comparisons, using the
-//! executable corpus and production Rules/Simulation owners without a device.
+//! executable corpus and production Rules/Simulation owners. Request controls
+//! need no device; the cleanup regression also exercises the real SFX consumer.
 
 use super::selection_voice_event;
+use crate::app::match_runtime::sound_dispatch;
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::audio::voice_queue::VoiceQueue;
 use crate::map::entities::EntityCategory;
@@ -11,6 +13,206 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::Simulation;
+
+#[test]
+fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
+    let native = crate::rules::deploy_voice_tests::native();
+    let controls = native["voice_controls"].as_array().unwrap();
+    assert_eq!(controls.len(), 14);
+    for row in controls {
+        let context = row["name"].as_str().unwrap();
+        let input = &row["input"];
+        let rules = crate::rules::deploy_voice_tests::control_rules(&native, input);
+        let mut sim = simulation(
+            "YAREFN",
+            EntityCategory::Structure,
+            if input["owner_is_local"] == true {
+                "Local"
+            } else {
+                "Other"
+            },
+            false,
+        );
+        let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(16);
+        if input["resource_cell"] == true {
+            terrain.cell_mut(10, 10).unwrap().land_type =
+                crate::rules::terrain_rules::LandType::Tiberium.as_index();
+        }
+        sim.install_resolved_terrain_for_new_map(terrain);
+        let entity = sim.entities_mut().get_mut(1).unwrap();
+        if input["archive_cell"] == true {
+            entity.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(10, 10)));
+        }
+        if input["suppression"] == true {
+            entity.suppress_next_deploy_voice();
+        }
+        let archive_before = entity.archive_target();
+        let mission_before = bincode::serialize(&entity.mission).unwrap();
+        let main_before = sim.rng_views().main.native_state_hex();
+        let scenario_before = sim.scenario_rng.native_state_hex();
+        let mapgen_before = sim.mapgen_rng.native_state_hex();
+        let mut queue = VoiceQueue::new();
+        if let Some(prior) = input["pending"].as_str() {
+            queue.queue(1, prior);
+        }
+        if let Some(sound) =
+            sim.deploy_voice_request(&rules, 1, input["voices_enabled"].as_bool().unwrap())
+        {
+            queue.queue(1, sound);
+        }
+        assert_eq!(
+            queue.pending_for(1),
+            row["output"]["pending"].as_str(),
+            "{context}"
+        );
+        assert_eq!(
+            queue.playing_for(1),
+            None,
+            "{context}: request does not play"
+        );
+        let entity = sim.entities().get(1).unwrap();
+        assert_eq!(
+            entity.deploy_voice_suppressed(),
+            row["output"]["suppression"].as_bool().unwrap(),
+            "{context}: suppression"
+        );
+        assert_eq!(
+            entity.archive_target(),
+            archive_before,
+            "{context}: Archive retained"
+        );
+        assert_eq!(
+            bincode::serialize(&entity.mission).unwrap(),
+            mission_before,
+            "{context}: timers"
+        );
+        assert_eq!(
+            sim.rng_views().main.native_state_hex(),
+            main_before,
+            "{context}: Main"
+        );
+        assert_eq!(
+            sim.scenario_rng.native_state_hex(),
+            scenario_before,
+            "{context}: Scenario"
+        );
+        assert_eq!(
+            sim.mapgen_rng.native_state_hex(),
+            mapgen_before,
+            "{context}: MapGen"
+        );
+    }
+}
+
+#[test]
+fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let Some((_root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let Some(mut player) = crate::audio::sfx::SfxPlayer::new() else {
+        eprintln!("pack-voice production consumer check needs an audio device");
+        return;
+    };
+    player.set_volume(0.0);
+    player
+        .observe_pcm(crate::audio::sfx::PcmObservationConfig {
+            sound_ids: vec!["SlaveMinerUnDeployVoice".into()],
+            max_events: 1,
+            max_samples_per_event: 1,
+        })
+        .unwrap();
+    let mut process = crate::app::process_assets::ProcessAssets::new(
+        crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+        true,
+    );
+    process.initialize_sources_if_needed(&assets).unwrap();
+    let playback = crate::app::presentation::building_anim::SoundPlaybackInputs {
+        assets: &assets,
+        catalog: process.audio_catalog().unwrap(),
+        listener: crate::audio::sfx::SpatialListener {
+            tactical_width: 640,
+            tactical_height: 480,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            zoom: 1.0,
+        },
+        eva_side: crate::rules::sound_ini::EvaSide::Yuri,
+    };
+    let mut sim = simulation("YAREFN", EntityCategory::Structure, "Local", false);
+    let mut events = SoundEventQueue::new();
+    crate::sim::production::sell_stage_zero(
+        &mut sim,
+        Some(&retail.rules),
+        1,
+        crate::sim::world::FrameEffects::empty(),
+    );
+    let requests = std::mem::take(&mut sim.sound_events);
+    sound_dispatch::dispatch_sim_sound_events(
+        requests,
+        &sim,
+        &retail.rules,
+        Some("Local"),
+        &mut |_| false,
+        &mut events,
+    );
+    playback.consume(&mut player, &events.drain(), Some(&sim), Some("Local"));
+    assert!(player.pending_unit_voice_owners().contains(&1));
+
+    // Original Techno destructor6F4607 ->405C00 stops its handle and forgets
+    // pending/playing slots. Destroy between Selling44A9DF and the next head:
+    // use the actual lifecycle producer, dispatcher and shared SFX consumer.
+    sim.uninit_with_context(
+        1,
+        crate::sim::world::UninitContext::with_rules(&retail.rules),
+    );
+    assert!(player.pending_unit_voice_owners().contains(&1));
+    sim.process_pending_delete_with(
+        Some(&retail.rules),
+        None,
+        crate::sim::world::FrameEffects::empty(),
+        1,
+        true,
+    );
+    assert!(sim.entities().get(1).is_none());
+    let destruction = std::mem::take(&mut sim.sound_events);
+    sound_dispatch::dispatch_sim_sound_events(
+        destruction,
+        &sim,
+        &retail.rules,
+        Some("Local"),
+        &mut |_| false,
+        &mut events,
+    );
+    playback.consume(&mut player, &events.drain(), Some(&sim), Some("Local"));
+    assert!(!player.pending_unit_voice_owners().contains(&1));
+    // Even a stale downstream head cannot revive the removed owner's line.
+    playback.consume(
+        &mut player,
+        &[GameSoundEvent::UnitVoiceVisit { owner: 1 }],
+        Some(&sim),
+        Some("Local"),
+    );
+    let report = player.finish_pcm_observation().unwrap().into_json();
+    assert!(report["outputs"].as_array().unwrap().is_empty());
+    let actions: Vec<_> = report["voice_actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|action| action["owner"] == 1)
+        .collect();
+    assert_eq!(actions.len(), 2);
+    assert_eq!(actions[0]["action"]["kind"], "queued");
+    assert_eq!(actions[0]["after"]["pending"], "SLAVEMINERUNDEPLOYVOICE");
+    assert_eq!(actions[1]["action"]["kind"], "destroyed");
+    assert_eq!(actions[1]["before"]["pending"], "SLAVEMINERUNDEPLOYVOICE");
+    assert!(actions[1]["after"]["pending"].is_null());
+    assert!(actions[1]["after"]["playing"].is_null());
+    player.stop_all();
+}
 
 fn corpus() -> serde_json::Value {
     serde_json::from_str(crate::test_fixture::text(

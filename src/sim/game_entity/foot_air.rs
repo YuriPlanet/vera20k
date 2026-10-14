@@ -159,7 +159,7 @@ impl Simulation {
             && if explicit_membership {
                 tracked
             } else {
-                air_spatial_tracks_entity(entity)
+                air_spatial_tracks_entity(entity, self.resolved_terrain.as_ref())
             };
         let cell = (entity.position.rx as i16, entity.position.ry as i16);
         // Fly Process follows a cell change itself, at its next visit

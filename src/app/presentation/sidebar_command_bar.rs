@@ -23,9 +23,9 @@ pub(crate) fn layout_and_slots(state: &AppState) -> Option<(CommandBarLayout, Ve
             .sidebar_gadget_state
             .command_bar_closed,
     )?;
-    use crate::app::match_runtime::sim_tick::{SessionMode, current_session_mode};
+    use crate::app::match_runtime::session::SessionMode;
     let multiplayer = !matches!(
-        current_session_mode(state),
+        state.match_state.session.mode(),
         SessionMode::Campaign | SessionMode::Skirmish
     );
     Some((layout, art.slots[usize::from(multiplayer)].clone()))

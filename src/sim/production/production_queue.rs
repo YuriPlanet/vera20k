@@ -503,7 +503,7 @@ pub(in crate::sim) fn exit_produced_object(
                             sim.session.binary_frame,
                             &crate::sim::mission::authority::EntityReadyInputProvider,
                         );
-                        if let Err(cause) = sim.set_infantry_destination(
+                        if let Err(cause) = sim.assign_infantry_destination(
                             spawned,
                             crate::sim::components::NavTargetRef::cell(exit_cell.0, exit_cell.1),
                             rules,
@@ -580,10 +580,16 @@ pub(in crate::sim) fn exit_produced_object(
         //
         // The land WeaponsFactory's archive copy444492 and human/Harvest
         // continuation use the shared owners above and Unit PerCell. Residual
-        // (instruction reading): the other non-naval arms' archive copy44498E
-        // and their downstream exit mission remain on this eager rally
-        // adapter. Trigger: those produced objects with a rally; effect: no
-        // retained archive and earlier movement; frequency: each such build.
+        // (instruction reading): a Unit from any other Factory=UnitType
+        // building takes the generic arm444638, which never reads +0x218. It
+        // queues Move (4448D6) and assigns its exit Cell (4448F2); a human
+        // owner returns there (50B730), and a computer one queues Area_Guard
+        // (44490F) and takes its House500200 post (70C610). This adapter sends
+        // that object to the rally through the class setter instead. Trigger:
+        // such a building with a rally; every retail rulesmd.ini
+        // Factory=UnitType building sets WeaponsFactory, so only map or mod
+        // data reaches it. Effect: the object drives to the rally rather than
+        // holding its exit Cell or guarding its post.
         // The separate computer Unit House500200 post selection and its
         // Scenario RandomRanged(1,4) draw remain a Unit PerCell residual.
         let rally = sim
@@ -591,72 +597,28 @@ pub(in crate::sim) fn exit_produced_object(
             .entities
             .get(selection.producer_id)
             .and_then(|producer| producer.rally_cell());
-        let naval_rally = matches!(selection.delivery, ProductionDeliveryKind::NavalUnit)
-            .then_some(rally)
-            .flatten();
-        if let Some((tx, ty)) = naval_rally {
-            if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
-                // BuildingClass::ExitObject_Main @ 0x0044442B calls
-                // virtual Assign_Destination(target, 1) before its
-                // deferred Queue_Mission(Move, 0). NavCom is the owner
-                // destination; immediate A* is only a Rust executor.
-                crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
-                    entity,
-                    Some(crate::sim::components::NavTargetRef::cell(tx, ty)),
-                );
-            }
-            let _ = sim.mission_queue_exact(
+        if let Some((tx, ty)) = rally {
+            // 0x0044441A..0x00444439: with a rally the naval arm calls the
+            // class setter Assign_Destination(rally, 1) (vt+0x480), then
+            // Queue_Mission(Move, 0) (vt+0x1E8).
+            if let Err(cause) = sim.assign_destination_represented(
                 stable_id,
-                crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
-                0,
-                sim.session.binary_frame,
-                &crate::sim::mission::authority::EntityReadyInputProvider,
-            );
-        }
-        // Without a published grid the rally move and its restore are skipped.
-        if let Some((tx, ty)) = rally
-            && sim.path_grid().is_some()
-        {
-            let obj = rules.object(type_name);
-            // The rally move is an ordinary move order, so a unit that leaves
-            // the factory already promoted (InitialVeteran, cloning) drives to
-            // the rally point at its FASTER speed.
-            let speed = match sim.substrate.entities.get(stable_id) {
-                Some(e) => crate::sim::movement::order_speed(e, obj, Some(rules), &sim.houses),
-                None => crate::util::fixed_math::ra2_speed_to_leptons_per_second(
-                    obj.map_or(4, |o| o.speed),
-                ),
-            };
-            let speed_type = sim
-                .substrate
-                .entities
-                .get(stable_id)
-                .and_then(|e| e.locomotor.as_ref())
-                .map(|l| l.speed_type);
-            let _ = sim.issue_ground_move(
-                crate::sim::world::GroundMove {
-                    entity_id: stable_id,
-                    target: (tx, ty),
-                    speed,
-                    queue: false,
-                    speed_type,
-                    owner_blocks: false,
-                    object_destination: None,
-                },
+                Some(crate::sim::components::NavTargetRef::cell(tx, ty)),
                 Some(rules),
                 overlay_registry,
                 effects,
-            );
-            if naval_rally.is_some()
-                && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-            {
-                // A Ship's setter publishes the rally unchanged; the
-                // command-time adapter of the remaining locomotors
-                // (Hover) may redirect its endpoint. Restore the
-                // producer rally so that A* never owns NavCom.
-                crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
-                    entity,
-                    Some(crate::sim::components::NavTargetRef::cell(tx, ty)),
+            ) {
+                log::warn!("Rally destination {stable_id}: {cause}");
+            }
+            if matches!(selection.delivery, ProductionDeliveryKind::NavalUnit) {
+                let _ = sim.mission_queue_exact(
+                    stable_id,
+                    crate::sim::mission::MissionId::from_known(
+                        crate::sim::mission::MissionType::Move,
+                    ),
+                    0,
+                    sim.session.binary_frame,
+                    &crate::sim::mission::authority::EntityReadyInputProvider,
                 );
             }
         }

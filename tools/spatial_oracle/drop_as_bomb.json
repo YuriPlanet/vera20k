@@ -1,0 +1,1049 @@
+[
+  {
+    "bomb": true,
+    "bridge": false,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "bridge": 1,
+        "kind": "display_remove"
+      },
+      {
+        "bridge": 0,
+        "kind": "display_submit"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [],
+        "kind": "moving"
+      },
+      {
+        "args": [
+          2688,
+          2688,
+          416
+        ],
+        "kind": "scatter"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "drop",
+      "name": "standing_rate_kept",
+      "rate": -17
+    },
+    "rate": -17,
+    "threshold": 104,
+    "z": 416
+  },
+  {
+    "bomb": true,
+    "bridge": false,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "bridge": 1,
+        "kind": "display_remove"
+      },
+      {
+        "bridge": 0,
+        "kind": "display_submit"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [],
+        "kind": "moving"
+      },
+      {
+        "args": [
+          0
+        ],
+        "kind": "move_to"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "drop",
+      "moving": true,
+      "name": "moving"
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 416
+  },
+  {
+    "bomb": true,
+    "bridge": false,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "bridge": 1,
+        "kind": "display_remove"
+      },
+      {
+        "bridge": 0,
+        "kind": "display_submit"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "foot": false,
+      "kind": "drop",
+      "name": "nonfoot"
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 416
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "fall",
+      "name": "free_rate_0",
+      "rate": 0,
+      "z": 1000
+    },
+    "rate": -1,
+    "threshold": 104,
+    "z": 1000
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "fall",
+      "name": "free_rate_-1",
+      "rate": -1,
+      "z": 1000
+    },
+    "rate": -2,
+    "threshold": 104,
+    "z": 999
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "fall",
+      "name": "free_rate_-2",
+      "rate": -2,
+      "z": 1000
+    },
+    "rate": -3,
+    "threshold": 104,
+    "z": 998
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "fall",
+      "name": "free_rate_-98",
+      "rate": -98,
+      "z": 1000
+    },
+    "rate": -99,
+    "threshold": 104,
+    "z": 902
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "fall",
+      "name": "free_rate_-99",
+      "rate": -99,
+      "z": 1000
+    },
+    "rate": -100,
+    "threshold": 104,
+    "z": 901
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "fall",
+      "name": "free_rate_-100",
+      "rate": -100,
+      "z": 1000
+    },
+    "rate": -100,
+    "threshold": 104,
+    "z": 900
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "fall",
+      "name": "free_rate_2",
+      "rate": 2,
+      "z": 1000
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 1002
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": false,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          0
+        ],
+        "kind": "set_height"
+      },
+      {
+        "args": [
+          2
+        ],
+        "kind": "mission"
+      },
+      {
+        "args": [
+          100,
+          0,
+          "C4Warhead",
+          0,
+          1,
+          1,
+          0
+        ],
+        "kind": "damage"
+      }
+    ],
+    "falling": false,
+    "input": {
+      "kind": "fall",
+      "name": "grounding",
+      "rate": -2,
+      "z": 1
+    },
+    "rate": -3,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": false,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          0
+        ],
+        "kind": "set_height"
+      },
+      {
+        "args": [
+          2
+        ],
+        "kind": "mission"
+      },
+      {
+        "args": [
+          100,
+          0,
+          "C4Warhead",
+          0,
+          1,
+          1,
+          0
+        ],
+        "kind": "damage"
+      }
+    ],
+    "falling": false,
+    "input": {
+      "kind": "fall",
+      "name": "already_grounded",
+      "rate": 0,
+      "z": 0
+    },
+    "rate": -1,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": false,
+    "bridge": true,
+    "canopy_active": false,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          0
+        ],
+        "kind": "set_height"
+      },
+      {
+        "args": [
+          2
+        ],
+        "kind": "mission"
+      }
+    ],
+    "falling": false,
+    "input": {
+      "bomb": 0,
+      "kind": "fall",
+      "name": "nonbomb_grounding",
+      "z": 0
+    },
+    "rate": -1,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": false,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          0
+        ],
+        "kind": "set_height"
+      },
+      {
+        "args": [
+          2
+        ],
+        "kind": "mission"
+      }
+    ],
+    "falling": false,
+    "input": {
+      "health": 0,
+      "kind": "fall",
+      "name": "dead_grounding",
+      "z": 0
+    },
+    "rate": -1,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [],
+    "falling": false,
+    "input": {
+      "falling": 0,
+      "kind": "fall",
+      "name": "not_falling_bomb",
+      "z": 0
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": false,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          0
+        ],
+        "kind": "set_height"
+      },
+      {
+        "args": [
+          2
+        ],
+        "kind": "mission"
+      }
+    ],
+    "falling": false,
+    "input": {
+      "health": -1,
+      "kind": "fall",
+      "name": "negative_health",
+      "z": 0
+    },
+    "rate": -1,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "free_cap": -6,
+      "kind": "fall",
+      "name": "custom_free_cap",
+      "rate": -5,
+      "z": 1000
+    },
+    "rate": -6,
+    "threshold": 104,
+    "z": 995
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [],
+    "falling": true,
+    "input": {
+      "kind": "fall",
+      "marked": 0,
+      "name": "unmarked",
+      "rate": -2,
+      "z": 1000
+    },
+    "rate": -3,
+    "threshold": 104,
+    "z": 998
+  },
+  {
+    "bomb": true,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "bridge": 1,
+        "kind": "display_remove"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "fall",
+      "limbo": 1,
+      "name": "limbo_keeps_rate",
+      "rate": -4,
+      "z": 1000
+    },
+    "rate": -4,
+    "threshold": 104,
+    "z": 996
+  },
+  {
+    "bomb": false,
+    "bridge": true,
+    "canopy_active": false,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [
+          0
+        ],
+        "kind": "set_height"
+      },
+      {
+        "args": [
+          2
+        ],
+        "kind": "mission"
+      }
+    ],
+    "falling": false,
+    "input": {
+      "bomb": 0,
+      "kind": "fall",
+      "name": "parachute_landing",
+      "parachuted": 1,
+      "rate": -2,
+      "z": 0
+    },
+    "rate": -3,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": true,
+    "bridge": false,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [],
+        "kind": "powered"
+      },
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "bridge": 1,
+        "kind": "display_remove"
+      },
+      {
+        "bridge": 0,
+        "kind": "display_submit"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [],
+        "kind": "moving"
+      },
+      {
+        "args": [
+          2688,
+          2688,
+          0
+        ],
+        "kind": "scatter"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "hover_water",
+      "name": "water_z_0",
+      "spinning": 1,
+      "steps": 1,
+      "z": 0
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": true,
+    "bridge": false,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [],
+        "kind": "powered"
+      },
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "bridge": 1,
+        "kind": "display_remove"
+      },
+      {
+        "bridge": 0,
+        "kind": "display_submit"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [],
+        "kind": "moving"
+      },
+      {
+        "args": [
+          2688,
+          2688,
+          103
+        ],
+        "kind": "scatter"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "hover_water",
+      "name": "water_z_103",
+      "spinning": 1,
+      "steps": 1,
+      "z": 103
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 103
+  },
+  {
+    "bomb": false,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [],
+        "kind": "powered"
+      }
+    ],
+    "falling": false,
+    "input": {
+      "kind": "hover_water",
+      "name": "water_z_104",
+      "spinning": 1,
+      "steps": 1,
+      "z": 104
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 104
+  },
+  {
+    "bomb": false,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [],
+        "kind": "powered"
+      }
+    ],
+    "falling": false,
+    "input": {
+      "kind": "hover_water",
+      "name": "water_z_105",
+      "spinning": 1,
+      "steps": 1,
+      "z": 105
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 105
+  },
+  {
+    "bomb": false,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [],
+        "kind": "powered"
+      }
+    ],
+    "falling": false,
+    "input": {
+      "kind": "hover_water",
+      "land": 0,
+      "name": "dry",
+      "spinning": 1,
+      "z": 0
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": false,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [],
+        "kind": "powered"
+      }
+    ],
+    "falling": false,
+    "input": {
+      "kind": "hover_water",
+      "name": "still_spinning",
+      "powered": 1,
+      "spinning": 1,
+      "z": 0
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": false,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [],
+    "falling": false,
+    "input": {
+      "kind": "hover_water",
+      "name": "not_spinning",
+      "z": 0
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": true,
+    "bridge": false,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [],
+        "kind": "powered"
+      },
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "bridge": 1,
+        "kind": "display_remove"
+      },
+      {
+        "bridge": 0,
+        "kind": "display_submit"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [],
+        "kind": "moving"
+      },
+      {
+        "args": [
+          2688,
+          2688,
+          0
+        ],
+        "kind": "scatter"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "kind": "hover_water",
+      "name": "last_spin_step",
+      "powered": 1,
+      "spinning": 1,
+      "steps": 1,
+      "z": 0
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 0
+  },
+  {
+    "bomb": true,
+    "bridge": false,
+    "canopy_active": true,
+    "events": [
+      {
+        "args": [
+          0
+        ],
+        "kind": "mark"
+      },
+      {
+        "bridge": 1,
+        "kind": "display_remove"
+      },
+      {
+        "bridge": 0,
+        "kind": "display_submit"
+      },
+      {
+        "args": [
+          1
+        ],
+        "kind": "mark"
+      },
+      {
+        "args": [],
+        "kind": "moving"
+      },
+      {
+        "args": [
+          2688,
+          2688,
+          416
+        ],
+        "kind": "scatter"
+      }
+    ],
+    "falling": true,
+    "input": {
+      "bridge": 1,
+      "kind": "bridge_gate",
+      "name": "missing_deck"
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 416
+  },
+  {
+    "bomb": false,
+    "bridge": true,
+    "canopy_active": true,
+    "events": [],
+    "falling": false,
+    "input": {
+      "bridge": 1,
+      "deck": true,
+      "kind": "bridge_gate",
+      "name": "present_deck"
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 416
+  },
+  {
+    "bomb": false,
+    "bridge": false,
+    "canopy_active": true,
+    "events": [],
+    "falling": false,
+    "input": {
+      "bridge": 0,
+      "kind": "bridge_gate",
+      "name": "not_on_bridge"
+    },
+    "rate": 0,
+    "threshold": 104,
+    "z": 416
+  }
+]

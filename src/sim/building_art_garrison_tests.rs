@@ -122,7 +122,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
     let building = sim.substrate.entities.get_mut(id).unwrap();
     building.passenger_role = PassengerRole::Transport { cargo };
     building.health.current = integer(&input["current_hp"]);
-    building.building_damage_state_active = input["retained_damage_state"].as_bool().unwrap();
+    building.building_art.damage_state_active = input["retained_damage_state"].as_bool().unwrap();
     (sim, rules, id)
 }
 
@@ -145,9 +145,9 @@ fn native_refresh_corpus_replays_through_live_animation_slots() {
             continue;
         }
         let (mut sim, rules, id) = fixture(input);
-        let before = sim.entities().get(id).unwrap().building_anim_slots;
+        let before = sim.entities().get(id).unwrap().building_art.anim_slots;
         sim.refresh_garrison_anims(id, &rules);
-        let after = sim.entities().get(id).unwrap().building_anim_slots;
+        let after = sim.entities().get(id).unwrap().building_art.anim_slots;
         let expected_calls = output["calls"].as_array().unwrap();
         let mut replaced = BTreeSet::new();
         let mut last_replacement = None;

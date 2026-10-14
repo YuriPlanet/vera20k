@@ -22,7 +22,6 @@ fn active_walk_and_hover_queries_retain_committed_xyz_after_other_coordinate_wri
                 .matches(DriveCoord { z: 0, ..head })
         );
         e.position.exact_z_leptons = Some(832);
-        e.movement_target = None;
         assert!(
             AtCoordQuery::from_entity(&e).unwrap().matches(head),
             "Stop/path retirement must not reconstruct Head_To"

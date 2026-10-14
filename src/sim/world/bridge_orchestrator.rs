@@ -770,7 +770,12 @@ pub(super) fn blow_up_bridge_cell_fallout(
     frame_effects: FrameEffects<'_>,
 ) {
     kill_ground_occupants_at(sim, rules, rx, ry, overlay_registry, frame_effects);
-    drop_in_bridge_deck_entities(sim, rx, ry);
+    drop_in_bridge_deck_entities(
+        sim,
+        rx,
+        ry,
+        super::UninitContext::new(Some(rules), overlay_registry).with_effects(frame_effects),
+    );
     let mut one_cell = BTreeSet::new();
     one_cell.insert((rx, ry));
     spawn_bridge_debris(sim, rules, &one_cell);
@@ -951,7 +956,12 @@ fn bridge_jittered_axis(cell: i16, draw: u32) -> i32 {
 /// BlowUpBridge's deck pass (0x0047DDBA..0x0047DDC9): read the selected
 /// head after ground callbacks, capture next BEFORE DropIn removes current.
 /// Membership owns selection, including retained corpses and non-anchor cells.
-fn drop_in_bridge_deck_entities(sim: &mut Simulation, rx: u16, ry: u16) {
+fn drop_in_bridge_deck_entities(
+    sim: &mut Simulation,
+    rx: u16,
+    ry: u16,
+    context: super::UninitContext<'_>,
+) {
     use crate::sim::movement::locomotor::MovementLayer;
     let mut next = sim
         .substrate
@@ -964,7 +974,7 @@ fn drop_in_bridge_deck_entities(sim: &mut Simulation, rx: u16, ry: u16) {
             .occupancy
             .get(rx, ry)
             .and_then(|cell| cell.next_on_layer(MovementLayer::Bridge, id));
-        sim.drop_in_bridge_member(id);
+        sim.drop_as_bomb(id, context);
     }
 }
 
@@ -1048,23 +1058,27 @@ mod tests {
             true,
         );
         entity.on_bridge = true;
+        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.cell_marked = true;
         entity.locomotor = Some(drive_loco_on_bridge());
-        // Give it a short fake movement target so we can verify it gets
-        // halted on collapse.
-        entity.movement_target = Some(crate::sim::components::MovementTarget::default());
         sim.substrate.entities.insert(entity);
         1
     }
 
-    /// Task 11 — DropIn correction: bridge-deck entities snap to ground
-    /// level + survive even when the destination is unwalkable (water
-    /// below). The legacy `resolve_bridge_state_changes` despawned in
-    /// this case; vanilla never does (HIGH §12.7 / §12.9).
+    /// DropAsBomb5F4160 preserves Location and orders while arming the
+    /// shared ObjectAI fall. The receiver kills the object only on landing.
     #[test]
-    fn drop_in_snaps_deck_entity_to_ground_over_water_no_despawn() {
+    fn bridge_drop_arms_a_bomb_without_snapping_or_clearing_its_order() {
         let mut sim = Simulation::new();
         sim.resolved_terrain = Some(water_below_bridge_terrain(3));
         let id = spawn_deck_unit(&mut sim);
+        let order = Some(crate::sim::components::NavTargetRef::cell(7, 5));
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .navigation
+            .nav_com = order;
         sim.substrate.occupancy.add(
             5,
             5,
@@ -1074,22 +1088,26 @@ mod tests {
             CellListInsertion::PrependNonBuilding,
         );
 
-        drop_in_bridge_deck_entities(&mut sim, 5, 5);
+        drop_in_bridge_deck_entities(&mut sim, 5, 5, super::super::UninitContext::default());
 
         let e = sim
             .substrate
             .entities
             .get(id)
-            .expect("deck entity must SURVIVE collapse over water");
-        assert_eq!(e.position.z, 0, "snapped to ground level");
+            .expect("deck entity remains until the landing receiver");
+        assert_eq!(e.position.z, 3, "Location is retained");
+        assert!(e.was_dropped_as_bomb() && e.is_falling_down());
         assert!(!e.on_bridge, "OnBridge cleared by DropIn");
-        assert!(e.movement_target.is_none(), "movement halted on collapse");
+        assert_eq!(
+            e.navigation.nav_com, order,
+            "DropAsBomb does not write orders"
+        );
         assert_eq!(e.health.current, 256, "DropIn never harms — no damage");
         let loco = e.locomotor.as_ref().expect("locomotor");
         assert_eq!(
             loco.layer,
-            MovementLayer::Ground,
-            "layer flipped Bridge → Ground"
+            MovementLayer::Bridge,
+            "DropAsBomb does not write locomotor storage; live list queries use OnBridge"
         );
         let cell = sim
             .substrate
@@ -1119,7 +1137,7 @@ mod tests {
             CellListInsertion::PrependNonBuilding,
         );
 
-        drop_in_bridge_deck_entities(&mut sim, 5, 5);
+        drop_in_bridge_deck_entities(&mut sim, 5, 5, super::super::UninitContext::default());
 
         let e = sim.substrate.entities.get(id).unwrap();
         assert!(!e.on_bridge);
@@ -1675,7 +1693,7 @@ mod tests {
             CellListInsertion::PrependNonBuilding,
         );
 
-        drop_in_bridge_deck_entities(&mut sim, 5, 5);
+        drop_in_bridge_deck_entities(&mut sim, 5, 5, super::super::UninitContext::default());
 
         // Ground entity untouched — still alive, still ground layer.
         let e = sim

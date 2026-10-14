@@ -24,8 +24,7 @@ use crate::rules::ruleset::RuleSet;
 #[cfg(test)]
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::find_nearby_cell::{
-    NearbyAnchorGate, NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
-    map_owned_radius_cap,
+    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
 };
 use crate::sim::house_state::{HouseDifficulty, HouseState, determine_waypoint_edge};
 use crate::sim::mission::{MissionId, MissionType};
@@ -247,7 +246,6 @@ fn find_nearby_pre_fill_start_rect(
             i32::from(DEFICIENT_START_RECT_W),
             i32::from(DEFICIENT_START_RECT_H),
         ),
-        anchor_gate: NearbyAnchorGate::NativeHeightAware,
         allow_bridge_cells: true,
         check_height: false,
         check_occupancy: false,
@@ -299,7 +297,6 @@ pub(crate) fn find_nearby_start_rect(
             i32::from(DEFICIENT_START_RECT_W),
             i32::from(DEFICIENT_START_RECT_H),
         ),
-        anchor_gate: NearbyAnchorGate::NativeHeightAware,
         allow_bridge_cells: true,
         check_height: false,
         check_occupancy: false,
@@ -2017,7 +2014,7 @@ fn seed_starting_extra_units_with_overlay_registry(
             // gate. Seeding the raw accumulator too is what keeps the unit
             // elite through its first kill instead of demoting it.
             if initial_veteran && let Some(entity) = sim.entities_mut().get_mut(stable_id) {
-                crate::sim::combat::veterancy::set_elite(entity);
+                entity.veterancy.set_elite();
             }
             let mission = if slot.is_human {
                 MissionType::Guard

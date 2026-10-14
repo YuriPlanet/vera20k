@@ -348,7 +348,7 @@ pub(crate) fn build_path_overlay_instances(
         if !entity.selected {
             continue;
         }
-        if entity.movement_target.is_none() {
+        if crate::sim::movement::motion_query::is_moving(entity) != Some(true) {
             continue;
         }
         // The Foot+5E0 words from the reference cell; the first is next.

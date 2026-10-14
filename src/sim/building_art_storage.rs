@@ -79,13 +79,15 @@ impl Simulation {
         };
         let tier =
             entity
-                .building_storage
+                .building_art
+                .storage
                 .tier(object.storage, self.session.binary_frame, "445FE4");
         self.substrate
             .entities
             .get_mut(id)
             .unwrap()
-            .building_storage
+            .building_art
+            .storage
             .refinery_tier = tier;
         if let Some(slot) = active_slot(tier) {
             self.allocate_storage_slot(id, slot, rules);
@@ -109,15 +111,15 @@ impl Simulation {
             .resolve_metadata_entry(self.interner.resolve(entity.type_ref()), &object.image)
             .is_some_and(|art| art.silo_damage);
         if silo {
-            let frame = entity.building_storage.silo_frame(capacity);
+            let frame = entity.building_art.storage.silo_frame(capacity);
             if frame == 0 {
                 self.clear_building_anim_slot(id, 10);
             } else {
-                if self.entities().get(id).unwrap().building_anim_slots[10].is_none() {
+                if self.entities().get(id).unwrap().building_art.anim_slots[10].is_none() {
                     self.allocate_storage_slot(id, 10, rules);
                 }
-                let anim =
-                    self.entities().get(id).unwrap().building_anim_slots[10].unwrap_or_else(|| {
+                let anim = self.entities().get(id).unwrap().building_art.anim_slots[10]
+                    .unwrap_or_else(|| {
                         panic!(
                             "native SiloDamage null Anim write450D81: building={id} frame={}",
                             self.session.binary_frame
@@ -134,7 +136,7 @@ impl Simulation {
         if !refinery {
             return;
         }
-        let storage = self.entities().get(id).unwrap().building_storage;
+        let storage = self.entities().get(id).unwrap().building_art.storage;
         let tier = storage.tier(capacity, self.session.binary_frame, "450DAA");
         if tier == storage.refinery_tier {
             return;
@@ -143,7 +145,7 @@ impl Simulation {
             self.clear_building_anim_slot(id, slot);
         }
         //450E12 re-reads storage after the synchronous old Anim destructor.
-        let tier = self.entities().get(id).unwrap().building_storage.tier(
+        let tier = self.entities().get(id).unwrap().building_art.storage.tier(
             capacity,
             self.session.binary_frame,
             "450E12",
@@ -152,7 +154,8 @@ impl Simulation {
             .entities
             .get_mut(id)
             .unwrap()
-            .building_storage
+            .building_art
+            .storage
             .refinery_tier = tier;
         if let Some(slot) = active_slot(tier) {
             self.allocate_storage_slot(id, slot, rules);
@@ -218,8 +221,8 @@ mod tests {
             entity.owner = sim.interner.intern("A");
             entity.health.current = current;
             entity.lifecycle.in_limbo = false;
-            entity.building_damage_state_active = current <= 50;
-            entity.building_storage = BuildingStorage {
+            entity.building_art.damage_state_active = current <= 50;
+            entity.building_art.storage = BuildingStorage {
                 amounts: std::array::from_fn(|i| {
                     NativeF32Bits::from_bits(
                         u32::from_str_radix(input["amount_bits"][i].as_str().unwrap(), 16).unwrap(),
@@ -263,7 +266,8 @@ mod tests {
                 sim.entities()
                     .get(id)
                     .unwrap()
-                    .building_storage
+                    .building_art
+                    .storage
                     .refinery_tier,
                 output["tier"].as_i64().unwrap() as i32,
                 "tier row{index}"
@@ -303,7 +307,7 @@ mod tests {
                 })
                 .collect();
             assert_eq!(actual, expected, "allocation row{index}");
-            let silo_frame = sim.entities().get(id).unwrap().building_anim_slots[10]
+            let silo_frame = sim.entities().get(id).unwrap().building_art.anim_slots[10]
                 .map(|a| sim.anim(a).unwrap().runtime.current_frame);
             assert_eq!(
                 silo_frame,

@@ -79,19 +79,13 @@ fn first_process_publishes_raw_head_and_matching_progress_for_drive_and_ship() {
         let mut sim = crate::sim::world::Simulation::new();
         sim.interner = crate::sim::intern::test_interner();
         let grid = crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        let entities = &mut sim.substrate.entities;
-        entities.insert(entity);
-        assert!(crate::sim::movement::issue_move_command(
-            entities,
-            &grid,
+        sim.substrate.entities.insert(entity);
+        assert!(sim.set_unit_destination(
             1,
-            (11, 8),
-            SimFixed::from_num(0),
-            false,
-            None,
-            None,
-            None,
-            crate::sim::movement::DestinationTiming::new(0, 60),
+            crate::sim::components::NavTargetRef::cell(11, 8),
+            &rules,
+            true,
+            crate::sim::world::FrameEffects::default(),
         ));
         assert!(committed_track_head(sim.substrate.entities.get(1).unwrap()).is_none());
         sim.substrate.occupancy =

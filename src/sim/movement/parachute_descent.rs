@@ -1,4 +1,4 @@
-//! Parachute descent: the falling state of paradropped infantry.
+//! ObjectClass falling: parachutes and dropped bombs share one state owner.
 //!
 //! As in gamemd, a falling object's height is its Location Z
 //! (`position.exact_z_leptons`). `ObjectClass::AI`'s falling block moves it
@@ -10,7 +10,9 @@
 //!   object on the ground or deck
 //! - the infantry keeps its base locomotor and body sequence during descent
 //!
-//! This module keeps the FallRate and the canopy.
+//! Free fall uses trunc(FallRate - 1.4), capped by NoParachuteMaxFallRate.
+//! Landing retains the rate and parachute/bomb bytes; a bomb then enters
+//! the synchronous C4 receiver with its current Health and both force flags.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/game_entity, sim/entity_store, sim/locomotor.
@@ -19,17 +21,6 @@
 use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::world::FrameEffects;
-
-/// Per-entity parachute descent state. Set by [`begin_parachute_descent`],
-/// cleared on landing. This mirrors gamemd's object-level falling state:
-/// normal paradropped infantry keep their base locomotor and body animation.
-/// The height is the object's Location Z, not part of this state.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ParachuteDescentState {
-    /// `ObjectClass+0x2C` FallRate in leptons per frame; negative falls.
-    /// Starts at 0; decrements by 1 per frame; clamps to `Rules.ParachuteMaxFallRate`.
-    pub rate: i32,
-}
 
 /// Begin parachute descent for an entity at world Z `drop_z` (leptons).
 /// Returns `true` on success.
@@ -46,8 +37,7 @@ pub fn begin_parachute_descent(entities: &mut EntityStore, entity_id: u64, drop_
         return false;
     };
 
-    entity.position.exact_z_leptons = Some(drop_z);
-    entity.parachute_state = Some(ParachuteDescentState { rate: 0 });
+    entity.begin_parachute_fall(drop_z);
 
     entity.push_debug_event(
         0,
@@ -66,6 +56,101 @@ const PARACHUTE_ANIM_Z_LIFT_LEPTONS: i32 = 0x4B;
 const PARACHUTE_ANIM_DRAW_FLAGS: u32 = 0x600;
 
 impl crate::sim::world::Simulation {
+    /// ObjectAI5F3F11..5F405B inside MissionAI, before mission dispatch and
+    /// the locomotor. The landing callback precedes canopy wind-down and the
+    /// forced C4 receiver. No fall-specific RNG, timer or detach calls occur;
+    /// the synchronous production receiver owns all ordinary death effects.
+    pub(crate) fn object_ai_fall(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<(bool, bool), crate::sim::world::FrameAdvanceError> {
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_none_or(|e| !e.is_falling_down())
+        {
+            return Ok((false, false));
+        }
+        let old_layer = self.entity_display_layer(id, Some(rules));
+        let landed = self.advance_fall(
+            id,
+            rules.general.parachute_max_fall_rate,
+            Some(rules),
+            registry,
+            effects,
+        );
+        let mut changed = false;
+        if landed {
+            changed = self.per_cell_process(
+                id,
+                super::PerCellReason::Arrival,
+                Some(rules),
+                registry,
+                effects,
+            )?;
+            self.wind_down_parachute_anim(rules, id);
+            //5F3FA4..5F3FFA: PerCell can Limbo the object. The landing
+            // frame updates and retains FallRate only after that callback.
+            if let Some(entity) = self.substrate.entities.get_mut(id)
+                && !entity.lifecycle.in_limbo
+            {
+                entity.advance_fall_rate(
+                    rules.general.parachute_max_fall_rate,
+                    rules.general.no_parachute_max_fall_rate,
+                );
+            }
+        }
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|e| e.lifecycle.in_limbo)
+        {
+            self.substrate.display.remove(id);
+            return Ok((landed, changed));
+        }
+        let new_layer = self.entity_display_layer(id, Some(rules));
+        if old_layer != new_layer
+            && let Some(layer) = new_layer
+        {
+            //5F4001..5F400E: resubmit only when the live layer changed.
+            self.submit_object_display(id, layer, Some(rules));
+        }
+        if let Some(health) = self
+            .substrate
+            .entities
+            .get(id)
+            .filter(|e| {
+                !e.lifecycle.in_limbo
+                    && !e.is_falling_down()
+                    && e.was_dropped_as_bomb()
+                    && e.health.current > 0
+            })
+            .map(|e| e.health.current)
+        {
+            //5F402B copies current Health+6C into a local packet (not Strength).
+            let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
+            let hit = crate::sim::combat::EntityDamageEvent::direct_receiver(
+                id,
+                health,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                c4,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: true,
+                },
+            );
+            self.commit_direct_damage_receiver(rules, registry, hit, effects);
+        }
+        Ok((landed, changed))
+    }
+
     /// Construct the falling object's canopy.
     ///
     /// gamemd-derived, the virtual `ObjectClass::Paradrop @ 0x005F5940`. It
@@ -169,24 +254,11 @@ impl crate::sim::world::Simulation {
     /// - GetHeight at most 0 (`0x005F3F6A`) grounds it: SetHeight(0)
     ///   (`0x005F3F7A`) puts it on the ground or deck, and the falling byte
     ///   clears (`0x005F3F86`).
-    /// - Otherwise a parachute's FallRate drops by one, no lower than
-    ///   `Rules+0x7B8` (`0x005F3FBC..0x005F3FFA`). Native also updates it on
-    ///   the grounding frame and keeps it after the fall; VERA drops it with
-    ///   the falling state. Only DropIn's fall (`0x005F4160`), which does not
-    ///   reset the rate, would start from a kept one, and VERA's DropIn grounds
-    ///   a standing object instead (DRIFT at `drop_in_bridge_member`).
+    /// - An airborne object updates its retained rate here. On landing,
+    ///   `object_ai_fall` first runs PerCell and canopy wind-down, then updates
+    ///   the rate unless that callback put the object in Limbo (5F3FA4).
     ///
-    /// RESIDUAL: every frame of the fall, native removes a Limbo object from
-    /// the display and returns before the FallRate update (`0x005F3FA4` ->
-    /// `0x005F4146`), and otherwise resubmits the object to the display when
-    /// its layer (`vt+0x78`, read at `0x005F3F23` and `0x005F4001`) changed
-    /// (`0x004A9720` at `0x005F400E`). Trigger: a falling Jumpjet crossing its
-    /// layer bounds, or an object Limboed while it falls. Effect: its display
-    /// list entry keeps the old layer. Frequency: none in retail play. VERA
-    /// drops only the paradrop superweapon's `[General]` lists, which retail
-    /// `rulesmd.ini` sets to Walk infantry (E1, E1, E2, INIT, read through
-    /// `RuleSet::from_ini`), though a map may override them. Its bridge DropIn
-    /// grounds a standing Jumpjet at once. Risk: draw order.
+    /// Native rate controls are executed in drop_as_bomb.json.
     pub(crate) fn advance_fall(
         &mut self,
         stable_id: u64,
@@ -198,7 +270,7 @@ impl crate::sim::world::Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
-        let Some(rate) = entity.parachute_state.as_ref().map(|state| state.rate) else {
+        let Some(rate) = entity.is_falling_down().then(|| entity.fall_rate()) else {
             return false;
         };
         let z = crate::sim::movement::ground_pose::object_world_z_leptons(
@@ -222,9 +294,11 @@ impl crate::sim::world::Simulation {
             return false;
         };
         if crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0 {
-            if let Some(state) = entity.parachute_state.as_mut() {
-                // Integer DEC, then clamp toward the more-negative bound.
-                state.rate = (state.rate - 1).max(max_fall_rate);
+            if !entity.lifecycle.in_limbo {
+                entity.advance_fall_rate(
+                    max_fall_rate,
+                    rules.map_or(-100, |r| r.general.no_parachute_max_fall_rate),
+                );
             }
             return false;
         }
@@ -235,7 +309,7 @@ impl crate::sim::world::Simulation {
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return true;
         };
-        entity.parachute_state = None;
+        entity.finish_fall();
         entity.push_debug_event(self.session.tick as u32, DebugEventKind::SpecialMovementEnd);
         true
     }
@@ -261,6 +335,7 @@ mod tests {
     /// inserted into `entities`. Returns the entity id.
     fn insert_test_infantry(entities: &mut EntityStore, id: u64) -> u64 {
         let mut e = GameEntity::test_default(id, "E1", "Americans", 10, 10);
+        e.lifecycle.in_limbo = false;
         e.locomotor = Some(make_walk_loco());
         e.animation = Some(Animation::new(SequenceKind::Stand));
         entities.insert(e);
@@ -281,12 +356,9 @@ mod tests {
             Some(1200),
             "the drop coordinate's Z replaces the passenger's old one"
         );
-        let state = entity
-            .parachute_state
-            .as_ref()
-            .expect("parachute state must be attached");
         assert_eq!(
-            state.rate, 0,
+            entity.fall_rate(),
+            0,
             "rate must start at 0 (3-tick ramp begins next tick)"
         );
 
@@ -334,7 +406,7 @@ mod tests {
         assert!(begin_parachute_descent(&mut entities, 1, 1200));
 
         let entity = entities.get(1).expect("alive");
-        assert!(entity.parachute_state.is_some());
+        assert!(entity.is_falling_down());
     }
 
     #[test]
@@ -384,14 +456,7 @@ mod tests {
     }
 
     fn rate(sim: &Simulation, id: u64) -> i32 {
-        sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .parachute_state
-            .as_ref()
-            .expect("descending")
-            .rate
+        sim.substrate.entities.get(id).unwrap().fall_rate()
     }
 
     #[test]
@@ -451,7 +516,8 @@ mod tests {
     #[test]
     fn test_landing_inclusive_zero() {
         // Drop Z = 6 leptons → tick 4 moves the object to height 0 → landing
-        // triggers (inclusive bound). `parachute_state` must be cleared.
+        // triggers (inclusive bound). Only the falling flag is cleared;
+        // the shared state retains the rate and parachute/bomb flags.
         let (mut sim, id) = falling(6);
 
         let landed: Vec<bool> = (0..4).map(|_| fall(&mut sim, id)).collect();
@@ -459,7 +525,7 @@ mod tests {
         assert_eq!(landed, vec![false, false, false, true]);
         let entity = sim.substrate.entities.get(id).expect("alive");
         assert!(
-            entity.parachute_state.is_none(),
+            !entity.is_falling_down(),
             "landing at height 0 must trigger cleanup"
         );
     }
@@ -479,7 +545,7 @@ mod tests {
 
         assert!(fall(&mut sim, id), "the overshooting tick lands");
         let entity = sim.substrate.entities.get(id).expect("alive");
-        assert!(entity.parachute_state.is_none());
+        assert!(!entity.is_falling_down());
         assert_eq!(entity.position.exact_z_leptons, Some(0), "SetHeight(0)");
     }
 
@@ -494,12 +560,13 @@ mod tests {
                 .substrate
                 .entities
                 .get(id)
-                .and_then(|e| e.parachute_state.as_ref())
+                .filter(|e| e.is_falling_down())
+                .map(|e| e.fall_rate())
             {
                 assert!(
-                    state.rate >= RULES_PARACHUTE_MAX_FALL_RATE,
+                    state >= RULES_PARACHUTE_MAX_FALL_RATE,
                     "rate {} must not exceed (more-negative than) max {}",
-                    state.rate,
+                    state,
                     RULES_PARACHUTE_MAX_FALL_RATE
                 );
             }
@@ -635,7 +702,7 @@ mod tests {
         }
         let entity = sim.substrate.entities.get(id).unwrap();
         assert!(
-            entity.parachute_state.is_none(),
+            !entity.is_falling_down(),
             "should land cleanly without an animation field"
         );
     }
@@ -669,6 +736,12 @@ mod canopy_tests {
         sim.substrate
             .entities
             .insert(GameEntity::test_default(id, "E1", "Americans", 10, 11));
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .lifecycle
+            .in_limbo = false;
         assert!(begin_parachute_descent(
             &mut sim.substrate.entities,
             id,

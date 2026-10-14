@@ -210,7 +210,6 @@ fn cruising_jumpjet() -> Simulation {
             deviation: 40,
             no_wobbles: false,
         });
-    locomotor.altitude = SimFixed::from_num(500);
     entity.position.exact_z_leptons = Some(500);
     sim
 }

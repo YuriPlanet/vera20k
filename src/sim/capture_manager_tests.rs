@@ -1595,19 +1595,30 @@ fn a_building_mid_construction_cannot_be_captured() {
     assert!(sim.can_capture(yuri, plant, &rules));
 }
 
-/// Capture and release leave no order behind: VERA's legacy `order_intent`
-/// goes with the TarCom and NavCom ChangeOwner drops.
+/// ChangeOwner leaves an attack-move alone: only the MegaMission bodies,
+/// the Foot constructor and PointerExpired write `Foot+0x5C4..+0x5D1`. Its
+/// Enter_Idle_Mode asks RefreshMegaMission, which resumes the order with
+/// Guard committed on the spot, but CaptureUnit then resets the captive's
+/// orders to Guard (`vt+0x3D0` at `0x00471EA5`): it stands still with its
+/// MegaMission kept. FreeUnit has no such reset, so the released object goes
+/// on to the MegaDestination for its old owner.
 #[test]
-fn capture_and_release_drop_the_previous_order() {
-    use crate::sim::components::OrderIntent;
+fn a_released_captive_resumes_its_attack_move() {
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::mission::MissionType;
     let rules = rules();
     let mut sim = sim(33);
+    // A human controller keeps its captive's orders (no DecideUnitFate roll).
+    let yuri_house = sim.interner.intern("YuriCountry");
+    sim.houses.get_mut(&yuri_house).unwrap().is_human = true;
     let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
-    sim.substrate.entities.get_mut(gi).unwrap().order_intent = Some(OrderIntent::AttackMove {
-        goal_rx: 30,
-        goal_ry: 30,
-    });
+    let captive = sim.substrate.entities.get_mut(gi).unwrap();
+    captive.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(Some(
+        crate::sim::combat::TargetKind::Cell(30, 30),
+    ));
+    // Its FootClass::AI has cleared Foot+6B3 since the Unlimbo (`0x004DA54E`).
+    captive.mission_leaf.set_foot_idle_entry_latch(0);
     assert!(sim.capture_unit(
         yuri,
         gi,
@@ -1615,19 +1626,21 @@ fn capture_and_release_drop_the_previous_order() {
         None,
         crate::sim::world::FrameEffects::default()
     ));
-    assert!(
-        sim.substrate
-            .entities
-            .get(gi)
-            .unwrap()
-            .order_intent
-            .is_none()
+    let captive = sim.substrate.entities.get(gi).unwrap();
+    assert!(captive.mega_mission.is_attack_move());
+    assert_eq!(captive.navigation.nav_com, None);
+    assert_eq!(
+        captive.mission.effective().known(),
+        Some(MissionType::Guard)
     );
 
-    sim.substrate.entities.get_mut(gi).unwrap().order_intent = Some(OrderIntent::AttackMove {
-        goal_rx: 11,
-        goal_ry: 10,
-    });
+    // Frames pass before the release; FootClass::AI clears Foot+6B3 again.
+    sim.substrate
+        .entities
+        .get_mut(gi)
+        .unwrap()
+        .mission_leaf
+        .set_foot_idle_entry_latch(0);
     assert!(sim.free_unit(
         yuri,
         gi,
@@ -1636,14 +1649,10 @@ fn capture_and_release_drop_the_previous_order() {
         crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(owner(&sim, gi), "Americans");
-    assert!(
-        sim.substrate
-            .entities
-            .get(gi)
-            .unwrap()
-            .order_intent
-            .is_none()
-    );
+    let freed = sim.substrate.entities.get(gi).unwrap();
+    assert!(freed.mega_mission.is_attack_move());
+    assert_eq!(freed.navigation.nav_com, Some(NavTargetRef::cell(30, 30)));
+    assert_eq!(freed.mission.effective().known(), Some(MissionType::Move));
 }
 
 /// A captive entering an absorbing building is freed first (the

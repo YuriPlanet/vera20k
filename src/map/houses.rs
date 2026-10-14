@@ -155,14 +155,12 @@ pub fn are_houses_friendly(alliances: &HouseAllianceMap, a: &str, b: &str) -> bo
     if a.eq_ignore_ascii_case(b) {
         return true;
     }
-    let a_norm = normalize_house_name(a);
-    let b_norm = normalize_house_name(b);
-    alliances
-        .get(&a_norm)
-        .is_some_and(|set| set.contains(&b_norm))
-        || alliances
-            .get(&b_norm)
-            .is_some_and(|set| set.contains(&a_norm))
+    with_house_key(a, |a| {
+        with_house_key(b, |b| {
+            alliances.get(a).is_some_and(|set| set.contains(b))
+                || alliances.get(b).is_some_and(|set| set.contains(a))
+        })
+    })
 }
 
 /// Directional alliance test: does `asker` consider `other` an ally?
@@ -175,9 +173,11 @@ pub fn is_allied_with(alliances: &HouseAllianceMap, asker: &str, other: &str) ->
     if asker.eq_ignore_ascii_case(other) {
         return true;
     }
-    alliances
-        .get(&normalize_house_name(asker))
-        .is_some_and(|set| set.contains(&normalize_house_name(other)))
+    with_house_key(asker, |asker| {
+        alliances
+            .get(asker)
+            .is_some_and(|set| with_house_key(other, |other| set.contains(other)))
+    })
 }
 
 /// Mutual-alliance test — both houses must name each other.
@@ -192,6 +192,22 @@ pub fn are_houses_mutually_allied(alliances: &HouseAllianceMap, a: &str, b: &str
 /// The ally graph's key for a house name.
 pub(crate) fn normalize_house_name(name: &str) -> String {
     name.trim().to_ascii_uppercase()
+}
+
+/// `f` applied to `name`'s ally-graph key ([`normalize_house_name`]), built
+/// on the stack when it fits. The alliance tests run for every path-search
+/// blocker and fog viewer, where a heap key per test showed in profiles.
+fn with_house_key<R>(name: &str, f: impl FnOnce(&str) -> R) -> R {
+    let name = name.trim();
+    let mut buffer = [0u8; 64];
+    match buffer.get_mut(..name.len()) {
+        Some(key) => {
+            key.copy_from_slice(name.as_bytes());
+            key.make_ascii_uppercase();
+            f(std::str::from_utf8(key).expect("ASCII uppercasing keeps UTF-8"))
+        }
+        None => f(&normalize_house_name(name)),
+    }
 }
 
 /// Parse house color assignments from a map's INI data.
@@ -628,5 +644,38 @@ mod tests {
         assert_eq!(plan.nodes[0].packed_cell, 9);
         assert_eq!(plan.nodes[1].packed_cell, 32_768u32 | (32_766u32 << 16));
         assert_eq!(plan.nodes[2].packed_cell, 12u32 | (65_523u32 << 16));
+    }
+
+    /// Stack-built ally-graph keys equal `normalize_house_name` for padded,
+    /// mixed-case and non-ASCII names, at the buffer's size and past it; the
+    /// alliance tests find mixed-case names through them.
+    #[test]
+    fn house_keys_match_normalized_names() {
+        let fits = "a".repeat(64);
+        let overflows = "b".repeat(65);
+        let padded = format!(" {fits}\t");
+        for name in [
+            "Americans",
+            "  soviet1 \t",
+            "Ämericans",
+            "",
+            fits.as_str(),
+            overflows.as_str(),
+            padded.as_str(),
+        ] {
+            assert_eq!(
+                with_house_key(name, str::to_owned),
+                normalize_house_name(name),
+                "{name:?}"
+            );
+        }
+        let mut alliances = HouseAllianceMap::new();
+        alliances
+            .entry("AMERICANS".into())
+            .or_default()
+            .insert("BRITISH".into());
+        assert!(is_allied_with(&alliances, " americans", "British "));
+        assert!(!is_allied_with(&alliances, "British", "Americans"));
+        assert!(are_houses_friendly(&alliances, "british", "AMERICANS "));
     }
 }

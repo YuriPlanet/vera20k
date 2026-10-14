@@ -178,7 +178,9 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
             .nav_com = Some(NavTargetRef::Entity { id: 3 });
     }
     let owner = sim.substrate.entities.get_mut(1).unwrap();
-    owner.set_veterancy_rank((input["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
+    owner
+        .veterancy
+        .set_rank_for_test((input["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
     if input["flag_3d4"].as_bool().unwrap_or(false) {
         owner.mark_mission_only();
     }
@@ -240,7 +242,8 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         );
         let e = sim.substrate.entities.get_mut(id).unwrap();
         e.lifecycle.in_limbo = true;
-        e.set_veterancy_rank((passenger["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
+        e.veterancy
+            .set_rank_for_test((passenger["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
         e.set_gunner_selection_for_test(passenger["current"].as_i64().unwrap_or(0) as i32, -1);
         cargo.board_forced(id, 1);
     }

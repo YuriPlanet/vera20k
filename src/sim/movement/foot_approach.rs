@@ -1,5 +1,6 @@
 //! Foot4D5690, reached through Unit7414E0 by a unit's Approach (Attack, Hunt,
-//! AreaGuard, Rescue), and through Infantry522340 by an infantryman's
+//! AreaGuard, Rescue, and TechnoClass::AI's reach block at `0x006FAB74`), and
+//! through Infantry522340 by an infantryman's
 //! ([`Simulation::approach_target`]), whatever their locomotor. Native execution:
 //! tools/spatial_oracle/fv_cell_attack. The shared range,
 //! Cell admission, zone-cost, target and destination owners retain their work.
@@ -16,7 +17,7 @@ use crate::rules::object_type::Ability;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::{self, CellRect, CellRectPassabilityContext};
-use crate::sim::combat::veterancy::{has_weapon_ability, rank_from_u16};
+use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::combat::{self, TargetKind, in_range};
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::MissionType;
@@ -25,7 +26,7 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 use crate::util::direction_tables::{cell_delta_unchecked, facing16_between};
 use crate::util::native_trig::facing_step_world_xy;
-use crate::util::native_x87::distance_3d_leptons;
+use crate::util::native_x87::{X87Chop53, distance_3d_leptons, sqrt_approx_f32};
 
 const OFFSETS: [i16; 25] = [
     0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 8, -8, 16, -16, 24, -24, 32, -32, 48, -48, 64, -64,
@@ -119,8 +120,8 @@ impl Simulation {
         }
         let object = self.object_type(actor.type_ref(), rules)?;
         let crusher = object.crusher
-            || has_weapon_ability(rank_from_u16(actor.veterancy()), object, Ability::Crusher);
-        // The pursuit pass asks this of every pursuer each frame.
+            || has_weapon_ability(actor.veterancy.rank_kind(), object, Ability::Crusher);
+        // Every Approach asks this; most units crush nothing.
         if !crusher && !object.omni_crusher {
             return None;
         }
@@ -178,14 +179,13 @@ impl Simulation {
     /// - With the no-move flag set, native returns the Target without the
     ///   destination. Every mission passes 0, and no VERA caller passes 1.
     /// - Mission_Patrol calls Approach too (`0x004D473A`), and VERA has no
-    ///   Foot Patrol body; the pursuit pass (`tick_attack_pursuit`) stands in.
-    ///   Trigger: a unit on Patrol holding a target that an arm would take: a
-    ///   Kirov, a Floating Disc, a computer's crusher beside it or a Battle
-    ///   Fortress. Effect: the pass sends it to the target's cell, and its
-    ///   in-range halt admits no Patrol (`range_stop_admits`), so it goes on
-    ///   to that cell and stays on Patrol, roughly where the arms send it; a
-    ///   Disc on its laser does not stop at range. Frequency: nothing in VERA
-    ///   puts a Unit on Patrol today; native producers were not surveyed.
+    ///   Foot Patrol body (`FootClass::Mission_Patrol @ 0x004D4280`). Trigger:
+    ///   a Foot on Patrol holding a target. Effect: it does not approach the
+    ///   target; only the reach block's (`0x006FAB74`) does, for one it
+    ///   cannot reach. Frequency: a map can author Patrol in an object's
+    ///   `MISSION=` column (retail maps not surveyed); the team script's
+    ///   Patrol action (`0x006ECCE0`) is not ported. Risk: a whole unported
+    ///   mission.
     pub(crate) fn unit_approach_head(&self, id: u64, rules: &RuleSet) -> Option<NavTargetRef> {
         let crush = self.approach_crush(id, rules);
         if let Some((facts, target)) = crush
@@ -222,32 +222,49 @@ impl Simulation {
     pub(crate) fn balloon_hover_approach(&self, id: u64, rules: &RuleSet) -> Option<NavTargetRef> {
         let actor = self.substrate.entities.get(id)?;
         let target = actor.attack_target.as_ref()?.target;
-        if actor.category != EntityCategory::Unit
-            || !self.object_type(actor.type_ref(), rules)?.balloon_hover
-        {
+        let object = self.object_type(actor.type_ref(), rules)?;
+        if actor.category != EntityCategory::Unit || !object.balloon_hover {
             return None;
         }
-        let selected = combat::pursuit_selection(
-            actor,
-            &target,
-            &self.substrate.entities,
+        let (_, selected) = self.foot_target_weapon(actor, object, target, rules)?;
+        balloon_hover_destination(selected.map(|selected| selected.weapon), target, rules)
+    }
+
+    /// SelectWeapon (vt+0x2E4) against `target`, and GetWeapon (vt+0x3F8) at
+    /// the index it answers ([`combat::combat_weapon::select_weapon_against`]),
+    /// as Approach (`0x004D56CA`, the BalloonHover arm at `0x007415BA`) and
+    /// the per-cell range stop (`0x004D883A`) ask them. The weapon is None for
+    /// an empty slot; the answer is None only when the target is gone.
+    /// Legality is not asked: both measure with InRange, without
+    /// GetFireError.
+    pub(super) fn foot_target_weapon<'r>(
+        &self,
+        actor: &crate::sim::game_entity::GameEntity,
+        object: &'r crate::rules::object_type::ObjectType,
+        target: TargetKind,
+        rules: &'r RuleSet,
+    ) -> Option<(i32, Option<combat::combat_weapon::SelectedWeapon<'r>>)> {
+        combat::combat_weapon::select_weapon_against(
             rules,
+            actor,
+            object,
+            &combat::combat_weapon::attacker_facts(actor, object),
+            Some(&target),
+            &self.substrate.entities,
             &self.interner,
             self.resolved_terrain.as_ref(),
             Some(&self.house_alliances),
-        );
-        balloon_hover_destination(selected.map(|selected| selected.weapon), target, rules)
+        )
     }
 
     /// Approach (vt+0x53C) with no-move 0, as Mission_Attack (`0x004D4E6A`),
     /// Mission_Hunt (`0x004D54E3`, `0x004D54D2`), Mission_AreaGuard
-    /// (`0x004D6F32`) and Mission_Rescue (`0x004DDFEB`) call it: a Unit's head
+    /// (`0x004D6F32`), Mission_Rescue (`0x004DDFEB`) and TechnoClass::AI's
+    /// reach block (`0x006FAB74`) call it: a Unit's head
     /// ([`Self::approach_unit_head`]) or an infantryman's deployed arm
     /// ([`Self::approach_infantry_deployed`]), then the Foot body
     /// ([`Self::approach_foot_target`]; Unit `0x00741689`, Infantry
     /// `0x0052236E`) for a mover [`Self::owns_foot_approach`] represents.
-    /// The pursuit pass stands in for the rest of Approach for any other
-    /// mover ([`Self::mission_owns_approach`]).
     pub(crate) fn approach_target(
         &mut self,
         id: u64,
@@ -347,87 +364,73 @@ impl Simulation {
         true
     }
 
-    /// Whether the current mission's own Approach ([`Self::approach_target`])
-    /// takes `id`'s approach, so the pursuit pass (`tick_attack_pursuit`)
-    /// leaves it alone: on a mission that calls Approach (Attack, Hunt,
-    /// AreaGuard and Rescue), the Foot body ([`Self::owns_foot_approach`]) or
-    /// the head's BalloonHover arm. A unit the head's crush arms carry
-    /// ([`Self::unit_approach_head`]) holds a live Techno Target, so the Foot
-    /// body's boundary covers it too. A hunting infantryman calls Approach
-    /// from Mission_Hunt's no-flag arm (`0x004D54D2`); its Engineer and C4
-    /// arms set the destination themselves (`0x004D53BA..0x004D5467`), so the
-    /// mission decides his movement either way (`evaluate_foot_hunt`). Its
-    /// VehicleThief arm (`0x004D546C..0x004D54B9`) is not ported, so the pass
-    /// stands in for a `VehicleThief=` man. Keep it in step with those calls.
-    pub(crate) fn mission_owns_approach(&self, id: u64, rules: &RuleSet) -> bool {
-        let Some(actor) = self.substrate.entities.get(id) else {
-            return false;
-        };
-        let calls_approach = match actor.mission.current().known() {
-            Some(MissionType::Attack | MissionType::AreaGuard | MissionType::Rescue) => true,
-            Some(MissionType::Hunt) => {
-                actor.category != EntityCategory::Infantry
-                    || !self
-                        .object_type(actor.type_ref(), rules)
-                        .is_some_and(|t| t.vehicle_thief)
-            }
-            _ => false,
-        };
-        calls_approach
-            && (self.owns_foot_approach(id, rules)
-                || self.balloon_hover_approach(id, rules).is_some())
-    }
-
-    /// Ownership boundary for the absorbed common Unit/Infantry approach. The
-    /// BalloonHover arm ([`Self::balloon_hover_approach`]), non-Cell queued
-    /// receivers and DestroyableCliffs redirect have separate native
-    /// branches; their old adapter remains explicit.
-    /// A mapless fixture cannot execute native cell/zone queries.
+    /// Whether the Foot body ([`Self::approach_foot_target`]) represents
+    /// `id`'s Approach: a Unit or an infantryman out of a deploy action (the
+    /// deployed arm is [`Self::approach_infantry_deployed`]) with a locomotor,
+    /// a type and a live target, on a map with zones. Unit7414E0 ends in
+    /// Foot4D5690(false) at 741689, and Infantry522340 calls it at 52236E,
+    /// whatever the locomotor: the body tells a Jumpjet apart itself. A
+    /// mapless fixture cannot execute native cell/zone queries. No aircraft
+    /// is represented (the body's Rescue residual).
     pub(crate) fn owns_foot_approach(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
-            return false;
-        };
-        let Some(terrain) = self.resolved_terrain.as_ref() else {
             return false;
         };
         let Some(target) = actor.attack_target.as_ref().map(|a| a.target) else {
             return false;
         };
-        // Unit7414E0 ends in Foot4D5690(false) at 741689, and Infantry522340
-        // calls it at 52236E for any infantryman not in a deploy action
-        // (522352..52236A; the deployed arm is `approach_infantry_deployed`),
-        // whatever the locomotor: the body tells a Jumpjet apart itself.
-        let represented = matches!(
+        matches!(
             actor.category,
             EntityCategory::Unit | EntityCategory::Infantry
         ) && actor.locomotor.is_some()
             && !actor.infantry_deploy_doing()
             && match target {
-                TargetKind::Cell(rx, ry) => !terrain.is_destroyable_cliff(rx, ry),
+                TargetKind::Cell(..) => true,
                 TargetKind::Entity(target) => self.substrate.entities.contains(target),
-            };
-        represented
+            }
+            && self.resolved_terrain.is_some()
             && self.zone_grid.is_some()
             && self.object_type(actor.type_ref(), rules).is_some()
-            && self.balloon_hover_approach(id, rules).is_none()
-            && actor
-                .navigation
-                .nav_queue
-                .iter()
-                .all(|target| matches!(target, NavTargetRef::Cell { .. }))
     }
 
     /// Common Foot4D5690 body (Unit741689 and Infantry52236C pass false).
-    /// Its only RNG is PlaceInfantryInCell's centre-row draw on a CloseRange
+    /// Its only RNG is PlaceInfantryInCell's centre-row draw: on a CloseRange
     /// infantryman's spot requests (the pre-search arm and each ring
-    /// candidate); MissionAttack draws its cadence after this returns.
+    /// candidate), and in the destination setter of a Teleport or Jumpjet
+    /// infantryman, which picks his spot in the cell it sets. MissionAttack
+    /// draws its cadence after this returns.
+    ///
+    /// RESIDUAL: the `DeployToFire=` arm (UnitType `+0xE12`) is not ported. A
+    /// Unit whose own cell fails `CellClass @ 0x00487C10` caps its range at
+    /// Distance + 512 (`0x004D57EA..0x004D5863`), skips the in-range return
+    /// (`0x004D5A2C`) and takes only ring candidates whose cell passes the
+    /// same test (`0x004D613E..0x004D6162`). Trigger: a modded
+    /// `DeployToFire=` unit; no retail type sets the key, and `0x00487C10`
+    /// has no port (`fire_error_world` records the same gap). Effect: none in
+    /// retail.
+    ///
+    /// RESIDUAL: a mover whose selected slot is empty returns at once. Native
+    /// has no such exit: GetWeaponRange answers 0 (`0x007012C0`), CanFireAt
+    /// false (`0x006F7237`), the search runs no ring, and the exhausted arm
+    /// drops the Target and sets the passable cell nearest it
+    /// (`0x004D68E7..0x004D6A58`). Trigger: a mover with an empty slot
+    /// holding a Target on Attack, Hunt or Area Guard, or sent here by the
+    /// reach block. Retail's slotless movers (the Chrono Miner, an MCV) take
+    /// no attack order; engineers, spies and the War Miner carry a weapon.
+    /// Effect: it keeps the Target and stands where native lets it go and
+    /// walks beside it; after the reach block, the block's CanFireAt drops it
+    /// with no destination. Kept because the `harvest_attack_return` corpus
+    /// replays a declared Approach seam that this exit stands in for, and
+    /// two fixtures hold unarmed movers on Attack
+    /// (`the_team_attacks_the_building_its_first_member_finds`, the spy
+    /// holding a dying building, whose stale Target Approach still reads).
     pub(crate) fn approach_foot_target(
         &mut self,
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
-    ) -> Result<Option<(u16, u16)>, String> {
+    ) -> Result<Option<NavTargetRef>, String> {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(None);
         };
@@ -439,20 +442,16 @@ impl Simulation {
         if matches!(target, TargetKind::Entity(target) if actor.locomotor_target == Some(target)) {
             return Ok(None);
         }
-        let Some(selected) = combat::pursuit_selection(
-            actor,
-            &target,
-            &self.substrate.entities,
-            rules,
-            &self.interner,
-            self.resolved_terrain.as_ref(),
-            Some(&self.house_alliances),
-        ) else {
-            return Ok(None);
-        };
         let object = self
             .object_type(actor.type_ref(), rules)
             .ok_or("Approach requires mover type")?;
+        //4D56CA..4D56F8: SelectWeapon, then GetWeaponRange (vt+0x168) of its
+        // index. An empty slot returns here (RESIDUAL above).
+        let Some((index, Some(selected))) = self.foot_target_weapon(actor, object, target, rules)
+        else {
+            return Ok(None);
+        };
+        let weapon = selected.weapon;
         let terrain = self
             .resolved_terrain
             .as_ref()
@@ -466,7 +465,7 @@ impl Simulation {
         let mut range = combat::combat_weapon::weapon_range(
             actor,
             object,
-            selected.index,
+            index,
             &self.substrate.entities,
             rules,
             &self.interner,
@@ -483,7 +482,7 @@ impl Simulation {
             in_range::cell_target_in_range(
                 actor,
                 identity,
-                selected.weapon,
+                weapon,
                 rules,
                 &self.interner,
                 &self.substrate.entities,
@@ -557,28 +556,18 @@ impl Simulation {
         {
             return Ok(None);
         }
-        if let Some(NavTargetRef::Cell { rx, ry }) = actor.navigation.nav_queue.first().copied() {
-            if actor.category == EntityCategory::Unit {
-                self.set_unit_destination(
-                    id,
-                    NavTargetRef::cell(rx, ry),
-                    rules,
-                    false,
-                    frame_effects,
-                );
-            } else {
-                //4D5A64 passes flag0. Infantry51AA40 forwards the flag,
-                // but Foot4D94B0 never reads it; original ordinary CLEG
-                // Cell-setter flag0/1 controls have equal state and RNG.
-                self.assign_destination_represented(
-                    id,
-                    Some(NavTargetRef::cell(rx, ry)),
-                    Some(rules),
-                    registry,
-                    frame_effects,
-                )
-                .map_err(|e| format!("Approach queued destination: {e}"))?;
-            }
+        //4D5A4D..5ABB: the first queued destination (+0x58C, a Cell or an
+        // object) is taken (vt+0x480 with 0), leaves the queue and is the
+        // answer.
+        if let Some(entry) = actor.navigation.nav_queue.first().copied() {
+            self.assign_destination_keeping_queue(
+                id,
+                Some(entry),
+                Some(rules),
+                registry,
+                frame_effects,
+            )
+            .map_err(|e| format!("Approach queued destination: {e}"))?;
             let queue = &mut self
                 .substrate
                 .entities
@@ -589,8 +578,46 @@ impl Simulation {
             if !queue.is_empty() {
                 queue.remove(0);
             }
-            return Ok(Some((rx, ry)));
+            return Ok(Some(entry));
         }
+
+        //4D5ABE..5B60: a Cell TarCom on a DestroyableCliffs tile
+        // (Tile_Is_DestroyableCliff 0x00486900) is retargeted (vt+0x3C8) to
+        // the tile's cell nearest the mover's own vt+0x4C cell (Map586FC0),
+        // and the body goes on against it: every later TarCom read reloads
+        // +0x2B4. The weapon and its range stay as selected above.
+        let cliff = match target {
+            TargetKind::Cell(rx, ry) if terrain.is_destroyable_cliff(rx, ry) => {
+                let own = self.foot_navigation_coordinate(id)?;
+                Some(self.destroyable_cliff_nearest_cell(
+                    (rx, ry),
+                    ((own.x / 256) as i16, (own.y / 256) as i16),
+                ))
+            }
+            _ => None,
+        };
+        let (target, identity, target_reference) = match cliff {
+            Some((x, y)) => {
+                let redirected = TargetKind::Cell(x as u16, y as u16);
+                self.assign_target_represented(
+                    id,
+                    Some(redirected),
+                    Some(rules),
+                    registry,
+                    frame_effects,
+                )
+                .map_err(|e| format!("Approach cliff target: {e}"))?;
+                (
+                    redirected,
+                    redirected.cell_identity(self.resolved_terrain.as_ref().unwrap()),
+                    NavTargetRef::cell(x as u16, y as u16),
+                )
+            }
+            None => (target, identity, target_reference),
+        };
+        let actor = self.substrate.entities.get(id).unwrap();
+        let terrain = self.resolved_terrain.as_ref().unwrap();
+        let cells = NativeCellQuery::canonical(terrain);
 
         let foundation = match target {
             TargetKind::Entity(id) => self
@@ -686,7 +713,7 @@ impl Simulation {
                     id,
                     point,
                     &target,
-                    selected.weapon,
+                    weapon,
                     close_range.then_some(own),
                     rules,
                     registry,
@@ -726,7 +753,7 @@ impl Simulation {
                             id,
                             cell_centre(candidate),
                             &target,
-                            selected.weapon,
+                            weapon,
                             close_range.then_some(own),
                             rules,
                             registry,
@@ -808,12 +835,11 @@ impl Simulation {
                 .as_ref()
                 .unwrap()
                 .native_cell_identity(cell);
-            return Ok(Some((cell.0 as u16, cell.1 as u16)));
+            return Ok(Some(NavTargetRef::cell(cell.0 as u16, cell.1 as u16)));
         }
         //4D68E7..6919: a HunterSeeker, or a VehicleThief infantryman, takes
         // the Target itself as its destination (4D6A71, vt+0x480(TarCom, 1))
-        // and returns it; the answer here is the cell under it. Neither key is
-        // set in retail.
+        // and returns it. Neither key is set in retail.
         if object.hunter_seeker || category == EntityCategory::Infantry && object.vehicle_thief {
             self.assign_destination_represented(
                 id,
@@ -823,7 +849,7 @@ impl Simulation {
                 frame_effects,
             )
             .map_err(|e| format!("Approach Target destination: {e}"))?;
-            return Ok(Some((target_cell.0 as u16, target_cell.1 as u16)));
+            return Ok(Some(target_reference));
         }
         let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref().unwrap());
         let fallback = self.approach_fallback(id, retained_candidate, rules, &cells)?;
@@ -842,6 +868,53 @@ impl Simulation {
             self.assign_null_destination(id, Some(rules), registry, frame_effects);
         }
         Ok(None)
+    }
+
+    /// `MapClass @ 0x00586FC0`, as Approach's DestroyableCliffs arm calls it
+    /// (`0x004D5B34`): of the destroyable-cliff tile under `target`
+    /// ([`crate::map::resolved_terrain::ResolvedTerrainGrid::destroyable_cliff_tile`]),
+    /// row by row, the cells whose subtile has an image (`0x005870D9`) and
+    /// that lie in the playfield (`Is_Cell_In_Playfield(cell, 1)`,
+    /// `0x005870EC`), the first whose Sqrt_Approx distance to `own`
+    /// (`0x00587127`) is strictly under the best so far, from 10000.0. With
+    /// none, the empty cell (0, 0) (`0x00ABD480`). A cell outside any
+    /// destroyable-cliff tile answers itself, as one without an IsoTile does
+    /// natively (`0x00587021..0x0058702A`).
+    fn destroyable_cliff_nearest_cell(&self, target: (u16, u16), own: (i16, i16)) -> (i16, i16) {
+        let terrain = self.resolved_terrain.as_ref();
+        let Some(tile) = terrain.and_then(|grid| grid.destroyable_cliff_tile(target.0, target.1))
+        else {
+            return (target.0 as i16, target.1 as i16);
+        };
+        let mut best = (0, 0);
+        let mut best_distance = 10000.0_f64;
+        for row in 0..tile.height {
+            for column in 0..tile.width {
+                let cell = (
+                    tile.origin.0.wrapping_add(i16::from(column)),
+                    tile.origin.1.wrapping_add(i16::from(row)),
+                );
+                if !tile.has_image(column, row)
+                    || !cell_rect::cell_is_in_playfield_height_aware(
+                        (i32::from(cell.0), i32::from(cell.1)),
+                        self.playfield_bounds,
+                        terrain,
+                    )
+                {
+                    continue;
+                }
+                let dx = i32::from(cell.0) - i32::from(own.0);
+                let dy = i32::from(cell.1) - i32::from(own.1);
+                let root = sqrt_approx_f32(X87Chop53::load_i32(dy * dy + dx * dx))
+                    .expect("a finite int32 has a finite root");
+                let distance = f64::from(f32::from_bits(root.bits()));
+                if distance < best_distance {
+                    best_distance = distance;
+                    best = cell;
+                }
+            }
+        }
+        best
     }
 
     fn approach_nav_center(
@@ -1096,8 +1169,8 @@ impl Simulation {
         cells: &NativeCellQuery<'_>,
     ) -> Result<Option<(u16, u16)>, String> {
         use crate::sim::find_nearby_cell::{
-            NearbyAnchorGate, NearbyFootprint, NearbyQuery, PassabilityArgs,
-            find_nearby_passable_cell, map_owned_radius_cap,
+            NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
+            map_owned_radius_cap,
         };
         let actor = self
             .substrate
@@ -1146,7 +1219,6 @@ impl Simulation {
                     bridge_aware_zone: bridge_aware,
                 },
                 footprint: NearbyFootprint::SINGLE,
-                anchor_gate: NearbyAnchorGate::NativeHeightAware,
                 allow_bridge_cells: false,
                 check_height: true,
                 check_occupancy: false,

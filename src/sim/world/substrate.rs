@@ -385,7 +385,7 @@ pub(crate) struct ObjectSubstrate {
     /// including the single shared dummy CellClass mask.
     #[serde(default)]
     pub(crate) base_reservations: CellReservationGrid,
-    /// Plain-struct entity storage (`BTreeMap<u64, GameEntity>` + infantry registry).
+    /// Plain-struct entity storage (dense, in stable_id order, + infantry registry).
     /// The authoritative object store — serialized verbatim (NOT skipped).
     pub(crate) entities: EntityStore,
     /// Separate AnimClass registry sharing the global object ID namespace and

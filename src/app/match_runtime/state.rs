@@ -10,6 +10,10 @@ use crate::map::basic::BasicSection;
 
 pub(crate) struct MatchState {
     pub(crate) startup: super::startup::MatchStartup,
+    /// Live session owner: gamemd's `SessionClass` at `0x00A8B238` (mode,
+    /// participants, local participant, host). Written by the launch path
+    /// and the saved-game restore; read by the app loop only.
+    pub(crate) session: super::session::MatchSession,
     pub(crate) sim_runtime: Option<crate::sim::runtime::SimRuntime>,
     /// Match input owner (F12): camera, zoom, cursor, keys, hotkeys.
     pub(crate) input: crate::app::input::state::MatchInputState,

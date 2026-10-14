@@ -3,8 +3,8 @@
 //! Drives each active `ParticleSystem` in shared LogicVector order: temporarily
 //! takes it from storage, runs per-`BehavesLike` AI, decrements lifetime, then
 //! reinserts it. Completed systems enter the common deferred-delete path.
-//! Smoke (C2), Gas (C3), and Fire (C4) have
-//! full bodies; Spark dispatch is active while Railgun remains a no-op.
+//! Ordinary Smoke and Spark are connected. Gas/Fire retain explicit
+//! movement/damage residuals; Railgun body is still absent.
 //!
 //! Pulling each system out before ticking lets the inner AI take `&mut Simulation`
 //! freely — needed for spawning child systems and applying damage to entities —
@@ -12,7 +12,7 @@
 //! `stable_id` so deterministic iteration order is preserved.
 
 use crate::rules::particle_system_type::ParticleSystemBehavesLike;
-use crate::rules::particle_type::{ParticleBehavesLike, ParticleTypeId};
+use crate::rules::particle_type::ParticleBehavesLike;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::particles::ParticleSystem;
 use crate::sim::world::Simulation;
@@ -28,69 +28,90 @@ use super::spark_world::{SparkCollisionWorld, SparkWorldError};
 // alone remains dormant in the behavior dispatch below.
 #[derive(Debug, Error)]
 pub(crate) enum SparkSystemTickError {
-    #[error("particle type {0:?} is not behavior-3 Spark")]
-    NonSparkParticle(ParticleTypeId),
     #[error(transparent)]
     Kernel(#[from] SparkKernelError),
     #[error(transparent)]
     World(#[from] SparkWorldError),
 }
 
-/// Resolve the SHP frame count for a particle's `Image=` field from the
-/// immutable rules-side asset catalog. Returns 0 when the type has no image
-/// or the optional SHP was not bound.
-pub(super) fn resolve_image_frame_count(
-    rules: &RuleSet,
-    pt: &crate::rules::particle_type::ParticleType,
-) -> u16 {
-    let Some(image) = pt.image.as_deref() else {
-        return 0;
-    };
-    rules.effect_frame_count(image).unwrap_or(0)
+/// The shared signed UID/EC cadence in Smoke62C540, Gas62C313 and
+/// Fire62CBD6. EC is zero-extended; additions wrap before signed IDIV.
+/// Smoke/Gas pass the type byte; Fire passes its constructor-adjusted byte.
+/// Source: original gamemd, tools/spatial_oracle/damage_smoke.md.
+pub(super) fn state_advance_due(p: &super::Particle, max_ec: i32, advance: u8) -> bool {
+    let numerator = p
+        .native_unique_id()
+        .wrapping_add(max_ec)
+        .wrapping_sub(i32::from(p.lifetime_remaining as u16));
+    let divisor = (p.native_unique_id() & 1) + i32::from(advance as i8);
+    numerator
+        .checked_rem(divisor)
+        .expect("native particle cadence requires valid IDIV")
+        == 0
 }
 
-/// Advance one Tier-2 particle's animation-state machine by one tick.
-///
-/// A sub-tick counter increments every call; when it hits a per-type
-/// denominator computed from the SHP's frame-count parity and the type's
-/// `StateAIAdvance` divisor, `animation_state` advances by 1. Reaching
-/// `EndStateAI` either marks the particle for deletion (when
-/// `DeleteOnStateLimit`) or resets the state to 0. Reaching
-/// `Translucent50State` or `Translucent25State` writes the corresponding
-/// translucency byte the renderer reads.
-///
-/// `image_frame_count` is the SHP frame count from
-/// the rules-side asset catalog. When it's 0 (image not registered or missing
-/// SHP), the denominator falls through to `1 + StateAIAdvance`.
-pub(super) fn advance_state(
-    p: &mut crate::sim::particles::Particle,
-    pt: &crate::rules::particle_type::ParticleType,
-    image_frame_count: u16,
-) {
-    let parity_bit = (image_frame_count % 2) as u8;
-    let denom = (parity_bit + 1).saturating_add(pt.state_ai_advance).max(1);
-
-    p.state_advance_counter = p.state_advance_counter.wrapping_add(1);
-    if !p.state_advance_counter.is_multiple_of(denom) {
-        return;
+/// ParticleClass::AI_Dispatch62CE40 tail. Even a class body that returns
+/// early or marks deletion still decrements EC once, with word wrap.
+pub(super) fn finish_lifetime(p: &mut super::Particle) {
+    p.lifetime_remaining = p.lifetime_remaining.wrapping_sub(1);
+    if p.lifetime_remaining == 0 {
+        p.marked_for_deletion = true;
     }
+}
 
-    p.animation_state = p.animation_state.saturating_add(1);
+/// One AI_Dispatch62CE40 owner, selected by the PARTICLE's behavior rather
+/// than its containing system. Spark retains its begin/query/finish boundary.
+pub(super) fn tick_particle(p: &mut super::Particle, sim: &mut Simulation, rules: &RuleSet) {
+    if let Err(error) = tick_particle_with_query(p, sim, rules, |sim, rules, motion| {
+        SparkCollisionWorld::new(sim, rules)?.query(motion)
+    }) {
+        log::warn!(
+            "particles: particle {} AI failed: {error}",
+            p.native_unique_id()
+        );
+    }
+}
 
-    if p.animation_state == pt.end_state_ai {
-        if pt.delete_on_state_limit {
-            p.marked_for_deletion = true;
-        } else {
-            p.animation_state = 0;
+fn tick_particle_with_query<F>(
+    p: &mut super::Particle,
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    mut query: F,
+) -> Result<(), SparkSystemTickError>
+where
+    F: FnMut(
+        &Simulation,
+        &RuleSet,
+        SparkMotionStep,
+    ) -> Result<SparkCollisionFacts, SparkWorldError>,
+{
+    let pt = rules.particle_type(p.type_id);
+    match pt.behaves_like {
+        ParticleBehavesLike::Smoke => {
+            super::smoke::tick_particle(p, pt, sim.session.binary_frame, sim.particle_rng())
+        }
+        ParticleBehavesLike::Gas => super::gas::tick_particle(p, pt),
+        ParticleBehavesLike::Fire => super::fire::tick_particle(p, pt, sim.particle_rng()),
+        ParticleBehavesLike::Spark => {
+            let motion = begin_particle_tick(p, gravity_as_stored_f32(rules.general.gravity)?)?;
+            let collision = query(sim, rules, motion)?;
+            finish_particle_tick(
+                p,
+                motion,
+                collision,
+                pt.color_speed,
+                pt.color_list.len(),
+                sim.particle_rng(),
+            )?;
+            return Ok(()); // Spark finish calls the same lifetime owner.
+        }
+        ParticleBehavesLike::Railgun => {
+            // RESIDUAL: Railgun body62C3A0 (dispatch62CE81) remains unported;
+            // the shared lifetime tail still runs.
         }
     }
-
-    if pt.translucent_50_state != 0xFF && p.animation_state >= pt.translucent_50_state {
-        p.translucency = 0x19;
-    }
-    if pt.translucent_25_state != 0xFF && p.animation_state >= pt.translucent_25_state {
-        p.translucency = 0x32;
-    }
+    finish_lifetime(p);
+    Ok(())
 }
 
 /// Dispatch one particle-system object at its current LogicVector slot.
@@ -110,7 +131,7 @@ pub(crate) fn tick_particle_system(sim: &mut Simulation, rules: &RuleSet, id: u6
     // (`0x006301E0`) whose whole body is `*(byte*)(this+0xF8) = 1`. A negative
     // lifetime (`Lifetime=` absent, which is every stock Spark system) walks
     // past zero and never triggers it, exactly as here.
-    sys.lifetime -= 1;
+    sys.lifetime = sys.lifetime.wrapping_sub(1);
     if sys.lifetime == 0 {
         sys.done_spawning = true;
     }
@@ -119,7 +140,7 @@ pub(crate) fn tick_particle_system(sim: &mut Simulation, rules: &RuleSet, id: u6
     let retires = sys.done_spawning && sys.particles.is_empty();
     sim.particle_systems_mut().reinsert_after_tick(sys);
     if retires {
-        sim.retire_particle_system(id);
+        sim.retire_particle_system(id, crate::sim::world::UninitContext::with_rules(rules));
     }
     true
 }
@@ -205,29 +226,15 @@ where
         SparkMotionStep,
     ) -> Result<SparkCollisionFacts, SparkWorldError>,
 {
-    let gravity = gravity_as_stored_f32(rules.general.gravity)?;
     for particle in &mut sys.particles {
-        let particle_type = rules.particle_type(particle.type_id);
-        if particle_type.behaves_like != ParticleBehavesLike::Spark {
-            return Err(SparkSystemTickError::NonSparkParticle(particle.type_id));
-        }
-
-        let motion = begin_particle_tick(particle, gravity)?;
-        let collision = query(sim, rules, motion)?;
-        finish_particle_tick(
-            particle,
-            motion,
-            collision,
-            particle_type.color_speed,
-            particle_type.color_list.len(),
-            sim.particle_rng(),
-        )?;
+        tick_particle_with_query(particle, sim, rules, &mut query)?;
     }
 
     // Native container cleanup walks backward so removals cannot perturb the
     // forward tick/RNG order of surviving particles.
     for index in (0..sys.particles.len()).rev() {
         if sys.particles[index].marked_for_deletion {
+            sim.conceal_particle(sys.particles[index].stable_id());
             sys.particles.remove(index);
         }
     }
@@ -251,10 +258,11 @@ mod tests {
 
     fn build_rules(behaves_like: &str, lifetime: i32) -> RuleSet {
         let ini_text = format!(
-            "[ParticleSystems]\n\
+            "[General]\nWindDirection=1\n[ParticleSystems]\n\
              1=Sys\n\
              [Sys]\n\
              BehavesLike={behaves_like}\n\
+             SpawnCutoff=13\n\
              Lifetime={lifetime}\n",
         );
         RuleSet::from_ini(&IniFile::from_str(&ini_text)).expect("rules parse")
@@ -377,26 +385,6 @@ mod tests {
         tick_particle_systems(&mut sim, &rules);
         assert!(sim.particle_systems().get(id).is_some());
         assert_eq!(sim.particle_systems().get(id).unwrap().lifetime, 99);
-    }
-
-    #[test]
-    fn particle_frame_lookup_uses_rules_without_mutating_sim_interner() {
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[Particles]\n0=SmokeP\n\
-             [SmokeP]\nBehavesLike=Smoke\nImage=SMOKEIMG\n",
-        ))
-        .expect("particle rules");
-        rules.set_effect_frame_count_for_test("SMOKEIMG", 5, 5);
-        let mut sim = Simulation::new();
-        let before = sim.interner.len();
-
-        let count = resolve_image_frame_count(&rules, rules.particle_type(ParticleTypeId(0)));
-
-        assert_eq!(count, 5);
-        assert_eq!(sim.interner.len(), before);
-        assert!(sim.interner.get("SMOKEIMG").is_none());
-        let marker = sim.interner.intern("AFTER_EFFECT_LOOKUP");
-        assert_eq!(marker.index() as usize, before);
     }
 
     #[test]
@@ -622,185 +610,6 @@ SpawnSparkPercentage=1
         assert_eq!(
             collision_sim.rng_views().scenario,
             expected_rng.logical_view()
-        );
-    }
-
-    mod advance_state_tests {
-        use super::*;
-        use crate::rules::particle_type::ParticleTypeId;
-        use crate::sim::particles::Particle;
-        use glam::IVec3;
-
-        fn pt_rules(extra: &str) -> RuleSet {
-            let ini = format!("[Particles]\n1=Smk\n[Smk]\nBehavesLike=Smoke\nMaxEC=10\n{extra}\n");
-            RuleSet::from_ini(&IniFile::from_str(&ini)).expect("rules parse")
-        }
-
-        fn fake_particle(pt: &crate::rules::particle_type::ParticleType) -> Particle {
-            let mut particle = Particle::test_fixture(ParticleTypeId(0), IVec3::ZERO);
-            particle.origin = IVec3::ZERO;
-            particle.lifetime_remaining = 100;
-            particle.state_ai_advance = pt.state_ai_advance;
-            particle.animation_state = pt.start_state_ai;
-            particle.translucency = pt.translucency;
-            particle
-        }
-
-        #[test]
-        fn even_frame_count_denom_is_state_ai_advance_plus_1() {
-            // image_frame_count=20 (even), StateAIAdvance=4 → denom = (0+1) + 4 = 5.
-            // After 4 ticks: counter=4, no advance. After 5: counter=5, animation_state=1.
-            let rules = pt_rules("StateAIAdvance=4\nEndStateAI=99");
-            let pt = rules.particle_type(ParticleTypeId(0));
-            let mut p = fake_particle(pt);
-            for _ in 0..4 {
-                advance_state(&mut p, pt, 20);
-            }
-            assert_eq!(p.animation_state, 0, "no advance before denom");
-            advance_state(&mut p, pt, 20);
-            assert_eq!(p.animation_state, 1, "advance on tick 5");
-        }
-
-        #[test]
-        fn odd_frame_count_denom_is_state_ai_advance_plus_2() {
-            // image_frame_count=21 (odd), StateAIAdvance=4 → denom = (1+1) + 4 = 6.
-            let rules = pt_rules("StateAIAdvance=4\nEndStateAI=99");
-            let pt = rules.particle_type(ParticleTypeId(0));
-            let mut p = fake_particle(pt);
-            for _ in 0..5 {
-                advance_state(&mut p, pt, 21);
-            }
-            assert_eq!(p.animation_state, 0);
-            advance_state(&mut p, pt, 21);
-            assert_eq!(p.animation_state, 1);
-        }
-
-        #[test]
-        fn end_state_with_delete_on_state_limit_marks_for_deletion() {
-            let rules = pt_rules("StateAIAdvance=0\nEndStateAI=2\nDeleteOnStateLimit=yes");
-            let pt = rules.particle_type(ParticleTypeId(0));
-            let mut p = fake_particle(pt);
-            // denom = (0+1)+0 = 1 → advance every tick.
-            advance_state(&mut p, pt, 4); // state 0→1
-            assert!(!p.marked_for_deletion);
-            advance_state(&mut p, pt, 4); // state 1→2 (==EndStateAI)
-            assert!(p.marked_for_deletion);
-        }
-
-        #[test]
-        fn end_state_without_delete_resets_to_zero() {
-            let rules = pt_rules("StateAIAdvance=0\nEndStateAI=2");
-            let pt = rules.particle_type(ParticleTypeId(0));
-            let mut p = fake_particle(pt);
-            advance_state(&mut p, pt, 4); // 0→1
-            advance_state(&mut p, pt, 4); // 1→2 → reset to 0
-            assert_eq!(p.animation_state, 0);
-            assert!(!p.marked_for_deletion);
-        }
-
-        #[test]
-        fn translucent_50_state_writes_0x19() {
-            let rules = pt_rules("StateAIAdvance=0\nEndStateAI=99\nTranslucent50State=3");
-            let pt = rules.particle_type(ParticleTypeId(0));
-            let mut p = fake_particle(pt);
-            for _ in 0..3 {
-                advance_state(&mut p, pt, 4);
-            }
-            assert_eq!(p.translucency, 0x19, "Translucent50State sets 0x19");
-        }
-
-        #[test]
-        fn translucent_25_state_writes_0x32() {
-            let rules = pt_rules("StateAIAdvance=0\nEndStateAI=99\nTranslucent25State=2");
-            let pt = rules.particle_type(ParticleTypeId(0));
-            let mut p = fake_particle(pt);
-            for _ in 0..2 {
-                advance_state(&mut p, pt, 4);
-            }
-            assert_eq!(p.translucency, 0x32);
-        }
-
-        #[test]
-        fn translucent_state_0xff_means_never() {
-            // Both Translucent25State and Translucent50State default to 0xFF.
-            let rules = pt_rules("StateAIAdvance=0\nEndStateAI=99");
-            let pt = rules.particle_type(ParticleTypeId(0));
-            let mut p = fake_particle(pt);
-            for _ in 0..50 {
-                advance_state(&mut p, pt, 4);
-            }
-            // Translucency should still be the spawn-time value.
-            assert_eq!(p.translucency, pt.translucency);
-        }
-
-        #[test]
-        fn frame_count_zero_uses_even_denominator() {
-            // image_frame_count=0 → parity_bit = 0 → denom = (0+1)+0 = 1.
-            let rules = pt_rules("StateAIAdvance=0\nEndStateAI=99");
-            let pt = rules.particle_type(ParticleTypeId(0));
-            let mut p = fake_particle(pt);
-            advance_state(&mut p, pt, 0);
-            assert_eq!(p.animation_state, 1, "denom=1 advances every tick");
-        }
-
-        #[test]
-        fn counter_wraps_without_breaking_modulo() {
-            // denom=5; let counter overflow.
-            let rules = pt_rules("StateAIAdvance=4\nEndStateAI=99");
-            let pt = rules.particle_type(ParticleTypeId(0));
-            let mut p = fake_particle(pt);
-            for _ in 0..260 {
-                advance_state(&mut p, pt, 20);
-            }
-            // 260 ticks / denom 5 = 52 advances expected. EndStateAI=99, no reset.
-            assert_eq!(p.animation_state, 52);
-        }
-    }
-
-    /// One BigGreySmokeSys-shaped system through the production system tick:
-    /// it spawns particles and their state AI advances.
-    #[test]
-    fn smoke_animation_state_advances_over_ticks() {
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[Particles]\n1=LargeGreySmoke\n\
-             [LargeGreySmoke]\nBehavesLike=Smoke\nImage=LGRYSMK1\nMaxEC=80\n\
-             Translucency=50\nEndStateAI=20\nStateAIAdvance=4\nDeleteOnStateLimit=yes\n\
-             [ParticleSystems]\n1=BigGreySmokeSys\n\
-             [BigGreySmokeSys]\nBehavesLike=Smoke\nHoldsWhat=LargeGreySmoke\nSpawns=yes\n\
-             SpawnFrames=10\nParticleCap=15\n",
-        ))
-        .expect("rules parse");
-        let mut sim = crate::sim::world::Simulation::new();
-        sim.spawn_particle_system(
-            ParticleSystemTypeId(0),
-            IVec3::new(1024, 1024, 0),
-            None,
-            None,
-            IVec3::ZERO,
-            None,
-            &rules,
-        )
-        .expect("spawn");
-
-        // SpawnFrames=10 puts the first particle at tick 10. Without a retail
-        // asset binder the missing-SHP fallback yields denom = (0+1) + 4 = 5;
-        // rules/asset binding and the odd stock LGRYSMK1 count are covered by
-        // the library boundary tests.
-        for _ in 0..30 {
-            tick_particle_systems(&mut sim, &rules);
-            sim.session.tick += 1;
-        }
-
-        // The tick removes, advances and reinserts each system, so read the
-        // single survivor from the store.
-        let (_, system) = sim.particle_systems().iter().next().expect("system alive");
-        assert!(
-            !system.particles.is_empty(),
-            "should have spawned particles"
-        );
-        assert!(
-            system.particles[0].animation_state > 0,
-            "animation_state should advance"
         );
     }
 }

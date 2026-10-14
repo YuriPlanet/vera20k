@@ -49,6 +49,375 @@ fn world(seed: u64) -> (Simulation, RuleSet, InternedId) {
 }
 
 /// Use physical stock Battle rules through the scenario reader, including its
+/// mode/map passes, and the three original-byte controls documented in
+/// tools/sidebar_oracle/factory_loss.md. The full bound runtime must preserve
+/// Factory-before-House cancellation, wallet/statistics and held-object cleanup.
+/// Healthy preplaced buildings are synthetic priors from `spawn_structure`,
+/// with retail health/foundations applied. Removal reaches real UnInit/first
+/// Limbo and the runtime; building admission/construction and map loading are
+/// outside this fixture.
+#[test]
+fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/sidebar_oracle/factory_loss.json",
+    ))
+    .expect("original factory-loss controls");
+    for row in native["controls"].as_array().unwrap() {
+        let loss = row["loss"].as_str().unwrap();
+        let wallet = row["wallet"].as_i64().unwrap() as i32;
+        let lost_building = match loss {
+            "GATECH" => 4,
+            "GAWEAP" => 1,
+            other => panic!("unknown native loss {other}"),
+        };
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = &retail.rules;
+        assert_eq!(
+            rules.object("MGTK").unwrap().prerequisite,
+            ["GAWEAP", "GATECH"].map(|name| crate::rules::prerequisite::Prerequisite::Building(
+                rules.building_ids.iter().position(|id| id == name).unwrap() as i32,
+            ))
+        );
+        assert!(rules.object("GATECH").unwrap().factory.is_none());
+        let mut sim = Simulation::with_seed(0xfac7_1307);
+        sim.install_resolved_terrain_for_new_map(
+            crate::map::resolved_terrain::test_flat_ground_grid(64),
+        );
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        sim.session.game_mode_nonzero = true;
+        sim.set_input_delay_ticks(0);
+        let owner = sim.interner.intern("Americans");
+        sim.session.current_house = Some(owner);
+        sim.houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
+        );
+        for (index, name) in ["GAWEAP", "GAPILE", "GACNST", "GATECH", "GAPOWR", "GAPOWR"]
+            .into_iter()
+            .enumerate()
+        {
+            let id = index as u64 + 1;
+            spawn_structure(
+                &mut sim,
+                rules,
+                id,
+                "Americans",
+                name,
+                10 + index as u16 * 5,
+                10,
+            );
+            sim.substrate.entities.get_mut(id).unwrap().health.current =
+                rules.object(name).unwrap().strength;
+            sim.remove_entity_occupancy(id);
+            super::tests::stamp_type_foundation(&mut sim, rules, id);
+            sim.add_entity_occupancy(id);
+        }
+        assert!(enqueue_by_type(
+            &mut sim,
+            rules,
+            "Americans",
+            "MGTK",
+            crate::sim::world::FrameEffects::default()
+        ));
+        let held = held_id(&sim, owner, ProductionCategory::Vehicle);
+        for _ in 0..1000 {
+            sim.advance_tick(&[], Some(rules), None, None, 67);
+            if sim
+                .production
+                .factories
+                .view(owner, ProductionCategory::Vehicle)
+                .unwrap()
+                .progress
+                >= 1
+            {
+                break;
+            }
+        }
+        let vehicle = sim
+            .production
+            .factories
+            .view(owner, ProductionCategory::Vehicle)
+            .unwrap();
+        assert_eq!(
+            u64::from(vehicle.progress),
+            row["before"]["factories"]["MGTK"]["stage"]
+                .as_u64()
+                .unwrap()
+        );
+        let balance = sim
+            .production
+            .factories
+            .test_factory_mut(owner, ProductionCategory::Vehicle)
+            .unwrap()
+            .balance;
+        assert_eq!(
+            i64::from(balance),
+            row["before"]["factories"]["MGTK"]["balance"]
+                .as_i64()
+                .unwrap()
+        );
+        assert!(enqueue_by_type(
+            &mut sim,
+            rules,
+            "Americans",
+            "E1",
+            crate::sim::world::FrameEffects::default()
+        ));
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .economy
+            .set_credits_for_test(wallet);
+        assert_eq!(
+            i64::from(sim.houses[&owner].economy.spent_credits()),
+            row["before"]["spent"].as_i64().unwrap()
+        );
+        assert_eq!(
+            sim.houses[&owner].tech_recheck_pending(),
+            row["before"]["dirty"].as_bool().unwrap()
+        );
+        let frame = sim.session.binary_frame as i32;
+        for category in [ProductionCategory::Vehicle, ProductionCategory::Infantry] {
+            sim.production
+                .factories
+                .test_factory_mut(owner, category)
+                .unwrap()
+                .step_timer
+                .start(frame, 0);
+        }
+        // Native BuildingLimbo445D99 sets House+1FC for either loss, but
+        // only a Factory= building reaches UpdateFactoryQueue445E14. The
+        // prerequisite-only loss refunds at the local event tail, after all
+        // factories tried to charge (Logic55B66A -> House4F92E2 -> 647260).
+        sim.uninit_with_rules(lost_building, rules);
+        assert_eq!(
+            sim.houses[&owner].tech_recheck_pending(),
+            row["after_removal"]["dirty"].as_bool().unwrap()
+        );
+        let mut resources = crate::sim::runtime::SimResources::empty();
+        resources.rules = retail.rules;
+        let mut runtime = crate::sim::runtime::SimRuntime {
+            simulation: sim,
+            resources,
+        };
+        let mut output = runtime
+            .advance_frame(
+                &[],
+                67,
+                crate::sim::world::TickLane::Ordinary,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .expect("bound production loss frame");
+        let admitted = output.take_admitted_commands();
+        let event_kinds: Vec<_> = admitted
+            .iter()
+            .map(|command| {
+                assert_eq!(command.owner, owner);
+                assert_eq!(command.execute_tick, output.tick.tick);
+                match command.payload {
+                    crate::sim::command::Command::CancelProductionByType { type_id, all } => {
+                        assert_eq!(runtime.simulation.interner.resolve(type_id), "MGTK");
+                        if all { 0x2E } else { 0x10 }
+                    }
+                    ref other => panic!("unexpected loss event {other:?}"),
+                }
+            })
+            .collect();
+        assert_eq!(
+            event_kinds,
+            row["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap())
+                .collect::<Vec<_>>()
+        );
+        let crate::sim::runtime::SimRuntime {
+            simulation: mut sim,
+            resources: _,
+        } = runtime;
+        assert_gone(&sim, held, &[]);
+        assert!(
+            sim.production
+                .factories
+                .view(owner, ProductionCategory::Vehicle)
+                .is_none(),
+            "native cancellation releases the empty factory and held Techno"
+        );
+        let expected = &row["after_events"];
+        assert!(expected["factories"]["MGTK"].is_null());
+        let infantry = sim
+            .production
+            .factories
+            .view(owner, ProductionCategory::Infantry)
+            .unwrap();
+        assert_eq!(
+            u64::from(infantry.progress),
+            expected["factories"]["E1"]["stage"].as_u64().unwrap(),
+            "{loss}/wallet{wallet}: a prerequisite refund cannot fund an earlier factory visit"
+        );
+        let balance = sim
+            .production
+            .factories
+            .test_factory_mut(owner, ProductionCategory::Infantry)
+            .unwrap()
+            .balance;
+        assert_eq!(
+            i64::from(balance),
+            expected["factories"]["E1"]["balance"].as_i64().unwrap()
+        );
+        assert_eq!(
+            i64::from(sim.houses[&owner].economy.credits()),
+            expected["credits"].as_i64().unwrap()
+        );
+        assert_eq!(
+            i64::from(sim.houses[&owner].economy.spent_credits()),
+            expected["spent"].as_i64().unwrap()
+        );
+        assert_eq!(
+            sim.houses[&owner].tech_recheck_pending(),
+            expected["dirty"].as_bool().unwrap()
+        );
+    }
+}
+
+#[test]
+fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
+    use crate::sim::runtime::{SimResources, SimRuntime};
+    use crate::sim::snapshot::GameSnapshot;
+    use crate::sim::world::{FrameEffects, TickLane};
+
+    let (mut sim, rules, owner) = world(0xfac7_1308);
+    for name in ["SMIN", "SMIN", "MTNK"] {
+        assert!(enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            name,
+            FrameEffects::default()
+        ));
+    }
+    let parent = held_id(&sim, owner, ProductionCategory::Vehicle);
+    let child_ids = children(&sim, parent);
+    for _ in 0..40 {
+        sim.advance_tick(&[], Some(&rules), None, None, 67);
+    }
+    assert!(!sim.houses[&owner].tech_recheck_pending());
+    sim.uninit_with_rules(4, &rules);
+    assert!(sim.houses[&owner].tech_recheck_pending());
+    // Full native Scenario load reseeds its saved stream to zero. Isolate the
+    // recheck roundtrip from that intentional transition, and retain the live
+    // process cursors through the same in-scenario load seam as the app.
+    sim.scenario_rng = SimRng::new(0);
+    let bytes = GameSnapshot::save(&sim, 0, rules.simulation_config_hash(), "factory-loss", 0);
+    let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
+    restored
+        .restore_after_snapshot_load()
+        .expect("restore held-object references");
+    restored.resolve_type_handles(&rules);
+    assert!(
+        restored.houses[&owner].tech_recheck_pending(),
+        "a saved loss cannot consume the pending recheck"
+    );
+    assert_eq!(restored.state_hash(), sim.state_hash(), "saved loss state");
+
+    let header = ReplayHeader {
+        version: 1,
+        tick_hz: 15,
+        seed: sim.session.seed,
+        pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
+        map_name: "factory-loss".into(),
+        rules_hash: rules.simulation_config_hash(),
+    };
+    let mut resources = SimResources::empty();
+    resources.rules = rules;
+    let mut live = SimRuntime {
+        simulation: sim,
+        resources,
+    };
+    let mut replay_resources = SimResources::empty();
+    replay_resources.rules = manager_rules();
+    let mut replay = SimRuntime {
+        simulation: restored,
+        resources: replay_resources,
+    };
+    let type_id = live.simulation.interner.get("SMIN").unwrap();
+    let input = CommandEnvelope::new(
+        owner,
+        live.simulation.session.tick + 1,
+        Command::CancelProductionByType {
+            type_id,
+            all: false,
+        },
+    );
+    let mut output = live
+        .advance_frame(
+            &[input.clone()],
+            67,
+            TickLane::Ordinary,
+            FrameEffects::default(),
+        )
+        .expect("loss and player cancel frame");
+    let admitted_commands = output.take_admitted_commands();
+    assert_eq!(
+        admitted_commands,
+        [
+            input.clone(),
+            input,
+            CommandEnvelope::new(
+                owner,
+                output.tick.tick,
+                Command::CancelProductionByType { type_id, all: true }
+            )
+        ],
+        "the player's identical ABANDON and the strip's ABANDON both reach the event tail"
+    );
+    assert_eq!(output.tick.executed_commands, 3);
+    assert_gone(&live.simulation, parent, &child_ids);
+    assert!(!live.simulation.houses[&owner].tech_recheck_pending());
+    let head = held_id(&live.simulation, owner, ProductionCategory::Vehicle);
+    assert_eq!(
+        live.simulation.interner.resolve(
+            live.simulation
+                .substrate
+                .entities
+                .get(head)
+                .unwrap()
+                .type_ref()
+        ),
+        "MTNK"
+    );
+    assert!(
+        live.simulation
+            .production
+            .factories
+            .view(owner, ProductionCategory::Vehicle)
+            .unwrap()
+            .queue
+            .is_empty()
+    );
+    let mut log = ReplayLog::new(header);
+    log.record_tick(output.tick.tick, admitted_commands, output.tick.state_hash);
+    let hashes =
+        ReplayRunner::run_runtime(&mut replay, &log, 67).expect("recorded production replay");
+    assert_eq!(hashes, [live.simulation.state_hash()]);
+    assert_gone(&replay.simulation, parent, &child_ids);
+    let mut next = live
+        .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+        .expect("post-loss frame");
+    assert!(
+        next.take_admitted_commands().is_empty(),
+        "the consumed dirty flag emits no repeated cancellation"
+    );
+}
+
+/// Use physical stock Battle rules through the scenario reader, including its
 /// mode/map passes. This is a production regression, not a native timing golden.
 #[test]
 fn retail_superweapon_construction_survives_revalidation() {
@@ -488,7 +857,7 @@ fn a_produced_slave_miner_hunts_instead_of_taking_the_rally_point() {
         let entity = sim.substrate.entities.get(produced).unwrap();
         assert!(!entity.lifecycle.in_limbo, "{unit_type} delivered");
         assert_eq!(
-            entity.movement_target.is_some(),
+            crate::sim::movement::motion_query::is_moving(&entity) == Some(true),
             !hunts,
             "{unit_type}: the rally move"
         );
@@ -707,8 +1076,7 @@ fn prerequisite_revalidation_disposes_manager_and_promoted_build_steps_a_rate_la
     let mut expected = sim.scenario_rng.clone();
     // The producing factory remains; only the active type loses its
     // prerequisite, which its house stops counting on the map.
-    sim.house_removed_from_game(4, None, crate::sim::world::FrameEffects::empty());
-    sim.substrate.entities.remove(4);
+    sim.uninit_with_rules(4, &rules);
     let promotion_frame = sim.session.binary_frame;
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     assert_gone(&sim, parent, &child_ids);

@@ -736,6 +736,7 @@ mod tests {
             &entity,
             &vision::VisionConfig::default(),
             None,
+            None,
             false,
             &interner,
         );
@@ -750,6 +751,7 @@ mod tests {
             None,
             &Default::default(),
             &vision::VisionConfig::default(),
+            None,
             None,
             &interner,
             None,
@@ -809,6 +811,7 @@ mod tests {
             &mut fog,
             &entity,
             &vision::VisionConfig::default(),
+            None,
             None,
             false,
             &interner,

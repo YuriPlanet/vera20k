@@ -148,8 +148,7 @@ fn end_piggyback(entity: &mut GameEntity) -> PiggybackEnd {
         .as_mut()
         .is_some_and(|locomotor| locomotor.end_piggyback());
     if restored {
-        // END transfers the controller without moving Object+9C. Restored
-        // altitude is controller state, not an addition to this exact XYZ.
+        // END transfers the controller without moving Object+9C.
         entity.position.exact_z_leptons = Some(physical.z);
     }
     PiggybackEnd {
@@ -225,12 +224,14 @@ impl crate::sim::world::Simulation {
     /// remains unported: selected retail MCV and
     /// Slave Miner Deploy use Drive; modded other-class Deploy failure can
     /// miss that class's head claim before its ordinary Foot Mark(DOWN).
+    /// Hover5171C0 delegates to the shared Head_To getter514D10, which
+    /// substitutes Location for a null head and has no power/limbo gate.
     pub(crate) fn locomotor_mark_all_occupation_bits(&mut self, id: u64, put: bool) {
-        let kind = self.substrate.entities.get(id).and_then(|entity| {
-            (!entity.lifecycle.in_limbo)
-                .then(|| entity.locomotor.as_ref().map(|loco| loco.kind))
-                .flatten()
-        });
+        let kind = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| entity.locomotor.as_ref().map(|loco| loco.active_kind()));
         match kind {
             Some(crate::rules::locomotor_type::LocomotorKind::Drive) => {
                 self.track_apply_occupation(id, super::track_process::TrackFamily::Drive, put);
@@ -241,6 +242,10 @@ impl crate::sim::world::Simulation {
             Some(crate::rules::locomotor_type::LocomotorKind::Hover) => {
                 self.hover_mark_all_occupation_bits(id, put);
             }
+            Some(
+                crate::rules::locomotor_type::LocomotorKind::Fly
+                | crate::rules::locomotor_type::LocomotorKind::Rocket,
+            ) => {}
             _ if !put => {
                 self.release_walk_occupation_before_foot_limbo(id);
                 self.release_teleport_occupation_before_foot_limbo(id);

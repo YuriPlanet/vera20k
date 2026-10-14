@@ -100,8 +100,6 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     entity.on_bridge = flag("on_bridge");
     entity.health.current = integer("health", 100);
     let loco = entity.locomotor.as_mut().unwrap();
-    // A deliberately stale cache must not override the physical coordinate.
-    loco.altitude = SimFixed::from_num(123);
     if flag("landing") {
         loco.begin_fly_landing();
     }
@@ -151,8 +149,11 @@ fn healthy_native_height_vectors_reach_production_coordinates() {
             row["input"]
         );
         assert_eq!(
-            entity.locomotor.as_ref().unwrap().altitude,
-            SimFixed::saturating_from_num(expected_height),
+            crate::sim::movement::air_movement::current_fly_height(
+                entity,
+                sim.resolved_terrain.as_ref()
+            ),
+            expected_height,
             "{}",
             row["input"]
         );
@@ -403,14 +404,12 @@ fn assert_native_move_takeoff(sim: &mut Simulation, rules: &RuleSet, row: &serde
         "{row}"
     );
     let before_rng = sim.scenario_rng.logical_state();
-    assert!(sim.issue_air_cell_destination(
-        1,
-        (12, 10),
-        SimFixed::from_num(10),
-        Some(rules),
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
+    let cells = sim
+        .resolved_terrain
+        .as_ref()
+        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+    let coordinate = crate::sim::movement::target_cell_coord(12, 10, cells.as_ref());
+    assert!(sim.move_air_coordinate(1, coordinate, None, Some(rules)));
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!(
         entity.locomotor.as_ref().unwrap().fly_target_height(),
@@ -604,8 +603,6 @@ fn fly_destination_orders_match_original_retained_xyz_and_refusals() {
             "{input}"
         );
         assert_eq!(sim.scenario_rng.logical_state(), before_rng);
-        // MoveTo writes the Fly alone; no order adapter follows it.
-        assert!(entity.movement_target.is_none());
         if !accepted {
             assert_eq!(sim.shared_cell_dummy.snapshot().coord, (-7, -8), "{input}");
         }
@@ -625,14 +622,12 @@ fn fly_cell_orders_resolve_ground_before_retaining_the_coordinate() {
         .find(|r| r["input"]["name"] == "ground_3_4")
         .unwrap();
     let (mut sim, rules) = destination_fixture(&row);
-    assert!(sim.issue_air_cell_destination(
-        1,
-        (64, 64),
-        SimFixed::from_num(10),
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
+    let cells = sim
+        .resolved_terrain
+        .as_ref()
+        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+    let coordinate = crate::sim::movement::target_cell_coord(64, 64, cells.as_ref());
+    assert!(sim.move_air_coordinate(1, coordinate, None, Some(&rules)));
     let destination = sim
         .substrate
         .entities
@@ -680,7 +675,6 @@ fn fly_retained_destination_drives_subcell_arrival_after_save_and_restore() {
             crate::sim::world::FrameEffects::default(),
         );
         let entity = instance.substrate.entities.get(1).unwrap();
-        assert!(entity.movement_target.is_none());
         // Arrival must not invent a native destination clear.
         assert_eq!(
             entity
@@ -1335,7 +1329,7 @@ fn fly_paid_step_matches_native_math_and_production_type_speed() {
         entity.position.sub_x = SimFixed::from_num(current[0] % 256);
         entity.position.sub_y = SimFixed::from_num(current[1] % 256);
         entity.body_facing = primary;
-        entity.set_veterancy_rank(2); // Fly's getter bypasses Foot's FASTER path
+        entity.veterancy.set_rank_for_test(2); // Fly's getter bypasses Foot's FASTER path
         sim.add_entity_occupancy(1);
         assert!(issue_coordinate(
             &mut sim,

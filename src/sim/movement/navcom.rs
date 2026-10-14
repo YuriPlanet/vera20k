@@ -1,7 +1,7 @@
 //! FootClass-style navigation destination helpers.
 //!
-//! These helpers model the owner `NavCom` lifecycle separately from
-//! `MovementTarget`, which remains the active path execution adapter.
+//! These helpers model the owner `NavCom` lifecycle (Foot+0x5A4) and the
+//! locomotor Move_To and Stop_Moving calls the Foot setter makes.
 
 use super::track_process::TrackFamily;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -341,14 +341,14 @@ pub(crate) fn set_destination_internal_coord(
 pub(super) fn publish_nav_com(entity: &mut GameEntity, target: NavTargetRef) {
     entity.navigation.nav_com_aux = None;
     entity.navigation.nav_com = Some(target);
-    entity.navigation.pending_arrival_clear = false;
+    entity.navigation.pending_destination_setter = false;
 }
 
 /// Foot4D94C7/4D9510 NULL reference publication, before locomotor Stop.
 pub(super) fn publish_null_nav_com(entity: &mut GameEntity) {
     entity.navigation.nav_com_aux = None;
     entity.navigation.nav_com = None;
-    entity.navigation.pending_arrival_clear = false;
+    entity.navigation.pending_destination_setter = false;
 }
 
 /// FootClass::Stop_Moving-equivalent owner clear (`0x004DF0D0`): zeroes only
@@ -381,23 +381,17 @@ fn drive_set_destination(
 
 /// ILocomotion +0x44 Move_To of the active Drive/Ship instance without the
 /// Foot setter (Drive 0x4AFD40 / Ship 0x69F450): the outer Process's NavCom
-/// reissue (0x4B09A3 / 0x6A006C) calls it directly. Returns false when the
-/// instance refused (warp) or is not Drive/Ship.
+/// reissue (0x4B09A3 / 0x6A006C) calls it directly. A warping instance
+/// refuses; another locomotor has no such Move_To here.
 pub(super) fn track_move_to(
     entity: &mut GameEntity,
     coord: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
-) -> bool {
+) {
     if is_drive_locomotor(entity) {
-        drive_set_destination(entity, coord, terrain)
-    } else if is_ship_locomotor(entity) {
-        if super::locomotor_owner::owner_is_warping(entity) {
-            return false;
-        }
+        drive_set_destination(entity, coord, terrain);
+    } else if is_ship_locomotor(entity) && !super::locomotor_owner::owner_is_warping(entity) {
         ship_set_destination(entity, coord, terrain);
-        true
-    } else {
-        false
     }
 }
 
@@ -434,8 +428,8 @@ fn drive_stop_moving(entity: &mut GameEntity) {
     // OPEN Process-host timing: native Stop4AFE00 clamps only class target
     // and clears destination. The owner zero belongs to the admitted Process
     // rest tail4B0828, which also tests queue emptiness. Several ordinary
-    // arrival returns skip that tail. Preserve the existing adapter timing
-    // here until that continuation is wired; this is not Stop parity.
+    // arrival returns skip that tail. Zero it here, as before, until that
+    // tail is ported; this is not Stop parity.
     if loco.track_head(TrackFamily::Drive).is_none()
         && entity.foot_speed.applied_fraction() > SIM_ZERO
     {
@@ -542,8 +536,7 @@ impl crate::sim::world::Simulation {
     ///   (`0x004D96BC`), so a re-target's NavCom does not survive.
     /// - The timer tail (`0x004D96C2..0x004D9707`) follows either way.
     ///
-    /// The caller's class prelude runs first; the scheduling adapter is the
-    /// caller's too.
+    /// The caller's class prelude runs first.
     pub(crate) fn foot_null_destination(
         &mut self,
         id: u64,

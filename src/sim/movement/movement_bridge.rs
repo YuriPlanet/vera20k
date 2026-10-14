@@ -188,16 +188,23 @@ pub(super) fn resolve_cell_transition_bridge_state(
     // and therefore no value that can be absent, so this must not consult the A*
     // layer or any cell-side walkability permission — both are VERA inventions
     // that silently substituted ground level for the deck.
-    let z = (dst_cell.signed_level()
-        + if on_bridge_after {
-            crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16
-        } else {
-            0
-        }) as u8;
-    position.z = z;
+    position.z = stored_level(dst_cell.ground_level, on_bridge_after);
     // Raw Object Z has a separate setter cadence. Paid Drive/Ship points and
     // Walk commits refresh it; a residual crossing retains it (0x4B253F).
     update
+}
+
+/// The coarse level VERA stores in [`Position::z`] for an object standing in
+/// a cell of terrain `level` (the cell's raw signed byte): that level, plus
+/// the bridge deck when OnBridge — `ObjectClass::SetHeight @ 0x005F5FA0`'s
+/// Z at height 0, in whole levels. Every mover that changes cell keeps it,
+/// since sight, radar, selection depth and crew placement read it.
+pub(crate) fn stored_level(level: u8, on_bridge: bool) -> u8 {
+    level.wrapping_add(if on_bridge {
+        crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as u8
+    } else {
+        0
+    })
 }
 
 /// Diagnostic wrapper for a single boundary crossing. It computes the same
@@ -830,7 +837,7 @@ mod tests {
 // 0x00AC13C8; its two derived globals, 2x for the flight threshold and 4x
 // for the 416-lepton deck offset, are already pinned in `util::lepton`.
 // VERA instead passes the mover's raw layer as `start_layer` and the goal
-// cell's own bridge flag as `goal_layer` (`movement_path::goal_zone_layer`,
+// cell's own bridge flag as `goal_layer` (`zone_search::admit_zone_search`,
 // `zone_map::ZoneGrid::can_reach`).
 //
 // Trigger: a reachability query by a ground unit whose destination ground
@@ -839,10 +846,10 @@ mod tests {
 // yet on a bridge to a cell on the deck, or a unit on the deck to a cell
 // up on the bank.
 //
-// Effect: the zone id is looked up on the wrong layer, so a move order
-// across a bridge can be judged unreachable and substituted with a nearby
-// cell, or judged reachable and pathed on the wrong layer. It moves where
-// the unit ends up, not whether it renders on the deck.
+// Effect: the zone id is looked up on the wrong layer, so a move across a
+// bridge can be judged unreachable, or judged reachable and pathed on the
+// wrong layer. It moves where the unit ends up, not whether it renders on
+// the deck.
 //
 // Frequency: `FootClass::Locomotion_AI` is a per-tick caller, so this is
 // per tick per moving ground unit whose destination sits four or more
@@ -851,10 +858,10 @@ mod tests {
 // every cell crossing; the real one is lower than that but not by much,
 // and it lands on a different system.
 //
-// Blocker: the layer arguments are threaded through every move-order
-// caller as `MovementLayer`, and this needs the mover's location and its
-// destination coordinate at the same point, in leptons, to compute two
-// `GetGroundHeight`s. That is a signature change across the order path,
-// not a change here.
+// Blocker: the one production search (`FootPathRequest::search`) passes
+// the mover's current layer as `start_layer`, and this needs the mover's
+// location and its destination coordinate at the same point, in leptons,
+// to compute two `GetGroundHeight`s. That is a signature change along the
+// Foot search, not a change here.
 // Residual (formerly an ignored placeholder test): gamemd 0x005F6A70 adjusts the reachability on-bridge layer by destination ground height; VERA passes the raw mover layer.
 // Unimplemented: destination-height on-bridge layer for Can_Reach_Zone 0x0056D100.

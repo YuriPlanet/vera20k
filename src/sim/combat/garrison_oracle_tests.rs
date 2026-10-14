@@ -65,7 +65,7 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
                 10,
                 EntityCategory::Infantry,
             );
-            occupant.set_veterancy_rank(rank);
+            occupant.veterancy.set_rank_for_test(rank);
             occupant.passenger_role = PassengerRole::Inside {
                 transport_id: 1,
                 open_topped: false,
@@ -226,7 +226,9 @@ pub(super) fn for_each_native_case(
             EntityCategory::Structure,
         );
         building.foundation.clone_from(&object.foundation);
-        building.set_veterancy_rank((input["building_veterancy"].as_f64().unwrap() * 100.0) as u16);
+        building
+            .veterancy
+            .set_rank_for_test((input["building_veterancy"].as_f64().unwrap() * 100.0) as u16);
         building.set_gunner_selection_for_test(
             input["current_weapon_number"].as_i64().unwrap() as i32,
             0,
@@ -243,7 +245,9 @@ pub(super) fn for_each_native_case(
                 10,
                 EntityCategory::Infantry,
             );
-            entity.set_veterancy_rank((occupant["veterancy"].as_f64().unwrap() * 100.0) as u16);
+            entity
+                .veterancy
+                .set_rank_for_test((occupant["veterancy"].as_f64().unwrap() * 100.0) as u16);
             cargo.add_occupant(id, 1);
             entities.insert(entity);
         }

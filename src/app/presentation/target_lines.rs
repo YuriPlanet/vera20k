@@ -568,7 +568,6 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
     use crate::sim::combat::AttackTarget;
-    use crate::sim::components::MovementTarget;
     use crate::sim::game_entity::GameEntity;
 
     #[test]
@@ -622,9 +621,6 @@ mod tests {
         sim.session.game_mode_nonzero = true;
         sim.session.current_house = Some(unit.owner());
         unit.navigation.nav_com = Some(NavTargetRef::cell(25, 25));
-        unit.movement_target = Some(MovementTarget {
-            ..Default::default()
-        });
         unit.attack_target = Some(AttackTarget::new(2));
         let mut target = GameEntity::test_default(2, "HTNK", "Soviet", 14, 10);
         target.owner = sim.interner.intern("Soviet");

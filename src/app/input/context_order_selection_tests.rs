@@ -73,7 +73,6 @@ fn prepared_factory_rallies_and_mobile_orders_keep_native_selection_order() {
             entity_id: 10,
             target_rx: 7,
             target_ry: 8,
-            queue: false,
         }),
     ];
     restore_selection_dispatch_order(&mut queued, &[30, 10, 20]);
@@ -110,7 +109,6 @@ fn aggregated_rally_batch_keeps_existing_dispatch_order() {
                 entity_id: 10,
                 target_rx: 7,
                 target_ry: 8,
-                queue: false,
             },
         ),
     ];

@@ -514,7 +514,7 @@ fn execute(
             //Original class EAX is register residue (e.g.100), not a Bool
             //contract. Compare the owned state/query/fullRNG below instead.
             let _ = sim
-                .set_infantry_destination(
+                .assign_infantry_destination(
                     id,
                     NavTargetRef::cell(rx, ry),
                     rules,
@@ -1049,7 +1049,6 @@ fn two_ordinary_cleg_moves_publish_class_destinations_before_process() {
                 entity_id: id,
                 target_rx,
                 target_ry: 10,
-                queue: false
             },
             Some(&rules),
             None,
@@ -1104,7 +1103,7 @@ fn a_deferred_restore_keeps_a_cleg_object_navcom() {
     let target = NavTargetRef::object(object);
     let cleg = sim.substrate.entities.get_mut(id).unwrap();
     cleg.navigation.nav_com = Some(target);
-    cleg.navigation.pending_arrival_clear = true;
+    cleg.navigation.pending_destination_setter = true;
     sim.complete_pending_order(
         id,
         Some(&rules),
@@ -1113,7 +1112,7 @@ fn a_deferred_restore_keeps_a_cleg_object_navcom() {
     );
     let cleg = sim.substrate.entities.get(id).unwrap();
     assert_eq!(cleg.navigation.nav_com, Some(target));
-    assert!(!cleg.navigation.pending_arrival_clear);
+    assert!(!cleg.navigation.pending_destination_setter);
     assert!(
         cleg.locomotor
             .as_ref()
@@ -1159,7 +1158,7 @@ fn overlay_destination_without_registered_inputs_is_atomic() {
             "Teleport Cell admission requires registered overlay inputs before mutation"
         );
         assert!(
-            sim.set_infantry_destination(
+            sim.assign_infantry_destination(
                 id,
                 target,
                 &rules,
@@ -1199,7 +1198,7 @@ fn teleport_admission_input_error_restores_physical_occupation() {
         .speed_costs = crate::rules::terrain_rules::SpeedCostProfile::default();
     let raw = bincode::serialize(&sim.substrate.raw_cell_occupation).unwrap();
     assert!(
-        !sim.set_infantry_destination(
+        !sim.assign_infantry_destination(
             id,
             NavTargetRef::cell(12, 10),
             &rules,
@@ -1318,22 +1317,23 @@ fn cleg_overlay_cell_requests_match_every_original_command_boundary() {
                 assert_rng(&sim, &boundary["rng_before"], &context);
                 assert_eq!(boundary["input"]["kind"], "set_destination");
                 if ordinary_command {
+                    // The event runs whatever the class answers: the setter
+                    // at 4C747C is void. Its refusal shows in the state and
+                    // 718080 below.
                     let (rx, ry) = pair(&boundary["input"]["cell"]);
-                    assert_eq!(
+                    assert!(
                         sim.apply_command_with_overlays(
                             "Americans",
                             &Command::Move {
                                 entity_id: id,
                                 target_rx: rx,
                                 target_ry: ry,
-                                queue: false
                             },
                             Some(&rules),
                             Some(&registry),
                             crate::sim::world::FrameEffects::default(),
                         ),
-                        boundary["query_al"].as_u64().unwrap() != 0,
-                        "{context}: request acceptance"
+                        "{context}: the Move event runs"
                     );
                 } else {
                     execute(&mut sim, id, &boundary["input"], &rules, Some(&registry));

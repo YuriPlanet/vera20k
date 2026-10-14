@@ -318,7 +318,7 @@ fn c4_order_from_a_distance_reaches_the_building_while_moving_or_idle() {
                 .unwrap();
             if moving {
                 assert!(
-                    sim.set_infantry_destination(
+                    sim.assign_infantry_destination(
                         seal,
                         NavTargetRef::cell(seal_at.0, seal_at.1 + 5),
                         &rules,
@@ -331,12 +331,9 @@ fn c4_order_from_a_distance_reaches_the_building_while_moving_or_idle() {
                     step_with_overlay_registry(&mut sim, &rules, &registry);
                 }
                 assert!(
-                    sim.substrate
-                        .entities
-                        .get(seal)
-                        .unwrap()
-                        .movement_target
-                        .is_some(),
+                    crate::sim::movement::motion_query::is_moving(
+                        sim.substrate.entities.get(seal).unwrap()
+                    ) == Some(true),
                     "the SEAL is mid-walk when the order lands"
                 );
             }

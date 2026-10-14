@@ -66,6 +66,11 @@ impl FlightAttitude {
         self.pitch > crate::util::fixed_math::SIM_ZERO
     }
 
+    /// `+0x2E8 == 0.0`, as Aircraft Unload tests it (`0x0041520D`).
+    pub(crate) fn is_level(&self) -> bool {
+        self.pitch == crate::util::fixed_math::SIM_ZERO
+    }
+
     /// Fly4CE2E5..4CE3BA. Caller owns IsDropship, health, speed and takeoff gates.
     pub(crate) fn approach(
         &mut self,

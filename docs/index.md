@@ -18,7 +18,7 @@ A short map of the code. If it disagrees with the code, the code is right. Each 
 - `app/` — window, input, loading and saving; wires sim, render, ui, audio and net together.
 - `ui/` — menus, dialogs, in-game screens and the sidebar.
 - `audio/` — sound effects and music.
-- `net/` — deterministic lockstep. There is no network transport yet.
+- `net/` — deterministic lockstep. There is no network transport yet; the plan is in [Networking.md](Networking.md).
 - `rules/` — the retail INI files and their layers.
 - `map/` — maps, theaters, terrain, triggers and the random map generator.
 - `assets/` — parsers for the original file formats (`.mix`, `.shp`, `.vxl`, `.pal`, Bink video and more).

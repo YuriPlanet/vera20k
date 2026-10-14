@@ -339,7 +339,7 @@ pub(super) fn resolve_receive_damage(
     let rank_armor = target_type
         .is_some_and(|object| {
             super::veterancy::has_weapon_ability(
-                super::veterancy::rank_from_u16(target.veterancy()),
+                target.veterancy.rank_kind(),
                 object,
                 crate::rules::object_type::Ability::Stronger,
             )

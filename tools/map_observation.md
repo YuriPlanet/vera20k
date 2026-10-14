@@ -940,7 +940,7 @@ Release captures of `6dab3753` drew neither body, only its health pips. With the
 turret split following the drawn model both are drawn: the simulation fingerprints
 are equal and the frames differ only inside x287..349/y246..298 (miner) and
 x295..335/y264..293 (Harrier). The same holds in flight (x296..339/y65..101): add
-`{"Move": {"entity_id": 1489, "target_rx": 44, "target_ry": 98, "queue": false}}`
+`{"Move": {"entity_id": 1489, "target_rx": 44, "target_ry": 98}}`
 at step5200 and stop at step5300 with the camera on (41,95). These observe
 production output; no gamemd frame was compared. Numeric handles are tied to
 each launch.
@@ -2042,7 +2042,7 @@ created by the AI MCV. Seal the final profile with those IDs and observed timing
     {"issue_after_step": 0, "owner": "Computer1",
      "payload": {"DeployMcv": {"entity_id": 120}}},
     {"issue_after_step": 40, "owner": "Computer1",
-     "payload": {"Move": {"entity_id": 121, "target_rx": 87, "target_ry": 53, "queue": false}}},
+     "payload": {"Move": {"entity_id": 121, "target_rx": 87, "target_ry": 53}}},
     {"issue_after_step": 200, "owner": "Computer2",
      "payload": {"Attack": {"attacker_id": 130, "target_id": 140}}}
   ],

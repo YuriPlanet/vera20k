@@ -205,7 +205,7 @@ pub(crate) fn fly_speed_facts(
                     || crate::sim::combat::combat_weapon::aircraft_strafes(
                         rules,
                         object,
-                        entity.veterancy(),
+                        entity.veterancy.rank(),
                     )
             });
     FlySpeedFacts {
@@ -248,16 +248,6 @@ pub(crate) fn fly_coordinate_admitted(entity: &crate::sim::game_entity::GameEnti
         && !super::locomotor_owner::owner_is_warping(entity)
 }
 
-/// Fly `+0x34`: the Fly holds a move request. MoveTo sets it; only a
-/// landing at its destination (`0x004CEF5F`) and Stop clear it.
-pub(crate) fn fly_moving(entity: &crate::sim::game_entity::GameEntity) -> bool {
-    entity
-        .locomotor
-        .as_ref()
-        .and_then(|locomotor| locomotor.fly_runtime())
-        .is_some_and(super::fly_height::FlyRuntime::moving)
-}
-
 /// `FlyLocomotionClass::Get_Status @ 0x004CFE50` (ILocomotion `+0x90`): 1
 /// while descending, 0 while ascending, else 2 moving (`Is_Moving`) or 3.
 /// `None` without a Fly locomotor.
@@ -293,13 +283,10 @@ pub struct AirMovementTickStats {
 
 /// `ObjectClass::GetHeight @ 0x005F5F40`, shared by every object vtable
 /// (`+0x1C8`): the Location's Z less the ground under it and, on a bridge, the
-/// deck. An exact coordinate is the Location's Z. An object without one keeps
-/// its height apart from its ground ([`object_world_z_leptons`]), so its
-/// height is that part ([`object_altitude_leptons`]): an Air-layer
-/// locomotor's or an active Hover's altitude.
+/// deck. An exact coordinate is the Location's Z. An object without one
+/// stands on its ground ([`object_world_z_leptons`]), so its height is 0.
 ///
 /// [`object_world_z_leptons`]: super::ground_pose::object_world_z_leptons
-/// [`object_altitude_leptons`]: super::ground_pose::object_altitude_leptons
 pub(crate) fn current_fly_height(
     entity: &crate::sim::game_entity::GameEntity,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -313,7 +300,7 @@ fn queried_flight_height(
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> i32 {
     let Some(z) = entity.position.exact_z_leptons else {
-        return super::ground_pose::object_altitude_leptons(entity);
+        return 0;
     };
     let ground = cells
         .and_then(|cells| {
@@ -491,39 +478,45 @@ pub(crate) fn update_fly_height(
         });
     entity.position.exact_z_leptons = Some(output.world_z);
     entity.on_bridge = output.on_bridge;
-    super::ground_pose::mirror_height(entity, output.height);
     output
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotor::AirMovePhase;
     use crate::util::fixed_math::SIM_HALF;
 
+    /// Fly `+0x34`: the Fly holds a move request. MoveTo sets it; only a
+    /// landing at its destination (`0x004CEF5F`) and Stop clear it.
+    pub(crate) fn fly_moving(entity: &GameEntity) -> bool {
+        entity
+            .locomotor
+            .as_ref()
+            .and_then(|locomotor| locomotor.fly_runtime())
+            .is_some_and(crate::sim::movement::fly_height::FlyRuntime::moving)
+    }
+
     #[test]
-    fn test_issue_air_move_command() {
+    fn fly_move_to_a_cell_retains_its_centre_and_ascends() {
         let mut sim = crate::sim::world::Simulation::with_seed(0);
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
         entity.locomotor = Some(make_fly_loco());
         sim.substrate.entities.insert(entity);
 
-        let ok = sim.issue_air_cell_destination(
+        let ok = sim.move_air_coordinate(
             1,
-            (20, 15),
-            SimFixed::from_num(10),
+            crate::sim::movement::target_cell_coord(20, 15, None),
             None,
             None,
-            crate::sim::world::FrameEffects::default(),
         );
         assert!(ok);
 
         // MoveTo retains the cell's centre as the Fly destination and marks
-        // it moving (`0x004CCE1C..0x004CCE6E`); no order adapter or route.
+        // it moving (`0x004CCE1C..0x004CCE6E`); no route.
         let e = sim.substrate.entities.get(1).expect("has entity");
-        assert!(e.movement_target.is_none());
         let fly = e.locomotor.as_ref().and_then(|l| l.fly_runtime()).unwrap();
         assert!(fly.moving());
         let destination = fly.destination();
@@ -535,13 +528,15 @@ mod tests {
 
         // Should trigger ascending.
         let loco = e.locomotor.as_ref().expect("has loco");
-        assert_eq!(loco.air_phase(), AirMovePhase::Ascending);
+        assert_eq!(
+            loco.air_phase(current_fly_height(e, sim.resolved_terrain.as_ref())),
+            AirMovePhase::Ascending
+        );
     }
 
     /// A vehicle Jumpjet's order takes its own `Move_To`: Foot's NavCom, then
-    /// the locomotor's destination at the ordered cell's floor, which the
-    /// movement adapter publishes as the goal. Its phase is its own state
-    /// field: `AirMovePhase` stays untouched.
+    /// the locomotor's destination at the ordered cell's floor. Its phase is
+    /// its own state field: `AirMovePhase` stays untouched.
     #[test]
     fn a_jumpjet_order_does_not_write_the_fly_phase() {
         // Unit orders now enter the class destination owner, whose type/speed
@@ -561,17 +556,21 @@ mod tests {
             .spawn_object("SHAD", "Americans", 10, 10, 0, &rules)
             .expect("Jumpjet Unit");
 
-        assert!(sim.issue_air_cell_destination(
+        sim.assign_destination_represented(
             id,
-            (20, 15),
-            SimFixed::from_num(10),
+            Some(crate::sim::components::NavTargetRef::cell(20, 15)),
             Some(&rules),
             None,
             crate::sim::world::FrameEffects::default(),
-        ));
+        )
+        .expect("the Unit setter takes the cell");
 
         let e = sim.substrate.entities.get(id).expect("has entity");
-        assert!(e.movement_target.is_some(), "the order itself is accepted");
+        assert_eq!(
+            crate::sim::movement::motion_query::is_moving(e),
+            Some(true),
+            "the order itself is accepted"
+        );
         assert_eq!(
             e.navigation.nav_com,
             Some(crate::sim::components::NavTargetRef::cell(20, 15))
@@ -591,25 +590,26 @@ mod tests {
             }
         );
         assert_eq!(
-            e.locomotor.as_ref().unwrap().air_phase(),
+            e.locomotor
+                .as_ref()
+                .unwrap()
+                .air_phase(current_fly_height(e, sim.resolved_terrain.as_ref())),
             AirMovePhase::Landed
         );
     }
 
     #[test]
-    fn test_issue_air_move_already_at_target() {
+    fn fly_move_to_its_own_cell_still_moves() {
         let mut sim = crate::sim::world::Simulation::with_seed(0);
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
         entity.locomotor = Some(make_fly_loco());
         sim.substrate.entities.insert(entity);
 
-        let ok = sim.issue_air_cell_destination(
+        let ok = sim.move_air_coordinate(
             1,
-            (10, 10),
-            SimFixed::from_num(10),
+            crate::sim::movement::target_cell_coord(10, 10, None),
             None,
             None,
-            crate::sim::world::FrameEffects::default(),
         );
         assert!(ok);
         // Native MoveTo accepts a nonnull destination even at the owner cell.

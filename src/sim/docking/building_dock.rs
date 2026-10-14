@@ -1036,11 +1036,13 @@ pub(crate) fn try_pending_entry(
             sim.session.binary_frame,
             &LiveReadyInputProvider { rules },
         );
-        sim.set_unit_destination(
+        // vt+0x480 of whichever Foot waits: an aircraft's pending entry is
+        // its own (`AircraftClass::Assign_Destination` sets it).
+        let _ = sim.assign_destination_represented(
             id,
-            crate::sim::components::NavTargetRef::Building { id: depot },
-            rules,
-            true,
+            Some(crate::sim::components::NavTargetRef::Building { id: depot }),
+            Some(rules),
+            None,
             frame_effects,
         );
         set_pending_entry(sim, id, None);
@@ -1119,16 +1121,7 @@ pub(crate) fn park_pending_entry(
         return false;
     };
     let cell = crate::sim::components::NavTargetRef::cell(x, y);
-    if sim
-        .substrate
-        .entities
-        .get(id)
-        .is_some_and(|actor| actor.category == crate::map::entities::EntityCategory::Aircraft)
-    {
-        sim.assign_aircraft_destination(id, Some(cell), rules, frame_effects);
-    } else {
-        sim.set_unit_destination(id, cell, rules, true, frame_effects);
-    }
+    let _ = sim.assign_destination_represented(id, Some(cell), Some(rules), None, frame_effects);
     let _ = sim.mission_queue_exact(
         id,
         MissionId::from_known(MissionType::Move),
@@ -1195,7 +1188,8 @@ fn idle_service_art(sim: &mut Simulation, rules: &RuleSet, depot: u64, clear_fir
     }
 }
 
-///44C397/44BE97: release through the Unit setter and Radio contact owners.
+///44C397/44BE97: release through the contact's class setter (vt+0x480) and
+/// the Radio contact owners.
 /// State1 clears ArchiveTarget unconditionally after a successful release;
 /// state2 clears it only in the AI archive arm. An unavailable exit holds the
 /// contact for a later dispatch. Foundation waiting #937 remains separate.
@@ -1249,7 +1243,13 @@ fn release_contact(
         sim.session.binary_frame,
         &LiveReadyInputProvider { rules },
     );
-    sim.set_unit_destination(unit, destination, rules, true, frame_effects);
+    let _ = sim.assign_destination_represented(
+        unit,
+        Some(destination),
+        Some(rules),
+        registry,
+        frame_effects,
+    );
     if (state1 || ai_archive.is_some())
         && let Some(contact) = sim.substrate.entities.get_mut(unit)
     {
@@ -1310,8 +1310,8 @@ pub(crate) fn mission_repair(
         // when neither service slot exists. Recreating them would reset their
         // stages and consume additional constructor RNG on every dispatch.
         if status != 1
-            || building.building_anim_slots[8].is_some()
-            || building.building_anim_slots[11].is_some()
+            || building.building_art.anim_slots()[8].is_some()
+            || building.building_art.anim_slots()[11].is_some()
         {
             idle_service_art(sim, rules, depot, status != 1);
         }
@@ -1319,7 +1319,7 @@ pub(crate) fn mission_repair(
         if status == 2 {
             building.mission.set_handler_state(1);
         }
-        if status == 0 || (status == 1 && building.building_anim_slots[18].is_none()) {
+        if status == 0 || (status == 1 && building.building_art.anim_slots()[18].is_none()) {
             // State0 Queue44C6EA preserves +6DD; only state1's no-contact
             // arm44C18E sets ready before asking Queue to commence Guard.
             if status == 1 {
@@ -1384,7 +1384,7 @@ pub(crate) fn mission_repair(
     }
     if status == 1 {
         // The ProductionAnim must finish before the first paid step.
-        if sim.substrate.entities.get(depot)?.building_anim_slots[8].is_some() {
+        if sim.substrate.entities.get(depot)?.building_art.anim_slots()[8].is_some() {
             return Some(1);
         }
         if distance_to_pad(sim, rules, depot, unit).is_some_and(|d| d < 200) {
@@ -1934,6 +1934,58 @@ mod tests {
     const DEPOT: u64 = 500;
     const DEPOT_RX: u16 = 10;
     const DEPOT_RY: u16 = 10;
+
+    /// MissionRepairAndProduce releases its contact through the contact's own
+    /// class setter (vt+0x480 at `0x0044C496`). The UnitRepair CAN_LOAD takes
+    /// aircraft as well as Units, and a released aircraft gets the Aircraft
+    /// setter (`0x0041AA80`) toward the exit cell.
+    #[test]
+    fn a_released_aircraft_takes_its_own_class_setter() {
+        let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
+        else {
+            return;
+        };
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini)
+            .expect("retail rules parse");
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let depot = sim
+            .spawn_object("GADEPT", "Americans", 10, 10, 0, &rules)
+            .expect("retail GADEPT");
+        let aircraft = sim
+            .spawn_object("ORCA", "Americans", 16, 16, 0, &rules)
+            .expect("retail ORCA");
+        sim.substrate
+            .entities
+            .get_mut(depot)
+            .unwrap()
+            .mark_live_contact_with(aircraft);
+        sim.substrate
+            .entities
+            .get_mut(aircraft)
+            .unwrap()
+            .mark_live_contact_with(depot);
+        let exit = building_dock_cell(&sim, depot, aircraft, (0, 0), &rules, None)
+            .expect("an exit cell for the aircraft");
+
+        release_contact(
+            &mut sim,
+            &rules,
+            depot,
+            aircraft,
+            false,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+
+        let released = sim.substrate.entities.get(aircraft).unwrap();
+        assert_eq!(
+            released.navigation.nav_com,
+            Some(NavTargetRef::cell(exit.0, exit.1))
+        );
+        assert!(!released.has_live_contact_with(depot));
+    }
 
     fn depot_rules() -> RuleSet {
         depot_rules_with_strength(300)
@@ -2662,7 +2714,6 @@ mod tests {
             None,
             crate::sim::world::FrameEffects::default(),
         );
-        sim.substrate.entities.get_mut(1).unwrap().movement_target = None;
         for _ in 0..100 {
             tick_units(&mut sim, &rules);
             let unit = sim.substrate.entities.get(1).unwrap();
@@ -3153,7 +3204,8 @@ mod tests {
             .entities
             .get(DEPOT)
             .unwrap()
-            .building_anim_slots;
+            .building_art
+            .anim_slots();
         assert_eq!((slots[3], slots[12]), (Some(active), Some(idle)));
         assert_eq!(sim.scenario_rng.state(), rng);
     }

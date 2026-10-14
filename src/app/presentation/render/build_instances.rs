@@ -42,9 +42,8 @@ pub(super) struct WorldInstances {
     pub bridge_body: Vec<SpriteInstance>,
     pub bridge_body_shadow: Vec<SpriteInstance>,
     pub bridge_railing: Vec<SpriteInstance>,
-    /// Per-particle SpriteInstances (Layer 3). Drawn at Step 7.5 — above
-    /// all ground objects + cliffs, below debug/shroud/UI.
-    pub particle_paged: Vec<Vec<SpriteInstance>>,
+    /// Actual particle pieces observed by the existing map diagnostic policy.
+    pub particle_draws: Option<Vec<instances::ParticleDrawObservation>>,
     /// PixelFX water/ore sparkles — 1-pixel cell dots emitted per frame.
     /// Empty when the live `[Options] DetailLevel` projection is zero.
     pub cell_sparkles: Vec<SpriteInstance>,
@@ -224,14 +223,6 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
     // pipeline plumbing (build → upload → draw) is wired regardless.
     let smudge: Vec<SpriteInstance> = build_smudge_instances(state, sw, sh);
 
-    // SHP sprites: buildings, infantry, effects — paged across sprite atlas pages.
-    let shp_page_count: usize = state
-        .match_state
-        .match_presentation
-        .sprite_atlas
-        .as_ref()
-        .map_or(1, |a| a.page_count().max(1));
-    let mut particle_paged: Vec<Vec<SpriteInstance>> = vec![Vec::new(); shp_page_count];
     state
         .renderer
         .vxl_pose_frame_cache
@@ -261,12 +252,10 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
     instances::build_projectile_visual_instances(state, &mut planned_objects, &display_order);
     instances::build_parachute_instances(state, &mut planned_objects, &parachute_body_depths);
 
-    // Layer 3 particle systems — separate paged list above all Ground-layer
-    // geometry per the original's ParticleClass::GetLayer = 3.
-    instances::build_particle_instances(state, &mut particle_paged);
-    for page in &mut particle_paged {
-        sort_by_depth_desc(page);
-    }
+    // Every Particle owns its retained AIR slot. Its indexed SHP piece shares
+    // native Z/palette/packed composition with the other object families.
+    let particle_draws =
+        instances::build_particle_instances(state, &mut planned_objects, &display_order);
 
     let object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
 
@@ -311,7 +300,7 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         bridge_body,
         bridge_body_shadow,
         bridge_railing,
-        particle_paged,
+        particle_draws,
         cell_sparkles,
         weapon_waves,
         spotlight_type16,

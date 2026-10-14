@@ -865,7 +865,6 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
         entity.position.exact_z_leptons = Some(500);
         entity.body_facing = FacingClass::new(0x4000, 5);
         let loco = entity.locomotor.as_mut().unwrap();
-        loco.altitude = SimFixed::from_num(500);
         let runtime = loco.jumpjet_runtime_mut().unwrap();
         let mut flight = runtime.flight();
         flight.facing.snap(0x4000, 1000);
@@ -1196,14 +1195,14 @@ fn a_shot_down_balloon_jumpjet_bombs_its_impact_cell() {
 #[test]
 fn a_jumpjet_shot_down_after_its_null_destination_reaches_the_ground() {
     let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
-    assert!(sim.issue_air_cell_destination(
+    sim.assign_destination_represented(
         1,
-        (60, 52),
-        SimFixed::from_num(30),
+        Some(crate::sim::components::NavTargetRef::cell(60, 52)),
         Some(&rules),
         None,
-        crate::sim::world::FrameEffects::default()
-    ));
+        crate::sim::world::FrameEffects::default(),
+    )
+    .expect("the Unit setter takes the cell");
     // Cruise until the owner has left the hover cell.
     let mut frame = 1001;
     while sim
@@ -1278,7 +1277,6 @@ fn a_jumpjet_shot_down_touching_down_still_crashes() {
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         entity.position.exact_z_leptons = Some(10);
         let loco = entity.locomotor.as_mut().unwrap();
-        loco.altitude = SimFixed::from_num(10);
         let runtime = loco.jumpjet_runtime_mut().unwrap();
         let mut flight = runtime.flight();
         flight.target_height = 0;
@@ -1402,7 +1400,6 @@ fn a_landed_jumpjet_dies_where_it_stands() {
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         entity.position.exact_z_leptons = Some(0);
         let loco = entity.locomotor.as_mut().unwrap();
-        loco.altitude = SimFixed::ZERO;
         let runtime = loco.jumpjet_runtime_mut().unwrap();
         *runtime = runtime.clone().with_phase_for_test(
             crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_GROUND,
@@ -1838,7 +1835,6 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                     entity_id,
                     target_rx: destination.0,
                     target_ry: destination.1,
-                    queue: false,
                 },
             )
         })

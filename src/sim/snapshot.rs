@@ -984,20 +984,44 @@ use crate::sim::world::Simulation;
 // 339 -> 340: a bounce body keeps its native orientation and rotation
 // quaternions (BounceClass+0x30/+0x40) instead of the axis and angle that
 // built them. Version 339 records carry the axis and angle.
-//340 ->341: retain private House+1FC tech-tree recheck requests and remove
-//the competing global superweapon initialization flag. A pending House tail
-//must survive reload without reconstructing or prematurely granting Supers.
-//341 ->342: shared TriggerType event+54 and LiveTrigger+2C House identities,
-//plus the sticky Type+A0 capture-transfer flag. EntityStore's Techno index is
-//derived from retained constructor IDs; transient allocated-cell cursor is not saved.
-//342 ->343: retain the native ChronoScreenEffect phase/countdown/input-lock
-//authority; GPU snapshots and physical playback resources remain app-owned.
-//343 ->344: retain House's initial Techno Type/signed-cell history for
-//50D320 restoration; saved loads preserve it without resnapshotting survivors.
-//344 ->345: share the House result's native CdTimer instead of a duplicate
-//deadline/announcement latch; retain automatic-garrison seek691, process AI
-//PatrolScan and TeamType transport-origin inputs through the existing owners.
-const SNAPSHOT_VERSION: u32 = 345;
+// 340 -> 341: each object keeps its attack-move order, the Foot MegaMission
+// (+0x5C4..+0x5D1), in place of the OrderIntent goal. Version 340 records
+// carry the goal.
+// 341 -> 342: each House retains its tech-tree recheck byte (+1FC).
+// Version 341 records cannot preserve a pending strip cancellation decision.
+// 342 -> 343: objects retain the complete Object fall state (rate, parachute,
+// falling and IsABomb), and falling runs inside MissionAI before dispatch.
+// 343 -> 344: each Techno retains its one-shot deploy-voice suppression
+// (+4F8); Rules retain registered Harvest/Deploy/Undeploy scalar voice slots.
+// Version343 lacks these bincode fields and cannot resume their history.
+// 344 -> 345: particle speed and system spawn accumulator retain native f32
+// bits; children retain individual Display IDs and System Alive/Limbo state;
+// the existing Rules registry retains WindDirection across passes. The
+// superseded animation counter is removed; native cadence uses UID/EC.
+// Old records cannot resume these scalar authorities.
+// 345 -> 346: pending Move and AttackMove commands drop the unread queue flag,
+// and a Move onto an object is a new Command variant; both change the bincode
+// schema.
+// 346 -> 347: a pending AttackMove carries the event's target and destination
+// tokens, and MegaDestination may name an object.
+// 347 -> 348: the Simulation retains whether it batches code-2 re-path
+// searches and the Foots waiting for the next frame's batch.
+// 348 -> 349: the move-order adapter (`MovementTarget`) is gone (#689); Foot's
+// NavCom and the locomotor own every order. Version 348 records carry it.
+// 349 -> 350: each waiting Foot names the request it repeats, no-queue or
+// code-2 ladder.
+// 350 -> 351: a Building's animation art fields move into one record
+// (`BuildingArt`), which changes the entity's field order.
+// 351 -> 352: the locomotor's altitude mirror is gone (#692); an object's
+// height is its Location Z. Version 351 records carry it.
+// 352 -> 353: integrate the ALL01 r6 branch (its fork-local schema345).
+// TriggerType Event+54/LiveTrigger+2C and capture-transfer state, active
+// ChronoScreenEffect, initial House Techno type/cell records, shared result
+// CdTimer, automatic-garrison seek691, PatrolScan and Team transport-origin
+// inputs retain their existing owners. Main352 and r6/345 records do not
+// share this integrated bincode layout and are both refused. The one House
+// tech-tree recheck stays main's authority; EntityStore indexes remain derived.
+const SNAPSHOT_VERSION: u32 = 353;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1674,6 +1698,13 @@ impl RestoredObjectIndex {
                 system.stable_id,
             )?;
             highest_id = highest_id.max(registry_id);
+            // Individual particles retain AIR Display membership. Register
+            // their owning store's identities in the existing restore index.
+            for particle in &system.particles {
+                let id = particle.stable_id();
+                Self::register(&mut identities, "ParticleSystemStore.children", id, id)?;
+                highest_id = highest_id.max(id);
+            }
         }
         for (&registry_id, terrain) in &sim.production.terrain_objects {
             Self::register(
@@ -1852,7 +1883,8 @@ fn restore_object_references(
     for (owner_id, entity) in sim.substrate.entities.iter_sorted() {
         // Diagnostic slots0..20 are Building+55C, slots21..28 are +5C8.
         for (slot, anim_id) in entity
-            .building_anim_slots
+            .building_art
+            .anim_slots()
             .iter()
             .chain(entity.damage_fire_anim_ids.iter())
             .enumerate()
@@ -4370,11 +4402,20 @@ mod tests {
         // 337 -> 338: the deactivated latch and the powered-center counts.
         // 338 -> 339: every bullet's ProximityDetector reference.
         // 339 -> 340: a bounce body's orientation and rotation quaternions.
-        // 340 -> 341: native per-House technology recheck replaces global
-        // super-weapon initialization state.
-        //342 ->343: active ChronoScreenEffect state.
-        //344 ->345: shared result timer, seek/patrol and transport inputs.
-        assert_eq!(super::SNAPSHOT_VERSION, 345);
+        // 340 -> 341: the Foot MegaMission replaces the OrderIntent goal.
+        // 341 -> 342: the House tech-tree recheck byte.
+        // 342 -> 343: the complete Object fall state.
+        // 343 -> 344: retained deploy-voice suppression and bound voice slots.
+        // 344 -> 345: Smoke scalars and individual Particle AIR identities.
+        // 345 -> 346: Move commands without the queue flag, and MoveToObject.
+        // 346 -> 347: AttackMove tokens and an object MegaDestination.
+        // 347 -> 348: the batched re-path setting and its waiting Foots.
+        // 348 -> 349: no move-order adapter (`MovementTarget`).
+        // 349 -> 350: the request each waiting Foot repeats.
+        // 350 -> 351: the Building's animation art in one record.
+        // 351 -> 352: no locomotor altitude copy; height is the Location Z.
+        // 352 -> 353: integrated ALL01 retained Tag/ChronoScreen/House/Team state.
+        assert_eq!(super::SNAPSHOT_VERSION, 353);
     }
 
     #[test]
@@ -5478,7 +5519,8 @@ mod tests {
                         .entities
                         .get_mut(owner)
                         .unwrap()
-                        .building_anim_slots[3] = Some(target);
+                        .building_art
+                        .anim_slots_mut_for_test()[3] = Some(target);
                     SnapshotRestoreError::MissingBuildingSlotAnim {
                         owner_id: owner,
                         slot: 3,
@@ -5498,7 +5540,8 @@ mod tests {
                         .entities
                         .get_mut(owner)
                         .unwrap()
-                        .building_anim_slots[4] = Some(anim);
+                        .building_art
+                        .anim_slots_mut_for_test()[4] = Some(anim);
                     SnapshotRestoreError::DuplicateBuildingSlotAnim {
                         anim_id: anim,
                         first_owner: owner,
@@ -5548,7 +5591,7 @@ mod tests {
                 }
                 _ => {
                     let entity = sim.substrate.entities.get_mut(owner).unwrap();
-                    entity.building_anim_slots[3] = None;
+                    entity.building_art.anim_slots_mut_for_test()[3] = None;
                     entity.damage_fire_anim_ids[0] = Some(anim);
                     entity.category = crate::map::entities::EntityCategory::Unit;
                     SnapshotRestoreError::InvalidBuildingAnimSlotOwner {
@@ -5584,7 +5627,7 @@ mod tests {
         // Anim UnInit4255B0 broadcasts before deferred physical deletion;
         // Building451B40 clears slot3 immediately but retains Anim+118.
         assert_eq!(
-            sim.entities().get(owner).unwrap().building_anim_slots[3],
+            sim.entities().get(owner).unwrap().building_art.anim_slots()[3],
             None
         );
         assert!(sim.anim(anim).unwrap().building_slot.is_none());
@@ -5617,16 +5660,16 @@ mod tests {
             .current_frame = 17;
         sim.substrate.anims.get_mut(anim).unwrap().runtime.paused = true;
         let building = sim.substrate.entities.get_mut(id).unwrap();
-        building.building_anim_effect_replay[16] = true;
+        building.building_art.anim_effect_replay_mut_for_test()[16] = true;
         building.building_last_operational = true;
-        building.building_stuff_enabled = false;
-        building.building_storage.amounts = [
+        building.building_art.set_stuff_enabled_for_test(false);
+        building.building_art.storage_mut_for_test().amounts = [
             crate::util::native_x87::NativeF32Bits::from_bits(0x7fc01234),
             crate::util::native_x87::NativeF32Bits::NEGATIVE_ZERO,
             crate::util::native_x87::NativeF32Bits::ONE,
             crate::util::native_x87::NativeF32Bits::from_bits(0xbf800000),
         ];
-        building.building_storage.refinery_tier = -17;
+        building.building_art.storage_mut_for_test().refinery_tier = -17;
         assert_ne!(sim.scenario_rng.logical_state(), load_rng);
         let bytes = GameSnapshot::save(&sim, 1, 2, "building-anim.map", 0);
         // Native Scenario load consumes the saved RNG bytes, then reseeds zero.
@@ -5642,7 +5685,12 @@ mod tests {
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(restored.scenario_rng.logical_state(), load_rng);
         assert_eq!(
-            restored.entities().get(id).unwrap().building_anim_slots[3],
+            restored
+                .entities()
+                .get(id)
+                .unwrap()
+                .building_art
+                .anim_slots()[3],
             Some(anim)
         );
         assert!(
@@ -5650,7 +5698,8 @@ mod tests {
                 .entities()
                 .get(id)
                 .unwrap()
-                .building_damage_state_active
+                .building_art
+                .damage_state_active()
         );
         assert_eq!(restored.anim(anim).unwrap().runtime.current_frame, 17);
         assert!(restored.anim(anim).unwrap().runtime.paused);
@@ -5659,7 +5708,8 @@ mod tests {
                 .entities()
                 .get(id)
                 .unwrap()
-                .building_anim_effect_replay[16]
+                .building_art
+                .anim_effect_replay()[16]
         );
         assert!(
             restored
@@ -5668,10 +5718,17 @@ mod tests {
                 .unwrap()
                 .building_last_operational
         );
-        assert!(!restored.entities().get(id).unwrap().building_stuff_enabled);
+        assert!(
+            !restored
+                .entities()
+                .get(id)
+                .unwrap()
+                .building_art
+                .stuff_enabled()
+        );
         assert_eq!(
-            restored.entities().get(id).unwrap().building_storage,
-            sim.entities().get(id).unwrap().building_storage
+            restored.entities().get(id).unwrap().building_art.storage(),
+            sim.entities().get(id).unwrap().building_art.storage()
         );
         assert_eq!(restored.anim(anim).unwrap().building_slot, Some((id, 3)));
         assert_eq!(restored.state_hash(), expected);
@@ -6325,7 +6382,7 @@ mod tests {
                 glam::IVec3::ZERO,
             );
             system.offset = glam::IVec3::ZERO;
-            system.spawn_timer = crate::util::fixed_math::SimFixed::from_num(1);
+            system.set_spawn_timer_for_test(crate::util::native_x87::NativeF32Bits::ONE);
             system.owner_entity = Some(entity_id);
             system.target_coords = glam::IVec3::ZERO;
             system

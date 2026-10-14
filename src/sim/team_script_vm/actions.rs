@@ -95,7 +95,7 @@ impl TeamScriptState {
     fn flash_members(&self, entities: &mut EntityStore, frames: i32) {
         for member in self.members() {
             if let Some(entity) = entities.get_mut(member) {
-                entity.start_flash_countdown(frames);
+                entity.flashing.start(frames);
             }
         }
     }
@@ -1546,7 +1546,7 @@ impl Simulation {
         footprint: (i32, i32),
     ) -> Option<(u16, u16)> {
         use crate::sim::find_nearby_cell::{
-            NearbyAnchorGate, NearbyFootprint, NearbyQuery, NearbySearchOptions, PassabilityArgs,
+            NearbyFootprint, NearbyQuery, NearbySearchOptions, PassabilityArgs,
             find_nearby_passable_cell_with_options, map_owned_radius_cap,
         };
         let terrain = self.resolved_terrain.as_ref()?;
@@ -1568,7 +1568,6 @@ impl Simulation {
                     bridge_aware_zone: false,
                 },
                 footprint: NearbyFootprint::new(footprint.0, footprint.1),
-                anchor_gate: NearbyAnchorGate::NativeHeightAware,
                 allow_bridge_cells: true,
                 check_height: false,
                 check_occupancy: false,
@@ -2423,7 +2422,7 @@ impl Simulation {
                     .is_some_and(|object| {
                         crate::sim::combat::combat_weapon::primary_for_tier(
                             object,
-                            entity.veterancy(),
+                            entity.veterancy.rank(),
                         )
                         .is_some()
                             && member_ammo(entity, object) <= 0

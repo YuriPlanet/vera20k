@@ -1,183 +1,250 @@
-//! Particle-system instance builder — Layer 3 (above all ground objects).
+//! SHP particles in their retained native Display slots.
 //!
-//! Reads `Simulation::particle_systems()` and emits one SpriteInstance per live
-//! particle, dispatched on the per-system BehavesLike for frame-index
-//! calculation. Smoke/Gas use `animation_state` as the frame directly; Fire
-//! uses `facing_band * EndStateAI + animation_state`. Spark/Railgun (Tier 3)
-//! are filtered at spawn but a defensive once-per-type warn-log catches any
-//! that slip through.
-//!
-//! Output pages match the sprite atlas page layout — particle pass uses its
-//! own pool stream ("particle_page", one buffer per atlas page) drawn after
-//! bridge railings and before debug overlays.
-//!
-//! ## Dependency rules
-//! - Part of the app layer — may depend on everything.
-
-use std::collections::HashSet;
-use std::sync::{Mutex, OnceLock};
+//! Particle62BB0E -> ObjectUnlimbo5F4EC0 queries GetLayer62D770 (AIR3),
+//! then Submit4A9720 appends the Particle, independently of its System.
+//! Tactical6D8DB0 visits those registrations in retained order and reaches
+//! ParticleDraw62CEC0 through ObjectDrawIfVisible5F4B10. The existing tactical
+//! lowering, indexed atlas, palette and packed compositor consume each piece.
+//! Native caller/type/draw evidence: tools/spatial_oracle/damage_smoke.md.
 
 use crate::app::AppState;
+use crate::app::presentation::render::draw_plan_lowering::{
+    NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
+};
 use crate::map::terrain;
 use crate::render::batch::SpriteInstance;
-use crate::render::sprite_atlas::ShpSpriteKey;
+use crate::render::draw_state::DrawState;
+use crate::render::native_z::ZGradient;
+use crate::render::palette_light::PaletteLight;
+use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteKey};
+use crate::render::tactical_draw_plan::{BlitPolicy, RenderZPolicy, SpriteEncoding};
 use crate::rules::house_colors::HouseColorIndex;
-use crate::rules::particle_system_type::ParticleSystemBehavesLike;
 use crate::rules::particle_type::ParticleBehavesLike;
+use crate::util::native_x87::adjust_for_z_standard;
 
-use super::helpers::in_view;
+use super::helpers::{compute_sprite_depth_params_lifted, depth_axis, projection_admitted};
 
-/// Screen-Y nudge applied to every particle position. The original engine
-/// shifts by `-15 - AdjustForZ()`; for Tier-2 (no airborne particles)
-/// AdjustForZ is 0, so −15 px is the lift that puts smoke origins just
-/// above the spawn cell instead of buried in it.
-const PARTICLE_Y_LIFT: f32 = 15.0;
+/// Read-only projection of the actual piece submitted by this builder. It is
+/// collected only under the existing map diagnostic presentation policy.
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct ParticleDrawObservation {
+    system_id: u64,
+    particle_id: u64,
+    particle_native_id: i32,
+    display_layer: u8,
+    display_order: u64,
+    image: String,
+    frame: u16,
+    atlas_page: usize,
+    source_palette: u32,
+    position: [f32; 2],
+    size: [f32; 2],
+    uv_origin: [f32; 2],
+    uv_size: [f32; 2],
+    native_flags: u32,
+    z_adjust: f32,
+    z_gradient: u32,
+    palette_light: [u32; 4],
+    render_z: &'static str,
+}
 
-/// Build SpriteInstance entries for every live particle in the simulation.
-///
-/// Caller passes the paged output vector list (one Vec per atlas page, sized
-/// `state.match_presentation.sprite_atlas.page_count()`). This function appends; sorting is the
-/// caller's responsibility (see `build_world_instances`).
-pub(crate) fn build_particle_instances(state: &AppState, paged: &mut [Vec<SpriteInstance>]) {
-    let (sim, atlas, rules) = match (
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        &state.match_state.match_presentation.sprite_atlas,
-        state.rules(),
-    ) {
-        (Some(s), Some(a), Some(r)) => (s, a, r),
-        _ => return,
-    };
-
-    let z = state.match_state.input.zoom_level;
-    let (cam_x, cam_y, sw, sh) = (
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-        state.render_width() as f32 / z,
-        state.render_height() as f32 / z,
-    );
-
-    for (_sys_id, sys) in sim.particle_systems().iter() {
-        let pst = rules.particle_system_type(sys.type_id);
-        match pst.behaves_like {
-            ParticleSystemBehavesLike::Spark | ParticleSystemBehavesLike::Railgun => {
-                warn_once_per_tier3_type(pst.behaves_like);
-                continue;
-            }
-            _ => {}
+/// ParticleDraw62CEC0 selects the Convert leaf only at detail2. The last
+/// comparison sign-extends the retained translucency byte; 128..255 are opaque.
+fn particle_draw_flags(detail_level: u32, translucency: u8) -> u32 {
+    let selector = if detail_level == 2 {
+        match translucency {
+            25 => 2,
+            50 => 4,
+            value if value as i8 >= 75 => 6,
+            _ => 0,
         }
+    } else {
+        0
+    };
+    0x2E00 | selector
+}
 
-        for p in &sys.particles {
-            let pt = rules.particle_type(p.type_id);
-            let Some(image_name) = pt.image.as_deref() else {
-                continue;
-            };
+/// Append each SHP Particle as its own retained Display parent. A Move-dead
+/// Particle retains that registration for its last draw; the lifecycle owner
+/// removes it, rather than a marked-for-deletion render filter.
+pub(crate) fn build_particle_instances(
+    state: &AppState,
+    objects: &mut Vec<PlannedObjectInstance>,
+    order: &NativeDisplayOrder,
+) -> Option<Vec<ParticleDrawObservation>> {
+    let mut observations = state.diagnostic_presentation_ms().map(|_| Vec::new());
+    let (Some(runtime), Some(atlas)) = (
+        state.match_state.sim_runtime.as_ref(),
+        state.match_state.match_presentation.sprite_atlas.as_ref(),
+    ) else {
+        return observations;
+    };
+    let sim = &runtime.simulation;
+    let rules = &runtime.resources.rules;
+    let presentation = &state.match_state.match_presentation;
+    let detail_level = presentation.in_game_options.detail_level;
+    let input = &state.match_state.input;
+    let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let viewport = [
+        width as f32 / input.zoom_level,
+        height as f32 / input.zoom_level,
+    ];
+    let camera = [input.camera_x, input.camera_y];
+    let axis = depth_axis(state);
 
-            let frame: u16 = match pt.behaves_like {
-                ParticleBehavesLike::Smoke | ParticleBehavesLike::Gas => p.animation_state as u16,
-                ParticleBehavesLike::Fire => {
-                    let facing_band = (sys.facing as u16 / 0x40) & 0x3;
-                    facing_band * pt.end_state_ai as u16 + p.animation_state as u16
-                }
-                _ => continue,
-            };
+    // Frame-local borrowed inputs, derived solely from retained Display ranks.
+    // Drop them after this build. DetailState's mutative 55AF60 query must run
+    // in AIR registration order, before later atlas lowering can restore it.
+    let mut particles: Vec<_> = sim
+        .particle_systems()
+        .iter()
+        .flat_map(|(&system_id, system)| {
+            system.particles.iter().filter_map(move |particle| {
+                order
+                    .object_draw(particle.stable_id(), SpriteEncoding::Plain)
+                    .map(|parent| (system_id, system, particle, parent))
+            })
+        })
+        .collect();
+    particles.sort_unstable_by_key(|(_, _, _, parent)| (parent.layer.0, parent.display_order));
 
-            let key = ShpSpriteKey {
-                palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-                type_id: image_name.to_string(),
-                facing: 0,
-                frame,
-                house_color: HouseColorIndex(0),
-            };
-            let Some(entry) = atlas.get(&key) else {
-                continue;
-            };
-
-            let (sx, sy_raw) = terrain::lepton_to_screen(p.coords);
-            let sy = sy_raw - PARTICLE_Y_LIFT;
-
-            if !in_view(sx, sy, 64.0, 64.0, cam_x, cam_y, sw, sh, 120.0) {
-                continue;
+    for (system_id, system, particle, mut parent) in particles {
+        let point = terrain::lepton_to_screen(particle.coords);
+        if !projection_admitted([point.0, point.1], camera, viewport) {
+            continue;
+        }
+        let kind = rules.particle_type(particle.type_id);
+        // ParticleDraw62CEC0 reads the shared unsigned FPS/minimum owner.
+        // Damaging particles alone can pass a below-minimum frame rate.
+        let enough_fps = {
+            let mut detail = presentation.detail.borrow_mut();
+            detail.frame_rate() >= detail.minimum_frame_rate()
+        };
+        if !enough_fps && kind.damage == 0 {
+            continue;
+        }
+        if detail_level == 0
+            && matches!(
+                kind.behaves_like,
+                ParticleBehavesLike::Smoke | ParticleBehavesLike::Spark
+            )
+        {
+            continue;
+        }
+        let Some(image) = kind.image.as_deref() else {
+            continue;
+        };
+        let native_frame = match kind.behaves_like {
+            // ParticleGetDrawFrame62D830: MOVSX from state+12E. The atlas
+            // accepts nonnegative frames only; stock Smoke is0..19.
+            ParticleBehavesLike::Smoke | ParticleBehavesLike::Gas => {
+                i32::from(particle.animation_state as i8)
             }
-
-            let alpha = match p.translucency {
-                0x00 => 1.0,
-                0x19 => 0.5,
-                0x32 => 0.25,
-                t if t >= 0x4A => 0.16,
-                _ => 1.0,
-            };
-
-            // Y-descending depth so closer particles draw on top of farther
-            // ones in the CPU sort (passthrough pipeline does no GPU depth
-            // read/write, so this field only feeds sort_by_depth_desc).
-            let depth = sy;
-
-            paged[entry.page as usize].push(SpriteInstance {
-                position: [sx + entry.offset_x, sy + entry.offset_y],
+            // The separate Fire frame policy retains its existing path;
+            // this mechanism is bounded to stock building damage-Smoke.
+            ParticleBehavesLike::Fire => {
+                let band = (u16::from(system.facing) / 0x40) & 3;
+                i32::from(band * u16::from(kind.end_state_ai) + u16::from(particle.animation_state))
+            }
+            ParticleBehavesLike::Spark | ParticleBehavesLike::Railgun => continue,
+        };
+        let Ok(frame) = u16::try_from(native_frame) else {
+            continue;
+        };
+        let key = ShpSpriteKey {
+            palette_context: ShpPaletteContext::GlobalAnim,
+            type_id: image.to_owned(),
+            facing: 0,
+            frame,
+            house_color: HouseColorIndex(0),
+        };
+        let Some(entry) = atlas.get(&key) else {
+            continue;
+        };
+        let flags = particle_draw_flags(detail_level, particle.translucency);
+        if flags & 6 != 0 {
+            parent.policy = BlitPolicy::translucent(SpriteEncoding::Plain, RenderZPolicy::ReadOnly);
+        }
+        let lift = adjust_for_z_standard(particle.coords.z);
+        let piece = ObjectPieceInstance {
+            target: ObjectTexture::ShpPage(entry.page as usize),
+            render_z: parent.policy.render_z,
+            instance: SpriteInstance {
+                position: [point.0 + entry.offset_x, point.1 + entry.offset_y],
                 size: entry.pixel_size,
                 uv_origin: entry.uv_origin,
                 uv_size: entry.uv_size,
                 source_palette: entry.source_palette,
-                depth,
-                tint: [1.0, 1.0, 1.0],
-                alpha,
+                depth: compute_sprite_depth_params_lifted(
+                    axis.origin_y,
+                    axis.world_height,
+                    point.1,
+                    lift,
+                ),
+                tint: crate::map::lighting::DEFAULT_TINT,
+                alpha: 1.0,
+                draw_state: DrawState::from_native_selector(0, (flags & 6) as u8),
+                // Particle62CFF9 passes decimal1000 (PUSH0x3E8) and
+                // global ANIM87F6C0, independently of cell lighting.
+                palette_light: PaletteLight::plain(53, 1000),
+                // 62D01D: this is the depth argument, not a screen-Y lift.
+                z_adjust: (-15i32).wrapping_sub(lift) as f32,
+                z_gradient: ZGradient::Vertical as u32,
                 ..Default::default()
+            },
+        };
+        if let Some(rows) = &mut observations {
+            rows.push(ParticleDrawObservation {
+                system_id,
+                particle_id: parent.id,
+                particle_native_id: particle.native_unique_id(),
+                display_layer: parent.layer.0,
+                display_order: parent.display_order,
+                image: image.to_owned(),
+                frame,
+                atlas_page: entry.page as usize,
+                source_palette: piece.instance.source_palette,
+                position: piece.instance.position,
+                size: piece.instance.size,
+                uv_origin: piece.instance.uv_origin,
+                uv_size: piece.instance.uv_size,
+                native_flags: flags,
+                z_adjust: piece.instance.z_adjust,
+                z_gradient: piece.instance.z_gradient,
+                palette_light: piece.instance.palette_light.0,
+                render_z: match piece.render_z {
+                    RenderZPolicy::ReadOnly => "read_only",
+                    _ => unreachable!("ParticleDraw62CEC0 never writes render Z"),
+                },
             });
         }
+        objects.push(PlannedObjectInstance::object(parent, vec![piece]));
     }
-}
-
-/// Once-per-type warn log for Tier-3 systems that slip past the spawn-side
-/// filter. Defense in depth — the spawn side is the primary guard, this
-/// catches snapshot loads / future bugs.
-fn warn_once_per_tier3_type(kind: ParticleSystemBehavesLike) {
-    static SEEN: OnceLock<Mutex<HashSet<ParticleSystemBehavesLike>>> = OnceLock::new();
-    let seen = SEEN.get_or_init(|| Mutex::new(HashSet::new()));
-    if let Ok(mut set) = seen.lock()
-        && set.insert(kind)
-    {
-        log::warn!(
-            "particles: render found Tier-3 system {:?} in store \
-                 (spawn-side filter should have caught this); skipping",
-            kind
-        );
-    }
+    observations
 }
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn translucency_byte_to_alpha_table() {
-        fn alpha(b: u8) -> f32 {
-            match b {
-                0x00 => 1.0,
-                0x19 => 0.5,
-                0x32 => 0.25,
-                t if t >= 0x4A => 0.16,
-                _ => 1.0,
-            }
-        }
-        assert_eq!(alpha(0x00), 1.0);
-        assert_eq!(alpha(0x19), 0.5);
-        assert_eq!(alpha(0x32), 0.25);
-        assert_eq!(alpha(0x4A), 0.16);
-        assert_eq!(alpha(0xFF), 0.16);
-        assert_eq!(alpha(0x40), 1.0);
-    }
+    use super::particle_draw_flags;
 
     #[test]
-    fn fire_frame_uses_facing_band_times_end_state() {
-        fn fire_frame(facing: u8, end_state_ai: u8, animation_state: u8) -> u16 {
-            let facing_band = (facing as u16 / 0x40) & 0x3;
-            facing_band * end_state_ai as u16 + animation_state as u16
+    fn native_particle_selector_uses_detail_and_signed_byte_comparison() {
+        // Instruction-level control boundaries at ParticleDraw62CEC0;
+        // packed RGB565 arithmetic is tested by its existing compositor owner.
+        for (byte, selector) in [
+            (0, 0),
+            (25, 2),
+            (50, 4),
+            (74, 0),
+            (75, 6),
+            (127, 6),
+            (128, 0),
+            (255, 0),
+        ] {
+            assert_eq!(particle_draw_flags(2, byte), 0x2E00 | selector);
+            for detail in [0, 1, 3] {
+                assert_eq!(particle_draw_flags(detail, byte), 0x2E00);
+            }
         }
-        assert_eq!(fire_frame(0x1D, 19, 5), 5);
-        assert_eq!(fire_frame(0x40, 19, 5), 24);
-        assert_eq!(fire_frame(0x80, 19, 5), 43);
-        assert_eq!(fire_frame(0xC0, 19, 5), 62);
     }
 }

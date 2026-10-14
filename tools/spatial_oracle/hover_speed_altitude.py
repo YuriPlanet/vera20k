@@ -8,12 +8,19 @@ Is_Moving, Is_Powered, FacingClass, the distance and trig helpers, SinFromTable
 and the map ground query 578080 over a supplied cell table, executes unmodified.
 SpeedUpdate cases always carry a head, so its null-head arm (Set_Speed,
 Path_And_Arrival, ProcessMovement) is out of scope.
+
+``python -m tools.spatial_oracle.hover_speed_altitude --drop-as-bomb --check``
+replays a separate small corpus in drop_as_bomb.json. It runs ObjectClass's
+DropAsBomb and falling AI, the Foot missing-deck gate and Hover water tail,
+recording substituted receiver calls. Original Hover startup helpers establish
+the 104-lepton water threshold; the native x87 fall-rate conversion runs.
 """
 from pathlib import Path
 import struct
+import sys
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
-from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_ESP, UC_X86_REG_FPCW
+from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_EIP, UC_X86_REG_ESP, UC_X86_REG_FPCW
 from tools.native_oracle import load_image, run_checked, finish_vectors, provenance, NATIVE_FPCW
 from tools.native_slope import slope_matrices
 
@@ -201,7 +208,160 @@ def generate():
     return [execute(case) for case in [*speed_cases(), *altitude_cases()]]
 
 
+def execute_bomb(case):
+    """Original Object bodies and bounded Hover water tail; receiver substitutions
+    are explicit controls, not evidence of receiver implementations or play parity.
+    The x87 fall conversion and startup threshold execute without substitution.
+    """
+    uc = machine(dict(rules='retail', frame=100, height=0, id=1,
+                      location=(2688, 2688, case.get('z', 416)), path=(-1, -1), powered=0))
+    read32 = lambda p: struct.unpack('<I', uc.mem_read(p, 4))[0]
+    signed = lambda p: struct.unpack('<i', uc.mem_read(p, 4))[0]
+    for entry in (0x513A10, 0x513A40, 0x513A60, 0x513A80, 0x513AA0, 0x513AC0, 0x513AE0):
+        run(uc, entry, [entry])
+    threshold = signed(0xA8F1C0)
+    uc.mem_write(RULES + 0x7B8, words(case.get('parachute_cap', -3), case.get('free_cap', -100)))
+    uc.mem_write(RULES + 0xFA8, words(MEM + 0xD000))
+    uc.mem_write(FOOT + 0x14, words(4 if case.get('foot', True) else 0))
+    uc.mem_write(FOOT + 0x2C, words(case.get('rate', 0)))
+    uc.mem_write(FOOT + 0x64, words(-1))
+    uc.mem_write(FOOT + 0x6C, words(case.get('health', 100)))
+    for offset, key, default in ((0x74, 'marked', 1), (0x81, 'limbo', 0), (0x84, 'parachuted', 0),
+                                 (0x8C, 'bridge', 1), (0x8D, 'falling', int(case['kind'] == 'fall')),
+                                 (0x8F, 'bomb', int(case['kind'] == 'fall'))):
+        uc.mem_write(FOOT + offset, bytes([case.get(key, default)]))
+    canopy = MEM + 0xE000
+    uc.mem_write(FOOT + 0x88, words(canopy))
+    uc.mem_write(canopy + 0x195, b'\x01')
+    loco_vt = MEM + 0xC000
+    uc.mem_write(OBJ + 4, words(loco_vt))
+    uc.mem_write(FOOT + 0x674, words(OBJ + 4))
+    callbacks = {}
+    for index, (slot, name, cleanup) in enumerate(((0x124, 'mark', 4), (0xF4, 'scatter', 4),
+            (0x78, 'layer', 0), (0x1D0, 'z', 0), (0x1C8, 'height', 0),
+            (0x1CC, 'set_height', 4), (0x18C, 'mission', 4), (0x16C, 'damage', 28),
+            (0x2C, 'class', 0), (0x88, 'type', 0))):
+        address = STUBS + 0x200 + index * 0x20
+        uc.mem_write(address, b'\xc3')
+        uc.mem_write(FOOT_VT + slot, words(address))
+        callbacks[address] = (name, cleanup)
+    for index, (slot, name, cleanup) in enumerate(((0x10, 'moving', 4), (0x9C, 'move_to', 8),
+                                                (0x60, 'powered', 4))):
+        address = STUBS + 0x500 + index * 0x20
+        uc.mem_write(address, b'\xc3')
+        uc.mem_write(loco_vt + slot, words(address))
+        callbacks[address] = (name, cleanup)
+    events = []
+    def ret(cleanup, value=0):
+        sp = uc.reg_read(UC_X86_REG_ESP)
+        uc.reg_write(UC_X86_REG_EAX, value & 0xFFFFFFFF)
+        uc.reg_write(UC_X86_REG_EIP, read32(sp))
+        uc.reg_write(UC_X86_REG_ESP, sp + 4 + cleanup)
+    def observe(u, address, _size, _data):
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if address in (0x4A9770, 0x4A9720):
+            events.append(dict(kind='display_remove' if address == 0x4A9770 else 'display_submit',
+                               bridge=read32(FOOT + 0x8C) & 255))
+            ret(4)
+        elif address in callbacks:
+            name, cleanup = callbacks[address]
+            args = [signed(sp + 4 + n * 4) for n in range(cleanup // 4)]
+            value = 0
+            if name == 'z': value = signed(FOOT + 0xA4)
+            elif name == 'height': value = signed(FOOT + 0xA4) - case.get('floor', 0)
+            elif name == 'set_height': uc.mem_write(FOOT + 0xA4, words(case.get('floor', 0) + args[0]))
+            elif name == 'moving': value = int(case.get('moving', False))
+            elif name == 'powered':
+                value = int(case.get('powered', False) or signed(FOOT + 0xA4) > case.get('floor', 0))
+            elif name == 'damage':
+                args[0] = signed(args[0])
+                args[2] = 'C4Warhead' if args[2] == MEM + 0xD000 else args[2]
+            if name not in ('z', 'height', 'class', 'type', 'layer'):
+                # Pointer arguments are receiver identity; record only semantically meaningful values.
+                if name in ('moving', 'powered'): args = []
+                elif name == 'move_to': args = [args[1]]
+                elif name == 'scatter': args = list(struct.unpack('<3i', u.mem_read(args[0], 12)))
+                events.append(dict(kind=name, args=args))
+            ret(cleanup, value)
+        elif address == 0x565730 and case['kind'] in ('hover_water', 'bridge_gate'):
+            ret(4, CELLS)
+        elif address == 0x578080 and case['kind'] == 'hover_water':
+            ret(4, case.get('floor', 0))
+        elif address == 0x4C93D0 and case['kind'] == 'hover_water':
+            uc.mem_write(read32(sp + 4), words(0))
+            ret(4, read32(sp + 4))
+        elif address == 0x4C9300 and case['kind'] == 'hover_water':
+            ret(4)
+    uc.hook_add(UC_HOOK_CODE, observe)
+    if case['kind'] == 'bridge_gate':
+        uc.mem_write(CELLS + 0x140, words(0x100 if case.get('deck', False) else 0))
+        uc.mem_write(FOOT_VT + 0xEC, words(0x5F4160))
+        uc.reg_write(UC_X86_REG_ESI, FOOT)
+        uc.reg_write(UC_X86_REG_ESP, MEM + 0x1FF000)
+        run_checked(uc, 0x4D8D0B, 0x4D8D59, count=1000, required_addresses=[0x4D8D0B])
+    elif case['kind'] == 'hover_water':
+        uc.mem_write(OBJ + 8, words(FOOT))
+        uc.mem_write(OBJ, words(loco_vt))
+        uc.mem_write(OBJ + 0x64, bytes([case.get('spinning', 0)]))
+        uc.mem_write(OBJ + 0x68, words(case.get('steps', 2)))
+        uc.mem_write(CELLS + 0xEC, words(case.get('land', 2)))
+        uc.mem_write(FOOT_VT + 0xEC, words(0x5F4160))
+        uc.reg_write(UC_X86_REG_ESI, OBJ)
+        uc.reg_write(UC_X86_REG_ESP, MEM + 0x1FF000)
+        run_checked(uc, 0x514AD0, 0x514C12, count=1000, required_addresses=[0x514AD0])
+    else:
+        entry = 0x5F4160 if case['kind'] == 'drop' else 0x5F3E70
+        uc.mem_write(MEM + 0x1FF000, words(STOP))
+        uc.reg_write(UC_X86_REG_ESP, MEM + 0x1FF000)
+        uc.reg_write(UC_X86_REG_ECX, FOOT)
+        run_checked(uc, entry, STOP, count=2000, required_addresses=[entry])
+    return dict(input=case, threshold=threshold, events=events, z=signed(FOOT + 0xA4),
+                rate=signed(FOOT + 0x2C), falling=bool(uc.mem_read(FOOT + 0x8D, 1)[0]),
+                bomb=bool(uc.mem_read(FOOT + 0x8F, 1)[0]),
+                bridge=bool(uc.mem_read(FOOT + 0x8C, 1)[0]),
+                canopy_active=bool(uc.mem_read(canopy + 0x195, 1)[0]))
+
+
+def generate_bomb():
+    cases = [dict(kind='drop', name='standing_rate_kept', rate=-17),
+             dict(kind='drop', name='moving', moving=True), dict(kind='drop', name='nonfoot', foot=False)]
+    cases += [dict(kind='fall', name=f'free_rate_{rate}', rate=rate, z=1000)
+              for rate in (0, -1, -2, -98, -99, -100, 2)]
+    cases += [dict(kind='fall', name=name, **values) for name, values in (
+        ('grounding', dict(z=1, rate=-2)), ('already_grounded', dict(z=0, rate=0)),
+        ('nonbomb_grounding', dict(z=0, bomb=0)), ('dead_grounding', dict(z=0, health=0)),
+        ('not_falling_bomb', dict(z=0, falling=0)), ('negative_health', dict(z=0, health=-1)),
+        ('custom_free_cap', dict(z=1000, rate=-5, free_cap=-6)),
+        ('unmarked', dict(z=1000, rate=-2, marked=0)),
+        ('limbo_keeps_rate', dict(z=1000, limbo=1, rate=-4)),
+        ('parachute_landing', dict(z=0, rate=-2, parachuted=1, bomb=0)))]
+    cases += [dict(kind='hover_water', name=f'water_z_{z}', z=z, spinning=1, steps=1)
+              for z in (0, 103, 104, 105)]
+    cases += [dict(kind='hover_water', name='dry', z=0, land=0, spinning=1),
+              dict(kind='hover_water', name='still_spinning', z=0, spinning=1, powered=1),
+              dict(kind='hover_water', name='not_spinning', z=0),
+              dict(kind='hover_water', name='last_spin_step', z=0, spinning=1, powered=1, steps=1)]
+    cases += [dict(kind='bridge_gate', name='missing_deck', bridge=1),
+              dict(kind='bridge_gate', name='present_deck', bridge=1, deck=True),
+              dict(kind='bridge_gate', name='not_on_bridge', bridge=0)]
+    return [execute_bomb(case) for case in cases]
+
+
 if __name__ == '__main__':
+    if '--drop-as-bomb' in sys.argv:
+        finish_vectors(generate_bomb, Path(__file__).with_name('drop_as_bomb.json'),
+            argv=[arg for arg in sys.argv[1:] if arg != '--drop-as-bomb'],
+            provenance=lambda: provenance(
+                scope='Bounded original DropAsBomb, ObjectAI falling block, Foot missing-deck and Hover Process water gate controls',
+                entry_points=dict(drop_as_bomb=0x5F4160, object_ai=0x5F3E70, hover_water=0x514AD0,
+                                  foot_missing_deck=0x4D8D0B, hover_threshold_startup=0x513AE0),
+                substitutions=['Foot virtual receiver callbacks and display membership record arguments and return supplied values; no receiver parity claim',
+                               'Foot/Hover gate Map lookup and Hover floor return supplied cell/floor; DropAsBomb dispatch executes original body',
+                               'Hover Is_Powered returns the supplied powered byte OR supplied Location Z above floor (516C70); facing read/update callbacks are substituted while spin-step arithmetic and entry/exit gates execute original bytes'],
+                assumptions=['Foot/nonfoot bit, health, Location, canopy, limbo, bridge, parachute, falling and bomb flags are supplied controls',
+                             'Rules fall caps -3/-100 and C4Warhead pointer supplied; freefall literal1.4 and x87 conversion execute original bytes',
+                             'Original Hover startup helpers513A10..513AE0 execute in order to initialize threshold104; no startup constants supplied']))
+        sys.exit(0)
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(
         scope='Original Hover SpeedUpdate 515ED0 (request, ramp, SpeedMult) and altitude controller '
               '513D20 (visible height, spring offset) over supplied object, Foot and map state',

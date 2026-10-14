@@ -330,9 +330,12 @@ fn an_exploding_vehicle_with_ammo_dies_with_its_last_explosion() {
             let mut sim = sim(seed);
             let unit = spawn(&mut sim, &rules, kind, 12, 12);
             if veteran {
-                crate::sim::combat::veterancy::set_veteran(
-                    sim.substrate.entities.get_mut(unit).unwrap(),
-                );
+                sim.substrate
+                    .entities
+                    .get_mut(unit)
+                    .unwrap()
+                    .veterancy
+                    .set_veteran();
             }
             let mut replay = sim.scenario_rng.clone();
             let mut recorded = Vec::new();
@@ -396,6 +399,165 @@ fn kill_with(
         &[hit],
         crate::sim::world::FrameEffects::default(),
     );
+}
+
+/// Rust regression through the production damage receiver. Instruction
+/// evidence: Techno702232, Unit737E78 and Infantry5181B5 (retail gamemd).
+/// Both water branches retain Location Z and construct Wake before the
+/// selected splash, with no selection draws. The low bomb gate alone skips
+/// Techno's debris; high bombs and ordinary water deaths still consume it.
+#[test]
+fn low_dropped_bombs_use_class_water_splashes_without_debris() {
+    use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+    use crate::rules::terrain_rules::SpeedCostProfile;
+
+    let text = RULES
+        .replace("[General]\n", "[General]\nWake=EXPA\n")
+        .replace("1=ENGINEER\n", "1=ENGINEER\n2=ROCKET\n")
+        .replace(
+            "[PLAIN]\nStrength=100\nExplosion=EXPA,EXPB,EXPC\nDestroyAnim=DESTA",
+            "[PLAIN]\nStrength=100\nExplosion=DESTA\nMaxDebris=2\nMinDebris=1\nDebrisAnims=DESTA",
+        )
+        + "\n[CombatDamage]\nSplashList=EXPC,EXPB\n\
+           [ROCKET]\nStrength=100\nJumpJet=yes\nCrashable=yes\nSpeed=4\n\
+           Locomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\n";
+    let rules = rules_from(&text);
+    let open = SpeedCostProfile {
+        foot: Some(100),
+        track: Some(100),
+        wheel: Some(100),
+        float: Some(100),
+        amphibious: Some(100),
+        float_beach: Some(100),
+        hover: Some(100),
+    };
+    for (kind, bomb, height, water, splash) in [
+        ("PLAIN", true, 10, true, Some(("EXPB", 5))),
+        ("PLAIN", true, 0, true, Some(("EXPB", 5))),
+        ("PLAIN", false, 0, true, None),
+        ("PLAIN", true, 11, true, None),
+        ("PLAIN", true, 0, false, None),
+        ("E1", true, 10, true, Some(("EXPC", 3))),
+        ("E1", true, 0, true, Some(("EXPC", 3))),
+        ("ROCKET", true, 0, true, Some(("EXPC", 3))),
+        ("ROCKET", true, 10, true, Some(("EXPC", 3))),
+        ("SHIP", true, 0, true, None),
+    ] {
+        let mut sim = sim(9);
+        let cells = (0..20_u16)
+            .flat_map(|y| (0..20_u16).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                let mut cell = test_flat_cell(x, y);
+                cell.speed_costs = open;
+                cell.base_speed_costs = open;
+                if (x, y) == (12, 12) {
+                    cell.level = 2;
+                    cell.is_water = water;
+                    cell.land_type = if water {
+                        LandType::Water.as_index()
+                    } else {
+                        LandType::Clear.as_index()
+                    };
+                    cell.yr_cell_land_type = cell.land_type;
+                    cell.base_land_type = cell.land_type;
+                    cell.base_yr_cell_land_type = cell.land_type;
+                }
+                cell
+            })
+            .collect();
+        sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(20, 20, cells));
+        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+            base: 20,
+            off_fc: -128,
+            off_100: -128,
+            off_104: 256,
+            off_108: 256,
+        });
+        sim.playfield_size_height = Some(20);
+        assert!(sim.rebuild_dynamic_navigation(&rules));
+        let id = spawn(&mut sim, &rules, kind, 12, 12);
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        // Two ground levels exercise a raw world Z rather than a floor-Z
+        // substitute. Native GetHeight still sees the table's 0/10/11.
+        entity.position.exact_z_leptons =
+            Some(2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS + height);
+        if bomb {
+            entity.begin_bomb_fall();
+            entity.finish_fall();
+            assert!(entity.was_dropped_as_bomb(), "landing retains +8F");
+        }
+        let raw = position_world_coord(&entity.position);
+        let before = sim.scenario_rng.state();
+        kill(&mut sim, &rules, id);
+        let played = anims(&sim);
+        if let Some((name, lift)) = splash {
+            assert_eq!(
+                played,
+                vec![
+                    (
+                        "EXPA".to_string(),
+                        AnimWorldCoord {
+                            x: raw.x,
+                            y: raw.y,
+                            z: raw.z
+                        },
+                        0,
+                        0x600,
+                        0,
+                    ),
+                    (
+                        name.to_string(),
+                        AnimWorldCoord {
+                            x: raw.x,
+                            y: raw.y,
+                            z: raw.z + lift
+                        },
+                        0,
+                        0x600,
+                        0,
+                    ),
+                ],
+                "{kind} bomb={bomb} height={height} water={water}",
+            );
+            // Jumpjet Stop_Driver legitimately consumes placement draws
+            // before this concrete death arm. Plain foot/vehicle controls
+            // isolate the splash selections' absence of RNG draws.
+            if kind != "ROCKET" {
+                assert_eq!(sim.scenario_rng.state(), before, "no selection draw");
+            }
+            if kind == "ROCKET" && height > 0 {
+                let entity = sim.substrate.entities.get(id).unwrap();
+                assert!(entity.crashing, "common Crashable tail follows splash");
+                assert!(entity.lifecycle.object_alive);
+                assert_eq!(entity.health.current, 0);
+                assert!(entity.infantry_terminal.is_none());
+                assert!(!entity.dying);
+                assert!(!sim.substrate.pending_delete.contains_object(&id));
+                continue;
+            }
+            assert!(
+                !sim.substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .lifecycle
+                    .object_alive
+            );
+            assert!(sim.substrate.pending_delete.contains_object(&id));
+        } else if kind == "SHIP" {
+            assert!(played.is_empty(), "ship sinking precedes water splash");
+            let ship = sim.substrate.entities.get(id).unwrap();
+            assert!(ship.sinking.is_active());
+            assert_eq!(ship.health.current, 1);
+        } else {
+            assert!(
+                played.len() >= 2,
+                "debris plus ordinary explosion: {played:?}"
+            );
+            assert!(played.iter().all(|anim| anim.0 == "DESTA"));
+            assert_ne!(sim.scenario_rng.state(), before, "debris/explosion draw");
+        }
+    }
 }
 
 /// Through the production receiver: an infantryman's InfDeath anim is built

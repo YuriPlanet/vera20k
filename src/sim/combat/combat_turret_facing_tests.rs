@@ -981,7 +981,6 @@ fn gsi_08_04_moving_turretless_vehicle_does_not_turn_to_fire() {
     {
         let attacker = sim.substrate.entities.get_mut(1).unwrap();
         attacker.attack_target = Some(AttackTarget::new(2));
-        attacker.passively_acquired_target = true; // pursuit leaves this one alone
         attacker.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(5, 1));
     }
 
@@ -1064,18 +1063,11 @@ fn drive_with(
 }
 
 #[test]
-fn gsi_08_04_the_fire_turn_asks_navcom_and_the_locomotor_not_the_order() {
+fn gsi_08_04_the_fire_turn_asks_navcom_and_the_locomotor() {
     // Case 2 reads NavCom (`0x00736FB6`) and the locomotor's Is_Moving
     // (`0x00736FE1`), nothing else about movement.
     let toward = Some(facing_from_5_5_to_5_9());
     assert_eq!(fire_turn_hull(|_| {}), toward, "a standing unit turns");
-    assert_eq!(
-        fire_turn_hull(|attacker| {
-            attacker.movement_target = Some(crate::sim::components::MovementTarget::default());
-        }),
-        toward,
-        "an order with no NavCom and a still locomotor turns"
-    );
     assert_eq!(
         fire_turn_hull(drive_under_way),
         None,
@@ -1102,7 +1094,7 @@ fn rules_turretless_track() -> RuleSet {
 }
 
 #[test]
-fn facing_update_turretless_arm_asks_navcom_and_the_locomotor_not_the_order() {
+fn facing_update_turretless_arm_asks_navcom_and_the_locomotor() {
     // Arm A re-sets a turretless hull that already points at its target only
     // with no NavCom (`0x00736A38`) and Is_Moving false (`0x00736A5F`).
     use crate::sim::movement::turret::facing_update;
@@ -1126,11 +1118,6 @@ fn facing_update_turretless_arm_asks_navcom_and_the_locomotor_not_the_order() {
         .hull_destination
     };
     assert_eq!(hull(&|_| {}), Some(toward), "a standing unit pins its hull");
-    assert_eq!(
-        hull(&|unit| unit.movement_target = Some(crate::sim::components::MovementTarget::default())),
-        Some(toward),
-        "an order with no NavCom and a still locomotor"
-    );
     assert_eq!(
         hull(&|unit| unit.navigation.nav_com =
             Some(crate::sim::components::NavTargetRef::cell(5, 1))),
@@ -1242,7 +1229,7 @@ fn gsi_08_14_idle_turret_leads_toward_the_move_destination() {
 #[test]
 fn gsi_08_14_idle_turret_returns_to_the_hull_without_a_navcom() {
     // `0x00736BAB`: with no NavCom the idle return takes the hull's facing,
-    // whatever path the scheduling adapter holds.
+    // whatever path Foot+5E0 holds.
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 100);
     sim.substrate
@@ -1253,10 +1240,6 @@ fn gsi_08_14_idle_turret_returns_to_the_hull_without_a_navcom() {
         .snap(0x0000, 0); // hull north
     use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
-    sim.substrate.entities.get_mut(1).unwrap().movement_target =
-        Some(crate::sim::components::MovementTarget {
-            ..Default::default()
-        });
     // A route east without a NavCom: Foot+5E0 words toward (9,5).
     sim.substrate
         .entities
@@ -1274,7 +1257,7 @@ fn gsi_08_14_idle_turret_returns_to_the_hull_without_a_navcom() {
             .find(|u| u.entity_id == 1)
             .and_then(|u| u.turret_destination),
         Some(0),
-        "an adapter path is not a NavCom"
+        "a path is not a NavCom"
     );
 }
 

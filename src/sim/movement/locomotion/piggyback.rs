@@ -246,7 +246,6 @@ pub fn end_into(
 /// which is the Foot's: END (`0x004AF930`) does not move the Foot, and Drive
 /// and Teleport both answer Ground from `In_Which_Layer` (`0x004B4820`,
 /// `0x00719E20`), so a Foot that drove onto or off a bridge deck stays there.
-/// Its `altitude` is left as the object kept it; neither class reads one.
 pub fn end(state: &mut LocomotorState) -> Option<LocomotorState> {
     let stashed = state.piggyback.take()?;
     let released = std::mem::replace(state, *stashed.0);
@@ -266,7 +265,6 @@ mod tests {
     use super::*;
     use crate::rules::locomotor_type::SpeedType;
     use crate::sim::movement::locomotor::MovementLayer;
-    use crate::util::fixed_math::SimFixed;
 
     fn teleporter() -> LocomotorState {
         LocomotorState::for_test_kind(LocomotorKind::Teleport)
@@ -320,7 +318,6 @@ mod tests {
     #[test]
     fn begin_and_end_transfer_the_complete_object() {
         let mut state = teleporter();
-        state.altitude = SimFixed::from_num(123);
         state.speed_type = SpeedType::Wheel;
         state.power_off();
         let before = state.clone();
@@ -334,14 +331,13 @@ mod tests {
         // LocomotionClass constructor 0x0055A6C0 raises Powered; the
         // temporary shares only the type's data with the displaced object.
         assert!(state.powered);
-        assert_eq!(state.altitude, SimFixed::ZERO);
         assert_eq!(state.speed_type, SpeedType::Wheel);
         assert_eq!(state.piggyback.as_deref(), Some(&before));
 
-        state.altitude = SimFixed::from_num(7);
+        state.power_off();
         let released = end(&mut state).expect("suspended object");
         assert_eq!(released.kind, LocomotorKind::Drive);
-        assert_eq!(released.altitude, SimFixed::from_num(7));
+        assert!(!released.powered);
         assert_eq!(state, before);
         assert_eq!(state.effective_kind(), LocomotorKind::Teleport);
     }

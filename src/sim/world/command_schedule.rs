@@ -126,24 +126,41 @@ impl Simulation {
         if let Some(rules) = rules {
             crate::sim::production::publish_production_changes(self, rules);
         }
-        let mut published = self.pending_commands.split_off(previous_pending);
+        let published = self.pending_commands.split_off(previous_pending);
+        let mut admitted = commands.to_vec();
+        self.admit_generated_frame_commands(&mut admitted, published, true);
+        admitted
+    }
+
+    /// Local events produced during the frame join the existing batch in
+    /// OutList insertion order before the canonical House-ordered dispatcher.
+    /// Recorded diagnostic batches already contain these events; consume one
+    /// exact regenerated copy per recorded entry only on that route. Ordinary
+    /// player cancellation and a strip cancellation may be identical and both
+    /// must execute. Future events stay with the one persisted queue owner.
+    pub(super) fn admit_generated_frame_commands(
+        &mut self,
+        admitted: &mut Vec<CommandEnvelope>,
+        mut generated: Vec<CommandEnvelope>,
+        commands_include_generated: bool,
+    ) {
         let execute_tick = self.session.tick.saturating_add(1);
-        for admitted in commands {
-            if admitted.execute_tick <= execute_tick
-                && let Some(index) = published.iter().position(|command| command == admitted)
-            {
-                published.remove(index);
+        if commands_include_generated {
+            for command in admitted.iter() {
+                if command.execute_tick <= execute_tick
+                    && let Some(index) = generated.iter().position(|fresh| fresh == command)
+                {
+                    generated.remove(index);
+                }
             }
         }
-        let mut admitted = commands.to_vec();
-        for command in published {
+        for command in generated {
             if command.execute_tick <= execute_tick {
                 admitted.push(command);
             } else {
                 self.pending_commands.push(command);
             }
         }
-        admitted
     }
 
     /// Admit and drain a diagnostic-replay batch, consuming exact matching
@@ -163,6 +180,7 @@ impl Simulation {
         &mut self,
         commands: impl IntoIterator<Item = CommandEnvelope>,
     ) -> Vec<CommandEnvelope> {
+        self.replaying_recorded_commands = true;
         let commands: Vec<_> = commands.into_iter().collect();
         let execute_tick = self.session.tick.saturating_add(1);
         for recorded in &commands {
@@ -186,6 +204,17 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> (bool, bool) {
+        // Scatter's found-cell arm immediately runs the locomotor. Its
+        // authoritative bridge flag can change before the ordinary movement
+        // phase, so that phase must rebuild its derived navigation view too.
+        let scatter_bridge_before = match cmd.payload {
+            Command::Scatter { entity_id } => self
+                .substrate
+                .entities
+                .get(entity_id)
+                .map(|entity| (entity_id, entity.on_bridge)),
+            _ => None,
+        };
         let cmd_owner_str = self.interner.resolve(cmd.owner).to_string();
         let applied = self.apply_command_with_overlays(
             &cmd_owner_str,
@@ -201,7 +230,13 @@ impl Simulation {
         let spawned_entity = synchronous_deploy
             || placed_building_owner.is_some()
             || applied && matches!(cmd.payload, Command::PlaceProducedMobile { .. })
-            || applied && matches!(cmd.payload, Command::LaunchSuperWeapon { .. });
+            || applied && matches!(cmd.payload, Command::LaunchSuperWeapon { .. })
+            || scatter_bridge_before.is_some_and(|(id, before)| {
+                self.substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|entity| entity.on_bridge != before)
+            });
         (applied, spawned_entity)
     }
 
@@ -225,6 +260,7 @@ impl Simulation {
         matches!(
             command,
             Command::Move { .. }
+                | Command::MoveToObject { .. }
                 | Command::Attack { .. }
                 | Command::ForceAttack { .. }
                 | Command::AttackMove { .. }
@@ -243,6 +279,12 @@ impl Simulation {
         )
     }
 
+    /// The run key of `0x0064CDA0`'s caller: action, target and destination
+    /// tokens (`0x0064CB0A..0x0064CB60`). `0x0064CDA0` returns at once unless
+    /// the destination token is a Cell (`0x0064CDCA..0x0064CDDC`), so a Move
+    /// onto an object, and an attack-move with a target or an object
+    /// destination, have no key: each ends a run and is never spread. The
+    /// click never sends an attack-move with both tokens.
     fn formation_key(command: &Command) -> Option<(u8, u16, u16)> {
         match command {
             Command::Move {
@@ -251,10 +293,10 @@ impl Simulation {
                 ..
             } => Some((0, *target_rx, *target_ry)),
             Command::AttackMove {
-                target_rx,
-                target_ry,
+                target: None,
+                destination: Some(crate::sim::combat::TargetKind::Cell(rx, ry)),
                 ..
-            } => Some((1, *target_rx, *target_ry)),
+            } => Some((1, *rx, *ry)),
             _ => None,
         }
     }
@@ -465,8 +507,8 @@ impl Simulation {
                             ..
                         }
                         | Command::AttackMove {
-                            target_rx,
-                            target_ry,
+                            destination:
+                                Some(crate::sim::combat::TargetKind::Cell(target_rx, target_ry)),
                             ..
                         } => {
                             *target_rx = assignment.destination.0 as u16;

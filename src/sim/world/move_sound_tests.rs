@@ -168,6 +168,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
             },
             object.hover_attack,
             object.deploy_to_land,
+            None,
             sim.session.binary_frame,
         );
         sim.tick_move_sound_after_process(id, body_before, Some(rules));

@@ -394,22 +394,6 @@ impl Simulation {
                 {
                     loco.store_track_destination(family, None);
                 }
-                // Retire only the completed order adapter before PerCell. The
-                // native terminal tail has no legacy finalizer/body-turn reset;
-                // a callback may install a new path that must survive this tail.
-                if let Some(entity) = self.substrate.entities.get_mut(id) {
-                    if reached {
-                        entity.movement_target = None;
-                    } else if entity.movement_target.is_some()
-                        && entity
-                            .navigation
-                            .path_replay
-                            .remaining_directions()
-                            .is_empty()
-                    {
-                        super::movement_commands::spend_track_route(entity);
-                    }
-                }
                 self.unit_per_cell_process(
                     id,
                     super::per_cell::PerCellReason::Arrival,
@@ -425,7 +409,7 @@ impl Simulation {
                     let entity = self.substrate.entities.get_mut(id).unwrap();
                     super::navcom::foot_stop_moving(entity);
                     entity.navigation.path_replay.clear_live_head();
-                    entity.navigation.pending_arrival_clear = false;
+                    entity.navigation.pending_destination_setter = false;
                     if entity.mission.current().known() == Some(MissionType::Move) {
                         let returns = self.unit_enter_idle_mode(id, rules, false, effects);
                         observe(self, id, TrackWorldEvent::Arrival);
@@ -433,12 +417,6 @@ impl Simulation {
                             return Ok(TrackPass::aborted(moved));
                         }
                     }
-                }
-                if !reached
-                    && let Some(entity) = self.substrate.entities.get_mut(id)
-                    && entity.movement_target.is_none()
-                {
-                    entity.navigation.pending_arrival_clear = entity.navigation.nav_com.is_some();
                 }
                 if self.track_navigation_gate(id, rules, effects) {
                     return Ok(TrackPass::aborted(moved));
@@ -726,28 +704,31 @@ impl Simulation {
             &self.interner,
         );
         observe(self, id, TrackWorldEvent::SetCoords);
-        if crossing && !terminal {
-            // Crossing uses actual current cell; this predicate instead uses
-            // the previous transformed cached point (or current at cursor0).
             let grid = self.path_grid.as_deref();
-            if let Some(entity) = self.substrate.entities.get_mut(id)
-                && let Some((source, destination)) = grid.and_then(|grid| {
-                    grid.cell(previous_track_cell.0, previous_track_cell.1)
-                        .zip(grid.cell(selected_cell.0, selected_cell.1))
-                })
-            {
-                use super::movement_bridge::{BridgeStateUpdate, BridgeTransition};
-                let update =
-                    match super::movement_bridge::compute_bridge_transition(source, destination) {
-                        BridgeTransition::Enter => BridgeStateUpdate::Set,
-                        BridgeTransition::Exit => BridgeStateUpdate::Clear,
-                        BridgeTransition::NoChange => BridgeStateUpdate::Unchanged,
-                    };
+        if crossing && let Some(entity) = self.substrate.entities.get_mut(id) {
+            if !terminal {
+                // Crossing uses actual current cell; this predicate instead
+                // uses the previous transformed cached point (or current at
+                // cursor0). The resolver also stores the entered cell's level.
+                let update = super::movement_bridge::resolve_cell_transition_bridge_state(
+                    &mut entity.position,
+                    grid,
+                    previous_track_cell,
+                    selected_cell,
+                    entity.on_bridge,
+                );
                 super::movement_bridge::apply_bridge_layer_state(
                     &mut entity.locomotor,
                     &mut entity.on_bridge,
                     update,
                 );
+            } else if let Some(entered) =
+                grid.and_then(|grid| grid.cell(selected_cell.0, selected_cell.1))
+            {
+                // The terminal point skips the bridge predicate but still
+                // enters a new cell.
+                entity.position.z =
+                    super::movement_bridge::stored_level(entered.ground_level, entity.on_bridge);
             }
         }
         if terminal && let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -1070,8 +1051,12 @@ impl Simulation {
             return false;
         }
         entity.mission_leaf.set_foot_idle_entry_latch(1);
-        // Foot4D82D9 -> Techno709A54 lets a held Temporal target go first.
+        // Foot4D82D9 -> Techno709A54 lets a held Temporal target go first,
+        // then asks RefreshMegaMission (vt+0x4D0, Techno709A5D) whether an
+        // attack-move resumes. Its false answer would ask the planning path
+        // (vt+0x430), which VERA does not represent.
         self.temporal_release_if_warping(id);
+        self.foot_refresh_mega_mission(id, rules, registry, effects);
         // Foot4D831A..8376 asks the active IPiggyback, whatever its class,
         // and ends it before NavQueue when its Is_Ok_To_End allows.
         // Unit saves the base return but still executes its own receiver tail.
@@ -1095,61 +1080,19 @@ impl Simulation {
                     None
                 }
             });
-        // 4D838E..83CA: vt+0x480(queue[0], 0), then the queue shift. Drive
-        // and Ship finish the setter at their next Process entry
-        // (`complete_pending_order`); another receiver runs it here.
-        let track = entity.locomotor.as_ref().is_some_and(|loco| {
-            matches!(
-                loco.active_kind(),
-                crate::rules::locomotor_type::LocomotorKind::Drive
-                    | crate::rules::locomotor_type::LocomotorKind::Ship
-            )
-        });
-        let category = entity.category;
-        let setter_now = queued_cell.is_some_and(|(rx, ry)| {
-            !track
-                && rules.is_some_and(|rules| match category {
-                    EntityCategory::Unit => self.unit_setter_receiver(id, Some(rules)),
-                    EntityCategory::Infantry => {
+        // 4D838E..83CA: vt+0x480(queue[0], 0) through the one dispatcher,
+        // which keeps its own NavCom fallback for a receiver no class setter
+        // represents, then the queue shift.
+        if let Some((rx, ry)) = queued_cell {
                         let target = crate::sim::components::NavTargetRef::cell(rx, ry);
-                        self.infantry_setter_receiver(id, rules)
-                            && self
-                                .infantry_destination_inputs_available(id, target, rules, registry)
+            if let Err(cause) =
+                self.assign_destination_keeping_queue(id, Some(target), rules, registry, effects)
+            {
+                log::debug!("Foot {id} NavQueue destination: {cause:?}");
                     }
-                    _ => false,
-                })
-        });
-        let entity = self
-            .substrate
-            .entities
-            .get_mut(id)
-            .expect("same idle-mode actor");
-        if let Some(next) = queued_cell.filter(|_| !setter_now) {
-            super::navcom::set_destination_internal_cell(
-                entity,
-                next,
-                self.resolved_terrain.as_ref(),
-                self.session.binary_frame,
-            );
-            entity.navigation.nav_queue.remove(0);
-            entity.navigation.pending_arrival_clear = true;
-        }
-        if let (Some((rx, ry)), Some(rules)) = (queued_cell.filter(|_| setter_now), rules) {
-            let target = crate::sim::components::NavTargetRef::cell(rx, ry);
-            if category == EntityCategory::Infantry {
-                // Infantry51AA40 does not read the queue-clear flag; its
-                // shared setter supplies the same receiver for mode0/1.
-                self.set_infantry_destination(id, target, rules, registry, effects)
-                    .expect("checked Infantry NavQueue destination inputs");
-            } else {
-                self.set_unit_destination(id, target, rules, false, effects);
-            }
-            let entity = self
-                .substrate
-                .entities
-                .get_mut(id)
-                .expect("same idle-mode actor");
-            if !entity.navigation.nav_queue.is_empty() {
+            if let Some(entity) = self.substrate.entities.get_mut(id)
+                && !entity.navigation.nav_queue.is_empty()
+            {
                 entity.navigation.nav_queue.remove(0);
             }
         }
@@ -1204,7 +1147,7 @@ impl Simulation {
                 }
             };
             if let Err(cause) =
-                self.set_infantry_destination(id, destination, rules, registry, effects)
+                self.assign_infantry_destination(id, destination, rules, registry, effects)
             {
                 log::debug!("Infantry {id} idle Archive destination: {cause}");
             }
@@ -1221,8 +1164,8 @@ impl Simulation {
     /// placement, and locomotor/radio callers. The first argument skips the
     /// human harvester land check when nonzero. Native executable controls:
     /// tools/spatial_oracle/harvest_attack_return.json, track_destination.json
-    /// and foot_enter_idle.json. Foot planning-path and saved AttackMove state
-    /// remain separate residuals; ordinary Attack clears those saved inputs.
+    /// and foot_enter_idle.json. The Foot planning path remains a separate
+    /// residual.
     pub(crate) fn unit_enter_idle_mode(
         &mut self,
         id: u64,
@@ -1234,8 +1177,11 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return saved_base_return;
         };
-        //73899E..7389AB: Wait28 suppresses only the Unit tail after Foot.
-        if entity.mission.effective().known() == Some(MissionType::Deliberate) {
+        //738990..7389AB: a resumed attack-move (HaveMegaMission, vt+0x4AC)
+        // or Wait28 suppresses the Unit tail after Foot.
+        if entity.mega_mission.is_attack_move()
+            || entity.mission.effective().known() == Some(MissionType::Deliberate)
+        {
             return saved_base_return;
         }
         // 0x007389B1..0x007389BF: a Magnetron lets go of what it holds.

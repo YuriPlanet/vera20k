@@ -741,7 +741,7 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         ),
         (269, Some(269))
     );
-    assert!(reactor.building_damage_state_active);
+    assert!(reactor.building_art.damage_state_active());
     let golden = charge["house_refresh_controls"]
         .as_array()
         .unwrap()
@@ -770,7 +770,8 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         sim.entities()
             .get(building)
             .unwrap()
-            .building_anim_slots
+            .building_art
+            .anim_slots()
             .iter()
             .enumerate()
             .filter(|(slot, _)| (14..=17).contains(slot))
@@ -1320,7 +1321,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
     assert_eq!(json!(reactor.health.current), last["health"]);
     assert_eq!(json!(reactor.estimated_health.get()), last["estimated"]);
     assert_eq!(
-        u8::from(reactor.building_damage_state_active),
+        u8::from(reactor.building_art.damage_state_active()),
         last["damaged_mode"].as_u64().unwrap() as u8
     );
     assert_eq!(
@@ -3261,7 +3262,7 @@ fn native_trigger_reveal_initial_event48_tags_receive_neutral_discovery_dispatch
             false,
             0,
         );
-        entity.building_actually_placed = true;
+        entity.building_art.set_actually_placed_for_test(true);
         sim.substrate.entities.insert(entity);
         sim.attach_object_trigger_tag(id, Some(lead["tag"].as_str().unwrap()));
         let tag = sim.trigger_runtime.attachments[&TagAttachment::Object(id)];

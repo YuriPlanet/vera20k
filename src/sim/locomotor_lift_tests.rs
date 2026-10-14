@@ -91,7 +91,6 @@ fn move_away(sim: &mut Simulation, magnetron: u64) {
             entity_id: magnetron,
             target_rx: 4,
             target_ry: 16,
-            queue: false,
         },
     );
 }

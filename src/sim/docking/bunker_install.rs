@@ -29,13 +29,15 @@ pub enum BunkerState {
     /// Empty / not installing.
     #[default]
     Idle,
-    /// Candidate admitted; waiting for it to arrive on the footprint + stop, then shove blockers.
+    /// Candidate admitted; waiting for it to stop in a bunker cell
+    /// ([`arrived_and_stopped`]), then shove blockers.
     ArriveWait,
     /// Waiting for the footprint to clear of other objects, then face the building.
     ClearWait,
     /// Turning the unit to face the building.
     TurnToBuilding,
-    /// Force-track sub-cell step onto the foundation centre in progress.
+    /// Force-track sub-cell step onto the foundation centre in progress,
+    /// until the unit stops in a bunker cell ([`arrived_and_stopped`]).
     TrackStep,
     /// Turning the unit to South (desired body facing 0x8000).
     TurnSouth,
@@ -126,7 +128,7 @@ fn step_install(
 
     match state {
         BunkerState::ArriveWait => {
-            if on_footprint_and_stopped(sim, building_id, unit_id) {
+            if arrived_and_stopped(sim, building_id, unit_id) {
                 set_state(sim, building_id, BunkerState::ClearWait, Some(unit_id));
             }
         }
@@ -157,7 +159,7 @@ fn step_install(
             }
         }
         BunkerState::TrackStep => {
-            if !is_moving(sim, unit_id) {
+            if arrived_and_stopped(sim, building_id, unit_id) {
                 turn_unit(sim, unit_id, SOUTH_FACING);
                 set_state(sim, building_id, BunkerState::TurnSouth, Some(unit_id));
             }
@@ -208,26 +210,19 @@ fn is_turning(sim: &Simulation, unit_id: u64) -> bool {
         .is_some_and(|u| u.body_facing.is_rotating(frame))
 }
 
-fn is_moving(sim: &Simulation, unit_id: u64) -> bool {
-    sim.substrate.entities.get(unit_id).is_some_and(|u| {
-        movement::track_head::committed_track_head(u).is_some() || u.movement_target.is_some()
+/// UpdateBunker's arrival test in states 0 and 3 (`0x00458EAF..0x00458EE9`,
+/// `0x004591D6..0x00459210`): the first ground Building of the unit's cell
+/// (`Look_up_building_in_cell @ 0x0047C520`) is this bunker, and the unit's
+/// locomotor answers Is_Moving (vt+0x10 at `0x00458EE4`, `0x0045920B`) false.
+fn arrived_and_stopped(sim: &Simulation, building_id: u64, unit_id: u64) -> bool {
+    sim.substrate.entities.get(unit_id).is_some_and(|unit| {
+        sim.substrate.occupancy.first_building_on_layer(
+            unit.position.rx,
+            unit.position.ry,
+            movement::locomotor::MovementLayer::Ground,
+        ) == Some(building_id)
+            && movement::motion_query::is_moving(unit) != Some(true)
     })
-}
-
-/// The candidate is on one of the bunker's footprint cells and not moving.
-fn on_footprint_and_stopped(sim: &Simulation, building_id: u64, unit_id: u64) -> bool {
-    let Some(building) = sim.substrate.entities.get(building_id) else {
-        return false;
-    };
-    let footprint = entity_occupancy_cells(building);
-    let Some(unit) = sim.substrate.entities.get(unit_id) else {
-        return false;
-    };
-    let on = footprint
-        .iter()
-        .any(|&(cx, cy)| cx == unit.position.rx && cy == unit.position.ry);
-    on && unit.movement_target.is_none()
-        && movement::track_head::committed_track_head(unit).is_none()
 }
 
 /// No live vehicle/infantry other than the candidate stands on the footprint.
@@ -669,11 +664,12 @@ mod tests {
         let rules = rules();
         spawn_bunker(&mut sim, 2);
         spawn_tank_on(&mut sim, 1, 10, 10); // already on the anchor cell
+        assert!(matches!(sim.reveal(2), RevealOutcome::Revealed { .. }));
         assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
         sim.substrate.entities.get_mut(1).unwrap().bunker_link = BunkerLink::Approaching(2);
         set_state(&mut sim, 2, BunkerState::ArriveWait, Some(1));
 
-        // ArriveWait -> ClearWait (on footprint, stopped).
+        // ArriveWait -> ClearWait (in the bunker's cell, stopped).
         tick_bunker_install(
             &mut sim,
             &rules,
@@ -714,7 +710,6 @@ mod tests {
         let loco = unit.locomotor.as_mut().unwrap();
         assert!(loco.store_track_head(movement::track_process::TrackFamily::Drive, None));
         assert!(loco.store_track_destination(movement::track_process::TrackFamily::Drive, None));
-        unit.movement_target = None;
         tick_bunker_install(
             &mut sim,
             &rules,
@@ -772,6 +767,58 @@ mod tests {
         );
     }
 
+    /// UpdateBunker states 0 and 3 wait on the locomotor's Is_Moving
+    /// (`0x00458EE4`, `0x0045920B`), not on an order: a Drive with a
+    /// destination waits in the bunker cell, and stopped, it proceeds. Outside
+    /// the bunker's cell (`0x00458EBC..0x00458EC3`, `0x004591E3..0x004591EA`)
+    /// it waits too.
+    #[test]
+    fn arrival_waits_for_the_bunker_cell_and_a_stopped_locomotor() {
+        let rules = rules();
+        for (waiting, next) in [
+            (BunkerState::ArriveWait, BunkerState::ClearWait),
+            (BunkerState::TrackStep, BunkerState::TurnSouth),
+        ] {
+            let mut sim = Simulation::new();
+            spawn_bunker(&mut sim, 2);
+            spawn_tank_on(&mut sim, 1, 9, 10);
+            assert!(matches!(sim.reveal(2), RevealOutcome::Revealed { .. }));
+            assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
+            sim.substrate.entities.get_mut(1).unwrap().bunker_link = BunkerLink::Approaching(2);
+            set_state(&mut sim, 2, waiting, Some(1));
+            let tick = |sim: &mut Simulation| {
+                tick_bunker_install(
+                    sim,
+                    &rules,
+                    None,
+                    crate::sim::world::FrameEffects::default(),
+                )
+            };
+
+            tick(&mut sim);
+            assert_eq!(rt(&sim, 2).state, waiting, "not in its cell");
+
+            let unit = sim.substrate.entities.get_mut(1).unwrap();
+            unit.position.rx = 10;
+            assert!(unit.locomotor.as_mut().unwrap().store_track_destination(
+                movement::track_process::TrackFamily::Drive,
+                Some(crate::sim::components::DriveCoord::cell(10, 10, 0)),
+            ));
+            tick(&mut sim);
+            assert_eq!(rt(&sim, 2).state, waiting, "still moving");
+
+            let unit = sim.substrate.entities.get_mut(1).unwrap();
+            assert!(
+                unit.locomotor
+                    .as_mut()
+                    .unwrap()
+                    .store_track_destination(movement::track_process::TrackFamily::Drive, None)
+            );
+            tick(&mut sim);
+            assert_eq!(rt(&sim, 2).state, next);
+        }
+    }
+
     #[test]
     fn install_aborts_when_candidate_not_approaching() {
         let mut sim = Simulation::new();
@@ -800,6 +847,7 @@ mod tests {
         spawn_bunker(&mut sim, 2);
         spawn_tank_on(&mut sim, 1, 10, 10); // installer on the anchor
         spawn_tank_on(&mut sim, 3, 10, 10); // blocker on the same footprint cell
+        assert!(matches!(sim.reveal(2), RevealOutcome::Revealed { .. }));
         assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
         assert!(matches!(sim.reveal(3), RevealOutcome::Revealed { .. }));
         sim.substrate.entities.get_mut(1).unwrap().bunker_link = BunkerLink::Approaching(2);
@@ -841,7 +889,6 @@ mod tests {
         {
             let b = sim.substrate.entities.get_mut(3).unwrap();
             b.position.rx = 20;
-            b.movement_target = None;
         }
 
         // Footprint clear now → advance.

@@ -242,7 +242,7 @@ fn out_of_contact_destination_installs_fresh_drive_without_previous_instance_sta
     let locomotor = entity.locomotor.as_ref().unwrap();
     assert_eq!(locomotor.active_kind(), LocomotorKind::Drive);
     assert_eq!(locomotor.effective_kind(), LocomotorKind::Teleport);
-    assert!(entity.movement_target.is_some());
+    assert!(crate::sim::movement::motion_query::is_moving(&entity) == Some(true));
     assert_eq!(
         locomotor
             .track_progress(TrackFamily::Drive)
@@ -416,15 +416,13 @@ fn refused_miner_order_leaves_teleport_payload_untouched() {
         grid.set_blocked(12, 8, false);
         sim.path_grid = Some(std::sync::Arc::new(grid));
 
-        assert!(
-            !crate::sim::miner::miner_system::issue_stock_miner_drive_move(
-                &mut sim,
-                &rules,
-                1,
-                (12, 8),
-                None,
-                crate::sim::world::FrameEffects::default(),
-            )
+        crate::sim::miner::miner_system::assign_miner_cell_destination(
+            &mut sim,
+            &rules,
+            1,
+            (12, 8),
+            None,
+            crate::sim::world::FrameEffects::default(),
         );
 
         let entity = sim.substrate.entities.get(1).unwrap();
@@ -434,7 +432,7 @@ fn refused_miner_order_leaves_teleport_payload_untouched() {
             entity.locomotor.as_ref().unwrap().runtime_payload,
             LocomotorRuntimePayload::Teleport(_)
         ));
-        assert!(entity.movement_target.is_none());
+        assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
     }
 }
 

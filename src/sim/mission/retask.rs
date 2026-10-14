@@ -5,10 +5,10 @@
 //! execution queues the selected mission with `commence_now = 0`
 //! (`EventClass` execute, Queue callsite `0x004C73B9=dynamic/0`); the
 //! per-object AI host promotes it via Ready→Commence on its next update. The
-//! legacy `Option<T>` machines stay the behavior drivers; the per-site field
-//! clears (`attack_target`/`order_intent`) stay inline at the call
-//! site — the sites cancel different field subsets, so they cannot be folded
-//! into a fixed teardown without diverging.
+//! legacy `Option<T>` machines stay the behavior drivers; the per-site target
+//! and destination writes stay inline at the call site — the sites cancel
+//! different field subsets, so they cannot be folded into a fixed teardown
+//! without diverging.
 
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
@@ -24,15 +24,22 @@ impl Simulation {
     /// Pending entry+500 clears at4C7353, before Team removal and Queue.
     /// Original executable controls: building_repair.depot_service.json,
     /// pending_entry_lifecycle (declared Event slices, full Scenario RNG).
+    ///
+    /// Then `Assign_Target_Command` (vt+0x4A4, `0x004C73AA`) answers the
+    /// mission to queue ([`Self::foot_assign_target_command`]). `target` and
+    /// `destination` are the event's tokens, which it stores for an
+    /// attack-move; no other mission reads them.
     pub(crate) fn begin_megamission_retask(
         &mut self,
         id: u64,
         mission: MissionType,
+        target: Option<crate::sim::combat::TargetKind>,
+        destination: Option<crate::sim::combat::TargetKind>,
         rules: Option<&crate::rules::ruleset::RuleSet>,
         frame_effects: FrameEffects<'_>,
-    ) {
+    ) -> MissionType {
         let Some(entity) = self.substrate.entities.get(id) else {
-            return;
+            return mission;
         };
         let tethered = entity.dock_entered_with.is_some();
         let foot = matches!(
@@ -67,6 +74,7 @@ impl Simulation {
         if foot && mission != MissionType::Unload {
             self.leave_team(id, true, rules, frame_effects);
         }
+        self.foot_assign_target_command(id, mission, target, destination, rules)
     }
 
     /// `TechnoClass::ResetOrdersToGuard` (`vt+0x3D0` = `0x0070F850`, no
@@ -86,7 +94,6 @@ impl Simulation {
         self.assign_null_destination(id, Some(rules), None, frame_effects);
         let _ = self.assign_target_represented(id, None, Some(rules), None, frame_effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.movement_target = None;
             entity.set_archive_target(None);
         }
         let _ = self.mission_assign_exact(id, MissionId::from_known(MissionType::Guard), now);
@@ -156,31 +163,31 @@ impl Simulation {
         &mut self,
         id: u64,
         mission: MissionType,
+        target: Option<crate::sim::combat::TargetKind>,
+        destination: Option<crate::sim::combat::TargetKind>,
         rules: Option<&crate::rules::ruleset::RuleSet>,
         frame_effects: FrameEffects<'_>,
     ) {
-        self.begin_megamission_retask(id, mission, rules, frame_effects);
-        self.queue_order_mission(id, mission);
+        let queued =
+            self.begin_megamission_retask(id, mission, target, destination, rules, frame_effects);
+        self.queue_order_mission(id, queued);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.suspended_attack_target = None;
             if entity.category != crate::map::entities::EntityCategory::Structure {
                 entity.navigation.suspended_nav_com = None;
             }
         }
-        // `0x004C73E1..0x004C73EA`: any order but Attack takes a Slave Miner
-        // off its hunt (`sim::slave_manager`).
-        if mission != MissionType::Attack
+        // `0x004C73E1..0x004C73EA`: any queued mission but Attack takes a
+        // Slave Miner off its hunt (`sim::slave_manager`).
+        if queued != MissionType::Attack
             && let Some(rules) = rules
         {
             self.reset_slave_manager(id, rules, frame_effects);
         }
         // Event4C7446 tests the Foot receiver; non-Foot actors skip this
-        // call. Raw mission11 uses AreaGuard's separate Archive assignment
-        // at4C7430. AttackMove29 still uses VERA's deferred OrderIntent
-        // adapter rather than Foot4DF0E0's raw-event mapping; preserve that
-        // adapter here pending its recorded migration (#852/#1023). This
-        // exception is not native raw29 behavior, which clears the Archive.
-        if !matches!(mission, MissionType::AreaGuard | MissionType::AttackMove)
+        // call. Raw mission11 (`0x004C73EF` reads the event's own byte) uses
+        // AreaGuard's separate Archive assignment at4C7430.
+        if mission != MissionType::AreaGuard
             && let Some(entity) = self.substrate.entities.get_mut(id)
             && matches!(
                 entity.category,

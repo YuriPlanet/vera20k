@@ -137,8 +137,7 @@ pub(crate) fn target_present(
 /// Returns `None` if the target is `Entity(id)` and the entity no longer
 /// exists (despawned). `Cell` targets always resolve.
 ///
-/// Shared by the combat tick and the pursuit pre-combat stage so range
-/// decisions stay consistent.
+/// Read by the combat tick, the fire coordinate and the Temporal weapon.
 pub(crate) fn resolve_target_coords(
     target: &TargetKind,
     entities: &EntityStore,
@@ -203,16 +202,6 @@ pub(crate) fn install_entity_attack_target_for_test(
         None => return false,
     };
 
-    // Preserve historical fixture setup: discard a non-Walk movement adapter
-    // before installing the initial target. This is not a native setter effect.
-    if !attacker
-        .locomotor
-        .as_ref()
-        .is_some_and(|loco| loco.kind == crate::rules::locomotor_type::LocomotorKind::Walk)
-    {
-        attacker.movement_target = None;
-    }
-
     crate::sim::mission::concrete_effects::represented_assign_target_admitted(
         attacker,
         Some(TargetKind::Entity(target_id)),
@@ -259,13 +248,6 @@ pub(crate) fn install_cell_attack_target_for_test(
         None => return false,
     };
 
-    if !attacker
-        .locomotor
-        .as_ref()
-        .is_some_and(|loco| loco.kind == crate::rules::locomotor_type::LocomotorKind::Walk)
-    {
-        attacker.movement_target = None;
-    }
     crate::sim::mission::concrete_effects::represented_assign_target(
         attacker,
         Some(TargetKind::Cell(target_rx, target_ry)),

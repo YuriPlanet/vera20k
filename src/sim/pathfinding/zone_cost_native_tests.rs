@@ -70,6 +70,46 @@ fn original_zone_threat_sampling_matches_all_directions_and_signed_average() {
     }
 }
 
+/// The precheck memo holds only threat-free answers: on a hierarchy that
+/// already answered a threat-free precheck, a threat-active one still reads
+/// the House threat and keeps nothing.
+#[test]
+fn threat_active_prechecks_bypass_the_precheck_memo() {
+    let packet = threat_packet();
+    let row = packet["prechecks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| !row["reads"].as_array().unwrap().is_empty())
+        .expect("a precheck that reads the threat");
+    let graph = hierarchy(&row["graphs"], None);
+    let precheck = |threat| {
+        zone_precheck_flat(
+            &graph,
+            1,
+            4,
+            MovementZone::Normal,
+            &ZonePrecheckExclusions::default(),
+            threat,
+        )
+        .unwrap()
+    };
+    precheck(None);
+    let kept = graph.memo.len();
+    assert!(kept > 0);
+    let reads = std::cell::RefCell::new(Vec::new());
+    let lookup = |index| {
+        reads.borrow_mut().push(index);
+        Ok(grid_value(&row["grid"], index))
+    };
+    let coefficient = NativeF64Bits::from_bits(
+        u64::from_str_radix(row["coefficient_bits"].as_str().unwrap(), 16).unwrap(),
+    );
+    precheck(Some(ZonePrecheckThreat::new(coefficient, &lookup)));
+    assert!(!reads.borrow().is_empty());
+    assert_eq!(graph.memo.len(), kept);
+}
+
 #[test]
 fn original_positive_zone_prechecks_match_routes_float_costs_and_threat_reads() {
     let packet = threat_packet();

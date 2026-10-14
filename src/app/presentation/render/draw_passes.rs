@@ -358,25 +358,6 @@ pub(super) fn dispatch_draw_passes(
     // voxel turret inside the building's retained Display slot, after the
     // body. Atlas page changes preserve that parent and its piece order.)
 
-    // --- Step 7.5: Particles (Layer 3, above all ground geometry) ---
-    // ParticleClass::GetLayer = 3 in the original engine, drawing particles
-    // above Layer 2 (buildings, units, turrets).
-    // Passthrough pipeline (no depth interaction) — particles are translucent
-    // and Y-sorted on the CPU, so no GPU depth read/write needed.
-    if let Some(atlas) = state.match_state.match_presentation.sprite_atlas.as_ref() {
-        for (page, atlas_page) in atlas.pages.iter().enumerate() {
-            if let Some((buf, count)) = pool.get_page("particle_page", page) {
-                state.renderer.batch_renderer.draw_passthrough_range(
-                    &mut pass,
-                    &atlas_page.texture,
-                    buf,
-                    0,
-                    count,
-                );
-            }
-        }
-    }
-
     // BuildingLightClass registers in layer 3. This pass is exact once its
     // authoritative child-light coordinates are emitted; it deliberately does
     // not substitute the parent building coordinate.

@@ -7,7 +7,6 @@
 //!
 //! sim/ only — never render/ui/audio/net.
 use crate::map::entities::EntityCategory;
-use crate::rules::locomotor_type::SpeedType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::docking::bunker_install::{BunkerRuntime, BunkerState};
@@ -16,8 +15,8 @@ use crate::sim::mission::authority::{EntityReadyInputProvider, LiveReadyInputPro
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::ground_pose::object_get_coords;
 use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse, transmit};
-use crate::sim::world::{FrameEffects, GroundMove, SimSoundEvent, Simulation};
-use crate::util::fixed_math::{SIM_ONE, ra2_speed_to_leptons_per_second};
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
+use crate::util::fixed_math::SIM_ONE;
 
 /// Exit-search ring limit for the normal release (mirrors the refinery exit).
 const BUNKER_EXIT_SEARCH_MAX_RADIUS: i32 = 16;
@@ -91,36 +90,22 @@ pub(crate) fn begin_entry(
     if let Some(unit) = sim.substrate.entities.get_mut(unit_id) {
         unit.bunker_link = BunkerLink::Approaching(bunker_id);
     }
-    // Issue an approach move toward the bunker cell (mirror EnterTransport).
+    // The approach to the bunker's cell, through the Unit's class setter.
     let bunker_cell = sim
         .substrate
         .entities
         .get(bunker_id)
         .map(|bunker| (bunker.position.rx, bunker.position.ry));
-    if let Some((brx, bry)) = bunker_cell {
-        let info = sim.resolve_move_info(unit_id, Some(rules));
-        let speed = info
-            .as_ref()
-            .map(|info| info.speed)
-            .unwrap_or(ra2_speed_to_leptons_per_second(4));
-        let speed_type = info
-            .as_ref()
-            .map(|info| info.speed_type)
-            .unwrap_or(SpeedType::Track);
-        sim.issue_ground_move(
-            GroundMove {
-                entity_id: unit_id,
-                target: (brx, bry),
-                speed,
-                queue: false,
-                speed_type: Some(speed_type),
-                owner_blocks: true,
-                object_destination: None,
-            },
+    if let Some((brx, bry)) = bunker_cell
+        && let Err(cause) = sim.assign_destination_represented(
+            unit_id,
+            Some(crate::sim::components::NavTargetRef::cell(brx, bry)),
             Some(rules),
             registry,
             effects,
-        );
+        )
+    {
+        log::warn!("Bunker approach {unit_id}: {cause}");
     }
     true
 }

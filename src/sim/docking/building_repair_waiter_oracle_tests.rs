@@ -304,7 +304,6 @@ fn native_actual_ally_entry_near_stop_preserves_pending_until_foundation_refusal
         scene.tank,
         TrackFamily::Drive,
         ProcessMovementArgs::OUTER,
-        None,
         &scene.rules,
         None,
         crate::sim::world::FrameEffects::default(),

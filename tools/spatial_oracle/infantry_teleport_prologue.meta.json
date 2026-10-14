@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eight original ordinary Teleport Process warp-in controls, including hidden open-topped state, with actual TimerCheck and constructor",
+  "assumptions": [
+    "OriginalCursor owns the mapped original image, isolated scratch/stack and supplied x87 control word. Its generic mapping is reused; no Drive construction or movement is claimed.",
+    "Actual Teleport718000 construction installs original primary and ILocomotion vtables. Prepared owner link, alive flag, +271, state0, pending-state0, nonnull target and timer epoch/duration are supplied independently of real Infantry/House/BFRT construction.",
+    "Original Process receives the interface pointer (object+4), takes its early +271/state0/pending0 arm, calls whole719BF0 and returns false. Hidden +81 and open-topped +82 contrast with outside state; original Infantry51BBC0 scheduling is instruction evidence, not executed by these component controls.",
+    "Nonnull TarCom suppresses no-target scan/idle callbacks without substituting their answers. Epoch100/duration30 at129/130/131 and epoch-16/frame14 establish expiry and 32-bit frame wrap. Timer publication, zero-target callbacks, nonzero-state progression, relocation, boarding and full firing/Temporal effects are excluded."
+  ],
+  "substitutions": [
+    "Prepared caller/object state only; no original gameplay callable answer, instruction or vtable is replaced."
+  ],
+  "entry_points": {
+    "teleport_constructor": "0x00718000",
+    "teleport_process": "0x007192F0",
+    "process_timer_call": "0x00719322",
+    "timer_check": "0x00719BF0",
+    "clear_warping_in": "0x00719C15"
+  },
+  "replay_command": "python -m tools.spatial_oracle.infantry_scatter_destination --teleport-prologue",
+  "payload_sha256": "270bad6f6994d7fd530e973f7051f032835d50a2eaea8e04a72492d3951322ce"
+}

@@ -115,7 +115,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
     building.type_ref = sim.interner.intern("B");
     building.owner = houses[input["current_owner"].as_u64().unwrap() as usize];
     building.health.current = 100;
-    building.building_actually_placed = true;
+    building.building_art.set_actually_placed_for_test(true);
     building.mission_leaf =
         crate::sim::mission::leaf::MissionLeafState::for_entity_category(EntityCategory::Structure);
     let mut cargo = PassengerCargo::new(10, 1);
@@ -179,7 +179,13 @@ fn allegiance_matches_native_decisions_for_valid_rosters() {
             continue;
         }
         let (mut sim, rules, id, houses) = fixture(input);
-        let old_anim = sim.substrate.entities.get(id).unwrap().building_anim_slots[3];
+        let old_anim = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .building_art
+            .anim_slots()[3];
         let old_owner = sim.substrate.entities.get(id).unwrap().owner();
         let changed = reconcile_civilian_garrison_owner_for_building(
             &mut sim,
@@ -218,7 +224,7 @@ fn allegiance_matches_native_decisions_for_valid_rosters() {
                 .any(|call| call["op"] == op)
         };
         assert_eq!(
-            building.building_anim_slots[3] != old_anim,
+            building.building_art.anim_slots()[3] != old_anim,
             called("refresh_anims"),
             "{name}"
         );
@@ -399,7 +405,7 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
 
     let building = sim.substrate.entities.get(id).unwrap();
     assert_eq!(sim.interner.resolve(building.owner()), "Town");
-    assert_ne!(building.building_anim_slots[3], Some(old_anim));
+    assert_ne!(building.building_art.anim_slots()[3], Some(old_anim));
     assert!(sim.sound_events.iter().any(|event| matches!(event,
         SimSoundEvent::VocCentered { sound_id } if sound_id == "Abandon"
     )));

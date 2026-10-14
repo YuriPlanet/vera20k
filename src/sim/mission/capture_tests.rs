@@ -143,6 +143,110 @@ fn a_capturer_on_its_way_takes_captures_cadence() {
     assert_eq!(sim.scenario_rng.logical_state(), rng.logical_state());
 }
 
+/// Original E1 Capture8 through Mission5B3060 -> Foot4D4B20, with physical
+/// RULESMD/LANGRULE/MPBattleMD/XMP03T4 reads. The three native controls include
+/// RandomRanged65C7E0 rejection retries and both dispatcher timer writes
+/// (5B331B/5B3324). Mission prior and nonnull Building NavCom are supplied;
+/// mouse scheduling, native construction and walking are separate coverage.
+#[test]
+fn retail_occupier_capture_dispatch_matches_native_rng_and_timer() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/anytown_damage/foot_capture.json",
+    ))
+    .unwrap();
+    let rules = &retail.rules;
+    assert!(rules.object("E1").unwrap().occupier);
+    let controls = native["controls"].as_array().unwrap();
+    assert_eq!(controls.len(), 3);
+    for control in controls {
+        let name = control["name"].as_str().unwrap();
+        let (mut sim, building) = arena(rules);
+        let gi = capturer(&mut sim, rules, "E1", "Americans", 10);
+        head_for(&mut sim, rules, gi, building);
+        sim.session.binary_frame = control["frame"].as_u64().unwrap() as u32;
+        let timer_before = control["timer_before"].as_array().unwrap();
+        sim.substrate
+            .entities
+            .get_mut(gi)
+            .unwrap()
+            .mission
+            .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {
+                current: MissionId::from_raw(control["mission"].as_i64().unwrap() as i32),
+                suspended: MissionId::NONE,
+                queued: MissionId::from_raw(control["queued"].as_i64().unwrap() as i32),
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: MissionDispatchTimer::from_raw(
+                    timer_before[0].as_i64().unwrap() as i32,
+                    timer_before[1].as_i64().unwrap() as i32,
+                ),
+            });
+        sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+            control["rng_before"]["native_state_hex"].as_str().unwrap(),
+        );
+        let main_before = sim.main_rng.logical_state();
+        let mapgen_before = sim.mapgen_rng.logical_state();
+        let (_, draws) = crate::sim::rng::trace_draws(|| {
+            crate::sim::world::dispatch_foot_mission(&mut sim, gi, rules, ObjectAiCtx::default())
+        });
+
+        assert_eq!(heading(&sim, gi), Some(building), "{name}");
+        assert_eq!(mission(&sim, gi), (CAPTURE, MissionId::NONE), "{name}");
+        assert!(
+            sim.substrate
+                .entities
+                .get(gi)
+                .unwrap()
+                .attack_target
+                .is_none(),
+            "{name}"
+        );
+        let timer_after = control["timer_after"].as_array().unwrap();
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(gi)
+                .unwrap()
+                .mission
+                .dispatch_timer(),
+            MissionDispatchTimer::from_raw(
+                timer_after[0].as_i64().unwrap() as i32,
+                timer_after[1].as_i64().unwrap() as i32,
+            ),
+            "{name}",
+        );
+        assert_eq!(
+            draws
+                .iter()
+                .map(|draw| draw["value"].clone())
+                .collect::<Vec<_>>(),
+            *control["raw_draws"].as_array().unwrap(),
+            "{name}: ordered Scenario raw words include rejection retries",
+        );
+        assert_eq!(
+            sim.scenario_rng.native_state_hex(),
+            control["rng_after"]["native_state_hex"].as_str().unwrap(),
+            "{name}: complete Scenario state",
+        );
+        assert_eq!(
+            sim.main_rng.logical_state(),
+            main_before,
+            "{name}: Main unchanged"
+        );
+        assert_eq!(
+            sim.mapgen_rng.logical_state(),
+            mapgen_before,
+            "{name}: MapGen unchanged"
+        );
+    }
+}
+
 /// No destination left: the capturer idles (`0x004D4BD1..0x004D4BD9`),
 /// which queues Guard.
 #[test]

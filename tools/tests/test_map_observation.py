@@ -136,7 +136,7 @@ class MapObservationTests(unittest.TestCase):
                 frames[-1]['effects'] = deepcopy(self.effect_frames.get(step, effects))
             if self.profile.get('observe_lasers', False):
                 frames[-1]['lasers'] = deepcopy(self.laser_frames.get(step, self.laser_snapshot()))
-            if self.profile.get('observe_electric_bolts', False):
+            if observation._observes_electric_step(self.profile, step):
                 frames[-1]['electric_bolts'] = deepcopy(self.electric_frames.get(step, self.electric_snapshot()))
             if self.profile.get('observe_bombs', False):
                 frames[-1]['bombs'] = deepcopy(self.bomb_frames.get(step, {'carriers': [], 'records': []}))
@@ -151,12 +151,18 @@ class MapObservationTests(unittest.TestCase):
             'frames': frames,
         }
         if self.profile.get('observe_electric_bolts', False):
+            draw_steps = [step for step in range(1, ticks + 1)
+                          if observation._observes_electric_step(self.profile, step)]
+            if ticks == 0 and observation._observes_electric_step(self.profile, 0):
+                draw_steps.append(0)
             manifest['observations']['electric_bolt_draws'] = {
-                'policy': 'electric-bolt-after-each-tactical-composite-v1',
-                'frames': [{'ordinal': index, 'completed_steps': min(index + 1, ticks),
-                            'simulation_tick': min(index + 1, ticks), 'binary_frame': min(index + 1, ticks),
-                            'effects': deepcopy(self.electric_frames.get(min(index + 1, ticks), self.electric_snapshot()))}
-                           for index in range(max(1, ticks))]}
+                'policy': ('electric-bolt-after-requested-tactical-composite-v2'
+                           if 'observe_electric_bolt_steps' in self.profile
+                           else 'electric-bolt-after-each-tactical-composite-v1'),
+                'frames': [{'ordinal': index, 'completed_steps': step,
+                            'simulation_tick': step, 'binary_frame': step,
+                            'effects': deepcopy(self.electric_frames.get(step, self.electric_snapshot()))}
+                           for index, step in enumerate(draw_steps)]}
         if 'observe_types' in self.profile:
             manifest['observations']['type_filter'] = deepcopy(self.profile['observe_types'])
         if 'gestures' in self.profile:
@@ -2101,6 +2107,124 @@ class MapObservationTests(unittest.TestCase):
             report = self.run_capture()
         self.assertEqual(report['status'], 'INVALID')
         self.assertTrue(any('sample budget' in error for error in report['errors']), report['errors'])
+
+    def test_electric_step_whitelist_binds_logic_and_composite_boundaries(self):
+        self.scripted_profile()
+        self.profile.update(observe_electric_bolts=True, observe_electric_bolt_steps=[0, 2])
+        self.profile_path.write_text(json.dumps(self.profile))
+        for actors in self.actor_frames.values():
+            for actor in actors:
+                actor['prism'] = None
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        frames = report['capture']['observations']['frames']
+        self.assertEqual([row['completed_steps'] for row in frames if 'electric_bolts' in row], [0, 2])
+        draws = report['capture']['observations']['electric_bolt_draws']
+        self.assertEqual([row['completed_steps'] for row in draws['frames']], [2])
+        self.assertEqual(observation._electric_bolt_draws(draws, self.profile, [], 4), 4)
+        draws['frames'][0]['completed_steps'] = 1
+        with self.assertRaises(ValidationError):
+            observation._electric_bolt_draws(draws, self.profile, [], 0)
+
+    def test_electric_step_whitelist_requires_explicit_owner_and_order(self):
+        self.scripted_profile()
+        valid = dict(self.profile, observe_electric_bolts=True, observe_electric_bolt_steps=[0, 1, 3])
+        observation._profile_extensions(valid)
+        for steps in (None, [], [0, 0], [2, 1], [4], [-1], [True], ['1']):
+            with self.subTest(steps=steps), self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(valid, observe_electric_bolt_steps=steps))
+        for owner in (False, None):
+            with self.subTest(owner=owner), self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(valid, observe_electric_bolts=owner))
+        with self.assertRaises(ValidationError):
+            observation._profile_extensions({key: value for key, value in valid.items()
+                                             if key != 'observe_electric_bolts'})
+        with self.assertRaises(ValidationError):
+            observation._profile_extensions(dict(valid, schema_version=observation.PROFILE_V1))
+
+    def test_particle_runtime_extensions_retain_raw_bits_and_require_complete_rows(self):
+        snapshot = self.electric_snapshot()
+        snapshot['game_detail_level'] = 2
+        particle = {'stable_id': 11, 'display_layer': 3, 'native_id': -1,
+                    'type_id': 'SmallGreySmoke', 'coord': [30, 40, 100],
+                    'lifetime': -32768, 'damage_counter': 32767, 'marked_for_deletion': False,
+                    'velocity_bits': 0xffffffff, 'origin': [30, 40, 0], 'drift': [-1, 0, 2],
+                    'animation_state': 255, 'state_ai_advance': 255, 'translucency': 255}
+        snapshot['particle_systems'] = [{'stable_id': 10, 'native_id': -2, 'type_id': 'SmallGreySSys',
+            'coord': [30, 40, 0], 'lifetime': -1, 'spawn_frames': -1, 'spawn_timer_bits': 0xffffffff,
+            'in_limbo': False, 'display_layer': 2,
+            'done_spawning': True, 'in_logic_vector': True, 'owner_entity': 5, 'attached_entity': None,
+            'particles': [particle]}]
+        self.assertEqual(observation._electric_bolts(snapshot, 'electric'), 6)
+        for key, value in (('stable_id', 0), ('display_layer', 5),
+                           ('velocity_bits', -1), ('velocity_bits', 1 << 32),
+                           ('animation_state', 256), ('state_ai_advance', True),
+                           ('translucency', -1), ('drift', [0, 0])):
+            invalid = deepcopy(snapshot)
+            invalid['particle_systems'][0]['particles'][0][key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(ValidationError):
+                observation._electric_bolts(invalid, 'electric')
+        invalid = deepcopy(snapshot)
+        del invalid['particle_systems'][0]['particles'][0]['origin']
+        with self.assertRaises(ValidationError):
+            observation._electric_bolts(invalid, 'electric')
+        invalid = deepcopy(snapshot)
+        invalid['particle_systems'][0]['spawn_timer_bits'] = True
+        with self.assertRaises(ValidationError):
+            observation._electric_bolts(invalid, 'electric')
+        for field, value in (('in_limbo', 0), ('display_layer', 5)):
+            invalid = deepcopy(snapshot)
+            invalid['particle_systems'][0][field] = value
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                observation._electric_bolts(invalid, 'electric')
+        invalid = deepcopy(snapshot)
+        invalid['game_detail_level'] = True
+        with self.assertRaises(ValidationError):
+            observation._electric_bolts(invalid, 'electric')
+        actor = self.actor()
+        actor['damage_smoke_system_id'] = 10
+        observation._actor(actor, 'actor', damage_smoke=True)
+        with self.assertRaises(ValidationError):
+            observation._actor(actor, 'actor')
+        actor['damage_smoke_system_id'] = 0
+        with self.assertRaises(ValidationError):
+            observation._actor(actor, 'actor', damage_smoke=True)
+
+    def test_particle_draw_projection_charges_budget_and_checks_identity_and_shape(self):
+        self.profile.update(schema_version=observation.PROFILE_V2, observe_electric_bolts=True, ticks=0)
+        # Protocol payload only: production builders and native drawing corpora
+        # establish the values, not this receipt-shape fixture.
+        piece = {'system_id': 10, 'particle_id': 11, 'particle_native_id': -1,
+                 'display_layer': 3, 'display_order': 0,
+                 'image': 'SGRYSMK1', 'frame': 0, 'atlas_page': 0, 'source_palette': 1,
+                 'position': [10.0, 20.0], 'size': [8.0, 9.0], 'uv_origin': [0.0, 0.0],
+                 'uv_size': [0.5, 0.5], 'native_flags': 0x2e04, 'z_adjust': -15.0,
+                 'z_gradient': 2, 'palette_light': [0, 0, 0, 0], 'render_z': 'read_only'}
+        effects = self.electric_snapshot()
+        effects['particle_systems'] = [{'stable_id': 10, 'native_id': -2, 'type_id': 'SmallGreySSys',
+            'coord': [30, 40, 0], 'lifetime': -1, 'spawn_frames': -1, 'spawn_timer_bits': 0,
+            'done_spawning': False, 'in_logic_vector': True, 'owner_entity': 5, 'attached_entity': None,
+            'particles': [{'stable_id': 11, 'display_layer': 3, 'native_id': -1,
+                'type_id': 'SmallGreySmoke', 'coord': [30, 40, 100], 'lifetime': 10,
+                'damage_counter': 0, 'marked_for_deletion': False, 'velocity_bits': 0,
+                'origin': [30, 40, 0], 'drift': [0, 0, 0], 'animation_state': 0,
+                'state_ai_advance': 4, 'translucency': 50}]}]
+        receipt = {'policy': 'electric-bolt-after-each-tactical-composite-v1', 'frames': [
+            {'ordinal': 0, 'completed_steps': 0, 'simulation_tick': 0, 'binary_frame': 0,
+             'effects': effects, 'particle_draws': [piece]}]}
+        self.assertEqual(observation._electric_bolt_draws(receipt, self.profile, [], 0), 7)
+        invalid = deepcopy(receipt)
+        invalid['frames'][0]['particle_draws'][0]['system_id'] = 20
+        with self.assertRaises(ValidationError):
+            observation._electric_bolt_draws(invalid, self.profile, [], 0)
+        for key, value in (('particle_native_id', 1 << 31), ('system_id', 0),
+                           ('frame', -1), ('position', [float('nan'), 0]),
+                           ('palette_light', [0, 0, 0]), ('render_z', 'read_write')):
+            invalid = dict(piece, **{key: value})
+            with self.subTest(key=key), self.assertRaises(ValidationError):
+                observation._particle_draws([invalid], 'pieces')
+        with self.assertRaises(ValidationError):
+            observation._particle_draws([piece, piece], 'pieces')
 
     def test_lasers_round_trip_live_beams_detail_and_prism_with_explicit_opt_in(self):
         self.scripted_profile()

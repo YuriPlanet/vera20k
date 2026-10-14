@@ -399,6 +399,14 @@ pub(crate) struct MapCaptureProfile {
         skip_serializing_if = "Option::is_none"
     )]
     observe_electric_bolts: Option<bool>,
+    /// Optional committed-step whitelist for the same effect snapshots and
+    /// composite observations. Absence retains every historical boundary.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    observe_electric_bolt_steps: Option<Vec<u32>>,
     /// Read the existing bomb owner and observed actors' retained FireAt state.
     #[serde(
         default,
@@ -486,6 +494,7 @@ impl MapCaptureProfile {
                     && self.observe_disguise_inputs.is_none()
                     && self.observe_lasers.is_none()
                     && self.observe_electric_bolts.is_none()
+                    && self.observe_electric_bolt_steps.is_none()
                     && self.observe_bombs.is_none()
                     && self.camera_cell.is_none()
                     && self.cursor_position.is_none()
@@ -635,6 +644,21 @@ impl MapCaptureProfile {
                 "sidebar observation steps must be unique, increasing and within the capture"
             );
         }
+        if let Some(steps) = &self.observe_electric_bolt_steps {
+            ensure!(
+                self.observe_electric_bolts == Some(true),
+                "electric observation steps require observe_electric_bolts"
+            );
+            ensure!(
+                !steps.is_empty() && steps.len() <= MAX_OBSERVATION_SAMPLES,
+                "electric observation steps must contain 1..100000 entries"
+            );
+            ensure!(
+                steps.iter().all(|step| *step <= self.ticks)
+                    && steps.windows(2).all(|pair| pair[0] < pair[1]),
+                "electric observation steps must be unique, increasing and within the capture"
+            );
+        }
         let owners = self.observe_owners();
         ensure!(
             owners.len() <= MAX_OBSERVED_OWNERS,
@@ -723,6 +747,16 @@ impl MapCaptureProfile {
 
     fn commands(&self) -> &[MapScheduledCommand] {
         self.commands.as_deref().unwrap_or_default()
+    }
+
+    fn observes_electric_step(&self, step: u64) -> bool {
+        self.observe_electric_bolts == Some(true)
+            && self
+                .observe_electric_bolt_steps
+                .as_ref()
+                .is_none_or(|steps| {
+                    u32::try_from(step).is_ok_and(|step| steps.binary_search(&step).is_ok())
+                })
     }
 
     fn gestures(&self) -> &[MapScheduledGesture] {
@@ -1706,6 +1740,7 @@ impl MapLaserObservation {
 #[derive(Debug, Serialize)]
 struct MapElectricBoltObservation {
     detail: crate::app::presentation::detail::DetailObservation,
+    game_detail_level: u32,
     live: Vec<crate::app::presentation::electric_bolts::ElectricBoltObservation>,
     lights: Vec<crate::app::presentation::combat_lights::CombatLightObservation>,
     particle_systems: Vec<Value>,
@@ -1748,13 +1783,22 @@ impl MapElectricBoltObservation {
                 "particle observation exceeds sample budget"
             );
             let particles: Vec<_> = system.particles.iter().map(|particle| json!({
+                "stable_id": particle.stable_id(),
                 "native_id": particle.native_unique_id(), "type_id": rules.particle_type(particle.type_id).name,
+                "display_layer": sim.display_layers().layer_of(particle.stable_id()).map(|layer| layer.index()),
                 "coord": particle.coords.to_array(), "lifetime": particle.lifetime_remaining,
                 "damage_counter": particle.damage_counter, "marked_for_deletion": particle.marked_for_deletion,
+                "velocity_bits": particle.velocity().bits(), "origin": particle.origin.to_array(),
+                "drift": [particle.drift_x, particle.drift_y, particle.drift_z],
+                "animation_state": particle.animation_state, "state_ai_advance": particle.state_ai_advance,
+                "translucency": particle.translucency,
             })).collect();
             particle_systems.push(json!({"stable_id": id, "native_id": system.native_unique_id(),
                 "type_id": rules.particle_system_type(system.type_id).name, "coord": system.coords.to_array(),
                 "lifetime": system.lifetime, "spawn_frames": system.spark_spawn_frames,
+                "spawn_timer_bits": system.spawn_timer().bits(),
+                "in_limbo": system.in_limbo(),
+                "display_layer": sim.display_layers().layer_of(id).map(|layer| layer.index()),
                 "done_spawning": system.done_spawning, "in_logic_vector": system.in_logic_vector,
                 "owner_entity": system.owner_entity, "attached_entity": system.attached_entity,
                 "particles": particles}));
@@ -1772,6 +1816,7 @@ impl MapElectricBoltObservation {
         };
         Ok(Self {
             detail: presentation.detail.borrow().observation(),
+            game_detail_level: presentation.in_game_options.detail_level,
             live,
             lights,
             particle_systems,
@@ -1800,6 +1845,10 @@ struct MapElectricBoltDrawObservation {
     simulation_tick: u64,
     binary_frame: u32,
     effects: MapElectricBoltObservation,
+    /// Copied from the actual pieces uploaded by this render; no diagnostic
+    /// projection, atlas lookup or second instance-building pass participates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    particle_draws: Option<Vec<crate::app::presentation::instances::ParticleDrawObservation>>,
 }
 
 /// Boundary snapshots of the production stores, without retained provenance,
@@ -1983,7 +2032,13 @@ impl MapObservation {
                 json!({"policy": SIDEBAR_POLICY, "frames": self.sidebar_frames});
         }
         if profile.observe_electric_bolts == Some(true) {
-            observations["electric_bolt_draws"] = json!({"policy": "electric-bolt-after-each-tactical-composite-v1", "frames": self.electric_bolt_draws});
+            let policy = if profile.observe_electric_bolt_steps.is_some() {
+                "electric-bolt-after-requested-tactical-composite-v2"
+            } else {
+                "electric-bolt-after-each-tactical-composite-v1"
+            };
+            observations["electric_bolt_draws"] =
+                json!({"policy": policy, "frames": self.electric_bolt_draws});
         }
         if profile.observe_audio.is_some() {
             observations["audio"] = json!(self.audio);
@@ -3027,7 +3082,7 @@ impl TacticalCaptureSession {
                 let building = if entity.category == crate::map::entities::EntityCategory::Structure
                 {
                     let slots: Vec<_> = entity
-                        .building_anim_slots
+                        .building_art.anim_slots()
                         .iter()
                         .enumerate()
                         .filter_map(|(slot, anim_id)| {
@@ -3051,7 +3106,7 @@ impl TacticalCaptureSession {
                     "queued_body_state": entity.queued_building_body_state(),
                     "construction_control": entity.building_construction_control(),
                     "stage": entity.native_stage(), "ready_latch": entity.building_ready_latch(),
-                    "actually_placed": entity.building_actually_placed,
+                    "actually_placed": entity.building_art.actually_placed(),
                     "last_operational": entity.building_last_operational,
                     "animation_slots": slots,
                     "voxel_gun": {
@@ -3099,9 +3154,9 @@ impl TacticalCaptureSession {
                     "cell": [entity.position.rx, entity.position.ry],
                     "physical_leptons": [coord.x, coord.y, coord.z], "on_bridge": entity.on_bridge,
                     "health": entity.health.current, "active": entity.is_active(),
-                    "veterancy_raw_bits": entity.veterancy_raw.bits(),
-                    "veterancy_rank_cache": entity.veterancy_rank_cache,
-                    "elite_flash_frames": entity.flash_countdown(),
+                    "veterancy_raw_bits": entity.veterancy.raw().bits(),
+                    "veterancy_rank_cache": entity.veterancy.rank_cache(),
+                    "elite_flash_frames": entity.flashing.frames(),
                     "object_alive": entity.is_object_alive(),
                     "in_limbo": entity.lifecycle.in_limbo, "dying": entity.dying,
                     // Techno +0x1C8, the offline latch (`sim::powered_unit`).
@@ -3131,6 +3186,9 @@ impl TacticalCaptureSession {
                 {
                     observation["prism"] =
                         prism_observation(entity, sim.session.binary_frame as i32);
+                }
+                if profile.observe_electric_bolts == Some(true) {
+                    observation["damage_smoke_system_id"] = json!(entity.damage_smoke_system_id);
                 }
                 if profile.observe_bombs == Some(true) {
                     observation["fire"] = fire_observation(entity, sim.session.binary_frame as i32);
@@ -3164,7 +3222,7 @@ impl TacticalCaptureSession {
                                 &sim.houses, entity, Some(object)).bits(),
                             "current_speed": crate::sim::movement::owner_current_speed(
                                 entity, Some(object), rules.general.veteran_speed, &sim.houses),
-                            "veterancy": entity.veterancy(),
+                            "veterancy": entity.veterancy.rank(),
                             "current_weapon": crate::sim::combat::combat_weapon::current_weapon(
                                 entity, object, sim.entities(), rules, &sim.interner)
                                 .map(|weapon| weapon.id.as_str()),
@@ -3277,7 +3335,8 @@ impl TacticalCaptureSession {
             lasers: (profile.observe_lasers == Some(true))
                 .then(|| MapLaserObservation::capture(state))
                 .transpose()?,
-            electric_bolts: (profile.observe_electric_bolts == Some(true))
+            electric_bolts: profile
+                .observes_electric_step(self.exact_step_receipts.len() as u64)
                 .then(|| MapElectricBoltObservation::capture(state))
                 .transpose()?,
             bombs: (profile.observe_bombs == Some(true))
@@ -3340,20 +3399,21 @@ impl TacticalCaptureSession {
             state.diagnostic_presentation_ms() == Some(output.times.radar_ms),
             "map diagnostic presentation policy is not active"
         );
-        let electric = (self
+        let electric = self
             .request
             .map_profile()
             .unwrap()
             .value
-            .observe_electric_bolts
-            == Some(true))
-        .then(|| MapElectricBoltObservation::capture(state))
-        .transpose()?;
+            .observes_electric_step(step)
+            .then(|| MapElectricBoltObservation::capture(state))
+            .transpose()?;
         let map = self.map_state_mut()?;
         if let Some(effects) = electric {
             map.sample_count = map
                 .sample_count
-                .checked_add(effects.sample_count())
+                .checked_add(
+                    effects.sample_count() + output.particle_draws.as_ref().map_or(0, Vec::len),
+                )
                 .context("draw observation count overflow")?;
             ensure!(
                 map.sample_count <= MAX_OBSERVATION_SAMPLES,
@@ -3366,6 +3426,7 @@ impl TacticalCaptureSession {
                     simulation_tick: sim.session.tick,
                     binary_frame: sim.session.binary_frame,
                     effects,
+                    particle_draws: output.particle_draws.clone(),
                 });
         }
         if map.audio_tail_started.is_some() && map.draws.len() == requested.max(1) as usize {
@@ -4257,6 +4318,9 @@ mod tests {
         legacy.observe_electric_bolts = Some(false);
         assert!(legacy.validate().is_err());
         let mut legacy = example();
+        legacy.observe_electric_bolt_steps = Some(vec![0]);
+        assert!(legacy.validate().is_err());
+        let mut legacy = example();
         legacy.observe_bombs = Some(false);
         assert!(legacy.validate().is_err());
         let mut legacy = example();
@@ -4288,6 +4352,7 @@ mod tests {
         modern["observe_disguise_inputs"] = json!(true);
         modern["observe_lasers"] = json!(true);
         modern["observe_electric_bolts"] = json!(true);
+        modern["observe_electric_bolt_steps"] = json!([0]);
         modern["observe_bombs"] = json!(true);
         modern["cursor_position"] = json!([720, 556]);
         modern["gestures"] = json!([]);
@@ -4308,6 +4373,7 @@ mod tests {
             "observe_disguise_inputs",
             "observe_lasers",
             "observe_electric_bolts",
+            "observe_electric_bolt_steps",
             "observe_bombs",
             "camera_cell",
             "cursor_position",
@@ -4340,6 +4406,31 @@ mod tests {
                 "{key}"
             );
         }
+    }
+
+    #[test]
+    fn effect_step_whitelist_preserves_selected_boundaries_and_rejects_bad_schedules() {
+        let mut profile = example();
+        profile.schema_version = PROFILE_V2.to_owned();
+        profile.ticks = 3;
+        profile.observe_electric_bolts = Some(true);
+        profile.validate().unwrap();
+        assert!((0..=3).all(|step| profile.observes_electric_step(step)));
+        profile.observe_electric_bolt_steps = Some(vec![0, 2]);
+        profile.validate().unwrap();
+        assert!(profile.observes_electric_step(0));
+        assert!(!profile.observes_electric_step(1));
+        assert!(profile.observes_electric_step(2));
+        assert!(!profile.observes_electric_step(3));
+        for steps in [vec![], vec![0, 0], vec![2, 1], vec![4]] {
+            profile.observe_electric_bolt_steps = Some(steps);
+            assert!(profile.validate().is_err());
+        }
+        profile.observe_electric_bolt_steps = Some(vec![0]);
+        profile.observe_electric_bolts = Some(false);
+        assert!(profile.validate().is_err());
+        profile.observe_electric_bolts = None;
+        assert!(profile.validate().is_err());
     }
 
     #[test]
@@ -5237,6 +5328,43 @@ mod tests {
         }
         value["commands"][1]["payload"]["PlaceReadyBuilding"]["ignored"] = json!(true);
         assert!(serde_json::from_value::<MapCaptureProfile>(value).is_err());
+    }
+
+    /// Every profile kept under `tools/` loads through the production reader,
+    /// so a change to a command's wire shape has to migrate them. Each one
+    /// names its schema in its first key.
+    #[test]
+    fn stored_profiles_load() {
+        fn walk(dir: &Path, profiles: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    walk(&path, profiles);
+                } else if path
+                    .extension()
+                    .is_some_and(|extension| extension == "json")
+                {
+                    let mut head = [0; 128];
+                    let read =
+                        std::io::Read::read(&mut std::fs::File::open(&path).unwrap(), &mut head)
+                            .unwrap();
+                    let tag = b"\"schema_version\": \"vera20k.map-observation-profile.";
+                    if head[..read].windows(tag.len()).any(|window| window == tag) {
+                        profiles.push(path);
+                    }
+                }
+            }
+        }
+        let mut profiles = Vec::new();
+        // The reader refuses linked ancestors; a checkout may sit behind one.
+        let tools = std::fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("tools"));
+        walk(&tools.unwrap(), &mut profiles);
+        assert!(!profiles.is_empty());
+        for path in profiles {
+            if let Err(error) = MapCaptureProfile::load(&path) {
+                panic!("{}: {error:#}", path.display());
+            }
+        }
     }
 
     #[test]

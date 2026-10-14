@@ -662,6 +662,8 @@ fn native_pending_entry_and_radio_lifecycle_use_shared_command_owners() {
                 scene.sim.begin_megamission_retask(
                     scene.tank,
                     MissionType::Move,
+                    None,
+                    None,
                     Some(&scene.rules),
                     crate::sim::world::FrameEffects::default(),
                 );

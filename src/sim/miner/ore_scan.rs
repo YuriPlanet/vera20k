@@ -101,7 +101,7 @@ pub(crate) fn search_for_tiberium_and_move(
     if cell == own {
         return true;
     }
-    let _ = super::miner_system::issue_stock_miner_drive_move(
+    super::miner_system::assign_miner_cell_destination(
         sim,
         rules,
         id,

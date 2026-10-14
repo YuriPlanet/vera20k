@@ -2242,8 +2242,7 @@ mod retail_construction_tests {
 
     /// A Normal Soviet house's Rhino sent to Attack a GI beside it drives over
     /// it: `UnitClass::Approach_Target`'s computer crush arm gives it the GI
-    /// as its destination (`movement::foot_approach::ApproachCrush`), and
-    /// the pursuit pass leaves the charge alone.
+    /// as its destination (`movement::foot_approach::ApproachCrush`).
     #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
     fn retail_computer_rhino_drives_over_the_gi_it_attacks() {

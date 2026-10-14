@@ -1,6 +1,7 @@
 //! Original-executable observations, never regenerated from the Rust port.
 use super::{RightDragPoll, TacticalMouseState, right_drag_pan_step};
-use crate::app::match_runtime::sim_tick::{RuntimePassInputs, SessionMode, decide_runtime_pass};
+use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::sim_tick::{RuntimePassInputs, decide_runtime_pass};
 use serde::Deserialize;
 
 #[derive(Deserialize)]

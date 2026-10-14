@@ -1819,11 +1819,11 @@ fn naval_unit_rally_uses_water_pathing_after_spawn() {
     assert_eq!(
         ship.mission.queued(),
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
-        "the producer rally queues Move before the immediate-path adapter"
+        "the producer rally queues Move"
     );
     assert!(
-        ship.movement_target.is_some(),
-        "the clear water fixture should also build its optional immediate A* path"
+        crate::sim::movement::motion_query::is_moving(&ship) == Some(true),
+        "the rally's setter starts the ship"
     );
 }
 

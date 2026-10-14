@@ -8,7 +8,7 @@ use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::{LocomotorKind, SpeedType};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::{Health, MovementTarget};
+use crate::sim::components::Health;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::{test_intern, test_interner};
@@ -63,10 +63,6 @@ fn prone_mover() -> GameEntity {
         .as_mut()
         .unwrap()
         .set_step_head(Some(crate::sim::components::DriveCoord::cell(1, 0, 0)));
-    entity.movement_target = Some(MovementTarget {
-        speed: SimFixed::from_num(165),
-        ..Default::default()
-    });
     entity
 }
 

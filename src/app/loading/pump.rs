@@ -677,6 +677,14 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     );
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
+    // The shell writes GameMode before the loading screen (`0x0052E10F`
+    // Skirmish, `0x0052E175` campaign); the session owner is live from here.
+    state.match_state.session.begin_offline(
+        request.startup().session_mode(),
+        request
+            .skirmish_launch_session()
+            .map(|launch| launch.player_name.clone()),
+    );
     let mut session = LoadingSession::from_request(request);
     session.job.ra2_dir = state
         .platform

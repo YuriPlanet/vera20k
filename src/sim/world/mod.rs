@@ -9,7 +9,7 @@
 //! - `world_commands.rs`: individual payloads and selection/ownership helpers
 //! - `world_hash.rs` — deterministic state-hash folds
 //! - `world_spawn.rs` — entity spawning from map data and production
-//! - `world_orders.rs` — order-intent tick systems (attack-move, guard, area-guard)
+//! - `world_orders.rs` — click-order helpers, building entries and pending building detonation
 //! - `lifecycle.rs` / `substrate.rs` — object transitions, stores and registration order
 //! - `object_turn.rs` — complete live-object turn and pass outcomes
 //! - `techno_ai.rs` — per-object AI dispatch within each turn
@@ -37,8 +37,6 @@ mod unit_unlimbo_tests;
 pub(crate) use sinking::SinkingState;
 pub mod edge_cell;
 mod gap_generator;
-mod ground_move;
-pub(crate) use ground_move::GroundMove;
 mod house_base;
 mod house_defeat;
 pub(crate) use house_defeat::HouseBlowupSubset;
@@ -66,6 +64,7 @@ mod lifecycle;
 mod load_object_lifecycle;
 mod logic_vector;
 mod move_cell_input;
+pub(crate) use move_cell_input::{CellActionQuery, MoveAction};
 mod move_sound;
 mod object_sound;
 mod turret_rotate_sound;
@@ -101,6 +100,7 @@ pub(crate) use techno_ai::enter_idle_mode;
 pub(crate) use techno_ai::foot_enter_idle_mode_selection;
 pub(crate) use techno_ai::passive_target_acquire;
 pub(crate) use techno_ai::queue_and_commence;
+pub(crate) use techno_ai::retaliate_and_scan;
 pub(crate) use techno_ai::techno_unlimbo_idle_mode;
 pub(crate) use techno_ai::{can_fire_at, weapon_at_index};
 mod command_schedule;
@@ -358,6 +358,10 @@ pub enum SimSoundEvent {
     /// A pending acknowledgement owner's live AI reached Techno6F9EBB.
     /// The app owns the latch/handle; this fact preserves the actual visit.
     UnitVoiceVisit { owner: u64 },
+    /// An admitted QueueVoice708D90 request, before any later positional
+    /// cue. The sole audio owner latches it; only a reached Techno head drains.
+    /// Keep the canonical name outside the gameplay identity interner.
+    UnitVoiceRequested { owner: u64, sound_id: String },
     /// Techno destructor6F4607 destroys its voice handle before its owned
     /// Anims. The app discards both pending and playing voice identities.
     UnitVoiceDestroyed { owner: u64 },
@@ -1181,6 +1185,9 @@ pub struct Simulation {
     /// Rebuilt from state on demand; never serialized or hashed.
     #[serde(skip)]
     pub(crate) movement_pass_cache: crate::sim::movement::movement_tick::MovementPassCache,
+    /// Batched path searches (`movement::path_batch`); `None`
+    /// searches in native order. Its registrations wait across a save.
+    pub(crate) path_batch: Option<crate::sim::movement::path_batch::PathBatch>,
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;
     /// LoadContent67E8CD rebuilds hierarchy after bound Cell/object restoration.
@@ -1336,6 +1343,11 @@ pub struct Simulation {
     /// Admitted through `queue_command(s)` and drained each tick when
     /// `cmd.execute_tick <= current_tick + 1`.
     pending_commands: Vec<CommandEnvelope>,
+    /// Diagnostic playback supplies a batch already containing generated
+    /// events. Transient admission context, not gameplay or saved state.
+    #[cfg(test)]
+    #[serde(skip)]
+    replaying_recorded_commands: bool,
     /// Serialized map trigger state, initialized and mutated by trigger_runtime.
     /// Remains installed while actions call other Simulation mechanisms.
     pub(crate) trigger_runtime: TriggerRuntime,
@@ -2312,7 +2324,7 @@ impl Simulation {
                 };
                 let Some(weapon_name) = crate::sim::combat::combat_weapon::primary_for_tier(
                     object_type,
-                    firer.veterancy(),
+                    firer.veterancy.rank(),
                 ) else {
                     break;
                 };
@@ -3281,6 +3293,7 @@ impl Simulation {
         let seed = session.seed;
         let mut out = Self {
             movement_pass_cache: Default::default(),
+            path_batch: None,
             interner: crate::sim::intern::StringInterner::new(),
             type_handles: crate::sim::type_handle_table::TypeHandleTable::default(),
             rule_handles: None,
@@ -3371,6 +3384,8 @@ impl Simulation {
             executed_exit_owner: None,
             connection_lost: false,
             pending_commands: Vec::new(),
+            #[cfg(test)]
+            replaying_recorded_commands: false,
             trigger_runtime: TriggerRuntime::default(),
         };
         debug_assert_eq!(out.scenario_rng.state(), out.main_rng.state());
@@ -3670,7 +3685,8 @@ impl Simulation {
     }
 
     fn natural_outcome_exit_ready(&self) -> bool {
-        self.session.current_house
+        self.session
+            .current_house
             .is_some_and(|owner| self.ready_outcome_for_owner(owner).is_some())
     }
 
@@ -3947,6 +3963,7 @@ impl Simulation {
                     entity,
                     &reveal_config,
                     height_grid.as_deref(),
+                    self.resolved_terrain.as_ref(),
                     sight_ability,
                     &self.interner,
                 );
@@ -4677,7 +4694,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| entity.building_actually_placed);
+            .is_some_and(|entity| entity.building_art.actually_placed());
         if !placed || (infantry == 0 && units == 0) {
             return;
         }
@@ -4762,7 +4779,7 @@ impl Simulation {
     /// power/radar dirty bytes remain with their distinct PowerState owner.
     pub(crate) fn request_house_tech_tree_recheck(&mut self, owner: InternedId) {
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.recheck_tech_tree();
+            house.request_tech_recheck();
         }
     }
 
@@ -5040,30 +5057,21 @@ impl Simulation {
                 && self
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.is_simple_deployer);
-            let now = self.session.binary_frame;
             let _ = self.assign_target_represented(stable_id, None, Some(rules), registry, effects);
             self.assign_null_destination(stable_id, Some(rules), None, effects);
-            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                entity.movement_target = None;
-                entity.order_intent = None;
-                if !unit_deploying {
-                    entity.set_archive_target(None);
-                }
+            if !unit_deploying && let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+                entity.set_archive_target(None);
             }
             if current != Some(MissionType::Selling) && !simple_deployer_unloading {
                 // `Queue_Mission(Guard, 1)`: the queue write, then Ready_To_Commence
-                // (`+0x200`) and Commence (`+0x1EC`). The immediate promotion runs
-                // through the host's promotion step so the recorded readiness
-                // degradation (absent locomotor producers read as "not moving")
-                // applies here exactly as it does at the per-tick AI position.
+                // (`+0x200`) and Commence (`+0x1EC`).
                 let _ = self.mission_queue_exact(
                     stable_id,
                     MissionId::from_known(MissionType::Guard),
-                    0,
-                    now,
+                    1,
+                    self.session.binary_frame,
                     &crate::sim::mission::authority::LiveReadyInputProvider { rules },
                 );
-                self.mission_host_promote(stable_id, now, rules);
             }
         }
 
@@ -5303,9 +5311,14 @@ impl Simulation {
     ///   - a Building (`0x0044D6A0` with `initial = 0`) calls `0x00447780(1)`
     ///     and `Queue_Mission(Guard, 0)`.
     ///
-    /// VERA's legacy `order_intent` (an AttackMove goal or Guard anchor) is
-    /// the duplicate of the TarCom/NavCom orders this drops, so it goes too:
-    /// no order survives an owner change.
+    /// Nothing here clears an attack-move's MegaMission (`Foot+0x5C4`). The
+    /// Enter_Idle_Mode above asks RefreshMegaMission
+    /// ([`Simulation::foot_refresh_mega_mission`]), which resumes the order
+    /// when the object had found a target on the way or Guard was committed
+    /// on the spot; otherwise the order ends there. A released object goes
+    /// on to its MegaDestination for its old owner; CaptureUnit resets a
+    /// captive's orders to Guard afterwards (`0x00471EA5`), which drops the
+    /// resumed NavCom but keeps the MegaMission.
     ///
     /// Callers: engineer capture and garrison transfer, and mind control's
     /// CaptureUnit and FreeUnit. No stock miner is ever mind-controlled: HARV,
@@ -5387,9 +5400,6 @@ impl Simulation {
             return;
         }
         self.assign_null_destination(stable_id, Some(rules), None, effects);
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.movement_target = None;
-        }
         let _ = self.assign_target_represented(stable_id, None, Some(rules), None, effects);
         enter_idle_mode(self, stable_id, rules, None, effects);
     }
@@ -6096,9 +6106,8 @@ impl Simulation {
     }
 
     fn refresh_fog(&mut self, config: &vision::VisionConfig, rules: Option<&RuleSet>) {
-        // Recompute visibility in-place: clears FLAG_VISIBLE on existing grids
-        // (preserving FLAG_REVEALED) then re-reveals from entity positions.
-        // No allocation or merge_revealed_from pass needed.
+        // Recompute visibility in place: end last frame's sight (preserving
+        // FLAG_REVEALED) and reconcile each source's sight with its position.
         let path_grid = self.path_grid.as_deref();
         let height_grid = self.sight_height_grid(config);
 
@@ -6109,6 +6118,7 @@ impl Simulation {
             &self.house_alliances,
             config,
             height_grid.as_deref(),
+            self.resolved_terrain.as_ref(),
             &self.interner,
             rules,
         );
@@ -6270,7 +6280,7 @@ impl Simulation {
     /// the terminating call skips frame commit and pending-delete processing.
     fn run_late_region(
         &mut self,
-        commands: &[CommandEnvelope],
+        commands: &mut Vec<CommandEnvelope>,
         rules: Option<&RuleSet>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         tick_ms: u32,
@@ -6294,7 +6304,16 @@ impl Simulation {
         // which construction and the frame-end pending-delete drain move: a
         // death reaches the gate on the next frame. Each house's strategy tick
         // (`house_strategy.rs`) and building choice follow its own gate.
-        self.house_rung(rules, overlay_registry, self.session.tick > 0, effects);
+        let generated = self.house_rung(rules, overlay_registry, self.session.tick > 0, effects);
+        #[cfg(test)]
+        let commands_include_generated = self.replaying_recorded_commands;
+        #[cfg(not(test))]
+        let commands_include_generated = false;
+        self.admit_generated_frame_commands(commands, generated, commands_include_generated);
+        #[cfg(test)]
+        {
+            self.replaying_recorded_commands = false;
+        }
         #[cfg(test)]
         if self.session.tick > 0 {
             self.trace_house_ai_activation_order(HouseAiActivationOrderTestEvent::DefeatProcessed);
@@ -6637,10 +6656,10 @@ impl Simulation {
         #[cfg(test)]
         self.trace_master_frame_rung(MasterFrameTestRung::SessionCommands);
 
-        let commands = if lane == TickLane::Ordinary {
+        let mut commands = if lane == TickLane::Ordinary {
             self.admit_frame_commands(commands, rules)
         } else {
-            commands.to_vec()
+            Vec::new()
         };
 
         // MainTick55DBC8 precedes Logic55DC9E (including trigger polling).
@@ -6767,17 +6786,6 @@ impl Simulation {
             // Engineer repair, capture and consumption, and a C4 plant, occur
             // synchronously at Walk's completed step in the object pass; a
             // charge goes off in its building's own Update visit.
-            self.tick_order_intents_pre_combat(rules, overlay_registry, &tube_turn_owned_ids);
-            // The compatibility pursuit host excludes every mover whose
-            // mission's Approach carries it (`mission_owns_approach`). Its
-            // remaining consumers retain their existing order before the
-            // remaining combat hosts.
-            self.tick_attack_pursuit_with_overlay_registry(
-                rules,
-                overlay_registry,
-                &tube_turn_owned_ids,
-                effects,
-            );
             // Preserve live-object order among the remaining class requests.
             // Foot fire and its same-pass Bullet visits have already completed.
             let logic_order = self.live_object_order_snapshot();
@@ -6792,13 +6800,12 @@ impl Simulation {
                 self.commit_logic_wave_damage_request(rules, overlay_registry, &request, effects);
             }
             let first_tail_id = self.substrate.next_stable_object_id;
-            let fire_suppressed = tube_turn_owned_ids.clone();
             let combat_result = self.tick_combat_with_fatal_lifecycle(
                 rules,
                 overlay_registry,
                 tick_ms,
                 &logic_order,
-                &fire_suppressed,
+                &tube_turn_owned_ids,
                 &fire_requests,
                 &projectile_detonations,
                 effects,
@@ -6832,12 +6839,6 @@ impl Simulation {
             // Retaliation is not a phase: every receiver issues its Mission
             // Override inline (`TechnoClass::ReceiveDamage 0x00702A43`).
             passenger::tick_passenger_system(self, rules, overlay_registry, effects);
-            self.tick_order_intents_post_combat_except(
-                Some(rules),
-                &tube_turn_owned_ids,
-                overlay_registry,
-                effects,
-            );
             // `IonBlastClass::UpdateAll @ 0x0053D310` follows the object loop
             // (`0x0055B64B`).
             self.update_ion_blasts();
@@ -6916,11 +6917,7 @@ impl Simulation {
         // (incl. defeat) in the tail and commits the frame counter late; AI
         // placement is project-deferred and kept in its current slot.
         let frame_committed = self.run_late_region(
-            if lane == TickLane::Ordinary {
-                &commands
-            } else {
-                &[]
-            },
+            &mut commands,
             rules,
             overlay_registry,
             tick_ms,
@@ -7158,3 +7155,6 @@ mod tibtre_oracle_tests;
 #[cfg(test)]
 #[path = "ore_spread_oracle_tests.rs"]
 mod ore_spread_oracle_tests;
+
+#[cfg(test)]
+mod drop_as_bomb_integration_tests;

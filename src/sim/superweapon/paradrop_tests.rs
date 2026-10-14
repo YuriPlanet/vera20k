@@ -1068,7 +1068,7 @@ fn fly_out(
             sim.substrate
                 .entities
                 .get(id)
-                .is_some_and(|entity| entity.lifecycle.in_limbo || entity.parachute_state.is_some())
+                .is_some_and(|entity| entity.lifecycle.in_limbo || entity.is_falling_down())
         })
     };
     let mut frames = 0;
@@ -1102,7 +1102,7 @@ fn assert_landed(
     let mission = MissionId::from_known(mission);
     for (&id, missions) in passengers.iter().zip(missions) {
         let entity = sim.substrate.entities.get(id).expect("landed");
-        assert!(!entity.lifecycle.in_limbo && entity.parachute_state.is_none());
+        assert!(!entity.lifecycle.in_limbo && !entity.is_falling_down());
         let off = |at: u16, centre: u16| (i32::from(at) - i32::from(centre)).abs();
         assert!(
             off(entity.position.rx, around.0) <= 5 && off(entity.position.ry, around.1) <= 5,

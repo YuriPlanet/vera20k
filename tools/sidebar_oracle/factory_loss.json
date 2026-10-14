@@ -1,0 +1,233 @@
+{
+  "controls": [
+    {
+      "after_events": {
+        "credits": 18,
+        "dirty": false,
+        "factories": {
+          "E1": {
+            "balance": 200,
+            "stage": 0
+          },
+          "MGTK": null
+        },
+        "spent": 18
+      },
+      "after_factories": {
+        "credits": 0,
+        "dirty": true,
+        "factories": {
+          "E1": {
+            "balance": 200,
+            "stage": 0
+          },
+          "MGTK": {
+            "balance": 982,
+            "stage": 1
+          }
+        },
+        "spent": 18
+      },
+      "after_house": {
+        "credits": 0,
+        "dirty": false,
+        "factories": {
+          "E1": {
+            "balance": 200,
+            "stage": 0
+          },
+          "MGTK": {
+            "balance": 982,
+            "stage": 1
+          }
+        },
+        "spent": 18
+      },
+      "after_removal": {
+        "credits": 0,
+        "dirty": true,
+        "factories": {
+          "E1": {
+            "balance": 200,
+            "stage": 0
+          },
+          "MGTK": {
+            "balance": 982,
+            "stage": 1
+          }
+        },
+        "spent": 18
+      },
+      "before": {
+        "credits": 0,
+        "dirty": false,
+        "factories": {
+          "E1": {
+            "balance": 200,
+            "stage": 0
+          },
+          "MGTK": {
+            "balance": 982,
+            "stage": 1
+          }
+        },
+        "spent": 18
+      },
+      "events": [
+        16,
+        46
+      ],
+      "loss": "GATECH",
+      "wallet": 0
+    },
+    {
+      "after_events": {
+        "credits": 115,
+        "dirty": false,
+        "factories": {
+          "E1": {
+            "balance": 197,
+            "stage": 1
+          },
+          "MGTK": null
+        },
+        "spent": 39
+      },
+      "after_factories": {
+        "credits": 79,
+        "dirty": true,
+        "factories": {
+          "E1": {
+            "balance": 197,
+            "stage": 1
+          },
+          "MGTK": {
+            "balance": 964,
+            "stage": 2
+          }
+        },
+        "spent": 39
+      },
+      "after_house": {
+        "credits": 79,
+        "dirty": false,
+        "factories": {
+          "E1": {
+            "balance": 197,
+            "stage": 1
+          },
+          "MGTK": {
+            "balance": 964,
+            "stage": 2
+          }
+        },
+        "spent": 39
+      },
+      "after_removal": {
+        "credits": 100,
+        "dirty": true,
+        "factories": {
+          "E1": {
+            "balance": 200,
+            "stage": 0
+          },
+          "MGTK": {
+            "balance": 982,
+            "stage": 1
+          }
+        },
+        "spent": 18
+      },
+      "before": {
+        "credits": 100,
+        "dirty": false,
+        "factories": {
+          "E1": {
+            "balance": 200,
+            "stage": 0
+          },
+          "MGTK": {
+            "balance": 982,
+            "stage": 1
+          }
+        },
+        "spent": 18
+      },
+      "events": [
+        16,
+        46
+      ],
+      "loss": "GATECH",
+      "wallet": 100
+    },
+    {
+      "after_events": {
+        "credits": 15,
+        "dirty": false,
+        "factories": {
+          "E1": {
+            "balance": 197,
+            "stage": 1
+          },
+          "MGTK": null
+        },
+        "spent": 21
+      },
+      "after_factories": {
+        "credits": 15,
+        "dirty": true,
+        "factories": {
+          "E1": {
+            "balance": 197,
+            "stage": 1
+          },
+          "MGTK": null
+        },
+        "spent": 21
+      },
+      "after_house": {
+        "credits": 15,
+        "dirty": false,
+        "factories": {
+          "E1": {
+            "balance": 197,
+            "stage": 1
+          },
+          "MGTK": null
+        },
+        "spent": 21
+      },
+      "after_removal": {
+        "credits": 18,
+        "dirty": true,
+        "factories": {
+          "E1": {
+            "balance": 200,
+            "stage": 0
+          },
+          "MGTK": null
+        },
+        "spent": 18
+      },
+      "before": {
+        "credits": 0,
+        "dirty": false,
+        "factories": {
+          "E1": {
+            "balance": 200,
+            "stage": 0
+          },
+          "MGTK": {
+            "balance": 982,
+            "stage": 1
+          }
+        },
+        "spent": 18
+      },
+      "events": [],
+      "loss": "GAWEAP",
+      "wallet": 0
+    }
+  ],
+  "schema": 1
+}

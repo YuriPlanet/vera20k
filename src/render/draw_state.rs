@@ -176,6 +176,22 @@ impl DrawState {
         self.fx_params[1] as u32
     }
 
+    /// Carry an already-selected native Convert blitter into the shared SHP /
+    /// voxel compositor. The producer owns its selector; this owner supplies
+    /// the common opacity interpretation and GPU transport.
+    pub(crate) fn from_native_selector(remap_row: u32, selector: u8) -> Self {
+        Self {
+            remap_row,
+            fx_params: [
+                opacity_for_selector_bits(selector),
+                f32::from(selector),
+                1.0,
+                0.0,
+            ],
+            ..Self::default()
+        }
+    }
+
     /// Resolve YR object draw state without inferring any producer-owned gameplay state.
     ///
     /// Original locations: `TechnoClass::DrawVoxel @ 0x00706640` and
@@ -227,13 +243,7 @@ impl DrawState {
     /// translucency: a `Translucent=` `[VoxelAnims]` type's body
     /// (`VoxelAnimClass::DrawIt`, `0x2804` at `0x00749E00`).
     pub(crate) fn translucent(remap_row: u32) -> Self {
-        let mut state = Self {
-            remap_row,
-            ..Self::default()
-        };
-        state.fx_params[0] = opacity_for_selector_bits(TRANSLUCENCY_50);
-        state.fx_params[1] = f32::from(TRANSLUCENCY_50);
-        state
+        Self::from_native_selector(remap_row, TRANSLUCENCY_50)
     }
 
     /// Adapt simulation-owned producers without inventing missing native fields.

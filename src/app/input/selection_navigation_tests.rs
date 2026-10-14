@@ -377,7 +377,7 @@ fn assert_navigation_boundary(
             "{label}: Limbo{id}"
         );
         assert_eq!(
-            u64::from(entity.veterancy_raw.bits()),
+            u64::from(entity.veterancy.raw().bits()),
             actor["veterancy_raw_bits"].as_u64().unwrap(),
             "{label}: raw experience{id}"
         );
@@ -585,7 +585,7 @@ fn replay_category_history(
         .map(|entity| {
             (
                 entity.stable_id(),
-                (entity.veterancy_rank_cache, entity.flash_countdown()),
+                (entity.veterancy.rank_cache(), entity.flashing.frames()),
             )
         })
         .collect();
@@ -792,9 +792,10 @@ fn replay_category_history(
                 sim.entities_mut()
                     .get_mut(step["id"].as_u64().unwrap())
                     .unwrap()
-                    .veterancy_raw = crate::util::native_x87::NativeF32Bits::from_bits(
-                    step["bits"].as_u64().unwrap() as u32,
-                );
+                    .veterancy
+                    .set_raw_for_test(crate::util::native_x87::NativeF32Bits::from_bits(
+                        step["bits"].as_u64().unwrap() as u32,
+                    ));
             }
             "supply_actor_state" => {
                 let entity = sim
@@ -917,7 +918,7 @@ fn replay_category_history(
         }
         for entity in sim.entities().values() {
             assert_eq!(
-                (entity.veterancy_rank_cache, entity.flash_countdown()),
+                (entity.veterancy.rank_cache(), entity.flashing.frames()),
                 rank_cache[&entity.stable_id()],
                 "{label}: navigation samples raw without announcing/promoting {}",
                 entity.stable_id()
@@ -1050,14 +1051,18 @@ fn veterancy_navigation_samples_original_raw_rank_without_cached_rank_writes() {
         let (mut sim, rules) = fixture(&history.inputs, &[]);
         let id = history.inputs.actors[0].id;
         let entity = sim.entities_mut().get_mut(id).unwrap();
-        entity.veterancy_raw = crate::util::native_x87::NativeF32Bits::from_bits(
-            row["raw_bits"].as_u64().unwrap() as u32,
-        );
+        entity
+            .veterancy
+            .set_raw_for_test(crate::util::native_x87::NativeF32Bits::from_bits(
+                row["raw_bits"].as_u64().unwrap() as u32,
+            ));
         // The executed750030 leaf never reads Techno's announced-rank cache.
         // A deliberately stale valid value catches using it instead of raw.
-        entity.veterancy_rank_cache = ((row["rank"].as_u64().unwrap() + 1) % 3) as i8;
-        let cache = entity.veterancy_rank_cache;
-        let flash = entity.flash_countdown();
+        entity
+            .veterancy
+            .set_rank_cache_for_test(((row["rank"].as_u64().unwrap() + 1) % 3) as i8);
+        let cache = entity.veterancy.rank_cache();
+        let flash = entity.flashing.frames();
         let before_rng = sim.rng_state();
         assert_eq!(
             entity_navigation_category(&sim, &rules, id, CategoryNavigationKind::Veterancy),
@@ -1068,7 +1073,7 @@ fn veterancy_navigation_samples_original_raw_rank_without_cached_rank_writes() {
         assert_eq!(sim.rng_state(), before_rng, "{}: no RNG", row["id"]);
         let entity = sim.entities().get(id).unwrap();
         assert_eq!(
-            (entity.veterancy_rank_cache, entity.flash_countdown()),
+            (entity.veterancy.rank_cache(), entity.flashing.frames()),
             (cache, flash),
             "{}: read-only raw rank",
             row["id"]
@@ -1782,7 +1787,9 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
         entity.discovery.discovered_by_current_house = actor.discovered;
         entity.selected = selected.contains(&actor.id);
         if let Some(bits) = actor.veterancy_raw_bits {
-            entity.veterancy_raw = crate::util::native_x87::NativeF32Bits::from_bits(bits);
+            entity
+                .veterancy
+                .set_raw_for_test(crate::util::native_x87::NativeF32Bits::from_bits(bits));
         }
         entity.foot_locomotor_swap_active = actor.locomotor_swap;
         if actor.mission_only {

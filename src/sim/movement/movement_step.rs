@@ -20,8 +20,6 @@ pub(super) enum RotationResult {
 /// the body (`0x004B0788`), whoever started the turn. The fresh arm issues
 /// Do_Turn through the shared locomotor slot owner before this query.
 /// Infantry are excluded by the caller.
-///
-/// Takes individual fields to avoid borrow conflicts with `entity.movement_target`.
 pub(super) fn handle_vehicle_rotation(
     body_facing: &super::facing_class::FacingClass,
     native_frame: u32,

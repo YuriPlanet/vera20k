@@ -3066,7 +3066,7 @@ impl Simulation {
                         self.resolve(entity.type_ref()) == action.inline_type_name()
                     });
                     if matches && let Some(entity) = self.substrate.entities.get_mut(id) {
-                        entity.start_flash_countdown(value.unwrap_or(0));
+                        entity.flashing.start(value.unwrap_or(0));
                     }
                 }
             }

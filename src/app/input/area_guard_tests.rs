@@ -21,11 +21,11 @@ use crate::sim::world::Simulation;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-struct Fixture {
-    sim: Simulation,
-    rules: RuleSet,
-    ids: BTreeMap<String, u64>,
-    native_ids: BTreeMap<u64, u64>,
+pub(super) struct Fixture {
+    pub(super) sim: Simulation,
+    pub(super) rules: RuleSet,
+    pub(super) ids: BTreeMap<String, u64>,
+    pub(super) native_ids: BTreeMap<u64, u64>,
 }
 
 fn rng_hex<'a>(row: &'a Value, state: &Value, stream: &str) -> &'a str {
@@ -45,16 +45,15 @@ fn assert_rng(sim: &Simulation, row: &Value, state: &Value) {
     }
 }
 
-fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) -> Fixture {
+pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) -> Fixture {
     let before = &row["boundaries"]
         .as_array()
         .unwrap()
         .iter()
         .find(|boundary| {
-            boundary["label"]
-                .as_str()
-                .unwrap()
-                .starts_with("original_Guard_execute")
+            let label = boundary["label"].as_str().unwrap();
+            label.starts_with("original_Guard_execute")
+                || label.starts_with("original_Scatter_execute")
         })
         .unwrap()["before"];
     let mut rules = retail.rules;

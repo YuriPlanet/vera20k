@@ -19,8 +19,8 @@ use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::components::NavTargetRef;
 use crate::sim::components::{DriveCoord, FootPathQueue, TrackProgress};
-use crate::sim::components::{MovementTarget, NavTargetRef};
 use crate::sim::game_entity::{BuildingGateRuntime, GameEntity};
 use crate::sim::intern::test_interner;
 use crate::sim::mission::MissionType;
@@ -113,7 +113,6 @@ fn add_blocker(sim: &mut Simulation, moving: bool) {
     if moving {
         // Unit Can_Enter_Cell's code2 body arm (0x73F86B) sees a NavCom and
         // retains Foot+6B6 while moving.
-        blocker.movement_target = Some(MovementTarget::default());
         blocker.navigation.nav_com = Some(NavTargetRef::cell(20, 9));
         assert!(
             blocker
@@ -252,7 +251,7 @@ fn production_chain_clear_and_code2_share_admission_and_never_scatter_or_repath(
                 .substrate
                 .entities
                 .get(2)
-                .map(|e| serde_json::to_value(&e.movement_target).unwrap());
+                .map(|e| serde_json::to_value(&e.navigation).unwrap());
             let mut per_cell = 0;
             sim.run_track_points_observed(invocation, 8, Some(&rules), None, &mut |_, _, event| {
                 per_cell += usize::from(event == TrackWorldEvent::PerCell);
@@ -293,7 +292,7 @@ fn production_chain_clear_and_code2_share_admission_and_never_scatter_or_repath(
                 sim.substrate
                     .entities
                     .get(2)
-                    .map(|e| serde_json::to_value(&e.movement_target).unwrap()),
+                    .map(|e| serde_json::to_value(&e.navigation).unwrap()),
                 blocker_before
             );
             assert_eq!(

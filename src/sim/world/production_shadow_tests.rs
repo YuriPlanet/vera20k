@@ -57,7 +57,7 @@ fn spawn_war_factory(sim: &mut Simulation, owner: InternedId) {
     e.lifecycle.in_limbo = false;
     e.in_playfield = true;
     e.finish_building_construction_for_test();
-    e.building_actually_placed = true;
+    e.building_art.set_actually_placed_for_test(true);
     sim.substrate.entities.insert(e);
     sim.add_entity_occupancy(1);
     sim.append_house_base_building_for_test(1);

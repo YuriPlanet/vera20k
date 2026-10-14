@@ -865,7 +865,9 @@ class EngineerJoinedFixture(construction.JoinedFixture):
             u.reg_write(UC_X86_REG_ESP, sp + 4)
             u.reg_write(UC_X86_REG_EIP, pc + 6)
             return
-        if pc == 0x646F20:
+        if pc in (0x646F20, 0x6FFE81):
+            # Both original event issuers call WINMM timeGetTime through
+            # IAT7E1530, stamping OutList metadata rather than simulation time.
             self.trace.append(dict(kind='platform_event_clock', phase=self.phase, pc=f'0x{pc:08X}'))
             input_transport = getattr(self, 'os_input_transport', None)
             if input_transport is not None:

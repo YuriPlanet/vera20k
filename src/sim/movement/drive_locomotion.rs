@@ -1,9 +1,9 @@
 //! DriveLocomotion runtime helpers.
 //!
-//! This module owns Drive-specific state updates that should not leak into the
-//! generic `MovementTarget` path. Detailed DriveTrack consumption remains in
-//! `track_host`; this file owns private per-instance storage and the Drive/Ship
-//! speed prefix. Storage operations do not duplicate native movement ports.
+//! This module owns Drive-specific state updates. Detailed DriveTrack
+//! consumption remains in `track_host`; this file owns private per-instance
+//! storage and the Drive/Ship speed prefix. Storage operations do not
+//! duplicate native movement ports.
 
 use super::locomotion::piggyback::LocomotorRuntimePayload;
 use super::locomotor::LocomotorState;
@@ -1127,8 +1127,10 @@ mod tests {
     #[test]
     fn gsi_06_12_drive_is_moving_reads_its_own_destination() {
         let mut entity = drive_entity_at(3, 3);
-        entity.movement_target = Some(crate::sim::components::MovementTarget::default());
-        assert!(!drive_is_moving(&entity), "an order alone is not moving");
+        assert!(
+            !drive_is_moving(&entity),
+            "no destination and no head: not moving"
+        );
 
         assert!(
             entity

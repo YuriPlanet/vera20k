@@ -477,19 +477,19 @@ fn map_veterancy_seed_matches_native_percent_and_rank() {
         );
         let entity = sim.substrate.entities.values().next().unwrap();
         assert_eq!(
-            u64::from(entity.veterancy_raw.bits()),
+            u64::from(entity.veterancy.raw().bits()),
             row["raw_bits_after"].as_u64().unwrap(),
             "native map token {id}: {token:?}"
         );
         assert_eq!(
             i64::from(crate::sim::combat::veterancy::veterancy_level(
-                entity.veterancy_raw
+                entity.veterancy.raw()
             )),
             row["rank"].as_i64().unwrap(),
             "native rank after map token {id}: {token:?}"
         );
         assert_eq!(
-            entity.veterancy_rank_cache,
+            entity.veterancy.rank_cache(),
             crate::sim::combat::veterancy::LEVEL_UNSAMPLED,
             "percent seeding must not announce a promotion: {id}"
         );
@@ -1640,7 +1640,7 @@ fn techno_constructor_routes_preserve_components_and_authored_overrides() {
             assert!(entity.debug_log.is_some(), "{type_id} route {route}");
             assert!(entity.dont_score);
             assert_eq!(entity.health.current, if route == 0 { 100 } else { 200 });
-            assert_eq!(entity.veterancy(), if route == 0 { 100 } else { 0 });
+            assert_eq!(entity.veterancy.rank(), if route == 0 { 100 } else { 0 });
             assert_eq!(entity.lifecycle.in_limbo, route == 2);
             if route == 0 {
                 assert!(!entity.base_defense_response.recruitable_a);

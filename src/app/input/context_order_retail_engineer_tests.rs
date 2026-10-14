@@ -147,7 +147,8 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         .entities()
         .get(plant)
         .unwrap()
-        .building_anim_slots[3]
+        .building_art
+        .anim_slots()[3]
         .expect("stock GAPOWR active slot");
     assert_eq!(
         runtime
@@ -235,9 +236,9 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         after["estimated_hp"].as_i64().unwrap() as i32
     );
     assert!(!plant_entity.repairing);
-    assert!(!plant_entity.building_damage_state_active);
+    assert!(!plant_entity.building_art.damage_state_active());
     assert_eq!(plant_entity.building_power_health_sample(), Some(750));
-    let healthy_slot = plant_entity.building_anim_slots[3].unwrap();
+    let healthy_slot = plant_entity.building_art.anim_slots()[3].unwrap();
     assert_ne!(healthy_slot, damaged_slot);
     assert!(runtime.simulation.anim(damaged_slot).is_none());
     assert_eq!(

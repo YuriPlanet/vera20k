@@ -461,18 +461,15 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
             // spread cell loop. Damage dispatch happens only after collection,
             // so walls still mutate during the later cell walk before any
             // receiver runs.
-            let (terrain_width, terrain_height) = layer_context
-                .terrain
-                .as_deref()
-                .map(|terrain| (terrain.width(), terrain.height()))
-                .expect("checked terrain Apply_area_damage context");
             for entity_id in airborne_ids_in_spatial_order(
                 entities,
                 impact_rx,
                 impact_ry,
                 cell_spread::whole_cells(cell_spread),
-                terrain_width,
-                terrain_height,
+                layer_context
+                    .terrain
+                    .as_deref()
+                    .expect("checked terrain Apply_area_damage context"),
             ) {
                 let terrain = layer_context
                     .terrain
@@ -802,14 +799,13 @@ fn airborne_ids_in_spatial_order(
     impact_rx: u16,
     impact_ry: u16,
     radius_cells: i32,
-    map_width: u16,
-    map_height: u16,
+    terrain: &ResolvedTerrainGrid,
 ) -> Vec<u64> {
+    let (map_width, map_height) = (terrain.width(), terrain.height());
     let mut buckets: BTreeMap<u16, Vec<(u64, u64)>> = BTreeMap::new();
-    for entity in entities
-        .values()
-        .filter(|entity| entity.air_spatial_bucket().is_some() && air_spatial_tracks_entity(entity))
-    {
+    for entity in entities.values().filter(|entity| {
+        entity.air_spatial_bucket().is_some() && air_spatial_tracks_entity(entity, Some(terrain))
+    }) {
         buckets
             .entry(entity.air_spatial_bucket().expect("filtered above"))
             .or_default()
@@ -1374,7 +1370,6 @@ mod tests {
                 0,
             );
             locomotor.layer = MovementLayer::Air;
-            locomotor.altitude = SimFixed::from_num(altitude);
             air.locomotor = Some(locomotor);
             air = air
                 .with_air_spatial_membership_for_test(Some(5 + 5 * 20), stable_id)
@@ -1847,8 +1842,8 @@ mod tests {
                         0,
                     );
                 air_locomotor.layer = MovementLayer::Air;
-                air_locomotor.altitude = SimFixed::from_num(1);
                 air.locomotor = Some(air_locomotor);
+                air.position.exact_z_leptons = Some(1);
                 air = air
                     .with_air_spatial_membership_for_test(Some(rx + 5 * 20), enter_order)
                     .with_air_tracker_cell_for_test((rx as i16, 5));
@@ -2774,7 +2769,7 @@ mod tests {
         veteran.owner = american;
         veteran.type_ref = mtnk;
         veteran.health.current = 300;
-        veteran.set_veterancy_rank(100);
+        veteran.veterancy.set_rank_for_test(100);
         entities.insert(veteran);
 
         let mut occupancy = OccupancyGrid::new();
@@ -3554,9 +3549,8 @@ mod tests {
                     .expect("Infantry runtime")
                     .fear_level,
                 destination: victim
-                    .movement_target
+                    .locomotor
                     .as_ref()
-                    .and(victim.locomotor.as_ref())
                     .and_then(|l| l.walk_destination_cell()),
                 queued_mission: victim.mission.queued(),
                 rng_changed: world.scenario_rng.state() != before_rng,
@@ -3912,8 +3906,8 @@ mod tests {
             0,
         );
         air_locomotor.layer = MovementLayer::Air;
-        air_locomotor.altitude = SimFixed::from_num(1);
         air.locomotor = Some(air_locomotor);
+        air.position.exact_z_leptons = Some(1);
         air = air
             .with_air_spatial_membership_for_test(Some(5 + 5 * 20), 1)
             .with_air_tracker_cell_for_test((5, 5));

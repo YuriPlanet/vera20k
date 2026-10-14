@@ -66,7 +66,7 @@ impl Simulation {
         let target = target?;
         let entity = self.substrate.entities.get(id)?;
         let object = rules.object(self.interner.resolve(entity.type_ref()))?;
-        if combat_weapon::aircraft_strafes(rules, object, entity.veterancy()) {
+        if combat_weapon::aircraft_strafes(rules, object, entity.veterancy.rank()) {
             return Some(target);
         }
         let range = combat_weapon::weapon_range(

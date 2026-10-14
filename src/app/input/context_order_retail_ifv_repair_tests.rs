@@ -87,6 +87,7 @@ fn repair_click(sim: &Simulation, rules: &RuleSet, ifv: u64, tank: u64) -> Comma
         owner,
         OrderModifier::Normal,
         OrderMode::Move,
+        false,
     );
     assert!(dispatch.consumed && !dispatch.select_fallback);
     assert_eq!(dispatch.receivers, [ifv].into_iter().collect());
@@ -101,6 +102,41 @@ fn repair_click(sim: &Simulation, rules: &RuleSet, ifv: u64, tank: u64) -> Comma
         "input must not mutate gameplay/RNG"
     );
     dispatch.commands.into_iter().next().unwrap()
+}
+
+/// Under the attack-move chord, ClickedMission promotes the repair click's
+/// Attack too (`0x006FFC09..0x006FFC1E`) and keeps the friend as the event
+/// target, which `Assign_Target_Command` stores as MegaTarget.
+#[test]
+fn retail_repair_click_under_the_attack_move_chord_keeps_the_friend_as_target() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (sim, ifv, tank) = repair_ifv(rules);
+    let owner = sim.entities().get(ifv).unwrap().owner();
+    let dispatch = unit_repair_branch_orders(
+        &sim,
+        rules,
+        &[ifv],
+        &[ifv],
+        &HoverTargetKindWithId {
+            kind: HoverTargetKind::FriendlyUnit,
+            stable_id: tank,
+        },
+        owner,
+        OrderModifier::Normal,
+        OrderMode::AttackMove,
+        false,
+    );
+    assert_eq!(
+        dispatch.commands,
+        [Command::AttackMove {
+            entity_id: ifv,
+            target: Some(TargetKind::Entity(tank)),
+            destination: None,
+        }]
+    );
 }
 
 #[test]
@@ -165,7 +201,7 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
     let owner = sim.entities().get(ifv).unwrap().owner();
     assert_eq!(
         berserk_selection_click(&sim, rules, &[ifv], Some(&hover), (0, 0), owner),
-        BerserkSelectionClick::Dispatch
+        LeftRelease::Dispatch
     );
     // Over itself the healer arm answers Select (`0x0073FE3B`), since the
     // berserk base answer (0) skips the self action.
@@ -175,7 +211,7 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
     };
     assert_eq!(
         berserk_selection_click(&sim, rules, &[ifv], Some(&over_itself), (0, 0), owner),
-        BerserkSelectionClick::Select
+        LeftRelease::Select
     );
     assert_eq!(sim.state_hash(), prior);
     // The refusal belongs to ClickedAction, not Event::Execute. An event
@@ -279,7 +315,7 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
         (OrderModifier::ForceFire, "ctrl_friend"),
         (OrderModifier::ForceMove, "alt_friend"),
         (OrderModifier::GuardArea, "ctrl_alt_friend"),
-        (OrderModifier::Queue, "shift_friend"),
+        (OrderModifier::Shift, "shift_friend"),
     ] {
         let native = packet["repair_rows"]
             .as_array()
@@ -296,6 +332,7 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
             owner,
             modifier,
             OrderMode::Move,
+            false,
         );
         let native_orders: Vec<_> = native["trace"]
             .as_array()
@@ -333,7 +370,8 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
             &hover,
             owner,
             OrderModifier::Normal,
-            OrderMode::Move
+            OrderMode::Move,
+            false
         )
         .commands
         .is_empty()
@@ -360,6 +398,7 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
         owner,
         OrderModifier::Normal,
         OrderMode::Move,
+        false,
     );
     assert_eq!(move_dispatch.commands.len(), 1);
     assert!(

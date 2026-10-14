@@ -586,10 +586,10 @@ fn the_launch_matches_native() {
         let sw = rules.super_weapon("NukeSpecial").unwrap().clone();
         // The native harness begins with a cleared House+1FC, independently
         // of provider fixture construction and its ordinary Unlimbo request.
-        sim.houses.get_mut(&owner).unwrap().take_tech_tree_recheck();
+        sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
         let launched = super::nuke::launch(&mut sim, &rules, owner, sw_type, &sw, target);
         assert_eq!(
-            sim.houses.get_mut(&owner).unwrap().take_tech_tree_recheck(),
+            sim.houses.get_mut(&owner).unwrap().take_tech_recheck(),
             int(&row["recheck"]) != 0,
             "{row}: common-tail House request",
         );

@@ -29,6 +29,7 @@ pub(crate) use mission_handlers::techno_unlimbo_idle_mode;
 use mission_handlers::*;
 pub(crate) use target_scan::direct_greatest_threat;
 pub(crate) use target_scan::passive_target_acquire;
+pub(crate) use target_scan::scan as retaliate_and_scan;
 pub(crate) use target_scan::{can_fire_at, weapon_at_index};
 
 use target_scan::{can_acquire_target, passive_acquire_step};
@@ -61,6 +62,8 @@ pub(super) struct ObjectAiOutcome {
     pub(super) visited: bool,
     pub(super) bridge_state_changed: bool,
     ownership_changed: bool,
+    pub(super) landed: bool,
+    pub(super) fall_error: Option<super::FrameAdvanceError>,
 }
 
 impl ObjectAiOutcome {
@@ -698,7 +701,7 @@ fn techno_ai_shell(
     }
     match category {
         EntityCategory::Unit => {
-            unit_techno_bracket(sim, id, rules, ctx, &mut outcome.bridge_state_changed);
+            unit_techno_bracket(sim, id, rules, ctx, outcome);
         }
         // InfantryClass::AI promotes queued missions via Ready→Commence
         // (`0x0051BC51`/`0x0051BF03`); fear, fire and sequence run in
@@ -720,19 +723,15 @@ fn techno_ai_shell(
                 return;
             }
             clear_passive_target_off_mission(sim, id, rules);
-            mission_counter_step(sim, id, rules, ctx.effects);
+            if !mission_counter_step(sim, id, rules, ctx, outcome) {
+                return;
+            }
             if let Some(rules) = rules
                 && mission_handlers_run(sim, id)
             {
                 outcome.bridge_state_changed |= dispatch_foot_mission(sim, id, rules, ctx);
             }
             passive_acquire_step(sim, id, rules, ctx);
-            if let Some(rules) = rules {
-                // Shared Techno targeting precedes Infantry51BF59 fire, as
-                // for Unit. Keep the legacy OrderIntent decision with its
-                // existing owner until retained AttackMove is ported.
-                sim.acquire_order_intent_target_one(id, rules, ctx.overlay_registry);
-            }
             bomb_fuse_slot(
                 sim,
                 id,
@@ -744,7 +743,7 @@ fn techno_ai_shell(
             slave_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
             spawn_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
             if let Some(rules) = rules {
-                open_transport_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
+                target_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
             }
             techno_common_post(sim, id, rules);
         }
@@ -779,7 +778,9 @@ fn techno_ai_shell(
             // its targets. A building commences a queued mission only at
             // Update's ready checks, never here.
             clear_passive_target_off_mission(sim, id, rules);
-            mission_counter_step(sim, id, rules, ctx.effects);
+            if !mission_counter_step(sim, id, rules, ctx, outcome) {
+                return;
+            }
             building_missions::dispatch(sim, id, rules, ctx, &mut outcome.bridge_state_changed);
             if sim
                 .substrate
@@ -803,7 +804,7 @@ fn techno_ai_shell(
             slave_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
             spawn_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
-            elite_flash_step(sim, id);
+            flash_step(sim, id);
             if let Some(rules) = rules {
                 building_missions::gattling_idle(sim, id, rules);
             }
@@ -906,7 +907,9 @@ fn techno_ai_shell(
                 return;
             }
             clear_passive_target_off_mission(sim, id, rules);
-            mission_counter_step(sim, id, rules, ctx.effects);
+            if !mission_counter_step(sim, id, rules, ctx, outcome) {
+                return;
+            }
             // MissionClass::AI, inside this slot and before Fly Process
             // (FootClass::AI4DA530).
             if let Some(rules) = rules
@@ -942,14 +945,15 @@ fn techno_ai_shell(
 /// veteran plays `UpgradeVeteranSound` plus the EVA. The local-player gate is
 /// the app layer's (`HouseClass::IsHumanPlayer @ 0x0050B6F0` is
 /// `owner == g_PlayerPtr` in a skirmish). The flash's existing signed dword
-/// counter is stepped later by4CC770 at6FAC4D, through elite_flash_step; a
+/// counter is stepped later by4CC770 at6FAC4D, through flash_step; a
 /// newly promoted object's timer therefore loses one on this same visit.
 fn veterancy_promotion_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;
     };
-    let Some(promotion) =
-        crate::sim::combat::veterancy::sample_promotion(entity, rules.general.elite_flash_timer)
+    let Some(promotion) = entity
+        .veterancy
+        .sample_promotion(&mut entity.flashing, rules.general.elite_flash_timer)
     else {
         return;
     };
@@ -971,40 +975,6 @@ fn veterancy_promotion_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         rx,
         ry,
     });
-    refresh_mover_speed_after_promotion(sim, id, rules);
-}
-
-/// Re-derive a moving unit's `FASTER` speed the moment its rank crosses.
-///
-/// gamemd never caches a mover speed: the ground locomotors call
-/// `FootClass::GetCurrentSpeed @ 0x004DB1A0` through vtable slot `+0x538` on
-/// every frame they step (`DriveLocomotionClass::Process_Drive_Track
-/// @ 0x004B1274`, `WalkLocomotionClass::ProcessMovement @ 0x0075BFC0`,
-/// `ShipLocomotionClass::Process_Drive_Track @ 0x006A093C`,
-/// `HoverLocomotionClass::Move @ 0x00514372`), so a unit promoted mid-path
-/// speeds up on the very next frame. VERA's track and Walk steps and the
-/// readiness gate query the getter live; the Jumpjet order speed
-/// (`jumpjet_order_speed`) still reads the `MovementTarget::speed` stamp made
-/// at path creation, so the stamp is refreshed here when the rank changes. The
-/// crate multiplier and the house factor do not refresh it: such a mover keeps
-/// its stamp until its next order.
-fn refresh_mover_speed_after_promotion(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    let Some(entity) = sim.substrate.entities.get(id) else {
-        return;
-    };
-    if entity.movement_target.is_none() {
-        return;
-    }
-    let obj = sim.object_type(entity.type_ref(), rules);
-    let speed = crate::sim::movement::order_speed(entity, obj, Some(rules), &sim.houses);
-    if let Some(target) = sim
-        .substrate
-        .entities
-        .get_mut(id)
-        .and_then(|e| e.movement_target.as_mut())
-    {
-        target.speed = speed;
-    }
 }
 
 /// The house self-heal pulse of `TechnoClass::AI_Update`, read from the
@@ -1225,12 +1195,26 @@ fn mission_counter_step(
     sim: &mut Simulation,
     id: u64,
     rules: Option<&RuleSet>,
-    effects: FrameEffects<'_>,
-) {
+    ctx: ObjectAiCtx<'_>,
+    outcome: &mut ObjectAiOutcome,
+) -> bool {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission.increment_ai_counter();
     }
-    sim.object_ai_sounds(id, rules, effects);
+    if let Some(rules) = rules {
+        match sim.object_ai_fall(id, rules, ctx.overlay_registry, ctx.effects) {
+            Ok((landed, changed)) => {
+                outcome.landed |= landed;
+                outcome.bridge_state_changed |= changed;
+            }
+            Err(error) => {
+                outcome.fall_error = Some(error);
+                return false;
+            }
+        }
+    }
+    sim.object_ai_sounds(id, rules, ctx.effects);
+    ai_alive(sim, id)
 }
 
 // ===== TechnoClass common-body bracket =====
@@ -1260,9 +1244,8 @@ pub(crate) fn ai_alive(sim: &Simulation, id: u64) -> bool {
 /// `MissionClass::AI @ 0x005B3060`'s last gate before a mission handler: Health
 /// above zero (`0x005B30A7`, signed). A crashing wreck is alive at Health 0, so
 /// its Techno AI runs but no handler does and its dispatch timer is not
-/// rewritten. VERA's handler stand-ins (the order intents, the attack pursuit)
-/// share it.
-pub(crate) fn mission_handlers_run(sim: &Simulation, id: u64) -> bool {
+/// rewritten.
+fn mission_handlers_run(sim: &Simulation, id: u64) -> bool {
     sim.substrate
         .entities
         .get(id)
@@ -1446,58 +1429,46 @@ fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     }
 }
 
-/// `TechnoClass::AI_Update @ 0x006FAAEF..0x006FABB8` for an open-topped
-/// transport's rider (`+0x82`): every frame, a rider holding a target it
-/// cannot hit from where it sits lets go of it.
+/// `TechnoClass::AI_Update @ 0x006FAAEF..0x006FABB8`, after the spawn
+/// manager: a Foot outside a team that holds a target it cannot reach, or an
+/// open-topped transport's rider (`+0x82`), approaches the target, then lets
+/// go of one it still cannot hit unless that left it a destination.
 ///
-/// The block admits a non-aircraft object with a target, outside a team
-/// (`vt+0x290`, VERA builds no production teams), whose NavCom is empty. It
-/// runs `Approach_Target(0)` (vt+0x53C; Infantry `0x00522340` chains into
-/// Foot `0x004D5690`) when the target is unreachable (`CanReachDestination`,
-/// vt+0x2C4) or, for a rider, always (`0x006FAB52`); then, NavCom still
-/// empty, it drops the target unless `CanFireAt(target, SelectWeapon)`
-/// (`0x006FAB86..0x006FABB2`). A rider never chases (`0x004D5782`) and is
-/// refused any destination (`0x004D94D7`), so out of range:
-/// - on its Guard (every rider: `SetInOpenTransport` puts it there) or any
-///   mission but the three below, Approach_Target itself drops the target and
-///   the destination (`0x004D571F..0x004D5744`);
-/// - on Attack, a human's Area Guard or a computer's Hunt, Approach_Target
-///   goes on to its approach search, and the block's own CanFireAt test drops
-///   the target.
+/// - The block skips an aircraft (vt+0x2C == 2), an object without a target,
+///   a team member (vt+0x290 = `0x0041C050`, Foot `+0x5D4`) and a Foot with a
+///   NavCom (`+0x5A4`). A building answers reachable (vt+0x2C4 =
+///   `0x00459D90`) and is no rider, so it never acts here.
+/// - A Foot asks IsInSameZoneAs (vt+0x2C4,
+///   [`Simulation::foot_is_in_same_zone_as`]). A reachable target held by an
+///   object outside a transport ends the block (`0x006FAB52`).
+/// - Otherwise the Foot runs Approach_Target(0) (vt+0x53C at `0x006FAB74`,
+///   [`Simulation::approach_target`]). With a NavCom then, the block ends;
+///   without, the target it then holds is measured with CanFireAt (vt+0x3A8)
+///   and the weapon SelectWeapon picks for it (vt+0x2E4), and a miss drops it
+///   (vt+0x3C8(NULL), `0x006FABB2`). CanFireAt answers yes for no target
+///   (`0x006F77BB`).
 ///
-/// In range, Approach_Target returns at `0x004D5A34` (a rider keeps its
-/// playfield byte `+0x3D5`). No draw.
+/// A rider never chases (`0x004D5782`) and is refused any destination
+/// (`0x004D94D7`): out of range on its Guard (every rider:
+/// `SetInOpenTransport` puts it there), Approach drops the target and the
+/// destination (`0x004D571F..0x004D5744`); on Attack, a human's Area Guard or
+/// a computer's Hunt, Approach goes on to its search, and the block's
+/// CanFireAt drops the target. In range, Approach returns at `0x004D5A34`.
 ///
-/// RESIDUAL: the approach search a rider on Attack, Area Guard (human) or
-/// Hunt (computer) runs (`0x004D57EA..`) is not ported; nothing but a Guard
-/// rider is known to reach this block.
+/// The block draws nothing itself. Approach draws through PlaceInfantryInCell
+/// (`0x00481180`): a `CloseRange=` infantryman's spot requests, and the
+/// destination setter of a Teleport or Jumpjet infantryman, which picks his
+/// spot in the cell it is given. A Die1/Die2 corpse does not run the block
+/// here (residual on [`dying_infantry_techno_ai`]).
 ///
 /// RESIDUAL: a unit rider runs the head of `UnitClass::Approach_Target @
-/// 0x007414E0` (`Simulation::unit_approach_head`) before the Foot body. Its
-/// three arms can take the target as the destination and return without
-/// Foot's Set_Destination(NULL):
-/// - a computer's `Crusher=` (`+0xD28`, or the CRUSHER ability) near a
-///   crushable techno;
-/// - a `BalloonHover=` type (`+0xD6A`) with a `Vertical=` weapon;
-/// - an `OmniCrusher=` type (`+0xD29`).
-///
-/// VERA runs the Foot arm for every rider: calling the head here needs what
-/// `UnitClass::Set_Destination @ 0x00741970` does with a rider, unreviewed.
-/// - Trigger: a modded unit rider with one of those flags. Retail's only
-///   unit riders are the Terror and Chaos Drones (`Size=2`), which have none.
-/// - Effect: none in retail. A modded rider calls
-///   `UnitClass::Set_Destination @ 0x00741970` with the target, whose arms
-///   ahead of the Foot refusal are not reviewed. It skips Foot's
-///   Set_Destination(NULL). The block's CanFireAt test still drops the target
-///   in the same frame.
-/// - Frequency and risk: modded data only.
-///
-/// RESIDUAL: the unreachable-target arm for every other object (vt+0x2C4
-/// false). Trigger: a Foot object without NavCom holding a target its
-/// movement zone cannot reach, e.g. a tank with a target across water.
-/// Effect: native approaches and drops a target it cannot hit; VERA keeps it.
-/// Frequency: uncommon. Risk: the object keeps a target it can never fire at.
-fn open_transport_reach_step(
+/// 0x007414E0` ([`Simulation::unit_approach_head`]), whose crush and
+/// BalloonHover arms take the target as the destination through
+/// `UnitClass::Set_Destination @ 0x00741970`, unreviewed for a rider ahead of
+/// the Foot refusal. Trigger: a modded unit rider with `Crusher=`,
+/// `OmniCrusher=` or `BalloonHover=`; retail's only unit riders, the Terror
+/// and Chaos Drones, have none. Effect: none in retail.
+fn target_reach_step(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
@@ -1508,36 +1479,54 @@ fn open_transport_reach_step(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    if !entity.passenger_role.in_open_transport() || entity.navigation.nav_com.is_some() {
+    let Some(target) = entity.attack_target.as_ref().map(|attack| attack.target) else {
+        return;
+    };
+    if !matches!(
+        entity.category,
+        EntityCategory::Unit | EntityCategory::Infantry
+    ) || sim.team_script_vm.team_for_member(id).is_some()
+        || entity.navigation.nav_com.is_some()
+    {
+        return;
+    }
+    // A target that no longer resolves is cleared natively (`PointerExpired`)
+    // before this block; the Attack handler owns VERA's clear of it.
+    if let TargetKind::Entity(target_id) = target
+        && !sim.substrate.entities.contains(target_id)
+    {
+        return;
+    }
+    let rider = entity.passenger_role.in_open_transport();
+    // A rider asks too (`0x006FAB48`), though only `+0x82` decides for it.
+    // The query needs the map's cells, zones, bounds and size and a Foot's
+    // locomotor, which a loaded scenario always has; a fixture without them
+    // cannot ask and answers reachable.
+    let reachable = match sim.foot_is_in_same_zone_as(id, target, rules) {
+        Ok(reachable) => reachable,
+        Err(cause) => {
+            log::debug!("object {id} cannot ask IsInSameZoneAs: {cause}");
+            true
+        }
+    };
+    if reachable && !rider {
+        return;
+    }
+    sim.approach_target(id, rules, overlay_registry, effects);
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    if entity.navigation.nav_com.is_some() {
         return;
     }
     let Some(target) = entity.attack_target.as_ref().map(|attack| attack.target) else {
         return;
     };
-    // A target that no longer resolves is cleared natively (`PointerExpired`)
-    // before this block; the Attack handler owns VERA's clear of it.
-    if let TargetKind::Entity(target_id) = target
-        && sim.substrate.entities.get(target_id).is_none()
-    {
-        return;
-    }
     let weapon = target_scan::select_weapon(sim, rules, id, Some(target));
     if target_scan::can_fire_at(sim, rules, id, target, weapon, overlay_registry) {
         return;
     }
-    let human = sim.owner_is_human(entity.owner());
-    let approaches = match entity.mission.current().known() {
-        Some(MissionType::Attack) => true,
-        Some(MissionType::AreaGuard) => human,
-        Some(MissionType::Hunt) => !human,
-        _ => false,
-    };
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
-    }
-    if !approaches {
-        sim.assign_null_destination(id, Some(rules), overlay_registry, effects);
-    }
+    let _ = sim.assign_target_represented(id, None, Some(rules), overlay_registry, effects);
 }
 
 /// `TechnoClass::AI_Update @ 0x006FA30C..0x006FA46C`, every frame after the
@@ -1629,6 +1618,18 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 ///
 /// RESIDUAL: the rest of the subset (veterancy, drains, CaptureManager,
 /// self-heal, cloak, bomb) does nothing for a GI corpse and is not run.
+///
+/// RESIDUAL: the reach block (`0x006FAAEF..0x006FABB8`, [`target_reach_step`])
+/// runs for a corpse before its Stage clock, and is not run here. Trigger: a
+/// man killed while he holds a target in another zone. Effect: native runs
+/// Approach on the corpse, which can set it a destination and draw for a
+/// spot (PlaceInfantryInCell); how the class setters treat a Die1/Die2
+/// infantryman is not traced. Frequency: a man killed while his target lies
+/// across water or a cliff. Risk: a Scenario draw native makes and VERA
+/// does not. In the frame a carried bomb kills him, the Infantry dispatch
+/// still runs the block (it has no IsAlive gate, `0x006FA735`), as native
+/// does for a Die1/Die2 man, who stays IsAlive (the corpse reaches
+/// `0x006FABC4`); a death native UnInits at once ends at that gate instead.
 pub(super) fn dying_infantry_techno_ai(
     sim: &mut Simulation,
     id: u64,
@@ -1781,7 +1782,7 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.tick_native_stage(sim.session.binary_frame as i32);
     }
-    elite_flash_step(sim, id);
+    flash_step(sim, id);
     let Some(rules) = rules else {
         return;
     };
@@ -1881,11 +1882,11 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
 /// Shared late Techno6FAC31..6FAC79 slot for every represented category.
 /// The countdown owns no RNG or CdTimer. Native redraw virtual+124 is a
 /// presentation dependency; the existing +F0 supplies its phase bits.
-fn elite_flash_step(sim: &mut Simulation, id: u64) {
+fn flash_step(sim: &mut Simulation, id: u64) {
     if ai_alive(sim, id)
         && let Some(entity) = sim.substrate.entities.get_mut(id)
     {
-        entity.tick_elite_flash();
+        entity.flashing.tick();
     }
 }
 
@@ -1909,7 +1910,7 @@ fn unit_techno_bracket(
     id: u64,
     rules: Option<&RuleSet>,
     ctx: ObjectAiCtx<'_>,
-    bridge_state_changed: &mut bool,
+    outcome: &mut ObjectAiOutcome,
 ) -> BracketReach {
     techno_common_pre(sim, id, rules, ctx.overlay_registry, ctx.effects);
     // Guard B (IsAlive, `0x006FA23C`). A crashing wreck is alive at Health 0,
@@ -1922,7 +1923,9 @@ fn unit_techno_bracket(
     }
     // The off-mission passive-target clear runs BEFORE the +0xC4 counter.
     clear_passive_target_off_mission(sim, id, rules);
-    mission_counter_step(sim, id, rules, ctx.effects);
+    if !mission_counter_step(sim, id, rules, ctx, outcome) {
+        return BracketReach::Dispatched;
+    }
     // Mission_Dispatch position: the absorbed handler bodies run here,
     // timer-gated, ending with the verified post-handler epilogue write
     // (start = current frame, delay = handler return). One committed-selector
@@ -1930,7 +1933,7 @@ fn unit_techno_bracket(
     if mission_handlers_run(sim, id)
         && let Some(rules) = rules
     {
-        *bridge_state_changed |= dispatch_foot_mission(sim, id, rules, ctx);
+        outcome.bridge_state_changed |= dispatch_foot_mission(sim, id, rules, ctx);
     }
     // `UnitClass::AI @ 0x007361A9..0x007361E9`: a draining Floating Disc
     // re-checks the building under it every 16th frame and drops the link
@@ -1939,18 +1942,12 @@ fn unit_techno_bracket(
     // Passive / opportunity target acquisition sits between mission dispatch
     // and the second IsAlive guard, before the object's own locomotion.
     passive_acquire_step(sim, id, rules, ctx);
-    if let Some(rules) = rules {
-        // 6FA681/6FA68F place retained AttackMove acquisition in this
-        // targeting slot. Its legacy OrderIntent decision has one owner;
-        // its unported retained state/cadence is documented there.
-        sim.acquire_order_intent_target_one(id, rules, ctx.overlay_registry);
-    }
     bomb_fuse_slot(
         sim,
         id,
         rules,
         ctx.overlay_registry,
-        bridge_state_changed,
+        &mut outcome.bridge_state_changed,
         ctx.effects,
     );
     slave_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
@@ -1962,7 +1959,7 @@ fn unit_techno_bracket(
     }
     spawn_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
     if let Some(rules) = rules {
-        open_transport_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
+        target_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
     }
     techno_common_post(sim, id, rules);
     BracketReach::Dispatched
@@ -2020,7 +2017,7 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::combat::{AttackTarget, TargetKind};
-    use crate::sim::components::{DriveCoord, MovementTarget, NavTargetRef};
+    use crate::sim::components::{DriveCoord, NavTargetRef};
     use crate::sim::game_entity::{BunkerLink, GameEntity};
     use crate::sim::miner::{Miner, MinerConfig, MinerKind};
     use crate::sim::mission::leaf::MissionLeafState;
@@ -2368,7 +2365,13 @@ mod tests {
         // A live Unit reaches the dispatch point: +0xC4 counter tick; the
         // verb-owned current selector is untouched.
         assert_eq!(
-            unit_techno_bracket(&mut sim, 1, None, ObjectAiCtx::default(), &mut false),
+            unit_techno_bracket(
+                &mut sim,
+                1,
+                None,
+                ObjectAiCtx::default(),
+                &mut ObjectAiOutcome::default()
+            ),
             BracketReach::Dispatched
         );
         let u = sim.substrate.entities.get(1).unwrap();
@@ -2386,7 +2389,13 @@ mod tests {
         // Guard B (IsAlive) fires after the (empty) pre-block: a dead Unit runs
         // no mission work (counter stays 0).
         assert_eq!(
-            unit_techno_bracket(&mut sim, 1, None, ObjectAiCtx::default(), &mut false),
+            unit_techno_bracket(
+                &mut sim,
+                1,
+                None,
+                ObjectAiCtx::default(),
+                &mut ObjectAiOutcome::default()
+            ),
             BracketReach::DiedInPre
         );
         assert_eq!(
@@ -2405,7 +2414,13 @@ mod tests {
         e.crashing = true;
         sim.substrate.entities.insert(e);
         assert_eq!(
-            unit_techno_bracket(&mut sim, 1, None, ObjectAiCtx::default(), &mut false),
+            unit_techno_bracket(
+                &mut sim,
+                1,
+                None,
+                ObjectAiCtx::default(),
+                &mut ObjectAiOutcome::default()
+            ),
             BracketReach::Dispatched
         );
         assert_eq!(
@@ -2424,7 +2439,13 @@ mod tests {
         // common mission step for every live Unit (the miner FSM keeps driving
         // behavior; its mission commits arrive through the departure verbs).
         assert_eq!(
-            unit_techno_bracket(&mut sim, 1, None, ObjectAiCtx::default(), &mut false),
+            unit_techno_bracket(
+                &mut sim,
+                1,
+                None,
+                ObjectAiCtx::default(),
+                &mut ObjectAiOutcome::default()
+            ),
             BracketReach::Dispatched
         );
         assert_eq!(
@@ -2768,10 +2789,10 @@ mod tests {
 
     #[test]
     fn a_unit_that_passively_acquires_does_not_move_toward_the_target() {
-        // Pursuit regression guard. The passive commit writes the target
-        // pointer only; a Guard unit fires from where it stands. If pursuit
-        // ever picks these units up again they walk off across the map with no
-        // OrderIntent to bring them home.
+        // The passive commit writes the target pointer only; a Guard unit fires
+        // from where it stands, and the reach block approaches only a target in
+        // another zone. A unit that chased these targets would walk off across
+        // the map with no order to bring it home.
         //
         // A target can only be acquired IN range, so the scenario has to open a
         // range gap afterwards: the unarmed Allied scout parks two cells away
@@ -2814,7 +2835,6 @@ mod tests {
                 entity_id: 1,
                 target_rx: 30,
                 target_ry: 20,
-                queue: false,
             },
         );
         for tick in 60..260u64 {
@@ -2837,7 +2857,7 @@ mod tests {
             "a passively-acquired target must never be pursued — the unit holds its ground"
         );
         assert!(
-            soviet.movement_target.is_none(),
+            crate::sim::movement::motion_query::is_moving(&soviet) != Some(true),
             "no movement may be issued for a scanner-acquired target"
         );
     }
@@ -2972,7 +2992,7 @@ mod tests {
         // target (`0x007077C0`) and the next passive scan picks again, marking
         // the new target as its own (`0x006FA6EE`). The invariant is checked
         // every tick: a target the tank was never ordered onto is always
-        // scanner-owned, or pursuit would chase it.
+        // scanner-owned.
         let rules = passive_rules();
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
         let mut sim = Simulation::with_seed(0x5CA1_AB1E_0007);
@@ -3011,7 +3031,7 @@ mod tests {
                 tank.attack_target.is_none() || tank.passively_acquired_target,
                 "tick {tick}: the tank was never ordered to attack anything, so a target it \
                  holds must always be scanner-owned — a live target with the flag false takes \
-                 it out of the passive block, into pursuit, and it never releases"
+                 it out of the passive block, and it never releases"
             );
         }
         assert!(
@@ -3062,7 +3082,7 @@ mod tests {
         );
     }
 
-    /// One boarded `OCCUPANT` (`OccupyWeapon=` of `range` cells) in a 2x2
+    /// One garrisoned `OCCUPANT` (`OccupyWeapon=` of `range` cells) in a 2x2
     /// house at (10, 10), and an unarmed enemy at `enemy`, on flat ground
     /// through `advance_tick`. Answers the house's target and the enemy's
     /// health.
@@ -3088,10 +3108,10 @@ mod tests {
         )
         .expect("garrison passive-acquire rules parse");
         assert_eq!(rules.object("HOUSE").unwrap().foundation, "2x2");
-        run_boarded_garrison(&rules, "HOUSE", "OCCUPANT", "UNARM", enemy)
+        run_captured_garrison(&rules, "HOUSE", "OCCUPANT", "UNARM", enemy)
     }
 
-    fn run_boarded_garrison(
+    fn run_captured_garrison(
         rules: &RuleSet,
         building_type: &str,
         occupant_type: &str,
@@ -3121,12 +3141,16 @@ mod tests {
             soviet,
             crate::sim::house_state::HouseState::new(soviet, 1, None, true, 0, 10),
         );
-        // PerCellProcess boards from the garrison's own foundation cell.
-        let occupant = sim.substrate.entities.get_mut(2).unwrap();
-        occupant.position.rx = 10;
-        occupant.passenger_role = crate::sim::passenger::PassengerRole::Boarding {
-            target_transport_id: 1,
-        };
+        // Capture walks onto the foundation before PerCellProcess admits
+        // the occupant (InfantryClass::PerCellProcess @ 0x00519675).
+        assert!(sim.apply_command(
+            "Americans",
+            &crate::sim::command::Command::CaptureBuilding {
+                engineer_id: 2,
+                target_building_id: 1,
+            },
+            Some(rules),
+        ));
         for _ in 0..160 {
             let _ = sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
         }
@@ -3136,7 +3160,7 @@ mod tests {
                 .get(1)
                 .and_then(|house| house.passenger_role.cargo())
                 .is_some_and(|cargo| cargo.passengers == [2]),
-            "precondition: the occupant boarded"
+            "precondition: Capture admitted the occupant"
         );
         (
             sim.substrate
@@ -3180,13 +3204,13 @@ mod tests {
             .expect("retail RULESMD and fixed ARTMD");
         assert_eq!(rules.object("CABUNK01").unwrap().foundation, "2x2");
         let initial_health = rules.object("AMCV").unwrap().strength;
-        let (target, health) = run_boarded_garrison(&rules, "CABUNK01", "E1", "AMCV", (10, 16));
+        let (target, health) = run_captured_garrison(&rules, "CABUNK01", "E1", "AMCV", (10, 16));
         assert_eq!(target, Some(TargetKind::Entity(3)));
         assert!(
             health < initial_health,
             "the retail GI fired from the bunker"
         );
-        let (target, health) = run_boarded_garrison(&rules, "CABUNK01", "E1", "AMCV", (10, 17));
+        let (target, health) = run_captured_garrison(&rules, "CABUNK01", "E1", "AMCV", (10, 17));
         assert_eq!(target, None);
         assert_eq!(
             health, initial_health,
@@ -3222,7 +3246,6 @@ mod tests {
                 entity_id: 1,
                 target_rx: 19,
                 target_ry: 20,
-                queue: false,
             },
         );
         for tick in 0..220u64 {
@@ -3241,7 +3264,7 @@ mod tests {
             "the arrival hook committed Guard — the unit must not be left on Move"
         );
         assert!(
-            tank.movement_target.is_none(),
+            crate::sim::movement::motion_query::is_moving(&tank) != Some(true),
             "precondition: the move actually finished"
         );
         assert_eq!(
@@ -3313,8 +3336,8 @@ mod tests {
 
     #[test]
     fn stop_remains_committed_until_the_mission_owner_replaces_it() {
-        // TechnoAI6FA697 reads +AC. An empty movement adapter cannot turn Stop
-        // into Guard before the command/mission owner actually commences it.
+        // TechnoAI6FA697 reads +AC: nothing turns Stop into Guard before the
+        // command/mission owner actually commences it.
         let mut e = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
         e.mission
             .apply_test_fixture(fixture_with_current(&e.mission, MissionType::Stop));
@@ -3323,9 +3346,6 @@ mod tests {
             MissionType::Stop,
             "the passive consumer may not infer a mission transition"
         );
-        // While the order is still live, the committed selector wins.
-        e.movement_target = Some(MovementTarget::default());
-        assert_eq!(e.passive_acquire_mission(), MissionType::Stop);
     }
 
     fn fixture_with_current(mission: &MissionCom, current: MissionType) -> MissionTestFixture {
@@ -3945,7 +3965,6 @@ mod tests {
                 entity_id: 1,
                 target_rx: 28,
                 target_ry: 20,
-                queue: false,
             },
         );
         for tick in 60..300u64 {
@@ -3998,7 +4017,6 @@ mod tests {
             .unwrap();
         {
             let e = sim.substrate.entities.get_mut(1).unwrap();
-            e.movement_target = Some(MovementTarget::default());
             e.attack_target = Some(AttackTarget::new(9));
             e.passively_acquired_target = true;
         }
@@ -5018,8 +5036,9 @@ mod tests {
     }
 
     /// The headline of GSI-07.20: a hunting object acquires past its own weapon
-    /// reach, and the target it installs is NOT flagged passively-acquired — so
-    /// the pursuit pass will close on it instead of skipping it. Native:
+    /// reach, and the target it installs is NOT flagged passively-acquired, so
+    /// nothing treats it as a scan pick-up (the crush arms, the off-mission
+    /// clear). Native:
     /// `FootClass::Mission_Hunt @ 0x004D5373` scans with threat mask `0`, and
     /// `TechnoClass::Greatest_Threat @ 0x006F8FE0` (`TEST AL,0x3 ; JZ`) jumps
     /// past the whole radius block for that mask; `Retaliate_And_Scan @
@@ -5588,7 +5607,7 @@ mod tests {
         if gates.lifecycle_countdown_exit {
             return Err(HostTraceError::LifecyclePath);
         }
-        if entity.teleport_state().is_some() || entity.parachute_state.is_some() {
+        if entity.teleport_state().is_some() || entity.is_falling_down() {
             return Err(HostTraceError::SpecialLocomotorPath);
         }
 
@@ -6527,7 +6546,7 @@ mod tests {
         let sim = ordinary_drive_host_sim(12);
         let entity = sim.substrate.entities.get(ORDINARY_DRIVE_HOST_ID).unwrap();
         assert_eq!(entity.mission.current().known(), Some(MissionType::Move));
-        assert!(entity.movement_target.is_none());
+        assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
         assert!(entity.attack_target.is_none());
         assert!(entity.pending_entry().is_none() && entity.radio_contacts.is_empty());
         assert!(entity.miner.is_none());
@@ -6979,7 +6998,6 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
         } else {
             crate::util::fixed_math::SIM_ZERO
         });
-        entity.movement_target = walking.then(crate::sim::components::MovementTarget::default);
     }
 
     #[test]
@@ -7070,20 +7088,6 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
              test proves nothing"
         );
         assert_eq!(e.mission.current(), MissionId::NONE);
-
-        // Retiring the path adapter alone does not finish a paid Walk step.
-        sim.substrate.entities.get_mut(1).unwrap().movement_target = None;
-        sim.object_ai_post_movement_promote(Some(&rules));
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(1)
-                .unwrap()
-                .mission
-                .queued()
-                .known(),
-            Some(MissionType::Move)
-        );
 
         // Movement ended during the tick's movement phases.
         set_walking(&mut sim, 1, false);
@@ -7329,10 +7333,9 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
             5, // vision_range = 5 cells
             true,
         );
-        e.movement_target = Some(MovementTarget::default());
         // Out of limbo, where `FootClass::AI` admits a Process (`0x004DA86E`).
-        // The ground corridor's Walk Process retires the empty target on the
-        // first Process.
+        // The ground corridor's Walk Process takes its idle tail (Walk75BCE3)
+        // on the first Process.
         e.lifecycle.in_limbo = false;
         e.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::for_test_kind(
@@ -7348,12 +7351,16 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
     #[test]
     fn tick_never_projects_a_mission_from_the_machines() {
         let mut sim = Simulation::new();
-        insert_s2_scoped_move_unit(&mut sim, 1, 5, 5); // default target: arrives tick 1
+        insert_s2_scoped_move_unit(&mut sim, 1, 5, 5); // an idle Walk
         sim.set_logic_order_for_test(vec![1]);
 
         let _ = sim.advance_tick(&[], None, None, None, 67);
         let e = sim.substrate.entities.get(1).unwrap();
-        assert!(e.movement_target.is_none(), "fixture must arrive on tick 1");
+        assert_ne!(
+            crate::sim::movement::motion_query::is_moving(e),
+            Some(true),
+            "the fixture stands"
+        );
         assert_eq!(
             e.mission.current(),
             MissionId::NONE,
@@ -7371,32 +7378,37 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
     }
 
     /// `FootClass::AI` calls no locomotor Process while the object falls
-    /// (ObjectClass `+0x8D`, tested at `0x004DA826`): the mover's empty target
-    /// outlives the frame, and the Process retires it once the fall ends.
+    /// (ObjectClass `+0x8D`, tested at `0x004DA826`): the idle Walk's tail
+    /// (Walk75BCE3), which stops a positive Foot speed, waits until the fall
+    /// ends.
     #[test]
     fn a_falling_mover_gets_no_process() {
+        use crate::util::fixed_math::{SIM_ONE, SIM_ZERO};
         let mut sim = Simulation::new();
         insert_s2_scoped_move_unit(&mut sim, 1, 5, 5);
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .set_falling_down_for_test(true);
+        let mover = sim.substrate.entities.get_mut(1).unwrap();
+        mover.set_falling_down_for_test(true);
+        mover.foot_speed.set_speed_fraction(SIM_ONE);
         sim.set_logic_order_for_test(vec![1]);
 
         let _ = sim.advance_tick(&[], None, None, None, 67);
         let mover = sim.substrate.entities.get_mut(1).unwrap();
-        assert!(mover.movement_target.is_some(), "no Process while falling");
+        assert_eq!(
+            mover.foot_speed.applied_fraction(),
+            SIM_ONE,
+            "no Process while falling"
+        );
 
         mover.set_falling_down_for_test(false);
         let _ = sim.advance_tick(&[], None, None, None, 67);
-        assert!(
+        assert_eq!(
             sim.substrate
                 .entities
                 .get(1)
                 .unwrap()
-                .movement_target
-                .is_none(),
+                .foot_speed
+                .applied_fraction(),
+            SIM_ZERO,
             "the landed mover's Process runs"
         );
     }
@@ -7432,7 +7444,6 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
         insert_s2_scoped_move_unit(&mut sim, 1, 5, 5); // dispatched on tick 1
         insert_s2_scoped_move_unit(&mut sim, 2, 8, 8);
         // never collected; never scoped
-        sim.substrate.entities.get_mut(2).unwrap().movement_target = None;
         sim.set_logic_order_for_test(vec![1, 2]);
 
         let _ = sim.advance_tick(&[], None, None, None, 67);
@@ -7457,14 +7468,13 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
 
     /// Load trusts serialized MissionCom: a save carrying a verb-committed
     /// mission that no legacy machine could re-derive (Move current, no
-    /// movement_target) must restore an IDENTICAL state hash and value.
+    /// destination) must restore an IDENTICAL state hash and value.
     /// Guards the deleted post-load re-derive against reintroduction.
     #[test]
     fn save_load_round_trip_trusts_serialized_mission() {
         use crate::sim::snapshot::GameSnapshot;
         let mut sim = Simulation::new();
         insert_s2_scoped_move_unit(&mut sim, 1, 5, 5);
-        sim.substrate.entities.get_mut(1).unwrap().movement_target = None;
         update_mission_test_fixture(
             &mut sim.substrate.entities.get_mut(1).unwrap().mission,
             |fixture| {
@@ -7820,6 +7830,10 @@ mod bridge_low_repair_tests;
 #[cfg(test)]
 #[path = "techno_ai/mirage_disguise_tests.rs"]
 mod mirage_disguise_tests;
+
+#[cfg(test)]
+#[path = "techno_ai/target_reach_tests.rs"]
+mod target_reach_tests;
 
 #[cfg(test)]
 use super::bridge_test_evidence;

@@ -7,7 +7,7 @@
 use super::unit_damage_response::{CrushCharge, crush_distance};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::world_receiver::{ReceiverRun, commit_entities};
-use crate::sim::combat::{EntityDamageEvent, ReceiverCallFlags, TargetKind};
+use crate::sim::combat::{EntityDamageEvent, ReceiverCallFlags};
 use crate::sim::components::NavTargetRef;
 use crate::sim::house_state::HouseDifficulty;
 use crate::sim::miner::{CargoBale, ResourceType};
@@ -294,34 +294,6 @@ fn gassed_computer_fortress_charges_the_chaos_drone() {
         Some(NavTargetRef::Entity { id: drone })
     );
     assert_eq!(queued(&sim, fortress), MOVE);
-}
-
-/// The charge outlives the frame's pursuit pass. The Rhino still holds the GI
-/// it retaliates against, in range and on Attack, but Unit AI commences the
-/// queued Move (`0x00736473`) before Mission_Attack's approach or the range
-/// stop could drop the destination.
-#[test]
-fn queued_charge_keeps_its_destination_through_pursuit() {
-    let Some(rules) = retail_rules() else {
-        return;
-    };
-    let mut sim = arena(&rules);
-    let rhino = spawn(&mut sim, &rules, "HTNK", "Russians", (10, 10));
-    let gi = spawn(&mut sim, &rules, "E1", "Americans", (11, 10));
-    hit(&mut sim, &rules, rhino, gi, 10);
-    let entity = sim.substrate.entities.get(rhino).unwrap();
-    assert_eq!(
-        entity.mission.current(),
-        MissionId::from_known(MissionType::Attack)
-    );
-    assert_eq!(
-        entity.attack_target.as_ref().map(|attack| attack.target),
-        Some(TargetKind::Entity(gi))
-    );
-    assert!(entity.movement_target.is_some());
-    sim.tick_attack_pursuit(&rules);
-    assert_eq!(nav_com(&sim, rhino), Some(NavTargetRef::Entity { id: gi }));
-    assert_eq!(queued(&sim, rhino), MOVE);
 }
 
 /// A computer's War Miner carrying ore and at `ConditionYellow` (half its

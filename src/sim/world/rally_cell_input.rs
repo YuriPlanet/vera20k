@@ -9,8 +9,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::components::DriveCoord;
 use crate::sim::find_nearby_cell::{
-    NearbyAnchorGate, NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
-    map_owned_radius_cap,
+    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
 };
 use crate::sim::occupancy::RawCellOccupationGrid;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
@@ -116,7 +115,6 @@ fn resolve_rally_cell_click(
                 bridge_aware_zone: bridge,
             },
             footprint: NearbyFootprint::SINGLE,
-            anchor_gate: NearbyAnchorGate::NativeHeightAware,
             allow_bridge_cells: true,
             check_height: false,
             check_occupancy: false,

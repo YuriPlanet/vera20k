@@ -8,7 +8,7 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::combat::AttackTarget;
-use crate::sim::components::{DriveCoord, MovementTarget, TrackProgress};
+use crate::sim::components::{DriveCoord, TrackProgress};
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 use crate::sim::movement::DriveLocomotionRuntime;
@@ -100,10 +100,6 @@ fn install_paid_track(sim: &mut Simulation, id: u64) {
     );
     // The accepted head (x, y-1) was the route's last cell, so Foot+5E0
     // holds no word beyond it: the committed head alone models the route.
-    entity.movement_target = Some(MovementTarget {
-        speed: SimFixed::from_num(330),
-        ..Default::default()
-    });
 }
 
 fn position(sim: &Simulation, id: u64) -> ProjectileCoord {
@@ -191,22 +187,27 @@ fn attack_move_acquires_before_its_foot_fire_slot() {
         let (mut sim, rules, first, _) = fixture_with_first(first_type);
         let actor = sim.substrate.entities.get_mut(first).unwrap();
         actor.attack_target = None;
-        actor.order_intent = Some(crate::sim::components::OrderIntent::AttackMove {
-            goal_rx: 24,
-            goal_ry: 16,
-        });
-        // The compatibility global host must not make a Unit/Infantry decision. The
-        // retained native AttackMove state/cadence has its own recorded residual;
-        // this regression protects acquisition-before-fire at the object boundary.
-        sim.tick_order_intents_pre_combat(&rules, None, &BTreeSet::new());
-        assert!(
-            sim.substrate
-                .entities
-                .get(first)
-                .unwrap()
-                .attack_target
-                .is_none()
-        );
+        // The event's state: Move committed with the order stored, and a
+        // targeting timer that has run out. The targeting slot of
+        // TechnoClass::AI (`0x006FA681..0x006FA695`) runs the attack-mover's
+        // Arrival_Target_Handler, whose scan acquires and commits Attack
+        // before Unit7365E1 or Infantry51BF59 fire.
+        actor
+            .mission
+            .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {
+                current: MissionId::from_known(MissionType::Move),
+                suspended: MissionId::NONE,
+                queued: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: MissionDispatchTimer::from_raw(10, 1000),
+            });
+        actor.passive_scan_timer.reset(10);
+        actor.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(Some(
+            crate::sim::combat::TargetKind::Cell(24, 16),
+        ));
         sim.advance_live_object_turn(first, Some(&rules), techno_ai::ObjectAiCtx::default())
             .unwrap();
         assert_eq!(sim.fire_events.len(), 1);

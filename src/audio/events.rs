@@ -129,6 +129,10 @@ pub enum GameSoundEvent {
         sound_id: String,
     },
 
+    /// An already-admitted scalar voice from the simulation's reached
+    /// gameplay caller. Shares the same per-object pending/playing owner.
+    UnitVoiceRequested { speaker_id: u64, sound_id: String },
+
     /// The live Logic cursor reached Techno6F9EBB for an interested owner.
     /// This visit drains only that owner's pending acknowledgement.
     UnitVoiceVisit { owner: u64 },
@@ -351,6 +355,7 @@ impl GameSoundEvent {
             | Self::UnitSelected { sound_id, .. }
             | Self::UnitMoveOrder { sound_id, .. }
             | Self::UnitAttackOrder { sound_id, .. }
+            | Self::UnitVoiceRequested { sound_id, .. }
             | Self::EntityDestroyed { sound_id, .. }
             | Self::EntityCrushed { sound_id, .. }
             | Self::AircraftPhase { sound_id, .. }
@@ -446,12 +451,12 @@ impl GameSoundEvent {
 /// voice handles, including queued events without device output. A global
 /// presentation update cannot substitute for a reached Techno voice slot.
 ///
-/// **Still absent on the voice side.** `VoiceDeploy=`/`VoiceUndeploy=`
-/// (deploy/unload orders) and `VoiceFalling=` are not parsed,
-/// and taunts reach an empty match arm. The native consumers of those slots
-/// were not isolated, so no mapping is asserted.
-/// - Player effect: those orders and states stay silent.
-/// - Frequency: deploy orders are common.
+/// **Building pack-up is connected.** Selling stage0 queues the registered
+/// `VoiceDeploy=` slot, or the resource-Archive `VoiceHarvest=` override,
+/// before its positional DeploySound. Automatic relocation suppresses the
+/// ordinary line. Deploy/unload input acknowledgement for other categories
+/// remains separate, despite the bound Deploy/Undeploy slots; `VoiceFalling=`
+/// is still unparsed and taunts reach an empty match arm.
 ///
 /// `VoiceSinking=`/`SinkingSound=` are resolved against fixed SOUNDMD by the
 /// Rules process owner. Foot's +3CD/+3CE edge (4DABC7) emits the positional

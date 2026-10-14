@@ -378,7 +378,7 @@ GuardRange=9\n\n\
 
     fn type_weapon_ranges(rules: &RuleSet, obj: &ObjectType, veterancy: u16) -> [i32; 2] {
         let mut actor = crate::sim::game_entity::GameEntity::test_default(1, &obj.id, "Test", 0, 0);
-        actor.set_veterancy_rank(veterancy);
+        actor.veterancy.set_rank_for_test(veterancy);
         let entities = crate::sim::entity_store::EntityStore::new();
         let interner = crate::sim::intern::test_interner();
         std::array::from_fn(|index| {
@@ -624,7 +624,11 @@ GuardRange=9\n\n\
                 let id = 10 + index as u64;
                 let mut passenger =
                     GameEntity::test_default(id, &format!("P{index}"), "Test", 0, 0);
-                passenger.set_veterancy_rank(veterancy(lookup(rider, rider_defaults, "veterancy")));
+                passenger.veterancy.set_rank_for_test(veterancy(lookup(
+                    rider,
+                    rider_defaults,
+                    "veterancy",
+                )));
                 let current = lookup(rider, rider_defaults, "current_weapon")
                     .as_u64()
                     .unwrap();
@@ -637,7 +641,9 @@ GuardRange=9\n\n\
                 assert!(cargo.board(id, 1));
             }
             let mut transport = GameEntity::test_default(1, "TRN", "Test", 0, 0);
-            transport.set_veterancy_rank(veterancy(lookup(input, defaults, "veterancy")));
+            transport
+                .veterancy
+                .set_rank_for_test(veterancy(lookup(input, defaults, "veterancy")));
             transport.passenger_role = PassengerRole::Transport { cargo };
             let interner = crate::sim::intern::test_interner();
             let obj = rules.object("TRN").unwrap();

@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::{DriveCoord, MovementTarget};
+use crate::sim::components::DriveCoord;
 use crate::sim::movement::SpeedRules;
 use crate::sim::movement::motion_query::is_moving_now;
 use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};
@@ -25,14 +25,6 @@ fn mtnk_rules() -> RuleSet {
         "[VehicleTypes]\n0=MTNK\n[MTNK]\nSpeed=6\n",
     ))
     .expect("minimal MTNK rules")
-}
-
-/// An order toward (6,5). Its route is the Foot+5E0 queue
-/// (`order_route`); the adapter keeps only its presence and speed stamp.
-fn moving_target() -> MovementTarget {
-    MovementTarget {
-        ..MovementTarget::default()
-    }
 }
 
 /// The Foot+5E0 words Find_Path installs for that order from (5,5).
@@ -76,7 +68,7 @@ fn parked_drive_unit_reports_not_moving() {
 }
 
 /// A vehicle with a class-owned destination/head and positive owner-applied
-/// speed reports moving without a path-execution adapter.
+/// speed reports moving.
 #[test]
 fn driving_unit_reports_moving() {
     let mut entity = driving_mtnk();
@@ -155,11 +147,7 @@ fn ship_mirrors_drive_but_keeps_its_own_variant() {
     let mut entity = entity_with(LocomotorKind::Ship);
     let head = DriveCoord::cell(6, 5, 0);
     entity.foot_speed.set_speed_fraction(SIM_ONE);
-    // Without rules the getter reads the order's stamped speed.
-    entity.movement_target = Some(MovementTarget {
-        speed: SimFixed::from_num(300),
-        ..moving_target()
-    });
+    // Without rules the getter reads the `Speed=4` fallback.
     assert!(
         entity
             .locomotor
@@ -245,7 +233,6 @@ fn jumpjet_readiness_reads_the_native_state_field() {
         .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
         .unwrap();
     *runtime = runtime.clone().with_phase_for_test(2);
-    entity.movement_target = Some(moving_target());
     entity.navigation.path_replay = order_route();
     assert!(!ready_state_for(&entity, None, 100).unwrap().is_moving_now());
 }
@@ -275,7 +262,6 @@ fn walking_infantry_reports_moving() {
 #[test]
 fn blocked_walker_reports_not_moving() {
     let mut entity = entity_with(LocomotorKind::Walk);
-    entity.movement_target = Some(moving_target());
     entity.navigation.path_replay = order_route();
     let state = ready_state_for(&entity, None, 100).expect("Walk has a producer");
     assert!(
@@ -293,7 +279,6 @@ fn walk_stop_keeps_paid_head_readiness_until_retirement_and_restore() {
     loco.set_step_head(Some(head));
     loco.set_walk_destination(None);
     entity.foot_speed.set_speed_fraction(SIM_ONE);
-    assert!(entity.movement_target.is_none());
     assert!(is_moving_now(&entity, None, 100));
     let mut restored: GameEntity =
         serde_json::from_value(serde_json::to_value(&entity).unwrap()).unwrap();
@@ -380,9 +365,8 @@ fn retained_motion_and_walk_readiness_match_original_queries() {
             }
             _ => unreachable!(),
         }
-        // The compatibility path/order must not affect any represented query.
+        // A Foot+5E0 route must not affect any represented query.
         for has_order in [false, true] {
-            entity.movement_target = has_order.then(moving_target);
             entity.navigation.path_replay = if has_order {
                 order_route()
             } else {

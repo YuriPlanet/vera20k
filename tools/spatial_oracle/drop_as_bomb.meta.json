@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original DropAsBomb, ObjectAI falling block, Foot missing-deck and Hover Process water gate controls",
+  "assumptions": [
+    "Foot/nonfoot bit, health, Location, canopy, limbo, bridge, parachute, falling and bomb flags are supplied controls",
+    "Rules fall caps -3/-100 and C4Warhead pointer supplied; freefall literal1.4 and x87 conversion execute original bytes",
+    "Original Hover startup helpers513A10..513AE0 execute in order to initialize threshold104; no startup constants supplied"
+  ],
+  "substitutions": [
+    "Foot virtual receiver callbacks and display membership record arguments and return supplied values; no receiver parity claim",
+    "Foot/Hover gate Map lookup and Hover floor return supplied cell/floor; DropAsBomb dispatch executes original body",
+    "Hover Is_Powered returns the supplied powered byte OR supplied Location Z above floor (516C70); facing read/update callbacks are substituted while spin-step arithmetic and entry/exit gates execute original bytes"
+  ],
+  "entry_points": {
+    "drop_as_bomb": "0x005F4160",
+    "object_ai": "0x005F3E70",
+    "hover_water": "0x00514AD0",
+    "foot_missing_deck": "0x004D8D0B",
+    "hover_threshold_startup": "0x00513AE0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.hover_speed_altitude --drop-as-bomb",
+  "payload_sha256": "7ad810c0bc6986c50bb14027b1b80dd0bcf26f3706180edf88d6ea8445166feb"
+}

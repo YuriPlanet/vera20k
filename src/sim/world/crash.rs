@@ -228,12 +228,10 @@ impl Simulation {
             self.mark_entity_put(id, context);
             self.submit_entity_display(id, rules, None);
         }
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
+        let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        let height = current_fly_height(entity, self.resolved_terrain.as_ref());
-        crate::sim::movement::ground_pose::mirror_height(entity, height);
-        height <= 0
+        current_fly_height(entity, self.resolved_terrain.as_ref()) <= 0
     }
 
     /// The dead Fly's impact, `0x004CD7AA..0x004CD8A8` in the same function:

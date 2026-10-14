@@ -469,7 +469,7 @@ pub(crate) fn should_retaliate(
         if source.category == EntityCategory::Structure
             && ((victim.category == EntityCategory::Infantry && victim_type.c4)
                 || super::veterancy::has_weapon_ability(
-                    super::veterancy::rank_from_u16(victim.veterancy()),
+                    victim.veterancy.rank_kind(),
                     victim_type,
                     Ability::C4,
                 ))
@@ -591,7 +591,7 @@ pub(crate) fn build_attacker_snapshot(
         sub_x: entity.position.sub_x,
         sub_y: entity.position.sub_y,
         type_id: entity.type_ref(),
-        veterancy: entity.veterancy(),
+        veterancy: entity.veterancy.rank(),
         barrel_facing: entity.barrel_facing,
         hull_facing: entity.body_facing,
         garrison,

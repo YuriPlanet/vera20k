@@ -17,6 +17,7 @@ use crate::rules::particle_system_type::{ParticleSystemBehavesLike, ParticleSyst
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
+#[cfg(test)]
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{
     NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, sqrt_approx_f32,
@@ -26,7 +27,7 @@ use glam::IVec3;
 impl Simulation {
     /// Mark the attached Techno+310 smoke system for retirement while retaining
     /// its owner pointer. Native ParticleSystem virtual F8 (6301E0) only sets
-    /// its done-spawning byte; physical deletion owns pointer expiry.
+    /// its done-spawning byte; the done-empty Limbo broadcast owns pointer expiry.
     pub(crate) fn retire_attached_damage_smoke(&mut self, stable_id: u64) {
         let system_id = self
             .substrate
@@ -197,7 +198,8 @@ impl Simulation {
             coords,
             offset: IVec3::ZERO,
             particles: Vec::new(),
-            spawn_timer: SimFixed::from_num(pst.spawn_frames as i32),
+            spawn_timer: X87Chop53::store_f32(X87Chop53::load_i32(pst.spawn_frames))
+                .expect("signed SpawnFrames fits stored binary32"),
             lifetime: pst.lifetime,
             spark_spawn_frames: pst.spark_spawn_frames as i32,
             facing: 0x1D,
@@ -206,6 +208,8 @@ impl Simulation {
             target_coords,
             owner_house,
             done_spawning: false,
+            alive: true,
+            in_limbo: false,
         };
         debug_assert!(
             !self.substrate.entities.contains(stable_id)
@@ -364,15 +368,7 @@ pub(super) fn spawn_particle(
         return false;
     }
     let pt = rules.particle_type(pt_id);
-    let velocity = native_velocity(coords, sys.target_coords);
-    let mut particle = Particle::new(pt_id, coords, pt, sim);
-    // The direction keeps the binary32 vector as `SimFixed` rounded toward
-    // zero, as its chopped quotients are: 3/5 stores just below 0.6 and stays
-    // there. Scaling by 2^16 is exact; a component is about 1 at most.
-    particle.direction = velocity
-        .map(|component| SimFixed::from_bits((f32::from_bits(component.bits()) * 65536.0) as i32));
-    particle.state_ai_advance =
-        spawn_state_ai_advance(pt, coords, sys.target_coords, velocity, particle.velocity);
+    let particle = Particle::new(pt_id, coords, sys.target_coords, pt, sim);
     sys.particles.push(particle);
     true
 }
@@ -382,7 +378,7 @@ pub(super) fn spawn_particle(
 /// (`0x0062B8D7..0x0062B956`): `(x² + y²) + z²` through `Sqrt_Approx`, each
 /// component divided by that length and stored as binary32. A zero length
 /// leaves the vector as it is.
-fn native_velocity(source: IVec3, target: IVec3) -> [NativeF32Bits; 3] {
+pub(super) fn native_velocity(source: IVec3, target: IVec3) -> [NativeF32Bits; 3] {
     let velocity = [
         target.x.wrapping_sub(source.x),
         target.y.wrapping_sub(source.y),
@@ -421,14 +417,13 @@ fn native_velocity(source: IVec3, target: IVec3) -> [NativeF32Bits; 3] {
 /// ticks are smaller. The advance is the low byte of
 /// `ftol(ticks / (FinalDamageState + 1) + 1.0)`, the state sign-extended; a
 /// state of -1 divides by zero, which the masked x87 converts to 0. `speed`
-/// is the particle's (`+0xE4`); as `SimFixed` it equals the INI's binary32
-/// only for a value that fits both, as retail's do.
-fn spawn_state_ai_advance(
+/// is the particle's stored binary32 scalar (`+0xE4`).
+pub(super) fn spawn_state_ai_advance(
     pt: &crate::rules::particle_type::ParticleType,
     source: IVec3,
     target: IVec3,
     velocity: [NativeF32Bits; 3],
-    speed: SimFixed,
+    speed: NativeF32Bits,
 ) -> u8 {
     // `0x007EF920`.
     const NO_STEP_TICKS: NativeF32Bits = NativeF32Bits::from_bits(0x461C_3C00);
@@ -436,7 +431,7 @@ fn spawn_state_ai_advance(
         return pt.state_ai_advance;
     }
     let load = |bits| X87Chop53::load_f32(bits).expect("a particle's binary32 is finite");
-    let speed = load(NativeF32Bits::from_bits(speed.to_num::<f32>().to_bits()));
+    let speed = load(speed);
     let step = |component| X87Chop53::ftol_i32_low_masked(X87Chop53::mul(load(component), speed));
     let [step_x, step_y] = [
         step(velocity[0]).wrapping_abs(),
@@ -831,11 +826,18 @@ mod tests {
 
     #[test]
     fn lifetime_extra_uses_raw_abs_modulo_single_draw() {
-        // MaxEC=10 (Smk). seed=1 first raw draw is 0x78B76ED5 (+2_025_287_381);
+        // Use Gas to isolate the common lifetime roll; Smoke's preceding
+        // speed draw is covered by the original constructor corpus.
+        // MaxEC=10. seed=1 first raw draw is 0x78B76ED5 (+2_025_287_381);
         // abs(% 10) = 1 -> lifetime_remaining = 10 + 1 = 11. The raw-modulo helper
         // consumes EXACTLY ONE draw (no rejection loop); this pins both the value
         // and the single-advance contract.
-        let rules = build_rules("Smoke", 50);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Particles]\n0=Gas\n[Gas]\nBehavesLike=Gas\nMaxEC=10\n\
+             [ParticleSystems]\n0=Sys\n[Sys]\nBehavesLike=Gas\n\
+             HoldsWhat=Gas\nParticleCap=50\n",
+        ))
+        .unwrap();
         let mut sim = Simulation::new();
         let sys_id = sim
             .spawn_particle_system(

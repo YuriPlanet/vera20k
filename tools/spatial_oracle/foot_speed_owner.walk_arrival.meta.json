@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Walk final-head speed fraction gate before PerCell(2), original 75BE20..75BE3C and actual Infantry vtable +544 -> Foot4D3710",
+  "assumptions": [
+    "OriginalCursor supplies mapped original image and isolated owner/locomotor memory; no Drive or Walk construction is claimed for this fragment.",
+    "The original Foot setter first establishes each prior fraction. Path-head DWORD +5E0 is supplied as -1, 0, 2 or -2; no pathfinding or head-retirement producer runs.",
+    "Stops immediately before the real PerCell CALL, after the reason2 argument is pushed. No PerCell, boarding, full movement or AI executes."
+  ],
+  "substitutions": [
+    "Prepared caller registers and isolated object state only; original instructions/vtables and setter return are unchanged."
+  ],
+  "entry_points": {
+    "walk_arrival_gate": "0x0075BE20",
+    "walk_speed_call": "0x0075BE2F",
+    "foot_fraction_setter": "0x004D3710",
+    "per_cell_call": "0x0075BE3C"
+  },
+  "replay_command": "python -m tools.spatial_oracle.foot_speed_owner --walk-arrival",
+  "payload_sha256": "091a9813352542c1182918a95e8e35624e178cfed9fe115b8d440d6c27cea7e4"
+}

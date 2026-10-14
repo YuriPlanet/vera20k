@@ -2,8 +2,8 @@
 //!
 //! Native-frame visits execute the retained locomotor state: Drive/Ship use
 //! their track hosts and Walk pays a polar step toward its accepted head.
-//! Other locomotors retain their class-specific movement adapters. Coordinate
-//! and occupation transactions publish the resulting whole-cell crossings.
+//! Other locomotors run their own Process hosts. Coordinate and occupation
+//! transactions publish the resulting whole-cell crossings.
 //!
 //! ## Coordinate update
 //! Movement advances `rx`/`ry`/`sub_x`/`sub_y` only. Screen position is not
@@ -19,9 +19,8 @@
 //! byte readers take its high byte.
 //!
 //! ## Sub-modules
-//! - `movement_commands` — destination setters and the MovementTarget
-//!   scheduling adapter; Walk, Drive and Ship accept without a search, the
-//!   remaining locomotors keep their command-time A* adapter
+//! - `movement_commands` — the class setters' shared Move_To tails; no order
+//!   searches a route
 //! - `foot_path` — the shared `FootClass::Find_Path` (0x4D3920) owner that a
 //!   Walk or Drive/Ship no-queue Process request runs at Simulation level
 //! - `walk_path` / `track_path` — the Walk and Drive/Ship continuations after
@@ -45,7 +44,6 @@ use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::sim::cell_rect::PlayfieldBounds;
 #[cfg(test)]
 use crate::sim::entity_store::EntityStore;
-use crate::sim::intern::InternedId;
 #[cfg(test)]
 use crate::sim::lifecycle_request::LifecycleRequest;
 use crate::sim::pathfinding::PathGrid;
@@ -76,7 +74,6 @@ pub(crate) use foot_path::coord_cell;
 pub(crate) use track_fresh::{BlockingObject, ProcessMovementArgs};
 pub(crate) use drive_locomotion::drive_do_turn;
 mod foot_range_stop;
-pub(crate) use foot_range_stop::range_stop_admits;
 mod foot_speed;
 pub(crate) mod ground_pose;
 pub(crate) mod infantry_action;
@@ -98,6 +95,7 @@ pub(crate) use navcom::set_walk_destination_coord;
 pub(crate) use navcom::{building_dock_cell, building_dock_coordinate, nav_target_coordinate};
 #[cfg(test)]
 pub(crate) mod fresh_oracle_seam;
+pub(crate) mod path_batch;
 mod path_markers;
 #[cfg(test)]
 pub(crate) use path_markers::fixture_path_replay;
@@ -127,7 +125,6 @@ mod walk_step;
 
 // --- Movement-related modules (public API) ---
 pub mod air_movement;
-pub(crate) mod block_index;
 pub mod bump_crush;
 pub mod drive_track;
 pub mod facing_class;
@@ -151,15 +148,12 @@ pub(crate) use drive_locomotion::{DriveLocomotionRuntime, ShipLocomotionRuntime}
 #[cfg(test)]
 pub(crate) use foot_speed::owner_current_speed_from_fraction;
 pub(crate) use foot_speed::owner_speed_bonus;
-pub(crate) use foot_speed::{SpeedRules, order_speed, owner_current_speed};
+pub(crate) use foot_speed::{SpeedRules, owner_current_speed};
 
 pub use movement_commands::DestinationTiming;
 pub(crate) use movement_commands::{
-    can_accept_destination, issue_move_command_with_destination, movement_goal_cell,
-    prepare_walk_destination, retain_committed_movement,
+    can_accept_destination, movement_goal_cell, prepare_walk_destination,
 };
-#[cfg(test)]
-pub(crate) use movement_commands::{issue_move_command, issue_move_command_with_layered};
 #[cfg(test)]
 pub(crate) use movement_path::{
     path_search_used_zone_grid_marker, reset_path_search_used_zone_grid_marker,
@@ -215,34 +209,26 @@ pub(super) struct PathfindingContext<'a> {
 
 /// The mover's own facts a path search needs, carried as one value.
 ///
-/// They used to travel as loose positional arguments through `find_move_path`,
-/// `find_move_path_with_marker` and `..._detailed`. Ledger row I9c records
-/// what that shape cost: a mover fact derived independently per call site,
-/// where the callers without context quietly passed `false` and crushers
-/// detoured around sandbags they would have driven through.
+/// They used to travel as loose positional arguments through the search
+/// entries. Ledger row I9c records what that shape cost: a mover fact derived
+/// independently per call site, where the callers without context quietly
+/// passed `false` and crushers detoured around sandbags they would have driven
+/// through.
 ///
-/// So they travel together and are derived in two places only, both from the
-/// mover itself: `from_snapshot` on the tick path and `from_entity` where no
-/// snapshot exists. No caller supplies a fact.
+/// So they travel together and are derived from the mover itself
+/// (`from_snapshot`). No caller supplies a fact.
 ///
-/// RESIDUAL: `mover_is_crusher` here is `Crusher=` or `OmniCrusher=`, and the
-/// search uses it both for the entity soft-block exemption and for the
-/// crushable-wall admission. The runtime crossing keys the wall admission on
-/// `Crusher=` alone (`CrushCapability::wall_arm_crusher`, native
-/// `0x0073F438`). Trigger: a modded `OmniCrusher=yes`, `Crusher=no` unit
-/// routed across a sandbag line; stock `[BFRT]` sets both. Effect: the search
-/// admits a cell the crossing then refuses, and the unit repaths at the wall.
-/// Frequency: never in stock rules. Downstream risk: splitting the fact moves
-/// search results for such mods only.
+/// `mover_is_crusher` (`Crusher=` or `OmniCrusher=`) reaches only searches
+/// without a Foot receiver, whose reduced terrain entry uses it for the
+/// crushable-wall admission; the live Foot search answers walls through its
+/// receiver. The runtime crossing keys the wall admission on `Crusher=` alone
+/// (`CrushCapability::wall_arm_crusher`, native `0x0073F438`).
 #[derive(Clone, Copy)]
 pub(super) struct MoverPathFacts {
     pub urgency: u8,
     pub mover_is_crusher: bool,
     pub is_infantry: bool,
     pub speed_type: Option<SpeedType>,
-    /// A slave's deposit Cells (`SlaveManagerClass 0x006B0880`), which its
-    /// `Can_Enter_Cell` admits past the master's footprint.
-    pub slave_deposit_cells: [Option<(u16, u16)>; 2],
 }
 
 impl MoverPathFacts {
@@ -254,39 +240,6 @@ impl MoverPathFacts {
             mover_is_crusher: snap.crush_capability().can_crush_units(),
             is_infantry: snap.category == EntityCategory::Infantry,
             speed_type: snap.speed_type,
-            slave_deposit_cells: snap.slave_deposit_cells,
-        }
-    }
-
-    /// Facts for a search issued outside the movement tick, where no
-    /// `MoverSnapshot` exists: a move order, or the process-entry repath.
-    ///
-    /// The crusher and infantry facts come from the mover itself, the same
-    /// fields `from_snapshot` reads, so no caller supplies them. Ledger row I9c
-    /// is what happened when callers did: the ones without context passed
-    /// `false`, and the same tank planned as a crusher or not depending on
-    /// which function issued its move.
-    ///
-    /// RESIDUAL: these searches run without the live Foot `+0x1AC` receiver,
-    /// so a wall the mover could shoot is a hard block, where native's
-    /// `Can_Enter_Cell` answers 4 or 5 and `AStar_compute_edge_cost
-    /// @ 0x00429830` prices it at 60x or 20x.
-    /// - Trigger: an order that still searches when given (a Jumpjet's object
-    ///   order, or a mover with no represented class setter) to a goal it can
-    ///   reach only through a wall its warhead can hit. Drive, Ship, Hover,
-    ///   Walk and Teleport orders and Jumpjet cell orders accept first and
-    ///   search in their own turn, with the live receiver.
-    /// - Effect: the order is redirected or refused where retail accepts it.
-    /// - Frequency: rare.
-    /// - Downstream risk: changing it changes search results in the lockstep
-    ///   stream, so it is a movement-parity change with its own evidence.
-    pub fn from_entity(entity: &crate::sim::game_entity::GameEntity, urgency: u8) -> Self {
-        Self {
-            urgency,
-            mover_is_crusher: bump_crush::CrushCapability::of(entity).can_crush_units(),
-            is_infantry: entity.category == EntityCategory::Infantry,
-            speed_type: None,
-            slave_deposit_cells: [None, None],
         }
     }
 
@@ -298,7 +251,6 @@ impl MoverPathFacts {
             mover_is_crusher,
             is_infantry,
             speed_type: None,
-            slave_deposit_cells: [None, None],
         }
     }
 }
@@ -313,17 +265,12 @@ pub(super) struct MoverSnapshot {
     pub movement_zone: MovementZone,
     pub omni_crusher: bool,
     pub regular_crusher: bool,
-    pub owner: InternedId,
     pub on_bridge: bool,
     pub locomotor: Option<locomotor::LocomotorState>,
     /// Native AStar hierarchy admission reads the stored TechnoClass+0x3D5
     /// byte. False under live MapClass authority bypasses hierarchy and uses
     /// flat A*; headless fixtures without authority retain hierarchy.
     pub allow_zone_hierarchy: bool,
-    /// A slave's deposit Cells (`sim::slave_deposit::slave_deposit_cells`):
-    /// `InfantryClass::Can_Enter_Cell` (`0x0051C29E..0x0051C2CA`) admits it
-    /// into them past the master's footprint.
-    pub slave_deposit_cells: [Option<(u16, u16)>; 2],
 }
 
 impl MoverSnapshot {
@@ -364,10 +311,7 @@ pub fn facing_from_delta(dx: i32, dy: i32) -> u8 {
 // Tick entry points (thin wrappers)
 // ---------------------------------------------------------------------------
 
-/// Advance all entities with MovementTarget along their paths.
-///
-/// Called once per admitted native gameplay frame.
-/// Entities that reach their destination have MovementTarget removed automatically.
+/// Run one ground movement visit for every entity, in id order.
 #[cfg(test)]
 pub(crate) fn tick_movement(
     entities: &mut EntityStore,
@@ -393,9 +337,9 @@ pub(crate) fn tick_movement(
 
 /// Advance movement and perform deterministic blocked-cell recovery.
 ///
-/// `terrain_costs` is the per-SpeedType land-row map. When provided, repath
-/// attempts use `find_path_with_costs`, which reads it as a passability
-/// predicate — retail's search does not prefer roads or avoid rough terrain.
+/// `terrain_costs` is the per-SpeedType land-row map. When provided, path
+/// searches read it as a passability predicate — retail's search does not
+/// prefer roads or avoid rough terrain.
 #[cfg(test)]
 pub(crate) fn tick_movement_with_grid(
     entities: &mut EntityStore,
@@ -454,3 +398,6 @@ mod prone_speed_tests;
 
 #[cfg(test)]
 mod foot_timer_migration_tests;
+
+#[cfg(test)]
+mod drop_as_bomb_oracle_tests;

@@ -417,6 +417,8 @@ pub struct GeneralRules {
     /// Also the ballistic gravity: `WeaponTypeClass::GetSpeed @ 0x00773070`
     /// derives every `ROT=0` launch speed from it.
     pub gravity: i32,
+    /// Rules+7AC, ReadGeneral66F2AF: full signed wind-table index.
+    wind_direction: i32,
     /// `[General] VeteranSight=` — `RulesClass+0x680`, a double.
     ///
     /// gamemd-derived: `TechnoClass::UpdateReveal @ 0x0070AF50` MULTIPLIES the
@@ -664,6 +666,10 @@ pub struct GeneralRules {
     /// to this value. Default `-3` matches `[General] ParachuteMaxFallRate=-3`.
     /// Negative = falling.
     pub parachute_max_fall_rate: i32,
+    /// ObjectAI5F3FBC's non-parachute cap, Rules+7BC. Constructor66616D
+    /// initializes -100; ReadGeneral66F32E..350 reads the current value
+    /// as the default for [General] NoParachuteMaxFallRate via ReadInt5276D0.
+    pub no_parachute_max_fall_rate: i32,
     /// Paradrop trigger radius in leptons. From `[General] ParadropRadius=`.
     /// Default 1024 (~4 cells). Distance to target at which the carrier aircraft
     /// reveals fog + transitions to the overfly mission.
@@ -1113,6 +1119,10 @@ pub struct GeneralRules {
     /// then Voc FindIndex7514D0, retaining the prior ID on missing, empty or
     /// unresolved text. The fixed SOUNDMD binder owns name resolution.
     pub guard_sound: Option<String>,
+    /// ScatterSelectedObjects730FE0's centered cue. Rules+728 starts at -1
+    /// (66585F/666063); AudioVisual66AE6C..66AEA2 reads exact ScatterSound
+    /// with ReadString128 and fixed Voc lookup, retaining failed selections.
+    pub scatter_sound: Option<String>,
     /// `[AudioVisual] ScoldSound=` (`Rules+0x700`, read at `0x0066ABE8`
     /// through `VocClass::FindByName`; retail `MenuScold`): ToggleRepair's
     /// sound when a repair is switched on at full Strength (`0x00447068`).
@@ -2033,6 +2043,7 @@ impl Default for GeneralRules {
             // 0x3F9EB851EB851EB8 to +0x14C8.
             savour_delay_minutes: 0.03,
             gravity: 3,
+            wind_direction: -1,
             veteran_sight: 0.0,
             veteran_combat: 1.0,
             veteran_speed: 1.0,
@@ -2097,6 +2108,7 @@ impl Default for GeneralRules {
             hover_brake: NativeF64Bits::from_bits(0x3f9e_b851_eb85_1eb8),
             hover_dampen: NativeF64Bits::from_bits(0x3fe9_9999_9999_999a),
             parachute_max_fall_rate: -3,
+            no_parachute_max_fall_rate: -100,
             paradrop_radius: 1024,
             parachute_shp: None,
             amer_paradrop: ParadropList::default(),
@@ -2217,6 +2229,7 @@ impl Default for GeneralRules {
             gui_move_out_sound: None,
             generic_click_sound: None,
             guard_sound: None,
+            scatter_sound: None,
             scold_sound: None,
             generic_beep_sound: None,
             gui_checkbox_sound: None,
@@ -2672,6 +2685,10 @@ pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
 }
 
 impl GeneralRules {
+    pub fn wind_direction(&self) -> i32 {
+        self.wind_direction
+    }
+
     /// The Rules+714 reference resolved by the fixed SOUNDMD process binder.
     pub fn building_damage_sound(&self) -> Option<&str> {
         self.building_damage_sound.as_deref()
@@ -2939,6 +2956,7 @@ impl GeneralRules {
             // [General] silently fell back to the code default 3 — half stock
             // gravity for spark ballistics and the hover bob amplitude.
             gravity: audio_visual.read_int("Gravity", defaults.gravity),
+            wind_direction: general.read_int("WindDirection", defaults.wind_direction),
             veteran_sight: general.read_double("VeteranSight", defaults.veteran_sight),
             veteran_combat: general.read_double("VeteranCombat", defaults.veteran_combat),
             veteran_speed: general.read_double("VeteranSpeed", defaults.veteran_speed),
@@ -3053,6 +3071,10 @@ impl GeneralRules {
             hover_brake: general.read_double_bits("HoverBrake", defaults.hover_brake),
             hover_dampen: general.read_double_bits("HoverDampen", defaults.hover_dampen),
             parachute_max_fall_rate: general.read_int("ParachuteMaxFallRate", -3),
+            no_parachute_max_fall_rate: general.read_int(
+                "NoParachuteMaxFallRate",
+                defaults.no_parachute_max_fall_rate,
+            ),
             paradrop_radius: general.read_int("ParadropRadius", 1024),
             parachute_shp: general.read_name("Parachute", 0x80).map(str::to_uppercase),
             amer_paradrop: ParadropList::read_counts(general, "AmerParaDropNum"),
@@ -3227,6 +3249,7 @@ impl GeneralRules {
                 .map(str::to_owned),
             // Native constructor -1; resolved by the fixed SOUNDMD binder.
             guard_sound: None,
+            scatter_sound: None,
             scold_sound: audio_visual
                 .read_name("ScoldSound", 0x80)
                 .map(str::to_owned),
@@ -3812,6 +3835,7 @@ impl RuleSet {
         rules.general.default_mirage_disguises = processed.default_mirage_disguises().to_vec();
         rules.bridge_rules.explosions = processed.bridge_explosions().to_vec();
         rules.general.gravity = processed.gravity();
+        rules.general.wind_direction = processed.wind_direction();
         rules.general.difficulty_rows = *processed.difficulty_rows();
         rules.general.detail = processed.detail();
         rules.general.prism_support = processed.prism_support();
@@ -3842,6 +3866,10 @@ impl RuleSet {
             rules.general.safety_altitude,
             rules.general.line_trail_color_override,
         ) = processed.projectile_rule_controls();
+        (
+            rules.general.parachute_max_fall_rate,
+            rules.general.no_parachute_max_fall_rate,
+        ) = processed.fall_rate_controls();
         for (name, speed, projectile) in processed.weapon_speeds_and_projectiles() {
             if let Some(weapon) = rules
                 .weapons
@@ -3961,9 +3989,13 @@ impl RuleSet {
         self.general.cheer_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "CheerSound"));
+        self.general.scatter_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "ScatterSound"));
         for object in &mut self.object_list {
             let section = ini.section(&object.id);
             object.bind_damage_sound_reference(section, sounds);
+            object.bind_deploy_voice_references(section, sounds);
             object.voice_select = section.map_or_else(Vec::new, |section| {
                 sounds.read_rules_sound_list(section, "VoiceSelect")
             });
@@ -4959,11 +4991,14 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        b"rules-simulation-config-v15".hash(&mut hasher);
+        b"rules-simulation-config-v16".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         // Process-resident Gravity and Weapon postpass results can differ for
         // identical current source stacks because earlier passes retained them.
         self.general.gravity.hash(&mut hasher);
+        self.general.wind_direction.hash(&mut hasher);
+        self.general.parachute_max_fall_rate.hash(&mut hasher);
+        self.general.no_parachute_max_fall_rate.hash(&mut hasher);
         self.general.detail.hash(&mut hasher);
         self.general.prism_support.hash(&mut hasher);
         self.general.patrol_scan_minutes.hash(&mut hasher);

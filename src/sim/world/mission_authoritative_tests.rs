@@ -1,7 +1,5 @@
 //! Slice 8 — `MissionCom` is folded into `state_hash`. These pin that each
 //! component field is hash-relevant (the inverse of the Slice-2 shadow tests).
-//! No `order_intent` selector tripwire: `order_intent` is load-bearing substate
-//! and is retained (the V5 "pure selector" map row was corrected to KEEP).
 
 use super::Simulation;
 use crate::sim::game_entity::GameEntity;

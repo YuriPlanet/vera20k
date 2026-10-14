@@ -856,7 +856,7 @@ fn retail_damage_scatter_tail_admits_by_rank_ability_and_ownership() {
             actor.mission.current(),
             MissionId::from_known(MissionType::Guard)
         );
-        actor.set_veterancy_rank(rank);
+        actor.veterancy.set_rank_for_test(rank);
         if nav {
             actor.navigation.nav_com = Some(NavTargetRef::cell(14, 10));
         }
@@ -983,7 +983,8 @@ fn retail_damage_scatter_tail_follows_the_retaliation_answer() {
                     .entities
                     .get_mut(ids[0])
                     .unwrap()
-                    .set_veterancy_rank(rank)
+                    .veterancy
+                    .set_rank_for_test(rank)
             },
         );
         let tanya = sim.substrate.entities.get(ids[0]).unwrap();
@@ -1661,7 +1662,7 @@ fn lifecycle_authority_immediate_combat_death_reaches_uninit_without_precleanup(
     let mut dead = make_entity(1, "MTNK", 5, 5, 0);
     dead.selected = true;
     dead.attack_target = Some(AttackTarget::new(2));
-    dead.movement_target = Some(crate::sim::components::MovementTarget::default());
+    dead.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(9, 9));
     dead.in_logic_vector = true;
     dead.lifecycle.in_limbo = false;
     dead.lifecycle.cell_marked = true;
@@ -1688,7 +1689,7 @@ fn lifecycle_authority_immediate_combat_death_reaches_uninit_without_precleanup(
     assert!(dead.selected, "UnInit owns deselection");
     assert!(dead.attack_target.is_some(), "UnInit owns attack cleanup");
     assert!(
-        dead.movement_target.is_some(),
+        dead.navigation.nav_com.is_some(),
         "UnInit owns movement cleanup"
     );
     assert!(dead.in_logic_vector, "UnInit owns LogicVector removal");
@@ -1724,7 +1725,7 @@ fn lifecycle_authority_combat_leaves_transport_cargo_for_carrier_uninit() {
     };
     passenger.selected = true;
     passenger.attack_target = Some(AttackTarget::new(3));
-    passenger.movement_target = Some(crate::sim::components::MovementTarget::default());
+    passenger.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(9, 9));
     store.insert(passenger);
     store.insert(make_entity(3, "MTNK", 6, 5, 300));
 
@@ -1746,7 +1747,7 @@ fn lifecycle_authority_combat_leaves_transport_cargo_for_carrier_uninit() {
     ));
     assert!(passenger.selected);
     assert!(passenger.attack_target.is_some());
-    assert!(passenger.movement_target.is_some());
+    assert!(passenger.navigation.nav_com.is_some());
 }
 
 #[test]
@@ -1757,7 +1758,7 @@ fn lifecycle_authority_animated_combat_handoff_changes_only_dying_and_sequence()
     let mut dead = make_infantry_entity(1, "E1", 5, 5, 0);
     dead.selected = true;
     dead.attack_target = Some(AttackTarget::new(2));
-    dead.movement_target = Some(crate::sim::components::MovementTarget::default());
+    dead.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(9, 9));
     dead.in_logic_vector = true;
     dead.lifecycle.in_limbo = false;
     dead.lifecycle.cell_marked = true;
@@ -1781,7 +1782,7 @@ fn lifecycle_authority_animated_combat_handoff_changes_only_dying_and_sequence()
     assert_eq!(dead.infantry_sprite_pose(), Some((11, 0)));
     assert!(dead.selected);
     assert!(dead.attack_target.is_some());
-    assert!(dead.movement_target.is_some());
+    assert!(dead.navigation.nav_com.is_some());
     assert!(dead.in_logic_vector);
     assert!(dead.lifecycle.object_alive);
     assert!(!dead.lifecycle.in_limbo);
@@ -1919,19 +1920,13 @@ fn considered_aircraft_infantry_is_air_only_while_high_flying() {
         );
 
         if altitude_leptons > 0 {
-            // Airborne: its Location Z above the mapless ground, with the
-            // locomotor's altitude copy.
+            // Airborne: its Location Z above the mapless ground.
             let rocketeer = sim
                 .substrate
                 .entities
                 .get_mut(target)
                 .expect("target should exist");
             rocketeer.position.exact_z_leptons = Some(altitude_leptons as i32);
-            rocketeer
-                .locomotor
-                .as_mut()
-                .expect("Rocketeer carries a locomotor")
-                .altitude = crate::util::fixed_math::SimFixed::from_num(altitude_leptons);
         }
 
         install_entity_attack_target_for_test(&mut sim.substrate.entities, attacker, target);
@@ -3227,8 +3222,7 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
         // here is the inline mission Override, not turn-to-fire.
         victim.body_facing.snap(0xC000, 0);
         victim.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(9, 5));
-        // Supply the actual class receiver for the NULL destination below;
-        // a bare adapter without a locomotor cannot exercise Unit741970.
+        // Supply the actual class receiver for the NULL destination below.
         victim.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object("VICTIM").unwrap(),
@@ -3247,7 +3241,6 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
                         )))
                 ))
         );
-        victim.movement_target = Some(crate::sim::components::MovementTarget::default());
         entities.insert(victim);
 
         let mut occupancy = OccupancyGrid::new();
@@ -3325,7 +3318,7 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
             target: victim.attack_target.as_ref().map(|target| target.target),
             nav_com: victim.navigation.nav_com,
             suspended_nav_com: victim.navigation.suspended_nav_com,
-            has_movement: victim.movement_target.is_some(),
+            has_movement: crate::sim::movement::motion_query::is_moving(&victim) == Some(true),
             fired: result
                 .consequences
                 .fire_events()
@@ -3789,11 +3782,13 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
             .unwrap()
             .damage_smoke_system_id,
         Some(system_id),
-        "the owner pointer remains until physical pointer expiry"
+        "mark-only Destroy retains +0x310 until the system's own Limbo"
     );
-    sim.retire_particle_system(system_id);
-    sim.process_pending_delete();
-    assert!(sim.particle_systems().get(system_id).is_none());
+    sim.retire_particle_system(
+        system_id,
+        crate::sim::world::UninitContext::with_rules(&rules),
+    );
+    assert!(sim.particle_systems().get(system_id).is_some());
     assert_eq!(
         sim.substrate
             .entities
@@ -3801,8 +3796,10 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
             .unwrap()
             .damage_smoke_system_id,
         None,
-        "physical finalization clears the +0x310 pointer"
+        "done-empty Limbo clears +0x310 before physical finalization"
     );
+    sim.process_pending_delete();
+    assert!(sim.particle_systems().get(system_id).is_none());
 }
 
 #[test]
@@ -5891,11 +5888,11 @@ fn test_tick_combat_out_of_range() {
         target_health, 300,
         "Out-of-range target should not take damage"
     );
-    // Range failure preserves attack_target; pursuit (run from advance_tick,
-    // not from tick_combat in isolation) walks the unit into range.
+    // Range failure preserves attack_target; the mission's Approach (run from
+    // advance_tick, not from tick_combat in isolation) walks the unit into range.
     assert!(
         store.get(1).unwrap().attack_target.is_some(),
-        "AttackTarget preserved when out of range — pursuit closes the gap"
+        "AttackTarget preserved when out of range — Approach closes the gap"
     );
 }
 
@@ -7450,9 +7447,36 @@ fn wall_damage_deterministic_across_replays() {
     );
 }
 
+/// The range of the weapon SelectWeapon picks against `target`, as Approach
+/// reads it ([`combat_weapon::select_weapon_against`]); None for an empty
+/// slot.
+fn selected_weapon_range(
+    attacker: &GameEntity,
+    target: &TargetKind,
+    store: &EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> Option<crate::util::fixed_math::SimFixed> {
+    let obj = rules.object(interner.resolve(attacker.type_ref()))?;
+    combat_weapon::select_weapon_against(
+        rules,
+        attacker,
+        obj,
+        &combat_weapon::attacker_facts(attacker, obj),
+        Some(target),
+        store,
+        interner,
+        terrain,
+        None,
+    )
+    .and_then(|(_, selected)| selected)
+    .map(|selected| selected.weapon.range)
+}
+
 #[test]
-fn pursuit_weapon_range_for_entity_target() {
-    use crate::sim::combat::{TargetKind, pursuit_selected_weapon};
+fn selected_weapon_range_for_entity_target() {
+    use crate::sim::combat::TargetKind;
     let rules = test_rules();
     let mut store = EntityStore::new();
     store.insert(make_entity(1, "MTNK", 0, 0, 300));
@@ -7460,39 +7484,35 @@ fn pursuit_weapon_range_for_entity_target() {
     let interner = test_interner();
 
     let attacker = store.get(1).unwrap();
-    let range = pursuit_selected_weapon(
+    let range = selected_weapon_range(
         attacker,
         &TargetKind::Entity(2),
         &store,
         &rules,
         &interner,
         None,
-        None,
-    )
-    .map(|w| w.range);
+    );
     // 105mm Range=6.
     assert_eq!(range, Some(crate::util::fixed_math::SimFixed::from_num(6)));
 }
 
 #[test]
-fn pursuit_weapon_range_for_cell_target() {
-    use crate::sim::combat::{TargetKind, pursuit_selected_weapon};
+fn selected_weapon_range_for_cell_target() {
+    use crate::sim::combat::TargetKind;
     let rules = test_rules();
     let mut store = EntityStore::new();
     store.insert(make_entity(1, "MTNK", 0, 0, 300));
     let interner = test_interner();
 
     let attacker = store.get(1).unwrap();
-    let range = pursuit_selected_weapon(
+    let range = selected_weapon_range(
         attacker,
         &TargetKind::Cell(50, 50),
         &store,
         &rules,
         &interner,
         None,
-        None,
-    )
-    .map(|w| w.range);
+    );
     // Cell target: the ladder returns slot 0, the 105mm. Range = 6.
     assert_eq!(range, Some(crate::util::fixed_math::SimFixed::from_num(6)));
 }
@@ -7501,10 +7521,10 @@ fn pursuit_weapon_range_for_cell_target() {
 /// SelectWeapon(target))` (`0x006F77B0`, then `InRange @ 0x006F7220`), and
 /// `FootClass::Approach_Target @ 0x004D5690` measures the same way: neither
 /// asks GetFireError. A gun whose warhead cannot hurt the target (T54,
-/// ILLEGAL) still has it in range, and pursuit still measures with it.
+/// ILLEGAL) still has it in range, and Approach still measures with it.
 #[test]
 fn an_illegal_shot_is_still_in_range() {
-    use crate::sim::combat::{TargetKind, pursuit_selected_weapon};
+    use crate::sim::combat::TargetKind;
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[InfantryTypes]\n[VehicleTypes]\n0=MTNK\n1=HTNK\n[AircraftTypes]\n[BuildingTypes]\n\
          [MTNK]\nStrength=300\nArmor=light\nSpeed=6\nPrimary=Pea\n\
@@ -7557,22 +7577,20 @@ fn an_illegal_shot_is_still_in_range() {
             alliances: None,
         },
     ));
-    let range = pursuit_selected_weapon(
+    let range = selected_weapon_range(
         tank,
         &target,
         &sim.substrate.entities,
         &rules,
         &sim.interner,
         sim.resolved_terrain.as_ref(),
-        None,
-    )
-    .map(|weapon| weapon.range);
+    );
     assert_eq!(range, Some(crate::util::fixed_math::SimFixed::from_num(6)));
 }
 
 #[test]
-fn pursuit_weapon_range_none_for_unarmed_attacker() {
-    use crate::sim::combat::{TargetKind, pursuit_selected_weapon};
+fn selected_weapon_range_none_for_unarmed_attacker() {
+    use crate::sim::combat::TargetKind;
     let rules_str = "[InfantryTypes]\n0=ENGI\n\n\
                      [VehicleTypes]\n\n[BuildingTypes]\n\n[AircraftTypes]\n\n\
                      [ENGI]\nStrength=75\nArmor=none\nSpeed=4\n";
@@ -7583,16 +7601,14 @@ fn pursuit_weapon_range_none_for_unarmed_attacker() {
     let interner = test_interner();
 
     let attacker = store.get(1).unwrap();
-    let range = pursuit_selected_weapon(
+    let range = selected_weapon_range(
         attacker,
         &TargetKind::Cell(50, 50),
         &store,
         &rules,
         &interner,
         None,
-        None,
-    )
-    .map(|w| w.range);
+    );
     assert_eq!(range, None);
 }
 
@@ -8093,7 +8109,7 @@ fn gsi_04_11_persistent_projectile_keeps_exact_lepton_z() {
     let rules = persistent_projectile_rules();
     // These are ground objects on levels 7 and 11, not aircraft above a
     // missing map's zero floor. The live flight queries need that terrain;
-    // neither the legacy position level nor the altitude cache owns it.
+    // the legacy position level does not own it.
     let mut terrain = crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
         12,
         12,
@@ -9014,7 +9030,8 @@ fn gsi_04_07_damage_periodic_radiation_enters_direct_receiver_once() {
         .entities
         .get_mut(tank)
         .unwrap()
-        .set_veterancy_rank(100);
+        .veterancy
+        .set_rank_for_test(100);
     sim.radiation.apply_detonation(
         crate::sim::radiation::RadDetonation {
             rx: 5,
@@ -9051,8 +9068,6 @@ fn gsi_04_07_damage_periodic_radiation_enters_direct_receiver_once() {
 fn radiation_skips_only_objects_in_the_air() {
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::LocomotorState;
-    use crate::sim::movement::parachute_descent::ParachuteDescentState;
-    use crate::util::fixed_math::SimFixed;
 
     let rules = radiation_rules();
     let mut sim = crate::sim::world::Simulation::new();
@@ -9066,11 +9081,12 @@ fn radiation_skips_only_objects_in_the_air() {
     for (id, height) in [(high, 208), (low, 207)] {
         let paratrooper = sim.substrate.entities.get_mut(id).unwrap();
         paratrooper.position.exact_z_leptons = Some(height);
-        paratrooper.parachute_state = Some(ParachuteDescentState { rate: -3 });
+        paratrooper.set_falling_down_for_test(true);
+        paratrooper.set_fall_rate_for_test(-3);
     }
-    let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Hover);
-    locomotor.altitude = SimFixed::from_num(120);
-    sim.substrate.entities.get_mut(hover).unwrap().locomotor = Some(locomotor);
+    sim.substrate.entities.get_mut(hover).unwrap().locomotor =
+        Some(LocomotorState::for_test_kind(LocomotorKind::Hover));
+    sim.set_object_height_unmarked(hover, 120);
     sim.radiation.apply_detonation(
         crate::sim::radiation::RadDetonation {
             rx: 5,
@@ -10766,7 +10782,7 @@ fn gsi_08_12_a_grizzly_promotes_through_the_damage_path() {
             &mut scenario_rng,
         );
         store.remove(victim_id);
-        ranks.push(store.get(1).expect("killer").veterancy());
+        ranks.push(store.get(1).expect("killer").veterancy.rank());
     }
 
     assert_eq!(ranks, vec![0, 0, 100, 100, 200], "ranks after kills 1..5");
@@ -10794,7 +10810,7 @@ fn gsi_08_05_elite_rof_and_firepower_abilities_reach_the_fire_path() {
         let mut store = EntityStore::new();
         let mut firer = make_entity_owned(1, "MTNK", 5, 5, 300, "Soviet");
         if elite {
-            crate::sim::combat::veterancy::set_elite(&mut firer);
+            firer.veterancy.set_elite();
         }
         store.insert(firer);
         let _ = test_intern("HTNK");
@@ -10849,7 +10865,7 @@ fn gsi_08_05_a_heal_skips_the_firepower_rank_stage() {
         let mut store = EntityStore::new();
         let mut firer = make_entity_owned(1, "MTNK", 5, 5, 300, "Soviet");
         if elite {
-            crate::sim::combat::veterancy::set_elite(&mut firer);
+            firer.veterancy.set_elite();
         }
         store.insert(firer);
         let _ = test_intern("HTNK");
@@ -11101,8 +11117,12 @@ fn gsi_08_12_a_dont_score_victim_pays_no_experience() {
     }
 
     let killer = store.get(1).expect("killer");
-    assert_eq!(killer.veterancy(), 0, "five DontScore kills earn nothing");
-    assert_eq!(killer.veterancy_raw.bits(), 0);
+    assert_eq!(
+        killer.veterancy.rank(),
+        0,
+        "five DontScore kills earn nothing"
+    );
+    assert_eq!(killer.veterancy.raw().bits(), 0);
 }
 
 /// A garrison's kill promotes an occupant, never the building. A BuildingType
@@ -11168,7 +11188,7 @@ fn gsi_08_12_a_garrison_kill_pays_the_occupant_next_in_line() {
     );
 
     assert_eq!(store.get(2).map_or(0, |victim| victim.health.current), 0);
-    let raw = |id: u64| store.get(id).unwrap().veterancy_raw.bits();
+    let raw = |id: u64| store.get(id).unwrap().veterancy.raw().bits();
     assert_eq!(raw(10), 0, "the building never ranks");
     assert_eq!(raw(shooter), 0, "the shooter is not the one paid");
     assert_ne!(raw(next), 0, "the occupant next in line is");
@@ -11284,7 +11304,7 @@ fn gsi_08_12_a_base_defence_kill_pays_nobody() {
         &mut SimRng::new(1),
     );
     assert_eq!(store.get(2).map_or(0, |victim| victim.health.current), 0);
-    assert_eq!(store.get(1).unwrap().veterancy_raw.bits(), 0);
+    assert_eq!(store.get(1).unwrap().veterancy.raw().bits(), 0);
 }
 
 /// The shot leaves the BARREL, not the hull centre.
@@ -11714,7 +11734,7 @@ fn gsi_08_08_kirov_vertical_bomb_falls_and_detonates() {
     // Retail lists ZEP under `[VehicleTypes]`: the Kirov is a UnitClass.
     let mut kirov = make_entity_owned(1, "ZEP", 5, 5, 2000, "Soviet");
     let zep_object = rules.object("ZEP").expect("ZEP object type");
-    let mut locomotor =
+    let locomotor =
         crate::sim::movement::locomotor::LocomotorState::from_object_type(zep_object, 0);
     // The hover altitude is NOT hand-set: `JumpjetHeight=750` has to arrive
     // through the native Jumpjet Link_To_Object copy as the hover target, and
@@ -11726,9 +11746,7 @@ fn gsi_08_08_kirov_vertical_bomb_falls_and_detonates() {
         "`JumpjetHeight=750` must reach the locomotor's hover target; a 500 here \
          means the rules->locomotor hop is broken, not the flight model"
     );
-    locomotor.altitude = crate::util::fixed_math::SimFixed::from_num(
-        locomotor.jumpjet_runtime().unwrap().params().height,
-    );
+    kirov.position.exact_z_leptons = Some(locomotor.jumpjet_runtime().unwrap().params().height);
     kirov.locomotor = Some(locomotor);
     store.insert(kirov);
     let _ = test_intern("HTNK");

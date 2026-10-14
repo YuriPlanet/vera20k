@@ -226,7 +226,7 @@ impl Simulation {
                 rules,
                 obj,
                 category,
-                ge.veterancy(),
+                ge.veterancy.rank(),
             )
         {
             ge.parasite = Some(Box::new(
@@ -293,7 +293,7 @@ impl Simulation {
                 _ => false,
             });
         if veteran {
-            crate::sim::combat::veterancy::set_veteran(ge);
+            ge.veterancy.set_veteran();
         }
     }
 }

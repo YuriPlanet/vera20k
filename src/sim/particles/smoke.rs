@@ -1,336 +1,207 @@
-//! Smoke `BehavesLike` system + particle AI.
+//! Ordinary stationary Smoke, from ParticleSystemAI62ED40, ParticleAI62C540
+//! and MoveSmoke62D3F0. Original evidence/control corpus:
+//! tools/spatial_oracle/damage_smoke.{md,json}.
 //!
-//! Per-tick smoke logic for both the system (spawning, accumulator) and the
-//! individual particles (lifetime, decel). Includes the two-child
-//! `NextParticle` finding: when a smoke particle dies, the system spawns
-//! TWO children at symmetric `(+dx, +dy)` and `(-dx, -dy)` offsets — not one.
-//! Getting this wrong silently halves smoke density and changes the
-//! visual signature of damaged buildings + refinery vents.
-//!
-//! ## Deferred (tracked for follow-up tasks)
-//! - Entity-attached following (needs a `Position → IVec3 leptons` helper).
-//! - Translucency cutoff fade in the spawn path.
-//! - Spawn velocity reduction formula (accumulator delta × 0.025).
-//! - Bridge collision in `move_smoke`.
-//! - Wiring `move_smoke` into the per-tick path — needs `[General] WindDirection=`
-//!   to be parsed first; today `move_smoke` is a tested helper waiting for a caller.
-//! - Per-particle animation state machine + 25%-on-even-frame random drift.
+//! The Particle owner retains raw float stores: the spawn accumulator changes
+//! future emission/RNG frames, and speed stores change integer rise. Native
+//! 53-bit/chop operations use the existing numeric owner, never host FP state.
+//! RESIDUAL: Foot-owner following/suppression is a separate held movement
+//! chain. This route covers ownerless systems and stationary Building owners.
 
 use super::wind::{SMOKE_WIND_DX, SMOKE_WIND_DY};
 use super::{Particle, ParticleSystem};
-use crate::rules::particle_type::{ParticleType, ParticleTypeId};
+use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF32Bits};
 use glam::IVec3;
 
-/// Advance one smoke `ParticleSystem` by one tick.
 pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
     let pst = rules.particle_system_type(sys.type_id);
-    let cap = pst.particle_cap as usize;
-    let tick = u64::from(sim.session.binary_frame);
-
-    // Phase 1 — tick existing particles.
+    //62EDD0: every original child AI forward, even one already marked dead.
     for p in &mut sys.particles {
-        let pt = rules.particle_type(p.type_id);
-        let frame_count = super::system_ai::resolve_image_frame_count(rules, pt);
-        tick_particle(p, pt, frame_count);
+        super::system_ai::tick_particle(p, sim, rules);
+    }
+    //62ED40/62F037: backward over the ORIGINAL count. Appended children wait until
+    //the next visit; parent deletion compacts only after both births/fades.
+    for index in (0..sys.particles.len()).rev() {
+        if !sys.particles[index].marked_for_deletion {
+            let p = &mut sys.particles[index];
+            let pt = rules.particle_type(p.type_id);
+            if pt.behaves_like == ParticleBehavesLike::Smoke {
+                move_smoke(p, pt, rules.general.wind_direction(), sim);
+            }
+            // RESIDUAL: mixed Gas/Fire MoveDispatch bodies remain incomplete;
+            // neither stock damaged-building Smoke type has NextParticle.
+            continue; // a Move-dead child is retained/drawn until next visit.
+        }
+        let parent = sys.particles[index].clone();
+        let pt = rules.particle_type(parent.type_id);
+        if let Some(next) = pt.next_particle {
+            let radius = pt.radius >> 3;
+            let dx = symmetric_offset(radius, sim.particle_rng());
+            let dy = symmetric_offset(radius, sim.particle_rng());
+            for sign in [1i32, -1] {
+                let coords = offset_coords(
+                    parent.coords,
+                    dx.wrapping_mul(sign),
+                    dy.wrapping_mul(sign),
+                    0,
+                );
+                let mut child =
+                    Particle::new(next, coords, IVec3::ZERO, rules.particle_type(next), sim);
+                //62EF3B/62EFA0..62F003: ctor Smoke draw is retained even though its
+                //speed is overwritten; one fade draw follows EACH ctor.
+                child.velocity = parent.velocity;
+                child.translucency = if sim.particle_rng().next_raw_modulo_signed(6) != 0 {
+                    parent.translucency.wrapping_add(25)
+                } else {
+                    parent.translucency
+                };
+                sys.particles.push(child);
+            }
+        }
+        sim.conceal_particle(parent.stable_id());
+        sys.particles.remove(index);
     }
 
-    // Phase 2 — collect NextParticle children for any dying particle, then prune.
-    // Two-child finding: each dying parent spawns at +(dx,dy) AND -(dx,dy).
-    let mut child_specs: Vec<ChildSpec> = Vec::new();
-    for p in &sys.particles {
-        if !p.marked_for_deletion {
-            continue;
-        }
-        let pt = rules.particle_type(p.type_id);
-        let Some(next_id) = pt.next_particle else {
-            continue;
-        };
-        let r = pt.radius >> 3; // type's Radius / 8
-        let dx = symmetric_offset(r, sim.particle_rng());
-        let dy = symmetric_offset(r, sim.particle_rng());
-        let parent_coords = p.coords;
-        let parent_velocity = p.velocity;
-        let parent_translucency = p.translucency;
-        child_specs.push(ChildSpec {
-            next_id,
-            coords: parent_coords + IVec3::new(dx, dy, 0),
-            velocity: parent_velocity,
-            translucency: parent_translucency,
-        });
-        child_specs.push(ChildSpec {
-            next_id,
-            coords: parent_coords + IVec3::new(-dx, -dy, 0),
-            velocity: parent_velocity,
-            translucency: parent_translucency,
-        });
-    }
-    sys.particles.retain(|p| !p.marked_for_deletion);
-    for spec in child_specs {
-        if sys.particles.len() >= cap {
-            break;
-        }
-        let pt = rules.particle_type(spec.next_id);
-        sys.particles.push(make_child(spec, pt, sim));
-    }
-
-    // Phase 3 — spawn a new particle if conditions allow.
-    if !sys.done_spawning && pst.spawns {
-        let timer_int = sys.spawn_timer.to_num::<i32>().max(1) as u64;
-        if tick % timer_int == 0
-            && let Some(holds) = pst.holds_what
-            && sys.particles.len() < cap
+    //62F047: Smoke ignores Spawns and ParticleCap. Offset draws precede
+    //the HoldsWhat lookup, even when the type index is absent.
+    if !sys.done_spawning && sys.alive() {
+        let divisor = X87::ftol_i32_low_masked(X87::load_f32(sys.spawn_timer));
+        if (sim.session.binary_frame as i32)
+            .checked_rem(divisor)
+            .expect("native Smoke spawning requires valid IDIV")
+            == 0
         {
-            let pt = rules.particle_type(holds);
-            let r = pst.spawn_radius.max(0) as u32;
-            let off_x = sim.particle_rng().next_raw_modulo_signed(r + 1);
-            let off_y = sim.particle_rng().next_raw_modulo_signed(r + 1);
-            let spawn_pos = IVec3::new(
-                sys.coords.x + off_x,
-                sys.coords.y + off_y,
-                sys.coords.z + 10,
-            );
-            sys.particles.push(Particle::new(holds, spawn_pos, pt, sim));
+            let radius = pst.spawn_radius.wrapping_add(1);
+            assert_ne!(radius, 0, "native Smoke spawning divides by SpawnRadius+1");
+            let dx = sim.particle_rng().next_raw_modulo_signed(radius as u32);
+            let dy = sim.particle_rng().next_raw_modulo_signed(radius as u32);
+            if let Some(holds) = pst.holds_what {
+                let coords = offset_coords(sys.coords, dx, dy, 10);
+                let mut p = Particle::new(
+                    holds,
+                    coords,
+                    sys.target_coords,
+                    rules.particle_type(holds),
+                    sim,
+                );
+                if X87::compare(
+                    X87::load_f32(sys.spawn_timer),
+                    X87::load_f32(pst.spawn_translucency_cutoff),
+                ) == MaskedX87Ordering::Greater
+                {
+                    p.translucency = p.translucency.wrapping_add(25);
+                }
+                //62F198..62F1D6, constant [7EFB50]=stored 0.35.
+                let speed = X87::sub(
+                    X87::load_f32(p.velocity),
+                    X87::mul(
+                        X87::sub(
+                            X87::load_f32(sys.spawn_timer),
+                            X87::load_i32(pst.spawn_frames),
+                        ),
+                        X87::load_f32(NativeF32Bits::from_bits(0x3EB3_3333)),
+                    ),
+                );
+                p.velocity = X87::store_f32_masked_chop(speed);
+                if X87::compare(speed, X87::load_i32(2)) == MaskedX87Ordering::Less {
+                    p.velocity = NativeF32Bits::from_bits(0x4000_0000);
+                }
+                sys.particles.push(p);
+            }
         }
     }
-
-    // Phase 4 — accumulator. Per the binary, slowdown advances the timer toward
-    // spawn_cutoff; once the timer crosses the cutoff, the system stops spawning.
-    sys.spawn_timer += pst.slowdown;
-    if pst.spawn_cutoff < sys.spawn_timer {
+    //62F1F3..62F218: cutoff compares the UNSTORED sum. It can exceed
+    //cutoff although the chopped binary32 result equals cutoff exactly.
+    let sum = X87::add(X87::load_f32(sys.spawn_timer), X87::load_f32(pst.slowdown));
+    sys.spawn_timer = X87::store_f32_masked_chop(sum);
+    if X87::compare(sum, X87::load_f32(pst.spawn_cutoff)) == MaskedX87Ordering::Greater {
         sys.done_spawning = true;
     }
 }
 
-/// Per-tick AI for one smoke particle. Minimal Tier-2 form: state-AI advance
-/// (animation_state + translucency-state byte writes) → lifetime countdown
-/// → velocity decel. Drift lands later.
-pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, image_frame_count: u16) {
-    super::system_ai::advance_state(p, pt, image_frame_count);
-    p.lifetime_remaining = p.lifetime_remaining.saturating_sub(1);
-    if p.lifetime_remaining <= 0 {
+/// SmokeAI62C540 body; the shared dispatcher owns the subsequent EC tail.
+pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, frame: u32, rng: &mut SimRng) {
+    if frame & 1 != 0 {
+        if (rng.next_u32() as i32).wrapping_abs() & 3 == 0 {
+            let axis = (rng.next_u32() as i32).wrapping_abs() & 1;
+            // Native wraps ABS BEFORE signed %3. INT_MIN therefore yields-3.
+            let step = (rng.next_u32() as i32).wrapping_abs() % 3 - 1;
+            let drift = if axis == 0 {
+                &mut p.drift_x
+            } else {
+                &mut p.drift_y
+            };
+            *drift = drift.wrapping_add(step).clamp(-5, 5);
+        }
+        p.drift_z = 0;
+    }
+    if (p.animation_state as i8) < (pt.end_state_ai as i8)
+        && super::system_ai::state_advance_due(p, pt.max_ec, pt.state_ai_advance)
+    {
+        p.animation_state = p.animation_state.wrapping_add(1);
+        if p.animation_state == pt.end_state_ai && pt.delete_on_state_limit {
+            p.marked_for_deletion = true;
+        }
+    }
+    if X87::compare(X87::load_f32(p.velocity), X87::load_i32(3)) == MaskedX87Ordering::Greater {
+        p.velocity = X87::store_f32_masked_chop(X87::sub(
+            X87::load_f32(p.velocity),
+            X87::load_f32(pt.deacc),
+        ));
+    }
+}
+
+/// MoveSmoke62D3F0: old-cell bridge admission precedes raw-coordinate commit.
+pub(super) fn move_smoke(p: &mut Particle, pt: &ParticleType, wind: i32, sim: &Simulation) {
+    let index = usize::try_from(wind)
+        .ok()
+        .filter(|&i| i < SMOKE_WIND_DX.len())
+        .expect("native Smoke wind table requires WindDirection in 0..7");
+    let rise = X87::ftol_i32_low_masked(X87::load_f32(p.velocity)).wrapping_add(p.drift_z);
+    let next = offset_coords(
+        p.coords,
+        SMOKE_WIND_DX[index]
+            .wrapping_mul(pt.wind_effect)
+            .wrapping_add(p.drift_x),
+        SMOKE_WIND_DY[index]
+            .wrapping_mul(pt.wind_effect)
+            .wrapping_add(p.drift_y),
+        rise,
+    );
+    let deck = super::spark_world::smoke_bridge_deck(sim, p.coords)
+        .expect("Smoke movement requires supported old-cell ground facts");
+    if deck.is_some_and(|deck| {
+        p.coords.z < deck
+            && next.z >= deck.wrapping_sub(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS * 5 / 2)
+    }) {
         p.marked_for_deletion = true;
+    } else {
+        p.coords = next;
     }
-    if p.velocity > SIM_ZERO {
-        p.velocity = (p.velocity - pt.deacc).max(SIM_ZERO);
+}
+
+fn offset_coords(p: IVec3, x: i32, y: i32, z: i32) -> IVec3 {
+    IVec3::new(
+        p.x.wrapping_add(x),
+        p.y.wrapping_add(y),
+        p.z.wrapping_add(z),
+    )
+}
+
+fn symmetric_offset(radius: i32, rng: &mut SimRng) -> i32 {
+    assert_ne!(radius, 0, "native Smoke child split divides by Radius>>3");
+    let offset = rng.next_raw_modulo_signed(radius as u32);
+    if offset <= 0 {
+        offset.wrapping_sub(radius)
+    } else {
+        offset.wrapping_add(radius)
     }
-}
-
-/// Apply one tick of smoke-table wind drift to `p.coords`. Caller supplies the
-/// global wind direction (FacingType 0..7); `wind_effect` from the particle
-/// type scales the magnitude. Out-of-range wind directions are clamped to 0.
-///
-/// Bridge collision and odd-frame gating are deferred — see module-level notes.
-// Live dispatch still lacks the rules-owned wind direction and bridge query.
-#[allow(dead_code)]
-pub(super) fn move_smoke(p: &mut Particle, pt: &ParticleType) {
-    move_smoke_with_wind(p, pt, smoke_wind_dir());
-}
-
-/// Internal helper exposed for testing — lets a test pin a specific wind
-/// direction without touching global rules state.
-#[allow(dead_code)]
-pub(super) fn move_smoke_with_wind(p: &mut Particle, pt: &ParticleType, wind_dir: u8) {
-    let idx = (wind_dir as usize).min(7);
-    let scale = pt.wind_effect as i32;
-    p.coords.x += SMOKE_WIND_DX[idx] * scale;
-    p.coords.y += SMOKE_WIND_DY[idx] * scale;
-    p.coords.x += p.drift_x;
-    p.coords.y += p.drift_y;
-    p.coords.z += p.drift_z;
-}
-
-/// Default smoke wind direction. Real value comes from `[General] WindDirection=`
-/// once that's parsed; until then everything stays at index 0 (north).
-#[allow(dead_code)]
-fn smoke_wind_dir() -> u8 {
-    0
-}
-
-struct ChildSpec {
-    next_id: ParticleTypeId,
-    coords: IVec3,
-    velocity: SimFixed,
-    translucency: u8,
-}
-
-fn make_child(spec: ChildSpec, pt: &ParticleType, sim: &mut Simulation) -> Particle {
-    let mut p = Particle::new(spec.next_id, spec.coords, pt, sim);
-    p.velocity = spec.velocity;
-    p.translucency = spec.translucency;
-    p
-}
-
-/// Symmetric random offset around `r`. With `r > 0`, draws a signed remainder
-/// `raw` in `[-(r-1), r-1]` (one raw draw, no abs):
-///   - `raw <= 0` returns `raw - r` (a value in `[-(2r-1), -r]`)
-///   - `raw >= 1` returns `raw + r` (a value in `[r+1, 2r-1]`)
-///
-/// The sign-split matches the original two-child spawn path.
-fn symmetric_offset(r: i32, rng: &mut SimRng) -> i32 {
-    if r <= 0 {
-        return 0;
-    }
-    let raw = rng.next_raw_modulo_signed(r as u32);
-    if raw < 1 { raw - r } else { raw + r }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::rules::ini_parser::IniFile;
-    use crate::rules::particle_system_type::ParticleSystemTypeId;
-    use crate::sim::particles::ParticleSystem;
-    use glam::IVec3;
-
-    fn fake_system(type_id: ParticleSystemTypeId) -> ParticleSystem {
-        let mut system = ParticleSystem::test_fixture(0, type_id, IVec3::ZERO);
-        system.spawn_timer = SimFixed::from_num(1);
-        system
-    }
-
-    fn parse(ini_text: &str) -> RuleSet {
-        RuleSet::from_ini(&IniFile::from_str(ini_text)).expect("rules parse")
-    }
-
-    #[test]
-    fn next_particle_spawns_two_children_at_symmetric_offsets() {
-        // Smoke chain: SmkA → SmkB. Radius=8 so r=8>>3=1, giving deterministic
-        // offsets of either +/-1 from symmetric_offset.
-        let rules = parse(
-            "[Particles]\n\
-             1=SmkA\n\
-             2=SmkB\n\
-             [SmkA]\n\
-             BehavesLike=Smoke\n\
-             MaxEC=1\n\
-             Radius=8\n\
-             NextParticle=SmkB\n\
-             [SmkB]\n\
-             BehavesLike=Smoke\n\
-             MaxEC=10\n\
-             [ParticleSystems]\n\
-             1=Sys\n\
-             [Sys]\n\
-             BehavesLike=Smoke\n\
-             HoldsWhat=SmkA\n\
-             ParticleCap=20\n",
-        );
-        let mut sim = Simulation::new();
-        let mut sys = fake_system(ParticleSystemTypeId(0));
-        // Seed one SmkA particle with lifetime=1 so it dies this tick.
-        let pt_a = rules.particle_type(ParticleTypeId(0));
-        let mut parent =
-            Particle::new(ParticleTypeId(0), IVec3::new(1000, 2000, 0), pt_a, &mut sim);
-        parent.lifetime_remaining = 1;
-        sys.particles.push(parent);
-
-        tick_system(&mut sys, &mut sim, &rules);
-
-        // Parent died → two SmkB children. Original parent removed.
-        assert_eq!(sys.particles.len(), 2, "two-child finding");
-        assert!(sys.particles.iter().all(|p| p.type_id == ParticleTypeId(1)));
-        // The two children must be symmetric around the parent's position.
-        let a = sys.particles[0].coords;
-        let b = sys.particles[1].coords;
-        let parent_pos = IVec3::new(1000, 2000, 0);
-        let offset_a = a - parent_pos;
-        let offset_b = b - parent_pos;
-        assert_eq!(offset_a, -offset_b, "children symmetric around parent");
-        assert_ne!(offset_a, IVec3::ZERO, "offsets must be non-zero");
-    }
-
-    #[test]
-    fn symmetric_offset_uses_signed_remainder() {
-        // The signed helper can yield a negative remainder, so the raw<1 branch
-        // reaches [-(2r-1), -r] for any negative draw — a region the old
-        // non-negative next_range_u32 (min offset -r only at raw==0) could never
-        // produce. seed=1 third raw draw is negative (0xDA63B931 = -630_998_735);
-        // with r=100: -630_998_735 % 100 = -35 -> raw<1 -> raw - r = -135.
-        let mut rng = SimRng::new(1);
-        rng.next_u32(); // skip draw 1
-        rng.next_u32(); // skip draw 2 -> next (3rd) draw is the negative 0xDA63B931
-        assert_eq!(symmetric_offset(100, &mut rng), -135);
-    }
-
-    #[test]
-    fn spawn_cap_enforced() {
-        // Cap=5 — even with aggressive spawning, particle count must stay ≤ 5.
-        let rules = parse(
-            "[Particles]\n\
-             1=Smk\n\
-             [Smk]\n\
-             BehavesLike=Smoke\n\
-             MaxEC=1000\n\
-             [ParticleSystems]\n\
-             1=Sys\n\
-             [Sys]\n\
-             BehavesLike=Smoke\n\
-             HoldsWhat=Smk\n\
-             ParticleCap=5\n\
-             SpawnFrames=1\n\
-             Spawns=yes\n",
-        );
-        let mut sim = Simulation::new();
-        let mut sys = fake_system(ParticleSystemTypeId(0));
-        for _ in 0..50 {
-            tick_system(&mut sys, &mut sim, &rules);
-            sim.session.binary_frame = sim.session.binary_frame.wrapping_add(1);
-        }
-        assert!(
-            sys.particles.len() <= 5,
-            "cap exceeded: {}",
-            sys.particles.len()
-        );
-    }
-
-    #[test]
-    fn done_spawning_when_accumulator_exceeds_cutoff() {
-        // Slowdown=1 per tick, SpawnCutoff=2 → after 3 ticks accumulator > cutoff.
-        let rules = parse(
-            "[ParticleSystems]\n\
-             1=Sys\n\
-             [Sys]\n\
-             BehavesLike=Smoke\n\
-             ParticleCap=10\n\
-             Slowdown=1.0\n\
-             SpawnCutoff=2.0\n",
-        );
-        let mut sim = Simulation::new();
-        let mut sys = fake_system(ParticleSystemTypeId(0));
-        // spawn_timer starts at 1. After tick 1: 1+1=2, cutoff (2) < timer (2) is FALSE.
-        // After tick 2: 2+1=3, cutoff (2) < timer (3) is TRUE → done_spawning.
-        for _ in 0..2 {
-            tick_system(&mut sys, &mut sim, &rules);
-            sim.session.binary_frame = sim.session.binary_frame.wrapping_add(1);
-        }
-        assert!(
-            sys.done_spawning,
-            "done_spawning should be set after cutoff"
-        );
-    }
-
-    #[test]
-    fn move_smoke_uses_smoke_table_at_se() {
-        // SE wind direction (idx 3): smoke=2, gas=1.
-        let rules = parse(
-            "[Particles]\n\
-             1=Smk\n\
-             [Smk]\n\
-             BehavesLike=Smoke\n\
-             WindEffect=1\n\
-             MaxEC=10\n",
-        );
-        let pt = rules.particle_type(ParticleTypeId(0));
-        let mut sim = Simulation::new();
-        let mut p = Particle::new(ParticleTypeId(0), IVec3::new(0, 0, 0), pt, &mut sim);
-        move_smoke_with_wind(&mut p, pt, 3);
-        // SMOKE_WIND_DX[3] = 2 → coords.x advanced by +2 (smoke table, not gas).
-        assert_eq!(p.coords.x, 2);
-        // SMOKE_WIND_DY[3] = 2.
-        assert_eq!(p.coords.y, 2);
-    }
-}
+#[path = "smoke_native_tests.rs"]
+mod native_tests;

@@ -177,7 +177,8 @@ fn the_old_owners_share_requires_the_placed_byte() {
         .entities
         .get_mut(hospital)
         .unwrap()
-        .building_actually_placed = false;
+        .building_art
+        .set_actually_placed_for_test(false);
     sim.remove_old_owner_self_heal(hospital, owner, &rules);
     assert_eq!(
         sim.houses[&owner].self_heal_infantry(),

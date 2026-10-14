@@ -72,7 +72,7 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
     {
         let entity = sim.substrate.entities.get_mut(yard).unwrap();
         entity.finish_building_construction_for_test();
-        entity.building_actually_placed = true;
+        entity.building_art.set_actually_placed_for_test(true);
         entity.building_last_operational = true;
     }
     // The original corpus supplies these already admitted actors, then starts
@@ -163,7 +163,7 @@ fn assert_joined_frame(sim: &Simulation, id: u64, frame: &Value, context: &str) 
         "{context}: queued body"
     );
     assert_eq!(
-        u64::from(entity.building_actually_placed),
+        u64::from(entity.building_art.actually_placed()),
         frame["placed"].as_u64().unwrap(),
         "{context}: placement"
     );
@@ -286,7 +286,8 @@ fn assert_joined_frame(sim: &Simulation, id: u64, frame: &Value, context: &str) 
         .collect();
     assert_eq!(json!(logic), frame["logic"], "{context}: live order");
     let slots: Vec<_> = entity
-        .building_anim_slots
+        .building_art
+        .anim_slots()
         .iter()
         .map(|slot| slot.map_or(0, native_pointer))
         .collect();

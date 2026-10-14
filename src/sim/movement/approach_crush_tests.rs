@@ -1,7 +1,6 @@
 //! The crush arms of `UnitClass::Approach_Target @ 0x007414E0`: the native
 //! rows of `tools/unit_crush_oracle.json` `approach`, and Rust regression
-//! tests of the head, the pursuit pass and the per-cell range stop on retail
-//! rules.
+//! tests of the head and the per-cell range stop on retail rules.
 
 use super::ApproachCrush;
 use crate::rules::ruleset::RuleSet;
@@ -148,8 +147,6 @@ fn computer_crusher_heads_for_a_crushable_target_within_reach() {
 /// A Battle Fortress (`OmniCrusher=`) takes infantry it targets as its
 /// destination at any range, also a human's; a human's spares a GI its own
 /// scan picked up, a computer's does not, and neither drives onto a building.
-/// On Hunt, the pursuit pass leaves the Fortress's approach to its mission:
-/// that arm for the GI, the Foot body for the building.
 #[test]
 fn battle_fortress_heads_for_infantry_it_targets() {
     let Some(rules) = retail_rules() else {
@@ -171,54 +168,6 @@ fn battle_fortress_heads_for_infantry_it_targets() {
     assert!(!head("Americans", ("E1", "Russians"), true));
     assert!(head("Russians", ("E1", "Americans"), true));
     assert!(!head("Americans", ("NAPOWR", "Russians"), false));
-
-    let hunt_owned = |victim: &str| {
-        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x741603);
-        let fortress = spawn(&mut sim, &rules, "BFRT", "Russians", (10, 10));
-        let victim = spawn(&mut sim, &rules, victim, "Americans", (17, 10));
-        target(&mut sim, fortress, victim);
-        start_mission(&mut sim, fortress, MissionType::Hunt);
-        sim.mission_owns_approach(fortress, &rules)
-    };
-    assert!(hunt_owned("E1"));
-    assert!(hunt_owned("NAPOWR"));
-}
-
-/// The pursuit pass leaves a computer Rhino's charge to its mission: on
-/// Attack, in range of the GI it heads for, it keeps the GI as its NavCom.
-#[test]
-fn the_pursuit_pass_leaves_a_crush_charge_alone() {
-    let Some(rules) = retail_rules() else {
-        return;
-    };
-    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x74165F);
-    let rhino = spawn(&mut sim, &rules, "HTNK", "Russians", (10, 10));
-    let gi = spawn(&mut sim, &rules, "E1", "Americans", (11, 10));
-    target(&mut sim, rhino, gi);
-    start_mission(&mut sim, rhino, MissionType::Attack);
-    assert!(sim.approach_unit_head(
-        rhino,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
-    let entity = sim.substrate.entities.get(rhino).unwrap();
-    assert_eq!(
-        entity.mission.current(),
-        MissionId::from_known(MissionType::Attack)
-    );
-    assert!(entity.movement_target.is_some());
-    assert!(sim.mission_owns_approach(rhino, &rules));
-    sim.tick_attack_pursuit(&rules);
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(rhino)
-            .unwrap()
-            .navigation
-            .nav_com,
-        Some(NavTargetRef::object(gi))
-    );
 }
 
 /// A computer's Rhino whose charge at a GI the crush arm carries takes the
@@ -236,7 +185,6 @@ fn a_crush_charge_takes_the_per_cell_range_stop() {
     target(&mut sim, rhino, gi);
     start_mission(&mut sim, rhino, MissionType::Attack);
     set_nav_com(&mut sim, rhino, NavTargetRef::object(gi));
-    assert!(sim.mission_owns_approach(rhino, &rules));
     sim.per_cell_process(
         rhino,
         crate::sim::movement::PerCellReason::Arrival,

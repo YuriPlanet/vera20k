@@ -1,7 +1,7 @@
 use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::sim::components::{DriveCoord, MovementTarget};
+use crate::sim::components::DriveCoord;
 use crate::sim::movement::{FacingClass, locomotor::LocomotorState};
 
 #[test]
@@ -33,7 +33,6 @@ fn paid_walk_matches_original_numeric_facing_and_boundary_vectors() {
         let mut loco = LocomotorState::for_test_kind(LocomotorKind::Walk);
         loco.set_step_head(Some(coord("head")));
         entity.locomotor = Some(loco);
-        entity.movement_target = Some(MovementTarget::default());
         let mut body = FacingClass::new(
             input["initial_previous"].as_u64().unwrap() as u16,
             input["rot"].as_u64().unwrap() as u8,
@@ -121,7 +120,6 @@ fn idle_walk_scold_tails_match_original_through_ordinary_process() {
             .set_scold_latch_for_test(row["supplied_byte"].as_u64().unwrap() as u8);
         sim.substrate.entities.insert(actor);
 
-        // No movement adapter is needed for this native Process corridor.
         sim.process_ground_locomotor_for_test(1, None, None, None)
             .unwrap();
         let actor = sim.substrate.entities.get(1).unwrap();

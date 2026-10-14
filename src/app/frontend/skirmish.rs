@@ -2081,7 +2081,7 @@ mod tests {
         // is the 2.0f accumulator, not just the rank projection — a unit
         // seeded only in the projection would demote on its first kill.
         assert!(sim.entities().values().all(|entity| {
-            entity.veterancy() == 200 && entity.veterancy_raw.bits() == 0x4000_0000
+            entity.veterancy.rank() == 200 && entity.veterancy.raw().bits() == 0x4000_0000
         }));
         assert!(sim.entities().values().all(|entity| {
             let expected = if sim.interner.resolve(entity.owner) == "Player" {

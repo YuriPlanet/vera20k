@@ -529,7 +529,6 @@ mod tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::passenger::PassengerCargo;
     use crate::sim::world::RevealOutcome;
-    use crate::util::fixed_math::SimFixed;
     use crate::util::lepton;
 
     fn drop_test_rules() -> RuleSet {
@@ -798,7 +797,7 @@ mod tests {
             if blocked {
                 assert_eq!(cargo(&sim, 1), vec![2]);
                 assert!(passenger.lifecycle.in_limbo);
-                assert!(passenger.parachute_state.is_none());
+                assert!(!passenger.is_falling_down());
             } else {
                 assert!(cargo(&sim, 1).is_empty());
                 assert_eq!((passenger.position.rx, passenger.position.ry), native_cell);
@@ -854,7 +853,7 @@ mod tests {
                 .substrate
                 .entities
                 .get(passenger_id)
-                .is_some_and(|passenger| passenger.parachute_state.is_some());
+                .is_some_and(|passenger| passenger.is_falling_down());
             match canopy(&sim) {
                 Some((id, owner, loops)) => {
                     assert_eq!((id, owner), (canopy_id, Some(passenger_id)));
@@ -1022,9 +1021,7 @@ mod tests {
         let plane_z = 2 * 104 + 1500;
         let plane = sim.substrate.entities.get_mut(aircraft_id).unwrap();
         plane.position.exact_z_leptons = Some(plane_z);
-        let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Fly);
-        locomotor.altitude = SimFixed::from_num(1500);
-        plane.locomotor = Some(locomotor);
+        plane.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
 
         drop_payload(
             &mut sim,
@@ -1127,9 +1124,7 @@ mod tests {
         insert_loaded_paradrop_pair(&mut sim, plane, passenger);
         let plane_entity = sim.substrate.entities.get_mut(plane).unwrap();
         plane_entity.position.exact_z_leptons = Some(1500);
-        let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Fly);
-        locomotor.altitude = SimFixed::from_num(1500);
-        plane_entity.locomotor = Some(locomotor);
+        plane_entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
         let effects = crate::sim::world::FrameEffects::default();
 
         drop_payload(&mut sim, plane, &rules, None, effects);
@@ -1282,7 +1277,7 @@ mod tests {
                 passenger.passenger_role,
                 PassengerRole::Inside { transport_id, .. } if transport_id == aircraft_id
             ));
-            assert!(passenger.parachute_state.is_none());
+            assert!(!passenger.is_falling_down());
             assert!(passenger.lifecycle.object_alive && passenger.lifecycle.in_limbo);
             assert!(!passenger.lifecycle.cell_marked && !passenger.in_logic_vector);
             assert_eq!(passenger.discovery.discovered_by_current_house, human);
@@ -1398,7 +1393,7 @@ mod tests {
             assert!(passenger.lifecycle.in_limbo);
             assert_eq!(passenger.lifecycle.cell_marked, post_attach);
             assert!(!passenger.in_logic_vector);
-            assert!(passenger.parachute_state.is_none());
+            assert!(!passenger.is_falling_down());
             assert_eq!(
                 passenger.locomotor.as_ref().unwrap().layer,
                 MovementLayer::Bridge
@@ -1455,7 +1450,7 @@ mod tests {
                 assert_eq!(cargo.passenger_sizes, vec![3]);
                 assert_eq!(cargo.total_size, 3);
                 let passenger = sim.substrate.entities.get(2).unwrap();
-                assert!(passenger.parachute_state.is_some());
+                assert!(passenger.is_falling_down());
                 assert!(passenger.lifecycle.cell_marked && passenger.in_logic_vector);
                 assert!(!passenger.passenger_role.is_inside_transport());
                 assert_eq!(chute_sounds(&sim).len(), 1);

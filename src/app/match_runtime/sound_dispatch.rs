@@ -152,6 +152,12 @@ pub(super) fn dispatch_sim_sound_events(
         let app_event: GameSoundEvent = match sim_event {
             SimSoundEvent::TriggerEva { index } => GameSoundEvent::TriggerEva { index },
             SimSoundEvent::UnitVoiceVisit { owner } => GameSoundEvent::UnitVoiceVisit { owner },
+            SimSoundEvent::UnitVoiceRequested { owner, sound_id } => {
+                GameSoundEvent::UnitVoiceRequested {
+                    speaker_id: owner,
+                    sound_id,
+                }
+            }
             SimSoundEvent::UnitVoiceDestroyed { owner } => {
                 GameSoundEvent::UnitVoiceDestroyed { owner }
             }

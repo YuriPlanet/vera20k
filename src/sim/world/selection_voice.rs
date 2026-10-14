@@ -75,6 +75,60 @@ impl Simulation {
         self.voice_request_from_list(&object.voice_special_attack, voices_enabled, human_player)
     }
 
+    /// QueueVoice708D90's sole admission predicate. The caller owns any list
+    /// draw and House50B6F0 query; the audio owner alone retains the pending
+    /// and playing slots. Scalar requests consume no random draw.
+    pub(crate) fn queue_voice_request(
+        sound: Option<&str>,
+        voices_enabled: bool,
+        human_player: bool,
+    ) -> Option<&str> {
+        sound.filter(|sound| voices_enabled && human_player && !sound.is_empty())
+    }
+
+    /// Building459C20's resource-Archive override, then common
+    /// VoiceDeploy708E00. The resource branch returns before the suppression
+    /// test/clear. Common infantry522510 deployment chooses +594 instead of
+    /// +590; a missing slot stays silent, with no fallback or Main draw.
+    /// Source: tools/input_oracle/slave_miner_pack_voice.{json,meta.json};
+    /// original1cdd1180.
+    pub(crate) fn deploy_voice_request<'a>(
+        &mut self,
+        rules: &'a RuleSet,
+        entity_id: u64,
+        voices_enabled: bool,
+    ) -> Option<&'a str> {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::combat::TargetKind;
+
+        let entity = self.entities().get(entity_id)?;
+        let human_player = self.house_is_human_player(entity.owner());
+        let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+        if entity.category == EntityCategory::Structure
+            && object.resource_gatherer
+            && object.resource_destination
+            && let Some(TargetKind::Cell(x, y)) = entity.archive_target()
+            && crate::sim::miner::ore_scan::cell_is_tiberium_land(self, None, (x, y))
+            && let Some(sound) = object.voice_harvest()
+        {
+            return Self::queue_voice_request(Some(sound), voices_enabled, human_player);
+        }
+        let request = if entity.deploy_voice_suppressed() {
+            None
+        } else {
+            let sound = if entity.category == EntityCategory::Infantry && entity.is_deployed() {
+                object.voice_undeploy()
+            } else {
+                object.voice_deploy()
+            };
+            Self::queue_voice_request(sound, voices_enabled, human_player)
+        };
+        self.entities_mut()
+            .get_mut(entity_id)?
+            .clear_deploy_voice_suppression();
+        request
+    }
+
     /// Reached VoiceSelect708EB0 and default command6FFD42 consume one raw
     /// Random65C780 draw for every nonempty list, including a singleton,
     /// then unsigned modulo.
@@ -92,9 +146,6 @@ impl Simulation {
         }
         let index = (self.main_rng.next_u32() % voices.len() as u32) as usize;
         // Empty is the existing sound-name representation of native ID -1.
-        if !voices_enabled || voices[index].is_empty() || !human_player {
-            return None;
-        }
-        Some(voices[index].as_str())
+        Self::queue_voice_request(Some(voices[index].as_str()), voices_enabled, human_player)
     }
 }

@@ -355,7 +355,8 @@ impl Fixture {
                 .entities
                 .get(building)
                 .unwrap()
-                .building_anim_slots[3]
+                .building_art
+                .anim_slots()[3]
                 .is_some()
         );
         let unit = sim
@@ -499,7 +500,7 @@ impl Fixture {
             "{boundary}: retained operational state",
         );
         assert_eq!(
-            building.building_actually_placed,
+            building.building_art.actually_placed(),
             native["building"]["placed"] == 1,
             "{boundary}: first-opening state",
         );
@@ -591,7 +592,7 @@ impl Fixture {
         );
         if let Some(building) = self.sim.substrate.entities.get(self.building) {
             for (slots, key) in [
-                (&building.building_anim_slots[..], "slots"),
+                (&building.building_art.anim_slots()[..], "slots"),
                 (&building.damage_fire_anim_ids[..], "damage_fire_slots"),
             ] {
                 let expected = if key == "slots" {
@@ -1428,7 +1429,8 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             .entities
             .get(fixture.building)
             .unwrap()
-            .building_anim_slots[3]
+            .building_art
+            .anim_slots()[3]
             .unwrap();
         fixture.assert_stock_pending_snapshot(route);
         let identities = fixture.identities();
@@ -1520,13 +1522,14 @@ fn original_direct_ap_receivers_join_debris_crew_uninit_power_and_deferred_destr
             &format!("direct sample/power {index}"),
         );
     }
-    let slots = fixture
+    let slots = *fixture
         .sim
         .substrate
         .entities
         .get(fixture.building)
         .unwrap()
-        .building_anim_slots;
+        .building_art
+        .anim_slots();
     assert!(slots[3].is_some(), "UnInit retains ordinary attached ART");
     fixture.sim.session.binary_frame = int(&route["after_frame_increment"]["frame"]) as u32;
     fixture.sim.process_pending_delete_with(

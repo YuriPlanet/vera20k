@@ -35,7 +35,9 @@ fn original_selfheal_tail_and_192_height_rows_retain_art_and_mark_smoke() {
         entity.type_ref = sim.interner.intern("SIGNED");
         entity.owner = sim.interner.intern("A");
         entity.health.current = input["current"].as_i64().unwrap() as i32;
-        entity.building_damage_state_active = input["old_flag"].as_u64().unwrap_or(1) == 1;
+        entity
+            .building_art
+            .set_damage_state_active_for_test(input["old_flag"].as_u64().unwrap_or(1) == 1);
         if let Some(xy) = input["xy"].as_array() {
             use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
             let x = xy[0].as_i64().unwrap() as i32;
@@ -78,7 +80,7 @@ fn original_selfheal_tail_and_192_height_rows_retain_art_and_mark_smoke() {
             "{row}"
         );
         assert_eq!(
-            entity.building_damage_state_active,
+            entity.building_art.damage_state_active(),
             row["output"]["retained_flag"] == 1,
             "{row}"
         );

@@ -656,13 +656,6 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
     let passenger = sim
         .spawn_object("E1", "Americans", 15, 15, 0, &rules)
         .unwrap();
-    // PerCellProcess boards from the garrison's own foundation cell.
-    sim.substrate
-        .entities
-        .get_mut(passenger)
-        .unwrap()
-        .position
-        .rx = 16;
     assert_eq!(
         sim.substrate
             .entities
@@ -671,19 +664,30 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .cached_spatial_threat(),
         Some(7)
     );
-    sim.substrate
-        .entities
-        .get_mut(passenger)
-        .unwrap()
-        .passenger_role = crate::sim::passenger::PassengerRole::Boarding {
-        target_transport_id: building,
-    };
-    crate::sim::passenger::tick_passenger_system(
-        &mut sim,
-        &rules,
+    assert!(sim.apply_command_with_overlays(
+        "Americans",
+        &crate::sim::command::Command::CaptureBuilding {
+            engineer_id: passenger,
+            target_building_id: building,
+        },
+        Some(&rules),
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
-    );
+    ));
+    let grid = sim.path_grid_snapshot().unwrap();
+    for _ in 0..64 {
+        sim.advance_tick(&[], Some(&rules), Some(&grid), Some(&registry), 67);
+        if sim
+            .substrate
+            .entities
+            .get(passenger)
+            .unwrap()
+            .passenger_role
+            .is_inside_transport()
+        {
+            break;
+        }
+    }
     assert_eq!(
         sim.substrate
             .entities

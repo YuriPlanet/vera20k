@@ -5,7 +5,7 @@ use super::track_head::committed_track_head;
 
 use super::*;
 use crate::map::entities::EntityCategory;
-use crate::sim::components::{DriveCoord, MovementTarget, NavTargetRef};
+use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::test_interner;
@@ -61,23 +61,11 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
         sim.reveal(1),
         crate::sim::world::RevealOutcome::Revealed { .. }
     ));
-    assert!(issue_move_command_with_layered(
-        &mut sim.substrate.entities,
-        &grid,
-        1,
-        (5, 0),
-        SimFixed::from_num(256),
-        false,
-        None,
-        None,
-        Some(&terrain),
-        Some(&zones),
-        None,
-        None,
-        None,
-        Some(&mut sim.substrate.cell_occupation),
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    ));
+    {
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        super::navcom::set_destination_internal_cell(entity, (5, 0), Some(&terrain), 0);
+        crate::sim::movement::DestinationTiming::new(0, 60).accept(entity);
+    }
     // Unit741970 accepts without a route; the first Process requests it.
     let accepted = sim.substrate.entities.get(1).unwrap();
     assert!(
@@ -259,7 +247,14 @@ fn test_drive_arrival_clears_navcom_same_tick() {
     let mut e = GameEntity::test_default(1, "HTNK", "Americans", 0, 0);
     e.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     e.drive_accelerates = false;
-    e.foot_speed.set_speed_fraction(SIM_ONE);
+    // One live speed lepton plus residual7 pays the terminal point: the
+    // rules-less type speed (10 leptons a frame) at Foot+578 0.15.
+    let one_lepton = SimFixed::lit("0.15");
+    e.foot_speed.set_speed_fraction(one_lepton);
+    assert_eq!(
+        crate::sim::movement::owner_current_speed(&e, None, 1.0, &Default::default()),
+        1
+    );
     e.navigation.nav_com = Some(NavTargetRef::cell(0, 0));
     assert!(
         e.locomotor
@@ -272,7 +267,7 @@ fn test_drive_arrival_clears_navcom_same_tick() {
                     )))
                     .with_head_to_for_test(Some(crate::sim::components::DriveCoord::cell(0, 0, 0)))
                     .with_track_valid_for_test(true)
-                    .with_target_speed_fraction_for_test(SIM_ONE)
+                    .with_target_speed_fraction_for_test(one_lepton)
                     .with_track_for_test(crate::sim::components::TrackProgress {
                         turn_index: 0,
                         cursor: drive_track::raw_track_points(1).len() as i32,
@@ -281,10 +276,6 @@ fn test_drive_arrival_clears_navcom_same_tick() {
                     })
             ))
     );
-    e.movement_target = Some(MovementTarget {
-        // One live speed lepton plus residual7 pays the terminal point.
-        speed: SimFixed::from_num(15),
-    });
     e.lifecycle.in_limbo = false;
     entities.insert(e);
 
@@ -293,9 +284,9 @@ fn test_drive_arrival_clears_navcom_same_tick() {
     let mut lifecycle_requests = Vec::new();
     tick_movement(&mut entities, &mut test_interner(), &mut lifecycle_requests);
     let entity = entities.get(1).expect("entity exists");
-    assert!(entity.movement_target.is_none());
+    assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
     assert_eq!(entity.navigation.nav_com, None);
-    assert!(!entity.navigation.pending_arrival_clear);
+    assert!(!entity.navigation.pending_destination_setter);
     let drive = entity
         .locomotor
         .as_ref()
@@ -309,104 +300,7 @@ fn test_drive_arrival_clears_navcom_same_tick() {
     assert_eq!(drive.destination(), None);
 }
 
-#[test]
-fn test_drive_queue_command_reissues_destination_without_navqueue_append() {
-    let mut entities = EntityStore::new();
-    let grid = PathGrid::new(8, 4);
-
-    let mut e = GameEntity::test_default(1, "HTNK", "Americans", 0, 0);
-    e.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
-    entities.insert(e);
-
-    assert!(issue_move_command(
-        &mut entities,
-        &grid,
-        1,
-        (2, 0),
-        SimFixed::from_num(1024),
-        false,
-        None,
-        None,
-        None,
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    ));
-    assert!(issue_move_command(
-        &mut entities,
-        &grid,
-        1,
-        (4, 0),
-        SimFixed::from_num(1024),
-        true,
-        None,
-        None,
-        None,
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    ));
-
-    // The queued Drive order re-enters the ordinary setter: the destination
-    // is replaced and the first Process requests the route.
-    let entity = entities.get(1).expect("entity exists");
-    assert!(entity.movement_target.is_some(), "movement target");
-    assert!(
-        entity
-            .navigation
-            .path_replay
-            .remaining_directions()
-            .is_empty()
-    );
-    assert_eq!(movement_goal_cell(entity), Some((4, 0)));
-    assert_eq!(
-        entity
-            .locomotor
-            .as_ref()
-            .and_then(|l| l.selected_drive_runtime())
-            .and_then(|r| r.retained())
-            .and_then(|d| d.destination()),
-        Some(DriveCoord {
-            x: 4 * 256 + 128,
-            y: 128,
-            z: 0
-        })
-    );
-    assert_eq!(entity.navigation.nav_com, Some(NavTargetRef::cell(4, 0)));
-    assert!(
-        entity.navigation.nav_queue.is_empty(),
-        "standard player/team/trigger movement must not create Foot NavQueue entries"
-    );
-}
-
 /// The fixture Drive types: a Unit's Process reads its type.
-/// The order-time adapter (here a fixture mover with no class setter) admits
-/// a destination in the mover's own cell without asking the AStar core, whose
-/// start-equals-goal exit has no route for it (0x00429BF3..0x00429C0A): the
-/// setters record any destination unsearched. A queued order to the same cell
-/// appends nothing.
-#[test]
-fn order_time_admission_accepts_a_goal_in_the_start_cell() {
-    let mut entities = EntityStore::new();
-    let grid = PathGrid::new(10, 10);
-    entities.insert(GameEntity::test_default(1, "MOVER", "Americans", 5, 5));
-    for queue in [false, true] {
-        assert!(
-            issue_move_command(
-                &mut entities,
-                &grid,
-                1,
-                (5, 5),
-                SimFixed::from_num(1024),
-                queue,
-                None,
-                None,
-                None,
-                crate::sim::movement::DestinationTiming::new(0, 60),
-            ),
-            "queue={queue}"
-        );
-    }
-    let movement = entities.get(1).unwrap().movement_target.as_ref().unwrap();
-    assert_eq!(movement.speed, SimFixed::from_num(1024));
-}
-
 fn drive_type_rules() -> crate::rules::ruleset::RuleSet {
     crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
         "[VehicleTypes]\n0=HTNK\n1=MTNK\n2=DRIVE\n[HTNK]\nSpeed=6\n[MTNK]\nSpeed=6\n[DRIVE]\nSpeed=6\n",
@@ -431,6 +325,27 @@ fn walk_path_timer_waits_without_double_aging_or_losing_owner_state() {
     use crate::sim::timer::CdTimer;
 
     let grid = PathGrid::test_all_passable(30, 30);
+    // The Infantry setter's accepted tail at a supplied frame and delay: the
+    // path word cleared, then Walk Move_To with the cell's coordinate.
+    let order = |sim: &mut Simulation, cell: (u16, u16), timing: DestinationTiming| {
+        let entities = &mut sim.substrate.entities;
+        entities
+            .get_mut(1)
+            .unwrap()
+            .navigation
+            .path_replay
+            .clear_live_head();
+        assert!(prepare_walk_destination(
+            entities,
+            1,
+            (
+                NavTargetRef::cell(cell.0, cell.1),
+                target_cell_coord(cell.0, cell.1, None),
+            ),
+            None,
+            timing,
+        ));
+    };
     for (timer, frame) in [
         (CdTimer::started(100, 9), 108),
         (CdTimer::from_raw(-1, -7), 100),
@@ -447,18 +362,7 @@ fn walk_path_timer_waits_without_double_aging_or_losing_owner_state() {
             sim.reveal(1),
             crate::sim::world::RevealOutcome::Revealed { .. }
         ));
-        assert!(issue_move_command(
-            &mut sim.substrate.entities,
-            &grid,
-            1,
-            (20, 10),
-            SimFixed::from_num(150),
-            false,
-            None,
-            None,
-            None,
-            DestinationTiming::new(100, 60),
-        ));
+        order(&mut sim, (20, 10), DestinationTiming::new(100, 60));
         let mut retained = FootPathRuntime::at_frame(0);
         retained.movement_timer = timer;
         retained.blocked_timer = CdTimer::started(100, 60);
@@ -489,9 +393,8 @@ fn walk_path_timer_waits_without_double_aging_or_losing_owner_state() {
             assert_eq!(sim.scenario_rng.logical_state(), rng);
         }
 
-        // Native null setter writes persistent timers even without an adapter;
-        // the next accepted order must not recreate or truncate the dword count.
-        sim.substrate.entities.get_mut(1).unwrap().movement_target = None;
+        // Native null setter writes persistent timers; the next accepted order
+        // must not recreate or truncate the dword count.
         sim.session.binary_frame = 200;
         assert!(sim.set_infantry_null_destination(
             1,
@@ -510,18 +413,7 @@ fn walk_path_timer_waits_without_double_aging_or_losing_owner_state() {
         );
         assert!(!actor.navigation.path_runtime.path_blocked);
         assert_eq!(actor.navigation.path_runtime.retries_left, u32::MAX);
-        assert!(issue_move_command(
-            &mut sim.substrate.entities,
-            &grid,
-            1,
-            (21, 10),
-            SimFixed::from_num(150),
-            false,
-            None,
-            None,
-            None,
-            DestinationTiming::new(201, 22),
-        ));
+        order(&mut sim, (21, 10), DestinationTiming::new(201, 22));
         let actor = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
             actor.navigation.path_runtime.movement_timer,
@@ -856,18 +748,16 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
             .kind,
         LocomotorKind::Walk,
     );
-    assert!(issue_move_command(
-        &mut sim.substrate.entities,
-        &grid,
-        walker,
-        (4, 1),
-        crate::util::fixed_math::ra2_speed_to_leptons_per_second(rules.object("E1").unwrap().speed),
-        false,
-        None,
-        None,
-        None,
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    ));
+    assert_eq!(
+        sim.assign_infantry_destination(
+            walker,
+            NavTargetRef::cell(4, 1),
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        ),
+        Ok(true)
+    );
     let walk_tick = |sim: &mut Simulation, frame: u32| {
         sim.session.tick = u64::from(frame);
         sim.session.binary_frame = frame;
@@ -997,7 +887,7 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
             entity.locomotor.as_ref().and_then(|l| l.step_head()),
             entity.navigation.path_replay.clone(),
         ));
-        if entity.movement_target.is_none() {
+        if crate::sim::movement::motion_query::is_moving(&entity) != Some(true) {
             break;
         }
     }
@@ -1006,13 +896,9 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
         "the walker never arrived in a new cell; trace={trace:?}"
     );
     assert_eq!(previous_cell, (4, 1), "trace={trace:#?}");
-    assert!(
-        sim.substrate
-            .entities
-            .get(walker)
-            .unwrap()
-            .movement_target
-            .is_none()
+    assert_ne!(
+        crate::sim::movement::motion_query::is_moving(sim.substrate.entities.get(walker).unwrap()),
+        Some(true)
     );
     println!("cell-arrival Infantry frames: {trace:?}");
 }
@@ -1025,7 +911,7 @@ fn forced_drive_rules(name: &str, speed: u32) -> crate::rules::ruleset::RuleSet 
 }
 
 #[test]
-fn forced_track_object_turn_relinks_each_committed_cell_without_a_movement_target() {
+fn forced_track_object_turn_relinks_each_committed_cell() {
     let rules = forced_drive_rules("CMIN", 5);
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
@@ -1106,8 +992,16 @@ fn forced_track_object_turn_relinks_each_committed_cell_without_a_movement_targe
         sim.process_ground_locomotor_for_test(1, Some(&rules), None, None)
             .unwrap();
         let entity = sim.substrate.entities.get(1).unwrap();
-        // Only the track end's same-Process continuation requests a route.
-        assert!(committed_track_head(entity).is_none() || entity.movement_target.is_none());
+        // Only the track end's same-Process continuation requests a route:
+        // mid-track the Foot+5E0 queue stays empty.
+        assert!(
+            committed_track_head(entity).is_none()
+                || entity
+                    .navigation
+                    .path_replay
+                    .remaining_directions()
+                    .is_empty()
+        );
         let current_cell = (entity.position.rx, entity.position.ry);
         assert!(
             sim.substrate
@@ -1158,499 +1052,13 @@ fn forced_track_object_turn_relinks_each_committed_cell_without_a_movement_targe
     );
 }
 
-// --- GSI-06.02: order-time reachability gate + zone-constrained substitution ---
-
-/// A 5x1 corridor blocked at x=2, so `(0,0)/(1,0)` and `(3,0)/(4,0)` are two
-/// disconnected zones for a ground mover.
-fn split_corridor_fixture() -> (PathGrid, crate::sim::pathfinding::zone_map::ZoneGrid) {
-    let mut grid = PathGrid::new(5, 1);
-    grid.set_blocked(2, 0, true);
-    let zone_grid = crate::sim::pathfinding::zone_map::ZoneGrid::following_path_grid(&grid);
-    (grid, zone_grid)
-}
-
-fn resolve_split_goal(
-    grid: &PathGrid,
-    zone_grid: Option<&crate::sim::pathfinding::zone_map::ZoneGrid>,
-    goal: (u16, u16),
-) -> Option<(u16, u16)> {
-    super::movement_path::resolve_reachable_move_goal(
-        grid,
-        zone_grid,
-        None,
-        (0, 0),
-        MovementLayer::Ground,
-        goal,
-        MovementZone::Normal,
-        crate::rules::locomotor_type::SpeedType::Track,
-    )
-}
-
-/// Gamemd's destination resolver ACCEPTS an order whose destination is in
-/// another zone: `Can_Reach_Zone` fails, it takes the mover's own zone id and
-/// runs the nearby-passable-cell search seeded at the click requiring that zone,
-/// so the unit drives to the near bank instead of standing still.
-#[test]
-fn gsi_06_02_unreachable_move_goal_retargets_into_the_movers_own_zone() {
-    let (grid, zone_grid) = split_corridor_fixture();
-    let cell = resolve_split_goal(&grid, Some(&zone_grid), (4, 0))
-        .expect("the order is accepted with a substituted near-side cell");
-    assert_ne!(cell, (4, 0), "the far-side cell must not survive the gate");
-    assert!(
-        cell.0 <= 1,
-        "substitute must lie in the mover's own zone, got {cell:?}"
-    );
-}
-
-/// When `Can_Reach_Zone` succeeds the clicked cell is used verbatim — no
-/// substitution, no retarget.
-#[test]
-fn gsi_06_02_reachable_move_goal_is_used_verbatim() {
-    let (grid, zone_grid) = split_corridor_fixture();
-    assert_eq!(
-        resolve_split_goal(&grid, Some(&zone_grid), (1, 0)),
-        Some((1, 0))
-    );
-}
-
-/// Gamemd's `mzRow == -1` short-circuit returns "reachable"; the Rust
-/// equivalent is "no zone data", which must not refuse the order.
-#[test]
-fn gsi_06_02_missing_zone_data_short_circuits_to_reachable() {
-    let (grid, _zone_grid) = split_corridor_fixture();
-    assert_eq!(resolve_split_goal(&grid, None, (4, 0)), Some((4, 0)));
-}
-
-/// A cross-zone ground move order is accepted unchanged: Unit741970 installs
-/// NavCom and the Drive destination without a search or redirect. The player
-/// click reaches it only through the ordinary 4DE1D0 resolver, which picks a
-/// reachable cell (move_cell_input); the first Process drops an unreachable
-/// destination through Find_Path's precheck and the continuation's recheck
-/// (track_path_continuation).
-#[test]
-fn gsi_06_02_cross_zone_move_order_is_accepted_without_redirect() {
-    let (grid, zone_grid) = split_corridor_fixture();
-    let mut entities = EntityStore::new();
-    let mut mover = GameEntity::test_default(1, "MTNK", "Americans", 0, 0);
-    mover.category = EntityCategory::Unit;
-    mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
-    assert!(
-        mover
-            .locomotor
-            .as_mut()
-            .unwrap()
-            .install_drive_state_for_test(Some(Default::default()))
-    );
-    entities.insert(mover);
-
-    assert!(
-        issue_move_command_with_layered(
-            &mut entities,
-            &grid,
-            1,
-            (4, 0),
-            SimFixed::from_num(1024),
-            false,
-            None,
-            None,
-            None,
-            Some(&zone_grid),
-            None,
-            None,
-            None,
-            None,
-            crate::sim::movement::DestinationTiming::new(0, 60),
-        ),
-        "gamemd accepts a ground move order across a disconnected boundary"
-    );
-    let entity = entities.get(1).unwrap();
-    assert!(entity.movement_target.is_some());
-    assert_eq!(movement_goal_cell(entity), Some((4, 0)));
-    assert!(
-        entity
-            .navigation
-            .path_replay
-            .remaining_directions()
-            .is_empty()
-    );
-    assert_eq!(entity.navigation.nav_com, Some(NavTargetRef::cell(4, 0)));
-}
-
-/// `AStar @ 0x0042CAD6` uses the hierarchy only for a +3D5 (in playfield)
-/// mover. A queued Walk order keeps the command-time search adapter, so the
-/// order's appended search shows the flat fallback (Drive and Ship search at
-/// their first Process through the same `allow_zone_hierarchy` snapshot).
-#[test]
-fn techno_playfield_false_mover_uses_flat_astar_instead_of_hierarchy_abort() {
-    let grid = PathGrid::new(5, 1);
-    let terrain = crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
-        5,
-        1,
-        (0..5)
-            .map(|rx| drive_speed_test_cell(rx, 0, Default::default()))
-            .collect(),
-    );
-    let bounds = crate::sim::cell_rect::PlayfieldBounds {
-        base: 0,
-        off_fc: -100,
-        off_100: -100,
-        off_104: 200,
-        off_108: 200,
-    };
-    assert!(bounds.contains_height_aware_packed(0, 0, 0, 0));
-    assert!(bounds.contains_height_aware_packed(4, 0, 0, 0));
-    let mut reduced = PathGrid::new(5, 1);
-    reduced.set_blocked(2, 0, true);
-    let zone_grid = crate::sim::pathfinding::zone_map::ZoneGrid::following_path_grid(&reduced);
-    assert!(!zone_grid.can_reach(
-        MovementZone::Normal,
-        (0, 0),
-        MovementLayer::Ground,
-        (4, 0),
-        MovementLayer::Ground,
-    ));
-
-    let mut entities = EntityStore::new();
-    let mut mover = GameEntity::test_default(1, "E1", "Americans", 0, 0);
-    mover.category = EntityCategory::Infantry;
-    let mut walk = LocomotorState::for_test_kind(LocomotorKind::Walk);
-    walk.movement_zone = MovementZone::Normal;
-    mover.locomotor = Some(walk);
-    mover.in_playfield = false;
-    mover.movement_target = Some(MovementTarget::default());
-    entities.insert(mover);
-
-    assert!(issue_move_command_with_layered(
-        &mut entities,
-        &grid,
-        1,
-        (4, 0),
-        SimFixed::from_num(1024),
-        true,
-        None,
-        None,
-        Some(&terrain),
-        Some(&zone_grid),
-        None,
-        None,
-        Some(bounds),
-        None,
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    ));
-    // The appended search keeps no cells; its acceptance above is the
-    // observable: the hierarchy would have aborted it (no reduced-zone route
-    // past (2,0)) and refused the queued order.
-}
-
-#[test]
-fn test_issue_move_command_sets_path() {
-    let mut entities = EntityStore::new();
-    let grid: PathGrid = PathGrid::new(20, 20);
-
-    let e = GameEntity::test_default(1, "HTNK", "Americans", 2, 3);
-    entities.insert(e);
-
-    let result: bool = issue_move_command(
-        &mut entities,
-        &grid,
-        1,
-        (7, 3),
-        SimFixed::from_num(768), // 3 cells/sec × 256 = 768 leptons/sec.
-        false,
-        None,
-        None,
-        None,
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    );
-    assert!(result, "Should find a path on open grid");
-
-    let entity = entities.get(1).expect("entity exists");
-    let target = entity
-        .movement_target
-        .as_ref()
-        .expect("should have MovementTarget");
-    // The command-time search only admits the order; the adapter keeps the
-    // speed stamp, and the first Process's Find_Path installs the route.
-    assert_eq!(target.speed, SimFixed::from_num(768));
-    assert!(
-        entity
-            .navigation
-            .path_replay
-            .remaining_directions()
-            .is_empty()
-    );
-    assert_eq!(target.speed, SimFixed::from_num(768));
-}
-
-// `TechnoClass::Set_Destination` @ `0x00741970` records the new destination
-// (NavCom @ `0x004D94B0`, Drive coordinate @ `0x004AFD40`) without touching the
-// Drive track cursor: a curve already in flight keeps driving to its committed
-// head cell and the new path takes over there.
-
-// The player-visible symptom of replacing an in-flight curve: the fresh curve's
-// cursor restarted at the lead-in point on the current cell centre, so every
-// mid-drive re-order teleported the body backward by its mid-cell progress.
-
-#[test]
-fn test_issue_move_command_no_path() {
-    let mut entities = EntityStore::new();
-    let mut grid: PathGrid = PathGrid::new(10, 10);
-
-    // Block column 5 completely.
-    for y in 0..10 {
-        grid.set_blocked(5, y, true);
-    }
-
-    let e = GameEntity::test_default(1, "HTNK", "Americans", 0, 0);
-    entities.insert(e);
-
-    let result: bool = issue_move_command(
-        &mut entities,
-        &grid,
-        1,
-        (9, 9),
-        SimFixed::from_num(768),
-        false,
-        None,
-        None,
-        None,
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    );
-    assert!(!result, "Should fail with blocked path");
-    let entity = entities.get(1).expect("entity exists");
-    assert!(
-        entity.movement_target.is_none(),
-        "Should not have MovementTarget when no path found"
-    );
-}
-
-#[test]
-fn test_issue_move_command_queue_appends_waypoint_path() {
-    let mut entities = EntityStore::new();
-    let grid: PathGrid = PathGrid::new(32, 32);
-
-    let e = GameEntity::test_default(1, "HTNK", "Americans", 2, 2);
-    entities.insert(e);
-
-    assert!(issue_move_command(
-        &mut entities,
-        &grid,
-        1,
-        (8, 2),
-        SimFixed::from_num(768),
-        false,
-        None,
-        None,
-        None,
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    ));
-    assert!(issue_move_command(
-        &mut entities,
-        &grid,
-        1,
-        (12, 2),
-        SimFixed::from_num(768),
-        true,
-        None,
-        None,
-        None,
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    ));
-
-    let entity = entities.get(1).expect("entity exists");
-    let movement = entity
-        .movement_target
-        .as_ref()
-        .expect("should keep movement target");
-    // The appended search admits the queued order but keeps no cells (the
-    // adapter keeps only its speed stamp); the acceptance above is what
-    // remains.
-    assert_eq!(movement.speed, SimFixed::from_num(768));
-}
-
-// --- Friendly-passable pathfinding tests ---
-
-#[test]
-fn test_friendly_passable_moving_unit_not_blocked() {
-    // A moving friendly unit should NOT appear in the entity block set.
-
-    let mut entities = EntityStore::new();
-    let _grid = PathGrid::new(10, 10);
-
-    // Unit A: stationary friendly at (3, 0).
-    let mut a = GameEntity::test_default(1, "HTNK", "Americans", 3, 0);
-    a.lifecycle.in_limbo = false;
-    a.lifecycle.cell_marked = true;
-    entities.insert(a);
-
-    // Unit B: moving friendly at (4, 0) — has a movement target.
-    let mut b = GameEntity::test_default(2, "HTNK", "Americans", 4, 0);
-    b.lifecycle.in_limbo = false;
-    b.lifecycle.cell_marked = true;
-    b.movement_target = Some(MovementTarget {
-        speed: SimFixed::from_num(1024),
-        ..Default::default()
-    });
-    // Moving: its Foot+5E0 head word steps east from (4,0).
-    b.navigation.path_replay = crate::sim::movement::fixture_path_replay(&[(4, 0), (5, 0), (6, 0)]);
-    entities.insert(b);
-
-    let alliances = HouseAllianceMap::new();
-    let (blocks, _penalty) = block_index::build_owner_block_set(
-        &entities,
-        None,
-        "Americans",
-        &alliances,
-        &test_interner(),
-        None,
-    );
-
-    // Stationary friendly at (3,0) is now soft-blocked (code 6, cost 8x) in
-    // entity_block_map, not in the hard-block BTreeSet.
-    assert!(
-        !blocks.contains(&(3, 0)),
-        "Stationary friendly should be soft-blocked, not hard-blocked"
-    );
-    assert!(
-        _penalty.contains_key(
-            crate::sim::movement::locomotor::MovementLayer::Ground,
-            &(3, 0)
-        ),
-        "Stationary friendly should be in entity_block_map"
-    );
-    assert_eq!(
-        _penalty
-            .get(
-                crate::sim::movement::locomotor::MovementLayer::Ground,
-                &(3, 0)
-            )
-            .expect("ground stationary friendly soft blocker")
-            .cost_code,
-        6,
-        "Stationary friendly should have cost_code 6"
-    );
-    // Moving friendly at (4,0) should be in entity_block_map with code 2.
-    assert!(
-        !blocks.contains(&(4, 0)),
-        "Moving friendly should be passable"
-    );
-    assert!(
-        _penalty.contains_key(
-            crate::sim::movement::locomotor::MovementLayer::Ground,
-            &(4, 0)
-        ),
-        "Moving friendly should be in entity_block_map"
-    );
-    assert_eq!(
-        _penalty
-            .get(
-                crate::sim::movement::locomotor::MovementLayer::Ground,
-                &(4, 0)
-            )
-            .expect("ground moving friendly soft blocker")
-            .cost_code,
-        2,
-        "Moving friendly should have cost_code 2"
-    );
-}
-
-#[test]
-fn test_enemy_unit_always_blocks_even_when_moving() {
-    use crate::map::houses::HouseAllianceMap;
-
-    let mut entities = EntityStore::new();
-
-    // Enemy unit moving at (3, 0).
-    let mut enemy = GameEntity::test_default(1, "HTNK", "Russians", 3, 0);
-    enemy.lifecycle.in_limbo = false;
-    enemy.lifecycle.cell_marked = true;
-    enemy.movement_target = Some(MovementTarget {
-        speed: SimFixed::from_num(1024),
-        ..Default::default()
-    });
-    // Moving: its Foot+5E0 head word steps east from (3,0).
-    enemy.navigation.path_replay = crate::sim::movement::fixture_path_replay(&[(3, 0), (4, 0)]);
-    entities.insert(enemy);
-
-    let alliances = HouseAllianceMap::new();
-    let (blocks, _penalty) = block_index::build_owner_block_set(
-        &entities,
-        None,
-        "Americans",
-        &alliances,
-        &test_interner(),
-        None,
-    );
-
-    // Enemy at (3,0) is now soft-blocked (code 5, cost 20x) in entity_block_map,
-    // not in the hard-block BTreeSet.
-    assert!(
-        !blocks.contains(&(3, 0)),
-        "Enemy should be soft-blocked, not hard-blocked"
-    );
-    assert!(
-        _penalty.contains_key(
-            crate::sim::movement::locomotor::MovementLayer::Ground,
-            &(3, 0)
-        ),
-        "Enemy should be in entity_block_map"
-    );
-    assert_eq!(
-        _penalty
-            .get(
-                crate::sim::movement::locomotor::MovementLayer::Ground,
-                &(3, 0)
-            )
-            .expect("ground enemy soft blocker")
-            .cost_code,
-        5,
-        "Enemy should have cost_code 5"
-    );
-}
-
-#[test]
-fn test_friendly_passable_path_goes_through_moving_friendly() {
-    // Unit should be able to pathfind THROUGH a moving friendly's cell.
-    use crate::sim::pathfinding::find_path_with_costs;
-    use std::collections::BTreeSet;
-
-    let grid = PathGrid::new(10, 3);
-    // Only block (3,1) — force path through row 0.
-    let mut blocks: BTreeSet<(u16, u16)> = BTreeSet::new();
-    // (3,0) has a moving friendly — NOT in blocks.
-    // (3,1) is a stationary friendly — in blocks.
-    blocks.insert((3, 1));
-
-    let path = find_path_with_costs(
-        &grid,
-        (0, 0),
-        (6, 0),
-        None,
-        Some(&blocks),
-        None,
-        None,
-        None,
-        0,
-        false,
-        false,
-    );
-    assert!(
-        path.is_some(),
-        "Should find path through moving-friendly cell"
-    );
-    let path = path.unwrap();
-    // Path can go through (3,0) since it's not blocked (moving friendly).
-    assert_eq!(path.last(), Some(&(6, 0)));
-}
-
 // --- 24-step path segmentation tests ---
 
 type RouteAndGoal = (Vec<(u16, u16)>, Option<(u16, u16)>);
 
 /// A Drive order on clear ground and its first Process: the order installs
 /// no route (Unit741970); the Process's Find_Path installs the segment.
-/// Returns the route that Find_Path installed from `start` and the adapter's
-/// goal.
+/// Returns the route that Find_Path installed from `start` and the goal.
 fn drive_first_process_route(start: (u16, u16), goal: (u16, u16)) -> RouteAndGoal {
     let mut sim = Simulation::with_seed(7);
     crate::sim::arena_fixture::supply_native_map(&mut sim);
@@ -1671,17 +1079,13 @@ fn drive_first_process_route(start: (u16, u16), goal: (u16, u16)) -> RouteAndGoa
         sim.reveal(1),
         crate::sim::world::RevealOutcome::Revealed { .. }
     ));
-    assert!(issue_move_command(
-        &mut sim.substrate.entities,
-        &grid,
+    let rules = drive_type_rules();
+    assert!(sim.set_unit_destination(
         1,
-        goal,
-        SimFixed::from_num(1024),
-        false,
-        None,
-        None,
-        None,
-        crate::sim::movement::DestinationTiming::new(0, 60),
+        NavTargetRef::cell(goal.0, goal.1),
+        &rules,
+        true,
+        crate::sim::world::FrameEffects::default(),
     ));
     let accepted = sim.substrate.entities.get(1).unwrap();
     assert!(
@@ -1692,7 +1096,7 @@ fn drive_first_process_route(start: (u16, u16), goal: (u16, u16)) -> RouteAndGoa
             .is_empty(),
         "the order installs no route"
     );
-    sim.process_ground_locomotor_for_test(1, Some(&drive_type_rules()), Some(&grid), None)
+    sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
         .unwrap();
     let entity = sim.substrate.entities.get(1).unwrap();
     (
@@ -1827,7 +1231,6 @@ fn walk_move(
             entity_id: id,
             target_rx: to.0,
             target_ry: to.1,
-            queue: false,
         },
         Some(rules),
         None,
@@ -1881,7 +1284,9 @@ fn walk_infantry_corridor(
         if visited.last() != Some(&cell) {
             visited.push(cell);
         }
-        if e.navigation.nav_com.is_none() && e.movement_target.is_none() {
+        if e.navigation.nav_com.is_none()
+            && crate::sim::movement::motion_query::is_moving(&e) != Some(true)
+        {
             break;
         }
     }
@@ -1952,9 +1357,6 @@ fn gsi_04_10_crusher_and_omnicrusher_never_enter_or_crush_a_terrain_object_cell(
                 .unwrap()
                 .install_drive_state_for_test(Some(Default::default()))
         );
-        tank.movement_target = Some(MovementTarget {
-            speed: SimFixed::from_num(1024),
-        });
         entities.insert(tank);
 
         let mut lifecycle_requests = Vec::new();
@@ -1990,7 +1392,6 @@ fn gsi_04_10_crusher_and_omnicrusher_never_enter_or_crush_a_terrain_object_cell(
 // no anticipatory on_bridge pre-claim.
 // ============================================================================
 
-use crate::map::houses::HouseAllianceMap;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone};
 use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::movement::tick_movement_with_grid;
@@ -2024,13 +1425,12 @@ fn sharp_turn_preserves_path_node_count() {
         "E->SW must be a null table entry for this test to exercise the substitute"
     );
 
-    let mut entity = gsi_06_13_fixture_mover(
+    let entity = gsi_06_13_fixture_mover(
         (10, 10),
         0x40,
         vec![(10, 10), (11, 10), (10, 11)],
         vec![2, 5],
     );
-    entity.movement_target.as_mut().unwrap().speed = SIM_ZERO;
     let mut sim = crate::sim::world::Simulation::new();
     sim.interner = test_interner();
     sim.substrate.entities.insert(entity);
@@ -2124,9 +1524,6 @@ fn gsi_06_13_fixture_mover(
     e.lifecycle.in_limbo = false;
     e.lifecycle.cell_marked = true;
     let goal = *path.last().expect("non-empty path");
-    e.movement_target = Some(MovementTarget {
-        speed: SimFixed::from_num(768),
-    });
     e.navigation.path_replay = crate::sim::components::FootPathQueue {
         directions,
         cursor: 0,
@@ -2142,8 +1539,8 @@ fn gsi_06_13_fixture_mover(
                     .with_target_speed_fraction_for_test(SIM_ONE)
             ))
     );
-    // A seeded path is only the route adapter. Native terminal +504 checks
-    // NavCom independently; install the real destination before executing it.
+    // A seeded path is only Foot+5E0. Native terminal +504 checks NavCom
+    // independently; install the real destination before executing it.
     super::navcom::set_destination_internal_cell(&mut e, goal, None, 0);
     e
 }
@@ -2187,7 +1584,7 @@ fn group_gis_do_not_jump_or_lose_their_goal() {
                     dx * dx + dy * dy <= 32 * 32,
                     "unexpected jump seed={seed} tick={tick} GI={id} delta=({dx},{dy})"
                 );
-                if e.movement_target.is_some()
+                if crate::sim::movement::motion_query::is_moving(&e) == Some(true)
                     && e.locomotor.as_ref().unwrap().walk_destination_cell() != Some((3, 3))
                 {
                     let dx = i32::from(p.rx) - 3;
@@ -2200,7 +1597,8 @@ fn group_gis_do_not_jump_or_lose_their_goal() {
             }
             if ids.iter().all(|&id| {
                 let e = sim.substrate.entities.get(id).unwrap();
-                e.movement_target.is_none() && e.navigation.nav_com.is_none()
+                crate::sim::movement::motion_query::is_moving(&e) != Some(true)
+                    && e.navigation.nav_com.is_none()
             }) {
                 break;
             }

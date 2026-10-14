@@ -9,7 +9,7 @@ use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::terrain_rules::{SpeedCostProfile, TerrainClass};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::pathfinding::terrain_cost::TerrainCostGrid;
-use crate::sim::pathfinding::zone_hierarchy::{ZoneLevelGraph, ZoneRecord};
+use crate::sim::pathfinding::zone_hierarchy::{MarkedZones, ZoneLevelGraph, ZoneRecord};
 use crate::sim::pathfinding::zone_map::ZoneId;
 
 fn bridge_test_cell(level: u8, structural: bool, transition: bool, slope_type: u8) -> PathCell {
@@ -85,7 +85,7 @@ fn test_euclidean_heuristic_zero() {
 }
 
 #[test]
-fn bridge_traversal_direction_minus_one_seeds_candidate_bridge_height_without_bridgehead() {
+fn bridge_traversal_direction_minus_one_is_allowed_without_bridgehead() {
     let candidate = bridge_test_cell(2, true, false, 0);
     let grid = PathGrid::from_cells(vec![candidate], 1, 1);
 
@@ -101,7 +101,6 @@ fn bridge_traversal_direction_minus_one_seeds_candidate_bridge_height_without_br
     );
 
     assert!(result.allowed);
-    assert_eq!(result.path_height, 6);
     assert!(!result.force_bridge_list);
 }
 
@@ -123,7 +122,6 @@ fn bridge_traversal_explicit_parent_unknown_height_requires_candidate_transition
     );
 
     assert!(!result.allowed);
-    assert_eq!(result.path_height, 4);
 }
 
 /// Despite the old name, the diff here is **4**, not 0: the parent carries no
@@ -359,53 +357,6 @@ fn bridge_traversal_null_parent_valid_direction_reconstructs_predecessor() {
     );
 
     assert!(result.allowed);
-}
-
-#[test]
-fn can_enter_layers_keep_bridge_object_list_with_ground_occupancy_bits() {
-    let candidate = bridge_test_cell(0, true, true, 0);
-
-    let layers = can_enter_layer_context(
-        MovementLayer::Bridge,
-        MovementLayer::Bridge,
-        &candidate,
-        candidate.signed_level(),
-    );
-
-    assert_eq!(layers.terrain_layer, MovementLayer::Bridge);
-    assert_eq!(layers.object_list_layer, MovementLayer::Bridge);
-    assert_eq!(layers.occupancy_bits_layer, MovementLayer::Ground);
-}
-
-#[test]
-fn can_enter_layers_resnapshot_bridge_occupancy_bits_at_deck_height() {
-    let candidate = bridge_test_cell(0, true, true, 0);
-
-    let layers = can_enter_layer_context(
-        MovementLayer::Bridge,
-        MovementLayer::Bridge,
-        &candidate,
-        candidate.signed_level() + 4,
-    );
-
-    assert_eq!(layers.object_list_layer, MovementLayer::Bridge);
-    assert_eq!(layers.occupancy_bits_layer, MovementLayer::Bridge);
-}
-
-#[test]
-fn can_enter_layers_non_bridge_cells_retain_single_ground_layer() {
-    let candidate = bridge_test_cell(0, false, false, 0);
-
-    let layers = can_enter_layer_context(
-        MovementLayer::Ground,
-        MovementLayer::Ground,
-        &candidate,
-        candidate.signed_level(),
-    );
-
-    assert_eq!(layers.terrain_layer, MovementLayer::Ground);
-    assert_eq!(layers.object_list_layer, MovementLayer::Ground);
-    assert_eq!(layers.occupancy_bits_layer, MovementLayer::Ground);
 }
 
 /// 0x00429BF3..0x00429C0A: AStar has no route for a goal in its start cell.
@@ -672,6 +623,28 @@ fn test_find_path_around_obstacle() {
             assert!(y >= 9, "Path must not cross blocked cells at (3,{})", y);
         }
     }
+}
+
+#[test]
+fn test_find_path_after_another_search_ignores_its_closed_cells() {
+    // The thread's A* workspace keeps its buffers between searches. A search
+    // on a bigger map leaves them bigger, and the way back runs through cells
+    // the way there closed; neither may reach a later search.
+    find_path(&PathGrid::new(40, 40), (0, 0), (39, 39)).expect("open-map route");
+    let mut grid: PathGrid = PathGrid::new(10, 10);
+    for y in 0..9 {
+        grid.set_blocked(3, y, true);
+    }
+    find_path(&grid, (1, 5), (5, 5)).expect("Should find path around wall");
+    let back = find_path(&grid, (5, 5), (1, 5));
+    let fresh = std::thread::scope(|scope| {
+        scope
+            .spawn(|| find_path(&grid, (5, 5), (1, 5)))
+            .join()
+            .expect("fresh-workspace search")
+    });
+    assert!(back.is_some(), "Should find the way back");
+    assert_eq!(back, fresh);
 }
 
 #[test]
@@ -955,15 +928,11 @@ fn test_layered_path_transitions_onto_bridge_and_stays_on_deck() {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let path = find_layered_path(
         &grid,
-        None,
-        None,
         (0, 0),
         MovementLayer::Ground,
         (4, 0),
         None,
         None,
-        None,
-        0,
         false,
         false,
     )
@@ -988,15 +957,11 @@ fn test_layered_path_stays_on_ground_when_bridge_not_needed() {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let path = find_layered_path(
         &grid,
-        None,
-        None,
         (0, 0),
         MovementLayer::Ground,
         (2, 0),
         None,
         None,
-        None,
-        0,
         false,
         false,
     )
@@ -1061,15 +1026,11 @@ fn test_layered_path_rebuild_blocks_destroyed_bridge_deck() {
     assert!(
         find_layered_path(
             &intact_grid,
-            None,
-            None,
             (0, 0),
             MovementLayer::Ground,
             (4, 0),
             None,
             None,
-            None,
-            0,
             false,
             false,
         )
@@ -1087,15 +1048,11 @@ fn test_layered_path_rebuild_blocks_destroyed_bridge_deck() {
     assert!(
         find_layered_path(
             &destroyed_grid,
-            None,
-            None,
             (0, 0),
             MovementLayer::Ground,
             (4, 0),
             None,
             None,
-            None,
-            0,
             false,
             false,
         )
@@ -1274,7 +1231,6 @@ fn infantry_under_span_admission_reads_ground_speed_with_deck_cost_grid() {
                         path_grid: Some(&grid),
                         resolved_terrain: Some(&terrain),
                         terrain_costs: Some(&costs),
-                        bypass_grid: false,
                         is_infantry: true,
                         mover_is_crusher: false,
                     })
@@ -1355,7 +1311,6 @@ fn unit_under_span_admission_reads_ground_row_beneath_deck() {
                     path_grid: Some(&grid),
                     resolved_terrain: Some(&terrain),
                     terrain_costs: Some(&costs),
-                    bypass_grid: false,
                     is_infantry: false,
                     mover_is_crusher: false,
                 })
@@ -1374,7 +1329,6 @@ fn unit_under_span_admission_reads_ground_row_beneath_deck() {
                     path_grid: Some(&grid),
                     resolved_terrain: Some(&terrain),
                     terrain_costs: Some(&costs),
-                    bypass_grid: false,
                     is_infantry: false,
                     mover_is_crusher: false,
                 })
@@ -1409,7 +1363,6 @@ fn infantry_under_span_admission_preserves_wall_and_grid_blocks() {
                 path_grid: Some(&grid),
                 resolved_terrain: Some(&terrain),
                 terrain_costs: Some(&costs),
-                bypass_grid: false,
                 is_infantry: true,
                 mover_is_crusher: false,
             })
@@ -1434,12 +1387,11 @@ fn infantry_under_span_admission_preserves_missing_target_rejection() {
                 path_grid,
                 resolved_terrain: None,
                 terrain_costs: None,
-                bypass_grid: true,
                 is_infantry: true,
                 mover_is_crusher: false,
             })
             .is_clear(),
-            "bypassing grid blockers must not admit an absent target"
+            "an absent target is refused"
         );
     }
 }
@@ -1474,9 +1426,9 @@ fn infantry_under_span_astar_keeps_ground_hierarchy_gate() {
     let counts = BlockerNeighborCounts::new(8, 1);
     for include_under_span in [false, true] {
         let marked = if include_under_span {
-            std::collections::BTreeSet::from([1, 2])
+            MarkedZones::from_iter([1, 2])
         } else {
-            std::collections::BTreeSet::from([1])
+            MarkedZones::from_iter([1])
         };
         let path = astar_search(
             &grid,
@@ -1550,10 +1502,7 @@ fn a_height_change_costs_the_same_as_a_flat_step() {
             (4, 1),
             None,
             None,
-            None,
             Some(terrain),
-            None,
-            0,
             false,
             false,
         )
@@ -1610,10 +1559,7 @@ fn astar_uses_explicit_nonzero_tube_edge() {
         (4, 0),
         None,
         None,
-        None,
         Some(&terrain),
-        None,
-        0,
         false,
         false,
     )
@@ -1645,10 +1591,7 @@ fn astar_rejects_zero_step_auto_shell_tube_edge() {
         (4, 0),
         None,
         None,
-        None,
         Some(&terrain),
-        None,
-        0,
         false,
         false,
     );
@@ -1680,10 +1623,7 @@ fn astar_walks_stock_low_bridge_cells_without_explicit_tubes() {
         (4, 0),
         None,
         None,
-        None,
         Some(&terrain),
-        None,
-        0,
         false,
         false,
     )
@@ -1693,570 +1633,31 @@ fn astar_walks_stock_low_bridge_cells_without_explicit_tubes() {
 }
 
 // ---------------------------------------------------------------------------
-// Entity-block (friendly-passable) pathfinding tests
+// Code-2 (friendly-moving blocker) costs. `code2_multiplier` is the urgency
+// rule of AStar_compute_edge_cost @ 0x00429830. The live chain and the
+// original executable's controls are tested in
+// `movement::foot_path::code2_chain_tests`.
 // ---------------------------------------------------------------------------
 
+/// `0x00429878..0x004299A6`: only urgency 0 asks the chain; urgency 2 routes
+/// around and any other nonzero urgency jams.
 #[test]
-fn test_entity_blocks_routes_around_blocked_cell() {
-    let grid = PathGrid::new(10, 10);
-    let mut blocks: BTreeSet<(u16, u16)> = BTreeSet::new();
-    blocks.insert((3, 0)); // Block cell (3,0) — directly on the straight path.
-
-    let path = find_path_with_costs(
-        &grid,
-        (0, 0),
-        (5, 0),
-        None,
-        Some(&blocks),
-        None,
-        None,
-        None,
-        0,
-        false,
-        false,
-    );
-    assert!(path.is_some(), "Should find a path around the entity block");
-    let path = path.unwrap();
-    assert!(
-        !path.contains(&(3, 0)),
-        "Path should not go through entity-blocked cell"
-    );
-    assert_eq!(path.last(), Some(&(5, 0)), "Path should reach goal");
-}
-
-#[test]
-fn test_entity_blocks_goal_cell_still_reachable() {
-    // Goal cell is in entity_blocks — path should still reach it.
-    let grid = PathGrid::new(10, 10);
-    let mut blocks: BTreeSet<(u16, u16)> = BTreeSet::new();
-    blocks.insert((5, 0)); // Block the GOAL cell.
-
-    let path = find_path_with_costs(
-        &grid,
-        (0, 0),
-        (5, 0),
-        None,
-        Some(&blocks),
-        None,
-        None,
-        None,
-        0,
-        false,
-        false,
-    );
-    assert!(
-        path.is_some(),
-        "Goal cell should always be reachable even if entity-blocked"
-    );
-    assert_eq!(path.unwrap().last(), Some(&(5, 0)));
-}
-
-#[test]
-fn test_entity_blocks_empty_set_same_as_none() {
-    let grid = PathGrid::new(10, 10);
-    let empty: BTreeSet<(u16, u16)> = BTreeSet::new();
-
-    let path_none = find_path_with_costs(
-        &grid,
-        (0, 0),
-        (5, 5),
-        None,
-        None,
-        None,
-        None,
-        None,
-        0,
-        false,
-        false,
-    );
-    let path_empty = find_path_with_costs(
-        &grid,
-        (0, 0),
-        (5, 5),
-        None,
-        Some(&empty),
-        None,
-        None,
-        None,
-        0,
-        false,
-        false,
-    );
-    assert_eq!(path_none, path_empty);
-}
-
-#[test]
-fn test_entity_blocks_fully_surrounded_no_path() {
-    let grid = PathGrid::new(10, 10);
-    let mut blocks: BTreeSet<(u16, u16)> = BTreeSet::new();
-    // Surround (5,5) on all 8 sides.
-    for dx in -1..=1i32 {
-        for dy in -1..=1i32 {
-            if dx == 0 && dy == 0 {
-                continue;
-            }
-            blocks.insert(((5i32 + dx) as u16, (5i32 + dy) as u16));
-        }
+fn code2_urgency_selects_the_multiplier_and_only_zero_asks_the_chain() {
+    for (urgency, jams, expected) in [
+        (0, false, CODE2_MULT_CLEARING),
+        (0, true, CODE2_MULT_JAM),
+        (1, false, CODE2_MULT_JAM),
+        (2, true, CODE2_MULT_ROUTE_AROUND),
+        (3, false, CODE2_MULT_JAM),
+    ] {
+        let mut asked = false;
+        let multiplier = code2_multiplier(urgency, || {
+            asked = true;
+            Ok::<_, ()>(jams)
+        });
+        assert_eq!(multiplier, Ok(expected), "urgency {urgency}");
+        assert_eq!(asked, urgency == 0, "urgency {urgency}");
     }
-    let path = find_path_with_costs(
-        &grid,
-        (0, 0),
-        (5, 5),
-        None,
-        Some(&blocks),
-        None,
-        None,
-        None,
-        0,
-        false,
-        false,
-    );
-    // Goal itself is reachable, but all approaches blocked → no path.
-    assert!(
-        path.is_none(),
-        "Should not find path when all approaches to goal are entity-blocked"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Code-2 (friendly-moving blocker) dynamic cost tests
-// Matches gamemd.exe AStar_compute_edge_cost @ 0x00429830.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn original_hills_code2_clearing_queue_costs_match_the_existing_cost_owner() {
-    let packet: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/astar_hills_markers.json",
-    ))
-    .unwrap();
-    assert_eq!(packet["code_unchanged"], true);
-    let native = &packet["blocker_prestate"];
-    assert_eq!(native["on_bridge"], false);
-    let cell = (
-        native["coord"][0].as_u64().unwrap() as u16,
-        native["coord"][1].as_u64().unwrap() as u16,
-    );
-    let direction = native["supplied_queue"][0].as_u64().unwrap() as usize;
-    let delta = crate::util::direction::DIRECTION_DELTAS[direction];
-    let next = (
-        (i32::from(cell.0) + delta.0) as u16,
-        (i32::from(cell.1) + delta.1) as u16,
-    );
-    // The owner consumes its existing selected-layer next-cell projection.
-    // Hills production integration independently checks the live code2 and
-    // queue/marker/search route; this pins original429830 scalar arithmetic.
-    let mut blockers = LayeredEntityBlockMap::new();
-    blockers.insert(
-        MovementLayer::Ground,
-        cell,
-        EntityBlockEntry {
-            next_cell: Some(next),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-    let controls = packet["costs"].as_array().unwrap();
-    assert_eq!(controls.len(), 6);
-    for control in controls {
-        assert_eq!(control["concrete_class"], 2);
-        assert_eq!(control["original_cost_trace"]["candidate_marked"], false);
-        assert_eq!(control["rng_before"], control["rng_after"]);
-        let actual = compute_code2_multiplier(
-            control["urgency"].as_u64().unwrap() as u8,
-            cell,
-            MovementLayer::Ground,
-            &blockers,
-        );
-        assert_eq!(
-            f64::from(actual),
-            control["cost"].as_f64().unwrap(),
-            "native Foot+578={} urgency={}",
-            control["supplied_speed_f64_bits"],
-            control["urgency"]
-        );
-    }
-}
-
-#[test]
-fn code2_urgency_2_routes_around_blocker() {
-    // Urgency=2 → 1000x multiplier, so A* should detour one cell off the direct row.
-    let grid = PathGrid::new(10, 3);
-    let mut ebm = LayeredEntityBlockMap::new();
-    // Blocker sitting at (3,1) with next cell (4,1).
-    ebm.insert(
-        MovementLayer::Ground,
-        (3, 1),
-        EntityBlockEntry {
-            next_cell: Some((4, 1)),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-    let path = find_path_with_costs(
-        &grid,
-        (0, 1),
-        (6, 1),
-        None,
-        None,
-        None,
-        None,
-        Some(&ebm),
-        2,
-        false,
-        false,
-    )
-    .expect("urgency=2 should still find a path");
-    assert!(
-        !path.contains(&(3, 1)),
-        "urgency=2 should route around the blocker cell at (3,1): {:?}",
-        path
-    );
-    assert_eq!(path.last(), Some(&(6, 1)));
-}
-
-#[test]
-fn code2_urgency_1_picks_alt_when_available() {
-    // Urgency=1 → 4x multiplier. With a parallel alt row of equal terrain
-    // cost, A* should prefer the alt row over paying 4x on the blocker cell.
-    let grid = PathGrid::new(10, 3);
-    let mut ebm = LayeredEntityBlockMap::new();
-    ebm.insert(
-        MovementLayer::Ground,
-        (3, 1),
-        EntityBlockEntry {
-            next_cell: Some((4, 1)),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-    let path = find_path_with_costs(
-        &grid,
-        (0, 1),
-        (6, 1),
-        None,
-        None,
-        None,
-        None,
-        Some(&ebm),
-        1,
-        false,
-        false,
-    )
-    .expect("urgency=1 should find a path");
-    assert!(
-        !path.contains(&(3, 1)),
-        "urgency=1 with a viable alt row should detour: {:?}",
-        path
-    );
-}
-
-#[test]
-fn code2_urgency_0_chain_clears_uses_baseline() {
-    // Three-blocker chain whose final next cell is empty. Urgency=0 chain walk
-    // should detect the cleared tail within 10 hops and return the baseline
-    // cost (1x), so the path may run straight through the blocker cell.
-    let grid = PathGrid::new(10, 3);
-    let mut ebm = LayeredEntityBlockMap::new();
-    // Chain: (3,1)→(4,1), (4,1)→(5,1), (5,1)→(6,1). (6,1) has no blocker.
-    ebm.insert(
-        MovementLayer::Ground,
-        (3, 1),
-        EntityBlockEntry {
-            next_cell: Some((4, 1)),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-    ebm.insert(
-        MovementLayer::Ground,
-        (4, 1),
-        EntityBlockEntry {
-            next_cell: Some((5, 1)),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-    ebm.insert(
-        MovementLayer::Ground,
-        (5, 1),
-        EntityBlockEntry {
-            next_cell: Some((6, 1)),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-    // Block the alt rows so the only route is through the chain.
-    let mut hard: BTreeSet<(u16, u16)> = BTreeSet::new();
-    for x in 0..10u16 {
-        hard.insert((x, 0));
-        hard.insert((x, 2));
-    }
-    let path = find_path_with_costs(
-        &grid,
-        (0, 1),
-        (6, 1),
-        None,
-        Some(&hard),
-        None,
-        None,
-        Some(&ebm),
-        0,
-        false,
-        false,
-    )
-    .expect("urgency=0 clearing chain should not block routing");
-    assert!(path.contains(&(3, 1)));
-    assert_eq!(path.last(), Some(&(6, 1)));
-}
-
-#[test]
-fn code2_urgency_0_ten_step_jam_uses_4x() {
-    // A 10-step chain that never clears within 10 hops. compute_code2_multiplier
-    // should return 4x (jam). The path should still go through if no alt,
-    // but we verify the multiplier doesn't explode to 1000.
-    let grid = PathGrid::new(12, 3);
-    let mut ebm = LayeredEntityBlockMap::new();
-    // 11-link chain (>10 hops): (0,1)→(1,1)→...→(10,1). Each link maps to the
-    // next cell and the chain runs 11 deep — chain walk exhausts at 10.
-    for x in 0..11u16 {
-        ebm.insert(
-            MovementLayer::Ground,
-            (x, 1),
-            EntityBlockEntry {
-                next_cell: Some((x + 1, 1)),
-                cost_code: 2,
-                blocker_is_infantry: false,
-            },
-        );
-    }
-    // Hard-block both alt rows to force the path through the jam.
-    let mut hard: BTreeSet<(u16, u16)> = BTreeSet::new();
-    for x in 0..12u16 {
-        hard.insert((x, 0));
-        hard.insert((x, 2));
-    }
-    let path = find_path_with_costs(
-        &grid,
-        (0, 1),
-        (11, 1),
-        None,
-        Some(&hard),
-        None,
-        None,
-        Some(&ebm),
-        0,
-        false,
-        false,
-    )
-    .expect("jam path should still exist — 4x penalty doesn't make it infeasible");
-    // Path does go through the chain cells.
-    assert!(path.contains(&(5, 1)));
-    assert_eq!(path.last(), Some(&(11, 1)));
-}
-
-#[test]
-fn code2_goal_cell_exempt_from_multiplier() {
-    // A blocker at the goal cell must not increase cost — the mover is
-    // entitled to reach its goal regardless.
-    let grid = PathGrid::new(10, 3);
-    let mut ebm = LayeredEntityBlockMap::new();
-    ebm.insert(
-        MovementLayer::Ground,
-        (5, 1),
-        EntityBlockEntry {
-            next_cell: Some((6, 1)),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-    let path = find_path_with_costs(
-        &grid,
-        (0, 1),
-        (5, 1),
-        None,
-        None,
-        None,
-        None,
-        Some(&ebm),
-        2,
-        false,
-        false,
-    )
-    .expect("goal cell should be reachable even with urgency=2 blocker on it");
-    assert_eq!(path.last(), Some(&(5, 1)));
-}
-
-#[test]
-fn soft_blocker_cost_uses_selected_ground_object_list_layer() {
-    let grid = PathGrid::new(7, 3);
-    let mut ebm = LayeredEntityBlockMap::new();
-    ebm.insert(
-        MovementLayer::Bridge,
-        (3, 1),
-        EntityBlockEntry {
-            next_cell: Some((4, 1)),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-
-    let bridge_only_path = find_path_with_costs(
-        &grid,
-        (0, 1),
-        (6, 1),
-        None,
-        None,
-        None,
-        None,
-        Some(&ebm),
-        2,
-        false,
-        false,
-    )
-    .expect("bridge-layer soft blocker must not affect ground path");
-    assert!(
-        bridge_only_path.contains(&(3, 1)),
-        "ground A* should ignore bridge object-list blocker at the same cell: {:?}",
-        bridge_only_path
-    );
-
-    ebm.insert(
-        MovementLayer::Ground,
-        (3, 1),
-        EntityBlockEntry {
-            next_cell: Some((4, 1)),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-    let ground_path = find_path_with_costs(
-        &grid,
-        (0, 1),
-        (6, 1),
-        None,
-        None,
-        None,
-        None,
-        Some(&ebm),
-        2,
-        false,
-        false,
-    )
-    .expect("ground path should still exist by detouring");
-    assert!(
-        !ground_path.contains(&(3, 1)),
-        "ground A* should apply ground object-list blocker cost: {:?}",
-        ground_path
-    );
-}
-
-#[test]
-fn soft_blocker_cost_uses_selected_bridge_object_list_layer() {
-    let mut grid = PathGrid::new(7, 3);
-    for y in 0..3 {
-        for x in 0..7 {
-            grid.set_cell_for_test(x, y, 0, true, true);
-        }
-    }
-
-    let mut ebm = LayeredEntityBlockMap::new();
-    ebm.insert(
-        MovementLayer::Ground,
-        (3, 1),
-        EntityBlockEntry {
-            next_cell: Some((4, 1)),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-    let ground_only_path = find_layered_path(
-        &grid,
-        None,
-        None,
-        (0, 1),
-        MovementLayer::Bridge,
-        (6, 1),
-        None,
-        None,
-        Some(&ebm),
-        2,
-        false,
-        false,
-    )
-    .expect("ground-layer soft blocker must not affect bridge path");
-    assert!(
-        ground_only_path
-            .iter()
-            .any(|step| (step.rx, step.ry) == (3, 1)),
-        "bridge A* should ignore ground object-list blocker at the same cell: {:?}",
-        ground_only_path
-    );
-
-    ebm.insert(
-        MovementLayer::Bridge,
-        (3, 1),
-        EntityBlockEntry {
-            next_cell: Some((4, 1)),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-    let bridge_path = find_layered_path(
-        &grid,
-        None,
-        None,
-        (0, 1),
-        MovementLayer::Bridge,
-        (6, 1),
-        None,
-        None,
-        Some(&ebm),
-        2,
-        false,
-        false,
-    )
-    .expect("bridge path should still exist by detouring");
-    assert!(
-        !bridge_path.iter().any(|step| (step.rx, step.ry) == (3, 1)),
-        "bridge A* should apply bridge object-list blocker cost: {:?}",
-        bridge_path
-    );
-}
-
-#[test]
-fn code2_chain_lookup_stays_on_selected_layer() {
-    let mut ebm = LayeredEntityBlockMap::new();
-    ebm.insert(
-        MovementLayer::Bridge,
-        (3, 1),
-        EntityBlockEntry {
-            next_cell: Some((4, 1)),
-            cost_code: 2,
-            blocker_is_infantry: false,
-        },
-    );
-    for x in 4..15u16 {
-        ebm.insert(
-            MovementLayer::Ground,
-            (x, 1),
-            EntityBlockEntry {
-                next_cell: Some((x + 1, 1)),
-                cost_code: 2,
-                blocker_is_infantry: false,
-            },
-        );
-    }
-
-    assert_eq!(
-        compute_code2_multiplier(0, (3, 1), MovementLayer::Bridge, &ebm),
-        CODE2_MULT_CLEARING,
-        "bridge chain must not continue through ground-layer blockers"
-    );
-    assert_eq!(
-        compute_code2_multiplier(0, (4, 1), MovementLayer::Ground, &ebm),
-        CODE2_MULT_JAM,
-        "ground-only chain behavior remains unchanged"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -2404,7 +1805,7 @@ fn row_level0_graph(zones: &[ZoneId]) -> ZoneLevelGraph {
 fn astar_hierarchy_rejects_unmarked_one_ring_zone_without_blocker_exception() {
     let grid = PathGrid::new(3, 1);
     let level0_zones = row_level0_graph(&[1, 2, 3]);
-    let marked_zones = BTreeSet::from([1, 3]);
+    let marked_zones = MarkedZones::from_iter([1, 3]);
     let blocker_counts = BlockerNeighborCounts::new(3, 1);
 
     let path = astar_search(
@@ -2432,7 +1833,7 @@ fn astar_hierarchy_rejects_unmarked_one_ring_zone_without_blocker_exception() {
 fn astar_hierarchy_allows_off_marker_cell_with_blocker_neighbor_count() {
     let grid = PathGrid::new(3, 1);
     let level0_zones = row_level0_graph(&[1, 2, 3]);
-    let marked_zones = BTreeSet::from([1, 3]);
+    let marked_zones = MarkedZones::from_iter([1, 3]);
     let mut blocker_counts = BlockerNeighborCounts::new(3, 1);
     blocker_counts.set_count(1, 0, 1);
 
@@ -2464,14 +1865,13 @@ fn astar_hierarchy_allows_off_marker_cell_with_blocker_neighbor_count() {
 fn astar_hierarchy_marker_follows_the_marked_straight_path() {
     let grid = PathGrid::new(4, 1);
     let level0_zones = row_level0_graph(&[1, 2, 3, 4]);
-    let marked_zones = BTreeSet::from([1, 2, 3, 4]);
+    let marked_zones = MarkedZones::from_iter([1, 2, 3, 4]);
     let blocker_counts = BlockerNeighborCounts::new(4, 1);
 
     let path = find_path_with_costs_marker(
         &grid,
         (0, 0),
         (3, 0),
-        None,
         None,
         Some(HierarchyGate {
             level0_zones: &level0_zones,
@@ -2481,12 +1881,10 @@ fn astar_hierarchy_marker_follows_the_marked_straight_path() {
         Some(MovementZone::Normal),
         None,
         None,
-        None,
         MoverSearchFacts {
             urgency: 0,
             mover_is_crusher: false,
             is_infantry: false,
-            search_cost_classifier: None,
             foot_entry: None,
         },
     )
@@ -2665,7 +2063,6 @@ fn runtime_and_search_share_known_water_cell_admission() {
         Some(SpeedType::Track),
         Some(&terrain),
         Some(&costs),
-        false,
     ));
 
     let path = astar_search(
@@ -2718,9 +2115,6 @@ fn test_float_unit_pathfinds_through_water() {
         Some(&float_costs),
         None,
         None,
-        None,
-        None,
-        0,
         false,
         false,
     );
@@ -2750,9 +2144,6 @@ fn test_track_unit_cannot_pathfind_through_water() {
         Some(&track_costs),
         None,
         None,
-        None,
-        None,
-        0,
         false,
         false,
     );
@@ -2777,9 +2168,6 @@ fn test_amphibious_unit_crosses_land_water_land() {
         Some(&amphi_costs),
         None,
         None,
-        None,
-        None,
-        0,
         false,
         false,
     );
@@ -2851,9 +2239,6 @@ fn test_ground_unit_diagonal_clips_water_corner() {
         Some(&foot_costs),
         None,
         None,
-        None,
-        None,
-        0,
         false,
         false,
     );
@@ -3003,15 +2388,11 @@ fn test_height_based_bridge_routing_deck_at_4() {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let path = find_layered_path(
         &grid,
-        None,
-        None,
         (0, 0),
         MovementLayer::Ground,
         (4, 0),
         None,
         None,
-        None,
-        0,
         false,
         false,
     )
@@ -3068,15 +2449,11 @@ fn test_cliff_cost_uses_effective_height_not_ground_level() {
     // Path from bridge start to land at same effective height
     let path = find_layered_path(
         &grid,
-        None,
-        None,
         (0, 0),
         MovementLayer::Bridge,
         (2, 0),
         None,
         None,
-        None,
-        0,
         false,
         false,
     );

@@ -26,11 +26,12 @@ pub const SATURATION_PI4: SimFixed = SimFixed::lit("0.7853982");
 pub const SATURATION_PI10: SimFixed = SimFixed::lit("0.3141593");
 
 /// "Out of normal range" threshold (±π/2). Above this, dampening pushes back
-/// inward at the base rate regardless of `is_moving`.
+/// inward at the base rate whatever the DirectRocker link.
 pub const NORMAL_RANGE_PI2: SimFixed = SimFixed::lit("1.5707963");
 
-/// Base damping rate (rad/tick). Stationary units use this directly; moving
-/// units scale it by `fallback_coefficient` (default 0.1 → 0.0002 rad/tick).
+/// Base damping rate (rad/tick). An unlinked rocker uses this directly; a
+/// DirectRocker-linked one scales it by `fallback_coefficient` (default 0.1
+/// → 0.0002 rad/tick).
 pub const BASE_DECAY_RATE: SimFixed = SimFixed::lit("0.002");
 
 /// Snap-back rate for the velocity-fighting-itself sub-branch (rad/tick).
@@ -50,19 +51,38 @@ pub const FORCE_SATURATION: SimFixed = SimFixed::lit("4");
 /// applied to any target in the radius.
 pub const APPLY_AREA_FORCE_FLOOR: SimFixed = SimFixed::lit("0.3");
 
-/// Advance one rocking axis (sideways OR forwards) by one tick.
-///
-/// Step order (matches reference engine RockingUpdate):
+/// Advance one rocking axis (sideways OR forwards) by one tick, after
+/// `TechnoClass::RockingUpdate @ 0x0070B570` (sideways `0x0070B700..0x0070B95D`,
+/// forwards `0x0070B963..0x0070BC1D`):
 ///   1. Zero-velocity short-circuit — if velocity == 0, force angle to 0.
 ///   2. Integrate angle += velocity.
-///   3. Saturation clamp — only when stationary AND in normal range AND
-///      the integration step crossed the cap this tick. Moving units drift
-///      past the cap; out-of-range angles fall through to step 4.
-///   4. Dampening — moving units decay at `fallback * BASE_DECAY_RATE`;
-///      stationary units at `BASE_DECAY_RATE`. Out-of-range velocity is
+///   3. Saturation clamp — only when not DirectRocker-linked AND in normal
+///      range AND the integration step crossed the cap this tick. A linked
+///      rocker drifts past the cap; out-of-range angles fall through to step 4.
+///   4. Dampening — a linked rocker decays at `fallback * BASE_DECAY_RATE`,
+///      an unlinked one at `BASE_DECAY_RATE`. Out-of-range velocity is
 ///      pushed in the same direction as the velocity sign (which is what
 ///      produces the wide-amplitude run-away that L30 self-destruct catches).
 ///   5. Deadband snap — `|angle| <= TILT_DEADBAND` clears both fields.
+///
+/// `direct_rocker_linked` is the DirectRocker link (`Techno+0x2A8`), which
+/// skips the clamp (sideways `0x0070B76C`, `0x0070B7A4`; forwards `0x0070BA30`,
+/// `0x0070BA66`) and scales the in-range damper by FallBackCoefficient
+/// (`Rules+0x18B8`, `0x0070B7FA`). The body never asks the locomotor whether
+/// the object moves.
+///
+/// DRIFT, unported while the ordinary rocker has no producer (`sim::rocking`):
+/// - native picks the damper's direction by whether the angle before the step
+///   is above the deadband (`0x0070B7DD`), not by the velocity's sign;
+/// - in range and unlinked, native changes the sideways velocity by 0.005
+///   when it is zero or already has the damper's sign (`0x0070B868`,
+///   `0x0070B90D`) and the forwards velocity by 0.005 always (`0x0070BB3D`,
+///   `0x0070BBCD`); VERA changes a non-zero velocity by 0.002 and leaves the
+///   zero velocity a clamp writes unchanged;
+/// - the range flag tests the angle before the step (`0x0070B700..0x0070B72A`);
+/// - the deadband compares the angles before and after the step: it clears
+///   an angle that came down through +2e-5 or up through -2e-5, past zero
+///   too, and not one that stays inside (`0x0070B927..0x0070B95D`).
 ///
 /// `cap` selects ±π/4 (default) or ±π/10 (forwards during vehicle-vs-building
 /// crush, currently DEFERRED).
@@ -70,7 +90,7 @@ pub(crate) fn advance_axis(
     angle: &mut SimFixed,
     velocity: &mut SimFixed,
     cap: SimFixed,
-    is_moving: bool,
+    direct_rocker_linked: bool,
     fallback: SimFixed,
 ) {
     // L10: strict velocity == 0 → angle force-zero, skip integration.
@@ -86,9 +106,9 @@ pub(crate) fn advance_axis(
 
     let in_range = angle.abs() <= NORMAL_RANGE_PI2;
 
-    // L7: saturation fires only when stationary, in normal range, and crossing
+    // L7: saturation fires only when unlinked, in normal range, and crossing
     // the cap this tick. Both clamp the angle and zero the velocity.
-    if !is_moving && in_range {
+    if !direct_rocker_linked && in_range {
         if new_angle > cap && prev < cap {
             *angle = cap;
             *velocity = SimFixed::ZERO;
@@ -99,12 +119,12 @@ pub(crate) fn advance_axis(
     }
 
     // L3 / L4 / L5: dampening.
-    //   - in_range, moving:    velocity decays by fallback * BASE_DECAY_RATE
-    //   - in_range, stationary: velocity decays by BASE_DECAY_RATE
-    //   - out_of_range:        velocity is pushed in its own direction by
-    //                          BASE_DECAY_RATE (subtract -BASE_DECAY_RATE = +)
-    //                          — the runaway path the L30 self-destruct catches.
-    let decay = if is_moving {
+    //   - in_range, linked:   velocity decays by fallback * BASE_DECAY_RATE
+    //   - in_range, unlinked: velocity decays by BASE_DECAY_RATE
+    //   - out_of_range:       velocity is pushed in its own direction by
+    //                         BASE_DECAY_RATE (subtract -BASE_DECAY_RATE = +)
+    //                         — the runaway path the L30 self-destruct catches.
+    let decay = if direct_rocker_linked {
         fallback * BASE_DECAY_RATE
     } else {
         BASE_DECAY_RATE
@@ -172,7 +192,11 @@ pub fn tick(
         };
 
         // Read whole-entity properties before borrowing rocking mutably.
-        let is_moving = entity_is_moving(entity);
+        // RESIDUAL: VERA keeps no DirectRocker link (`Techno+0x2A8`). Only the
+        // DirectRocker detonation arm sets it (`0x004699AD..0x004699B9`), whose
+        // effect `sim::projectile` does not perform, and no warhead in retail
+        // `rulesmd.ini` sets `DirectRocker=`.
+        let direct_rocker_linked = false;
         let supports_ship_rock = entity_type_supports_ship_rocking(entity);
         let fallback = rules.general.fallback_coefficient;
 
@@ -197,14 +221,14 @@ pub fn tick(
                     &mut rocking.angle_sideways,
                     &mut rocking.vel_sideways,
                     SATURATION_PI4,
-                    is_moving,
+                    direct_rocker_linked,
                     fallback,
                 );
                 advance_axis(
                     &mut rocking.angle_forwards,
                     &mut rocking.vel_forwards,
                     forward_cap,
-                    is_moving,
+                    direct_rocker_linked,
                     fallback,
                 );
             }
@@ -247,13 +271,6 @@ fn balloon_hover_type(
         && rules
             .object(interner.resolve(entity.type_ref()))
             .is_some_and(|object| object.balloon_hover)
-}
-
-/// Whether the entity currently has an active movement path. Used to choose
-/// between the base decay rate (stationary) and the fallback-scaled decay
-/// rate (moving).
-fn entity_is_moving(entity: &GameEntity) -> bool {
-    entity.movement_target.is_some()
 }
 
 /// Working assumption per design doc §"Open Questions" #1: vehicles ship-rock,

@@ -57,8 +57,20 @@ pub(crate) fn commit_prepared_load(
     // Saved native identity is session.current_house. Never borrow an outgoing
     // sandbox preference or another match's human display handle.
     state.match_state.local_owner_override = None;
-    state.match_state.match_presentation.local_player_handle =
-        committed.map.local_player_name().map(str::to_owned);
+    // Load_Game 0x0067E4E8 restores GameMode from the save header; VERA's
+    // persisted classification rides on the restored ScenarioSession.
+    let game_mode_nonzero = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .expect("prepared saved game installs a runtime")
+        .simulation
+        .session
+        .game_mode_nonzero;
+    state
+        .match_state
+        .session
+        .restore_from_save(game_mode_nonzero, committed.map.local_player_name());
     state.match_state.scenario_elapsed_clock = committed.elapsed_clock;
     state.match_state.sandbox_full_visibility = false;
     let runtime = state

@@ -9,8 +9,7 @@ use super::*;
 use crate::rules::ruleset::HouseCostFactors;
 use crate::sim::components::DriveCoord;
 use crate::sim::find_nearby_cell::{
-    NearbyAnchorGate, NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
-    map_owned_radius_cap,
+    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
 };
 use crate::util::native_x87::NativeF32Bits;
 
@@ -98,7 +97,6 @@ fn project_geometry(
                 bridge_aware_zone: false,
             },
             footprint: NearbyFootprint::SINGLE,
-            anchor_gate: NearbyAnchorGate::NativeHeightAware,
             allow_bridge_cells: true,
             check_height: false,
             check_occupancy: false,
@@ -417,7 +415,6 @@ impl Simulation {
                 bridge_aware_zone: false,
             },
             footprint: NearbyFootprint::SINGLE,
-            anchor_gate: NearbyAnchorGate::NativeHeightAware,
             allow_bridge_cells: true,
             check_height: false,
             check_occupancy: false,

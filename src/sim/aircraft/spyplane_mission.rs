@@ -118,8 +118,9 @@ pub(super) fn overfly(
 fn weapon(sim: &Simulation, id: u64, rules: &RuleSet) -> Option<(i32, i32)> {
     let plane = sim.substrate.entities.get(id)?;
     let object = rules.object(sim.interner.resolve(plane.type_ref()))?;
-    let weapon = crate::sim::combat::combat_weapon::primary_for_tier(object, plane.veterancy())
-        .and_then(|weapon| rules.weapon(weapon))?;
+    let weapon =
+        crate::sim::combat::combat_weapon::primary_for_tier(object, plane.veterancy.rank())
+            .and_then(|weapon| rules.weapon(weapon))?;
     Some((weapon.range_leptons, weapon.damage))
 }
 
@@ -178,6 +179,7 @@ fn snapshot(sim: &mut Simulation, id: u64, rules: &RuleSet, sound: bool) {
             plane,
             &config,
             heights.as_deref(),
+            sim.resolved_terrain.as_ref(),
             ability,
             &sim.interner,
             damage,

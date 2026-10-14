@@ -173,8 +173,8 @@ fn infantry_speed_refusal_at_fire_frame_clears_firing_latch() {
     set_infantry_stage(&mut store, 1, 2);
     let firer = store.get_mut(1).unwrap();
     assert!(firer.mission_leaf.foot_firing_sequence_latch() != 0);
-    // Isolate the live Foot predicate from the older movement-target shortcut.
-    assert!(firer.movement_target.is_none());
+    // The live Foot speed alone refuses the fire frame: the locomotor is still.
+    assert!(crate::sim::movement::motion_query::is_moving(&firer) != Some(true));
     firer.foot_speed.set_speed_fraction(SimFixed::ONE);
     let result = visit(&mut store, &rules, 101);
     let firer = store.get(1).unwrap();
@@ -218,7 +218,6 @@ fn rocketeer_pair() -> (EntityStore, RuleSet) {
         rules.object("JJ").unwrap(),
         0,
     );
-    locomotor.altitude = SimFixed::from_num(500);
     let runtime = locomotor.jumpjet_runtime_mut().unwrap();
     *runtime = runtime
         .clone()
@@ -530,7 +529,6 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
             entity_id: firer,
             target_rx: 5,
             target_ry: 10,
-            queue: false,
         },
     );
     for _ in 0..50 {

@@ -16,7 +16,7 @@
 //!
 //! ## Design
 //! `TerrainCostGrid` is built from map data + a `SpeedType` and provides the
-//! lookup that `find_path_with_costs()` uses. It is separate from `PathGrid`
+//! lookup the A* search reads. It is separate from `PathGrid`
 //! (which is boolean walkability) because it also folds in the per-SpeedType
 //! land rows, bridge decks, ramps and terrain-object sub-cell occupation.
 //!
@@ -618,10 +618,7 @@ mod tests {
                 (4, 2),
                 Some(&costs),
                 None,
-                None,
                 Some(terrain),
-                None,
-                0,
                 false,
                 false,
             )
@@ -664,10 +661,7 @@ mod tests {
             (2, 0),
             Some(&foot),
             None,
-            None,
             Some(&terrain),
-            None,
-            0,
             false,
             true,
         );
@@ -683,10 +677,7 @@ mod tests {
             (2, 0),
             Some(&track),
             None,
-            None,
             Some(&terrain),
-            None,
-            0,
             false,
             false,
         );

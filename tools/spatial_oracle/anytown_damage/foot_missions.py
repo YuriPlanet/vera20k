@@ -1,6 +1,7 @@
 """Selected original Foot missions, threat wrapper, idle, firing, emission, stage clocks and Infantry frame selection using Anytown Mission.
 
-Invoke through mission --foot-missions. No scanner, approach, RNG or map decision
+Invoke through mission --foot-missions, or --foot-capture for three Capture
+cadence controls. No scanner, approach, RNG or map decision
 is reimplemented here. Explicit prior-state controls and the scanner-return seam
 are distinguished from the original full scanner rows; see foot_missions.md.
 """
@@ -12,7 +13,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 
 from tools.spatial_oracle.anytown_damage import mission as native_owner
-from tools.native_oracle import RET_MAGIC, NATIVE_SHA256, run_checked, finish_vectors, provenance, file_span, image_bytes
+from tools.native_oracle import RET_MAGIC, NATIVE_SHA256, run_checked, finish_vectors, provenance, file_span, image_bytes, image_sha256
 from tools.spatial_oracle.building_body_rules import INI, RULES, SP, dwords
 from tools.projectile_oracle.bridge_render_inputs import lexical
 from tools.spatial_oracle.bridge_target_composed import GENERAL_KEYS
@@ -1595,4 +1596,96 @@ def source_paths():
 
 def publish(argv=None):
  finish_vectors(generate,HERE/'foot_missions.json',provenance=metadata,
+                source_paths=source_paths(),argv=argv)
+
+
+def generate_capture():
+ """Original E1 Capture4D4B20 through Mission5B3060, not a second emulator.
+
+ Capture's NULL Target/nonNULL NavCom/human path never dereferences NavCom.
+ The supplied Building identity therefore bounds cadence only, not a native
+ click producer, Building constructor/placement or successful walking/entry.
+ """
+ q=FootMissions();q.initialize_companion();m,u=q.m,q.u
+ layers=[];slot=0xA8E3A8+8*32
+ # Add this physical reader pass only in the new mode. Historical Foot rows
+ # keep their original constructor/reader contexts and payloads unchanged.
+ for name,path in native_owner.base.layers():
+  if not path.exists():
+   assert name=='LANGRULE.INI';layers.append(dict(file=name,absent=True));continue
+  raw=path.read_bytes();selected,_=lexical(raw,{'Capture'})
+  before=bytes(u.mem_read(slot+0x10,8)).hex();m.rules_cache(selected)
+  u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_ESI,RULES)
+  run_checked(u,0x679C92,0x679CAF,required_addresses=[0x5B3760])
+  layers.append(dict(file=name,sha256=hashlib.sha256(raw).hexdigest(),
+   capture=selected.get('Capture',{}),rate_before_bits=before,
+   rate_after_bits=bytes(u.mem_read(slot+0x10,8)).hex()))
+ building=m.alloc(0x900);u.mem_write(building,dwords(0x7E3EBC))
+ frame=m.read32(0xA8ED84);assert frame==1
+ actor=dict(type_name=m.string(q.e1_type+0x24),
+  occupier=bool(u.mem_read(q.e1_type+0xEB4,1)[0]),
+  house_is_human=bool(m.invoke(0x50B730,m.read32(q.e1+0x21C))))
+ assert actor==dict(type_name='E1',occupier=True,house_is_human=True)
+ assert m.read32(m.read32(q.e1)+0x214)==0x4D4B20
+ controls=[]
+ for seed in (0,1,31):
+  row=q.row(f'E1_capture_cadence_seed{seed}',family='E1',mission=8,status=0,
+   target=0,nav=building,seed=seed,dispatch_entry=True)
+  assert row['returned'] and row['input']['entry']=='0x5b3060'
+  for state in (row['before'],row['after']):
+   assert (state['mission'],state['queued'],state['target'],state['nav'])==(8,-1,'0x0',hex(building))
+  requests=[e for e in row['events'] if e['kind']=='rng']
+  assert len(requests)==1
+  request=requests[0]
+  assert (request['pc'],request['caller'],request['stream'],request['args'])==('0x65c7e0','0x4d4c9c','scenario',[0,2])
+  mission_control=[e for e in row['events'] if e['kind']=='mission_control']
+  assert len(mission_control)==1 and mission_control[0]['caller']=='0x4d4c78'
+  raw_draws=[e['value'] for e in row['events'] if e['kind']=='rng_raw']
+  assert raw_draws
+  main_unchanged=row['rng_before']['main']==row['rng_after']['main']
+  mapgen_unchanged=row['rng_before']['mapgen']==row['rng_after']['mapgen']
+  assert main_unchanged and mapgen_unchanged
+  timer_writes=[dict(pc=e['pc'],field=e['field'],value=e['value'])
+   for e in row['writes'] if e['field'] in ('timer_frame','timer_duration')]
+  assert [e['pc'] for e in timer_writes]==['0x5b331b','0x5b3324']
+  # Shared original-state decoder/encoder, not another RNG packing policy.
+  controls.append(dict(name=row['input']['name'],scenario_seed=seed,frame=frame,
+   mission=8,queued=-1,target=0,nav_nonnull=True,
+   rate_bits=mission_control[0]['rate_bits'],timer_before=row['before']['dispatch'],
+   timer_after=row['after']['dispatch'],returned_delay=row['returned_eax'],
+   ranged_requests=[dict(caller=request['caller'],stream=request['stream'],
+    args=request['args'],result=request['result_eax'])],raw_draws=raw_draws,
+   rng_before=dict(native_state_hex=native_owner.base.sr.state_bytes(row['rng_before']['scenario']).hex()),
+   rng_after=dict(native_state_hex=native_owner.base.sr.state_bytes(row['rng_after']['scenario']).hex()),
+   timer_writes=timer_writes,main_unchanged=main_unchanged,mapgen_unchanged=mapgen_unchanged))
+ text_unchanged=hashlib.sha256(bytes(u.mem_read(0x401000,0x3E0000))).hexdigest()==q.resident.code_hash
+ vtables_unchanged=all(bytes(u.mem_read(int(address,16),len(bytes.fromhex(raw))))==bytes.fromhex(raw)
+  for address,raw in q.vtables.items())
+ assert text_unchanged and vtables_unchanged
+ return dict(schema=1,native_sha256=image_sha256(),layers=layers,actor=actor,
+  controls=controls,native_text_unchanged=text_unchanged,native_vtables_unchanged=vtables_unchanged)
+
+
+def capture_metadata():
+ return provenance(scope='Three original E1 Capture dispatcher cadence controls, using the existing FootMissions owner.',
+  entry_points=dict(mission_control_init=0x4E7CF0,mission_control_reader=0x5B3760,
+   layered_mission_read=0x679C92,infantry_type_ctor=0x5236A0,infantry_type_reader=0x5240A0,
+   infantry_ctor=0x517A50,infantry_unlimbo=0x51DFF0,walk_factory=0x6C4790,
+   mission_dispatch=0x5B3060,capture=0x4D4B20,mission_control=0x5B3A00,
+   capture_ranged_call=0x4D4C97,rng_seed=0x65C6D0,rng_ranged=0x65C7E0,
+   ranged_raw_store=0x65C84B,dispatch_timer_start=0x5B331B,dispatch_timer_duration=0x5B3324),
+  assumptions=[
+   'Replay from the checkout: python -m tools.spatial_oracle.anytown_damage.mission --foot-capture --check (or --write to accept newly executed native outputs). Select the original supported gamemd.exe through VERA20K_GAMEMD_EXE or RA2_DIR. The sidecar pins that binary; no repository source hashes are persisted.',
+   'Use the separate physical sparse caches VERA20K_SHRAPNEL_INPUTS and VERA20K_ANYTOWN_INPUTS declared by tools/spatial_oracle/anytown_damage/retail_manifest.json. The former supplies original RULESMD/ARTMD/SOUNDMD/MPBattleMD reader bootstrap; the latter supplies XMP03T4.MAP and the existing physical crop/asset dependencies. Keep LANGRULE absent for these stock controls. layers records actual physical file hashes, selected Capture bytes and native Rate results.',
+   'The existing FootMissions VM executes original MissionControl, E1 type, Infantry/Foot/Techno and Walk construction, physical selected readers and successful original E1 Unlimbo/registration, retaining its explicit Ready fixture baseline. An additive Capture reader pass runs the existing original679C92..679CAF MissionControl loop through5B3760 in physical RULESMD, optional LANGRULE, MPBattleMD and XMP03T4 order; older Foot corpora are not generated or rewritten.',
+   'Controls supply current mission8, queued-1, status0, NULL Target and nonNULL Building NavCom at retained absolute frame1 after initialization. The Building is a supplied allocated identity with original7E3EBC vtable, not native construction or placement. On this NULL Target/nonNULL NavCom/controlled-human E1 path, original Capture only tests NavCom against NULL and never dereferences its Building identity. Original5B3060 dispatches the unchanged Infantry vtable+214 to4D4B20, including current Rate multiplication/ftol, actual Scenario65C7E0 rejection retries and real timer writes.',
+   'Scenario seeds0/1/31 are explicit per-row inputs. rng_before/after.native_state_hex encode all logical native Random2Class fields through existing shrapnel_repair.state_bytes; unmodeled padding is zero in that shared encoding. Ordered raw_draws come from actual65C84B stores, not host RNG arithmetic. Full native Main and MapGen logical states are compared unchanged; original text and concrete vtables are asserted unchanged. No gameplay return or native instruction/vtable is substituted in the selected cadence path.',
+  ],substitutions=[
+   'Inherited physical source-order INI/file-buffer caches, successful allocation, empty Windows SEH and OS/COM bootstrap boundaries remain those of the sole Mission/FootMissions owner. House storage/count vectors and ownership links are supplied with actual physical country readers; full House/Scenario/map-load chronology is excluded.',
+   'No whole input/ClickedAction/Event production, native Building construction/placement, walking/pathfinding/arrival, garrison admission/AddGarrison/Tag, rendering, audio playback/Main audio RNG, whole-match scheduling, multiplayer or persistence equivalence is claimed. This corpus establishes selected Capture cadence and RNG/timer behavior only.',
+  ])
+
+
+def publish_capture(argv=None):
+ finish_vectors(generate_capture,HERE/'foot_capture.json',provenance=capture_metadata,
                 source_paths=source_paths(),argv=argv)

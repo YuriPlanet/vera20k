@@ -27,8 +27,7 @@ use crate::sim::combat::veterancy::RANK_ELITE_U16;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::find_nearby_cell::{
-    NearbyAnchorGate, NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
-    map_owned_radius_cap,
+    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
 };
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
@@ -146,13 +145,13 @@ impl ScatterTechno {
         houses: &BTreeMap<InternedId, HouseState>,
         interner: &StringInterner,
     ) -> Self {
-        use crate::sim::combat::veterancy::{has_weapon_ability, rank_from_u16};
+        use crate::sim::combat::veterancy::has_weapon_ability;
         Self {
             has_scatter_ability: rules
                 .and_then(|rules| rules.object(interner.resolve(entity.type_ref())))
                 .is_some_and(|object| {
                     has_weapon_ability(
-                        rank_from_u16(entity.veterancy()),
+                        entity.veterancy.rank_kind(),
                         object,
                         crate::rules::object_type::Ability::Scatter,
                     )
@@ -234,7 +233,7 @@ pub(super) fn scatter_objects_admitted(
             entities
                 .get(id)
                 // `Scatter_Objects`' elite pre-scan: each occupant's `IsElite`.
-                .is_some_and(|entity| entity.veterancy() >= RANK_ELITE_U16)
+                .is_some_and(|entity| entity.veterancy.rank() >= RANK_ELITE_U16)
         });
     listed()
         .filter(|&id| {
@@ -314,7 +313,7 @@ fn receive_damage_scatter_admitted(
         .object(interner.resolve(entity.type_ref()))
         .ok_or("damage Scatter requires a Techno type")?;
     Ok(crate::sim::combat::veterancy::has_weapon_ability(
-        crate::sim::combat::veterancy::rank_from_u16(entity.veterancy()),
+        entity.veterancy.rank_kind(),
         object,
         crate::rules::object_type::Ability::Scatter,
     ))
@@ -556,7 +555,6 @@ impl Simulation {
                     bridge_aware_zone: on_bridge,
                 },
                 footprint: NearbyFootprint::SINGLE,
-                anchor_gate: NearbyAnchorGate::NativeHeightAware,
                 allow_bridge_cells: true,
                 check_height: true,
                 check_occupancy: false,

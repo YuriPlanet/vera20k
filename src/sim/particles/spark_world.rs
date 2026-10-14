@@ -4,6 +4,7 @@
 //! simulation state or consuming RNG. It returns an owned fact bundle so the
 //! Spark owner can release all world borrows before advancing the Scenario RNG.
 
+use glam::IVec3;
 use thiserror::Error;
 
 use super::spark::{
@@ -106,6 +107,26 @@ pub(super) fn constructor_ground_height(
     ground_height_for_selection(&selected, world_x, world_y).map(Some)
 }
 
+/// SmokeMove62D3F0 queries the OLD cell and reads ground only if that
+/// selected real/dummy cell has a live structural bridge. No overlay lookup.
+pub(super) fn smoke_bridge_deck(
+    sim: &Simulation,
+    coords: IVec3,
+) -> Result<Option<i32>, SparkWorldError> {
+    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+        return Ok(None);
+    };
+    let cell = select_cell(terrain, SparkCellSelectionRole::Cell, coords.x, coords.y);
+    if !SparkCollisionWorld::live_structural_bridge(&cell)? {
+        return Ok(None);
+    }
+    let ground = select_cell(terrain, SparkCellSelectionRole::Ground, coords.x, coords.y);
+    Ok(Some(
+        ground_height_for_selection(&ground, coords.x, coords.y)?
+            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
+    ))
+}
+
 /// Concrete read-only view over the live simulation state Spark collision reads.
 pub struct SparkCollisionWorld<'a> {
     sim: &'a Simulation,
@@ -179,7 +200,7 @@ impl<'a> SparkCollisionWorld<'a> {
             motion.candidate_coords.x,
             motion.candidate_coords.y,
         );
-        let candidate_has_structural_bridge = self.live_structural_bridge(&candidate_cell)?;
+        let candidate_has_structural_bridge = Self::live_structural_bridge(&candidate_cell)?;
         let old_has_structural_bridge = if candidate_has_structural_bridge {
             false
         } else {
@@ -188,7 +209,7 @@ impl<'a> SparkCollisionWorld<'a> {
                 motion.old_coords.x,
                 motion.old_coords.y,
             );
-            self.live_structural_bridge(&old_cell)?
+            Self::live_structural_bridge(&old_cell)?
         };
 
         let bridge_kind = bridge_collision_kind(
@@ -225,10 +246,7 @@ impl<'a> SparkCollisionWorld<'a> {
         Ok(facts)
     }
 
-    fn live_structural_bridge(
-        &self,
-        selection: &SelectedSparkCell<'_>,
-    ) -> Result<bool, SparkWorldError> {
+    fn live_structural_bridge(selection: &SelectedSparkCell<'_>) -> Result<bool, SparkWorldError> {
         debug_assert_eq!(selection.role, SparkCellSelectionRole::Cell);
         match &selection.cell {
             CellRef::Dummy { cell } => {

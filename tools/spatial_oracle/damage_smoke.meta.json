@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Smoke constructors, Particle dispatch and AI, reverse SmokeSystem children/spawn, movement and bounded float accumulator; supplied ordinary Building coordinate receiver and prior state.",
+  "assumptions": [
+    "Historical original executable; shared SparkBirth/BulletReader machine, cached physical INI readers, archive/CRT/OS transport and native53/chop x87 control word.",
+    "Selected SmallGreySSys/BigGreySmokeSys and SmallGreySmoke/LargeGreySmoke original constructors/readers over RULESMD, optional LANGRULE, MPBattleMD and XMP03T4 strings; ART and physical SHPs supplied through existing archive owner. This is not whole Rules::Process or physical INI/MIX traversal.",
+    "Existing empty Logic/Display/effect registries and flat level0 cells42..48 by46..52; native level104/deck416 globals supplied from existing independently initialized scalar evidence.",
+    "Native ID cursor reseeded after selected type readers. Original Particle/System derived constructors call the native ID allocator; no fixture hook assigns constructed IDs.",
+    "Synthetic prior Random state uses disjoint A/B windows, or the inherited original Seed path; original Random bodies execute without returned-value substitution. Main/MapGen state and original text are checked unchanged.",
+    "Prior state controls include word EC0/1, signed RNG/state/ID parity, byte state-end, f32 accumulator/cutoff/speed boundaries, and structural bridge bit100. They do not establish production formation of all supplied nonstock states.",
+    "Building owner is a bounded original Object constructor plus actual Building vtable/flags/raw-coordinate/alive receiver and supplied GAPOWR foundation index3, reusing LiveSparkBirth prior-state admission. Native coordinate getters execute. This is not full Building constructor, placement, House, sale or ReceiveDamage. Empty effect-slot expiry executes original Building/Techno callbacks.",
+    "Stock accumulator walk supplies constructor-default HoldsWhat=-1 to isolate arithmetic and offset-draw timing, records only key checkpoints, stops immediately on native logical retirement. No renderer/audio/save/load or whole-match execution."
+  ],
+  "substitutions": [
+    "All execution and OS/archive/INI transport inherited from existing SparkBirth/BulletReader. No Smoke body, RNG call, math result, ID allocation, timer, detach or retirement return is substituted."
+  ],
+  "entry_points": {
+    "particle_ctor": "0x0062B5E0",
+    "particle_dispatch": "0x0062CE40",
+    "smoke_ai": "0x0062C540",
+    "move_dispatch": "0x0062D5E0",
+    "move_smoke": "0x0062D3F0",
+    "system_ctor": "0x0062DC50",
+    "system_ai": "0x0062FD60",
+    "smoke_system_ai": "0x0062ED40",
+    "system_type_reader": "0x006442D0",
+    "particle_type_reader": "0x00644F50",
+    "wind_reader_slice": "0x0066F2AF",
+    "limbo": "0x005F4D30",
+    "detach_all": "0x005F5280",
+    "expiry": "0x007258D0",
+    "techno_expired": "0x007077C0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.damage_smoke",
+  "payload_sha256": "ae6cb8adabc8ce32114094828861dc7a1815bcf9150c6d60d7f782978c8ab11a"
+}

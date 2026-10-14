@@ -427,7 +427,7 @@ impl Fixture {
             "{boundary}: paid repair"
         );
         assert_eq!(
-            entity.building_damage_state_active,
+            entity.building_art.damage_state_active(),
             native["damaged_mode"] == 1,
             "{boundary}: damage mode"
         );
@@ -474,7 +474,7 @@ impl Fixture {
         for slot in native["slots"].as_array().unwrap() {
             let anim = self
                 .sim
-                .anim(entity.building_anim_slots[3].unwrap())
+                .anim(entity.building_art.anim_slots()[3].unwrap())
                 .unwrap();
             assert_eq!(
                 self.sim.resolve(anim.type_id),

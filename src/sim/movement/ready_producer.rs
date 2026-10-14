@@ -196,8 +196,7 @@ fn teleport(entity: &GameEntity) -> LocomotorReadyState {
 /// The input is `JumpjetRuntime::phase`, the locomotor's own state field
 /// (`+0x50`), which `world::jumpjet_cruise` advances through the native
 /// `Process` kernel. It used to be reconstructed from `AirMovePhase`, a lossy
-/// mirror that folded 2 and 3 together (told apart by whether a movement target
-/// existed) and had no 5 or 6.
+/// mirror that folded 2 and 3 together and had no 5 or 6.
 fn jumpjet(locomotor: &LocomotorState) -> LocomotorReadyState {
     LocomotorReadyState::Jumpjet {
         state: locomotor
@@ -207,9 +206,9 @@ fn jumpjet(locomotor: &LocomotorState) -> LocomotorReadyState {
 }
 
 /// Walk75AB40 calls IsMoving75AB30, reads Foot+578 >0, then tests the
-/// retained step XYZ. The Walk owner now retains all three inputs; NavCom,
-/// MovementTarget is not an authority for this query.
-/// Project the fixed fraction's sign to 1/0 without a float conversion.
+/// retained step XYZ. The Walk owner retains all three inputs; NavCom is not
+/// an authority for this query. The fixed fraction's sign projects to 1/0
+/// without a float conversion.
 fn walk(entity: &GameEntity, locomotor: &LocomotorState) -> LocomotorReadyState {
     LocomotorReadyState::Walk {
         moving_byte: u8::from(locomotor.walk_is_moving().unwrap_or(false)),

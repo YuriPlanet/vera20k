@@ -74,8 +74,8 @@ impl HouseFactoryAbandonment {
 /// lets a type at it through while one of the house's factories holds it
 /// (`0x004F8348`); a PRODUCE event asks no second time (`0x004C7130` passes
 /// 0). Nothing here asks the house's prerequisites: the sidebar offers only
-/// what the strip keeps, and the frame's [`revalidate_and_step_factories`]
-/// abandons what it no longer keeps. A stopped active object of the same
+/// what the strip keeps; the late House recheck sends cancellation events
+/// for options it drops ([`recalculate_strips`]). A stopped active object of the same
 /// type takes the same-type branch (`0x004FA5A8..0x004FA5C4`): a held build
 /// resumes, and a finished one stays (the build start refuses stage 54,
 /// `0x004C9ECD`). Otherwise `FactoryClass::StartProduction @ 0x004C9C70`
@@ -724,9 +724,9 @@ pub(in crate::sim) fn construct_active_factory_fixture(
 
 /// Revalidate before the charge sweep at its existing frame phase: first
 /// `HouseClass::Update_Factory_Queue` (`FactoryRegistry::plan_revalidation`),
-/// disposing all abandoned objects before starting any promoted ones, then
-/// the human houses' strips ([`recalculate_strips`]). A freshly abandoned
-/// factory is not charged this frame.
+/// disposing all abandoned objects before starting any promoted ones.
+/// Prerequisite-only loss belongs to the later House strip recheck and event
+/// tail ([`recalculate_strips`]), after this sweep charged the other factories.
 pub(in crate::sim) fn revalidate_and_step_factories(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -755,7 +755,6 @@ pub(in crate::sim) fn revalidate_and_step_factories(
         )
         .expect("validated revalidation promotion must construct one Techno");
     }
-    recalculate_strips(sim, rules, effects);
     let mut registry = std::mem::take(&mut sim.production.factories);
     registry.step_all(&mut sim.houses, sim.session.binary_frame);
     sim.production.factories = registry;
@@ -769,19 +768,32 @@ pub(in crate::sim) fn revalidate_and_step_factories(
 /// and ABANDON_ALL (event `0x2E`) when the house has a factory for the
 /// type's kind (`HouseClass::GetPrimaryFactory @ 0x00500510` with build
 /// category 0, so a defense asks the Buildings factory; `0x006AA809..`),
-/// both through [`cancel_by_type_for_owner`]. Every event is decided before
-/// any runs.
+/// both through the existing `CancelProductionByType` event dispatcher and
+/// [`cancel_by_type_for_owner`]. Every event is decided before any runs.
 ///
-/// Residual: the strip recalculates only when the house's tech tree is
-/// rechecked (House `+0x1FC`, set by a building's placement, opening,
-/// limbo, sale and capture, trigger actions and more), and its events run
-/// on a later frame; VERA decides every frame and abandons at once.
-/// Trigger: a build whose prerequisite or last factory is lost. Effect: the
-/// abandon and refund land a frame or more earlier. Frequency: occasional.
-fn recalculate_strips(sim: &mut Simulation, rules: &RuleSet, effects: FrameEffects<'_>) {
-    let mut abandons = Vec::new();
-    for (owner, category, types) in sim.production.factories.house_build_types() {
+/// Local MainTick55DC9E -> ProcessCommandQueues647260 (55DE40) executes
+/// these events in the same binary-frame tail, before increment55DE7E.
+/// Recheck admission is the private House+1FC owner, not a per-frame scan.
+/// No RNG/timer/detach writes occur here; event execution reuses the owning
+/// factory's cancellation/promotion and held-object lifecycle.
+///
+/// Residual: native client-local sidebar entry order and saturated/network
+/// OutList transport are separate mechanisms. VERA represents every human
+/// strip in deterministic House order; a single rejected stock MGTK cameo
+/// has no cross-entry ordering ambiguity. Trigger-action recheck writers and
+/// unpowered-factory cameo admission remain separate existing gaps.
+pub(in crate::sim) fn recalculate_strips(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+) -> Vec<crate::sim::command::CommandEnvelope> {
+    use crate::sim::command::{Command, CommandEnvelope};
         if !sim.houses.get(&owner).is_some_and(|house| house.is_human) {
+        return Vec::new();
+    }
+    let mut abandons = Vec::new();
+    for (factory_owner, category, types) in sim.production.factories.house_build_types() {
+        if factory_owner != owner {
             continue;
         }
         let active = sim
@@ -799,20 +811,32 @@ fn recalculate_strips(sim: &mut Simulation, rules: &RuleSet, effects: FrameEffec
                 .object_type(type_id, rules)
                 .is_some_and(|obj| strip_keeps(sim, rules, owner, obj));
             if !kept {
-                abandons.push((owner, type_id, active == Some(type_id), kind_factory));
+                abandons.push((type_id, active == Some(type_id), kind_factory));
             }
         }
     }
-    for (owner, type_id, own_factory, kind_factory) in abandons {
-        let owner_name = sim.interner.resolve(owner).to_string();
-        let type_name = sim.interner.resolve(type_id).to_string();
+    let mut events = Vec::new();
+    let execute_tick = sim.session.tick.saturating_add(1);
+    for (type_id, own_factory, kind_factory) in abandons {
         if own_factory {
-            cancel_by_type_for_owner(sim, rules, &owner_name, &type_name, false, effects);
+            events.push(CommandEnvelope::new(
+                owner,
+                execute_tick,
+                Command::CancelProductionByType {
+                    type_id,
+                    all: false,
+                },
+            ));
         }
         if kind_factory {
-            cancel_by_type_for_owner(sim, rules, &owner_name, &type_name, true, effects);
+            events.push(CommandEnvelope::new(
+                owner,
+                execute_tick,
+                Command::CancelProductionByType { type_id, all: true },
+            ));
         }
     }
+    events
 }
 
 /// House508D88 invokes the existing Factory rate owner after power changes.

@@ -28,7 +28,7 @@
 //! It reads NavCom and the actual locomotor motion query independently.
 
 use crate::rules::object_type::{Ability, ObjectType};
-use crate::sim::combat::veterancy::{has_weapon_ability, rank_from_u16};
+use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
@@ -50,7 +50,7 @@ const REPEATED_GREEN_ADD: u16 = 12;
 const PRONE_THRESHOLD: u16 = 50;
 
 pub fn is_fear_application_blocked(obj: &ObjectType, entity: &GameEntity) -> bool {
-    obj.fearless || has_weapon_ability(rank_from_u16(entity.veterancy()), obj, Ability::Fearless)
+    obj.fearless || has_weapon_ability(entity.veterancy.rank_kind(), obj, Ability::Fearless)
 }
 
 pub fn can_decay_fear(obj: &ObjectType) -> bool {
@@ -934,8 +934,6 @@ mod tests {
             .find(|row| row["input"]["name"] == "human_stationary")
             .unwrap();
         let (mut sim, rules) = fear_fixture(row);
-        sim.substrate.entities.get_mut(1).unwrap().movement_target =
-            Some(crate::sim::components::MovementTarget::default());
         assert!(
             !sim.infantry_fear_turn(1, &rules, None, crate::sim::world::FrameEffects::default())
                 .unwrap()
@@ -1045,14 +1043,14 @@ mod tests {
         let rules = rules_for("VeteranAbilities=FEARLESS\n");
         let obj = rules.object("E1").unwrap();
         let mut e = infantry(90);
-        e.set_veterancy_rank(100);
+        e.veterancy.set_rank_for_test(100);
         apply_fear_from_damage(obj, &mut e, 1, true, 0.25, 0.5);
         assert_eq!(e.infantry.unwrap().fear_level, 0);
 
         let rules = rules_for("EliteAbilities=FEARLESS\n");
         let obj = rules.object("E1").unwrap();
         let mut e = infantry(90);
-        e.set_veterancy_rank(200);
+        e.veterancy.set_rank_for_test(200);
         apply_panic_force(obj, &mut e);
         assert_eq!(e.infantry.unwrap().fear_level, 0);
     }

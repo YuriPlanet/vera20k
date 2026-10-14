@@ -57,6 +57,15 @@ fn ground_command_history<'a>(corpus: &'a Value, name: &str) -> &'a Value {
     row
 }
 
+/// Whether an original input held Shift (`0x00A8EC08`, key 16).
+fn ground_command_shift(input: &Value) -> bool {
+    input["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|key| key["key"] == 16)
+}
+
 fn ground_command_coordinate(value: &Value) -> crate::sim::components::DriveCoord {
     crate::sim::components::DriveCoord {
         x: value[0].as_i64().unwrap().try_into().unwrap(),
@@ -460,16 +469,6 @@ fn ground_command_fixture(
             .set_speed_fraction_native_bits(ground_command_double_bits(
                 &state["speed_fraction_bits"],
             ));
-        if ground_command_optional_coordinate(&drive["head"]).is_some() {
-            actor.movement_target = Some(crate::sim::components::MovementTarget {
-                speed: crate::sim::movement::order_speed(
-                    actor,
-                    Some(object),
-                    Some(&rules),
-                    &sim.houses,
-                ),
-            });
-        }
     } else {
         loco.set_step_head(ground_command_optional_coordinate(&state["walk"]["head"]));
         loco.set_walk_destination(ground_command_optional_coordinate(
@@ -945,11 +944,10 @@ fn simulation_ground_command(
     owner: crate::sim::intern::InternedId,
     id: u64,
     clicked: (u16, u16),
-    _shift: bool,
+    shift: bool,
 ) -> CommandEnvelope {
     let cell = sim
-        .ordinary_ground_foot_cell_input(owner, id, clicked, rules)
-        .unwrap()
+        .cell_click_destination(owner, id, clicked, shift, rules, None)
         .unwrap()
         .unwrap();
     CommandEnvelope::new(
@@ -959,7 +957,6 @@ fn simulation_ground_command(
             entity_id: id,
             target_rx: cell.0,
             target_ry: cell.1,
-            queue: false,
         },
     )
 }
@@ -1070,13 +1067,11 @@ pub(crate) fn check_initialized_ground_reissues(names: &[&str], produce: GroundC
                 entity_id,
                 target_rx,
                 target_ry,
-                queue,
             } = decoded.payload
             else {
                 panic!("{name}: original input emits an ordinary Move");
             };
             assert_eq!(entity_id, id);
-            assert!(!queue, "{name}: native Shift still emits ordinary Move");
             let expected = ground_command_nav_target(&dispatch["after"]).unwrap();
             assert_eq!(NavTargetRef::cell(target_rx, target_ry), expected);
             assert!(sim.apply_command_with_overlays(
@@ -1139,10 +1134,7 @@ pub(crate) fn check_initialized_unit_paid_reissues(produce: GroundCommandProduce
             fixture_cell(&input["clicked"]),
             false,
         );
-        assert!(matches!(
-            decoded.payload,
-            Command::Move { queue: false, .. }
-        ));
+        assert!(matches!(decoded.payload, Command::Move { .. }));
         assert!(sim.apply_command_with_overlays(
             "Americans",
             &decoded.payload,
@@ -1196,7 +1188,6 @@ fn initialized_unit_delayed_move_reaches_original_class_refusal() {
                 entity_id: id,
                 target_rx: rx,
                 target_ry: ry,
-                queue: false
             },
             Some(&rules),
             Some(&registry),
@@ -1234,8 +1225,14 @@ fn initialized_gi_move_clears_original_archive_before_destination() {
     let owner = sim.interner.get("Americans").unwrap();
     let input = row["inputs"].as_array().unwrap().last().unwrap();
     let resolved = sim
-        .ordinary_ground_foot_cell_input(owner, id, fixture_cell(&input["clicked"]), &rules)
-        .unwrap()
+        .cell_click_destination(
+            owner,
+            id,
+            fixture_cell(&input["clicked"]),
+            ground_command_shift(input),
+            &rules,
+            Some(&registry),
+        )
         .unwrap()
         .unwrap();
     assert!(sim.apply_command_with_overlays(
@@ -1244,7 +1241,6 @@ fn initialized_gi_move_clears_original_archive_before_destination() {
             entity_id: id,
             target_rx: resolved.0,
             target_ry: resolved.1,
-            queue: false
         },
         Some(&rules),
         Some(&registry),
@@ -1303,24 +1299,19 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
             assert_ground_command_fields(&sim, id, row, &down["after"]);
         }
         if name == "paid_head_Stop_B" {
-            let stop = boundaries
-                .iter()
-                .find(|boundary| boundary["label"] == "actual_GI_Stop")
-                .unwrap();
-            sim.infantry_stop_driver(
-                id,
-                &rules,
-                Some(&registry),
-                crate::sim::world::FrameEffects::default(),
-            )
-            .unwrap();
-            assert_ground_command_fields(&sim, id, row, &stop["after"]);
+            replay_original_stop(&mut sim, &rules, &registry, id, row);
         }
         let input = row["inputs"].as_array().unwrap().last().unwrap();
         let owner = sim.interner.get("Americans").unwrap();
         let resolved = sim
-            .ordinary_ground_foot_cell_input(owner, id, fixture_cell(&input["clicked"]), &rules)
-            .unwrap()
+            .cell_click_destination(
+                owner,
+                id,
+                fixture_cell(&input["clicked"]),
+                ground_command_shift(input),
+                &rules,
+                Some(&registry),
+            )
             .unwrap()
             .unwrap();
         assert!(sim.apply_command_with_overlays(
@@ -1329,7 +1320,6 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
                 entity_id: id,
                 target_rx: resolved.0,
                 target_ry: resolved.1,
-                queue: false
             },
             Some(&rules),
             Some(&registry),
@@ -1337,6 +1327,32 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
         ));
         assert_ground_command_fields(&sim, id, row, &row["final"]);
     }
+}
+
+/// The recorded `actual_GI_Stop` on a fixture built from the state before it,
+/// checked against the state after it. Its paid-head result (head set, no
+/// destination, still moving) exists only after a Stop.
+fn replay_original_stop(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    registry: &OverlayTypeRegistry,
+    id: u64,
+    row: &Value,
+) {
+    let stop = row["boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|boundary| boundary["label"] == "actual_GI_Stop")
+        .unwrap();
+    sim.infantry_stop_driver(
+        id,
+        rules,
+        Some(registry),
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
+    assert_ground_command_fields(sim, id, row, &stop["after"]);
 }
 
 /// Actual4D3CC7/4D3DF9 redirects from the initialized original GI. Compare
@@ -1404,6 +1420,73 @@ fn initialized_gi_findpath_redirects_match_original_class_returns() {
     }
 }
 
+/// Every recorded original What_Action on the clicked Cell (GI `0x0051F800`,
+/// MTNK `0x007404B0`, each through Foot `0x004DDDE0` and Techno `0x00700600`)
+/// gives the same action through [`Simulation::cell_move_action`] from the
+/// state saved before the query: plain, Shift and Alt clicks, a Cell outside
+/// the playfield, a foreign House, Berserk, the Unit deployment bytes and
+/// Doing27 for a Deployer and a non-Deployer.
+#[test]
+fn initialized_cell_what_action_matches_every_original_query() {
+    let corpus = ground_command_corpus();
+    let mut compared = 0;
+    for row in corpus["gi_reissue"].as_array().unwrap() {
+        let name = row["name"].as_str().unwrap();
+        let inputs = row["inputs"].as_array().unwrap();
+        let boundaries = row["boundaries"].as_array().unwrap();
+        let queries: Vec<_> = boundaries
+            .iter()
+            .enumerate()
+            .filter(|(_, boundary)| {
+                boundary["label"] == "actual_GI_WhatAction"
+                    || boundary["label"] == "actual_Unit_WhatAction"
+            })
+            .collect();
+        assert_eq!(queries.len(), inputs.len(), "{name}");
+        for ((position, boundary), input) in queries.into_iter().zip(inputs) {
+            //A query after the recorded Stop starts from the Stop's own replay.
+            let stopped = boundaries[..position]
+                .iter()
+                .any(|boundary| boundary["label"] == "actual_GI_Stop");
+            let prior = if stopped {
+                &boundaries
+                    .iter()
+                    .find(|boundary| boundary["label"] == "whole_original_GI_AI_1")
+                    .unwrap()["after"]
+            } else {
+                &boundary["before"]
+            };
+            let Some((mut sim, rules, registry, id)) = ground_command_fixture(row, prior) else {
+                return;
+            };
+            if stopped {
+                replay_original_stop(&mut sim, &rules, &registry, id, row);
+            }
+            let owner = sim.interner.get("Americans").unwrap();
+            let action = sim
+                .cell_move_action(
+                    owner,
+                    id,
+                    fixture_cell(&input["clicked"]),
+                    crate::sim::world::CellActionQuery {
+                        mouse_over: false,
+                        shift: ground_command_shift(input),
+                    },
+                    &rules,
+                    Some(&registry),
+                )
+                .unwrap();
+            assert_eq!(
+                json!(action.native()),
+                input["queried_action"],
+                "{name}: {input}"
+            );
+            compared += 1;
+        }
+    }
+    assert_eq!(compared, 54);
+}
+
 /// Original input emits no Move for the recorded local-house, Berserk and
 /// Deployer/Doing contexts. Action0 can return CellClick AL1 without issuing
 /// an order; the latter's query2 has a different refusal path.51AA40 owns its
@@ -1451,7 +1534,7 @@ fn check_initialized_no_order_contexts(names: &[&str]) {
                     }
             })
             .unwrap();
-        let Some((sim, rules, _, id)) = ground_command_fixture(row, &click["before"]) else {
+        let Some((sim, rules, registry, id)) = ground_command_fixture(row, &click["before"]) else {
             return;
         };
         if !unit {
@@ -1470,23 +1553,25 @@ fn check_initialized_no_order_contexts(names: &[&str]) {
                 .iter()
                 .any(|call| call["kind"] == "Event_Construct")
         );
-        let owner = sim.interner.get("Americans").unwrap();
         // Production order: the click producer keeps only the objects whose
         // ClickedAction can send (`click_order_receivers`, the Berserk
-        // refusal), then asks the move query.
+        // refusal), then resolves the Cell, which the class What_Action and
+        // ClickedAction refuse.
         let berserk_refused = sim.click_order_receivers(&[id]).is_empty();
         assert_eq!(berserk_refused, name.contains("berserk"), "{name}");
         if !berserk_refused {
+            let input = &row["inputs"][0];
+            let owner = sim.interner.get("Americans").unwrap();
             assert_eq!(
-                sim.ordinary_ground_foot_cell_input(
+                sim.cell_click_destination(
                     owner,
                     id,
-                    fixture_cell(&row["inputs"][0]["clicked"]),
-                    &rules
-                )
-                .unwrap()
-                .unwrap(),
-                None,
+                    fixture_cell(&input["clicked"]),
+                    ground_command_shift(input),
+                    &rules,
+                    Some(&registry),
+                ),
+                Ok(None),
                 "{name}: original input emits no Move event"
             );
         }
@@ -1513,13 +1598,14 @@ fn initialized_gi_non_deployer_input_reaches_original_class_refusal() {
     assert!(!rules.object("E1").unwrap().deployer);
     let owner = sim.interner.get("Americans").unwrap();
     let resolved = sim
-        .ordinary_ground_foot_cell_input(
+        .cell_click_destination(
             owner,
             id,
             fixture_cell(&row["inputs"][0]["clicked"]),
+            false,
             &rules,
+            Some(&registry),
         )
-        .unwrap()
         .unwrap()
         .unwrap();
     assert!(sim.apply_command_with_overlays(
@@ -1528,7 +1614,6 @@ fn initialized_gi_non_deployer_input_reaches_original_class_refusal() {
             entity_id: id,
             target_rx: resolved.0,
             target_ry: resolved.1,
-            queue: false,
         },
         Some(&rules),
         Some(&registry),
@@ -1564,7 +1649,7 @@ fn initialized_gi_deploy_class_contexts_match_original_returns() {
             ground_command_cell_reference(&call["before"], call["args"][0].as_u64().unwrap())
                 .unwrap();
         let _ = sim
-            .set_infantry_destination(
+            .assign_infantry_destination(
                 id,
                 requested,
                 &rules,

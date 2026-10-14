@@ -555,7 +555,7 @@ pub struct ResolvedTerrainGrid {
     /// `terrain_object_occupation` (the movement blocker plane's only terrain
     /// input) goes through `cell_mut`. A bump without a change only costs a
     /// rebuild.
-    mutation_epoch: std::cell::Cell<u64>,
+    mutation_epoch: u64,
     /// Production-only membership for native Size-diamond CellClass slots.
     /// `None` keeps synthetic/from_cells grids rectangular for focused tests.
     native_allocated: Option<Vec<bool>>,
@@ -804,7 +804,7 @@ impl ResolvedTerrainGrid {
             land_speed_costs: land_speed_cost_profiles(None),
             native_tmp_draw_heights: HashMap::new(),
             shared_cell_dummy: SharedCellDummy::fresh(),
-            mutation_epoch: std::cell::Cell::new(0),
+            mutation_epoch: 0,
             native_allocated: None,
             radar_color_valid,
             damaged_radar_metadata,
@@ -1081,14 +1081,13 @@ impl ResolvedTerrainGrid {
     /// only a `cfg(test)` body, which the suite could not detect.
     pub(crate) fn cell_mut(&mut self, rx: u16, ry: u16) -> Option<&mut ResolvedTerrainCell> {
         let idx = self.index(rx, ry)?;
-        self.mutation_epoch
-            .set(self.mutation_epoch.get().wrapping_add(1));
+        self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
         self.cells.get_mut(idx)
     }
 
     /// Epoch of mutable cell access; see the field note.
     pub fn mutation_epoch(&self) -> u64 {
-        self.mutation_epoch.get()
+        self.mutation_epoch
     }
 
     pub(crate) fn apply_dynamic_cell_state(

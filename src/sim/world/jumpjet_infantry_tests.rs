@@ -26,7 +26,10 @@ fn pose(sim: &super::Simulation, id: u64) -> Pose {
         sequence: entity
             .infantry_sprite_pose()
             .and_then(|(doing, _)| crate::rules::infantry_sequence::action_kind(doing)),
-        altitude: locomotor.altitude.to_num(),
+        altitude: crate::sim::movement::air_movement::current_fly_height(
+            entity,
+            sim.resolved_terrain.as_ref(),
+        ),
     }
 }
 
@@ -178,7 +181,6 @@ fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
             entity_id: rocketeer,
             target_rx: x + 8,
             target_ry: y,
-            queue: false,
         },
     );
     let mut orders = vec![order];
@@ -342,7 +344,6 @@ fn retail_dustbowl_parked_rocketeer_engages_nearby_enemies() {
             entity_id: rocketeer,
             target_rx: x + 8,
             target_ry: y,
-            queue: false,
         },
     );
     let mut orders = vec![park];
@@ -443,7 +444,6 @@ fn a_parked_rocketeer_scans_and_fires_on_move() {
             entity_id: 1,
             target_rx: 56,
             target_ry: 52,
-            queue: false,
         },
     );
     let mut orders = vec![order];
@@ -605,7 +605,6 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
             entity_id: rocketeer,
             target_rx: x + 8,
             target_ry: y,
-            queue: false,
         },
     );
     let mut orders = vec![hold];
@@ -893,7 +892,6 @@ fn rocketeer_crash_fixture(
             .foot_speed
             .set_speed_fraction_native_bits(input["fraction"].as_f64().unwrap_or(0.0).to_bits());
         let loco = entity.locomotor.as_mut().unwrap();
-        loco.altitude = SimFixed::from_num(height);
         let runtime = loco.jumpjet_runtime_mut().unwrap();
         let mut flight = runtime.flight();
         flight.facing.snap(0x4000, 1000);
@@ -1171,7 +1169,6 @@ fn a_rocketeer_lifting_off_clears_his_sub_cell() {
             entity_id: 1,
             target_rx: 60,
             target_ry: 52,
-            queue: false,
         },
         Some(&rules),
     ));
@@ -1202,7 +1199,6 @@ fn a_rocketeer_lifting_off_leaves_his_cell_list_at_two_levels() {
             entity_id: 1,
             target_rx: 60,
             target_ry: 52,
-            queue: false,
         },
         Some(&rules),
     ));
@@ -1263,7 +1259,7 @@ fn grounded_rocketeer() -> (super::Simulation, crate::rules::ruleset::RuleSet, u
     (sim, rules, shooter)
 }
 
-/// The ground route (factory rally, unload, pursuit, a grounded mover's Move)
+/// The ground route (factory rally, unload, Approach, a grounded mover's Move)
 /// gives a Rocketeer his cell through Foot's setter, as Infantry's does
 /// (`0x0051B1D2` -> `0x004D94B0`): the NavCom with the order (`0x004D9510`)
 /// and the Jumpjet's `Move_To` (`0x004D965D`). It left both to his `Process`.
@@ -1273,21 +1269,14 @@ fn a_ground_route_order_gives_a_rocketeer_his_navcom_and_move_to() {
     sim.path_grid = Some(std::sync::Arc::new(
         crate::sim::pathfinding::PathGrid::test_all_passable(70, 70),
     ));
-    let speed = sim.resolve_move_info(1, Some(&rules)).unwrap().speed;
-    assert!(sim.issue_ground_move(
-        super::GroundMove {
-            entity_id: 1,
-            target: (60, 52),
-            speed,
-            queue: false,
-            speed_type: None,
-            owner_blocks: false,
-            object_destination: None,
-        },
+    sim.assign_destination_represented(
+        1,
+        Some(crate::sim::components::NavTargetRef::cell(60, 52)),
         Some(&rules),
         None,
         crate::sim::world::FrameEffects::default(),
-    ));
+    )
+    .unwrap();
     let rocketeer = sim.substrate.entities.get(1).unwrap();
     assert_eq!(
         rocketeer.navigation.nav_com,
@@ -1349,8 +1338,8 @@ fn assert_rocketeer_flies_near(sim: &super::Simulation, near: (u16, u16)) {
 /// An object order takes the same Foot setter, with the order and without a
 /// route: the object is his NavCom (`0x004D9510`), and his Jumpjet's
 /// `Move_To` (`0x004D965D`) seeds its placement search with the coordinate
-/// the object gives him then (`+0x4C` at `0x004D9628`), not the one the order
-/// captured. The order used to leave the `Move_To` to his `Process`.
+/// the object gives him then (`+0x4C` at `0x004D9628`). The order used to
+/// leave the `Move_To` to his `Process`.
 #[test]
 fn an_object_order_flies_a_rocketeer_with_the_order() {
     let (mut sim, rules, shooter) = grounded_rocketeer();
@@ -1358,22 +1347,14 @@ fn an_object_order_flies_a_rocketeer_with_the_order() {
         crate::sim::pathfinding::PathGrid::test_all_passable(70, 70),
     ));
     move_shooter(&mut sim, shooter, (46, 44));
-    let speed = sim.resolve_move_info(1, Some(&rules)).unwrap().speed;
-    let object = crate::sim::components::NavTargetRef::object(shooter);
-    assert!(sim.issue_ground_move(
-        super::GroundMove {
-            entity_id: 1,
-            target: (40, 40),
-            speed,
-            queue: false,
-            speed_type: None,
-            owner_blocks: false,
-            object_destination: Some((object, crate::sim::components::DriveCoord::cell(40, 40, 0))),
-        },
+    sim.assign_destination_represented(
+        1,
+        Some(crate::sim::components::NavTargetRef::object(shooter)),
         Some(&rules),
         None,
         crate::sim::world::FrameEffects::default(),
-    ));
+    )
+    .unwrap();
     assert_rocketeer_flies_near(&sim, (46, 44));
 }
 
@@ -1386,7 +1367,7 @@ fn the_class_setter_flies_a_rocketeer_to_an_object() {
     let (mut sim, rules, shooter) = grounded_rocketeer();
     move_shooter(&mut sim, shooter, (46, 44));
     assert_eq!(
-        sim.set_infantry_destination(
+        sim.assign_infantry_destination(
             1,
             crate::sim::components::NavTargetRef::object(shooter),
             &rules,
@@ -1424,7 +1405,7 @@ fn the_mission_destination_setter_flies_a_rocketeer() {
 fn an_order_to_a_rocketeers_own_cell_is_ignored() {
     let (mut sim, rules, _) = grounded_rocketeer();
     assert_eq!(
-        sim.set_infantry_destination(
+        sim.assign_infantry_destination(
             1,
             crate::sim::components::NavTargetRef::cell(52, 52),
             &rules,
@@ -1454,7 +1435,7 @@ fn an_object_order_into_a_rocketeers_own_cell_is_ignored() {
     let (mut sim, rules, shooter) = grounded_rocketeer();
     move_shooter(&mut sim, shooter, (52, 52));
     assert_eq!(
-        sim.set_infantry_destination(
+        sim.assign_infantry_destination(
             1,
             crate::sim::components::NavTargetRef::object(shooter),
             &rules,
@@ -1543,7 +1524,7 @@ fn a_moving_rocketeers_reorder_runs_stop_driver_first() {
     let order =
         |sim: &mut super::Simulation, rules: &crate::rules::ruleset::RuleSet, cell: (u16, u16)| {
             assert_eq!(
-                sim.set_infantry_destination(
+                sim.assign_infantry_destination(
                     1,
                     crate::sim::components::NavTargetRef::cell(cell.0, cell.1),
                     rules,
@@ -1592,7 +1573,7 @@ fn foot_admission_refuses_a_rocketeers_order_during_a_locomotor_swap() {
         .unwrap()
         .foot_locomotor_swap_active = true;
     assert_eq!(
-        sim.set_infantry_destination(
+        sim.assign_infantry_destination(
             1,
             crate::sim::components::NavTargetRef::cell(60, 52),
             &rules,
@@ -1634,7 +1615,6 @@ fn a_grounded_rocketeers_move_order_survives_its_first_mission_visit() {
             entity_id: 1,
             target_rx: 60,
             target_ry: 52,
-            queue: false,
         },
     );
     sim.advance_tick(&[order], Some(&rules), Some(&grid), None, 67);
@@ -1668,7 +1648,6 @@ fn a_rocketeer_taken_over_in_flight_stops_over_his_cell() {
             entity_id: 1,
             target_rx: 64,
             target_ry: 52,
-            queue: false,
         },
         Some(&rules),
     ));
@@ -1723,7 +1702,6 @@ fn a_rocketeer_taken_over_in_flight_stops_over_his_cell() {
         "the re-target is the cell he is over"
     );
     assert_eq!(rocketeer.navigation.nav_com, None);
-    assert!(rocketeer.movement_target.is_none());
     for _ in 0..120 {
         sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
     }
