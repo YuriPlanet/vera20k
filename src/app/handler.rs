@@ -18,6 +18,57 @@ fn launcher_options_consumes_escape<T>(dialog: &Option<T>, is_escape: bool) -> b
 }
 
 impl App {
+    /// Drop every sticky in-game pointer byte.
+    ///
+    /// gamemd's capture-changed case drops the button-held byte and tears the
+    /// band rectangle down; without this the right-drag pan keeps applying its
+    /// anchor-relative step every frame and edge scroll stays inhibited until
+    /// the player right-clicks again. The gadget substrate keeps its own
+    /// sticky capture and must die on the same edge, or the next click is still
+    /// routed to the region that captured it (the release that would free it
+    /// was lost).
+    ///
+    /// A focus edge is the native trigger, but it is not the only way a
+    /// gesture can lose its release: while the debug overlay is up the
+    /// diagnostic GUI owns the pointer (`dev_ui_consumed` in the window-event
+    /// router) and every tactical press/release is dropped instead of
+    /// reaching the world. Whatever was half-done behind the overlay is
+    /// therefore still half-done when it closes, and the match looks dead
+    /// until something else — a minimise, an Alt+Tab — takes the focus away.
+    /// Ending the debug pause runs the same teardown so the first click after
+    /// the panel closes lands where the player aimed it.
+    pub(crate) fn release_in_game_pointer_state(state: &mut AppState) {
+        state.match_state.input.tactical_mouse.reset_on_focus_loss();
+        state.match_state.input.selection_state.cancel_drag();
+        state.match_state.input.minimap_dragging = false;
+        state
+            .match_state
+            .match_presentation
+            .in_game_gadgets
+            .cancel_pointer_capture();
+        state
+            .match_state
+            .match_presentation
+            .in_game_options
+            .dragging_slider = None;
+        state.match_state.match_presentation.in_game_options.buttons = Default::default();
+        state.match_state.match_presentation.pause_menu_interaction = Default::default();
+        state.match_state.match_presentation.abort_buttons = Default::default();
+        if let Some(dialog) = state.match_state.match_presentation.sound_dialog.as_mut() {
+            dialog.reset_interaction();
+        }
+        if let Some(browser) = state
+            .match_state
+            .match_presentation
+            .saved_game_browser
+            .as_mut()
+        {
+            browser.pressed_control = None;
+            browser.scroll_repeat_at = None;
+            browser.last_list_press = None;
+        }
+    }
+
     fn resize_surface_for_window_size(state: &mut AppState, size: PhysicalSize<u32>) {
         state.renderer.gpu.resize(size.width, size.height);
         state.renderer.depth_view = state.renderer.gpu.create_depth_texture();
@@ -163,6 +214,9 @@ impl ApplicationHandler for App {
                     event_loop.exit();
                     return;
                 }
+                // Clip the cursor to the window on first launch (
+                // default). A focus regain re-applies it if the OS dropped it.
+                crate::app::input::cursor::apply_cursor_confinement(&state);
                 self.state = Some(state);
                 log::info!("Initialization complete — showing main menu");
             }
@@ -404,52 +458,20 @@ impl ApplicationHandler for App {
                 // zero viewport. The restore edge delivers the real size.
                 if !hidden {
                     Self::resize_surface_for_window_size(state, size);
+                    // A resized window changes the rectangle the cursor is
+                    // clipped to, so re-apply the lock (no-op if it is off).
+                    crate::app::input::cursor::apply_cursor_confinement(state);
                 }
             }
             WindowEvent::Focused(active) => {
+                // The OS drops the cursor clip on alt-tab, so re-apply the
+                // player's confinement choice whenever the window returns.
+                if active {
+                    crate::app::input::cursor::apply_cursor_confinement(state);
+                }
                 if !active {
-                    // Losing focus takes the mouse capture away, and gamemd
-                    // handles that explicitly: its capture-changed case drops
-                    // the button-held byte and tears the band rectangle down.
-                    // Without this the right-drag pan keeps applying its
-                    // anchor-relative step every frame and edge scroll stays
-                    // inhibited until the player right-clicks again.
-                    state.match_state.input.tactical_mouse.reset_on_focus_loss();
-                    state.match_state.input.selection_state.cancel_drag();
-                    state.match_state.input.minimap_dragging = false;
-                    // The gadget substrate keeps its own sticky capture; it
-                    // must die with the same focus edge or the next click is
-                    // still routed to the region that captured it (the
-                    // release that would free it was lost with the focus).
-                    state
-                        .match_state
-                        .match_presentation
-                        .in_game_gadgets
-                        .cancel_pointer_capture();
-                    state
-                        .match_state
-                        .match_presentation
-                        .in_game_options
-                        .dragging_slider = None;
-                    state.match_state.match_presentation.in_game_options.buttons =
-                        Default::default();
-                    state.match_state.match_presentation.pause_menu_interaction =
-                        Default::default();
-                    state.match_state.match_presentation.abort_buttons = Default::default();
-                    if let Some(dialog) = state.match_state.match_presentation.sound_dialog.as_mut()
-                    {
-                        dialog.reset_interaction();
-                    }
-                    if let Some(browser) = state
-                        .match_state
-                        .match_presentation
-                        .saved_game_browser
-                        .as_mut()
-                    {
-                        browser.pressed_control = None;
-                        browser.scroll_repeat_at = None;
-                        browser.last_list_press = None;
-                    }
+                    crate::app::input::cursor::release_cursor_confinement(state);
+                    Self::release_in_game_pointer_state(state);
                     if let Some(browser) = state
                         .frontend
                         .skirmish_shell_state
@@ -492,6 +514,17 @@ impl ApplicationHandler for App {
                 // recorded before screen-specific dispatch own this state.
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                // cursor lock toggle: flip the window cursor
+                // clip so the pointer cannot leave the game (and back). Works
+                // on every screen, like the rest of the lock feature.
+                if let PhysicalKey::Code(KeyCode::ScrollLock) = event.physical_key
+                    && event.state.is_pressed()
+                    && !event.repeat
+                {
+                    crate::app::input::cursor::toggle_cursor_confinement(state);
+                    state.platform.window.request_redraw();
+                    return;
+                }
                 if state.frontend.keyboard_dialog.is_some() {
                     crate::app::input::keyboard::key(state, &event);
                     return;
@@ -961,6 +994,10 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
             Self::follow_window_full_screen(state);
+            // cursor lock: the OS drops the clip on focus loss /
+            // Windows key, so re-assert the player's choice every frame while
+            // the window is focused. Presentation-only, never part of the sim.
+            crate::app::input::cursor::reassert_cursor_confinement(state);
             Self::update_saved_seed_browser_scroll(state, false);
             Self::update_load_saved_game_scroll(state, false);
             [

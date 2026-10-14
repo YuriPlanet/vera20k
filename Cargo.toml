@@ -62,6 +62,14 @@ wgpu = "27"
 # winit 0.30 is the latest stable. 0.31 is still in beta.
 # Uses the ApplicationHandler trait pattern (deferred window creation).
 winit = "0.30"
+# raw-window-handle + windows-sys let us clip the OS cursor to the game window
+# with the Win32 ClipCursor API . That is reliable on frameless
+# windows, where winit's CursorGrabMode::Confined mis-computes the clip rect and
+# pins the pointer in place ("mouse won't move").
+raw-window-handle = "0.6"
+# `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClientRect;
+# `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen coords).
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
 # pollster bridges wgpu's async initialization inside winit's sync event loop.
 pollster = "0.4"
 # bytemuck enables safe transmutation of structs to GPU-friendly byte slices.

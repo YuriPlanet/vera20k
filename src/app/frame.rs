@@ -142,18 +142,40 @@ impl App {
     /// the shell pages draw whenever it loaded.
     fn show_os_cursor_only_without_game_cursor(state: &mut AppState, battlefield_drawn: bool) {
         let status_screen_drawn = std::mem::take(&mut state.frontend.status_screen_drawn);
-        let visible = status_screen_drawn
-            || if battlefield_drawn {
-                !state.use_software_cursor()
-                    && state.match_state.input.cursor_visibility.is_visible()
-            } else {
-                state
-                    .match_state
-                    .match_presentation
-                    .software_cursor
-                    .is_none()
-            };
+        let visible = if state.platform.cursor_confined {
+            // Confined: the game owns the pointer through its
+            // software cursor, so keep the OS cursor hidden everywhere the game
+            // draws one of its own — that leaves a single (software) cursor and
+            // avoids the OS arrow + game arrow flicker at the clip edge. Where
+            // the game draws *no* software cursor (the status screen, and any
+            // debug-pause / diagnostic overlay, since the sim is paused and
+            // `use_software_cursor` is false there), surface the OS cursor so
+            // egui debug panels stay interactive. Do NOT gate on
+            // `battlefield_drawn`: the sim stops redrawing while paused, so the
+            // battlefield is not "drawn" yet the debug overlay still needs a
+            // visible pointer.
+            status_screen_drawn || !state.use_software_cursor()
+        } else {
+            status_screen_drawn
+                || if battlefield_drawn {
+                    !state.use_software_cursor()
+                        && state.match_state.input.cursor_visibility.is_visible()
+                } else {
+                    state
+                        .match_state
+                        .match_presentation
+                        .software_cursor
+                        .is_none()
+                }
+        };
         state.platform.window.set_cursor_visible(visible);
+        if !visible {
+            // The pointer is ours this frame, but winit re-shows the class cursor
+            // on WM_SETCURSOR (notably when the mouse hits the ClipCursor edge),
+            // flickering a system arrow over the game's software cursor. Force it
+            // null so the OS arrow never appears while confined.
+            crate::app::input::cursor::suppress_os_cursor(state);
+        }
     }
 
     /// Dispatch rendering based on current GameScreen state.

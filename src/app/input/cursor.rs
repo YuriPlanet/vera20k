@@ -1373,6 +1373,205 @@ pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
     }
 }
 
+/// Apply the player's chosen cursor-confinement state to the window.
+///
+/// `cursor_confined` clips the OS pointer to the window rectangle ('s
+/// edge-scroll lock), so it cannot leave the game while the player scrolls the
+/// map. The OS drops the clip on focus loss (alt-tab), so callers re-apply this
+/// on every focus regain. A platform that cannot confine (some Wayland setups)
+/// logs and leaves the cursor free rather than failing the frame.
+pub(crate) fn apply_cursor_confinement(state: &AppState) {
+    apply_cursor_confinement_impl(state, true);
+}
+
+/// Force the OS arrow invisible, in addition to `set_cursor_visible(false)`.
+///
+/// `set_cursor_visible(false)` asks winit to hide the cursor, but winit restores
+/// the window's *class* cursor on every `WM_SETCURSOR` — most visibly when the
+/// pointer slams the `ClipCursor` edge, where Windows re-asserts the arrow for a
+/// frame and it flickers on top of the game's own software cursor. Calling
+/// `SetCursor(NULL)` every frame (what gamemd's `WWMouse` does with
+/// `ShowCursor(FALSE)`) keeps the OS arrow gone whenever VERA has decided the
+/// game should own the pointer. No-op off Windows.
+pub(crate) fn suppress_os_cursor(state: &AppState) {
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::SetCursor;
+        // NULL handle = no cursor for this window. Safe: it only changes the
+        // current thread's cursor image, never the clip or pointer position.
+        unsafe {
+            SetCursor(std::ptr::null_mut());
+        }
+    }
+    let _ = state;
+}
+
+/// Keep the player's cursor-lock choice alive every frame clips
+/// continuously). `ClipCursor` is a *system-wide* setting the OS drops on
+/// focus loss or the Windows key, so a one-shot apply silently stops working
+/// mid-session. While the window is focused we re-assert the clip each frame;
+/// while it is in the background we leave the pointer alone so we never trap
+/// it inside another application. Silent (no per-frame log spam).
+pub(crate) fn reassert_cursor_confinement(state: &AppState) {
+    if !state.platform.cursor_confined {
+        // Choice is "free": make sure the pointer is released (idempotent).
+        release_cursor_confinement(state);
+        return;
+    }
+    if !state.platform.window_active {
+        // Backgrounded: don't fight other apps; Focused(false) already released.
+        return;
+    }
+    apply_cursor_confinement_impl(state, false);
+    // Re-assert the OS-arrow suppression every frame, not just in the render
+    // pass: the pointer now rides the exact client edge to keep edge-scroll
+    // alive, so we must kill the border arrow at the earliest point each frame.
+    suppress_os_cursor(state);
+}
+
+fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
+    // Windows: clip to the client rectangle with the Win32 ClipCursor API
+    // (what the clipping approach actually does). winit's CursorGrabMode::Confined derives
+    // the clip rect from the *outer* window rect, which is wrong for frameless
+    // windows and pins the pointer in place — so we call ClipCursor directly on
+    // the client rect, which is reliable.
+    #[cfg(target_os = "windows")]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use std::ffi::c_void;
+        use windows_sys::Win32::Foundation::{POINT, RECT};
+        use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ClipCursor, GetClientRect};
+        let handle = match state.platform.window.window_handle() {
+            Ok(h) => h,
+            Err(err) => {
+                if verbose {
+                    log::warn!("cursor confinement: no window handle ({err})");
+                }
+                return;
+            }
+        };
+        let RawWindowHandle::Win32(w) = handle.as_raw() else {
+            return;
+        };
+        let hwnd = w.hwnd.get() as *mut c_void;
+        let mut rect: RECT = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        unsafe {
+            // Clip the *client* area, not the whole window: GetWindowRect would
+            // include the title bar and the resize border, so the pointer could
+            // still wander onto them. GetClientRect gives the drawable region in
+            // window-local coords; ClientToScreen maps its corners into screen
+            // space for ClipCursor. Both are in the same DPI-aware physical
+            // pixels, so the rect matches what ClipCursor expects.
+            GetClientRect(hwnd, &mut rect);
+            let mut tl = POINT { x: rect.left, y: rect.top };
+            let mut br = POINT { x: rect.right, y: rect.bottom };
+            ClientToScreen(hwnd, &mut tl);
+            ClientToScreen(hwnd, &mut br);
+            // Clip to the *exact* client rectangle — do NOT inset. The game's
+            // edge-scroll trigger is a one-pixel at-edge band (camera.rs
+            // `edge_scroll_intent`: `x<=0 || x>=view_w-1 || y<=0 || y>=view_h-1`),
+            // so the pointer must be able to reach the outer pixel
+            // (x=0 / x=view_w-1). Insetting even 1px pins the pointer at
+            // [1, view_w-2] and silently kills edge scrolling on all four sides.
+            // The border-arrow flicker that an exact clip can cause is handled by
+            // `SetCursor(NULL)` every frame (see `suppress_os_cursor`, called from
+            // both `reassert` and the render pass), not by shrinking the rect. The
+            // validity check below still guards tiny windows from an inverted rect.
+            let clip = RECT {
+                left: tl.x,
+                top: tl.y,
+                right: br.x,
+                bottom: br.y,
+            };
+            // A not-yet-laid-out window reports a zero/empty client; clipping to
+            // it would pin the pointer in place ("mouse won't move"), so defer
+            // until the window has real geometry. The per-frame reassert picks it
+            // up automatically once the window is sized.
+            if clip.right <= clip.left || clip.bottom <= clip.top {
+                if verbose {
+                    log::info!(
+                        "cursor confinement: client rect not ready ({},{},{},{}), deferring",
+                        clip.left, clip.top, clip.right, clip.bottom
+                    );
+                }
+                return;
+            }
+            if verbose {
+                log::info!(
+                    "cursor confinement: clipping to client ({},{},{},{}) confined={}",
+                    clip.left, clip.top, clip.right, clip.bottom,
+                    state.platform.cursor_confined
+                );
+            }
+            let ok = if state.platform.cursor_confined {
+                ClipCursor(&clip)
+            } else {
+                ClipCursor(std::ptr::null())
+            };
+            if ok == 0 && verbose {
+                log::warn!("cursor confinement: ClipCursor failed");
+            }
+        }
+    }
+    // Other platforms: use winit's Confined grab. On X11/macOS this confines the
+    // pointer to the window; on pure Wayland cursor confinement is unsupported
+    // and set_cursor_grab returns an error, which we log and tolerate so the
+    // frame is never blocked.
+    #[cfg(not(target_os = "windows"))]
+    {
+        use winit::window::CursorGrabMode;
+        let mode = if state.platform.cursor_confined {
+            CursorGrabMode::Confined
+        } else {
+            CursorGrabMode::None
+        };
+        if let Err(err) = state.platform.window.set_cursor_grab(mode) {
+            if verbose {
+                log::warn!("cursor confinement unavailable on this platform: {err:#}");
+            }
+        }
+    }
+}
+
+/// Drop the OS cursor clip entirely. Called on focus loss so alt-tab releases
+/// the pointer instead of leaving it trapped over the game window (
+/// behaviour). Presentation-only.
+pub(crate) fn release_cursor_confinement(state: &AppState) {
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor;
+        unsafe {
+            ClipCursor(std::ptr::null());
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Best-effort: releasing an already-free grab can error on some
+        // compositors (pure Wayland), which we tolerate so the per-frame
+        // re-assert path never spams the log.
+        let _ = state
+            .platform
+            .window
+            .set_cursor_grab(winit::window::CursorGrabMode::None);
+    }
+}
+
+/// Flip the window cursor lock  and re-apply it immediately.
+/// Bound to the runtime cursor-lock hotkey; never part of the sim or replay.
+pub(crate) fn toggle_cursor_confinement(state: &mut AppState) {
+    state.platform.cursor_confined = !state.platform.cursor_confined;
+    apply_cursor_confinement(state);
+    log::info!(
+        "cursor confinement {}",
+        if state.platform.cursor_confined {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
